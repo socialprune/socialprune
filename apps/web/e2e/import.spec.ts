@@ -117,7 +117,8 @@ test('aborts after real batches, releases the archive and imports again in the s
   page,
 }) => {
   test.setTimeout(60_000);
-  const audit = await observeImport(context, page);
+  const audit = await observeImport(context, page, { abortOnFirstItems: true });
+  const itemCount = 12_000;
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-abort-'));
   const large = join(directory, 'generated-x.zip');
   try {
@@ -131,7 +132,7 @@ test('aborts after real batches, releases the archive and imports again in the s
         '--platform',
         'x',
         '--count',
-        '8000',
+        String(itemCount),
         '--seed',
         '42',
         '--out',
@@ -144,18 +145,20 @@ test('aborts after real batches, releases the archive and imports again in the s
     if (!worker) throw new Error('The import worker did not start.');
     await page.getByLabel('Export ZIP files').setInputFiles(large);
     await page.getByRole('button', { name: 'Import', exact: true }).click();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () => window.socialprune.getImportSnapshot().receivedItems,
-        ),
-      )
-      .toBeGreaterThan(0);
-    await page.getByRole('button', { name: 'Abort', exact: true }).click();
     await expect(page.getByTestId('import-state')).toHaveAttribute(
       'data-phase',
       'aborted',
     );
+    expect(
+      await page.evaluate(
+        () =>
+          Reflect.get(globalThis, '__abortTrigger') as {
+            id: number;
+            phaseBefore: string;
+            receivedBefore: number;
+          } | null,
+      ),
+    ).toEqual({ id: 1, phaseBefore: 'importing', receivedBefore: 0 });
     const messages = await page.evaluate(
       () =>
         Reflect.get(globalThis, '__workerMessages') as {
@@ -170,7 +173,8 @@ test('aborts after real batches, releases the archive and imports again in the s
         window.socialprune.getImportSnapshot();
       return { batches, receivedItems, count: items.length, abortLatencyMs };
     });
-    expect(aborted.receivedItems).toBeLessThan(8000);
+    expect(aborted.receivedItems).toBeGreaterThan(0);
+    expect(aborted.receivedItems).toBeLessThan(itemCount);
     expect(aborted.count).toBe(0);
     expect(aborted.abortLatencyMs).toBeLessThan(3000);
     await page.waitForTimeout(200);

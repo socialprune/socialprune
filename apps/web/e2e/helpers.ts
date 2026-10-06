@@ -72,7 +72,11 @@ export async function fixtureZips(platform: string, id: string) {
   }
 }
 
-export async function observeImport(context: BrowserContext, page: Page) {
+export async function observeImport(
+  context: BrowserContext,
+  page: Page,
+  options: { abortOnFirstItems?: boolean } = {},
+) {
   const origin = 'http://127.0.0.1:4180';
   const requests: { url: string; source: string }[] = [];
   const failures: { url: string; error: string | null }[] = [];
@@ -94,13 +98,20 @@ export async function observeImport(context: BrowserContext, page: Page) {
     }),
   );
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((abortOnFirstItems: boolean) => {
     const host = globalThis as typeof globalThis & {
       __policy: string[];
       __workerMessages: { type: string; id: number }[];
+      __abortTrigger: {
+        id: number;
+        phaseBefore: string;
+        receivedBefore: number;
+      } | null;
     };
     host.__policy = [];
     host.__workerMessages = [];
+    host.__abortTrigger = null;
+    let abortPending = abortOnFirstItems;
     document.addEventListener('securitypolicyviolation', (event) =>
       host.__policy.push(event.effectiveDirective),
     );
@@ -115,11 +126,30 @@ export async function observeImport(context: BrowserContext, page: Page) {
               type: event.data.type,
               id: event.data.id,
             });
+            if (abortPending && event.data.type === 'items') {
+              // Law 23: enter the real abort path on the first batch, rather
+              // than assume it is still running after a Node poll and click.
+              abortPending = false;
+              const state = window.socialprune.getImportSnapshot();
+              host.__abortTrigger = {
+                id: event.data.id,
+                phaseBefore: state.phase,
+                receivedBefore: state.receivedItems,
+              };
+              const button = Array.from(
+                document.querySelectorAll('button'),
+              ).find((button) => button.textContent?.trim() === 'Abort');
+              if (!button || button.disabled)
+                throw new Error(
+                  'Abort must be enabled on the first item batch.',
+                );
+              button.click();
+            }
           },
         );
       }
     };
-  });
+  }, options.abortOnFirstItems ?? false);
   return {
     assert: async () => {
       expect(

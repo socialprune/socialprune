@@ -103,3 +103,67 @@ test('midstream cancellation does not wait for a stalled chunk producer', async 
     release();
   }
 });
+
+test('large synthetic arrays scan chunks without per-character awaits', async () => {
+  const count = 50_000;
+  const text = JSON.stringify(
+    Array.from({ length: count }, (_, index) => ({
+      index,
+      text: 'Generated [text] with "quotes" and ä😺',
+    })),
+  );
+  async function* chunks() {
+    await Promise.resolve();
+    for (let offset = 0; offset < text.length; offset += 64 * 1024)
+      yield text.slice(offset, offset + 64 * 1024);
+  }
+  let seen = 0;
+  for await (const item of parseJsonArrayStream(chunks(), {
+    assignment: 'none',
+  })) {
+    expect(item).toMatchObject({ index: seen });
+    seen++;
+  }
+  expect(seen).toBe(count);
+}, 10_000);
+
+test('all chunk boundaries preserve scanner state, exact UTF-8 limits and tail validation', async () => {
+  const text =
+    '\uFEFF a.b = [{"text":"ä😺\\\"quoted\\\\tail","array":[1,null]},false]; \n';
+  for (let size = 1; size <= text.length; size++) {
+    async function* chunks() {
+      await Promise.resolve();
+      for (let offset = 0; offset < text.length; offset += size)
+        yield text.slice(offset, offset + size);
+    }
+    const parser = parseJsonArrayStream(chunks(), { assignment: 'allowed' });
+    const values: unknown[] = [];
+    for await (const value of parser) values.push(value);
+    expect(values).toEqual([
+      { text: 'ä😺"quoted\\tail', array: [1, null] },
+      false,
+    ]);
+    expect(await parser.target).toBe('a.b');
+  }
+  const element = '"ä😺"';
+  async function* units() {
+    await Promise.resolve();
+    for (let i = 0; i < element.length + 2; i++) yield `[${element}]`[i]!;
+  }
+  const bytes = new TextEncoder().encode(element).byteLength;
+  const valid = parseJsonArrayStream(units(), {
+    assignment: 'none',
+    maxElementBytes: bytes,
+  });
+  const values: unknown[] = [];
+  for await (const value of valid) values.push(value);
+  expect(values).toEqual(['ä😺']);
+  const invalid = parseJsonArrayStream(units(), {
+    assignment: 'none',
+    maxElementBytes: bytes - 1,
+  });
+  const consume = async () => {
+    for await (const value of invalid) void value;
+  };
+  await expect(consume()).rejects.toBeInstanceOf(ArchiveLimitError);
+});

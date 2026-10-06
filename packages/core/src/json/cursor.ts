@@ -37,6 +37,32 @@ export class JsonCursor {
     }
     return character;
   }
+  async nextChunk(): Promise<string | null> {
+    throwIfAborted(this.signal);
+    if (this.pending !== undefined) {
+      const value = this.pending;
+      this.pending = undefined;
+      return value;
+    }
+    let remaining = this.chunk.slice(this.offset);
+    this.offset = this.chunk.length;
+    while (remaining.length === 0) {
+      const part = await abortable(this.iterator.next(), this.signal);
+      throwIfAborted(this.signal);
+      if (part.done) return null;
+      this.chunk = part.value;
+      this.offset = this.chunk.length;
+      remaining = this.chunk;
+    }
+    if (this.first) {
+      this.first = false;
+      if (remaining[0] === '\uFEFF') {
+        remaining = remaining.slice(1);
+        if (remaining.length === 0) return this.nextChunk();
+      }
+    }
+    return remaining;
+  }
   unread(value: string | null): void {
     this.pending = value;
   }

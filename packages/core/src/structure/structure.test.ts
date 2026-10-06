@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { createMemoryArchive } from '../archive/index.ts';
 import type { ArchiveReader } from '../archive/index.ts';
 import { openArchivePaths } from '../node/index.ts';
+import { parseJsonArrayStream } from '../json/index.ts';
 import { describeStructure } from './index.ts';
 
 const marker = ['Synthetic', 'Leaf', 'Never', 'Printed'].join('-');
@@ -170,6 +171,123 @@ test('all declared private categories are counted without opening their streams'
   });
 });
 
+function leafValues(input: unknown): string[] {
+  if (typeof input === 'string') return input.length >= 3 ? [input] : [];
+  if (typeof input === 'number')
+    return String(input).replace(/\D/g, '').length >= 3 ? [String(input)] : [];
+  if (Array.isArray(input)) return input.flatMap(leafValues);
+  if (input && typeof input === 'object')
+    return Object.values(input).flatMap(leafValues);
+  return [];
+}
+
+function literalLeaves(text: string): string[] {
+  const leaves: string[] = [];
+  for (const match of text.matchAll(/"(?:[^"\\]|\\[\s\S])*"/g)) {
+    if (/^\s*:/.test(text.slice(match.index + match[0].length))) continue;
+    try {
+      const decoded: unknown = JSON.parse(match[0]);
+      if (typeof decoded === 'string' && decoded.length >= 3)
+        leaves.push(decoded);
+    } catch {
+      // A malformed literal contributes no decoded value; keep scanning the
+      // rest of the file instead of omitting this malformed fixture entirely.
+    }
+  }
+  return leaves;
+}
+
+async function* fixtureChunks(text: string): AsyncIterable<string> {
+  yield await Promise.resolve(text);
+}
+
+async function extractFixtureLeaves(
+  text: string,
+  format: 'json' | 'js',
+): Promise<string[]> {
+  let leaves: string[] = [];
+  try {
+    if (format === 'json') {
+      const value: unknown = JSON.parse(text);
+      leaves = leafValues(value);
+    } else {
+      const stream = parseJsonArrayStream(fixtureChunks(text), {
+        assignment: 'allowed',
+      });
+      for await (const element of stream) leaves.push(...leafValues(element));
+      await stream.target;
+    }
+  } catch {
+    leaves = literalLeaves(text);
+  }
+  // Type names belong to the report vocabulary; short digit-only values can
+  // equal report counts. No other leaf values are exempt from the assertion.
+  const types = new Set([
+    'string',
+    'number',
+    'boolean',
+    'null',
+    'object',
+    'array',
+  ]);
+  return [...new Set(leaves)].filter(
+    (leaf) => !types.has(leaf) && (!/^\d+$/.test(leaf) || leaf.length >= 5),
+  );
+}
+
+test('fixture leaf extraction covers assigned JS, decoded literals and exact vocabulary exclusions', async () => {
+  const target = ['window', 'YTD', 'tweets', 'part0'].join('.');
+  const text = `${target} = ${JSON.stringify([
+    {
+      text: 'Assigned JS leaf',
+      number: 1234567,
+      nested: [
+        'Escaped "quoted" leaf',
+        '00123',
+        1234,
+        '123',
+        'string',
+        'number',
+        'boolean',
+        'null',
+        'object',
+        'array',
+        'strings remain leaves',
+      ],
+    },
+  ])};`;
+  expect(await extractFixtureLeaves(text, 'js')).toEqual([
+    'Assigned JS leaf',
+    '1234567',
+    'Escaped "quoted" leaf',
+    '00123',
+    'strings remain leaves',
+  ]);
+  expect(
+    await extractFixtureLeaves('{"key": "JSON leaf", "count": 12345}', 'json'),
+  ).toEqual(['JSON leaf', '12345']);
+});
+
+test('malformed and trailing-code fixtures retain decoded non-key string leaves', async () => {
+  const malformed =
+    '{"key_only" : "Malformed leaf", "escaped_key": "Decoded\\u0020leaf", "broken_key":';
+  expect(await extractFixtureLeaves(malformed, 'json')).toEqual([
+    'Malformed leaf',
+    'Decoded leaf',
+  ]);
+  const target = ['window', 'YTD', 'tweets', 'part0'].join('.');
+  const injection = `${target} = (function(){return {"key_only": "Injection leaf"}})() || []`;
+  expect(await extractFixtureLeaves(injection, 'js')).toEqual([
+    'Injection leaf',
+  ]);
+  expect(
+    await extractFixtureLeaves(
+      `${target} = ["Array leaf"]; "Trailing code leaf"`,
+      'js',
+    ),
+  ).toEqual(['Array leaf', 'Trailing code leaf']);
+});
+
 const fixtureRoot = fileURLToPath(
   new URL('../../../../fixtures/synthetic/', import.meta.url),
 );
@@ -197,32 +315,40 @@ test('fixture privacy coverage explicitly reports the current registered directo
 test.skipIf(variants.length === 0)(
   'every existing generated fixture hides its distinctive JSON leaf values',
   async () => {
-    function leaves(input: unknown): string[] {
-      if (typeof input === 'string') return input.length >= 3 ? [input] : [];
-      if (typeof input === 'number')
-        return String(input).replace(/\D/g, '').length >= 3
-          ? [String(input)]
-          : [];
-      if (Array.isArray(input)) return input.flatMap(leaves);
-      if (input && typeof input === 'object')
-        return Object.values(input).flatMap(leaves);
-      return [];
-    }
+    // verification-before-completion Law 32: fixture-wide proof must cover
+    // every eligible syntax and malformed input, with nonempty leaf evidence.
     for (const variant of variants) {
       const archive = await openArchivePaths([variant]);
       try {
         const report = JSON.stringify(await describeStructure(archive));
-        for (const entry of archive.list()) {
-          if (
-            !entry.path.endsWith('.json') ||
-            entry.path === 'variant.json' ||
-            entry.path === 'expected.json'
-          )
-            continue;
+        const dataFiles = archive
+          .list()
+          .filter(
+            (entry) =>
+              /\.(?:json|js)$/i.test(entry.path) &&
+              entry.path !== 'variant.json' &&
+              entry.path !== 'expected.json',
+          );
+        const leaves: string[] = [];
+        for (const entry of dataFiles) {
           const text = await archive.readText(entry);
-          const data: unknown = JSON.parse(text);
-          for (const leaf of leaves(data)) expect(report).not.toContain(leaf);
+          leaves.push(
+            ...(await extractFixtureLeaves(
+              text,
+              /\.js$/i.test(entry.path) ? 'js' : 'json',
+            )),
+          );
         }
+        if (dataFiles.length > 0)
+          expect(
+            leaves.length,
+            `No leaf coverage for ${variant}`,
+          ).toBeGreaterThan(0);
+        for (const leaf of leaves)
+          expect(
+            report,
+            `Leaf appeared in report for ${variant}`,
+          ).not.toContain(leaf);
       } finally {
         await archive.close();
       }

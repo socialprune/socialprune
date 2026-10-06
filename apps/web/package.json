@@ -11,8 +11,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p .",
-    "test:e2e": "playwright test --pass-with-no-tests",
-    "measure:g1": "node --input-type=module -e \"console.log('not implemented'); process.exitCode = 1\""
+    "test:e2e": "playwright test",
+    "measure:g1": "node scripts/measure-g1.ts"
   },
   "dependencies": {
     "@socialprune/core": "workspace:*",

@@ -34,3 +34,5 @@ jobs:
       - run: pnpm fixtures:check
       - run: pnpm schemas:check
       - run: pnpm build
+      - run: pnpm --filter @socialprune/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

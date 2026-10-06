@@ -6,7 +6,7 @@ import { createMemoryArchive } from '../archive/index.ts';
 import type { ArchiveReader } from '../archive/index.ts';
 import { openArchivePaths } from '../node/index.ts';
 import { parseJsonArrayStream } from '../json/index.ts';
-import { describeStructure } from './index.ts';
+import { describeStructure, KNOWN_EXPORT_DATA_DIRECTORIES } from './index.ts';
 
 const marker = ['Synthetic', 'Leaf', 'Never', 'Printed'].join('-');
 test('structure output contains no planted leaf values or identifier-like keys, and never reads private entries', async () => {
@@ -858,6 +858,10 @@ for (const platform of fixturePlatforms.filter(
       });
   }
 }
+// Measured 2026-10-06 on 1ade8ea in the full parallel root suite: 5510 ms.
+// 60 s exceeds six times that measurement (33060 ms) and leaves CI headroom.
+// Re-measure if the fixture corpus or the sweep's input shapes change.
+const FIXTURE_SWEEP_TIMEOUT_MS = 60_000;
 test('fixture privacy coverage explicitly reports the current registered directory count', () => {
   expect(variants.length).toBeGreaterThanOrEqual(0);
   if (variants.length === 0)
@@ -1031,4 +1035,139 @@ test.skipIf(variants.length === 0)(
     }
     expect(failures).toEqual([]);
   },
+  FIXTURE_SWEEP_TIMEOUT_MS,
+);
+
+test.skipIf(variants.length === 0)(
+  'every adapter-read fixture data directory is known and platform patterns have no unmasked prefix',
+  async () => {
+    const failures: string[] = [];
+    const unclassified: string[] = [];
+    const rootFiles: string[] = [];
+    const platforms = new Set<string>();
+    let dataFilesChecked = 0;
+    for (const variant of variants) {
+      const metadata: unknown = JSON.parse(
+        await readFile(join(variant.path, 'variant.json'), 'utf8'),
+      );
+      const expected: unknown = JSON.parse(
+        await readFile(join(variant.path, 'expected.json'), 'utf8'),
+      );
+      if (!expected || typeof expected !== 'object' || !('status' in expected))
+        throw new TypeError('Fixture expected status is missing.');
+      if (expected.status === 'unknown-format') continue;
+      if (
+        !metadata ||
+        typeof metadata !== 'object' ||
+        !('archives' in metadata) ||
+        !Array.isArray(metadata.archives)
+      )
+        throw new TypeError('Fixture archive names are missing.');
+      const expectedDataPaths = new Set<string>();
+      if ('items' in expected && Array.isArray(expected.items))
+        for (const item of expected.items as unknown[])
+          if (
+            item &&
+            typeof item === 'object' &&
+            'provenance' in item &&
+            item.provenance &&
+            typeof item.provenance === 'object' &&
+            'file' in item.provenance &&
+            typeof item.provenance.file === 'string'
+          )
+            expectedDataPaths.add(item.provenance.file);
+      if ('records' in expected && Array.isArray(expected.records))
+        for (const record of expected.records as unknown[])
+          if (
+            record &&
+            typeof record === 'object' &&
+            'diagnostics' in record &&
+            Array.isArray(record.diagnostics)
+          )
+            for (const diagnostic of record.diagnostics as unknown[])
+              if (
+                diagnostic &&
+                typeof diagnostic === 'object' &&
+                'files' in diagnostic &&
+                Array.isArray(diagnostic.files)
+              )
+                for (const path of diagnostic.files as unknown[])
+                  if (typeof path === 'string') expectedDataPaths.add(path);
+      platforms.add(variant.label.split('/')[0]!);
+      for (const name of metadata.archives as unknown[]) {
+        if (typeof name !== 'string')
+          throw new TypeError('Invalid fixture archive name.');
+        const archive = await openArchivePaths([join(variant.path, name)]);
+        try {
+          const entries = archive.list();
+          const common = entries[0]?.path.split('/')[0];
+          const commonWrapper =
+            common &&
+            !KNOWN_EXPORT_DATA_DIRECTORIES.includes(common.toLowerCase()) &&
+            entries.every((entry) => entry.path.startsWith(`${common}/`));
+          for (const entry of entries) {
+            if (!/\.(?:json|js|html?)$/i.test(entry.path)) continue;
+            const parts = entry.path.split('/');
+            if (identifyingArchiveTokens(parts[0]!).length > 0 || commonWrapper)
+              parts.shift();
+            if (parts.length < 2) {
+              // Legacy comments.json is an adapter-read root file, not a
+              // missing data directory. The fixtures also hold root markers.
+              rootFiles.push(`${variant.label}: ${entry.path}`);
+              continue;
+            }
+            const directory = parts[0]!;
+            const context = `${variant.label}: ${entry.path}`;
+            if (
+              KNOWN_EXPORT_DATA_DIRECTORIES.includes(directory.toLowerCase())
+            ) {
+              dataFilesChecked++;
+              continue;
+            }
+            const expectedRead =
+              expectedDataPaths.has(entry.path) ||
+              expectedDataPaths.has(parts.join('/'));
+            if (expectedRead)
+              failures.push(
+                `${context}: missing known data directory ${directory}`,
+              );
+            else unclassified.push(context);
+          }
+        } finally {
+          await archive.close();
+        }
+      }
+    }
+    // Do not promote contacts or __MACOSX distractors to export data folders.
+    // Their absence from expected provenance/diagnostics is fixture evidence,
+    // independent of production path filters; report every such entry.
+    console.info(
+      `Known fixture data directories: ${dataFilesChecked} files; root files: ${rootFiles.join('; ')}`,
+    );
+    console.info(
+      `Not adapter-read export data directories: ${unclassified.join('; ')}`,
+    );
+    expect(dataFilesChecked).toBeGreaterThan(0);
+    for (const platform of platforms) {
+      const archive = await openArchivePaths([join(fixtureRoot, platform)]);
+      try {
+        const report = await describeStructure(archive);
+        for (const file of report.files) {
+          const parts = file.pattern.split('/');
+          const known = parts.findIndex((part) =>
+            KNOWN_EXPORT_DATA_DIRECTORIES.includes(part.toLowerCase()),
+          );
+          if (
+            known >= 0 &&
+            parts.slice(0, known).some((part) => part !== '<root>')
+          )
+            failures.push(`${platform}: non-root prefix in ${file.pattern}`);
+        }
+      } finally {
+        await archive.close();
+      }
+    }
+    expect(failures).toEqual([]);
+  },
+  FIXTURE_SWEEP_TIMEOUT_MS,
 );

@@ -28,6 +28,7 @@ export const KNOWN_EXPORT_DATA_DIRECTORIES: readonly string[] = Object.freeze([
   'assets',
   'your_instagram_activity',
   'personal_information',
+  'account_information',
   'comments',
   'activity',
   'media',

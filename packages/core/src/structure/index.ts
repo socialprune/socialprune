@@ -17,6 +17,23 @@ export const PRIVATE_PATH_PATTERNS: readonly RegExp[] = Object.freeze([
   /(?:^|\/)(?:ip(?:[._-]|$)|[^/]*[-_]ip(?:[._-]|$))/i,
   /(?:^|\/)[^/]*(?:device|contact|phone[-_]number|email[-_]address[-_]change|security|login)[^/]*(?:\/|$)/i,
 ]);
+// These are export data directories, not personal wrapper-folder names. Keep
+// their structural names when detecting a common outer export directory.
+export const KNOWN_EXPORT_DATA_DIRECTORIES: readonly string[] = Object.freeze([
+  'data',
+  'assets',
+  'your_instagram_activity',
+  'personal_information',
+  'comments',
+  'activity',
+  'media',
+  'connections',
+  'logged_information',
+  'security_and_login_information',
+  'preferences',
+  'ads_information',
+  'apps_and_websites_off_of_instagram',
+]);
 export type JsonType =
   'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
 export interface StructureFile {
@@ -49,6 +66,12 @@ function redactKey(key: string): string {
 }
 function normalizeDigits(value: string): string {
   return value.replace(/\d+/g, 'N');
+}
+function redactPathSegment(segment: string): string {
+  if (segment.includes('@') || /^http/i.test(segment) || segment.length > 64)
+    return '<segment>';
+  // Normalize before reporting, including all-digit names and long ID runs.
+  return normalizeDigits(segment);
 }
 class Shape {
   readonly types = new Set<JsonType>();
@@ -223,18 +246,50 @@ function observe(input: unknown, shape: Shape, depth = 0): void {
   else if (typeof input === 'number') shape.types.add('number');
   else if (typeof input === 'boolean') shape.types.add('boolean');
 }
+function parseObjectAssignment(text: string): {
+  target: string;
+  object: Record<string, unknown>;
+} {
+  // Same dotted-identifier grammar as parseJsonArrayStream. JSON.parse rejects
+  // executable expressions and anything after the one optional semicolon.
+  const prefix = /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*=\s*/.exec(
+    text,
+  );
+  if (!prefix?.[1]) throw new JsonFormatError();
+  let payload = text.slice(prefix[0].length).trim();
+  if (payload.endsWith(';')) payload = payload.slice(0, -1).trimEnd();
+  if (!payload.startsWith('{')) throw new JsonFormatError();
+  let object: unknown;
+  try {
+    object = JSON.parse(payload);
+  } catch {
+    throw new JsonFormatError();
+  }
+  if (!object || typeof object !== 'object' || Array.isArray(object))
+    throw new JsonFormatError();
+  return { target: prefix[1], object: object as Record<string, unknown> };
+}
 export async function describeStructure(
   archive: ArchiveReader,
   opts: StructureOptions = {},
 ): Promise<StructureReport> {
   const limits = resolveImportLimits(opts.limits);
+  const entries = archive.list();
+  const firstSegment = entries[0]?.path.split('/')[0];
+  const wrapper =
+    firstSegment &&
+    !KNOWN_EXPORT_DATA_DIRECTORIES.includes(firstSegment.toLowerCase()) &&
+    entries.every((entry) => entry.path.split('/')[0] === firstSegment) &&
+    entries.some((entry) => entry.path.includes('/'))
+      ? firstSegment
+      : null;
   const files = new Map<string, { report: StructureFile; shape: Shape }>();
   const other = new Map<
     string,
     { directory: string; extension: string; count: number }
   >();
   let skippedPrivate = 0;
-  for (const entry of archive.list()) {
+  for (const entry of entries) {
     throwIfAborted(opts.signal);
     if (PRIVATE_PATH_PATTERNS.some((pattern) => pattern.test(entry.path))) {
       skippedPrivate++;
@@ -243,7 +298,9 @@ export async function describeStructure(
     const extension = /\.([^./]+)$/.exec(entry.path)?.[1]?.toLowerCase() ?? '';
     if (extension !== 'json' && extension !== 'js') {
       const directory = entry.path.includes('/')
-        ? normalizeDigits(redactKey(entry.path.split('/')[0] ?? ''))
+        ? wrapper
+          ? '<root>'
+          : redactPathSegment(entry.path.split('/')[0] ?? '')
         : '(root)';
       const key = JSON.stringify([directory, extension]);
       const current = other.get(key) ?? { directory, extension, count: 0 };
@@ -253,7 +310,9 @@ export async function describeStructure(
     }
     const pattern = entry.path
       .split('/')
-      .map((segment) => redactKey(normalizeDigits(segment)))
+      .map((segment, index) =>
+        index === 0 && wrapper ? '<root>' : redactPathSegment(segment),
+      )
       .join('/');
     const group = files.get(pattern) ?? {
       report: {
@@ -279,18 +338,32 @@ export async function describeStructure(
     const shape = new Shape();
     try {
       if (extension === 'js') {
-        shape.types.add('array');
-        shape.array = new Shape();
-        const parsed = parseJsonArrayStream(
-          archive.streamText(entry, { signal: opts.signal }),
-          {
-            assignment: 'allowed',
-            maxElementBytes: limits.maxElementBytes,
+        let target: string | null;
+        try {
+          const array = new Shape();
+          array.types.add('array');
+          array.array = new Shape();
+          const parsed = parseJsonArrayStream(
+            archive.streamText(entry, { signal: opts.signal }),
+            {
+              assignment: 'allowed',
+              maxElementBytes: limits.maxElementBytes,
+              signal: opts.signal,
+            },
+          );
+          for await (const element of parsed) observe(element, array.array);
+          target = await parsed.target;
+          shape.merge(array);
+        } catch (error) {
+          if (!(error instanceof JsonFormatError)) throw error;
+          const text = await archive.readText(entry, {
+            maxBytes: limits.maxElementBytes,
             signal: opts.signal,
-          },
-        );
-        for await (const element of parsed) observe(element, shape.array);
-        const target = await parsed.target;
+          });
+          const parsed = parseObjectAssignment(text);
+          target = parsed.target;
+          observe(parsed.object, shape);
+        }
         if (target)
           group.report.assignments.push(
             target

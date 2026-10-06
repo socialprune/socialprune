@@ -2,7 +2,7 @@
 
 SocialPrune helps people review and clean up their old posts and comments on X and Instagram. It reads the platform's official data export, flags risky or pointless items with rules and an optional local AI model, explains each flag in one sentence, and lets a person decide what goes. The final delete click always happens on the platform, by that person.
 
-**Status on 2026-10-06.** Repository, license and Kilo workflow shell are set up. Phase 1 is in progress: the workspace scaffold, the data guard with its pre-commit hook and CI exist, and spike S3 (offline analysis under a strict CSP) is recorded in `docs/spikes/S3.md`. Still to come in Phase 1 are the JSON schemas, the synthetic fixture generator, both export parsers, streaming ZIP import and the `structure` command.
+**Status on 2026-10-06.** Phase 1 is built: workspace, data guard and CI, the core data model with JSON schemas, a synthetic fixture generator, the X and Instagram parsers, streaming ZIP import in a web worker, and the `structure` command. Gate G1 is met: the evidence is in `docs/evidence/G1.md`, and an independent review accepted it at commit `feb6748`. Spikes S1 and S3 are recorded in `docs/spikes/`. Spike S2 has its unlabelled evaluation set and harness and waits for the maintainer's labels. Nothing usable for end users exists yet; the review UI comes in Phase 2.
 
 The maintainer's working plan is `PLAN.md` in the repository root. It is written in German, kept out of Git on purpose, and exists only on the maintainer's machine. When it is present, read it before planning work. It holds the decisions, phases, gates and spikes.
 
@@ -19,7 +19,7 @@ These hold in every phase. Changing one takes an explicit decision by the mainta
 
 ## Planned layout
 
-Phase 1 has created skeletons for `apps/web`, `apps/cli`, `packages/core`, both adapters and both tools. `packages/classify`, `packages/mcp`, `fixtures/synthetic` and `skills/` come later.
+Phase 1 has built `packages/core`, both adapters, `tools/`, `fixtures/synthetic/` (generated X and Instagram variants, plus the hand-written S2 evaluation set under `classify/`), the `structure` command in `apps/cli` and the worker import in `apps/web`. The review UI, `packages/classify`, `packages/mcp` and `skills/` come later.
 
 | Path | Purpose |
 |---|---|
@@ -54,20 +54,28 @@ Node 24 and pnpm 10.33.0 (`packageManager` in `package.json`).
 | typecheck | `pnpm typecheck` |
 | unit tests | `pnpm test` |
 | build | `pnpm build` |
-| synthetic fixtures, regenerate and drift check | `pnpm fixtures:generate`, `pnpm fixtures:check` |
+| synthetic fixtures, regenerate and drift check, optionally one platform | `pnpm fixtures:generate`, `pnpm fixtures:check`, add `--platform x` or `--platform instagram` |
+| large synthetic archive | `pnpm fixtures:large --platform x --count 100000 --out <file.zip> [--seed <n>] [--zip64]` |
 | JSON schemas, regenerate and drift check | `pnpm schemas:generate`, `pnpm schemas:check` |
 | browser tests (once before: `pnpm --filter @socialprune/web exec playwright install chromium`) | `pnpm test:e2e` |
+| Gate G1 measurements (100,000 tweets, ZIP64 over 4 GiB, abort), Windows only, writes about 4.7 GB to temp and removes it | `pnpm measure:g1` |
 | CLI | `pnpm socialprune --help` |
+| key paths and types of an export, without values (`-s` stops pnpm from printing the command line, which contains the path) | `pnpm -s socialprune structure <zip or folder...> [--json]` |
 
-CI (`.github/workflows/ci.yml`) runs install, guard, format check, lint, typecheck, tests, fixture check, schema check and build on every push to `main` and every pull request. Prettier skips Markdown, so prose keeps its exact wording.
+CI (`.github/workflows/ci.yml`) runs install, guard, format check, lint, typecheck, tests, fixture check, schema check, build and the browser tests on every push to `main` and every pull request. Prettier skips Markdown, so prose keeps its exact wording.
+
+Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `fixture-gen`, `data-guard`).
 
 Spikes under `spikes/` are standalone pnpm projects with their own lockfile, outside the workspace and outside CI. Each one documents how to rerun it in `docs/spikes/`.
 
 ## Proof this project relies on
 
-- Parsers are tested against generated fixtures for every known export variant.
-- A Playwright test records every browser network request while demo data is imported and classified, and fails on any request that leaves the app's origin. It observes real requests and never stubs `fetch`, because a stub would only test itself.
-- A data guard in pre-commit and CI blocks ZIP files and files with export signatures (`window.YTD.`, `string_map_data`, `media_owner`) outside `fixtures/synthetic/`.
+- Parsers are tested against generated fixtures for every known export variant, loaded as folders and as ZIPs.
+- Expected values and forbidden lists in these tests come from the fixture data, never from the code under test (lesson LL-2026-10-002).
+- A Playwright test records every browser network request while demo data is imported and classified, and fails on any request that leaves the app's origin. It observes real requests and never stubs `fetch`, because a stub would only test itself. Today it covers the import of every fixture whose format is recognised; classification joins it in Phase 2.
+- Archive content is parsed as data and never executed. The X `injection` fixture is imported in unit tests and in the browser, and both check that its code did not run.
+- `structure` is tested against every fixture, run on the export folder, on the fixture folder around it and on the whole platform folder: no handle, account key or export folder name may appear in its report, and in the export folder's report no leaf value either. A third-party handle used as an ordinary key in an unknown file is not detected, and neither is an export folder whose name departs from the export pattern, such as a browser's ` (1)` suffix (BL-004). So the CLI asks people, in its human-readable output and in `--help`, to check a report before they share it.
+- A data guard in pre-commit and CI blocks ZIP files and files with export signatures (an X `window.YTD.<name>.part<n> =` assignment, or the JSON keys `string_map_data`, `string_list_data` and `media_owner`) outside `fixtures/synthetic/`.
 - No classifier tier becomes a default before it is measured on a synthetic set whose expected labels the maintainer set by hand before any tier saw it. A large reference model runs alongside the tiers as one more measured candidate, not as ground truth.
 
 ## Reusing other projects

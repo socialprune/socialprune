@@ -6,6 +6,7 @@ export const FIXTURE_DATE = new Date('2000-01-01T00:00:00.000Z');
 export interface ZipFileEntry {
   path: string;
   content: string | Uint8Array | ReadableStream<Uint8Array>;
+  level?: number;
 }
 export async function writeZipFile(
   out: string,
@@ -43,7 +44,10 @@ export async function writeZipFile(
           : entry.content instanceof Uint8Array
             ? new Uint8ArrayReader(entry.content)
             : entry.content;
-      await writer.add(entry.path, reader, { signal: opts.signal });
+      await writer.add(entry.path, reader, {
+        signal: opts.signal,
+        ...(entry.level === undefined ? {} : { level: entry.level }),
+      });
     }
     await writer.close();
   } catch (error) {

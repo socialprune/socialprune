@@ -1,6 +1,9 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
+import { BlobReader, ZipReader } from '@zip.js/zip.js';
 import { expect, test } from 'vitest';
 import { openArchivePaths } from '@socialprune/core/node';
 import { generateFixtures, checkFixtures, writeVariants } from '../tree.ts';
@@ -102,6 +105,73 @@ test('file ZIP writer streams iterable entries, is deterministic, and supports Z
     await expect(writeZipFile(first, entries())).rejects.toMatchObject({
       code: 'EEXIST',
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('undefined per-entry level preserves omitted-level bytes and hashes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'socialprune-zip-level-default-'));
+  try {
+    const entries = [
+      {
+        path: 'data.json',
+        content: '[{"text":"Generated default ZIP content."}]',
+      },
+      { path: 'notes.txt', content: new Uint8Array([1, 2, 3, 4, 5]) },
+    ];
+    const omitted = join(root, 'omitted.zip');
+    const undefinedLevel = join(root, 'undefined.zip');
+    await writeZipFile(omitted, entries);
+    await writeZipFile(
+      undefinedLevel,
+      entries.map((entry) => ({ ...entry, level: undefined })),
+    );
+    const first = await readFile(omitted);
+    const second = await readFile(undefinedLevel);
+    const hash = (bytes: Uint8Array) =>
+      createHash('sha256').update(bytes).digest('hex');
+    expect(first).toEqual(second);
+    expect(hash(first)).toBe(hash(second));
+    expect(hash(first)).toBe(
+      '0afda5c744dd9b9c023d84e06a24f64a525705988d50919395d8289ff6b128b8',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('per-entry level zero writes a STORE entry with equal central-directory sizes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'socialprune-zip-level-store-'));
+  try {
+    const path = join(root, 'store.zip');
+    const padding = new Uint8Array(64 * 1024);
+    await writeZipFile(
+      path,
+      [
+        { path: 'padding.bin', content: padding, level: 0 },
+        { path: 'compressed.bin', content: padding },
+      ],
+      { zip64: true },
+    );
+    const reader = new ZipReader(new BlobReader(await openAsBlob(path)), {
+      useWebWorkers: false,
+      useCompressionStream: true,
+    });
+    try {
+      const entries = await reader.getEntries();
+      const stored = entries.find(({ filename }) => filename === 'padding.bin');
+      const compressed = entries.find(
+        ({ filename }) => filename === 'compressed.bin',
+      );
+      expect(stored?.compressionMethod).toBe(0);
+      expect(stored?.uncompressedSize).toBe(padding.byteLength);
+      expect(stored?.compressedSize).toBe(stored?.uncompressedSize);
+      expect(compressed?.compressionMethod).toBe(8);
+      expect(compressed?.compressedSize).toBeLessThan(padding.byteLength);
+    } finally {
+      await reader.close();
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

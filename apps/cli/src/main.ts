@@ -4,6 +4,9 @@ import { describeStructure } from '@socialprune/core';
 import { openArchivePaths } from '@socialprune/core/node';
 import { helpText, structureTree } from './index.ts';
 
+const reportNotice =
+  'Key names are shown as they appear in the export. Check the report before you share it.';
+
 try {
   const { values, positionals } = parseArgs({
     options: {
@@ -15,6 +18,7 @@ try {
 
   if (values.help) {
     console.log(helpText());
+    console.log(`\n${reportNotice}`);
   } else if (positionals[0] !== 'structure' || positionals.length < 2) {
     console.error('Usage: socialprune structure <path...> [--json]');
     process.exitCode = 2;
@@ -40,6 +44,7 @@ try {
         console.log(
           values.json ? JSON.stringify(report, null, 2) : structureTree(report),
         );
+        if (!values.json) console.error(reportNotice);
       } finally {
         await archive.close();
       }

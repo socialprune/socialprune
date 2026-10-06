@@ -16,9 +16,13 @@ export const PRIVATE_PATH_PATTERNS: readonly RegExp[] = Object.freeze([
   /(?:login[-_]activity|ip[-_]audit|account[-_]creation[-_]ip)/i,
   /(?:^|\/)(?:ip(?:[._-]|$)|[^/]*[-_]ip(?:[._-]|$))/i,
   /(?:^|\/)[^/]*(?:device|contact|phone[-_]number|email[-_]address[-_]change|security|login)[^/]*(?:\/|$)/i,
+  // Instagram connection maps use other people's handles as JSON keys. Match
+  // their category names, not unrelated filenames such as followers-notes.
+  /(?:^|\/)connections(?:\/|$)/i,
+  /(?:^|\/)(?:connections|followers(?:_and_following)?|following|close[_ -]friends|blocked(?:[_ -](?:accounts|users))?|restricted(?:[_ -](?:accounts|users))?|(?:pending[_ -]|recent[_ -]|sent[_ -]|received[_ -])?follow[_ -]requests|hide[_ -]story[_ -]from)(?:_\d+)?(?:\.[^/]+)?(?:\/|$)/i,
 ]);
 // These are export data directories, not personal wrapper-folder names. Keep
-// their structural names when detecting a common outer export directory.
+// their structural names when collapsing segments above an export.
 export const KNOWN_EXPORT_DATA_DIRECTORIES: readonly string[] = Object.freeze([
   'data',
   'assets',
@@ -55,58 +59,113 @@ export interface StructureOptions {
   signal?: AbortSignal;
   limits?: Partial<ImportLimits>;
 }
-function redactKey(key: string): string {
+const INSTAGRAM_EXPORT_NAME =
+  /^instagram-(.+)-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+(?:_\d+)?$/i;
+const X_EXPORT_NAME = /^twitter-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/i;
+function containsHandle(value: string, handles: readonly string[]): boolean {
+  const lowercase = value.toLowerCase();
+  return handles.some((handle) => lowercase.includes(handle));
+}
+function redactKey(key: string, handles: readonly string[]): string {
   return /^\d+$/.test(key) ||
     /\d{5,}/.test(key) ||
     key.includes('@') ||
     /^http/i.test(key) ||
-    key.length > 64
+    key.length > 64 ||
+    containsHandle(key, handles)
     ? '<key>'
-    : key;
+    : normalizeDigits(key);
 }
 function normalizeDigits(value: string): string {
   return value.replace(/\d+/g, 'N');
 }
-function redactPathSegment(segment: string): string {
+function redactPathSegment(
+  segment: string,
+  handles: readonly string[],
+): string {
+  if (
+    INSTAGRAM_EXPORT_NAME.test(segment) ||
+    X_EXPORT_NAME.test(segment) ||
+    containsHandle(segment, handles)
+  )
+    return '<root>';
   if (segment.includes('@') || /^http/i.test(segment) || segment.length > 64)
     return '<segment>';
   // Normalize before reporting, including all-digit names and long ID runs.
   return normalizeDigits(segment);
 }
+function reportPath(path: string, handles: readonly string[]): string[] {
+  const segments = path.split('/');
+  const firstDataDirectory = segments.findIndex(
+    (segment, index) =>
+      index < segments.length - 1 &&
+      KNOWN_EXPORT_DATA_DIRECTORIES.includes(segment.toLowerCase()),
+  );
+  if (firstDataDirectory > 0)
+    return [
+      '<root>',
+      ...segments
+        .slice(firstDataDirectory)
+        .map((segment) => redactPathSegment(segment, handles)),
+    ];
+  return segments.map((segment, index) =>
+    index === 0 && segments.length > 1 && firstDataDirectory < 0
+      ? '<root>'
+      : redactPathSegment(segment, handles),
+  );
+}
 class Shape {
   readonly types = new Set<JsonType>();
   readonly keys = new Map<string, Shape>();
+  private readonly rawKeys = new Set<string>();
   array?: Shape;
   map = false;
+  private readonly handles: readonly string[];
+  constructor(handles: readonly string[] = []) {
+    this.handles = handles;
+  }
   merge(other: Shape): void {
     for (const type of other.types) this.types.add(type);
     if (other.array) {
-      this.array ??= new Shape();
+      this.array ??= new Shape(this.handles);
       this.array.merge(other.array);
     }
     if (other.map) this.collapse();
-    for (const [key, child] of other.keys) this.child(key).merge(child);
+    if (!this.map) {
+      for (const key of other.rawKeys) this.rawKeys.add(key);
+      if (this.rawKeys.size > 50) this.collapse();
+    }
+    for (const [key, child] of other.keys) this.mergedChild(key).merge(child);
   }
   private collapse(): void {
     if (this.map) return;
-    const combined = new Shape();
+    const combined = new Shape(this.handles);
     for (const child of this.keys.values()) combined.merge(child);
     this.keys.clear();
+    this.rawKeys.clear();
     this.keys.set('<key>', combined);
     this.map = true;
   }
   child(raw: string): Shape {
-    const key = this.map ? '<key>' : redactKey(raw);
+    if (!this.map) {
+      this.rawKeys.add(raw);
+      if (this.rawKeys.size > 50) this.collapse();
+    }
+    const key = this.map ? '<key>' : redactKey(raw, this.handles);
+    return this.mergedChild(key);
+  }
+  private mergedChild(raw: string): Shape {
+    const key = this.map ? '<key>' : raw;
     let child = this.keys.get(key);
     if (!child) {
-      child = new Shape();
+      child = new Shape(this.handles);
       this.keys.set(key, child);
     }
-    if (this.keys.size > 50) {
-      this.collapse();
-      return this.keys.get('<key>')!;
-    }
     return child;
+  }
+  arrayChild(): Shape {
+    this.array ??= new Shape(this.handles);
+    return this.array;
   }
   paths(path = '$'): { path: string; types: JsonType[] }[] {
     const result = [{ path, types: [...this.types].sort() }];
@@ -161,7 +220,7 @@ async function readString(
   }
   if (!capture || tooLong) return '<key>';
   const decoded: unknown = JSON.parse(captured);
-  return typeof decoded === 'string' ? redactKey(decoded) : '<key>';
+  return typeof decoded === 'string' ? decoded : '<key>';
 }
 async function value(
   cursor: JsonCursor,
@@ -194,11 +253,11 @@ async function value(
   }
   if (character === '[') {
     shape.types.add('array');
-    shape.array ??= new Shape();
+    const elementShape = shape.arrayChild();
     let next = await cursor.nonWhitespace();
     if (next === ']') return;
     for (;;) {
-      await value(cursor, shape.array, maximum, depth + 1, next);
+      await value(cursor, elementShape, maximum, depth + 1, next);
       next = await cursor.nonWhitespace();
       if (next === ']') return;
       if (next !== ',') throw new JsonFormatError();
@@ -236,8 +295,8 @@ function observe(input: unknown, shape: Shape, depth = 0): void {
   if (input === null) shape.types.add('null');
   else if (Array.isArray(input)) {
     shape.types.add('array');
-    shape.array ??= new Shape();
-    for (const element of input) observe(element, shape.array, depth + 1);
+    const elementShape = shape.arrayChild();
+    for (const element of input) observe(element, elementShape, depth + 1);
   } else if (typeof input === 'object') {
     shape.types.add('object');
     for (const [key, child] of Object.entries(input))
@@ -275,14 +334,17 @@ export async function describeStructure(
 ): Promise<StructureReport> {
   const limits = resolveImportLimits(opts.limits);
   const entries = archive.list();
-  const firstSegment = entries[0]?.path.split('/')[0];
-  const wrapper =
-    firstSegment &&
-    !KNOWN_EXPORT_DATA_DIRECTORIES.includes(firstSegment.toLowerCase()) &&
-    entries.every((entry) => entry.path.split('/')[0] === firstSegment) &&
-    entries.some((entry) => entry.path.includes('/'))
-      ? firstSegment
-      : null;
+  const handles = [
+    ...new Set(
+      [
+        ...archive.archives.map((name) => name.replace(/\.zip$/i, '')),
+        ...entries.flatMap((entry) => entry.path.split('/')),
+      ].flatMap((name) => {
+        const handle = INSTAGRAM_EXPORT_NAME.exec(name)?.[1];
+        return handle && handle.length >= 3 ? [handle.toLowerCase()] : [];
+      }),
+    ),
+  ];
   const files = new Map<string, { report: StructureFile; shape: Shape }>();
   const other = new Map<
     string,
@@ -298,9 +360,7 @@ export async function describeStructure(
     const extension = /\.([^./]+)$/.exec(entry.path)?.[1]?.toLowerCase() ?? '';
     if (extension !== 'json' && extension !== 'js') {
       const directory = entry.path.includes('/')
-        ? wrapper
-          ? '<root>'
-          : redactPathSegment(entry.path.split('/')[0] ?? '')
+        ? (reportPath(entry.path, handles)[0] ?? '<root>')
         : '(root)';
       const key = JSON.stringify([directory, extension]);
       const current = other.get(key) ?? { directory, extension, count: 0 };
@@ -308,12 +368,7 @@ export async function describeStructure(
       other.set(key, current);
       continue;
     }
-    const pattern = entry.path
-      .split('/')
-      .map((segment, index) =>
-        index === 0 && wrapper ? '<root>' : redactPathSegment(segment),
-      )
-      .join('/');
+    const pattern = reportPath(entry.path, handles).join('/');
     const group = files.get(pattern) ?? {
       report: {
         pattern,
@@ -324,7 +379,7 @@ export async function describeStructure(
         errors: [],
         paths: [],
       },
-      shape: new Shape(),
+      shape: new Shape(handles),
     };
     files.set(pattern, group);
     group.report.count++;
@@ -335,14 +390,14 @@ export async function describeStructure(
             opts.signal,
           )
         : undefined;
-    const shape = new Shape();
+    const shape = new Shape(handles);
     try {
       if (extension === 'js') {
         let target: string | null;
         try {
-          const array = new Shape();
+          const array = new Shape(handles);
           array.types.add('array');
-          array.array = new Shape();
+          const elementShape = array.arrayChild();
           const parsed = parseJsonArrayStream(
             archive.streamText(entry, { signal: opts.signal }),
             {
@@ -351,7 +406,7 @@ export async function describeStructure(
               signal: opts.signal,
             },
           );
-          for await (const element of parsed) observe(element, array.array);
+          for await (const element of parsed) observe(element, elementShape);
           target = await parsed.target;
           shape.merge(array);
         } catch (error) {
@@ -368,7 +423,7 @@ export async function describeStructure(
           group.report.assignments.push(
             target
               .split('.')
-              .map((part) => normalizeDigits(redactKey(part)))
+              .map((part) => redactKey(part, handles))
               .join('.'),
           );
       } else if (cursor) {

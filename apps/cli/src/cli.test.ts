@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { writeZipFile } from '../../../tools/fixture-gen/src/shared/zip.ts';
 import { expect, test } from 'vitest';
 const cli = fileURLToPath(new URL('./main.ts', import.meta.url));
+const notice =
+  'Key names are shown as they appear in the export. Check the report before you share it.';
 test('CLI structure inspects a generated ZIP and reports no planted leaf values', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-cli-'));
   const planted = 'PLANTED_CLI_VALUE_NEVER_SHOWN';
@@ -24,6 +26,7 @@ test('CLI structure inspects a generated ZIP and reports no planted leaf values'
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toBe('');
+    expect(result.stdout).not.toContain(notice);
     expect(result.stdout).not.toContain(planted);
     expect(result.stdout).not.toContain('987654321');
     const report: unknown = JSON.parse(result.stdout);
@@ -35,6 +38,15 @@ test('CLI structure inspects a generated ZIP and reports no planted leaf values'
     });
     expect(human.status).toBe(0);
     expect(human.stdout).toContain('$[].text: string');
+    expect(human.stdout).not.toContain(notice);
+    expect(human.stderr.trim()).toBe(notice);
+    const help = spawnSync(process.execPath, [cli, '--help'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain(notice);
+    expect(help.stderr).toBe('');
     for (const args of [
       ['structure'],
       ['structure', join(directory, 'missing.zip')],

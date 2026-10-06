@@ -6,7 +6,7 @@ import { createMemoryArchive } from '../archive/index.ts';
 import type { ArchiveReader } from '../archive/index.ts';
 import { openArchivePaths } from '../node/index.ts';
 import { parseJsonArrayStream } from '../json/index.ts';
-import { describeStructure, KNOWN_EXPORT_DATA_DIRECTORIES } from './index.ts';
+import { describeStructure } from './index.ts';
 
 const marker = ['Synthetic', 'Leaf', 'Never', 'Printed'].join('-');
 test('structure output contains no planted leaf values or identifier-like keys, and never reads private entries', async () => {
@@ -545,7 +545,7 @@ test('known export directories are not wrappers and identifier-like path segment
   }
 });
 
-test('wrapper detection considers other and skipped entries, not only parsed data', async () => {
+test('segments above exports collapse even when sibling data and private entries exist', async () => {
   const archive = createMemoryArchive('mixed', {
     'wrapper/data/posts.json': '[]',
     'media/photo.jpg': 'unused',
@@ -553,24 +553,13 @@ test('wrapper detection considers other and skipped entries, not only parsed dat
   });
   try {
     const report = await describeStructure(archive);
-    expect(report.files[0]?.pattern).toBe('wrapper/data/posts.json');
+    expect(report.files[0]?.pattern).toBe('<root>/data/posts.json');
     expect(report.otherFiles[0]?.directory).toBe('media');
     expect(report.skippedPrivate).toBe(1);
   } finally {
     await archive.close();
   }
 });
-
-function wrapperSegment(archive: ArchiveReader): string | null {
-  const entries = archive.list();
-  const segment = entries[0]?.path.split('/')[0];
-  return segment &&
-    !KNOWN_EXPORT_DATA_DIRECTORIES.includes(segment.toLowerCase()) &&
-    entries.every((entry) => entry.path.split('/')[0] === segment) &&
-    entries.some((entry) => entry.path.includes('/'))
-    ? segment
-    : null;
-}
 
 function expectedAccountIdentities(expected: unknown): {
   handles: string[];
@@ -612,9 +601,9 @@ function expectedAccountIdentities(expected: unknown): {
 // by construction; the distinctive-name test below proves that boundary.
 function identifyingArchiveTokens(name: string): string[] {
   const instagram =
-    /^instagram-(.+)-(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)(?:_\d+)?$/.exec(name);
+    /^instagram-(.+)-(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)(?:_\d+)?$/i.exec(name);
   if (instagram) return [instagram[1]!, instagram[3]!];
-  const twitter = /^twitter-(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)$/.exec(name);
+  const twitter = /^twitter-(\d{4}-\d{2}-\d{2})-([A-Za-z0-9]+)$/i.exec(name);
   return twitter ? [twitter[2]!] : [];
 }
 
@@ -670,10 +659,180 @@ test('path masking also applies to other-file directory names', async () => {
   try {
     const report = await describeStructure(archive);
     expect(report.otherFiles).toEqual([
-      { directory: '<segment>', extension: 'jpg', count: 2 },
+      { directory: '<root>', extension: 'jpg', count: 2 },
     ]);
     expect(JSON.stringify(report)).not.toContain('private_handle');
     expect(JSON.stringify(report)).not.toContain('https-secret');
+  } finally {
+    await archive.close();
+  }
+});
+
+test.each(['', 'Downloads/'])(
+  'reviewer sibling shape %s hides input identities and normalizes keys',
+  async (prefix) => {
+    const folder = 'instagram-rev_handle-2026-01-02-zz9q';
+    const archive = createMemoryArchive('parent', {
+      [`${prefix}${folder}/comments/posts.json`]: JSON.stringify({
+        rev_handle: 'PLANTED_BODY',
+        user4321: true,
+        'review@example.invalid': null,
+        '654321': false,
+      }),
+      [`${prefix}${folder}/messages/inbox/someone/message_1.json`]:
+        'NEVER_READ',
+      'notes.txt': 'unrelated sibling',
+    });
+    try {
+      const report = await describeStructure(archive);
+      const serialized = JSON.stringify(report).toLowerCase();
+      for (const forbidden of [
+        'rev_handle',
+        'zz9q',
+        'someone',
+        'review@example.invalid',
+        '654321',
+        'user4321',
+        'PLANTED_BODY',
+      ])
+        expect(serialized).not.toContain(forbidden.toLowerCase());
+      expect(report.files[0]?.pattern).toBe('<root>/comments/posts.json');
+      expect(report.files[0]?.paths).toContainEqual({
+        path: '$.userN',
+        types: ['boolean'],
+      });
+      expect(report.files[0]?.paths).toContainEqual({
+        path: '$.<key>',
+        types: ['boolean', 'null', 'string'],
+      });
+      expect(report.skippedPrivate).toBe(1);
+    } finally {
+      await archive.close();
+    }
+  },
+);
+
+test('reviewer two-export shape merges patterns without either handle or random token', async () => {
+  const folders = [
+    'instagram-first_handle-2026-01-02-ab7x',
+    'instagram-second_handle-2026-01-02-cd8y',
+  ];
+  const archive = createMemoryArchive(
+    'parent',
+    Object.fromEntries(
+      folders.map((folder) => [`${folder}/comments/posts.json`, '[]']),
+    ),
+  );
+  try {
+    const report = await describeStructure(archive);
+    expect(report.files).toHaveLength(1);
+    expect(report.files[0]).toMatchObject({
+      pattern: '<root>/comments/posts.json',
+      count: 2,
+    });
+    const serialized = JSON.stringify(report).toLowerCase();
+    for (const forbidden of [
+      'first_handle',
+      'second_handle',
+      'ab7x',
+      'cd8y',
+      ...folders,
+    ])
+      expect(serialized).not.toContain(forbidden.toLowerCase());
+  } finally {
+    await archive.close();
+  }
+});
+
+test.each(['json', 'js', 'object-js'])(
+  'reviewer key shape %s masks archive-handle candidates case-insensitively',
+  async (format) => {
+    const object = {
+      REV_HANDLE: true,
+      prefix_rev_handle_suffix: null,
+      user4321: 'PLANTED_BODY',
+    };
+    const target = ['window', '__THAR_CONFIG'].join('.');
+    const content =
+      format === 'json'
+        ? JSON.stringify(object)
+        : format === 'js'
+          ? JSON.stringify([object])
+          : `${target} = ${JSON.stringify(object)};`;
+    const path =
+      format === 'json' ? 'comments/rev_handle.json' : 'data/rev_handle.js';
+    const archive = createMemoryArchive(
+      'instagram-rev_handle-2026-01-02-zz9q',
+      { [path]: content },
+    );
+    try {
+      const report = await describeStructure(archive);
+      const serialized = JSON.stringify(report).toLowerCase();
+      for (const forbidden of [
+        'rev_handle',
+        'zz9q',
+        'user4321',
+        'PLANTED_BODY',
+      ])
+        expect(serialized).not.toContain(forbidden.toLowerCase());
+      expect(serialized).toContain('<key>');
+      expect(serialized).toContain('usern');
+    } finally {
+      await archive.close();
+    }
+  },
+);
+
+test('reviewer followers maps are counted but never opened, and unrelated filenames remain readable', async () => {
+  const folder = 'instagram-rev_handle-2026-01-02-zz9q';
+  const privateFiles = [
+    'connections.json',
+    'followers.json',
+    'following.json',
+    'followers_1.json',
+    'close_friends.json',
+    'blocked_accounts.json',
+    'restricted_accounts.json',
+    'follow_requests.json',
+    'pending_follow_requests.json',
+    'hide_story_from.json',
+    'connections/followers_and_following/followers_1.json',
+  ];
+  const memory = createMemoryArchive('parent', {
+    ...Object.fromEntries(
+      privateFiles.map((path) => [
+        `${folder}/${path}`,
+        '{"planted_follower":true}',
+      ]),
+    ),
+    [`${folder}/comments/followers-notes.json`]: '{"kind":true}',
+  });
+  let opened = 0;
+  const archive: ArchiveReader = {
+    archives: memory.archives,
+    rejectedEntries: memory.rejectedEntries,
+    list: () => memory.list(),
+    readText(entry, opts) {
+      if (!entry.path.endsWith('followers-notes.json'))
+        throw new Error('Private map opened.');
+      opened++;
+      return memory.readText(entry, opts);
+    },
+    streamText(entry, opts) {
+      if (!entry.path.endsWith('followers-notes.json'))
+        throw new Error('Private map opened.');
+      opened++;
+      return memory.streamText(entry, opts);
+    },
+    close: () => memory.close(),
+  };
+  try {
+    const report = await describeStructure(archive);
+    expect(report.skippedPrivate).toBe(privateFiles.length);
+    expect(report.files).toHaveLength(1);
+    expect(opened).toBe(1);
+    expect(JSON.stringify(report)).not.toContain('planted_follower');
+    expect(JSON.stringify(report)).not.toContain('rev_handle');
   } finally {
     await archive.close();
   }
@@ -728,6 +887,7 @@ test.skipIf(variants.length === 0)(
       )
         leafBearing.set(platform.name, 0);
     const noScalarVariants: string[] = [];
+    const platformForbidden = new Map<string, Set<string>>();
     for (const variant of variants) {
       const platform = variant.label.split('/')[0]!;
       leafBearing.set(platform, leafBearing.get(platform) ?? 0);
@@ -754,6 +914,14 @@ test.skipIf(variants.length === 0)(
         await readFile(join(variant.path, 'expected.json'), 'utf8'),
       );
       const identities = expectedAccountIdentities(expected);
+      const forbidden = new Set([
+        ...identities.handles,
+        ...identities.keys,
+        ...archiveNames.flatMap(identifyingArchiveTokens),
+        ...archiveNames.filter(
+          (name) => identifyingArchiveTokens(name).length > 0,
+        ),
+      ]);
       let dataFileCount = 0;
       let leafCount = 0;
       let cleanWithoutScalars = true;
@@ -762,37 +930,20 @@ test.skipIf(variants.length === 0)(
         const archive = await openArchivePaths([join(variant.path, name)]);
         try {
           const report = JSON.stringify(await describeStructure(archive));
-          const lowercaseReport = report.toLowerCase();
-          const wrapper = wrapperSegment(archive);
-          const requiredAbsent = [
-            ...archiveNames.flatMap((archiveName) =>
-              identifyingArchiveTokens(archiveName).map((value) => ({
-                kind: 'archive identifying token',
-                value,
-              })),
-            ),
-            ...identities.keys.map((value) => ({ kind: 'account key', value })),
-            ...identities.handles.map((value) => ({
-              kind: 'account handle',
-              value,
-            })),
-            ...(wrapper ? [{ kind: 'wrapper', value: wrapper }] : []),
-          ];
-          for (const { kind, value } of requiredAbsent) {
-            if (
-              kind === 'account handle' &&
-              [...JSON_TYPE_NAMES, ...KNOWN_EXPORT_DATA_DIRECTORIES].includes(
-                value.toLowerCase(),
-              )
-            )
+          // LL-2026-10-002: forbidden identities come from fixture metadata and
+          // raw input names, never from a predicate in the implementation.
+          for (const entry of archive.list())
+            for (const segment of entry.path.split('/'))
+              if (identifyingArchiveTokens(segment).length > 0) {
+                forbidden.add(segment);
+                for (const token of identifyingArchiveTokens(segment))
+                  forbidden.add(token);
+              }
+          for (const value of forbidden)
+            if (report.toLowerCase().includes(value.toLowerCase()))
               variantFailures.push(
-                `${variant.label}/${name}: handle collides with report vocabulary or structural name ${JSON.stringify(value)}`,
+                `${variant.label}/${name}: forbidden input identity ${JSON.stringify(value)}`,
               );
-            else if (lowercaseReport.includes(value.toLowerCase()))
-              variantFailures.push(
-                `${variant.label}/${name}: required-absent ${kind} ${JSON.stringify(value)}`,
-              );
-          }
           const pathLeaves = archivePathLeaves(archive);
           const dataFiles = archive
             .list()
@@ -817,6 +968,22 @@ test.skipIf(variants.length === 0)(
           await archive.close();
         }
       }
+      const variantArchive = await openArchivePaths([variant.path]);
+      try {
+        const report = JSON.stringify(
+          await describeStructure(variantArchive),
+        ).toLowerCase();
+        for (const value of forbidden)
+          if (report.includes(value.toLowerCase()))
+            variantFailures.push(
+              `${variant.label}/variant-parent: forbidden input identity ${JSON.stringify(value)}`,
+            );
+      } finally {
+        await variantArchive.close();
+      }
+      const union = platformForbidden.get(platform) ?? new Set<string>();
+      for (const value of forbidden) union.add(value);
+      platformForbidden.set(platform, union);
       if (leafCount > 0)
         leafBearing.set(platform, leafBearing.get(platform)! + 1);
       else if (dataFileCount > 0) {
@@ -830,7 +997,7 @@ test.skipIf(variants.length === 0)(
         console.error(`Fixture privacy FAIL ${variantFailures.join('; ')}`);
       else
         console.info(
-          `Fixture privacy PASS ${variant.label} (${dataFileCount} data files, ${leafCount} leaves${dataFileCount > 0 && leafCount === 0 ? ', clean no-scalar variant' : ''})`,
+          `Fixture privacy PASS ${variant.label} (export + variant-parent; ${dataFileCount} data files, ${leafCount} leaves${dataFileCount > 0 && leafCount === 0 ? ', clean no-scalar variant' : ''})`,
         );
       failures.push(...variantFailures);
     }
@@ -839,6 +1006,29 @@ test.skipIf(variants.length === 0)(
     );
     for (const [platform, count] of leafBearing)
       if (count < 1) failures.push(`${platform}: no leaf-bearing variants`);
+    for (const [platform, forbidden] of platformForbidden) {
+      const archive = await openArchivePaths([join(fixtureRoot, platform)]);
+      const platformFailures: string[] = [];
+      try {
+        const report = JSON.stringify(
+          await describeStructure(archive),
+        ).toLowerCase();
+        for (const value of forbidden)
+          if (report.includes(value.toLowerCase()))
+            platformFailures.push(
+              `${platform}/platform-parent: forbidden input identity ${JSON.stringify(value)}`,
+            );
+      } finally {
+        await archive.close();
+      }
+      if (platformFailures.length)
+        console.error(`Fixture privacy FAIL ${platformFailures.join('; ')}`);
+      else
+        console.info(
+          `Fixture privacy PASS ${platform}/platform-parent (${forbidden.size} input identities)`,
+        );
+      failures.push(...platformFailures);
+    }
     expect(failures).toEqual([]);
   },
 );

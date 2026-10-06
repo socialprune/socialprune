@@ -1,16 +1,14 @@
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import * as instagram from './instagram/index.ts';
-import { checkFixtures, writeVariants } from './tree.ts';
+import { checkFixtures, generateFixtures } from './tree.ts';
+import { FIXTURES_ROOT } from './load.ts';
 import * as x from './x/index.ts';
 
-const fixturesRoot = fileURLToPath(
-  new URL('../../../fixtures/synthetic/', import.meta.url),
-);
+const generators = { x, instagram };
 const usage = [
-  'Usage: fixture-gen generate | check',
-  '       fixture-gen large --platform x|instagram --out <path> [--count <n>] [--seed <n>]',
+  'Usage: fixture-gen generate | check [--platform <id>]',
+  '       fixture-gen large --platform <id> --count <n> --out <file.zip> [--seed <n>] [--zip64]',
 ].join('\n');
 
 function integer(value: string, minimum: number): number {
@@ -29,24 +27,32 @@ try {
       out: { type: 'string' },
       count: { type: 'string' },
       seed: { type: 'string' },
+      zip64: { type: 'boolean' },
     },
     allowPositionals: true,
   });
   const command = positionals[0];
-  const variants = [...x.variants, ...instagram.variants];
+  const registered = Object.keys(generators) as (keyof typeof generators)[];
+  const platform = values.platform;
+  if (platform && !registered.includes(platform as keyof typeof generators))
+    throw new Error('Unknown fixture platform.');
+  const selected = platform
+    ? [platform as keyof typeof generators]
+    : registered;
+  const variants = selected.flatMap((id) => generators[id].variants);
   if (values.help) {
     console.log(usage);
   } else if (positionals.length !== 1) {
     console.error(usage);
     process.exitCode = 2;
   } else if (command === 'generate' || command === 'check') {
-    if (Object.keys(values).length !== 0)
+    if (Object.keys(values).some((key) => key !== 'platform'))
       throw new Error('Unexpected options.');
     if (command === 'generate') {
-      await writeVariants(fixturesRoot, variants);
+      await generateFixtures(FIXTURES_ROOT, variants, selected);
       console.log(`Generated ${variants.length} fixture variant(s).`);
     } else {
-      const drift = await checkFixtures(fixturesRoot, variants);
+      const drift = await checkFixtures(FIXTURES_ROOT, variants, selected);
       for (const path of drift)
         console.error(`Fixture drift: ${JSON.stringify(path)}`);
       process.exitCode = drift.length > 0 ? 1 : 0;
@@ -55,19 +61,17 @@ try {
       );
     }
   } else if (command === 'large') {
-    if (
-      !values.out ||
-      (values.platform !== 'x' && values.platform !== 'instagram')
-    ) {
+    if (!values.out || !values.count || !platform) {
       throw new Error(
         'Large generation requires --platform and an explicit --out path.',
       );
     }
-    const generator = values.platform === 'x' ? x : instagram;
+    const generator = generators[platform as keyof typeof generators];
     await generator.generateLarge({
       out: resolve(values.out),
-      count: integer(values.count ?? '100000', 1),
+      count: integer(values.count, 1),
       seed: integer(values.seed ?? '1', 0),
+      zip64: values.zip64 ?? false,
     });
   } else {
     console.error(usage);

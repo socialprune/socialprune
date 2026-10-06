@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "@socialprune/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@socialprune/fixture-gen": "workspace:*"
   }
 }

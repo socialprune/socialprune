@@ -26,21 +26,31 @@ test('fixture checks compare paths and bytes, including unexpected files', async
     id: 'test-variant',
     platform: 'x',
     description: 'Generated fixture for the tree comparison test.',
-    files: { 'data/notes.txt': 'generated content\n' },
+    archives: [
+      { name: 'archive', files: { 'data/notes.txt': 'generated content\n' } },
+    ],
     expected: { count: 1 },
   };
   try {
     expect(await checkFixtures(root, [])).toEqual([]);
     await writeVariants(root, [variant]);
     expect(await checkFixtures(root, [variant])).toEqual([]);
-    await writeFile(join(root, 'x/test-variant/data/notes.txt'), 'changed\n');
-    await writeFile(join(root, 'extra.txt'), 'unexpected\n');
+    await writeFile(
+      join(root, 'x/test-variant/archive/data/notes.txt'),
+      'changed\n',
+    );
+    await writeFile(join(root, 'x/extra.txt'), 'unexpected\n');
     expect(await checkFixtures(root, [variant])).toEqual([
-      'extra.txt',
-      'x/test-variant/data/notes.txt',
+      'x/extra.txt',
+      'x/test-variant/archive/data/notes.txt',
     ]);
     await expect(
-      writeVariants(root, [{ ...variant, files: { '../outside.txt': 'no' } }]),
+      writeVariants(root, [
+        {
+          ...variant,
+          archives: [{ name: 'archive', files: { '../outside.txt': 'no' } }],
+        },
+      ]),
     ).rejects.toThrow('relative');
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@socialprune/core": "workspace:*"
+    "@socialprune/core": "workspace:*",
+    "@socialprune/adapter-x": "workspace:*",
+    "@socialprune/adapter-instagram": "workspace:*"
   }
 }

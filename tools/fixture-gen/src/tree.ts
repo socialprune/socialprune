@@ -10,115 +10,150 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { Variant } from './shared/index.ts';
 
-function relativePath(path: string): string {
+export function fixtureSegment(segment: string): string {
   if (
-    path.length === 0 ||
-    path.startsWith('/') ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(segment) ||
+    segment === '.' ||
+    segment === '..'
+  )
+    throw new TypeError('Invalid fixture path segment.');
+  return segment;
+}
+export function fixturePath(path: string): string {
+  if (
     path.includes('\\') ||
     path.includes(':') ||
-    path.split('/').some((part) => part === '' || part === '.' || part === '..')
-  ) {
-    throw new Error(
-      'Fixture paths must be relative and contain no dot segments.',
-    );
-  }
+    path.split('/').some((part) => !part || part === '.' || part === '..')
+  )
+    throw new TypeError('Fixture paths must be relative.');
   return path;
 }
-
 export async function writeVariants(
   root: string,
   variants: readonly Variant[],
-) {
-  const identities = new Set<string>();
+): Promise<void> {
+  const ids = new Set<string>();
   for (const variant of variants) {
-    const platform = relativePath(variant.platform);
-    const id = relativePath(variant.id);
-    if (id.includes('/'))
-      throw new Error('Variant IDs must be single path segments.');
-    const identity = `${platform}/${id}`;
-    if (identities.has(identity)) throw new Error('Duplicate fixture variant.');
-    identities.add(identity);
-    const files: Record<string, string | Uint8Array> = {
-      ...variant.files,
-      'expected.json': JSON.stringify(variant.expected, null, 2) + '\n',
-      'variant.json':
-        JSON.stringify(
-          {
-            id: variant.id,
-            platform: variant.platform,
-            description: variant.description,
-          },
-          null,
-          2,
-        ) + '\n',
-    };
-    if ('expected.json' in variant.files || 'variant.json' in variant.files) {
-      throw new Error('Fixture metadata filenames are reserved.');
+    const target = join(
+      root,
+      fixtureSegment(variant.platform),
+      fixtureSegment(variant.id),
+    );
+    const identity = `${variant.platform}/${variant.id}`;
+    if (ids.has(identity)) throw new TypeError('Duplicate fixture variant.');
+    ids.add(identity);
+    const archiveNames = new Set<string>();
+    for (const archive of variant.archives) {
+      const name = fixtureSegment(archive.name);
+      if (
+        archiveNames.has(name) ||
+        name === 'expected.json' ||
+        name === 'variant.json'
+      )
+        throw new TypeError('Duplicate or reserved fixture archive name.');
+      archiveNames.add(name);
+      await mkdir(join(target, name), { recursive: true });
+      for (const [path, content] of Object.entries(archive.files).sort(
+        ([a], [b]) => (a < b ? -1 : 1),
+      )) {
+        const file = join(target, name, fixturePath(path));
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(file, content);
+      }
     }
-    for (const [path, content] of Object.entries(files).sort(([a], [b]) =>
-      a.localeCompare(b, 'en'),
-    )) {
-      const target = join(root, platform, id, relativePath(path));
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, content);
-    }
+    await mkdir(target, { recursive: true });
+    await writeFile(
+      join(target, 'expected.json'),
+      JSON.stringify(variant.expected, null, 2) + '\n',
+    );
+    await writeFile(
+      join(target, 'variant.json'),
+      JSON.stringify(
+        {
+          id: variant.id,
+          platform: variant.platform,
+          description: variant.description,
+          archives: [...archiveNames],
+        },
+        null,
+        2,
+      ) + '\n',
+    );
   }
 }
-
-async function readTree(
+export async function readTree(
   root: string,
   prefix = '',
-): Promise<Map<string, Buffer>> {
-  const files = new Map<string, Buffer>();
-  let entries;
-  try {
-    entries = await readdir(join(root, prefix), { withFileTypes: true });
-  } catch (error) {
+): Promise<Map<string, Uint8Array>> {
+  const files = new Map<string, Uint8Array>();
+  const entries = await readdir(join(root, prefix), {
+    withFileTypes: true,
+  }).catch((error: unknown) => {
     if (
       prefix === '' &&
       error instanceof Error &&
       'code' in error &&
       error.code === 'ENOENT'
-    ) {
-      return files;
-    }
+    )
+      return [];
     throw error;
-  }
-  for (const entry of entries.sort((a, b) =>
-    a.name.localeCompare(b.name, 'en'),
-  )) {
+  });
+  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink())
-      throw new Error('Fixture trees cannot contain links.');
-    if (entry.isDirectory()) {
+      throw new TypeError('Fixture trees cannot contain links.');
+    if (entry.isDirectory())
       for (const [key, value] of await readTree(root, path))
         files.set(key, value);
-    } else if (entry.isFile()) {
-      files.set(path, await readFile(join(root, path)));
-    } else {
-      throw new Error(
-        'Fixture trees must contain ordinary files and directories.',
-      );
-    }
+    else if (entry.isFile()) files.set(path, await readFile(join(root, path)));
+    else throw new TypeError('Unsupported fixture entry.');
   }
   return files;
 }
-
-export async function checkFixtures(
-  committedRoot: string,
+export async function generateFixtures(
+  root: string,
   variants: readonly Variant[],
+  platforms: readonly string[],
+): Promise<void> {
+  for (const platform of platforms) {
+    fixtureSegment(platform);
+    // Only this platform belongs to the invocation. Hand-authored classify data
+    // and another platform's concurrent generation are never replaced.
+    await rm(join(root, platform), { recursive: true, force: true });
+    await writeVariants(
+      root,
+      variants.filter((variant) => variant.platform === platform),
+    );
+  }
+}
+export async function checkFixtures(
+  root: string,
+  variants: readonly Variant[],
+  platforms: readonly string[] = [
+    ...new Set(variants.map(({ platform }) => platform)),
+  ],
 ): Promise<string[]> {
   const regenerated = await mkdtemp(join(tmpdir(), 'socialprune-fixtures-'));
   try {
-    await writeVariants(regenerated, variants);
-    const actual = await readTree(committedRoot);
-    const expected = await readTree(regenerated);
-    const paths = [...new Set([...actual.keys(), ...expected.keys()])].sort();
-    return paths.filter((path) => {
-      const a = actual.get(path);
-      const b = expected.get(path);
-      return !a || !b || !a.equals(b);
-    });
+    await writeVariants(
+      regenerated,
+      variants.filter((variant) => platforms.includes(variant.platform)),
+    );
+    const drift: string[] = [];
+    for (const platform of platforms) {
+      fixtureSegment(platform);
+      const actual = await readTree(join(root, platform));
+      const expected = await readTree(join(regenerated, platform));
+      for (const path of [
+        ...new Set([...actual.keys(), ...expected.keys()]),
+      ].sort()) {
+        const a = actual.get(path);
+        const b = expected.get(path);
+        if (!a || !b || !Buffer.from(a).equals(b))
+          drift.push(`${platform}/${path}`);
+      }
+    }
+    return drift;
   } finally {
     await rm(regenerated, { recursive: true, force: true });
   }

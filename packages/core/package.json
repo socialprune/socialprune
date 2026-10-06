@@ -9,11 +9,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "schemas:generate": "node --input-type=module -e \"console.log('No schemas defined yet (N1).')\"",
-    "schemas:check": "node --input-type=module -e \"console.log('No schemas defined yet (N1).')\""
+    "schemas:generate": "node src/node/schemas.ts generate",
+    "schemas:check": "node src/node/schemas.ts check"
   },
   "dependencies": {
     "@zip.js/zip.js": "2.23.0",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
   }
 }

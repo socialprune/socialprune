@@ -1,0 +1,19 @@
+{
+  "name": "@socialprune/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "schemas:generate": "node --input-type=module -e \"console.log('No schemas defined yet (N1).')\"",
+    "schemas:check": "node --input-type=module -e \"console.log('No schemas defined yet (N1).')\""
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "2.23.0",
+    "zod": "4.6.5"
+  }
+}

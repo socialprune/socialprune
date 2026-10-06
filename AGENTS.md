@@ -2,7 +2,7 @@
 
 SocialPrune helps people review and clean up their old posts and comments on X and Instagram. It reads the platform's official data export, flags risky or pointless items with rules and an optional local AI model, explains each flag in one sentence, and lets a person decide what goes. The final delete click always happens on the platform, by that person.
 
-**Status on 2026-10-06.** Repository, license and Kilo workflow shell are set up. There is no product code yet. Phase 1 builds the foundation: monorepo, JSON schemas, a synthetic fixture generator, both export parsers, streaming ZIP import, the data guard and CI.
+**Status on 2026-10-06.** Repository, license and Kilo workflow shell are set up. Phase 1 is in progress: the workspace scaffold, the data guard with its pre-commit hook and CI exist, and spike S3 (offline analysis under a strict CSP) is recorded in `docs/spikes/S3.md`. Still to come in Phase 1 are the JSON schemas, the synthetic fixture generator, both export parsers, streaming ZIP import and the `structure` command.
 
 The maintainer's working plan is `PLAN.md` in the repository root. It is written in German, kept out of Git on purpose, and exists only on the maintainer's machine. When it is present, read it before planning work. It holds the decisions, phases, gates and spikes.
 
@@ -19,7 +19,7 @@ These hold in every phase. Changing one takes an explicit decision by the mainta
 
 ## Planned layout
 
-Nothing below exists yet. Phase 1 creates it.
+Phase 1 has created skeletons for `apps/web`, `apps/cli`, `packages/core`, both adapters and both tools. `packages/classify`, `packages/mcp`, `fixtures/synthetic` and `skills/` come later.
 
 | Path | Purpose |
 |---|---|
@@ -35,11 +35,33 @@ Nothing below exists yet. Phase 1 creates it.
 
 A new platform is a new adapter package and must not need changes in `packages/core`.
 
-The planned stack is TypeScript, pnpm workspaces, Vite with React, TanStack Virtual, zip.js in a web worker, idb, vite-plugin-pwa, Vitest, Playwright against our own app only, and GitHub Actions. It can still change before Phase 1 starts.
+The stack is TypeScript, pnpm workspaces, Vite with React, zod for schemas, zip.js in a web worker, Vitest, Playwright against our own app only, and GitHub Actions. TanStack Virtual, idb and vite-plugin-pwa follow with the review UI. Every dependency is pinned to an exact version.
+
+Packages run as TypeScript source through Node 24 type stripping, without a build step. Relative imports carry the `.ts` extension, and workspace packages export `./src/index.ts`. `tsc` is TypeScript 7. typescript-eslint still needs the TypeScript 6 API, so the `typescript` package name is an alias for `@typescript/typescript6`. Vite's optional Lightning CSS (MPL-2.0) is removed by a pnpm override, and CSS goes through PostCSS and esbuild instead.
 
 ## Commands
 
-None yet. When Phase 1 adds the workspace, list the exact install, build, test, lint and data-guard commands here.
+Node 24 and pnpm 10.33.0 (`packageManager` in `package.json`).
+
+| Task | Command |
+|---|---|
+| install, also installs the pre-commit data guard | `pnpm install` |
+| install as in CI | `pnpm install --frozen-lockfile` |
+| data guard over all tracked files | `pnpm guard` |
+| data guard over staged files, as in pre-commit | `pnpm guard:staged` |
+| format check, format write | `pnpm format:check`, `pnpm format` |
+| lint | `pnpm lint` |
+| typecheck | `pnpm typecheck` |
+| unit tests | `pnpm test` |
+| build | `pnpm build` |
+| synthetic fixtures, regenerate and drift check | `pnpm fixtures:generate`, `pnpm fixtures:check` |
+| JSON schemas, regenerate and drift check | `pnpm schemas:generate`, `pnpm schemas:check` |
+| browser tests (once before: `pnpm --filter @socialprune/web exec playwright install chromium`) | `pnpm test:e2e` |
+| CLI | `pnpm socialprune --help` |
+
+CI (`.github/workflows/ci.yml`) runs install, guard, format check, lint, typecheck, tests, fixture check, schema check and build on every push to `main` and every pull request. Prettier skips Markdown, so prose keeps its exact wording.
+
+Spikes under `spikes/` are standalone pnpm projects with their own lockfile, outside the workspace and outside CI. Each one documents how to rerun it in `docs/spikes/`.
 
 ## Proof this project relies on
 

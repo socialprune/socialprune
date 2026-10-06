@@ -1,0 +1,15 @@
+**/*.md
+spikes/
+fixtures/
+pnpm-lock.yaml
+.kilo/
+PLAN.md
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/blob-report/
+# Existing governance configuration belongs to its own owner.
+kilo.jsonc

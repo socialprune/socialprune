@@ -1,0 +1,43 @@
+{
+  "name": "socialprune-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prepare": "simple-git-hooks",
+    "guard": "node tools/data-guard/src/cli.ts --all",
+    "guard:staged": "node tools/data-guard/src/cli.ts --staged",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "build": "pnpm -r build",
+    "fixtures:generate": "pnpm --filter @socialprune/fixture-gen run generate",
+    "fixtures:check": "pnpm --filter @socialprune/fixture-gen run check",
+    "schemas:generate": "pnpm --filter @socialprune/core run schemas:generate",
+    "schemas:check": "pnpm --filter @socialprune/core run schemas:check",
+    "test:e2e": "pnpm --filter @socialprune/web run test:e2e",
+    "measure:g1": "pnpm --filter @socialprune/web run measure:g1",
+    "socialprune": "node apps/cli/src/main.ts"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "node tools/data-guard/src/cli.ts --staged"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.1",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "10.12.0",
+    "prettier": "3.9.9",
+    "simple-git-hooks": "2.14.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
+  }
+}

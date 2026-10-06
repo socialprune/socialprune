@@ -1,0 +1,19 @@
+{
+  "name": "@socialprune/fixture-gen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "generate": "node src/cli.ts generate",
+    "check": "node src/cli.ts check",
+    "large": "node src/cli.ts large"
+  },
+  "dependencies": {
+    "@socialprune/core": "workspace:*",
+    "@zip.js/zip.js": "2.23.0"
+  }
+}

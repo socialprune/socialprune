@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+onlyBuiltDependencies:
+  - esbuild
+  - simple-git-hooks
+
+# Pin the compiler compatibility package's API dependency.
+# CSS uses PostCSS and esbuild, not the optional Lightning CSS route.
+# minimatch 9 retains the ISC license and receives maintenance releases.
+overrides:
+  '@typescript/old': npm:typescript@6.0.3
+  vite>lightningcss: '-'
+  minimatch: 9.0.9

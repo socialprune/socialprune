@@ -1,0 +1,8 @@
+packages:
+  - '.'
+onlyBuiltDependencies:
+  - esbuild
+overrides:
+  '@huggingface/transformers>sharp': '-'
+  '@huggingface/transformers>onnxruntime-node': '-'
+  'vite>lightningcss': '-'

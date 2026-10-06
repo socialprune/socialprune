@@ -1,0 +1,8 @@
+{
+  "id": "wrong-assignment",
+  "platform": "x",
+  "description": "A known filename assigned to an unrelated global is rejected before item emission. Strict target matching does not execute or treat arbitrary archive arrays as tweets.",
+  "archives": [
+    "archive"
+  ]
+}

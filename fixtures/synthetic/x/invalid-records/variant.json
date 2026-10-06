@@ -1,0 +1,8 @@
+{
+  "id": "invalid-records",
+  "platform": "x",
+  "description": "Missing id_str, impossible date and nonstring text are unreadable records, not coerced items; valid neighbors still import and category count includes all consumed elements.",
+  "archives": [
+    "archive"
+  ]
+}

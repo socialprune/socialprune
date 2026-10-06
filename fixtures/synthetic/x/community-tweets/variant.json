@@ -1,0 +1,8 @@
+{
+  "id": "community-tweets",
+  "platform": "x",
+  "description": "Community posts use the regular wrapped tweet mapping and deletion hints. community_tweet as the same tweet shape is task-provided, not verified against a real archive yet.",
+  "archives": [
+    "archive"
+  ]
+}

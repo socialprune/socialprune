@@ -1,0 +1,8 @@
+{
+  "id": "malformed-tweets",
+  "platform": "x",
+  "description": "Malformed JSON after a valid record gives partial import, preserves the streamed prefix record and continues with community posts. Counts describe consumed records, not an invented total.",
+  "archives": [
+    "archive"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "split-parts",
+  "platform": "x",
+  "description": "tweets.js part0 plus parts 1, 2 and 10 are streamed in numeric order and retain per-file indexes. The split filename shape is sourced from twitter-archive-reader Files_to_structures.",
+  "archives": [
+    "archive"
+  ]
+}

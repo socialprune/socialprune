@@ -1,0 +1,8 @@
+{
+  "id": "deleted-tweets",
+  "platform": "x",
+  "description": "Already deleted posts are counted but never become items; the deleted_tweets wrapper shape follows the task and needs S4 confirmation.",
+  "archives": [
+    "archive"
+  ]
+}

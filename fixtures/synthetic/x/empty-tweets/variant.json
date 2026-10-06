@@ -1,0 +1,8 @@
+{
+  "id": "empty-tweets",
+  "platform": "x",
+  "description": "A valid assigned empty tweet array stays empty rather than missing or unreadable; account metadata is still imported.",
+  "archives": [
+    "archive"
+  ]
+}

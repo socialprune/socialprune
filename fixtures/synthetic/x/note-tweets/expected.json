@@ -1,0 +1,201 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:700001",
+          "handle": "orbit_quokka"
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 4,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 4,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "found",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 5,
+          "message": "Export records were read."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "community-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "unmatched-note-tweets",
+          "status": "skipped",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 4,
+          "message": "Notes without a unique timestamp and text-prefix match were not imported separately."
+        },
+        {
+          "category": "ambiguous-note-tweets",
+          "status": "skipped",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 3,
+          "message": "Ambiguous note matches left the original post text unchanged."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254741300",
+      "platform": "x",
+      "kind": "post",
+      "text": "A unique lantern note. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. Invented full text from the garden. ",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741300",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    },
+    {
+      "id": "x:9007199254741301",
+      "platform": "x",
+      "kind": "post",
+      "text": "Ambiguous moss…",
+      "createdAt": "2018-10-10T20:20:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741301",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 1
+      }
+    },
+    {
+      "id": "x:9007199254741302",
+      "platform": "x",
+      "kind": "post",
+      "text": "Two identical starts…",
+      "createdAt": "2018-10-10T20:21:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741302",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 2
+      }
+    },
+    {
+      "id": "x:9007199254741303",
+      "platform": "x",
+      "kind": "post",
+      "text": "Two identical starts…",
+      "createdAt": "2018-10-10T20:21:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741303",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 3
+      }
+    }
+  ]
+}

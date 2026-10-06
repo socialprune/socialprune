@@ -1,0 +1,8 @@
+{
+  "id": "unreadable-optional-files",
+  "platform": "x",
+  "description": "Invalid account, manifest, notes, deleted and community data produce unreadable diagnostics independently; valid tweets still import with the scoped fallback account.",
+  "archives": [
+    "archive"
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:700001",
+          "handle": "orbit_quokka"
+        }
+      ],
+      "variant": "grailbird",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/js/user_details.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/js/tweets/2013_01.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "community-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254741700",
+      "platform": "x",
+      "kind": "post",
+      "text": "An invented classic tweet.",
+      "createdAt": "2013-01-15T10:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741700",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/js/tweets/2013_01.js",
+        "index": 0
+      }
+    }
+  ]
+}

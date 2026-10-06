@@ -1,0 +1,1 @@
+window.YTD.tweets.part0 = (function(){globalThis.__pwned = 1})() || [{"tweet":{"id":9007199254742000,"id_str":"9007199254742000","created_at":"Wed Oct 10 20:19:24 +0000 2018","full_text":"Injection text must not import.","favorite_count":"3","retweet_count":"1"}}];

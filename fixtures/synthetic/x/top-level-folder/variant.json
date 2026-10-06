@@ -1,0 +1,8 @@
+{
+  "id": "top-level-folder",
+  "platform": "x",
+  "description": "ZIP and directory entry paths with a single top-level export folder keep provenance and locate account/manifest siblings. Folder spelling is invented.",
+  "archives": [
+    "archive"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "note-tweets",
+  "platform": "x",
+  "description": "One unique timestamp-second/text-prefix match restores full text; one-to-many and many-to-one ambiguity preserves original text and unmatched notes only produce counts. Same-second matching, terminal ellipsis/t.co stripping and note schema are assumptions for S4; timestamp linkage has public exporter precedent.",
+  "archives": [
+    "archive"
+  ]
+}

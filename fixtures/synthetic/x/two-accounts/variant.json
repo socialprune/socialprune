@@ -1,0 +1,9 @@
+{
+  "id": "two-accounts",
+  "platform": "x",
+  "description": "Two archives keep distinct account keys and handles per item; core produces one platform import record and its generation timestamp is the newest manifest date. This record-date aggregation is an implementation choice.",
+  "archives": [
+    "archive-a",
+    "archive-b"
+  ]
+}

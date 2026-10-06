@@ -1,0 +1,8 @@
+{
+  "id": "no-match",
+  "platform": "x",
+  "description": "An invented unrelated JSON export has no recognized X data paths and remains unknown-format without content reads.",
+  "archives": [
+    "archive"
+  ]
+}

@@ -1,0 +1,265 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:700001",
+          "handle": "orbit_quokka"
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 7,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 7,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "community-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254740995",
+      "platform": "x",
+      "kind": "post",
+      "text": "A <b>lantern</b> & \"moss\" '星' 😀\nfrüh &amp;",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254740995",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    },
+    {
+      "id": "x:9007199254740997",
+      "platform": "x",
+      "kind": "reply",
+      "text": "@amber_moth invented reply",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": "600001",
+        "replyToHandle": "amber_moth",
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254740997",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 1
+      }
+    },
+    {
+      "id": "x:9007199254740999",
+      "platform": "x",
+      "kind": "repost",
+      "text": "RT @moss_badger: invented repost",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": "moss_badger",
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254740999",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 2
+      }
+    },
+    {
+      "id": "x:9007199254741001",
+      "platform": "x",
+      "kind": "quote",
+      "text": "An explicit quote https://t.co/quote",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": "600003",
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741001",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 3
+      }
+    },
+    {
+      "id": "x:9007199254741003",
+      "platform": "x",
+      "kind": "quote",
+      "text": "An archive quote https://t.co/invented",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": "600004",
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741003",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 4
+      }
+    },
+    {
+      "id": "x:9007199254741005",
+      "platform": "x",
+      "kind": "post",
+      "text": "Counts omitted, text and whitespace stay.  \n",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741005",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 5
+      }
+    },
+    {
+      "id": "x:9007199254741007",
+      "platform": "x",
+      "kind": "reply",
+      "text": "@amber_moth replying with a quote",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": "600005",
+        "replyToHandle": "amber_moth",
+        "quotedId": "600006",
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741007",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 6
+      }
+    }
+  ]
+}

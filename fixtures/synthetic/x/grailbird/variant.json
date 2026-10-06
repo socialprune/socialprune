@@ -1,0 +1,8 @@
+{
+  "id": "grailbird",
+  "platform": "x",
+  "description": "Monthly flat Grailbird tweets, text field, classic date and var user_details object. Paths and fields are sourced from twitter-archive-reader ClassicTweets and Files_to_structures; S4 checks the assignment spelling. Numeric tweet IDs are never used.",
+  "archives": [
+    "archive"
+  ]
+}

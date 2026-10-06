@@ -1,0 +1,74 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:archive:archive",
+          "handle": null
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 0,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "empty",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "empty",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        },
+        {
+          "category": "note-tweets",
+          "status": "empty",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "empty",
+          "files": [
+            "data/deleted-tweets.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        },
+        {
+          "category": "community-tweets",
+          "status": "empty",
+          "files": [
+            "data/community-tweet.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        }
+      ]
+    }
+  ],
+  "items": []
+}

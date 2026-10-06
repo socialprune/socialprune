@@ -1,0 +1,8 @@
+{
+  "id": "injection",
+  "platform": "x",
+  "description": "An executable assignment value is rejected as unreadable before any item is yielded, giving partial import without executing archive text. This adversarial payload is entirely invented.",
+  "archives": [
+    "archive"
+  ]
+}

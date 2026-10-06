@@ -1,0 +1,8 @@
+{
+  "id": "current-minimal",
+  "platform": "x",
+  "description": "Current wrapped tweets.js, account username/ID only, UTC date, string counts and rounded numeric id ignored. Manifest archiveInfo.generationDate is sourced from twitter-archive-reader GDPRManifest; S4 checks the current shape.",
+  "archives": [
+    "archive"
+  ]
+}

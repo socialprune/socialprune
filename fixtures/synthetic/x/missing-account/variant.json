@@ -1,0 +1,8 @@
+{
+  "id": "missing-account",
+  "platform": "x",
+  "description": "Absent account.js leaves a deterministic archive-scoped account key with null handle and a missing diagnostic. This fallback is an implementation choice, not a platform field.",
+  "archives": [
+    "archive"
+  ]
+}

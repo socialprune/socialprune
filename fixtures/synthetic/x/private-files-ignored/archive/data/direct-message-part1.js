@@ -1,0 +1,1 @@
+{"planted":"NEVER_OPEN_direct-message-part1.js","email":"never-open@example.com","text":"Invented private payload never appears in adapter output."}

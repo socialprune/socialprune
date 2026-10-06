@@ -1,0 +1,103 @@
+{
+  "status": "partial",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:archive:archive",
+          "handle": null
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "unreadable",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 0,
+          "message": "Some files or records could not be parsed."
+        },
+        {
+          "category": "manifest",
+          "status": "unreadable",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 0,
+          "message": "Some files or records could not be parsed."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "unreadable",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 0,
+          "message": "Some files or records could not be parsed."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "unreadable",
+          "files": [
+            "data/deleted-tweets.js"
+          ],
+          "count": 0,
+          "message": "Some files or records could not be parsed."
+        },
+        {
+          "category": "community-tweets",
+          "status": "unreadable",
+          "files": [
+            "data/community-tweet.js"
+          ],
+          "count": 0,
+          "message": "Some files or records could not be parsed."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254742300",
+      "platform": "x",
+      "kind": "post",
+      "text": "Metadata failures do not discard valid posts.",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742300",
+      "account": {
+        "key": "x:archive:archive",
+        "handle": null
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "missing-optional-files",
+  "platform": "x",
+  "description": "Absent manifest, notes, deleted posts and communities have missing diagnostics, not empty or unreadable; no generation timestamp is invented.",
+  "archives": [
+    "archive"
+  ]
+}

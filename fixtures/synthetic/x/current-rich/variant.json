@@ -1,0 +1,8 @@
+{
+  "id": "current-rich",
+  "platform": "x",
+  "description": "Reply/repost/quote precedence, explicit quote ID and status-URL heuristic, entities, Unicode, single-pass HTML decoding, whitespace and missing counts. Status links imply quotes only as an assumption for S4; a linked post is not always a quote.",
+  "archives": [
+    "archive"
+  ]
+}

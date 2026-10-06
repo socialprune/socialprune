@@ -1,0 +1,155 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:700001",
+          "handle": "orbit_quokka"
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 3,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "community-tweets",
+          "status": "found",
+          "files": [
+            "data/community-tweet.js"
+          ],
+          "count": 2,
+          "message": "Export records were read."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254741500",
+      "platform": "x",
+      "kind": "post",
+      "text": "A regular invented post.",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741500",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    },
+    {
+      "id": "x:9007199254741501",
+      "platform": "x",
+      "kind": "post",
+      "text": "An invented community post.",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741501",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/community-tweet.js",
+        "index": 0
+      }
+    },
+    {
+      "id": "x:9007199254741502",
+      "platform": "x",
+      "kind": "repost",
+      "text": "RT @violet_otter: invented community repost",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": "violet_otter",
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254741502",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/community-tweet.js",
+        "index": 1
+      }
+    }
+  ]
+}

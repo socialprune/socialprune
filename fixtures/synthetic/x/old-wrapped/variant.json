@@ -1,0 +1,8 @@
+{
+  "id": "old-wrapped",
+  "platform": "x",
+  "description": "Historical data/tweet.js with tweet-wrapped elements. S4 checks the precise historical schema; id_str remains authoritative.",
+  "archives": [
+    "archive"
+  ]
+}

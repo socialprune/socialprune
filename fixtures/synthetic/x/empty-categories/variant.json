@@ -1,0 +1,8 @@
+{
+  "id": "empty-categories",
+  "platform": "x",
+  "description": "Empty account, tweets, notes, deleted and community arrays stay distinct from missing; empty account uses the archive-scoped fallback.",
+  "archives": [
+    "archive"
+  ]
+}

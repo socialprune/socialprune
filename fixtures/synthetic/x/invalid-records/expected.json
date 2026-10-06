@@ -1,0 +1,97 @@
+{
+  "status": "partial",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:700001",
+          "handle": "orbit_quokka"
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "unreadable",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 4,
+          "message": "Some files or records could not be parsed."
+        },
+        {
+          "category": "note-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        },
+        {
+          "category": "community-tweets",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "This export category is absent."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254742400",
+      "platform": "x",
+      "kind": "post",
+      "text": "The only valid tweet imports.",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742400",
+      "account": {
+        "key": "x:700001",
+        "handle": "orbit_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    }
+  ]
+}

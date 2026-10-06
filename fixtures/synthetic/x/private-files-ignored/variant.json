@@ -1,0 +1,8 @@
+{
+  "id": "private-files-ignored",
+  "platform": "x",
+  "description": "Direct-message, login, IP, contacts, device and security files are present but never read or emitted. Account email/display name are not emitted either; all planted values are invented.",
+  "archives": [
+    "archive"
+  ]
+}

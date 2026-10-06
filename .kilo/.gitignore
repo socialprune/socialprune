@@ -1,0 +1,25 @@
+# Personal operator voice calibration.
+# The rule and the skill in this shell stay generic so they work for anyone on
+# the team. Real sample messages are private and must never reach a shared
+# repository, so they live here and are ignored on purpose.
+OPERATOR_VOICE.local.md
+**/OPERATOR_VOICE.local.md
+*.local.md
+
+# Kilo writes these on startup to install `@kilocode/plugin`. SocialPrune ships
+# no local plugin, so they are machine state, not project files. Track them only
+# if a local plugin is added and needs a pinned dependency.
+package.json
+package-lock.json
+bun.lock
+node_modules/
+
+# Drafts from Kilo's plan mode. Here they are built from the private PLAN.md,
+# so they stay local.
+plans/
+
+# Wake state normally lives in the canonical Git common directory.
+plugin/*.tmp
+plugin/wake-registry*.json
+plugin/wake-*.log*
+plugin/*.lock

@@ -1,0 +1,45 @@
+# SocialPrune
+
+# Real social media exports never enter this repository, in any form.
+# Tests and demos use generated data under fixtures/synthetic/ only.
+*.zip
+!fixtures/synthetic/**/*.zip
+/exports/
+/private/
+/cleanup/
+
+# Extracted exports, in case an archive gets unpacked inside the repository.
+/twitter-*/
+/instagram-*/
+your_instagram_activity/
+!fixtures/synthetic/**/your_instagram_activity/
+
+# The maintainer's private working plan (German). Not part of the project.
+/PLAN.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+
+  // SocialPrune Kilo config. Intentionally minimal.
+  // Agents live in .kilo/agents/*.md (plural folder), skills in .kilo/skills/.
+  // Every rule in .kilo/rules/ loads in every session through "instructions".
+  // No model is pinned, so each session uses the model the maintainer selects.
+  // Add keys only after checking them against the current Kilo docs.
+  "default_agent": "workflow-orchestrator",
+  "instructions": [".kilo/rules/*.md"]
+}

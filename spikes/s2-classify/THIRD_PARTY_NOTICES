@@ -1,0 +1,41 @@
+S2 classification spike
+
+No third-party word lists or classifier implementation code were copied.
+The short baseline patterns and invented corpus are original to this spike.
+
+Runtime dependencies are retained by the standalone lockfile:
+- @huggingface/transformers 4.3.0, Apache-2.0
+- @mlc-ai/web-llm 0.2.85, Apache-2.0
+- onnxruntime-web 1.31.0-dev.20260914-8d85527a0, MIT
+- playwright 1.63.0, Apache-2.0
+- vite 7.3.7, MIT
+- linked @socialprune/core is first-party SocialPrune code; its runtime
+  dependencies are zod 4.6.5 (MIT) and @zip.js/zip.js 2.23.0 (BSD-3-Clause).
+
+The license audit reads all reachable installed package manifests and the linked
+core's runtime dependencies. Exact transitive versions remain in pnpm-lock.yaml.
+Upstream license files remain with their packages. No downloaded model, browser
+binary or WASM library is part of the source delivery.
+
+Model licenses are separate from the code audit:
+- Qwen/Qwen3-0.6B and Qwen/Qwen3-1.7B, Apache-2.0, upstream Qwen team.
+  Ollama's qwen3:0.6b and qwen3:1.7b /api/show license text says Apache 2.0.
+  The mlc-ai conversions name these base models but do not repeat a license
+  field; the upstream model license is the provenance used in this trial.
+- MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7, MIT, Moritz Laurer.
+  The original repository supplies the tested ONNX conversion itself.
+- Gemini Nano would be supplied under Chrome's model distribution terms, not
+  under this spike's code license; no Gemini model was downloaded here.
+
+Prebuilt Qwen model libraries were downloaded for local execution from
+mlc-ai/binary-mlc-llm-libs commit
+025bcaf3780fa8254f5e5efd3bfea0a5397248f4, web-llm-models/v0_2_84/base.
+MLC LLM and WebLLM source are Apache-2.0, but S3 found no standalone license
+in that binary repository. Redistribution permission remains unestablished;
+these generated, ignored binaries must not be distributed with the product
+until that provenance question is resolved.
+
+API documentation consulted, not copied as implementation:
+https://developer.chrome.com/docs/ai/prompt-api (updated 2026-08-26)
+https://raw.githubusercontent.com/mlc-ai/web-llm/v0.2.85/src/config.ts
+Hugging Face model metadata and Ollama library tag pages (read 2026-10-06).

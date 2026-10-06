@@ -3,14 +3,48 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { homedir, tmpdir } from 'node:os';
 
-export const tempRoot = 'C:/Users/denni/AppData/Local/Temp/kilo/s2-classify';
+const home = homedir();
+const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+const systemRoot = path.parse(home).root;
+export const tempRoot = path.join(tmpdir(), 'kilo', 's2-classify');
 export const chromePaths = [
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-  'C:/Users/denni/AppData/Local/Google/Chrome/Application/chrome.exe',
-  'C:/Users/denni/AppData/Local/Google/Chrome SxS/Application/chrome.exe',
+  path.join(systemRoot, 'Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  path.join(systemRoot, 'Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  path.join(localAppData, 'Google', 'Chrome SxS', 'Application', 'chrome.exe'),
 ];
+export async function machineLocations() {
+  const defaultStore = path.join(home, '.ollama', 'models');
+  const locations = {
+    ollamaStore: defaultStore,
+    ollamaActualStore: defaultStore,
+    huggingFaceSharedCache: path.join(home, '.cache', 'huggingface'),
+    playwrightSharedCache: path.join(localAppData, 'ms-playwright'),
+    disposableProfilesAndTests: tempRoot,
+    spikeCache: fileURLToPath(new URL('.cache', import.meta.url)),
+    spikeDependencies: fileURLToPath(new URL('node_modules', import.meta.url)),
+    spikeBuild: fileURLToPath(new URL('dist', import.meta.url)),
+    spikeResults: fileURLToPath(new URL('results', import.meta.url)),
+  };
+  // Discover a nondefault store through local model metadata, never environment keys or config.
+  try {
+    const response = await fetch('http://127.0.0.1:11434/api/show', { method: 'POST', redirect: 'error',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen3:0.6b' }),
+      signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`Ollama metadata HTTP ${response.status}`);
+    const show = await response.json();
+    const from = show.modelfile?.match(/^FROM\s+(.+)$/m)?.[1].trim().replace(/^"(.*)"$/, '$1');
+    if (!from || !path.isAbsolute(from) || path.basename(path.dirname(from)) !== 'blobs') {
+      throw new Error('Ollama metadata did not identify a local model-store blob');
+    }
+    locations.ollamaActualStore = path.dirname(path.dirname(from));
+  } catch (error) {
+    console.error(`Ollama store discovery unavailable; reporting the default location: ${error.message}`);
+  }
+  return locations;
+}
 export async function bytes(directory) {
   let total = 0, files = 0;
   try {
@@ -36,17 +70,7 @@ export async function installedChrome() {
   return found;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const locations = {
-    ollamaStore: 'C:/Users/denni/.ollama/models',
-    ollamaActualStore: 'D:/AI/Ollama/models',
-    huggingFaceSharedCache: 'C:/Users/denni/.cache/huggingface',
-    playwrightSharedCache: 'C:/Users/denni/AppData/Local/ms-playwright',
-    disposableProfilesAndTests: tempRoot,
-    spikeCache: fileURLToPath(new URL('.cache', import.meta.url)),
-    spikeDependencies: fileURLToPath(new URL('node_modules', import.meta.url)),
-    spikeBuild: fileURLToPath(new URL('dist', import.meta.url)),
-    spikeResults: fileURLToPath(new URL('results', import.meta.url)),
-  };
+  const locations = await machineLocations();
   console.log(JSON.stringify({ observedAt: new Date().toISOString(), locations: Object.fromEntries(
     await Promise.all(Object.entries(locations).map(async ([name, directory]) => [name, { directory, ...await bytes(directory) }]))),
     installedChrome: await installedChrome() }, null, 2));

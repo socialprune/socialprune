@@ -1,0 +1,87 @@
+[
+  {
+    "media_owner": "synth_grÃ¼n_ð±",
+    "string_map_data": {
+      "Comment": {
+        "value": "GrÃ¼Ãe aus dem erfundenen Garten ð¿",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920000
+      },
+      "Media Owner": {
+        "value": "synth_grÃ¼n_ð±",
+        "timestamp": 0
+      }
+    }
+  },
+  {
+    "media_owner": "synth_native",
+    "string_map_data": {
+      "Comment": {
+        "value": "ä",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920001
+      },
+      "Media Owner": {
+        "value": "synth_native",
+        "timestamp": 0
+      }
+    }
+  },
+  {
+    "media_owner": "synth_emoji",
+    "string_map_data": {
+      "Comment": {
+        "value": "Correct emoji 🐸",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920002
+      },
+      "Media Owner": {
+        "value": "synth_emoji",
+        "timestamp": 0
+      }
+    }
+  },
+  {
+    "media_owner": "synth_mixed",
+    "string_map_data": {
+      "Comment": {
+        "value": "Mangled segment Ã¤ plus native ä",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920003
+      },
+      "Media Owner": {
+        "value": "synth_mixed",
+        "timestamp": 0
+      }
+    }
+  },
+  {
+    "media_owner": "synth_plain",
+    "string_map_data": {
+      "Comment": {
+        "value": "Suspicious Ã without valid bytes",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920004
+      },
+      "Media Owner": {
+        "value": "synth_plain",
+        "timestamp": 0
+      }
+    }
+  }
+]

@@ -1,0 +1,72 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:20afdc8d31cb67f5ff80f7b5224f16b2d8748e9fe9ec9883a9c54c3817a5feec",
+          "handle": null
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Account handle unavailable; using an archive-specific key."
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:5259ef5aa20d6631bca1a150ab0e8db01d9bd68c21bab9e8b329e44ebe0cc805",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:20afdc8d31cb67f5ff80f7b5224f16b2d8748e9fe9ec9883a9c54c3817a5feec",
+        "handle": null
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-anonymous-export",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

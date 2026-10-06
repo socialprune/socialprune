@@ -1,0 +1,8 @@
+{
+  "id": "invalid-row",
+  "platform": "instagram",
+  "description": "Wrong typed text in one row is unreadable while other rows and reels continue; invalid timestamp/alias inputs are also unit-tested.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

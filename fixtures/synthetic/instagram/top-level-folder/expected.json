@@ -1,0 +1,102 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 2,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "instagram-synth_fern-2026-07-31-a1b2c3/your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "found",
+          "files": [
+            "instagram-synth_fern-2026-07-31-a1b2c3/your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 1,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:9458b31a368a29d3fa3f30154ee2624755d336f186853d35a5ea3baf15b9fef4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "instagram-synth_fern-2026-07-31-a1b2c3/your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:00ffef9aa9fa8a0f4e5da6883f52d400a907b99ca8d47337122b5d6493cb8cb2",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented reel comment.",
+      "createdAt": "2025-07-31T00:00:02.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_reed"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "instagram-synth_fern-2026-07-31-a1b2c3/your_instagram_activity/comments/reels_comments.json",
+        "index": 0
+      }
+    }
+  ]
+}

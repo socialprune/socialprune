@@ -1,0 +1,160 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 4,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json",
+            "your_instagram_activity/comments/post_comments_2.json",
+            "your_instagram_activity/comments/post_comments_10.json"
+          ],
+          "count": 3,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 1,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:9458b31a368a29d3fa3f30154ee2624755d336f186853d35a5ea3baf15b9fef4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:c0e75d307073964493652a224805305f063542788dccd77c5f05996845888afb",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented orbit photo comment.",
+      "createdAt": "2025-07-31T00:00:01.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_orbit"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_2.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:6d6e07a33e3688fd72c7462a04a70b6705e0e701fdb5e4bda2bb5fed1f741165",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented tenth part.",
+      "createdAt": "2025-07-31T00:00:10.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_10.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:00ffef9aa9fa8a0f4e5da6883f52d400a907b99ca8d47337122b5d6493cb8cb2",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented reel comment.",
+      "createdAt": "2025-07-31T00:00:02.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_reed"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 0
+      }
+    }
+  ]
+}

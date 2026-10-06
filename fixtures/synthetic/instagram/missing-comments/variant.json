@@ -1,0 +1,8 @@
+{
+  "id": "missing-comments",
+  "platform": "instagram",
+  "description": "Profile marker identifies Instagram even when both comment categories are absent; no personal read when archive name supplies handle.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

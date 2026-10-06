@@ -1,0 +1,72 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-legacy",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "comments.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:9fbfe5398e981beb6bbab01a8e0fc6ca98d4e46d6a4946441e7cd96d54407abe",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Invented legacy comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_old"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "comments.json",
+        "index": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "split-overlap",
+  "platform": "instagram",
+  "description": "Two named parts of one account share one comment; per-archive ordinal IDs union overlap; exact _1/_2 token suffix is an assumption for S4.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3_1",
+    "instagram-synth_fern-2026-07-31-a1b2c3_2"
+  ]
+}

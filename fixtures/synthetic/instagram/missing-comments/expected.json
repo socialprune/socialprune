@@ -1,0 +1,41 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 0,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": []
+}

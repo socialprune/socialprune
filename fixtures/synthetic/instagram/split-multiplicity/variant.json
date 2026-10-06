@@ -1,0 +1,9 @@
+{
+  "id": "split-multiplicity",
+  "platform": "instagram",
+  "description": "Overlap preserves maximum observed multiplicity, not one item per fingerprint; first part has two equal comments and second has three.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3_1",
+    "instagram-synth_fern-2026-07-31-a1b2c3_2"
+  ]
+}

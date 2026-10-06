@@ -1,0 +1,74 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:a6c3444f2fa399defa53de50180d0fae141ecc952ec33abbbe9a043806bb5546",
+          "handle": null
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "empty",
+          "files": [
+            "personal_information/personal_information/personal_information.json"
+          ],
+          "count": 0,
+          "message": "Account handle unavailable; using an archive-specific key."
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:dae8d65802e84bb946f4a222b6afc46652515bff9c4d9456fb32dff3661710e4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:a6c3444f2fa399defa53de50180d0fae141ecc952ec33abbbe9a043806bb5546",
+        "handle": null
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-empty-profile",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

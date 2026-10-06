@@ -1,0 +1,74 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "empty",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 0,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:2ee9eb8ca7ace9b1defce07403323902f4777d5a1347288e7b5aac7a9086fb2f",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Erfundener deutscher Kommentar.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moos"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

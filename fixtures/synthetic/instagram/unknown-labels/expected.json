@@ -1,0 +1,74 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "empty",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 0,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:079ac15c6bf6bf56f24a7e382242a56c2face094bc95460c4305e0d8e2b64621",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Unknown label comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

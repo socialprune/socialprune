@@ -1,0 +1,74 @@
+{
+  "status": "partial",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:877e3bc26084a18e6a55de17753d8a744802e43149dc9cbff32d86c615f44758",
+          "handle": null
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "unreadable",
+          "files": [
+            "personal_information/personal_information/personal_information.json"
+          ],
+          "count": 0,
+          "message": "Account username metadata could not be read; using an archive-specific key."
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:9b4fb7f9516c3a865ee2a028628b92b5863d4a6b61cd8250dc08949ed8b1a71a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:877e3bc26084a18e6a55de17753d8a744802e43149dc9cbff32d86c615f44758",
+        "handle": null
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-broken-profile",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

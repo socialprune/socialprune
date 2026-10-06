@@ -1,0 +1,8 @@
+{
+  "id": "top-level-folder",
+  "platform": "instagram",
+  "description": "Single enclosing folder matches picnic archive-root description; provenance keeps it but item IDs do not depend on it.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_fern",
+          "handle": "synth_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 5,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 5,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "empty",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 0,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:66c3edb1c774cb7889bb7e909978be22c458881ee2f8b9f99fa05525ed9bf098",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Grüße aus dem erfundenen Garten 🌿",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_grün_🌱"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:a21f9aaf984dba06e742a2f17314e9f624593191ce4b1f8f1f1be4af058b03b9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "ä",
+      "createdAt": "2025-07-31T00:00:01.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_native"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 1
+      }
+    },
+    {
+      "id": "instagram:efa463f6d642cf87062b0fe092bbbe084d864bd3877de0694f875a96e9d1b427",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Correct emoji 🐸",
+      "createdAt": "2025-07-31T00:00:02.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_emoji"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 2
+      }
+    },
+    {
+      "id": "instagram:ac7b05eee96f06c9d89110a1eb0797b44d118d09d53fb5db5a065d4cfb7177ac",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Mangled segment Ã¤ plus native ä",
+      "createdAt": "2025-07-31T00:00:03.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_mixed"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 3
+      }
+    },
+    {
+      "id": "instagram:2670206b411f5e366300b0964bc2aeff2bb607a145dd3f49831c090d066ddd7d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_fern",
+        "handle": "synth_fern"
+      },
+      "kind": "comment",
+      "text": "Suspicious Ã without valid bytes",
+      "createdAt": "2025-07-31T00:00:04.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_plain"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_fern-2026-07-31-a1b2c3",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 4
+      }
+    }
+  ]
+}

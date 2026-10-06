@@ -1,0 +1,8 @@
+{
+  "id": "account-pre2022",
+  "platform": "instagram",
+  "description": "HPI sources this account folder before the Feb-Aug 2022 rename; root comment folder itself remains a compatibility assumption.",
+  "archives": [
+    "instagram-account-pre2022-fallback"
+  ]
+}

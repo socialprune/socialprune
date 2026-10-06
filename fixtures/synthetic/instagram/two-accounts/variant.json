@@ -1,0 +1,9 @@
+{
+  "id": "two-accounts",
+  "platform": "instagram",
+  "description": "Two invented archive-name handles remain distinct accounts even when comment fields are identical; same format in both ZIPs.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3",
+    "instagram-synth_orbit-2026-07-31-d4e5f6"
+  ]
+}

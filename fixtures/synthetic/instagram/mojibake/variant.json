@@ -1,0 +1,8 @@
+{
+  "id": "mojibake",
+  "platform": "instagram",
+  "description": "Manufactured Latin-1 byte text and owner strings with umlauts and emoji next to native Unicode, mixed encodings and suspicious non-UTF-8 bytes; repair rule sourced from Robin parser.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

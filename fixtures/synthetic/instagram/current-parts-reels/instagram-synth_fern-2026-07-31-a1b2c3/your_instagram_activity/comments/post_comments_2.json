@@ -1,0 +1,19 @@
+[
+  {
+    "media_owner": "synth_orbit",
+    "string_map_data": {
+      "Comment": {
+        "value": "Invented orbit photo comment.",
+        "timestamp": 0
+      },
+      "Time": {
+        "value": "",
+        "timestamp": 1753920001
+      },
+      "Media Owner": {
+        "value": "synth_orbit",
+        "timestamp": 0
+      }
+    }
+  }
+]

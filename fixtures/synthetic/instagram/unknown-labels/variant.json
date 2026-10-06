@@ -1,0 +1,8 @@
+{
+  "id": "unknown-labels",
+  "platform": "instagram",
+  "description": "Unknown text/time labels parse only with one remaining typed string slot and a resolved owner; this fallback is a compatibility assumption.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

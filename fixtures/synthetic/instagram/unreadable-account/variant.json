@@ -1,0 +1,8 @@
+{
+  "id": "unreadable-account",
+  "platform": "instagram",
+  "description": "Malformed profile metadata yields partial status and archive-key fallback without exposing parse errors or profile content.",
+  "archives": [
+    "instagram-broken-profile"
+  ]
+}

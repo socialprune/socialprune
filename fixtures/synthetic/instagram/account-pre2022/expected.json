@@ -1,0 +1,74 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_history",
+          "handle": "synth_history"
+        }
+      ],
+      "variant": "json-root-comments",
+      "exportCreatedAt": null,
+      "itemCount": 1,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "account_information/personal_information.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "comments/post_comments_1.json"
+          ],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "missing",
+          "files": [],
+          "count": 0,
+          "message": "Comment category is not present in this export."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:850c12a276283de5fb28e79aea6975b3453f1389a56b54ab2d5862816c83b170",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_history",
+        "handle": "synth_history"
+      },
+      "kind": "comment",
+      "text": "Invented fern photo comment.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_moss"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-account-pre2022-fallback",
+        "file": "comments/post_comments_1.json",
+        "index": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "media_comments": [
+    [
+      "2025-07-31T00:00:00+00:00",
+      "Invented legacy comment.",
+      "synth_old"
+    ]
+  ],
+  "story_comments": [
+    [
+      "2025-07-31T00:00:00+00:00",
+      "STORY_ONLY_MARKER",
+      "synth_story"
+    ]
+  ],
+  "live_comments": []
+}

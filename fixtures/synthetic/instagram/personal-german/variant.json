@@ -1,0 +1,8 @@
+{
+  "id": "personal-german",
+  "platform": "instagram",
+  "description": "Benutzername alias sourced from Robin parser; profile fallback never guesses from Email, Name or phone field types.",
+  "archives": [
+    "instagram-profile-german"
+  ]
+}

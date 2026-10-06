@@ -1,0 +1,8 @@
+{
+  "id": "personal-fallback",
+  "platform": "instagram",
+  "description": "Unknown archive name falls back only to profile_user Username; nested path sourced from picnic and HPI; invented email, phone, name and bio never leave input.",
+  "archives": [
+    "instagram-profile-fallback"
+  ]
+}

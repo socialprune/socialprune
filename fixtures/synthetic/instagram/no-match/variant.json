@@ -1,0 +1,8 @@
+{
+  "id": "no-match",
+  "platform": "instagram",
+  "description": "Unrelated JSON archive with a generic root comments.json must not be mistaken for Instagram or read.",
+  "archives": [
+    "unrelated-synthetic-archive"
+  ]
+}

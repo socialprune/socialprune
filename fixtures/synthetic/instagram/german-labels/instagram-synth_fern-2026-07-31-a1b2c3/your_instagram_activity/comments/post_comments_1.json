@@ -1,0 +1,18 @@
+[
+  {
+    "string_map_data": {
+      "Kommentar": {
+        "value": "Erfundener deutscher Kommentar.",
+        "timestamp": 0
+      },
+      "Zeit": {
+        "value": "",
+        "timestamp": 1753920000
+      },
+      "Medieninhaber": {
+        "value": "synth_moos",
+        "timestamp": 0
+      }
+    }
+  }
+]

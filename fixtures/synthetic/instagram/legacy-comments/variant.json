@@ -1,0 +1,8 @@
+{
+  "id": "legacy-comments",
+  "platform": "instagram",
+  "description": "Pre-envelope root comments.json media_comments triples sourced from MIT instagram_json_viewer; explicit-offset ISO dates are a tested assumption; story/live arrays are ignored.",
+  "archives": [
+    "instagram-synth_fern-2026-07-31-a1b2c3"
+  ]
+}

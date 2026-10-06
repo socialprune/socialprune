@@ -1,0 +1,8 @@
+{
+  "id": "unknown-account",
+  "platform": "instagram",
+  "description": "Missing account metadata gets archive-specific SHA-256 key and null handle, never content-derived identity.",
+  "archives": [
+    "instagram-anonymous-export"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "empty-account",
+  "platform": "instagram",
+  "description": "Empty profile_user array is empty account metadata, distinct from missing and malformed; comments still import under archive key.",
+  "archives": [
+    "instagram-empty-profile"
+  ]
+}

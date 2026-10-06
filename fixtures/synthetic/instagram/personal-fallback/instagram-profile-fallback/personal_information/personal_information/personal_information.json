@@ -1,0 +1,23 @@
+{
+  "profile_user": [
+    {
+      "string_map_data": {
+        "Email": {
+          "value": "synth_profile_only@example.com"
+        },
+        "Phone Number": {
+          "value": "+15555550123"
+        },
+        "Username": {
+          "value": "synth_profile"
+        },
+        "Name": {
+          "value": "Synthetic Profile Only"
+        },
+        "Bio": {
+          "value": "PROFILE_ONLY_MARKER"
+        }
+      }
+    }
+  ]
+}

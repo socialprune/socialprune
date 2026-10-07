@@ -9,6 +9,15 @@ const executionRules = {
   'no-script-url': 'error',
 };
 
+const restrictedProperties = [
+  {
+    object: 'process',
+    property: 'env',
+    message:
+      'AGENTS.md hard constraint 2: keys never come from the environment. Read only a key file the user explicitly names.',
+  },
+];
+
 export default defineConfig([
   {
     ignores: [
@@ -51,15 +60,21 @@ export default defineConfig([
       'apps/**/*.{js,mjs,cjs,ts,tsx}',
       'packages/**/*.{js,mjs,cjs,ts,tsx}',
     ],
+    ignores: ['apps/*/playwright*.config.ts'],
+    rules: {
+      'no-restricted-properties': ['error', ...restrictedProperties],
+    },
+  },
+  {
+    // Runner ports only: these configs run in Node and are never bundled.
+    // No key, token or credential may be read here.
+    files: ['apps/*/playwright*.config.ts'],
     rules: {
       'no-restricted-properties': [
         'error',
-        {
-          object: 'process',
-          property: 'env',
-          message:
-            'AGENTS.md hard constraint 2: keys never come from the environment. Read only a key file the user explicitly names.',
-        },
+        ...restrictedProperties.filter(
+          ({ object, property }) => object !== 'process' || property !== 'env',
+        ),
       ],
     },
   },

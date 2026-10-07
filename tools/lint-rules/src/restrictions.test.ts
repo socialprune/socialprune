@@ -36,6 +36,77 @@ async function restricted(code: string, path: string): Promise<string[]> {
     );
 }
 
+async function propertyRestrictions(path: string): Promise<unknown[]> {
+  const config: unknown = await eslint.calculateConfigForFile(
+    resolve(root, path),
+  );
+  if (
+    typeof config !== 'object' ||
+    config === null ||
+    !('rules' in config) ||
+    typeof config.rules !== 'object' ||
+    config.rules === null ||
+    !('no-restricted-properties' in config.rules)
+  ) {
+    throw new Error('Property restriction config is missing.');
+  }
+  const rule: unknown = config.rules['no-restricted-properties'];
+  if (!Array.isArray(rule)) {
+    throw new Error('Property restriction options are missing.');
+  }
+  return rule as unknown[];
+}
+
+describe('Node-only Playwright runner environment exception', () => {
+  const source = 'export const port = process.env.SP_E2E_PORT;';
+
+  it.each([
+    'apps/web/playwright.config.ts',
+    'apps/web/playwright.probe.config.ts',
+    'apps/web/playwright.update.config.ts',
+    'apps/cli/playwright.config.ts',
+  ])('allows runner ports only in %s', async (path) => {
+    expect(await restricted(source, path)).toEqual([]);
+  });
+
+  it.each([
+    'apps/web/src/main.tsx',
+    'apps/web/e2e/helpers.ts',
+    'apps/web/scripts/build-check.ts',
+    'apps/web/tooling/manifest.ts',
+    'apps/cli/src/main.ts',
+    'packages/core/src/index.ts',
+    'apps/web/src/playwright.config.ts',
+    'apps/web/e2e/playwright.config.ts',
+    'packages/core/playwright.config.ts',
+  ])('retains the environment ban in %s', async (path) => {
+    expect(await restricted(source, path)).toContain(
+      'no-restricted-properties',
+    );
+  });
+
+  it('removes only the environment entry from restricted properties', async () => {
+    const ordinaryRules = await propertyRestrictions('apps/web/src/main.tsx');
+    const runnerRules = await propertyRestrictions(
+      'apps/web/playwright.config.ts',
+    );
+    expect(runnerRules).toEqual([
+      ordinaryRules[0],
+      ...ordinaryRules
+        .slice(1)
+        .filter(
+          (entry) =>
+            typeof entry !== 'object' ||
+            entry === null ||
+            !('object' in entry) ||
+            !('property' in entry) ||
+            entry.object !== 'process' ||
+            entry.property !== 'env',
+        ),
+    ]);
+  });
+});
+
 describe('ADR-004 archive DOM boundary', () => {
   it.each([
     'export const view = <div dangerouslySetInnerHTML={{__html:"text"}} />;',

@@ -2,7 +2,9 @@
 
 SocialPrune helps people review and clean up their old posts and comments on X and Instagram. It reads the platform's official data export, flags risky or pointless items with rules and an optional local AI model, explains each flag in one sentence, and lets a person decide what goes. The final delete click always happens on the platform, by that person.
 
-**Status on 2026-10-06.** Phase 1 is built: workspace, data guard and CI, the core data model with JSON schemas, a synthetic fixture generator, the X and Instagram parsers, streaming ZIP import in a web worker, and the `structure` command. Gate G1 is met: the evidence is in `docs/evidence/G1.md`, and an independent review accepted it at commit `feb6748`. Spikes S1 and S3 are recorded in `docs/spikes/`. Spike S2 has its unlabelled evaluation set and harness and waits for the maintainer's labels. Nothing usable for end users exists yet; the review UI comes in Phase 2.
+**Status on 2026-10-06.** Phase 1 is built: workspace, data guard and CI, the core data model with JSON schemas, a synthetic fixture generator, the X and Instagram parsers, streaming ZIP import in a web worker, and the `structure` command. Gate G1 is met: the evidence is in `docs/evidence/G1.md`, and an independent review accepted it at commit `feb6748`. Spikes S1 and S3 are recorded in `docs/spikes/`. Spike S2 has its unlabelled evaluation set and harness and waits for the maintainer's labels.
+
+**Phase 2, status on 2026-10-07.** The architecture is proposed in `docs/architecture/` and `docs/design/`: 22 decision records, all `Proposed` until the maintainer approves them. Built so far: the workspace v2 model with its store port, review and label services, queries and streaming backup in `packages/core`; the offline web shell with its policy layers and worker gate, and the workspace worker on IndexedDB in `apps/web`; the CLI on Stricli with one JSON envelope per call; and the demo export under `fixtures/synthetic/demo/`. The review UI, the CLI workspace commands, the local review server and the Agent Skill do not exist yet, so nothing is usable for end users.
 
 The maintainer's working plan is `PLAN.md` in the repository root. It is written in German, kept out of Git on purpose, and exists only on the maintainer's machine. When it is present, read it before planning work. It holds the decisions, phases, gates and spikes.
 
@@ -35,9 +37,9 @@ Phase 1 has built `packages/core`, both adapters, `tools/`, `fixtures/synthetic/
 
 A new platform is a new adapter package and must not need changes in `packages/core`.
 
-The stack is TypeScript, pnpm workspaces, Vite with React, zod for schemas, zip.js in a web worker, Vitest, Playwright against our own app only, and GitHub Actions. TanStack Virtual, idb and vite-plugin-pwa follow with the review UI. Every dependency is pinned to an exact version.
+The stack is TypeScript, pnpm workspaces, Vite with React, zod for schemas, zip.js in a web worker, IndexedDB through idb, an app-owned service worker for the offline shell, Base UI and CSS Modules for components and styles, React Intl for the German and English catalogs, Stricli for the CLI, Vitest, Playwright against our own app only, and GitHub Actions. TanStack Virtual follows with the review UI. Every dependency is pinned to an exact version, and `pnpm licenses:check` admits only the licenses that `docs/architecture/adrs/ADR-002-dependency-licenses.md` lists.
 
-Packages run as TypeScript source through Node 24 type stripping, without a build step. Relative imports carry the `.ts` extension, and workspace packages export `./src/index.ts`. `tsc` is TypeScript 7. typescript-eslint still needs the TypeScript 6 API, so the `typescript` package name is an alias for `@typescript/typescript6`. Vite's optional Lightning CSS (MPL-2.0) is removed by a pnpm override, and CSS goes through PostCSS and esbuild instead.
+Packages run as TypeScript source through Node 24 type stripping, without a build step. Relative imports carry the `.ts` extension, and workspace packages export `./src/index.ts`. `tsc` is TypeScript 7. typescript-eslint still needs the TypeScript 6 API, so the `typescript` package name is an alias for `@typescript/typescript6`. Vite 8 declares Lightning CSS (MPL-2.0) as a dependency; a pnpm override removes it, and CSS goes through PostCSS and esbuild instead.
 
 ## Commands
 
@@ -57,12 +59,14 @@ Node 24 and pnpm 10.33.0 (`packageManager` in `package.json`).
 | synthetic fixtures, regenerate and drift check, optionally one platform | `pnpm fixtures:generate`, `pnpm fixtures:check`, add `--platform x` or `--platform instagram` |
 | large synthetic archive | `pnpm fixtures:large --platform x --count 100000 --out <file.zip> [--seed <n>] [--zip64]` |
 | JSON schemas, regenerate and drift check | `pnpm schemas:generate`, `pnpm schemas:check` |
-| browser tests (once before: `pnpm --filter @socialprune/web exec playwright install chromium`) | `pnpm test:e2e` |
-| Gate G1 measurements (100,000 tweets, ZIP64 over 4 GiB, abort), Windows only, writes about 4.7 GB to temp and removes it | `pnpm measure:g1` |
+| browser tests in Chromium (once before: `pnpm --filter @socialprune/web exec playwright install chromium`) | `pnpm test:e2e` |
+| browser tests in Chromium, Firefox and WebKit with the CSP positive controls and the production build check, as CI runs them (once before: `pnpm --filter @socialprune/web exec playwright install chromium firefox webkit`) | `pnpm test:e2e:all` |
+| other test server ports, when 4180, 4181 or 4183 are taken (the offline tests also use 4182) | set `SP_E2E_PORT`, `SP_E2E_PROBE_PORT`, `SP_E2E_DEV_PORT` |
+| Gate G1 measurements (100,000 tweets, ZIP64 over 4 GiB, abort), Windows only, writes about 4.7 GB to temp and removes it | `pnpm measure:g1`, currently broken: it drives the page import client that the workspace worker replaced and exits 1 until it is ported to the new import path or retired |
 | CLI | `pnpm socialprune --help` |
 | key paths and types of an export, without values (`-s` stops pnpm from printing the command line, which contains the path) | `pnpm -s socialprune structure <zip or folder...> [--json]` |
 
-CI (`.github/workflows/ci.yml`) runs install, guard, format check, lint, typecheck, tests, fixture check, schema check, build and the browser tests on every push to `main` and every pull request. Prettier skips Markdown, so prose keeps its exact wording.
+CI (`.github/workflows/ci.yml`) runs two jobs on every push to `main` and every pull request: checks (install, guard, license check, copy check, catalog check, format check, lint, typecheck, unit tests, fixture check, schema check, build) and e2e (`pnpm test:e2e:all` in Chromium, Firefox and WebKit). Prettier skips Markdown, so prose keeps its exact wording.
 
 Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `fixture-gen`, `data-guard`).
 

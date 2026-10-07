@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./node": "./src/node/index.ts"
+    "./node": "./src/node/index.ts",
+    "./browser-init": "./src/browser-init.ts",
+    "./guide/types": "./src/guide/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

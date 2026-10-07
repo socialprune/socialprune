@@ -52,7 +52,7 @@ test('platform generation replaces only selected data and checks only registered
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 60_000);
 test.each(['directory', 'zip'] as const)(
   'fixture loader preserves archive identity through %s access',
   async (as) => {

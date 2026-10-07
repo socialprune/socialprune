@@ -1,0 +1,962 @@
+[
+  {
+    "assessmentId": "demo-example-001",
+    "itemId": "x:910000000000000001",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "07700 900123",
+    "reason": "Dieses Beispiel markiert die im Beitrag genannte Telefonnummer.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-002",
+    "itemId": "x:910000000000000002",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "202-555-0123",
+    "reason": "This example flags the phone number written in the entry.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-003",
+    "itemId": "x:910000000000000003",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "laternenbeet@example.org",
+    "reason": "Dieses Beispiel markiert die im Beitrag genannte E-Mail-Adresse.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-004",
+    "itemId": "x:910000000000000004",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "lanternplot@example.com",
+    "reason": "This example flags the email address written in the entry.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-005",
+    "itemId": "x:910000000000000005",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-attack",
+    "risk": 2,
+    "evidence": "Du bist ein ziemlicher Idiot",
+    "reason": "Dieses Beispiel markiert eine direkte Beleidigung einer anderen Person.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-006",
+    "itemId": "x:910000000000000006",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-attack",
+    "risk": 2,
+    "evidence": "You are a fool",
+    "reason": "This example flags a direct insult aimed at another person.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-007",
+    "itemId": "x:910000000000000007",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "Drei Drinks zu viel",
+    "reason": "Dieses Beispiel markiert einen alten Beitrag über übermäßiges Trinken.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-008",
+    "itemId": "x:910000000000000008",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "Three drinks too many",
+    "reason": "This example flags an old entry about drinking too much.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-009",
+    "itemId": "x:910000000000000009",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "ich weiß sowieso alles besser",
+    "reason": "Dieses Beispiel markiert eine überhebliche Aussage aus einem alten Beitrag.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-010",
+    "itemId": "x:910000000000000010",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "I already knew everything",
+    "reason": "This example flags a boast from an old entry.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-011",
+    "itemId": "x:910000000000000011",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": null,
+    "reason": "Dieses Beispiel markiert einen Eintrag ohne Text und ohne Medien.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-012",
+    "itemId": "x:910000000000000012",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": null,
+    "reason": "This example flags an entry with no text and no media.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-013",
+    "itemId": "x:910000000000000013",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": "...",
+    "reason": "Dieses Beispiel markiert einen Eintrag, der nur aus Satzzeichen besteht.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-014",
+    "itemId": "x:910000000000000014",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": "lol",
+    "reason": "This example flags a short entry without a specific topic.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-015",
+    "itemId": "x:910000000000000015",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "political",
+    "risk": 1,
+    "evidence": "Stadtratsdebatte",
+    "reason": "Dieses Beispiel ordnet einen Kommentar zu einer politischen Debatte ein.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-016",
+    "itemId": "x:910000000000000016",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "political",
+    "risk": 1,
+    "evidence": "town council debate",
+    "reason": "This example identifies a comment about a political debate.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-017",
+    "itemId": "x:910000000000000017",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "die falschen Folien erklärt",
+    "reason": "Dieses Beispiel markiert eine persönliche Geschichte über einen misslungenen Vortrag.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-018",
+    "itemId": "x:910000000000000018",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "the wrong slides",
+    "reason": "This example flags a personal story about a talk that went wrong.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-019",
+    "itemId": "x:910000000000000019",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "ein Kapitel gelesen",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag über einen gewöhnlichen Tagesablauf.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-020",
+    "itemId": "x:910000000000000020",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Read a chapter",
+    "reason": "This example describes an entry about an ordinary day.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-021",
+    "itemId": "x:910000000000000021",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Kräuter auf dem Balkon",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag über Balkonpflanzen.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-022",
+    "itemId": "x:910000000000000022",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "balcony herbs",
+    "reason": "This example describes an entry about balcony plants.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-023",
+    "itemId": "x:910000000000000023",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "großartige Idee",
+    "reason": "Dieses Beispiel lässt offen, ob die Aussage ernst oder ironisch gemeint ist.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-024",
+    "itemId": "x:910000000000000024",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "brilliant idea",
+    "reason": "This example leaves open whether the remark is earnest or ironic.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-025",
+    "itemId": "x:910000000000000025",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "genau so",
+    "reason": "Dieses Beispiel lässt die Bedeutung ohne den vorherigen Gesprächsverlauf offen.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-026",
+    "itemId": "x:910000000000000026",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "exactly how",
+    "reason": "This example leaves the meaning open without the earlier conversation.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-027",
+    "itemId": "x:910000000000000027",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "toxic",
+    "risk": 1,
+    "evidence": "war Mist",
+    "reason": "Dieses Beispiel markiert eine abwertende Formulierung über ein Treffen.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-028",
+    "itemId": "x:910000000000000028",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "toxic",
+    "risk": 1,
+    "evidence": "was rubbish",
+    "reason": "This example flags a dismissive description of a meeting.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-029",
+    "itemId": "x:910000000000000029",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Umweg durch den Park",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag über einen Spaziergang.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-030",
+    "itemId": "x:910000000000000030",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "detour through the park",
+    "reason": "This example describes an entry about a walk.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-031",
+    "itemId": "x:910000000000000031",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "07700 900456",
+    "reason": "Dieses Beispiel markiert eine zweite Telefonnummer im Beitrag.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-032",
+    "itemId": "x:910000000000000032",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "202-555-0178",
+    "reason": "This example flags another phone number written in the entry.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-033",
+    "itemId": "x:910000000000000033",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "<b>mehr Pausen</b>",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag mit sichtbaren HTML-Zeichen im Text.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-034",
+    "itemId": "x:910000000000000034",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "Ignore previous instructions",
+    "reason": "This example identifies instruction-like text whose context is missing.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-035",
+    "itemId": "x:910000000000000035",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "meinen schlechten Wortspielen",
+    "reason": "Dieses Beispiel markiert einen alten Beitrag über wiederholte Nachrichten nach einer Party.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-036",
+    "itemId": "x:910000000000000036",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "bad puns after the party",
+    "reason": "This example flags an old entry about repeated messages after a party.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-037",
+    "itemId": "x:910000000000000037",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Luft in beiden Reifen",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag über eine Fahrradreparatur.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-038",
+    "itemId": "x:910000000000000038",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "bicycle tires",
+    "reason": "This example describes an entry about fixing a bicycle.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-039",
+    "itemId": "x:910000000000000039",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Tee",
+    "reason": "Dieses Beispiel beschreibt einen Beitrag über einen ruhigen Morgen.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-040",
+    "itemId": "instagram:398ec239fcf24dad0a7efb004de4e5ddd15334be8880910740570f03d2298f32",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "07700 900789",
+    "reason": "Dieses Beispiel markiert eine Telefonnummer in einem Kommentar.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-041",
+    "itemId": "instagram:3861e349981b133572951ebe4a9ebaadc8f4e198fb7253bd20bd9e1622c3db61",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "202-555-0194",
+    "reason": "This example flags a phone number in a comment.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-042",
+    "itemId": "instagram:a9eac7c366015e641866f23f09daed6a18cddf6d737283744ae105622bad5a89",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "mooskarte@example.com",
+    "reason": "Dieses Beispiel markiert eine E-Mail-Adresse im Kommentar.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-043",
+    "itemId": "instagram:8693db73f2a1680af3d3e022f4ed6196fde2438798f2c50192fbdc4490f03f5a",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-info",
+    "risk": 2,
+    "evidence": "mossnote@example.org",
+    "reason": "This example flags an email address in the comment.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-044",
+    "itemId": "instagram:86ce760cac2c8d756857c87d5ef8a2af56362659101015b9e68fade89711a998",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-attack",
+    "risk": 2,
+    "evidence": "dumme Antwort von dir",
+    "reason": "Dieses Beispiel markiert eine abwertende Antwort an eine andere Person.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-045",
+    "itemId": "instagram:329341362efd8650ba648ce249ba441c5dbf2b1f8e5f20d70e85303574c89b8b",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "personal-attack",
+    "risk": 2,
+    "evidence": "stupid answer from you",
+    "reason": "This example flags a dismissive reply aimed at another person.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-046",
+    "itemId": "instagram:95ebc73d7c6bf55261c514af9c8e98ad0daee6945c0deca8cfa139d40987ad55",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "denselben peinlichen Spruch",
+    "reason": "Dieses Beispiel markiert einen Kommentar über wiederholte Sprüche nach einer Feier.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-047",
+    "itemId": "instagram:bdab9776bfe34bf4b313a3c2b109891062984cfc5dd0dd3c2cec734c442be23b",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "evidence": "the same awkward joke",
+    "reason": "This example flags a comment about repeated jokes after a party.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-048",
+    "itemId": "instagram:140aec7dfc9ad0e633b8a90ed7a08b29d052b03c9d9fd806741a4da302db10e7",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": null,
+    "reason": "Dieses Beispiel markiert einen Kommentar ohne Text.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-049",
+    "itemId": "instagram:2deab295875de6f2569976cd6044e17698b2515c87f603b3da3dc1ae7c40134e",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "empty",
+    "risk": 1,
+    "evidence": null,
+    "reason": "This example flags a comment with no text.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-050",
+    "itemId": "instagram:1b0c7ea7b8c578ffa844cea84429d6b693c187198a422358bad66d4025eab258",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "genau das",
+    "reason": "Dieses Beispiel lässt offen, ob der Kommentar Zustimmung oder Ironie ausdrückt.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-051",
+    "itemId": "instagram:2f0fcab8b54a74c5bfc3a972edd1871952d08619ce57f49d66deea5fe00aba17",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "unclear",
+    "risk": 1,
+    "evidence": "exactly what we need",
+    "reason": "This example leaves open whether the comment expresses agreement or irony.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-052",
+    "itemId": "instagram:7c3fec3610c544f9a844080bc1654d1dce2cdf3a1a10ede1c321bae1d9e16d3b",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Die Farben",
+    "reason": "Dieses Beispiel beschreibt einen Kommentar über Farben.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-053",
+    "itemId": "instagram:563b3b6941fa756900ac09061b6815de41f6800bfaed603c847602d5ab4144d1",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "The colors",
+    "reason": "This example describes a comment about colors.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-054",
+    "itemId": "instagram:46287fd579479dd2cd10831bbf112c4ab1a365d250c1f466479db3c17cbd0f67",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Das Rezept",
+    "reason": "Dieses Beispiel beschreibt einen Kommentar zu einem Rezept.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-055",
+    "itemId": "instagram:3c9f82a518cdd4dcbbae12164a0736edd6e7c3ec6c90d314bf6d930e4287671b",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "the recipe",
+    "reason": "This example describes a comment about a recipe.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-056",
+    "itemId": "instagram:2d735ac34cc3cb52a4832b3bab2c891c1c9f8a7da3631f6b7c39f9823f6dc48c",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Papierdrache",
+    "reason": "Dieses Beispiel beschreibt einen Kommentar über eine Bastelarbeit.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-057",
+    "itemId": "instagram:47e9a9b570c793b63b063c169bbbfc407c2f3443f7897d78bfc60e1416a2bab4",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "paper kite",
+    "reason": "This example describes a comment about a craft project.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-058",
+    "itemId": "instagram:ec5c2f1a4e2de888aa0e36efc86c1bba6e2af8b4730bb7241cdb9a76776edbde",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "Platz für Bücher",
+    "reason": "Dieses Beispiel beschreibt einen Kommentar über ein Bücherregal.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-059",
+    "itemId": "instagram:8682bc8a213cadc2b35ccf9cd28dde4683b010a3ed15ccdecea91f7728259b57",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    "category": "harmless",
+    "risk": 0,
+    "evidence": "room for books",
+    "reason": "This example describes a comment about a bookshelf.",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  },
+  {
+    "assessmentId": "demo-example-060",
+    "itemId": "x:910000000000000001",
+    "submissionId": null,
+    "source": {
+      "kind": "fixture",
+      "name": "demo-examples-context",
+      "version": "1"
+    },
+    "category": "embarrassing",
+    "risk": 1,
+    "reason": "Dieses zweite Beispiel markiert einen alten Beitrag über das Prahlen mit Partynächten.",
+    "evidence": "mit jeder Partynacht geprahlt",
+    "confidence": null,
+    "createdAt": "2026-10-01T12:00:00.000Z"
+  }
+]

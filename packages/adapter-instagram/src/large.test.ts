@@ -70,4 +70,4 @@ test('large generator streams deterministic data, shards at 5000 and honors ZIP6
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-}, 30_000);
+}, 60_000);

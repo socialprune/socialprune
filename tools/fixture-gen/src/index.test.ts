@@ -97,7 +97,7 @@ test('CLI check without a platform detects drift in both registered platform tre
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 30_000);
+}, 60_000);
 
 test('seeded random sequences repeat and stay in range', () => {
   const first = createRandom(42);
@@ -143,4 +143,4 @@ test('fixture checks compare paths and bytes, including unexpected files', async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 60_000);

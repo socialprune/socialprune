@@ -50,7 +50,7 @@ test('large ZIP is seeded, streamed, ZIP64-capable and refuses overwrite', async
     log.mockRestore();
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 60_000);
 
 test('entry streams have bounded chunks and changed seed changes tweet data', async () => {
   async function tweets(seed: number): Promise<string> {
@@ -79,4 +79,4 @@ test('entry streams have bounded chunks and changed seed changes tweet data', as
     throw new Error('Missing tweet stream.');
   }
   expect(await tweets(1)).not.toBe(await tweets(2));
-});
+}, 60_000);

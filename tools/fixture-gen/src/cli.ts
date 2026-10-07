@@ -4,10 +4,14 @@ import * as instagram from './instagram/index.ts';
 import { checkFixtures, generateFixtures } from './tree.ts';
 import { FIXTURES_ROOT } from './load.ts';
 import * as x from './x/index.ts';
+import { checkDemo, generateDemo } from './demo/index.ts';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const generators = { x, instagram };
 const usage = [
   'Usage: fixture-gen generate | check [--platform <id>]',
+  '       fixture-gen demo',
   '       fixture-gen large --platform <id> --count <n> --out <file.zip> [--seed <n>] [--zip64]',
 ].join('\n');
 
@@ -53,6 +57,10 @@ try {
       console.log(`Generated ${variants.length} fixture variant(s).`);
     } else {
       const drift = await checkFixtures(FIXTURES_ROOT, variants, selected);
+      if (!platform && existsSync(join(FIXTURES_ROOT, 'demo'))) {
+        drift.push(...(await checkDemo(FIXTURES_ROOT)));
+        console.log('Demo fixtures checked.');
+      }
       for (const path of drift)
         console.error(`Fixture drift: ${JSON.stringify(path)}`);
       process.exitCode = drift.length > 0 ? 1 : 0;
@@ -60,6 +68,10 @@ try {
         `Fixtures: ${variants.length} variant(s), ${drift.length} changed file(s).`,
       );
     }
+  } else if (command === 'demo') {
+    if (Object.keys(values).length) throw new Error('Unexpected options.');
+    await generateDemo(FIXTURES_ROOT);
+    console.log('Generated invented demo exports and example suggestions.');
   } else if (command === 'large') {
     if (!values.out || !values.count || !platform) {
       throw new Error(

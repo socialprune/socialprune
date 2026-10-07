@@ -1,0 +1,63 @@
+{
+  "format": "socialprune-demo",
+  "version": "1",
+  "kind": "demo",
+  "defaultPlatform": "x",
+  "createdAt": "2026-10-01T12:00:00.000Z",
+  "sources": [
+    {
+      "kind": "fixture",
+      "name": "demo-examples",
+      "version": "1"
+    },
+    {
+      "kind": "fixture",
+      "name": "demo-examples-context",
+      "version": "1"
+    }
+  ],
+  "banner": {
+    "de": "Demo mit erfundenen Beiträgen. Die Vorschläge sind Beispiele für diese Demo. Kein Klassifikator hat sie erzeugt.",
+    "en": "Demo with invented posts. The suggestions are examples written for this demo. No classifier produced them."
+  },
+  "exports": [
+    {
+      "platform": "x",
+      "directory": "x/twitter-2026-10-01-demox",
+      "archive": "twitter-2026-10-01-demox",
+      "account": {
+        "key": "x:770001",
+        "handle": "demo_quokka"
+      },
+      "itemCount": 300
+    },
+    {
+      "platform": "instagram",
+      "directory": "instagram/instagram-demo_fern-2026-10-01-demoig",
+      "archive": "instagram-demo_fern-2026-10-01-demoig",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "itemCount": 120
+    }
+  ],
+  "languages": {
+    "x": {
+      "de": 150,
+      "en": 150
+    },
+    "instagram": {
+      "de": 60,
+      "en": 60
+    }
+  },
+  "counts": {
+    "posts": 300,
+    "comments": 120,
+    "assessments": 60,
+    "unclear": 7,
+    "itemsWithoutAssessment": 361
+  },
+  "twoAssessmentItemId": "x:910000000000000001"
+}

@@ -1,0 +1,3526 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:demo_fern",
+          "handle": "demo_fern"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 120,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 100,
+          "message": null
+        },
+        {
+          "category": "reels-comments",
+          "status": "found",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 20,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:398ec239fcf24dad0a7efb004de4e5ddd15334be8880910740570f03d2298f32",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der erfundene Basteltreff erreicht mich unter 07700 900789.",
+      "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:3861e349981b133572951ebe4a9ebaadc8f4e198fb7253bd20bd9e1622c3db61",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The invented craft group can reach me at 202-555-0194.",
+      "createdAt": "2018-10-10T21:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 1
+      }
+    },
+    {
+      "id": "instagram:a9eac7c366015e641866f23f09daed6a18cddf6d737283744ae105622bad5a89",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Meine Adresse für den erfundenen Lesekreis ist mooskarte@example.com.",
+      "createdAt": "2018-10-10T22:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 2
+      }
+    },
+    {
+      "id": "instagram:8693db73f2a1680af3d3e022f4ed6196fde2438798f2c50192fbdc4490f03f5a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My address for the invented reading group is mossnote@example.org.",
+      "createdAt": "2018-10-10T23:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 3
+      }
+    },
+    {
+      "id": "instagram:86ce760cac2c8d756857c87d5ef8a2af56362659101015b9e68fade89711a998",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "@amber_moth Das war eine dumme Antwort von dir.",
+      "createdAt": "2018-10-11T00:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 4
+      }
+    },
+    {
+      "id": "instagram:329341362efd8650ba648ce249ba441c5dbf2b1f8e5f20d70e85303574c89b8b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "@violet_otter That was a stupid answer from you.",
+      "createdAt": "2018-10-11T01:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 5
+      }
+    },
+    {
+      "id": "instagram:95ebc73d7c6bf55261c514af9c8e98ad0daee6945c0deca8cfa139d40987ad55",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Nach der erfundenen Feier habe ich unter jedem Bild denselben peinlichen Spruch gepostet.",
+      "createdAt": "2018-10-11T02:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 6
+      }
+    },
+    {
+      "id": "instagram:bdab9776bfe34bf4b313a3c2b109891062984cfc5dd0dd3c2cec734c442be23b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "After the invented party I put the same awkward joke under every photo.",
+      "createdAt": "2018-10-11T03:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 7
+      }
+    },
+    {
+      "id": "instagram:140aec7dfc9ad0e633b8a90ed7a08b29d052b03c9d9fd806741a4da302db10e7",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2018-10-11T04:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 8
+      }
+    },
+    {
+      "id": "instagram:2deab295875de6f2569976cd6044e17698b2515c87f603b3da3dc1ae7c40134e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2018-10-11T05:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 9
+      }
+    },
+    {
+      "id": "instagram:1b0c7ea7b8c578ffa844cea84429d6b693c187198a422358bad66d4025eab258",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Na klar, genau das brauchen wir jetzt.",
+      "createdAt": "2018-10-11T06:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 10
+      }
+    },
+    {
+      "id": "instagram:2f0fcab8b54a74c5bfc3a972edd1871952d08619ce57f49d66deea5fe00aba17",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Of course, exactly what we need right now.",
+      "createdAt": "2018-10-11T07:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 11
+      }
+    },
+    {
+      "id": "instagram:7c3fec3610c544f9a844080bc1654d1dce2cdf3a1a10ede1c321bae1d9e16d3b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Farben passen schön zum erfundenen Garten.",
+      "createdAt": "2018-10-11T08:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 12
+      }
+    },
+    {
+      "id": "instagram:563b3b6941fa756900ac09061b6815de41f6800bfaed603c847602d5ab4144d1",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The colors suit the invented garden nicely.",
+      "createdAt": "2018-10-11T09:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 13
+      }
+    },
+    {
+      "id": "instagram:46287fd579479dd2cd10831bbf112c4ab1a365d250c1f466479db3c17cbd0f67",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Rezept probiere ich am Wochenende aus.",
+      "createdAt": "2018-10-11T10:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 14
+      }
+    },
+    {
+      "id": "instagram:3c9f82a518cdd4dcbbae12164a0736edd6e7c3ec6c90d314bf6d930e4287671b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I will try the recipe this weekend.",
+      "createdAt": "2018-10-11T11:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 15
+      }
+    },
+    {
+      "id": "instagram:2d735ac34cc3cb52a4832b3bab2c891c1c9f8a7da3631f6b7c39f9823f6dc48c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der kleine Papierdrache sieht toll aus.",
+      "createdAt": "2018-10-11T12:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 16
+      }
+    },
+    {
+      "id": "instagram:47e9a9b570c793b63b063c169bbbfc407c2f3443f7897d78bfc60e1416a2bab4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The little paper kite looks lovely.",
+      "createdAt": "2018-10-11T13:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 17
+      }
+    },
+    {
+      "id": "instagram:ec5c2f1a4e2de888aa0e36efc86c1bba6e2af8b4730bb7241cdb9a76776edbde",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So viel Platz für Bücher hätte ich auch gern.",
+      "createdAt": "2018-10-11T14:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 18
+      }
+    },
+    {
+      "id": "instagram:8682bc8a213cadc2b35ccf9cd28dde4683b010a3ed15ccdecea91f7728259b57",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I would like that much room for books too.",
+      "createdAt": "2018-10-11T15:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 19
+      }
+    },
+    {
+      "id": "instagram:9f99821c79836b70006280e2eb384d31090a40e12d3108b3c2bf3c2d8e008273",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 3.",
+      "createdAt": "2018-10-11T16:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 20
+      }
+    },
+    {
+      "id": "instagram:6688a7ff1368d922521f90ad1ea0f2fa1833714248900ca59b2363e438424daa",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 3.",
+      "createdAt": "2018-10-11T17:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 21
+      }
+    },
+    {
+      "id": "instagram:70ad9f497a2a9fb1e824e72f2a6723ce26b31c810710ab829006a36151087b6b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 3.",
+      "createdAt": "2018-10-11T18:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 22
+      }
+    },
+    {
+      "id": "instagram:78b9e82fdbbc4091adbe6138a1a63498bff4a05400123263ddf725719266f5d7",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 3.",
+      "createdAt": "2018-10-11T19:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 23
+      }
+    },
+    {
+      "id": "instagram:934477778d39f918502c4b008285e095cbbff15c05a2f81cae636092301b126c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 3.",
+      "createdAt": "2018-10-11T20:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 24
+      }
+    },
+    {
+      "id": "instagram:b2d62747723bbaf54fca92e84bd31a5fc27bd12f9973cdfc79c9555093772685",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 3.",
+      "createdAt": "2018-10-11T21:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 25
+      }
+    },
+    {
+      "id": "instagram:d0082cc85d0724d24194278a284b024001c3f59b94cb89baaac8eff38eeeedf3",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 3.",
+      "createdAt": "2018-10-11T22:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 26
+      }
+    },
+    {
+      "id": "instagram:75021fd10e1a1efe1b6f8732941c88fb50d72196ef45ab46ec890f641d4ea547",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 3.",
+      "createdAt": "2018-10-11T23:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 27
+      }
+    },
+    {
+      "id": "instagram:12be5a1b36f1f0d699ac828b1d1b9e1fce6bd01d7042e74fb10dc5c3657c44d3",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 3.",
+      "createdAt": "2018-10-12T00:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 28
+      }
+    },
+    {
+      "id": "instagram:a516ee038ba62c7654fbca6086b3a27dbce19075de7f7890c40fb12f687ad7db",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 3.",
+      "createdAt": "2018-10-12T01:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 29
+      }
+    },
+    {
+      "id": "instagram:f11132e064ac46b1b8c0fb0b2946632cb0c615192debea357ef21da2a0a0005d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 4.",
+      "createdAt": "2018-10-12T02:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 30
+      }
+    },
+    {
+      "id": "instagram:5c8bc27a8e06a09e0070eaaa490b2fc39fc57135944de677e06f40f7194200dc",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 4.",
+      "createdAt": "2018-10-12T03:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 31
+      }
+    },
+    {
+      "id": "instagram:d72c43d241bba2a3ad24f8a27b7b1679d8295b8801cbf59a8cc6ff9e8d11d87e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 4.",
+      "createdAt": "2018-10-12T04:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 32
+      }
+    },
+    {
+      "id": "instagram:83287909d78a7419f046ff58cee4a7750f099d976f119bf87229c5c71d1ee0ea",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 4.",
+      "createdAt": "2018-10-12T05:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 33
+      }
+    },
+    {
+      "id": "instagram:708fd059c2ae249e32b801448f4f86d9e70d7d232ee8b4ab5476120867d88c60",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 4.",
+      "createdAt": "2018-10-12T06:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 34
+      }
+    },
+    {
+      "id": "instagram:402fcba184e327387a71425c7fb07a7ba5e4f4077a81d2fdae0d18b254b209b0",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 4.",
+      "createdAt": "2018-10-12T07:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 35
+      }
+    },
+    {
+      "id": "instagram:3ec8473ed3bcb35761e7d897b041e6e8c8425d07de549bde54efb2dcf2d8c97c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 4.",
+      "createdAt": "2018-10-12T08:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 36
+      }
+    },
+    {
+      "id": "instagram:9468d37d5699fcf24e8182bdcad54d6c311738ff5ef412efdd25ff49c1fbfc25",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 4.",
+      "createdAt": "2018-10-12T09:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 37
+      }
+    },
+    {
+      "id": "instagram:6a64638ec63e5a61f33b96c1e2576b84b16c21a08cbe6880a11930caec110364",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 4.",
+      "createdAt": "2018-10-12T10:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 38
+      }
+    },
+    {
+      "id": "instagram:c72ddf2479ba2c7191bc2213fbf74b86a486e380e70c10c91adfd9b60b1c7ea5",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 4.",
+      "createdAt": "2018-10-12T11:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 39
+      }
+    },
+    {
+      "id": "instagram:b221655b6e95227c893d6e244355bef3d04695f1e8bc3690952a58506384127a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 5.",
+      "createdAt": "2018-10-12T12:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 40
+      }
+    },
+    {
+      "id": "instagram:bf0c8352031fbb8202ed80526d75025871139db40b6cd866dca80c3874e68e7c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 5.",
+      "createdAt": "2018-10-12T13:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 41
+      }
+    },
+    {
+      "id": "instagram:60d4f05c82b33b45a3f9974f2464bdfcda225d95e1ebe6e3a67f5c1e5da0fb64",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 5.",
+      "createdAt": "2018-10-12T14:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 42
+      }
+    },
+    {
+      "id": "instagram:d5c94b0bed2dfae7c5c00cefb870c2e94d7ed443ffd57716842aa7a3b5d88369",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 5.",
+      "createdAt": "2018-10-12T15:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 43
+      }
+    },
+    {
+      "id": "instagram:932e77fc947b4a45d3b0c0d75943575ba5f9c87ba4056184b33684a641a99b08",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 5.",
+      "createdAt": "2018-10-12T16:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 44
+      }
+    },
+    {
+      "id": "instagram:582fcdf4e760305b89b7bfb21a9ff73eff2d22e55faf96224d8598a1e056429d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 5.",
+      "createdAt": "2018-10-12T17:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 45
+      }
+    },
+    {
+      "id": "instagram:59b9d10b8fc37f748bf4c58b278e62747be7671ff191c055ba37e6f424f36f8c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 5.",
+      "createdAt": "2018-10-12T18:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 46
+      }
+    },
+    {
+      "id": "instagram:5d1b8c91ecf9ad0bd1a9f8a9d3a01b59b82cde57491fdf4837d6a5b34493c908",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 5.",
+      "createdAt": "2018-10-12T19:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 47
+      }
+    },
+    {
+      "id": "instagram:1ba87e72912e1a181d4ed48ffaa4da14b5e9a77d08da1d17500d0bed01058b21",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 5.",
+      "createdAt": "2018-10-12T20:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 48
+      }
+    },
+    {
+      "id": "instagram:44c1e91949d483eaca247996eb571ae3083e89c69762d03820479642c93dd63f",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 5.",
+      "createdAt": "2018-10-12T21:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 49
+      }
+    },
+    {
+      "id": "instagram:ebe331534151c4f814ba4741251f3f3f229cb2d04e627db08d1e6f99f34703a5",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 6.",
+      "createdAt": "2018-10-12T22:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 50
+      }
+    },
+    {
+      "id": "instagram:7a1bf5a5cde01cb1d9e1f539c18f9af57f36ca781241630a84d2b69692e71d7c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 6.",
+      "createdAt": "2018-10-12T23:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 51
+      }
+    },
+    {
+      "id": "instagram:b684ea0a2a88d2ef4ce810a548c7e21896dcb5d22c79d5a1dd134307b145c04c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 6.",
+      "createdAt": "2018-10-13T00:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 52
+      }
+    },
+    {
+      "id": "instagram:307d63f8c0900eeeeee2a691d2a54159c030e23ae78d7603c02b152b3f216d89",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 6.",
+      "createdAt": "2018-10-13T01:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 53
+      }
+    },
+    {
+      "id": "instagram:b5c997d67f54f9a25092d0d94bee1863c39d67465118037cdd319e25a5af57b1",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 6.",
+      "createdAt": "2018-10-13T02:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 54
+      }
+    },
+    {
+      "id": "instagram:d69dbba4b613f4b99653cd193cbbc9f1a56f58b0d01e290ccf7972be7722159b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 6.",
+      "createdAt": "2018-10-13T03:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 55
+      }
+    },
+    {
+      "id": "instagram:f54b65ee54d350c066f9d03c90637f25d2d198beef36af8a2e18832056be51c2",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 6.",
+      "createdAt": "2018-10-13T04:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 56
+      }
+    },
+    {
+      "id": "instagram:ccfd9ab2354930baa734df3528cf028b534a4138426c887b19277bf9dfabcff4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 6.",
+      "createdAt": "2018-10-13T05:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 57
+      }
+    },
+    {
+      "id": "instagram:9228b51dcfacb35ad2c4492c4c2dbe694f79fe22af4eaa4154ec0df4ad84c46c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 6.",
+      "createdAt": "2018-10-13T06:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 58
+      }
+    },
+    {
+      "id": "instagram:b52b2a135418b64822501aee6e5a25fd74fc32249ab42ec6704aa18715f8cfab",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 6.",
+      "createdAt": "2018-10-13T07:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 59
+      }
+    },
+    {
+      "id": "instagram:977413070645aba7466035c1460e284ae200095e239852ebe5edef8be7304ae9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 7.",
+      "createdAt": "2018-10-13T08:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 60
+      }
+    },
+    {
+      "id": "instagram:38222a61c0787df7b1c14348ceca42728f2fb83a7c7bcd2171c2d1d0cd025061",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 7.",
+      "createdAt": "2018-10-13T09:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 61
+      }
+    },
+    {
+      "id": "instagram:437b8809e24be4b1b630ab2c3306451ad52823e535cfe0c15047d8d459461cc4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 7.",
+      "createdAt": "2018-10-13T10:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 62
+      }
+    },
+    {
+      "id": "instagram:283345c699fa88630890281a1881f8df3136ba03f08eaf504170ce7306e896d9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 7.",
+      "createdAt": "2018-10-13T11:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 63
+      }
+    },
+    {
+      "id": "instagram:5781f670c9c4a33d730d74e15a0e5744cbb258978a8481a15234d77884ccbc59",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 7.",
+      "createdAt": "2018-10-13T12:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 64
+      }
+    },
+    {
+      "id": "instagram:ec48a02a1e3b748517d3e4858e9191f1dea21b10acde957585d5a11b35fbc85d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 7.",
+      "createdAt": "2018-10-13T13:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 65
+      }
+    },
+    {
+      "id": "instagram:d19fabf3cc370e397bb19d05a35c82cb058f618650adb6addd53933e5f2b0874",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 7.",
+      "createdAt": "2018-10-13T14:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 66
+      }
+    },
+    {
+      "id": "instagram:88eb7655a5dd0ec4fa9ae6d92295c3b3e843ef77e4c7128137650991557945d9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 7.",
+      "createdAt": "2018-10-13T15:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 67
+      }
+    },
+    {
+      "id": "instagram:67e74b3f9e0cea03cf3d8888a83e57be751635475fb327106f47e718101e18ac",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 7.",
+      "createdAt": "2018-10-13T16:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 68
+      }
+    },
+    {
+      "id": "instagram:8504393213672a473d9d7e8251efd3e23ea4dd5b05b85fb8e3b3ca82d721963c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 7.",
+      "createdAt": "2018-10-13T17:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 69
+      }
+    },
+    {
+      "id": "instagram:c2b109c3bc0f5822a0fbb3306e62646404b3923b56c777cf3fe4971a3013cada",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 8.",
+      "createdAt": "2018-10-13T18:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 70
+      }
+    },
+    {
+      "id": "instagram:a73f4a1126e82d321d5deaf778b939f13f933548e7196885f17f8ff7e92d4383",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 8.",
+      "createdAt": "2018-10-13T19:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 71
+      }
+    },
+    {
+      "id": "instagram:3e1016632e935523afe5c47154483c2d19f77edfc634a1451d4c62b137076b5e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 8.",
+      "createdAt": "2018-10-13T20:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 72
+      }
+    },
+    {
+      "id": "instagram:7346d1ad9c705328b05356d547ea3e748fe259098de46fd790195acd1b8d08b4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 8.",
+      "createdAt": "2018-10-13T21:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 73
+      }
+    },
+    {
+      "id": "instagram:0771b7668a091393df015c07a2cb018e1fc4b0812143f49c73c74000d9c9e9a9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 8.",
+      "createdAt": "2018-10-13T22:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 74
+      }
+    },
+    {
+      "id": "instagram:ed5748d133291b649f7ba700a19027aee1c239cf1488fad961771563735cb4cd",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 8.",
+      "createdAt": "2018-10-13T23:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 75
+      }
+    },
+    {
+      "id": "instagram:a05ab9703d443069bfadd2708ab530bc534b96c247c699c7308f8de66c0a369c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 8.",
+      "createdAt": "2018-10-14T00:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 76
+      }
+    },
+    {
+      "id": "instagram:71b2c88a8ca3526bed76371a86bcaee54f7123273ac69ff585b8eb76ace60a60",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 8.",
+      "createdAt": "2018-10-14T01:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 77
+      }
+    },
+    {
+      "id": "instagram:149f7860d055fc6992e2fd5ca69802a1149f6375ecddbafc3271170dc8d6b14d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 8.",
+      "createdAt": "2018-10-14T02:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 78
+      }
+    },
+    {
+      "id": "instagram:eb647771ca795677d720e9cc42035da3ba89382352e320fec31ea9606da8e1fb",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 8.",
+      "createdAt": "2018-10-14T03:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 79
+      }
+    },
+    {
+      "id": "instagram:f1f6014e0dc9dcb44c5e22c0dbd92cf7697043980a66a70671bc2db3d37683b5",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 9.",
+      "createdAt": "2018-10-14T04:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 80
+      }
+    },
+    {
+      "id": "instagram:9679f2796351811b3e1ac122595db8f10268e2e40ca7b8f218f96c8df78d34e0",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 9.",
+      "createdAt": "2018-10-14T05:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 81
+      }
+    },
+    {
+      "id": "instagram:5437f832d86ba93cfa7c0b68747e022778fce0dff2cf31183aa1d36639b6e297",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 9.",
+      "createdAt": "2018-10-14T06:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 82
+      }
+    },
+    {
+      "id": "instagram:0b54f6755ac474c9f4ea587c155309344b0e8441a67273c96251c8cd7c6d1e7b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 9.",
+      "createdAt": "2018-10-14T07:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 83
+      }
+    },
+    {
+      "id": "instagram:81d91cc304027b759bbd03301b4ebf6b204a65c984a6408e1addd6edb0ab3920",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 9.",
+      "createdAt": "2018-10-14T08:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 84
+      }
+    },
+    {
+      "id": "instagram:3104f1440bed61043e717bf880a3d7725ad9f7027a91693ab9ba799965b950b1",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 9.",
+      "createdAt": "2018-10-14T09:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 85
+      }
+    },
+    {
+      "id": "instagram:37c96406bd581c579394f8a131e26488ebeec6a8b973e0277b40a0af07db9965",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 9.",
+      "createdAt": "2018-10-14T10:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 86
+      }
+    },
+    {
+      "id": "instagram:fcf07cb954e0f0a512b9af915d5934d5dcf05f99c71c37d6e930b0d2ab71d317",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 9.",
+      "createdAt": "2018-10-14T11:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 87
+      }
+    },
+    {
+      "id": "instagram:bbc885760c0edc1f4075403f3b18cef13d4511ceb3d332f6e7fc4ff6770e5266",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 9.",
+      "createdAt": "2018-10-14T12:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 88
+      }
+    },
+    {
+      "id": "instagram:38e6ff1c290f78d680899365a196ea19763c0f2f07afbe822382d9a72950c931",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 9.",
+      "createdAt": "2018-10-14T13:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 89
+      }
+    },
+    {
+      "id": "instagram:5a90b19314763256452350719089ce7c1ba2ba31e069580c1e8388f324c3edb4",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 10.",
+      "createdAt": "2018-10-14T14:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 90
+      }
+    },
+    {
+      "id": "instagram:3c50d7c3f4ca4bf9cbb863bb282e2584569f582c2e813d4b7d0669caa9bbc23f",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 10.",
+      "createdAt": "2018-10-14T15:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 91
+      }
+    },
+    {
+      "id": "instagram:2464ba42bb489a1e884cf00e6f80a5f42f7a6bc4b17f740792b678365ca3128e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 10.",
+      "createdAt": "2018-10-14T16:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 92
+      }
+    },
+    {
+      "id": "instagram:b517123141540d412ff71b556a9426630daddf7790030c5be788b0735570c938",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 10.",
+      "createdAt": "2018-10-14T17:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 93
+      }
+    },
+    {
+      "id": "instagram:ff2f49fda3215e599886cbfab322a75f502d14097ef6f335c6f5714e9da1017c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 10.",
+      "createdAt": "2018-10-14T18:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 94
+      }
+    },
+    {
+      "id": "instagram:e9ed054ce80381c35f5f28e492998798f45454abde1693ca684cffc58d67399a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 10.",
+      "createdAt": "2018-10-14T19:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 95
+      }
+    },
+    {
+      "id": "instagram:14d61dd1f66822a07def64eda97828f85a1c2e5a1bd1745bdac7542c5d45990e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 10.",
+      "createdAt": "2018-10-14T20:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 96
+      }
+    },
+    {
+      "id": "instagram:f2e1b589810e45db951e0233e739ff92aa4831e3230de93ac32e52a783c3c3a8",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 10.",
+      "createdAt": "2018-10-14T21:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 97
+      }
+    },
+    {
+      "id": "instagram:f4c962e7331826519dc80a59ea054fe3ce74d9fb32f08a11a99670e01403f419",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 10.",
+      "createdAt": "2018-10-14T22:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 98
+      }
+    },
+    {
+      "id": "instagram:3560ea0f2f68686b8afffa30a8f48a9189154cdfe38575ee9f1f0c7f9a22b17a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 10.",
+      "createdAt": "2018-10-14T23:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 99
+      }
+    },
+    {
+      "id": "instagram:164058bb038a35247e961b948f8d5a3da910f103f92a4bcd4ec95184b053c1a6",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 11.",
+      "createdAt": "2018-10-15T00:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:4d5648041a33b074f6cb45c5cbc3e034b3ad72a2045e2aa6c6ccf9f6c4951972",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 11.",
+      "createdAt": "2018-10-15T01:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 1
+      }
+    },
+    {
+      "id": "instagram:877e50e23af47f17874c54989495008636a97d8dd54b6f59b169ba7b468c40de",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 11.",
+      "createdAt": "2018-10-15T02:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 2
+      }
+    },
+    {
+      "id": "instagram:f908942b6f3670320cd4fe3c566ad04f0193ccb3edb60ea023f958e25b5838b7",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 11.",
+      "createdAt": "2018-10-15T03:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 3
+      }
+    },
+    {
+      "id": "instagram:0a3f97d2b95533a3ea055f02f30abfacd80048c942641e7e9970d25841f722eb",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 11.",
+      "createdAt": "2018-10-15T04:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 4
+      }
+    },
+    {
+      "id": "instagram:3569fe46a20f2bae997f4f5602d736265b84dcd9867f13471bfa214c723af74a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 11.",
+      "createdAt": "2018-10-15T05:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 5
+      }
+    },
+    {
+      "id": "instagram:d8478546f45b1a14b2265674e13e2d948efe23d4f7de2226e553c3be1d5abbc8",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 11.",
+      "createdAt": "2018-10-15T06:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 6
+      }
+    },
+    {
+      "id": "instagram:841c782c0dc58447d714e918d987efe739adb9f3bb028a4698af024667f7695c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 11.",
+      "createdAt": "2018-10-15T07:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 7
+      }
+    },
+    {
+      "id": "instagram:d04808ebb4f32f5b332dafd253a03574bb7de7b607bc2e6139906bbc455fadad",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 11.",
+      "createdAt": "2018-10-15T08:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 8
+      }
+    },
+    {
+      "id": "instagram:bf3d3dcf6d308705adf0452be9d1427593a06274a8eaab15c5bb67f52b36acbf",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 11.",
+      "createdAt": "2018-10-15T09:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 9
+      }
+    },
+    {
+      "id": "instagram:9dab816f3ccf77d55948edfba30883e3507a360c1599590651edc6439a5c928f",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Die Lichtflecken auf dem Tisch gefallen mir. Notiz 12.",
+      "createdAt": "2018-10-15T10:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 10
+      }
+    },
+    {
+      "id": "instagram:558d2b39e382f5e1c0c99e5141c0aa1119aeb8ac87aab2ae363a6e65aca79cf8",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "I like the patches of light on the table. Note 12.",
+      "createdAt": "2018-10-15T11:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 11
+      }
+    },
+    {
+      "id": "instagram:5ff6a0c36d2be29e40db107583bb544d20da429be46068747e379fc9e0279d7e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Danke für die genaue Beschreibung des Rezepts. Notiz 12.",
+      "createdAt": "2018-10-15T12:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 12
+      }
+    },
+    {
+      "id": "instagram:ccc71b05701ca0bbd90c629ddaa7c36f716cbbf38939b23068c6eadde177f91e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Thanks for the detailed recipe description. Note 12.",
+      "createdAt": "2018-10-15T13:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 13
+      }
+    },
+    {
+      "id": "instagram:0f26e511692d31e4bf337021b72dc55851c4fc5627e1923626f521fda3dca39a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Der Papierstern erinnert mich an den letzten Bastelnachmittag. Notiz 12.",
+      "createdAt": "2018-10-15T14:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 14
+      }
+    },
+    {
+      "id": "instagram:2893e5ffe05e6d0dd25aa3fab56ad7d23aefa4807d19a283813a3baca7750268",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "The paper star reminds me of our last craft afternoon. Note 12.",
+      "createdAt": "2018-10-15T15:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 15
+      }
+    },
+    {
+      "id": "instagram:d37e84cd9521c4a024920aba818b1b703b2434009c01b4463cd193b516331810",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "Das Blau passt gut zu den Blumentöpfen. Notiz 12.",
+      "createdAt": "2018-10-15T16:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "moss_badger"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 16
+      }
+    },
+    {
+      "id": "instagram:4031f9274d6301ae6b109199faf95aa8f96b0914de7116111428df5b3581ddce",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "That blue goes well with the plant pots. Note 12.",
+      "createdAt": "2018-10-15T17:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "amber_moth"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 17
+      }
+    },
+    {
+      "id": "instagram:a0022d49e0c94d4e51da02648ddae759a40ea45c1d625dd5180deaaaeb92facb",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "So ordentlich sieht mein Bücherregal selten aus. Notiz 12.",
+      "createdAt": "2018-10-15T18:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "violet_otter"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 18
+      }
+    },
+    {
+      "id": "instagram:26d536319e98d73ef91cef17626ec3ac744c967dbbc92decdb56b2817c89896d",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:demo_fern",
+        "handle": "demo_fern"
+      },
+      "kind": "comment",
+      "text": "My bookshelf rarely looks that tidy. Note 12.",
+      "createdAt": "2018-10-15T19:19:24.000Z",
+      "mediaCount": null,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "cobalt_wren"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-demo_fern-2026-10-01-demoig",
+        "file": "your_instagram_activity/comments/reels_comments.json",
+        "index": 19
+      }
+    }
+  ]
+}

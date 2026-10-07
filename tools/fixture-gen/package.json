@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p .",
     "generate": "node src/cli.ts generate",
     "check": "node src/cli.ts check",
-    "large": "node src/cli.ts large"
+    "large": "node src/cli.ts large",
+    "demo": "node src/cli.ts demo"
   },
   "dependencies": {
     "@socialprune/core": "workspace:*",

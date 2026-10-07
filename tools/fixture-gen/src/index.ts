@@ -8,3 +8,12 @@ export {
   FIXTURES_ROOT,
 } from './load.ts';
 export type { LoadedFixture, FixtureMetadata } from './load.ts';
+export {
+  createDemo,
+  demoFiles,
+  generateDemo,
+  checkDemo,
+  DEMO_ARCHIVES,
+  DEMO_VERSION,
+} from './demo/index.ts';
+export type { DemoData, DemoExport } from './demo/index.ts';

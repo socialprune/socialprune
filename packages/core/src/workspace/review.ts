@@ -13,6 +13,7 @@ import type { WorkspaceErrorCode } from './errors.ts';
 import { projectRow, reviewRow } from './query.ts';
 import type { ReviewQuery, ReviewProjectionChange } from './query.ts';
 import type { BulkPreview } from './protocol.ts';
+import { PreviewBulkRequestSchema } from './protocol.ts';
 import { records } from './store.ts';
 import type {
   ReviewCommandResult,
@@ -289,6 +290,7 @@ export class ReviewService {
     generation: number;
     value: DecisionValue;
     overwrite: DecisionValue[];
+    itemIds?: string[];
   }): Promise<BulkPreview> {
     if (
       !input.pageId ||
@@ -300,10 +302,18 @@ export class ReviewService {
       )
     )
       throw new WorkspaceError('INVALID_REQUEST');
+    const { itemIds, ...previewInput } = input;
+    if (!PreviewBulkRequestSchema.shape.itemIds.safeParse(itemIds).success)
+      throw new WorkspaceError('INVALID_REQUEST');
+    const requestedIds = itemIds === undefined ? undefined : new Set(itemIds);
     const selection = await this.query.selection(
       input.queryId,
       input.generation,
     );
+    const frozenIds =
+      requestedIds === undefined
+        ? selection.ids
+        : selection.ids.filter((id) => requestedIds.has(id));
     const frozen = await this.store.read(async (tx) => {
       const runtime = await tx.runtime.get();
       if (runtime.revision !== selection.revision)
@@ -311,7 +321,7 @@ export class ReviewService {
       const expected = new Map<string, DecisionValue>();
       const byCurrentValue = { keep: 0, delete: 0, later: 0, undecided: 0 };
       const sample = [];
-      const sampleIds = new Set(selection.ids.slice(0, 20));
+      const sampleIds = new Set(frozenIds.slice(0, 20));
       const sampleAssessments = new Map<string, Map<string, Assessment>>();
       for await (const assessment of tx.assessments.iterate()) {
         if (!sampleIds.has(assessment.itemId)) continue;
@@ -325,7 +335,7 @@ export class ReviewService {
         sampleAssessments.set(assessment.itemId, sources);
       }
       let willChange = 0;
-      for (const id of selection.ids) {
+      for (const id of frozenIds) {
         const stored = await tx.items.get(id);
         if (!stored) throw new WorkspaceError('UNKNOWN_ITEM');
         const state = (await tx.state.get(id)) ?? {
@@ -366,20 +376,29 @@ export class ReviewService {
     if (this.previews.size >= 4)
       this.previews.delete(this.previews.keys().next().value!);
     const payload: BulkPreview = {
-      ...input,
+      ...previewInput,
       overwrite: [...input.overwrite],
-      total: selection.ids.length,
-      unchanged: selection.ids.length - frozen.willChange,
+      total: frozenIds.length,
+      unchanged: frozenIds.length - frozen.willChange,
       willChange: frozen.willChange,
       byCurrentValue: frozen.byCurrentValue,
       sample: frozen.sample,
       revision: frozen.revision,
       expiresAt: new Date(this.now().getTime() + 10 * 60_000).toISOString(),
+      ...(requestedIds === undefined
+        ? {}
+        : {
+            selection: {
+              requested: requestedIds.size,
+              inView: frozenIds.length,
+              notInView: requestedIds.size - frozenIds.length,
+            },
+          }),
     };
     this.previews.set(input.previewId, {
       payload,
       expected: frozen.expected,
-      ids: [...selection.ids],
+      ids: [...frozenIds],
     });
     return structuredClone(payload);
   }

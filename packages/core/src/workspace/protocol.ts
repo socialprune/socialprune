@@ -115,6 +115,13 @@ export const BulkPreviewSchema = z.strictObject({
   sample: z.array(ReviewRowSchema).max(20),
   revision: nonnegative,
   expiresAt: UtcTimestampSchema,
+  selection: z
+    .strictObject({
+      requested: nonnegative,
+      inView: nonnegative,
+      notInView: nonnegative,
+    })
+    .optional(),
 });
 export type BulkPreview = z.infer<typeof BulkPreviewSchema>;
 export const ItemDetailSchema = z.strictObject({
@@ -160,6 +167,14 @@ export const PreviewBulkRequestSchema = z.strictObject({
   generation,
   value: DecisionValueSchema,
   overwrite: z.array(DecisionValueSchema).min(1).max(4),
+  itemIds: z
+    .array(id)
+    .min(1)
+    .max(10_000)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: 'Selection item IDs must be unique.',
+    })
+    .optional(),
 });
 const requests = [
   z.strictObject({ ...requestBase, type: z.literal('open'), workspaceId: id }),

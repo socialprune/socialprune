@@ -149,9 +149,14 @@ Agents use the CLI with `--json`: one JSON document per call on stdout, progress
 
 ## Adding a platform
 
-1. Create `packages/adapter-<platform>` implementing `PlatformAdapter` from `packages/core/src/adapter/`: `detect` with a confidence and a variant name, `parse` producing `Item`s whose IDs start with `<platform>:`, the `export` description, and `clickList` steps. Set `mediaCount` when the export says how many media files an item has.
-2. Add generated fixtures for every known export variant under `fixtures/synthetic/<platform>/`, each with an `expected.json` written from the fixture data, and an `injection` variant.
-3. Register the adapter in the web app's adapter list and in the CLI's.
+1. Create `packages/adapter-<platform>` implementing `PlatformAdapter` from `packages/core/src/adapter/index.ts`:
+   - `platform`, `name` and `version`;
+   - `clickListOrder`: `'risk'` lists marked entries from the highest risk down, as X does, and `'day'` groups them by day, newest first, as Instagram does;
+   - `detect`, which answers `match`, `no-match` or `html-export` with a variant name and a reason;
+   - `parse`, which yields account, item, diagnostic and meta events; item IDs start with `<platform>:`, and `mediaCount` is set when the export says how many media files an item has;
+   - `deletionHint`, which gives the click-list action (`delete`, `undo-repost` or `delete-comment`) and the item's link where the platform has one.
+2. Add a generator module under `tools/fixture-gen/src/<platform>/`, register it in `tools/fixture-gen/src/cli.ts` and in the registry test in `tools/fixture-gen/src/index.test.ts`, and generate fixtures for every known export variant under `fixtures/synthetic/<platform>/`, each with an `expected.json` the generator writes from its own data, plus an `injection` variant.
+3. Add the adapter to the adapter list in `apps/web/src/import/worker.ts`, and to the CLI's adapter list once the CLI imports archives.
 4. Add the platform's guide facts to `packages/core/src/guide/` with sources and verification dates ([ADR-022](adrs/ADR-022-export-guide-content.md)), and its strings to both catalogs.
 5. Run the full suite, including the browser network audit, which picks up new fixtures automatically.
 

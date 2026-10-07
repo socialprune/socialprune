@@ -11,7 +11,16 @@
     "./model/v1": "./src/model/v1.ts",
     "./workspace/protocol": "./src/workspace/protocol.ts",
     "./workspace/migrate": "./src/workspace/migrate.ts",
-    "./workspace/state": "./src/workspace/state.ts"
+    "./workspace/state": "./src/workspace/state.ts",
+    "./workspace/store": "./src/workspace/store.ts",
+    "./workspace/memory-store": "./src/workspace/memory-store.ts",
+    "./workspace/store-contract": "./src/workspace/store-contract.ts",
+    "./workspace/review": "./src/workspace/review.ts",
+    "./workspace/labels": "./src/workspace/labels.ts",
+    "./workspace/query": "./src/workspace/query.ts",
+    "./workspace/time": "./src/workspace/time.ts",
+    "./workspace/merge": "./src/workspace/merge.ts",
+    "./workspace/payloads": "./src/workspace/payloads.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

@@ -10,7 +10,7 @@ import {
   ItemSchema,
 } from './index.ts';
 
-test('schema catalogue keeps exact v1 sources and seven generated v2 files', async () => {
+test('schema catalogue keeps the canonical v2 and retained v1 JSON files', async () => {
   const files = await generateJsonSchemas();
   expect(Object.keys(files).sort()).toEqual(
     [
@@ -26,6 +26,12 @@ test('schema catalogue keeps exact v1 sources and seven generated v2 files', asy
       'v1/item.schema.json',
       'v1/outcome.schema.json',
       'v1/workspace.schema.json',
+      'batch.schema.json',
+      'label-file.schema.json',
+      'label-submission.schema.json',
+      'summary.schema.json',
+      'click-list.schema.json',
+      'review-readiness.schema.json',
     ].sort(),
   );
   for (const [filename, content] of Object.entries(files)) {

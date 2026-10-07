@@ -24,6 +24,13 @@ export const WORKSPACE_ERROR_CODES = [
   'INVALID_REQUEST',
   'IMPORT_INCOMPLETE',
   'CANCELLED',
+  'INVALID_CURSOR',
+  'ACCOUNT_REQUIRED',
+  'SHARING_NOT_CONFIRMED',
+  'INVALID_LABELS',
+  'CONTENT_CHANGED',
+  'UNKNOWN_CATEGORY',
+  'INVALID_REASON',
 ] as const;
 export type WorkspaceErrorCode = (typeof WORKSPACE_ERROR_CODES)[number];
 export class WorkspaceError extends Error {

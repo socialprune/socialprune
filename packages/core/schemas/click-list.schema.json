@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "timeZone": { "type": "string", "minLength": 1 },
+    "timeZoneSource": {
+      "type": "string",
+      "enum": ["flag", "workspace", "system"]
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string", "minLength": 1 },
+          "platform": { "type": "string", "minLength": 1 },
+          "action": {
+            "type": "string",
+            "enum": ["delete", "undo-repost", "delete-comment"]
+          },
+          "url": { "type": ["string", "null"] },
+          "day": {
+            "anyOf": [
+              { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+              { "type": "null" }
+            ]
+          },
+          "text": { "type": ["string", "null"] },
+          "ownerHandle": { "type": ["string", "null"] },
+          "via": { "type": "string", "enum": ["web-review", "local-review"] }
+        },
+        "required": [
+          "itemId",
+          "platform",
+          "action",
+          "url",
+          "day",
+          "text",
+          "ownerHandle",
+          "via"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["timeZone", "timeZoneSource", "entries"],
+  "additionalProperties": false,
+  "$id": "https://socialprune.github.io/socialprune/schemas/click-list.schema.json"
+}

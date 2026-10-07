@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "number", "const": 1 },
+    "submissionId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "const": "agent" },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"] }
+      },
+      "required": ["kind", "name", "version"],
+      "additionalProperties": false
+    },
+    "labels": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string", "minLength": 1 },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "category": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "risk": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "pattern": "^(?=[\\s\\S]*\\S)(?![\\s\\S]*[.!?]\\s+\\S)(?![\\s\\S]*[\\r\\n])[\\s\\S]+$"
+          },
+          "evidence": { "type": ["string", "null"] },
+          "confidence": {
+            "anyOf": [
+              { "type": "number", "minimum": 0, "maximum": 1 },
+              { "type": "null" }
+            ]
+          }
+        },
+        "required": [
+          "itemId",
+          "contentHash",
+          "category",
+          "risk",
+          "reason",
+          "evidence",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schemaVersion", "submissionId", "source", "labels"],
+  "additionalProperties": false,
+  "$id": "https://socialprune.github.io/socialprune/schemas/label-file.schema.json"
+}

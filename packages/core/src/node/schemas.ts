@@ -12,6 +12,14 @@ import {
   ImportRecordSchema,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
+import {
+  BatchSchema,
+  LabelFileSchema,
+  LabelSubmissionSchema,
+  SummarySchema,
+  ClickListSchema,
+  ReviewReadinessSchema,
+} from '../workspace/payloads.ts';
 
 export const SCHEMA_MODELS = {
   item: ItemSchema,
@@ -26,6 +34,12 @@ export const SCHEMA_MODELS = {
   'v1/decision': v1.DecisionSchema,
   'v1/outcome': v1.OutcomeSchema,
   'v1/workspace': v1.WorkspaceSchema,
+  batch: BatchSchema,
+  'label-file': LabelFileSchema,
+  'label-submission': LabelSubmissionSchema,
+  summary: SummarySchema,
+  'click-list': ClickListSchema,
+  'review-readiness': ReviewReadinessSchema,
 };
 export async function generateJsonSchemas(): Promise<Record<string, string>> {
   const files: Record<string, string> = {};

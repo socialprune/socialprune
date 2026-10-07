@@ -268,6 +268,9 @@ export const instagramAdapter: PlatformAdapter = {
               state.unreadable = true;
               continue;
             }
+            // Media filenames can change in a later export of the same account.
+            // Keep URIs and counts out of identity so re-import preserves IDs
+            // (ADR-006); equal media-only rows use the existing ordinal below.
             const parts = [
               account.key,
               parsed.createdAt,
@@ -290,7 +293,7 @@ export const instagramAdapter: PlatformAdapter = {
                 kind: 'comment',
                 text: parsed.text,
                 createdAt: parsed.createdAt,
-                mediaCount: null,
+                mediaCount: parsed.mediaCount ?? null,
                 engagement: { likes: null, reposts: null },
                 reference: {
                   replyToId: null,

@@ -1,0 +1,279 @@
+{
+  "status": "partial",
+  "records": [
+    {
+      "platform": "instagram",
+      "accounts": [
+        {
+          "key": "instagram:synth_media",
+          "handle": "synth_media"
+        }
+      ],
+      "variant": "json-current",
+      "exportCreatedAt": null,
+      "itemCount": 8,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [],
+          "count": 1,
+          "message": null
+        },
+        {
+          "category": "post-comments",
+          "status": "unreadable",
+          "files": [
+            "your_instagram_activity/comments/post_comments_1.json",
+            "your_instagram_activity/comments/post_comments_1.json"
+          ],
+          "count": 8,
+          "message": "Some comment data could not be read; other readable comments were imported."
+        },
+        {
+          "category": "reels-comments",
+          "status": "empty",
+          "files": [
+            "your_instagram_activity/comments/reels_comments.json"
+          ],
+          "count": 0,
+          "message": null
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "instagram:2b5af517f638b07053f11f721e7c820913c54e3f454f114a3c75c31bde1399a0",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "Invented comment without attachments.",
+      "createdAt": "2025-07-31T00:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 0
+      }
+    },
+    {
+      "id": "instagram:cdbe0ca50e0c244ba24fdb14b305f51129d8a34936282f5f914c1fe5bf83d670",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "Another invented text-only comment.",
+      "createdAt": "2025-07-31T00:00:01.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 1
+      }
+    },
+    {
+      "id": "instagram:60f419282db39bbe7e15c09c93b48988885ab1b8a06d9491d0d0f9197328f89a",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "Invented comment with a GIF.",
+      "createdAt": "2025-07-31T00:00:02.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 2
+      }
+    },
+    {
+      "id": "instagram:b31a46ecf6ac2e5f1f473a4ea494d40c037d1d6d7a22d733d6bb517b5c9d4a2e",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2025-07-31T00:00:03.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 3
+      }
+    },
+    {
+      "id": "instagram:3ea868aaaaadb6391bf5740b52167580df8b0c88e991505305904a4fad3bfd67",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2025-07-31T00:00:03.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 4
+      }
+    },
+    {
+      "id": "instagram:e5232a4b80adae5e13ec461c53b7918e92769e589e35e5e82af93aaf9380f51b",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2025-07-31T00:00:04.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 5
+      }
+    },
+    {
+      "id": "instagram:b2aff55fbda218417ad5eb7592fbdae53abaa555dd8cfe3ac0ce731201f08374",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2025-07-31T00:00:05.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_shared_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 6
+      }
+    },
+    {
+      "id": "instagram:5739a76d3a28f9f100e4ecec222194ec3be5092fa15e9f2f486aa4f6e31cb8f9",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "Invented text with an unknown translated label.",
+      "createdAt": "2025-07-31T00:00:07.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 8
+      }
+    }
+  ]
+}

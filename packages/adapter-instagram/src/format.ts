@@ -2,6 +2,7 @@
 // so the repository data guard can distinguish source from an actual export.
 export const MAP_KEY = ['string', 'map', 'data'].join('_');
 export const OWNER_KEY = ['media', 'owner'].join('_');
+const MEDIA_KEY = ['media', 'list', 'data'].join('_');
 
 // English labels are in picnic's 2025-07-31 snapshot. Username translations
 // are in RobinOehler/unfollowtool-export-parsers. Other translations are
@@ -73,6 +74,7 @@ export interface CommentData {
   text: string;
   createdAt: string;
   ownerHandle: string | null;
+  mediaCount?: number;
 }
 
 interface Field {
@@ -86,6 +88,8 @@ export function parseComment(value: unknown): CommentData | null {
   const row = object(value);
   const map = object(row?.[MAP_KEY]);
   if (!row || !map) return null;
+  const media = row[MEDIA_KEY];
+  const mediaCount = Array.isArray(media) ? media.length : null;
   const fields: Field[] = [];
   for (const [key, value] of Object.entries(map)) {
     const data = object(value);
@@ -142,8 +146,17 @@ export function parseComment(value: unknown): CommentData | null {
         field !== owner &&
         typeof field.data.value === 'string',
     );
-    if (candidates.length !== 1) return null;
-    comment = candidates[0];
+    if (candidates.length === 1 && (mediaCount === null || mediaCount === 0)) {
+      comment = candidates[0];
+    } else if (!(
+      candidates.length === 0 &&
+      mediaCount !== null &&
+      mediaCount > 0
+    )) {
+      // With media, a lone unknown string could name its owner, not text.
+      // Media-only rows need a non-empty list and no unresolved string slots.
+      return null;
+    }
   }
   if (!owner && sibling === null) {
     const candidates = fields.filter(
@@ -156,16 +169,17 @@ export function parseComment(value: unknown): CommentData | null {
     owner = candidates[0];
   }
   const createdAt = timestampToUtc(time?.data.timestamp);
-  if (!createdAt || typeof comment?.data.value !== 'string') return null;
+  if (!createdAt) return null;
   const ownerHandle =
     typeof owner?.data.value === 'string'
       ? repairMojibake(owner.data.value)
       : sibling;
   if (sibling !== null && ownerHandle !== sibling) return null;
   return {
-    text: repairMojibake(comment.data.value),
+    text: comment ? repairMojibake(comment.data.value as string) : '',
     createdAt,
     ownerHandle: ownerHandle === '' ? null : ownerHandle,
+    ...(mediaCount === null ? {} : { mediaCount }),
   };
 }
 

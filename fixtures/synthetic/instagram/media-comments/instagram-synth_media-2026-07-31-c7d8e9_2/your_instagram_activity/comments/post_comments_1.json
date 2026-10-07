@@ -1,0 +1,17 @@
+[
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_overlap_renamed_06.gif"
+      }
+    ],
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_shared_owner"
+      },
+      "Time": {
+        "timestamp": 1753920005
+      }
+    }
+  }
+]

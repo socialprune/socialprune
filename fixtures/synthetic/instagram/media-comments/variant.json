@@ -1,0 +1,9 @@
+{
+  "id": "media-comments",
+  "platform": "instagram",
+  "description": "Current-layout media-only shapes A/B from S4 structural facts, invented values only: empty lists on text comments, text plus media, absent text with/without owner, same-second ordinal IDs, split overlap with renamed URI, one contentless rejected row, unknown comment label with an empty media list accepted, and unknown owner label with positive media rejected as ambiguous (D34). URI values never enter expected items; counts come from authored media lists. Public media_list_data and uri field-name sources are in spikes/s4-real-exports/schema.ts.",
+  "archives": [
+    "instagram-synth_media-2026-07-31-c7d8e9_1",
+    "instagram-synth_media-2026-07-31-c7d8e9_2"
+  ]
+}

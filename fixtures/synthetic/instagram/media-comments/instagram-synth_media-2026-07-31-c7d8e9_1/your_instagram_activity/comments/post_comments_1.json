@@ -1,0 +1,144 @@
+[
+  {
+    "media_list_data": [],
+    "string_map_data": {
+      "Comment": {
+        "value": "Invented comment without attachments."
+      },
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920000
+      }
+    }
+  },
+  {
+    "media_list_data": [],
+    "string_map_data": {
+      "Comment": {
+        "value": "Another invented text-only comment."
+      },
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920001
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_gif_01.gif"
+      }
+    ],
+    "string_map_data": {
+      "Comment": {
+        "value": "Invented comment with a GIF."
+      },
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920002
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_gif_02.gif"
+      }
+    ],
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920003
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_sticker_03.webp"
+      }
+    ],
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920003
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_image_04.png"
+      }
+    ],
+    "string_map_data": {
+      "Time": {
+        "timestamp": 1753920004
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_overlap_05.gif"
+      }
+    ],
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_shared_owner"
+      },
+      "Time": {
+        "timestamp": 1753920005
+      }
+    }
+  },
+  {
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920006
+      }
+    }
+  },
+  {
+    "media_list_data": [],
+    "string_map_data": {
+      "Unknown comment label": {
+        "value": "Invented text with an unknown translated label."
+      },
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920007
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": "media/other/synthetic_unknown_owner_07.gif"
+      }
+    ],
+    "string_map_data": {
+      "Unknown owner label": {
+        "value": "synth_unknown_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920008
+      }
+    }
+  }
+]

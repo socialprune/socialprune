@@ -15,6 +15,7 @@ export interface Comment {
   text: string;
   owner: string | null;
   seconds: number;
+  mediaCount?: number;
 }
 export interface Row {
   raw: unknown;
@@ -208,7 +209,7 @@ export function variant(
           kind: 'comment',
           text,
           createdAt,
-          mediaCount: null,
+          mediaCount: row.comment.mediaCount ?? null,
           engagement: { likes: null, reposts: null },
           reference: {
             replyToId: null,

@@ -13,6 +13,7 @@ import {
   variant,
 } from './data.ts';
 import type { File, Row } from './data.ts';
+import { mediaComments } from './media.ts';
 
 const primary = (files: File[]) => ({
   name: PRIMARY,
@@ -460,4 +461,5 @@ export const variants: Variant[] = [
     'none',
     'unknown-format',
   ),
+  mediaComments,
 ];

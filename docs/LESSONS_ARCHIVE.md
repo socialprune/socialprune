@@ -65,3 +65,31 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-003] 2026-10-07 ORCHESTRATION: Change a running lane's authority only through its task
+
+**ID:** LL-2026-10-003
+**Severity:** MEDIUM
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). Lane names, times and tool names below are dated evidence from 2026-10-06 and 2026-10-07.
+
+**Feedback:** On 2026-10-07 the CLI lane returned `needs_context` instead of finishing node C1. Its task said the existing `structure` tests must pass unchanged, and my later board post told it to edit one of them. It declined to treat the post as authority, which is what the runtime requires. It was the third refusal of this kind in two days. On 2026-10-06 the web lane declined a write-set extension to `tools/fixture-gen/src/shared/zip.ts` that I had posted, and the foundation lane did not apply an amended S-1 test rule that I had posted instead of putting it into its task.
+**Problem:** Three times I changed a running lane's write set, test rule or constraint through a board post. Each lane kept to its task, as it must, because peer messages, the parent's included, never grant authority or change an assigned scope. Each time the work stopped until I resumed the lane with the change in its task. In the C1 case the conflict was mine from the start: the same task froze the `structure` tests and asked for the ADR-013 JSON envelope, which changes one of their assertions.
+**5 Whys Analysis:**
+1. Why did the lanes stop? -> They received a change to their authority through a channel that cannot carry authority.
+2. Why did I use that channel? -> A running task cannot be resumed until it returns, and the board reaches it at once.
+3. Why did a running lane need a change at all? -> Its task named a constraint without saying what to do when the work collides with it.
+4. Why was the collision not caught? -> When I write a task, I list constraints and deliverables separately and do not check them against each other or against the records the task implements.
+5. Why? -> Root cause: no step in writing a delegated task checks its constraints against its deliverables and governing records, and no rule says how to deliver a scope change found while the lane runs, so I used the nearest fast channel.
+**Rule(s):**
+1. A change to a delegated lane's authority, write set, constraints or acceptance rules takes effect only through the lane's task: in the task as first written, or in the task that resumes the lane after it returns. A shared message channel can inform a lane, never authorize it.
+2. Before dispatching a task, check each of its constraints against each deliverable and against the records it implements. Where they can collide, write the resolution or a conditional permission into the task.
+3. When a needed change turns up while the lane runs, post it as information only and deliver it by resuming the lane after it returns. A post to a running lane never reads as a decision or a permission.
+4. In this runtime the shared channel is `board_post` and `board_read`, and resuming is the `task` tool with the lane's `task_id`.
+**Detection Pattern:** a parent board post to a running lane that says "decision", "you may", "authorized" or "your write set now includes", or that changes a constraint from the lane's task; a lane return saying it did not apply a board instruction.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor for rules 1 and 3: the runtime's `board_post` tool description, read at the moment of posting, already says that peer messages never change the assigned scope. Rule 2 has no anchor yet. Tasks are written by the orchestrator, whose instructions live in `.kilo/agents/workflow-orchestrator.md`, a governance surface, so a one-line trigger there is proposed and not applied (`.kilo/rules/governance-protection.md`).
+**Related Lessons:** none
+**Regression / Verification Note:** applied on 2026-10-07 by resuming the CLI lane through its task with the envelope decision and the one test edit it may make.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

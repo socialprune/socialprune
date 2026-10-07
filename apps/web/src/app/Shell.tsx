@@ -389,6 +389,12 @@ function Content({
                   <h2>
                     {t('import.result')}: {state.summary.status}
                   </h2>
+                  {state.summary.status === 'unknown-format' && (
+                    <p>{t('import.unknown')}</p>
+                  )}
+                  {state.summary.status === 'html-export' && (
+                    <p>{t('import.html')}</p>
+                  )}
                   <a href="#/review">{t('review.title')}</a>
                   {state.summary.records.map((record) => (
                     <section key={record.id}>
@@ -408,8 +414,16 @@ function Content({
                       <ul>
                         {record.diagnostics.map((diagnostic, index) => (
                           <li key={index}>
-                            {diagnostic.category}: {diagnostic.status} (
-                            {diagnostic.count})
+                            {diagnostic.category === 'unsupported-compression'
+                              ? t('import.deflate64', {
+                                  file: diagnostic.files.join(', '),
+                                })
+                              : diagnostic.category === 'encrypted-entry'
+                                ? t('import.encrypted', {
+                                    file: diagnostic.files.join(', '),
+                                  })
+                                : `${diagnostic.category}: ${diagnostic.status}`}{' '}
+                            ({diagnostic.count})
                           </li>
                         ))}
                       </ul>

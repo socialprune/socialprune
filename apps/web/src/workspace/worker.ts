@@ -43,9 +43,10 @@ function notify(
   );
   changes.postMessage({ workspaceId, revision, itemIds });
 }
-observePolicyViolations(scope, (violation) =>
-  scope.postMessage({ type: 'policy-violation', violation }),
-);
+observePolicyViolations(scope, (violation) => {
+  console.warn('WORKSPACE_POLICY_VIOLATION', violation.directive);
+  post({ type: 'failed', requestId: 'workspace-policy', code: 'STORAGE' });
+});
 
 async function summary(): Promise<WorkspaceSummary> {
   if (!store) throw new Error('Workspace closed.');
@@ -107,7 +108,7 @@ async function open(id: string) {
     id === 'active' ? ((await activeWorkspace()) ?? crypto.randomUUID()) : id;
   const initial = createWorkspace({ id: workspaceId });
   store = await IndexedDBStore.open(workspaceId, initial, () => {
-    scope.postMessage({ type: 'storageLifecycle', state: 'reload-required' });
+    post({ type: 'failed', requestId: 'storage-lifecycle', code: 'STORAGE' });
   });
   query = new QueryEngine(store);
   review = new ReviewService(store, { query, via: 'web-review' });
@@ -382,52 +383,8 @@ async function handle(input: WorkspaceRequest) {
   }
 }
 scope.addEventListener('message', (event: MessageEvent<unknown>) => {
-  const metadata = event.data as {
-    type?: string;
-    requestId?: string;
-    itemIds?: unknown;
-  };
-  if (
-    metadata.type === 'rowSources' &&
-    typeof metadata.requestId === 'string'
-  ) {
-    const requestId = metadata.requestId;
-    if (
-      !store ||
-      !Array.isArray(metadata.itemIds) ||
-      metadata.itemIds.length > 200 ||
-      metadata.itemIds.some((id) => typeof id !== 'string')
-    ) {
-      post({ type: 'failed', requestId, code: 'INVALID_REQUEST' });
-      return;
-    }
-    const ids = new Set(metadata.itemIds as string[]);
-    void store
-      .read(async (tx) => {
-        const metadata = new Map<
-          string,
-          Map<string, import('@socialprune/core').AssessmentSource>
-        >();
-        for await (const assessment of tx.assessments.iterate()) {
-          if (!ids.has(assessment.itemId)) continue;
-          let sources = metadata.get(assessment.itemId);
-          if (!sources) {
-            sources = new Map();
-            metadata.set(assessment.itemId, sources);
-          }
-          sources.set(JSON.stringify(assessment.source), assessment.source);
-        }
-        return [...metadata].map(([itemId, sources]) => ({
-          itemId,
-          sources: [...sources.values()],
-        }));
-      })
-      .then((rows) =>
-        scope.postMessage({ type: 'rowSources', requestId, rows }),
-      )
-      .catch(() => post({ type: 'failed', requestId, code: 'STORAGE' }));
-    return;
-  }
+  // ADR-007: both transports use core schemas. A metadata convenience must
+  // never create a second request path before this validation boundary.
   const parsed = WorkspaceRequestSchema.safeParse(event.data);
   if (!parsed.success) {
     const id = (event.data as { requestId?: unknown })?.requestId;
@@ -473,10 +430,10 @@ changes.onmessage = (
         ),
       )
       .catch(() =>
-        scope.postMessage({
-          type: 'storageLifecycle',
-          state: 'projection-refresh-failed',
-          revision: event.data.revision,
+        post({
+          type: 'failed',
+          requestId: `projection-refresh-${event.data.revision}`,
+          code: 'STORAGE',
         }),
       );
   }

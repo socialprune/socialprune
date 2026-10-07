@@ -1,11 +1,34 @@
 import { expect, test } from 'vitest';
-import { evidenceParts, letterDecision, platformLink } from './model.ts';
+import {
+  evidenceParts,
+  evidenceSegments,
+  letterDecision,
+  platformLink,
+} from './model.ts';
 
 test('single-letter decisions require enabled grid focus', () => {
   expect(letterDecision('m', true, true)).toBe('delete');
   expect(letterDecision('k', false, true)).toBeNull();
   expect(letterDecision('l', true, false)).toBeNull();
   expect(letterDecision('j', true, true)).toBeNull();
+});
+test('full-text evidence joins overlaps and never highlights a non-verbatim quote', () => {
+  expect(
+    evidenceSegments('Invented café note.', [
+      'café',
+      'café note',
+      'CAFE',
+      null,
+    ]),
+  ).toEqual([
+    { text: 'Invented ', highlight: false },
+    { text: 'café note', highlight: true },
+    { text: '.', highlight: false },
+  ]);
+  expect(evidenceSegments('<script>literal</script>', ['<script>'])).toEqual([
+    { text: '<script>', highlight: true },
+    { text: 'literal</script>', highlight: false },
+  ]);
 });
 test('platform links reject executable and unrelated URLs', () => {
   expect(

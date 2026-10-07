@@ -22,7 +22,7 @@ async function walk(folder: string) {
         )
           throw new Error('Inline or executable WASM in production build.');
         if (
-          /Test-only blocked registration|probe-result|__archiveReads|__abortTrigger|__wasmCalls|socialprune-test/.test(
+          /Test-only blocked registration|probe-result|__archiveReads|__abortTrigger|__wasmCalls|socialprune-test|__rejectNextDecision|__recordWorkspacePost|__captureReviewRequest|__releaseHeldDecision/.test(
             text,
           )
         )

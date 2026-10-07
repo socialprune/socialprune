@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { Dialog } from '@base-ui/react/dialog';
+import { ContextMenu } from '@base-ui/react/context-menu';
 import { ArrowLeft, Bookmark, Check, Circle, Image, Pause } from 'lucide-react';
 import { useIntl } from 'react-intl';
 import { dayKey } from '@socialprune/core/workspace/time';
 import type { AssessmentSource, DecisionValue } from '@socialprune/core';
 import type {
   ItemDetail,
+  BulkPreview,
   QueryFilter,
   QuerySort,
   ReviewRow,
@@ -18,16 +20,22 @@ import type { WorkspaceClient } from '../workspace/client.ts';
 import { useT } from '../i18n/index.ts';
 import {
   categoryID,
+  actionMessage,
   decisionMessage,
-  evidenceParts,
+  evidenceSegments,
   kindMessage,
   letterDecision,
   platformLink,
   riskMessage,
 } from './model.ts';
 import styles from './Review.module.css';
+import { BulkDialog } from './BulkDialog.tsx';
+import { templateMessage } from './filters.ts';
+import type { Template } from './filters.ts';
+import { Filters } from './Filters.tsx';
 
 const WINDOW = 200;
+const PAGE = 100;
 const visibleIndex = (index: number) => Math.floor(index / WINDOW) * WINDOW;
 const nextId = () => crypto.randomUUID();
 const keys = [
@@ -52,7 +60,9 @@ function Source({ source }: { source: AssessmentSource }) {
         ? t('review.example')
         : source.kind === 'agent'
           ? t('review.agent', { name: source.name })
-          : source.name}
+          : source.kind === 'model'
+            ? t('review.modelSource', { name: source.name })
+            : t('review.sourceRules')}
     </span>
   );
 }
@@ -82,7 +92,9 @@ export function Review({ client }: { client: WorkspaceClient }) {
   );
   const [filter, setFilter] = useState<QueryFilter>({});
   const [sort, setSort] = useState<QuerySort>([
+    { by: 'risk', direction: 'desc' },
     { by: 'createdAt', direction: 'desc' },
+    { by: 'id', direction: 'asc' },
   ]);
   const [search, setSearch] = useState('');
   const [total, setTotal] = useState(0);
@@ -92,16 +104,26 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [sourceBadges, setSourceBadges] = useState<
-    Map<string, AssessmentSource[]>
-  >(new Map());
   const [searching, setSearching] = useState(false);
   const [saved, setSaved] = useState(true);
+  const [template, setTemplate] = useState<Template>('none');
+  const [queryCounts, setQueryCounts] = useState<
+    Extract<WorkspaceReply, { type: 'queryResult' }>['counts'] | null
+  >(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState<BulkPreview | null>(null);
+  const [bulkValue, setBulkValue] = useState<DecisionValue>('delete');
+  const [bulkOverwrite, setBulkOverwrite] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkReplacement, setBulkReplacement] = useState<
+    'stale' | 'expired' | null
+  >(null);
   const [activeCommand, setActiveCommand] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [history, setHistory] = useState<
     Extract<WorkspaceReply, { type: 'historyEntries' }>['entries']
   >([]);
@@ -115,6 +137,16 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const queryId = useRef(nextId());
+  const pageId = useRef(nextId());
+  const previewId = useRef<string | null>(null);
+  const bulkVersion = useRef(0);
+  const bulkQueryId = useRef(nextId());
+  const bulkGeneration = useRef(0);
+  const bulkSelected = useRef<string[] | null>(null);
+  const bulkFilter = useRef<QueryFilter | null>(null);
+  const [bulkSuggested, setBulkSuggested] = useState(false);
+  const allViewSelected = useRef(false);
+  const [selectionAll, setSelectionAll] = useState(false);
   const generation = useRef(0);
   const grid = useRef<HTMLDivElement | null>(null);
   const detailHeading = useRef<HTMLHeadingElement | null>(null);
@@ -122,15 +154,23 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const detailInvoker = useRef<HTMLElement | null>(null);
   const windowOffset = useRef(0);
   const loadingWindow = useRef<string | null>(null);
+  const selectionAnchor = useRef<number | null>(null);
   const currentQuery = useRef({ generation: 0, total: 0 });
   const focusedIndex = useRef(0);
   const movingFocus = useRef(false);
   const pendingCommands = useRef(new Set<Promise<unknown>>());
+  const ownRevision = useRef(-1);
   const virtualizer = useVirtualizer({
     count: total,
     getScrollElement: () => grid.current,
     estimateSize: () => 180,
-    overscan: 3,
+    overscan: 5,
+    useAnimationFrameWithResizeObserver: true,
+    getItemKey: (index) => rows[index - offset]?.id ?? `loading-${index}`,
+    rangeExtractor: (range) =>
+      [...new Set([...defaultRangeExtractor(range), focusIndex])]
+        .filter((index) => index >= 0 && index < total)
+        .sort((a, b) => a - b),
   });
   const zone =
     summary?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -138,7 +178,14 @@ export function Review({ client }: { client: WorkspaceClient }) {
   useEffect(
     () =>
       client.subscribe((notification) => {
-        if (notification.type === 'changed') setRevision(notification.revision);
+        if (notification.type === 'changed') {
+          setRevision(notification.revision);
+          if (
+            !pendingCommands.current.size &&
+            notification.revision !== ownRevision.current
+          )
+            setNotice(t('review.otherTab'));
+        }
       }),
     [client],
   );
@@ -149,24 +196,41 @@ export function Review({ client }: { client: WorkspaceClient }) {
       .then((reply) => {
         if (reply.type === 'itemDetail' && activeDetail.current === detailId)
           setDetail(reply);
-      });
+      })
+      .catch(() => setError(t('review.storageError')));
   }, [client, detailId, revision]);
   useEffect(() => {
     if (!historyOpen) return;
     void client
-      .request({ type: 'history', requestId: nextId(), limit: 100 })
+      .request({ type: 'history', requestId: nextId(), limit: 50 })
       .then((reply) => {
         if (reply.type === 'historyEntries') setHistory(reply.entries);
-      });
+      })
+      .catch(() => setError(t('review.storageError')));
   }, [client, historyOpen, revision]);
   useEffect(() => {
     let mounted = true;
-    void client.open().then((reply) => {
-      if (!mounted || reply.type !== 'opened') return;
-      setSummary(reply.summary);
-      setAccountKey(reply.summary.accounts[0]?.key ?? '');
-      setLoaded(true);
-    });
+    void client
+      .open()
+      .then((reply) => {
+        if (!mounted) return;
+        if (reply.type !== 'opened') {
+          setError(t('review.storageError'));
+          return;
+        }
+        setSummary(reply.summary);
+        // Preserve a person's account choice made while the initial store read
+        // was pending; a late summary must not move the view to another account.
+        setAccountKey((prior) =>
+          reply.summary.accounts.some(({ key }) => key === prior)
+            ? prior
+            : (reply.summary.accounts[0]?.key ?? ''),
+        );
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (mounted) setError(t('review.storageError'));
+      });
     return () => {
       mounted = false;
     };
@@ -175,6 +239,16 @@ export function Review({ client }: { client: WorkspaceClient }) {
     () => () => {
       activeDetail.current = null;
       generation.current++;
+      bulkVersion.current++;
+      if (previewId.current)
+        void client
+          .request({
+            type: 'releasePreview',
+            requestId: nextId(),
+            pageId: pageId.current,
+            previewId: previewId.current,
+          })
+          .catch(() => undefined);
     },
     [],
   );
@@ -200,6 +274,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
         if (!current || result.type !== 'queryResult') return;
         currentQuery.current = { generation: next, total: result.total };
         setTotal(result.total);
+        setQueryCounts(result.counts);
         const first = Math.min(
           focusedIndex.current,
           Math.max(0, result.total - 1),
@@ -236,20 +311,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
         queryId: queryId.current,
         generation: version,
         offset: start,
-        limit: WINDOW,
+        limit: paged ? PAGE : WINDOW,
       });
       if (reply.type !== 'rows' || version !== generation.current) return;
       windowOffset.current = start;
       setOffset(start);
       setRows(reply.rows);
-      // Bounded web metadata supplements the shared row protocol. Full item
-      // text crosses the page boundary only for an explicitly opened detail.
-      const badges = await client.sources(
-        reply.rows
-          .filter(({ highestRisk }) => highestRisk !== null)
-          .map(({ id }) => id),
-      );
-      if (version === generation.current) setSourceBadges(badges);
     } catch {
       setError(t('review.storageError'));
     } finally {
@@ -261,10 +328,15 @@ export function Review({ client }: { client: WorkspaceClient }) {
   }
   const virtualItems = virtualizer.getVirtualItems();
   useEffect(() => {
-    const first = virtualItems[0]?.index;
+    const first = virtualizer.range?.startIndex;
     if (first !== undefined) {
-      if (visibleIndex(first) !== windowOffset.current)
+      if (visibleIndex(first) !== windowOffset.current) {
         void loadWindow(visibleIndex(first));
+        if (!movingFocus.current) {
+          focusedIndex.current = first;
+          setFocusIndex(first);
+        }
+      }
       if (
         movingFocus.current &&
         virtualItems.some(({ index }) => index === focusedIndex.current)
@@ -278,7 +350,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
         setFocusIndex(first);
       }
     }
-  }, [virtualItems[0]?.index]);
+  }, [virtualizer.range?.startIndex]);
 
   async function move(index: number, extend = false) {
     movingFocus.current = true;
@@ -289,33 +361,207 @@ export function Review({ client }: { client: WorkspaceClient }) {
     focusedIndex.current = bounded;
     if (!paged) virtualizer.scrollToIndex(bounded, { align: 'auto' });
     if (extend) {
-      const anchor = rowAt(focusIndex)?.id;
-      const result = await client.request({
-        type: 'window',
-        requestId: nextId(),
-        queryId: queryId.current,
-        generation: generation.current,
-        offset: bounded,
-        limit: 1,
-      });
-      if (result.type === 'rows' && result.rows[0])
-        setSelection(
-          (prior) =>
-            new Set([
-              ...prior,
-              ...(anchor ? [anchor] : []),
-              result.rows[0]!.id,
-            ]),
-        );
-    }
+      allViewSelected.current = false;
+      setSelectionAll(false);
+      const anchor = selectionAnchor.current ?? focusIndex;
+      selectionAnchor.current = anchor;
+      const start = Math.min(anchor, bounded),
+        end = Math.max(anchor, bounded);
+      if (end - start + 1 > 10_000) {
+        setNotice(t('bulk.selectionLimit'));
+        return;
+      }
+      const selected = new Set(selection);
+      for (let offset = start; offset <= end; offset += WINDOW) {
+        const result = await client.request({
+          type: 'window',
+          requestId: nextId(),
+          queryId: queryId.current,
+          generation: generation.current,
+          offset,
+          limit: Math.min(WINDOW, end - offset + 1),
+        });
+        if (result.type === 'rows')
+          for (const row of result.rows) selected.add(row.id);
+      }
+      setSelection(selected);
+      client.rows = rows;
+    } else selectionAnchor.current = null;
   }
   function toggle(id: string) {
+    allViewSelected.current = false;
+    setSelectionAll(false);
     setSelection((prior) => {
       const next = new Set(prior);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }
+  function resetView() {
+    generation.current++;
+    setSelection(new Set());
+    selectionAnchor.current = null;
+    allViewSelected.current = false;
+    setSelectionAll(false);
+    setRows([]);
+    client.rows = [];
+    setFocusIndex(0);
+    focusedIndex.current = 0;
+    setOffset(0);
+    windowOffset.current = 0;
+    virtualizer.scrollToOffset(0);
+    closeDetail(false);
+    cancelBulk();
+  }
+  function updateFilter(value: QueryFilter) {
+    resetView();
+    setFilter(value);
+    setError(null);
+  }
+  function cancelBulk() {
+    bulkVersion.current++;
+    if (previewId.current)
+      void client
+        .request({
+          type: 'releasePreview',
+          requestId: nextId(),
+          pageId: pageId.current,
+          previewId: previewId.current,
+        })
+        .catch(() => undefined);
+    previewId.current = null;
+    setBulkOpen(false);
+    setBulkPreview(null);
+    setBulkLoading(false);
+    setBulkReplacement(null);
+  }
+  async function prepareBulk(
+    value: DecisionValue,
+    overwrite = bulkOverwrite,
+    replacement: 'stale' | 'expired' | null = null,
+    selectedIds: string[] | null = null,
+    suggested = false,
+  ) {
+    if (!generation.current || pendingCommands.current.size) return;
+    if (replacement === null) {
+      bulkSelected.current = selectedIds;
+      bulkFilter.current = suggested
+        ? {
+            ...filter,
+            risk: { min: 2, max: 3, unknown: 'exclude' },
+            decisions: ['undecided', 'later'],
+          }
+        : null;
+      setBulkSuggested(suggested);
+    }
+    const version = ++bulkVersion.current;
+    setBulkValue(value);
+    setBulkOverwrite(overwrite);
+    setBulkOpen(true);
+    setBulkLoading(true);
+    setBulkReplacement(replacement);
+    const id = nextId();
+    try {
+      if (previewId.current)
+        await client.request({
+          type: 'releasePreview',
+          requestId: nextId(),
+          pageId: pageId.current,
+          previewId: previewId.current,
+        });
+      if (version !== bulkVersion.current) return;
+      previewId.current = id;
+      const queryGeneration = ++bulkGeneration.current;
+      const fresh = await client.request({
+        type: 'query',
+        requestId: nextId(),
+        queryId: bulkQueryId.current,
+        generation: queryGeneration,
+        accountKey,
+        filter: bulkFilter.current ?? filter,
+        sort,
+        search,
+      });
+      if (version !== bulkVersion.current) return;
+      if (fresh.type !== 'queryResult') {
+        setError(t('review.storageError'));
+        return;
+      }
+      const reply = await client.request({
+        type: 'previewBulk',
+        requestId: nextId(),
+        pageId: pageId.current,
+        previewId: id,
+        queryId: bulkQueryId.current,
+        generation: queryGeneration,
+        value,
+        overwrite: overwrite
+          ? ['undecided', 'later', 'keep', 'delete']
+          : ['undecided', 'later'],
+        ...(bulkSelected.current ? { itemIds: bulkSelected.current } : {}),
+      });
+      if (version !== bulkVersion.current) {
+        await client.request({
+          type: 'releasePreview',
+          requestId: nextId(),
+          pageId: pageId.current,
+          previewId: id,
+        });
+        return;
+      }
+      if (reply.type === 'bulkPreview') setBulkPreview(reply);
+      else setError(t('review.storageError'));
+    } catch {
+      setError(t('review.storageError'));
+    } finally {
+      if (version === bulkVersion.current) setBulkLoading(false);
+    }
+  }
+  async function confirmBulk() {
+    if (!bulkPreview || bulkLoading) return;
+    setBulkLoading(true);
+    setError(null);
+    setSaved(false);
+    setActiveCommand(true);
+    const promise = client.request({
+      type: 'confirmBulk',
+      requestId: nextId(),
+      commandId: nextId(),
+      pageId: pageId.current,
+      previewId: bulkPreview.previewId,
+    });
+    pendingCommands.current.add(promise);
+    try {
+      const result = await promise;
+      if (result.type === 'committed') {
+        ownRevision.current = result.revision;
+        setSaved(true);
+        setNotice(t('review.markNotice', { count: result.changed }));
+        setRevision(result.revision);
+        cancelBulk();
+        setSelection(new Set());
+        allViewSelected.current = false;
+        setSelectionAll(false);
+      } else if (
+        result.type === 'rejected' &&
+        (result.code === 'STALE_PREVIEW' || result.code === 'PREVIEW_EXPIRED')
+      ) {
+        pendingCommands.current.delete(promise);
+        await prepareBulk(
+          bulkValue,
+          bulkOverwrite,
+          result.code === 'STALE_PREVIEW' ? 'stale' : 'expired',
+        );
+        setSaved(true);
+      } else setError(t('review.storageError'));
+    } catch {
+      setError(t('review.storageError'));
+    } finally {
+      pendingCommands.current.delete(promise);
+      setActiveCommand(false);
+      setBulkLoading(false);
+    }
   }
   async function openDetail(row: ReviewRow) {
     detailInvoker.current = document.activeElement as HTMLElement | null;
@@ -338,18 +584,32 @@ export function Review({ client }: { client: WorkspaceClient }) {
       setError(t('review.storageError'));
     }
   }
-  function closeDetail() {
+  function closeDetail(returnFocus = true) {
     activeDetail.current = null;
     setDetailId(null);
     setDetail(null);
+    if (!returnFocus) return;
     if (grid.current) grid.current.focus();
     else detailInvoker.current?.focus();
+    requestAnimationFrame(() => {
+      if (activeDetail.current === null) {
+        if (grid.current) grid.current.focus();
+        else detailInvoker.current?.focus();
+      }
+    });
   }
   async function command(value: DecisionValue, explicit?: ReviewRow) {
-    // W2a single-item proof. A selected group requires W2b's frozen preview,
-    // never silently turn selection into a list of independent writes.
-    if (!explicit && selection.size) {
-      setNotice(t('review.bulkPending'));
+    if (!explicit && (selection.size || allViewSelected.current)) {
+      if (!allViewSelected.current && selection.size > 10_000) {
+        setNotice(t('bulk.selectionLimit'));
+        return;
+      }
+      await prepareBulk(
+        value,
+        false,
+        null,
+        allViewSelected.current ? null : [...selection],
+      );
       return;
     }
     const row = explicit ?? rowAt(focusIndex);
@@ -363,6 +623,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
       expected: { [row.id]: row.decision },
     });
     pendingCommands.current.add(promise);
+    setError(null);
     setSaved(false);
     setActiveCommand(true);
     try {
@@ -372,6 +633,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
         return;
       }
       setSaved(true);
+      ownRevision.current = result.revision;
       setRows((prior) =>
         prior.map((item) =>
           item.id === row.id ? { ...item, decision: value } : item,
@@ -394,11 +656,13 @@ export function Review({ client }: { client: WorkspaceClient }) {
       commandId: nextId(),
     });
     pendingCommands.current.add(promise);
+    setError(null);
     setSaved(false);
     setActiveCommand(true);
     try {
       const result = await promise;
       if (result.type === 'committed') {
+        ownRevision.current = result.revision;
         setSaved(true);
         setNotice(
           t('review.undoNotice', {
@@ -422,7 +686,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     const result = await client.request({
       type: 'history',
       requestId: nextId(),
-      limit: 100,
+      limit: 50,
     });
     if (result.type === 'historyEntries') {
       setHistory(result.entries);
@@ -481,6 +745,24 @@ export function Review({ client }: { client: WorkspaceClient }) {
       closeDetail();
       return;
     }
+    if (key === 'ContextMenu' || (event.shiftKey && key === 'F10')) {
+      event.preventDefault();
+      const node = document.getElementById(
+        `review-cell-${focusIndex}`,
+      )?.parentElement;
+      if (node) {
+        const bounds = node.getBoundingClientRect();
+        grid.current?.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            clientX: bounds.left + 12,
+            clientY: bounds.top + 12,
+            button: 2,
+          }),
+        );
+      }
+      return;
+    }
     if (key === '?' && singleKeys) {
       event.preventDefault();
       setHelpOpen(true);
@@ -497,7 +779,14 @@ export function Review({ client }: { client: WorkspaceClient }) {
     await Promise.all(pendingCommands.current);
     setPaged((value) => !value);
     setSelection(new Set());
+    allViewSelected.current = false;
+    setSelectionAll(false);
     closeDetail();
+    setRows([]);
+    client.rows = [];
+    windowOffset.current = 0;
+    setOffset(0);
+    setRevision((value) => value + 1);
   }
   function rowContent(row: ReviewRow) {
     return (
@@ -531,9 +820,17 @@ export function Review({ client }: { client: WorkspaceClient }) {
               .join(', ')}
           </div>
         )}
-        {(sourceBadges.get(row.id) ?? []).map((source, index) => (
+        {row.sources.map((source, index) => (
           <Source key={index} source={source} />
         ))}
+        {row.moreSources > 0 && (
+          <span
+            className={styles.badge}
+            aria-label={t('review.moreSources', { count: row.moreSources })}
+          >
+            +{row.moreSources}
+          </span>
+        )}
         <DecisionBadge value={row.decision} />
       </>
     );
@@ -543,12 +840,97 @@ export function Review({ client }: { client: WorkspaceClient }) {
       ? t(decisionMessage[value as DecisionValue])
       : t('review.outcomeRecorded');
   }
+  function historyKind(kind: string) {
+    return t(
+      kind === 'undo'
+        ? 'review.historyUndo'
+        : kind === 'redo'
+          ? 'review.historyRedo'
+          : kind === 'outcome'
+            ? 'review.historyOutcome'
+            : 'review.historyDecision',
+    );
+  }
   const focused = rowAt(focusIndex);
+  const currentAssessments = detail
+    ? [
+        ...new Map(
+          detail.assessments.map((assessment) => [
+            JSON.stringify([assessment.source.kind, assessment.source.name]),
+            assessment,
+          ]),
+        ).values(),
+      ].sort(
+        (a, b) => b.risk - a.risk || a.source.name.localeCompare(b.source.name),
+      )
+    : [];
+  const unknownEngagement = {
+    include: 'review.includeUnknown',
+    exclude: 'review.excludeUnknown',
+    only: 'review.onlyUnknown',
+  } as const;
+  const filterLabels =
+    [
+      search ? `${t('review.search')}: ${search}` : null,
+      filter.decisions?.length
+        ? `${t('review.status')}: ${filter.decisions.map((value) => t(decisionMessage[value])).join(', ')}`
+        : null,
+      filter.kinds?.length
+        ? `${t('review.kindFilter')}: ${filter.kinds.map((value) => t(kindMessage[value])).join(', ')}`
+        : null,
+      filter.categories?.length
+        ? `${t('review.categoryFilter')}: ${filter.categories.map((value) => t(categoryID(value))).join(', ')}`
+        : null,
+      filter.risk
+        ? `${t('review.riskFilter')}: ${filter.risk.unknown === 'only' ? t('review.noSuggestionsFilter') : t(riskMessage[filter.risk.min ?? 0] ?? 'review.riskNone')}`
+        : null,
+      filter.dates
+        ? `${t('review.dateFrom')}: ${filter.dates.from ?? ''}, ${t('review.dateTo')}: ${filter.dates.to ?? ''}`
+        : null,
+      filter.likes
+        ? `${t('review.likesMinimum')}: ${filter.likes.min ?? ''}, ${t('review.likesMaximum')}: ${filter.likes.max ?? ''}, ${t('review.unknownEngagement')}: ${t(unknownEngagement[filter.likes.unknown])}`
+        : null,
+      filter.reposts
+        ? `${t('review.repostsMinimum')}: ${filter.reposts.min ?? ''}, ${t('review.repostsMaximum')}: ${filter.reposts.max ?? ''}, ${t('review.unknownReposts')}: ${t(unknownEngagement[filter.reposts.unknown])}`
+        : null,
+      filter.sources?.length
+        ? `${t('review.sourceFilter')}: ${filter.sources.map((source) => t(({ rules: 'review.sourceRules', model: 'review.sourceModel', agent: 'review.sourceAgent', fixture: 'review.example' } as const)[source])).join(', ')}`
+        : null,
+      filter.outcomes?.length
+        ? `${t('review.outcomeFilter')}: ${filter.outcomes.map((outcome) => t(({ unknown: 'review.outcomeUnknown', skipped: 'review.outcomeSkipped', 'deleted-by-user': 'review.outcomeDeleted' } as const)[outcome])).join(', ')}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('; ') || t(templateMessage[template]);
   return (
     <section
       aria-label={t('review.title')}
       data-testid="review"
+      className={styles.container}
       data-generation={generation.current}
+      data-detail-open={detailId !== null}
+      onKeyDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          target.closest(
+            'input, textarea, select, [contenteditable="true"], [role="grid"]',
+          )
+        )
+          return;
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === 'z'
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          void reverse(event.shiftKey ? 'redo' : 'undo');
+        }
+        if (event.ctrlKey && event.key.toLowerCase() === 'y') {
+          event.preventDefault();
+          event.stopPropagation();
+          void reverse('redo');
+        }
+      }}
     >
       {summary?.kind === 'demo' && (
         <p className={styles.notice}>{t('demo.banner')}</p>
@@ -560,12 +942,15 @@ export function Review({ client }: { client: WorkspaceClient }) {
             <select
               value={accountKey}
               onChange={(event) => {
+                resetView();
+                setSearch('');
+                setFilter({});
+                setTemplate('none');
                 setAccountKey(event.target.value);
                 setSelection(new Set());
                 setRows([]);
                 client.rows = [];
-                setSourceBadges(new Map());
-                closeDetail();
+                closeDetail(false);
               }}
             >
               {summary?.accounts.map((account) => (
@@ -580,17 +965,24 @@ export function Review({ client }: { client: WorkspaceClient }) {
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                resetView();
+                setSearch(event.target.value);
+              }}
             />
           </label>
           <label className={styles.field}>
             {t('review.status')}
             <select
+              value={filter.decisions?.[0] ?? 'all'}
               onChange={(event) =>
-                setFilter(
+                updateFilter(
                   event.target.value === 'all'
-                    ? {}
-                    : { decisions: [event.target.value as DecisionValue] },
+                    ? { ...filter, decisions: undefined }
+                    : {
+                        ...filter,
+                        decisions: [event.target.value as DecisionValue],
+                      },
                 )
               }
             >
@@ -608,14 +1000,15 @@ export function Review({ client }: { client: WorkspaceClient }) {
             {t('review.sort')}
             <select
               value={sort[0]?.by}
-              onChange={(event) =>
+              onChange={(event) => {
+                resetView();
                 setSort([
                   {
                     by: event.target.value as QuerySort[0]['by'],
                     direction: 'desc',
                   },
-                ])
-              }
+                ]);
+              }}
             >
               <option value="createdAt">{t('review.date')}</option>
               <option value="risk">{t('review.risk')}</option>
@@ -639,11 +1032,70 @@ export function Review({ client }: { client: WorkspaceClient }) {
           >
             {t('review.history')}
           </button>
-          <span role="status">
-            {saved ? t('review.saved') : t('review.saving')}
+          <span data-testid="save-state">
+            {error && !saved
+              ? t('review.notSaved')
+              : saved
+                ? t('review.saved')
+                : t('review.saving')}
           </span>
         </div>
         <div className={styles.listRegion}>
+          <Filters
+            filter={filter}
+            template={template}
+            zone={zone}
+            onFilter={updateFilter}
+            onTemplate={setTemplate}
+          />
+          <div className={styles.actions} aria-label={t('bulk.actions')}>
+            {summary && summary.counts.assessments > 0 && (
+              <button
+                disabled={activeCommand || searching}
+                onClick={() => {
+                  void prepareBulk('delete', false, null, null, true);
+                }}
+              >
+                {t('bulk.markSuggested')}
+              </button>
+            )}
+            {(['delete', 'keep', 'later', 'undecided'] as const).map(
+              (value) => (
+                <button
+                  key={value}
+                  disabled={activeCommand || searching || !total}
+                  onClick={() => {
+                    void prepareBulk(value, false);
+                  }}
+                >
+                  {t('bulk.allAction', { action: t(actionMessage[value]) })}
+                </button>
+              ),
+            )}
+          </div>
+          {(search ||
+            Object.values(filter).some((value) => value !== undefined)) && (
+            <p>
+              {t('review.filtersActive')}{' '}
+              <button
+                onClick={() => {
+                  resetView();
+                  setSearch('');
+                  setTemplate('none');
+                  setFilter({});
+                }}
+              >
+                {t('review.clearFilters')}
+              </button>
+            </p>
+          )}
+          {!total && loaded && !searching && <p>{t('review.noResults')}</p>}
+          {!!total &&
+            !search &&
+            !Object.values(filter).some((value) => value !== undefined) &&
+            queryCounts?.decisions.undecided === 0 && (
+              <p>{t('review.allDecided')}</p>
+            )}
           {tip && (
             <p>
               {t('review.tip')}{' '}
@@ -663,25 +1115,82 @@ export function Review({ client }: { client: WorkspaceClient }) {
               : t('review.total', { count: total })}
           </p>
           <p>
-            {t('review.selected', { count: selection.size })}{' '}
+            {t('review.selected', {
+              count: selectionAll ? total : selection.size,
+            })}{' '}
             <button
-              onClick={() => setSelection(new Set(rows.map(({ id }) => id)))}
+              onClick={() => {
+                allViewSelected.current = false;
+                setSelectionAll(false);
+                selectionAnchor.current = null;
+                setSelection(new Set(rows.map(({ id }) => id)));
+              }}
             >
               {t('review.selectWindow')}
             </button>{' '}
-            <button onClick={() => setSelection(new Set())}>
+            <button
+              onClick={() => {
+                allViewSelected.current = true;
+                setSelectionAll(true);
+                setSelection(new Set(rows.map(({ id }) => id)));
+              }}
+            >
+              {t('review.selectAllView')}
+            </button>{' '}
+            <button
+              onClick={() => {
+                allViewSelected.current = false;
+                setSelectionAll(false);
+                setSelection(new Set());
+              }}
+            >
               {t('review.clearSelection')}
             </button>
           </p>
+          {(selection.size > 0 || selectionAll) && (
+            <div
+              className={styles.selectionBar}
+              role="toolbar"
+              aria-label={t('bulk.selectionActions')}
+            >
+              {(['delete', 'keep', 'later', 'undecided'] as const).map(
+                (value) => (
+                  <button
+                    key={value}
+                    disabled={
+                      activeCommand ||
+                      searching ||
+                      (!selectionAll && selection.size > 10_000)
+                    }
+                    onClick={() => {
+                      void prepareBulk(
+                        value,
+                        false,
+                        null,
+                        selectionAll ? null : [...selection],
+                      );
+                    }}
+                  >
+                    {t('bulk.selectedAction', {
+                      action: t(actionMessage[value]),
+                    })}
+                  </button>
+                ),
+              )}
+              {selection.size > 10_000 && !selectionAll && (
+                <p>{t('bulk.selectionLimit')}</p>
+              )}
+            </div>
+          )}
           {paged ? (
             <>
               <ul className={styles.nativeList}>
-                {rows.map((row) => (
+                {rows.slice(0, PAGE).map((row) => (
                   <li className={styles.nativeRow} key={row.id}>
                     <label>
                       <input
                         type="checkbox"
-                        checked={selection.has(row.id)}
+                        checked={selectionAll || selection.has(row.id)}
                         onChange={() => toggle(row.id)}
                       />{' '}
                       {t('review.selectEntry')}
@@ -701,15 +1210,15 @@ export function Review({ client }: { client: WorkspaceClient }) {
                 <button
                   disabled={!offset}
                   onClick={() => {
-                    void loadWindow(Math.max(0, offset - WINDOW));
+                    void loadWindow(Math.max(0, offset - PAGE));
                   }}
                 >
                   {t('review.previous')}
                 </button>
                 <button
-                  disabled={offset + WINDOW >= total}
+                  disabled={offset + PAGE >= total}
                   onClick={() => {
-                    void loadWindow(offset + WINDOW);
+                    void loadWindow(offset + PAGE);
                   }}
                 >
                   {t('review.next')}
@@ -717,64 +1226,108 @@ export function Review({ client }: { client: WorkspaceClient }) {
               </div>
             </>
           ) : (
-            <div
-              role="grid"
-              aria-label={t('review.entries')}
-              aria-colcount={1}
-              aria-rowcount={total}
-              aria-activedescendant={
-                focused &&
-                virtualItems.some(({ index }) => index === focusIndex)
-                  ? `review-cell-${focusIndex}`
-                  : undefined
-              }
-              aria-describedby="review-key-tip"
-              tabIndex={0}
-              ref={grid}
-              className={styles.grid}
-              onKeyDown={keyboard}
-            >
-              <div
-                className={styles.canvas}
-                style={{ height: virtualizer.getTotalSize() }}
+            <ContextMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+              <ContextMenu.Trigger
+                render={
+                  <div
+                    role="grid"
+                    aria-label={t('review.entries')}
+                    aria-colcount={1}
+                    aria-multiselectable="true"
+                    aria-rowcount={total}
+                    aria-activedescendant={
+                      focused &&
+                      virtualItems.some(({ index }) => index === focusIndex)
+                        ? `review-cell-${focusIndex}`
+                        : undefined
+                    }
+                    aria-describedby="review-key-tip"
+                    tabIndex={0}
+                    ref={grid}
+                    className={styles.grid}
+                    onKeyDown={keyboard}
+                  />
+                }
               >
-                {virtualItems.map((virtual) => {
-                  const row = rowAt(virtual.index);
-                  const previous = rowAt(virtual.index - 1);
-                  return row ? (
-                    <div
-                      role="row"
-                      aria-rowindex={virtual.index + 1}
-                      aria-selected={selection.has(row.id)}
-                      key={row.id}
-                      data-index={virtual.index}
-                      ref={virtualizer.measureElement}
-                      className={`${styles.row} ${focusIndex === virtual.index ? styles.focused : ''} ${selection.has(row.id) ? styles.selected : ''}`}
-                      style={{ transform: `translateY(${virtual.start}px)` }}
+                <div
+                  className={styles.canvas}
+                  style={{ height: virtualizer.getTotalSize() }}
+                >
+                  {virtualItems.map((virtual) => {
+                    const row = rowAt(virtual.index);
+                    const previous = rowAt(virtual.index - 1);
+                    return row ? (
+                      <div
+                        role="row"
+                        aria-rowindex={virtual.index + 1}
+                        aria-selected={selectionAll || selection.has(row.id)}
+                        key={row.id}
+                        data-index={virtual.index}
+                        ref={virtualizer.measureElement}
+                        className={`${styles.row} ${focusIndex === virtual.index ? styles.focused : ''} ${selectionAll || selection.has(row.id) ? styles.selected : ''}`}
+                        style={{ transform: `translateY(${virtual.start}px)` }}
+                        onClick={() => {
+                          focusedIndex.current = virtual.index;
+                          setFocusIndex(virtual.index);
+                          grid.current?.focus();
+                        }}
+                        onContextMenu={() => {
+                          focusedIndex.current = virtual.index;
+                          setFocusIndex(virtual.index);
+                        }}
+                        onDoubleClick={() => {
+                          void openDetail(row);
+                        }}
+                      >
+                        <div
+                          role="gridcell"
+                          id={`review-cell-${virtual.index}`}
+                        >
+                          {(!previous ||
+                            dayKey(previous.createdAt, zone) !==
+                              dayKey(row.createdAt, zone)) && (
+                            <strong>
+                              {intl.formatDate(row.createdAt, {
+                                dateStyle: 'long',
+                                timeZone: zone,
+                              })}
+                            </strong>
+                          )}
+                          {rowContent(row)}
+                        </div>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Positioner>
+                  <ContextMenu.Popup className={styles.menu}>
+                    <ContextMenu.Item
                       onClick={() => {
-                        focusedIndex.current = virtual.index;
-                        setFocusIndex(virtual.index);
-                        grid.current?.focus();
+                        const row = rowAt(focusIndex);
+                        if (row) void openDetail(row);
                       }}
                     >
-                      <div role="gridcell" id={`review-cell-${virtual.index}`}>
-                        {(!previous ||
-                          dayKey(previous.createdAt, zone) !==
-                            dayKey(row.createdAt, zone)) && (
-                          <strong>
-                            {intl.formatDate(row.createdAt, {
-                              dateStyle: 'long',
-                              timeZone: zone,
-                            })}
-                          </strong>
-                        )}
-                        {rowContent(row)}
-                      </div>
-                    </div>
-                  ) : null;
-                })}
-              </div>
-            </div>
+                      {t('review.openDetail')}
+                    </ContextMenu.Item>
+                    {(['keep', 'delete', 'later', 'undecided'] as const).map(
+                      (value) => (
+                        <ContextMenu.Item
+                          key={value}
+                          disabled={activeCommand}
+                          onClick={() => {
+                            void command(value);
+                          }}
+                        >
+                          {t(actionMessage[value])}
+                        </ContextMenu.Item>
+                      ),
+                    )}
+                  </ContextMenu.Popup>
+                </ContextMenu.Positioner>
+              </ContextMenu.Portal>
+            </ContextMenu.Root>
           )}
           <p id="review-key-tip">{t('review.gridHelp')}</p>
           {notice && (
@@ -796,21 +1349,22 @@ export function Review({ client }: { client: WorkspaceClient }) {
               </button>
             </div>
           )}
-          {error && (
-            <div role="alert">
-              <p>{error}</p>
-              <button
-                onClick={() => {
-                  void client.downloadBackup();
-                }}
-              >
-                {t('workspace.backup')}
-              </button>
-            </div>
-          )}
         </div>
+        {error && (
+          <div role="alert" className={styles.storageError}>
+            <p>{error}</p>
+            <button
+              onClick={() => {
+                void client.downloadBackup();
+              }}
+            >
+              {t('workspace.backup')}
+            </button>
+          </div>
+        )}
         {detailId && (
-          <section
+          <aside
+            role="region"
             aria-label={t('review.detail')}
             className={styles.detail}
             onKeyDown={(event) => {
@@ -820,21 +1374,58 @@ export function Review({ client }: { client: WorkspaceClient }) {
               }
             }}
           >
-            <button onClick={closeDetail}>
+            <button onClick={() => closeDetail()}>
               <ArrowLeft size={20} aria-hidden="true" /> {t('review.back')}
             </button>
             <h2 ref={detailHeading} tabIndex={-1}>
               {t('review.detail')}
             </h2>
+            <p className={styles.mobileSave}>
+              {error && !saved
+                ? t('review.notSaved')
+                : saved
+                  ? t('review.saved')
+                  : t('review.saving')}
+            </p>
             {detail && (
               <>
-                <p className={styles.fullText}>{detail.item.text}</p>
+                <p className={styles.fullText} dir="auto">
+                  {evidenceSegments(
+                    detail.item.text,
+                    currentAssessments.map(({ evidence }) => evidence),
+                  ).map((segment, index) =>
+                    segment.highlight ? (
+                      <mark className={styles.evidence} key={index}>
+                        {segment.text}
+                      </mark>
+                    ) : (
+                      segment.text
+                    ),
+                  )}
+                </p>
                 <p>
                   {t('review.likesValue', {
                     count: detail.item.engagement.likes ?? -1,
                   })}
                 </p>
                 <p>{t('review.exportEngagement')}</p>
+                {detail.item.kind === 'comment' && (
+                  <p>{t('review.commentReference')}</p>
+                )}
+                {detail.item.reference.replyToHandle && (
+                  <p>
+                    {t('review.replyHandle', {
+                      handle: detail.item.reference.replyToHandle,
+                    })}
+                  </p>
+                )}
+                {detail.item.reference.replyToId && (
+                  <p>
+                    {t('review.replyReference', {
+                      id: detail.item.reference.replyToId,
+                    })}
+                  </p>
+                )}
                 {detail.item.mediaCount !== null &&
                   detail.item.mediaCount > 0 && (
                     <p>
@@ -855,11 +1446,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
                   )}
                 {detail.assessments.length ? (
                   <div>
-                    {detail.assessments.map((assessment) => {
-                      const evidence = evidenceParts(
-                        detail.item.text,
-                        assessment.evidence,
-                      );
+                    {currentAssessments.map((assessment) => {
                       return (
                         <section key={assessment.assessmentId}>
                           <h3>
@@ -870,15 +1457,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
                           </h3>
                           <Source source={assessment.source} />
                           <p>{assessment.reason}</p>
-                          {evidence && (
-                            <blockquote>
-                              {evidence.before}
-                              <mark className={styles.evidence}>
-                                {evidence.match}
-                              </mark>
-                              {evidence.after}
-                            </blockquote>
-                          )}
                         </section>
                       );
                     })}
@@ -899,7 +1477,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
                           if (row) void command(value, row);
                         }}
                       >
-                        {t(decisionMessage[value])}{' '}
+                        {t(actionMessage[value])}{' '}
                         <kbd>
                           {
                             {
@@ -936,9 +1514,53 @@ export function Review({ client }: { client: WorkspaceClient }) {
                 </ol>
               </>
             )}
-          </section>
+          </aside>
         )}
       </div>
+      <BulkDialog
+        open={bulkOpen}
+        preview={bulkPreview}
+        account={
+          summary?.accounts.find(({ key }) => key === accountKey)?.handle ??
+          accountKey
+        }
+        filterDescription={
+          bulkSuggested
+            ? `${t('bulk.suggestedFilter')}. ${filterLabels}`
+            : filterLabels
+        }
+        overwrite={bulkOverwrite}
+        loading={bulkLoading}
+        replacement={bulkReplacement}
+        error={error}
+        onOverwrite={(value) => {
+          void prepareBulk(
+            bulkValue,
+            value,
+            null,
+            bulkSelected.current,
+            bulkSuggested,
+          );
+        }}
+        onConfirm={() => {
+          void confirmBulk();
+        }}
+        onCancel={cancelBulk}
+        renderSources={(row) => (
+          <>
+            {row.sources.map((source, index) => (
+              <Source key={index} source={source} />
+            ))}
+            {row.moreSources > 0 && (
+              <span
+                aria-label={t('review.moreSources', { count: row.moreSources })}
+              >
+                +{row.moreSources}
+              </span>
+            )}
+          </>
+        )}
+      />
       <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.backdrop} />
@@ -1005,6 +1627,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
             <ol className={styles.history}>
               {history.map((entry) => (
                 <li key={entry.actionId}>
+                  <strong>{historyKind(entry.kind)}</strong>{' '}
                   {intl.formatDate(entry.time, {
                     dateStyle: 'medium',
                     timeStyle: 'short',

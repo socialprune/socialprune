@@ -42,3 +42,13 @@ export function method9Zip(): Buffer {
   end.writeUInt32LE(local.length + name.length + packed.length, 16);
   return Buffer.concat([local, name, packed, central, name, end]);
 }
+
+export function encryptedZip(): Buffer {
+  const archive = method9Zip();
+  archive.writeUInt16LE(1, 6);
+  archive.writeUInt16LE(0, 8);
+  const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  archive.writeUInt16LE(1, central + 8);
+  archive.writeUInt16LE(0, central + 10);
+  return archive;
+}

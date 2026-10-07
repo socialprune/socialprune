@@ -10,8 +10,6 @@ import type {
   ReviewRow,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
-import { AssessmentSourceSchema } from '@socialprune/core';
-import type { AssessmentSource } from '@socialprune/core';
 
 export class WorkspaceClient {
   readonly worker: Worker;
@@ -22,13 +20,6 @@ export class WorkspaceClient {
     string,
     { resolve: (reply: WorkspaceReply) => void; reject: (error: Error) => void }
   >();
-  private readonly metadataPending = new Map<
-    string,
-    {
-      resolve: (rows: Map<string, AssessmentSource[]>) => void;
-      reject: (error: Error) => void;
-    }
-  >();
   private readonly pendingWrites = new Set<Promise<WorkspaceReply>>();
   private readonly generations = new Map<string, number>();
   private readonly listeners = new Set<
@@ -38,30 +29,6 @@ export class WorkspaceClient {
   constructor(worker: Worker) {
     this.worker = worker;
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {
-      const metadata = event.data as {
-        type?: string;
-        requestId?: string;
-        rows?: { itemId: string; sources: unknown[] }[];
-      };
-      if (metadata.type === 'rowSources' && metadata.requestId) {
-        const waiting = this.metadataPending.get(metadata.requestId);
-        this.metadataPending.delete(metadata.requestId);
-        try {
-          if (!Array.isArray(metadata.rows) || metadata.rows.length > 200)
-            throw new Error('Invalid row metadata.');
-          waiting?.resolve(
-            new Map(
-              metadata.rows.map(({ itemId, sources }) => [
-                itemId,
-                sources.map((source) => AssessmentSourceSchema.parse(source)),
-              ]),
-            ),
-          );
-        } catch {
-          waiting?.reject(new Error('Invalid row metadata.'));
-        }
-        return;
-      }
       const notice = WorkspaceNotificationSchema.safeParse(event.data);
       if (notice.success) {
         for (const listener of this.listeners) listener(notice.data);
@@ -76,11 +43,6 @@ export class WorkspaceClient {
           requestId: reply.requestId,
           at: new Date().toISOString(),
         });
-      const waitingMetadata = this.metadataPending.get(reply.requestId);
-      if (waitingMetadata && reply.type === 'failed') {
-        this.metadataPending.delete(reply.requestId);
-        waitingMetadata.reject(new Error('Row metadata could not be read.'));
-      }
       if (reply.type === 'progress') return;
       const request = this.pending.get(reply.requestId);
       if (!request) return;
@@ -105,43 +67,56 @@ export class WorkspaceClient {
       for (const pending of this.pending.values())
         pending.reject(new Error('Workspace worker stopped.'));
       this.pending.clear();
-      for (const pending of this.metadataPending.values())
-        pending.reject(new Error('Workspace worker stopped.'));
-      this.metadataPending.clear();
-    });
-  }
-  sources(itemIds: string[]): Promise<Map<string, AssessmentSource[]>> {
-    if (itemIds.length > 200)
-      throw new Error('Metadata window exceeds 200 entries.');
-    const requestId = crypto.randomUUID();
-    return new Promise((resolve, reject) => {
-      this.metadataPending.set(requestId, { resolve, reject });
-      this.worker.postMessage({ type: 'rowSources', requestId, itemIds });
     });
   }
   async backup(save: (file: File) => Promise<void>): Promise<void> {
     const chunks: BlobPart[] = [];
+    let saved = () => {};
+    let saveFailed: (error: unknown) => void = () => {};
+    const savedReceipt = new Promise<void>((resolve, reject) => {
+      saved = resolve;
+      saveFailed = reject;
+    });
+    void savedReceipt.catch(() => undefined);
     const target = new WritableStream<Uint8Array>({
       write(chunk) {
         chunks.push(chunk as Uint8Array<ArrayBuffer>);
       },
       close: async () => {
-        await save(
-          new File(chunks, 'socialprune-backup.json', {
-            type: 'application/json',
-          }),
-        );
-        chunks.length = 0;
+        try {
+          await save(
+            new File(chunks, 'socialprune-backup.json', {
+              type: 'application/json',
+            }),
+          );
+          saved();
+        } catch (error) {
+          saveFailed(error);
+          throw error;
+        } finally {
+          chunks.length = 0;
+        }
       },
-      abort() {
+      abort(reason: unknown) {
         chunks.length = 0;
+        saveFailed(
+          reason instanceof Error
+            ? reason
+            : new Error('Backup stream aborted.'),
+        );
       },
     });
     const reply = await this.request(
       { type: 'backup', requestId: crypto.randomUUID(), target },
       [target],
     );
-    if (reply.type !== 'done') throw new Error('Backup did not complete.');
+    if (reply.type !== 'done') {
+      saveFailed(new Error('Backup did not complete.'));
+      throw new Error('Backup did not complete.');
+    }
+    // A transferred WritableStream close can settle before its receiver's
+    // async close callback in WebKit. The caller's save receipt is separate.
+    await savedReceipt;
   }
   async backupTo(target: WritableStream<Uint8Array>): Promise<void> {
     const reply = await this.request(
@@ -247,9 +222,6 @@ export class WorkspaceClient {
     for (const pending of this.pending.values())
       pending.reject(new Error('Workspace client disposed.'));
     this.pending.clear();
-    for (const pending of this.metadataPending.values())
-      pending.reject(new Error('Workspace client disposed.'));
-    this.metadataPending.clear();
   }
 }
 

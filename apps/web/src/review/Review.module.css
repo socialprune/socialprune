@@ -19,6 +19,11 @@
   .listRegion {
     min-width: 0;
   }
+  .storageError {
+    grid-column: 1 / -1;
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-error);
+  }
   .grid {
     height: 60vh;
     min-height: 18rem;
@@ -81,6 +86,9 @@
   .fullText {
     white-space: pre-wrap;
   }
+  .mobileSave {
+    display: none;
+  }
   .evidence {
     color: var(--color-text);
     background: var(--color-evidence-bg);
@@ -104,11 +112,11 @@
   }
   .dialog {
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: var(--space-4);
+    margin: auto;
+    height: fit-content;
     max-width: min(36rem, calc(100vw - var(--space-6)));
-    max-height: 85vh;
+    max-height: calc(100% - var(--space-6));
     overflow: auto;
     padding: var(--space-5);
     background: var(--color-surface);
@@ -117,6 +125,68 @@
   }
   .history {
     padding-inline-start: var(--space-5);
+  }
+  .sample {
+    max-height: 18rem;
+    overflow: auto;
+    padding-inline-start: var(--space-5);
+  }
+  .selectionBar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-selected-bg);
+    border: var(--border-width) solid var(--color-boundary);
+    z-index: 1;
+  }
+  .menu {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+    padding: var(--space-2);
+  }
+  .menu [role='menuitem'] {
+    min-height: var(--target-size);
+    padding: var(--space-2);
+  }
+  .menu [data-highlighted] {
+    outline: var(--focus-width) solid var(--color-action);
+    outline-offset: calc(-1 * var(--focus-width));
+  }
+  .overwrite {
+    display: flex;
+    align-items: start;
+    gap: var(--space-2);
+  }
+  .overwrite input {
+    min-width: 24px;
+    min-height: 24px;
+  }
+  .filters {
+    margin-block: var(--space-3);
+  }
+  .filterFields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-block: var(--space-3);
+  }
+  .filters summary {
+    min-height: var(--target-size);
+    cursor: pointer;
+  }
+  .field input,
+  .field select {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .dialog {
+    width: min(36rem, calc(100vw - var(--space-6)));
+    overflow-wrap: anywhere;
   }
   .nativeList {
     list-style: none;
@@ -133,6 +203,16 @@
     }
     .detail {
       grid-column: 1;
+    }
+    .mobileSave {
+      display: block;
+    }
+    .container[data-detail-open='true'] .listRegion,
+    .container[data-detail-open='true'] .toolbar {
+      display: none;
+    }
+    .actions button {
+      flex-grow: 1;
     }
   }
   @media (forced-colors: active) {

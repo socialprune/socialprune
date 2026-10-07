@@ -109,7 +109,11 @@ export function reviewFixture(
     },
   };
 }
-export async function restoreReview(page: Page, workspace = reviewFixture()) {
+export async function restoreReview(
+  page: Page,
+  workspace = reviewFixture(),
+  accountKey = workspace.items[0]?.account.key,
+) {
   await waitForApp(page);
   const reply = await page.evaluate(
     (text) =>
@@ -123,6 +127,10 @@ export async function restoreReview(page: Page, workspace = reviewFixture()) {
   expect(reply.type).toBe('opened');
   await page.goto('/socialprune/#/review');
   await expect(page.getByRole('grid')).toBeVisible();
+  if (accountKey)
+    await page
+      .getByRole('combobox', { name: 'Account', exact: true })
+      .selectOption(accountKey);
   await expect(page.getByRole('row').first()).toContainText(
     workspace.items[0]!.text,
   );

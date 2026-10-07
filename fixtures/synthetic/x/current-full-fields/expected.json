@@ -1,0 +1,307 @@
+{
+  "status": "ok",
+  "records": [
+    {
+      "platform": "x",
+      "accounts": [
+        {
+          "key": "x:710001",
+          "handle": "example_quokka"
+        }
+      ],
+      "variant": "ytd-tweets",
+      "exportCreatedAt": "2026-10-01T12:00:00.000Z",
+      "itemCount": 8,
+      "diagnostics": [
+        {
+          "category": "account",
+          "status": "found",
+          "files": [
+            "data/account.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "manifest",
+          "status": "found",
+          "files": [
+            "data/manifest.js"
+          ],
+          "count": 1,
+          "message": "Export records were read."
+        },
+        {
+          "category": "tweets",
+          "status": "found",
+          "files": [
+            "data/tweets.js"
+          ],
+          "count": 8,
+          "message": "Export records were read."
+        },
+        {
+          "category": "note-tweets",
+          "status": "empty",
+          "files": [
+            "data/note-tweet.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        },
+        {
+          "category": "deleted-tweets",
+          "status": "found",
+          "files": [
+            "data/deleted-tweets.js"
+          ],
+          "count": 1,
+          "message": "Already deleted posts were counted and were not imported."
+        },
+        {
+          "category": "community-tweets",
+          "status": "empty",
+          "files": [
+            "data/community-tweet.js"
+          ],
+          "count": 0,
+          "message": "This export category contains no records."
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "x:9007199254742600",
+      "platform": "x",
+      "kind": "post",
+      "text": "Invented #LanternNotes and #MossSketch with @example_moth. https://example.org/notes",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742600",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 0
+      }
+    },
+    {
+      "id": "x:9007199254742601",
+      "platform": "x",
+      "kind": "post",
+      "text": "Two invented lantern photos. https://example.org/p2601",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 2,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742601",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 1
+      }
+    },
+    {
+      "id": "x:9007199254742602",
+      "platform": "x",
+      "kind": "post",
+      "text": "An invented lantern animation. https://example.org/v2602",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 1,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742602",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 2
+      }
+    },
+    {
+      "id": "x:9007199254742603",
+      "platform": "x",
+      "kind": "reply",
+      "text": "@example_moth an invented reply about the paper garden.",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": "9007199254742610",
+        "replyToHandle": "example_moth",
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742603",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 3
+      }
+    },
+    {
+      "id": "x:9007199254742604",
+      "platform": "x",
+      "kind": "quote",
+      "text": "An invented quote about lanterns. https://example.org/q2604",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": "9007199254742600",
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742604",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 4
+      }
+    },
+    {
+      "id": "x:9007199254742605",
+      "platform": "x",
+      "kind": "repost",
+      "text": "RT @example_badger: An invented paper garden sketch.",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": "example_badger",
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742605",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 5
+      }
+    },
+    {
+      "id": "x:9007199254742606",
+      "platform": "x",
+      "kind": "post",
+      "text": "An edited invented lantern sketch.",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742606",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 6
+      }
+    },
+    {
+      "id": "x:9007199254742607",
+      "platform": "x",
+      "kind": "post",
+      "text": "An invented drawing with a content notice.",
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": 3,
+        "reposts": 1
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": null
+      },
+      "url": "https://x.com/i/web/status/9007199254742607",
+      "account": {
+        "key": "x:710001",
+        "handle": "example_quokka"
+      },
+      "provenance": {
+        "archive": "archive",
+        "file": "data/tweets.js",
+        "index": 7
+      }
+    }
+  ]
+}

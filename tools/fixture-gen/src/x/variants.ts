@@ -389,6 +389,354 @@ output.push(
   ),
 );
 
+type StringIndices = [string, string];
+function indices(value: string, token: string): StringIndices {
+  const start = value.indexOf(token);
+  if (start < 0) throw new Error('An authored entity must occur in its post.');
+  return [String(start), String(start + token.length)];
+}
+function fullEntities(
+  value: string,
+  options: {
+    hashtags?: string[];
+    mentions?: Array<{ id: string; handle: string }>;
+    urls?: Array<{ url: string; expanded: string; display: string }>;
+    media?: Record<string, unknown>[];
+  } = {},
+): Record<string, unknown> {
+  return {
+    hashtags: (options.hashtags ?? []).map((text) => ({
+      text,
+      indices: indices(value, `#${text}`),
+    })),
+    symbols: [],
+    urls: (options.urls ?? []).map(({ url, expanded, display }) => ({
+      url,
+      expanded_url: expanded,
+      display_url: display,
+      indices: indices(value, url),
+    })),
+    user_mentions: (options.mentions ?? []).map(({ id, handle }) => ({
+      id,
+      id_str: id,
+      name: 'Invented Moth or Badger',
+      screen_name: handle,
+      indices: indices(value, `@${handle}`),
+    })),
+    media: options.media ?? [],
+  };
+}
+function fullMedia(
+  id: string,
+  postId: string,
+  value: string,
+  url: string,
+  type: 'photo' | 'video' = 'photo',
+): Record<string, unknown> {
+  return {
+    id,
+    id_str: id,
+    display_url: `media.example.org/${id}`,
+    expanded_url: `https://example.org/posts/${postId}/${type}/1`,
+    media_url: `http://media.example.org/${id}.jpg`,
+    media_url_https: `https://media.example.org/${id}.jpg`,
+    url,
+    indices: indices(value, url),
+    type,
+    sizes: {
+      large: { w: '1600', h: '900', resize: 'fit' },
+      medium: { w: '1200', h: '675', resize: 'fit' },
+      small: { w: '680', h: '383', resize: 'fit' },
+      thumb: { w: '150', h: '150', resize: 'crop' },
+    },
+  };
+}
+function videoMedia(
+  id: string,
+  postId: string,
+  value: string,
+  url: string,
+): Record<string, unknown> {
+  return {
+    ...fullMedia(id, postId, value, url, 'video'),
+    // Public archive format, MediaGDPREntity.video_info, read 2026-10-07:
+    // https://github.com/alkihis/twitter-archive-reader/blob/a23fb890133553efa850b5c886ffbfb9a0892690/ts/types/GDPRTweets.ts
+    // It names aspect_ratio, duration_millis and variants[].url/content_type/
+    // bitrate, with the numeric archive values represented as strings.
+    video_info: {
+      aspect_ratio: ['16', '9'],
+      duration_millis: '6400',
+      variants: [
+        {
+          url: `https://media.example.org/${id}-640.mp4`,
+          content_type: 'video/mp4',
+          bitrate: '832000',
+        },
+        {
+          url: `https://media.example.org/${id}-1280.mp4`,
+          content_type: 'video/mp4',
+          bitrate: '2176000',
+        },
+      ],
+    },
+  };
+}
+const fullDate = '2026-09-30T12:00:00.000Z';
+function fullPost(id: string, value: string, opts: PostOptions = {}): Post {
+  return post(id, value, {
+    createdAt: fullDate,
+    mediaCount: 0,
+    ...opts,
+    source: {
+      id,
+      display_text_range: ['0', String(value.length)],
+      entities: fullEntities(value),
+      extended_entities: { media: [] },
+      favorited: false,
+      retweeted: false,
+      lang: 'en',
+      source:
+        '<a href="https://example.org/app" rel="nofollow">Invented Archive App</a>',
+      in_reply_to_user_id_str: opts.replyToId ? '710002' : '',
+      truncated: false,
+      possibly_sensitive: false,
+      edit_info: {
+        initial: {
+          editTweetIds: [id],
+          editableUntil: String(Date.parse(fullDate) + 30 * 60_000),
+          editsRemaining: '5',
+          isEditEligible: false,
+        },
+      },
+      ...opts.source,
+    },
+  });
+}
+
+const full = archive({ accountId: '710001', handle: 'example_quokka' });
+const taggedText =
+  'Invented #LanternNotes and #MossSketch with @example_moth. https://example.org/notes';
+const photoText = 'Two invented lantern photos. https://example.org/p2601';
+const photos = ['820001', '820002'].map((id) =>
+  fullMedia(id, '9007199254742601', photoText, 'https://example.org/p2601'),
+);
+// Both photos share the shortened attachment URL, but identify distinct media
+// and distinct positions in the expanded gallery.
+photos[1]!.expanded_url = 'https://example.org/posts/9007199254742601/photo/2';
+const videoText = 'An invented lantern animation. https://example.org/v2602';
+const replyText = '@example_moth an invented reply about the paper garden.';
+const quoteText = 'An invented quote about lanterns. https://example.org/q2604';
+const repostText = 'RT @example_badger: An invented paper garden sketch.';
+addPosts(full, [
+  fullPost('9007199254742600', taggedText, {
+    source: {
+      entities: fullEntities(taggedText, {
+        hashtags: ['LanternNotes', 'MossSketch'],
+        mentions: [{ id: '710002', handle: 'example_moth' }],
+        urls: [
+          {
+            url: 'https://example.org/notes',
+            expanded: 'https://example.org/field-notes',
+            display: 'example.org/field-notes',
+          },
+        ],
+      }),
+    },
+  }),
+  fullPost('9007199254742601', photoText, {
+    mediaCount: 2,
+    source: {
+      entities: fullEntities(photoText, { media: [photos[0]!] }),
+      extended_entities: { media: photos },
+    },
+  }),
+  fullPost('9007199254742602', videoText, {
+    mediaCount: 1,
+    source: {
+      entities: fullEntities(videoText, {
+        media: [
+          fullMedia(
+            '820003',
+            '9007199254742602',
+            videoText,
+            'https://example.org/v2602',
+          ),
+        ],
+      }),
+      extended_entities: {
+        media: [
+          videoMedia(
+            '820003',
+            '9007199254742602',
+            videoText,
+            'https://example.org/v2602',
+          ),
+        ],
+      },
+    },
+  }),
+  fullPost('9007199254742603', replyText, {
+    kind: 'reply',
+    replyToId: '9007199254742610',
+    replyToHandle: 'example_moth',
+    source: {
+      entities: fullEntities(replyText, {
+        mentions: [{ id: '710002', handle: 'example_moth' }],
+      }),
+    },
+  }),
+  fullPost('9007199254742604', quoteText, {
+    kind: 'quote',
+    quotedId: '9007199254742600',
+    source: {
+      quoted_status_id_str: '9007199254742600',
+      entities: fullEntities(quoteText, {
+        urls: [
+          {
+            url: 'https://example.org/q2604',
+            expanded: 'https://example.org/posts/9007199254742600',
+            display: 'example.org/posts/9007199254742600',
+          },
+        ],
+      }),
+    },
+  }),
+  fullPost('9007199254742605', repostText, {
+    kind: 'repost',
+    repostOfHandle: 'example_badger',
+    source: {
+      retweeted: true,
+      entities: fullEntities(repostText, {
+        mentions: [{ id: '710003', handle: 'example_badger' }],
+      }),
+    },
+  }),
+  fullPost('9007199254742606', 'An edited invented lantern sketch.', {
+    source: {
+      edit_info: {
+        initial: {
+          editTweetIds: ['9007199254742609', '9007199254742606'],
+          editableUntil: String(Date.parse(fullDate) + 30 * 60_000),
+          editsRemaining: '4',
+          isEditEligible: false,
+        },
+      },
+    },
+  }),
+  fullPost('9007199254742607', 'An invented drawing with a content notice.', {
+    source: { possibly_sensitive: true, favorited: true },
+  }),
+]);
+const deletedText =
+  '@example_moth an invented deleted #LanternNotes clip. https://example.org/deleted-note https://example.org/v2608';
+addArray(
+  full,
+  'deleted-tweets',
+  [
+    {
+      tweet: fullPost('9007199254742608', deletedText, {
+        mediaCount: 1,
+        source: {
+          possibly_sensitive: true,
+          entities: fullEntities(deletedText, {
+            hashtags: ['LanternNotes'],
+            mentions: [{ id: '710002', handle: 'example_moth' }],
+            urls: [
+              {
+                url: 'https://example.org/deleted-note',
+                expanded: 'https://example.org/deleted-field-notes',
+                display: 'example.org/deleted-field-notes',
+              },
+            ],
+            media: [
+              fullMedia(
+                '820004',
+                '9007199254742608',
+                deletedText,
+                'https://example.org/v2608',
+              ),
+            ],
+          }),
+          extended_entities: {
+            media: [
+              videoMedia(
+                '820004',
+                '9007199254742608',
+                deletedText,
+                'https://example.org/v2608',
+              ),
+            ],
+          },
+        },
+      }).raw,
+    },
+  ],
+  'deleted-tweets',
+);
+addArray(full, 'note-tweet', [], 'note-tweets');
+addPosts(full, [], { name: 'community-tweet', category: 'community-tweets' });
+// Manifest fields and string counts: public GDPRManifest.ts, read 2026-10-07.
+// https://github.com/alkihis/twitter-archive-reader/blob/a23fb890133553efa850b5c886ffbfb9a0892690/ts/types/GDPRManifest.ts
+full.files['data/manifest.js'] = `window.__THAR_CONFIG = ${JSON.stringify(
+  {
+    userInfo: {
+      accountId: '710001',
+      userName: 'example_quokka',
+      displayName: 'Invented Orbit',
+    },
+    archiveInfo: {
+      sizeBytes: '65536',
+      generationDate: full.date,
+      isArchivePartial: false,
+      maxPartSizeBytes: '536870912',
+    },
+    dataTypes: Object.fromEntries(
+      (
+        [
+          ['account', 'account'],
+          ['tweets', 'tweets'],
+          ['deletedTweets', 'deleted-tweets'],
+          ['noteTweet', 'note-tweet'],
+          ['communityTweet', 'community-tweet'],
+        ] as const
+      ).map(([type, name]) => {
+        const fileName = `data/${name}.js`;
+        return [
+          type,
+          {
+            ...(type === 'tweets'
+              ? { mediaDirectory: 'data/tweets_media' }
+              : {}),
+            files: [
+              {
+                fileName,
+                globalName: [
+                  'window',
+                  'YTD',
+                  name.replaceAll('-', '_'),
+                  'part0',
+                ].join('.'),
+                count: String(
+                  full.categories.find((file) => file.path === fileName)!.count,
+                ),
+              },
+            ],
+          },
+        ] as const;
+      }),
+    ),
+  },
+  null,
+  2,
+)};\n`;
+output.push(
+  variant(
+    'current-full-fields',
+    'Invented current export with complete string-valued entities, photo gallery and video metadata, reply/quote/repost references, edit history, content notice, one deleted row, empty notes and communities, and a full manifest with string counts. Expected items are authored independently of the adapter.',
+    [full],
+  ),
+);
+
 const root = 'twitter-2026-10-01-ab12cd/';
 const nested = archive({ root });
 addPosts(

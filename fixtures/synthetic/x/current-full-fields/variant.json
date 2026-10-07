@@ -1,0 +1,8 @@
+{
+  "id": "current-full-fields",
+  "platform": "x",
+  "description": "Invented current export with complete string-valued entities, photo gallery and video metadata, reply/quote/repost references, edit history, content notice, one deleted row, empty notes and communities, and a full manifest with string counts. Expected items are authored independently of the adapter.",
+  "archives": [
+    "archive"
+  ]
+}

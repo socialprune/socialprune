@@ -9,7 +9,7 @@ import { instagramAdapter } from '../../packages/adapter-instagram/src/index.ts'
 import { difference, mergeFiles, pattern, projectStructure, sizeClass } from './projection.ts';
 import { CATEGORIES, PLATFORMS, validateReport } from './schema.ts';
 import type { DiagnosticCount, Kinds, Platform, Report, ShapeFile } from './schema.ts';
-import { inspectRows } from './rows.ts';
+import { inspectRowsWithMedia } from './rows.ts';
 
 const adapters = [xAdapter, instagramAdapter];
 const fixtures = fileURLToPath(new URL('../../fixtures/synthetic/', import.meta.url));
@@ -136,8 +136,8 @@ export async function checkInputs(paths: string[]): Promise<Report> {
     if (trace.denied) throw new Error('S4_PRIVATE_READ');
     const shapes = await readShapes(reader, trace);
     const rows = {
-      x: await inspectRows(reader, 'x', [...trace.reads.x]),
-      instagram: await inspectRows(reader, 'instagram', [...trace.reads.instagram]),
+      x: await inspectRowsWithMedia(reader, 'x', [...trace.reads.x]),
+      instagram: await inspectRowsWithMedia(reader, 'instagram', [...trace.reads.instagram]),
     };
     const read = new Set([...trace.reads.x, ...trace.reads.instagram]);
     const other = new Map<string, number>();

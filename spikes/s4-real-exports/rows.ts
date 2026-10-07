@@ -5,7 +5,8 @@ import { commentFile } from '../../packages/adapter-instagram/src/paths.ts';
 import { files as xFiles } from '../../packages/adapter-x/src/archive.ts';
 import { tweetItem } from '../../packages/adapter-x/src/tweet.ts';
 import { pattern, rowShape } from './projection.ts';
-import type { Platform, RowFile } from './schema.ts';
+import type { Platform, RowClass, RowFile } from './schema.ts';
+import { countMedia, createMediaStats, sortMediaPatterns } from './media.ts';
 
 // Framing only: expose a bare array or one object's sole array property to
 // core's streaming JSON parser. Row acceptance belongs to the adapters.
@@ -65,28 +66,31 @@ async function* commentArray(chunks: AsyncIterable<string>): AsyncGenerator<stri
   if (mode === 'header' || mode !== 'bare' && (!closed || depth !== 0)) throw new Error('S4_ARRAY_TRUNCATED');
 }
 
-interface Spec { rowParser: RowFile['rowParser']; rejected(value: unknown, index: number): boolean | null }
+interface Spec { rowParser: RowFile['rowParser']; classify(value: unknown, index: number): RowClass | null }
 function spec(reader: ArchiveReader, entry: ArchiveEntry, platform: Platform): Spec | null {
   if (platform === 'instagram') {
     const file = commentFile(entry);
     if (!file || file.format !== 'json') return null;
-    return file.layout === 'legacy'
-      ? { rowParser: 'instagram-legacy-comment', rejected: (value) => parseLegacyComment(value) === null }
-      : { rowParser: 'instagram-comment', rejected: (value) => parseComment(value) === null };
+    const parser = file.layout === 'legacy' ? parseLegacyComment : parseComment;
+    return { rowParser: file.layout === 'legacy' ? 'instagram-legacy-comment' : 'instagram-comment', classify(value) {
+      const parsed = parser(value);
+      return parsed === null ? 'rejected' : parsed.text === '' ? 'mediaOnly' : 'text';
+    } };
   }
   const file = xFiles(reader).find((file) => file.entry === entry);
   if (!file || !['tweets', 'deleted-tweets', 'community-tweets', 'note-tweets'].includes(file.category)) return null;
-  if (file.category === 'note-tweets') return { rowParser: 'seen-only', rejected: () => null };
-  return { rowParser: 'x-tweet', rejected: (value, index) => tweetItem(value, { key: 'x:s4-row-context', handle: null }, entry, index) === null };
+  if (file.category === 'note-tweets') return { rowParser: 'seen-only', classify: () => null };
+  return { rowParser: 'x-tweet', classify: (value, index) => tweetItem(value, { key: 'x:s4-row-context', handle: null }, entry, index) === null ? 'rejected' : 'text' };
 }
 
-export async function inspectRows(reader: ArchiveReader, platform: Platform, entries: readonly ArchiveEntry[]): Promise<RowFile[]> {
+async function auditRows(reader: ArchiveReader, platform: Platform, entries: readonly ArchiveEntry[], withMedia: boolean): Promise<RowFile[]> {
   const reports: RowFile[] = [];
   for (const entry of entries) {
     const row = spec(reader, entry, platform);
     if (!row) continue;
     const report: RowFile = { label: `file-${reports.length + 1}`, pattern: pattern(entry.path), rowParser: row.rowParser,
       rowsSeen: 0, rowsRejected: row.rowParser === 'seen-only' ? null : 0, streamError: false, rejectedShapes: [] };
+    if (platform === 'instagram' && withMedia) report.mediaStats = createMediaStats();
     const shapes = new Map<string, RowFile['rejectedShapes'][number]>();
     let parser;
     try {
@@ -102,7 +106,9 @@ export async function inspectRows(reader: ArchiveReader, platform: Platform, ent
           catch { report.streamError = true; break; }
           if (next.done) break;
           const index = report.rowsSeen++;
-          if (!row.rejected(next.value, index)) continue;
+          const rowClass = row.classify(next.value, index);
+          if (report.mediaStats && rowClass !== null) countMedia(report.mediaStats, rowClass, next.value);
+          if (rowClass !== 'rejected') continue;
           report.rowsRejected!++;
           const paths = rowShape(next.value);
           const signature = JSON.stringify(paths);
@@ -116,7 +122,16 @@ export async function inspectRows(reader: ArchiveReader, platform: Platform, ent
       } finally { await iterator.return?.(); }
     }
     report.rejectedShapes = [...shapes.values()];
+    if (report.mediaStats) sortMediaPatterns(report.mediaStats);
     reports.push(report);
   }
   return reports;
+}
+// Keep the round-2 row-inspection API stable for its unchanged regression
+// tests. The report's enriched API shares the same stream and row decisions.
+export function inspectRows(reader: ArchiveReader, platform: Platform, entries: readonly ArchiveEntry[]): Promise<RowFile[]> {
+  return auditRows(reader, platform, entries, false);
+}
+export function inspectRowsWithMedia(reader: ArchiveReader, platform: Platform, entries: readonly ArchiveEntry[]): Promise<RowFile[]> {
+  return auditRows(reader, platform, entries, true);
 }

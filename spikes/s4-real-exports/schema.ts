@@ -25,6 +25,11 @@ export const DIRECTORIES = [
   'media', 'preferences', 'ads_information', 'apps_and_websites_off_of_instagram',
   'logged_information', 'saved', 'likes',
 ] as const;
+// Public directory-layout snapshot, checked 2026-10-07. Only these directory
+// names appear in its top-level media tree and URI examples. The document's
+// profile/archived/recently-deleted names are files, not verified directories.
+// https://github.com/anand-loop/picnic/blob/3dc08d728e339e80336e852d1011956532fd6799/docs/instagram-export-format.md
+export const MEDIA_DIRECTORIES = ['media', 'posts', 'stories', 'reels', 'igtv', 'other'] as const;
 export const FILE_TOKENS = [
   '<tweets>', '<tweet>', '<tweets-partN>', '<tweet-partN>', '<tweets_N_N>',
   '<account>', '<manifest>', '<user_details>', '<note-tweet>',
@@ -88,6 +93,20 @@ export interface DiagnosticCount {
 }
 export interface Kinds { post: number; reply: number; quote: number; repost: number; comment: number }
 export const ROW_PARSERS = ['x-tweet', 'instagram-comment', 'instagram-legacy-comment', 'seen-only'] as const;
+export const ROW_CLASSES = ['text', 'mediaOnly', 'rejected'] as const;
+export type RowClass = (typeof ROW_CLASSES)[number];
+export const LENGTH_BUCKETS = ['absent', '0', '1', '2', '3+'] as const;
+export const URI_FORMS = ['relative-path', 'http-url', 'data-url', 'other'] as const;
+export interface MediaStats {
+  lengths: Record<RowClass, Record<(typeof LENGTH_BUCKETS)[number], number>>;
+  uriForms: Record<RowClass, {
+    'relative-path': { count: number; patterns: { pattern: string; count: number }[] };
+    'http-url': number; 'data-url': number; other: number;
+  }>;
+  creationTimestamp: Record<RowClass, {
+    present: number; comparable: number; equal: number; earlier: number; later: number;
+  }>;
+}
 export interface RowFile {
   label: string;
   pattern: string;
@@ -96,6 +115,7 @@ export interface RowFile {
   rowsRejected: number | null;
   streamError: boolean;
   rejectedShapes: { paths: ShapePath[]; count: number }[];
+  mediaStats?: MediaStats;
 }
 export interface Report {
   inputs: { label: string; kind: 'zip' | 'folder'; sizeClass: SizeClass; entryCount: number; rejectedEntries: number; privateEntriesSkipped: number }[];
@@ -133,14 +153,60 @@ function number(value: unknown): asserts value is number {
 }
 function platform(value: unknown): Platform { choice(value, PLATFORMS); return value; }
 function variant(value: unknown, owner: Platform): void { if (value !== null) choice(value, VARIANTS[owner]); }
-export function validPattern(value: unknown): boolean {
+export function validPattern(value: unknown, mode: 'file' | 'media' = 'file'): boolean {
   if (typeof value !== 'string' || value.length > 2048) return false;
   const parts = value.split('/');
   const file = parts.pop() ?? '';
-  for (const directory of parts) if (!['<root>', '<segment>', ...DIRECTORIES].includes(directory)) return false;
+  for (const directory of parts) if (!(mode === 'media' ? ['<segment>', ...MEDIA_DIRECTORIES] : ['<root>', '<segment>', ...DIRECTORIES]).includes(directory)) return false;
   const dot = file.lastIndexOf('.');
-  return FILE_TOKENS.includes((dot < 0 ? file : file.slice(0, dot)) as (typeof FILE_TOKENS)[number])
+  return (mode === 'media' ? (dot < 0 ? file : file.slice(0, dot)) === '<file>' : FILE_TOKENS.includes((dot < 0 ? file : file.slice(0, dot)) as (typeof FILE_TOKENS)[number]))
     && (dot < 0 || EXTENSIONS.includes(file.slice(dot + 1) as (typeof EXTENSIONS)[number]));
+}
+function mediaStats(value: unknown, rowsSeen: number, rowsRejected: number): void {
+  const stats = record(value, ['lengths', 'uriForms', 'creationTimestamp']);
+  const lengths = record(stats.lengths, ROW_CLASSES);
+  const forms = record(stats.uriForms, ROW_CLASSES);
+  const timestamps = record(stats.creationTimestamp, ROW_CLASSES);
+  const classTotals: Record<RowClass, number> = { text: 0, mediaOnly: 0, rejected: 0 };
+  for (const owner of ROW_CLASSES) {
+    const histogram = record(lengths[owner], LENGTH_BUCKETS);
+    for (const bucket of LENGTH_BUCKETS) {
+      number(histogram[bucket]);
+      classTotals[owner] += histogram[bucket] as number;
+    }
+    if (!Number.isSafeInteger(classTotals[owner])) throw new Error('S4_REPORT_INVALID');
+    const uri = record(forms[owner], URI_FORMS);
+    const relative = record(uri['relative-path'], ['count', 'patterns']);
+    number(relative.count);
+    for (const form of ['http-url', 'data-url', 'other']) number(uri[form]);
+    const patterns = array(relative.patterns);
+    if (patterns.length > 10) throw new Error('S4_REPORT_INVALID');
+    let patternTotal = 0;
+    const distinct = new Set<string>();
+    for (const value of patterns) {
+      const entry = record(value, ['pattern', 'count']);
+      if (!validPattern(entry.pattern, 'media') || distinct.has(entry.pattern as string)) throw new Error('S4_REPORT_INVALID');
+      distinct.add(entry.pattern as string);
+      number(entry.count);
+      if (!entry.count) throw new Error('S4_REPORT_INVALID');
+      patternTotal += entry.count;
+    }
+    if (!Number.isSafeInteger(patternTotal) || patternTotal > relative.count || patterns.length < 10 && patternTotal !== relative.count) throw new Error('S4_REPORT_INVALID');
+    const uriTotal = relative.count + (uri['http-url'] as number) + (uri['data-url'] as number) + (uri.other as number);
+    const finiteEntries = (histogram['1'] as number) + 2 * (histogram['2'] as number);
+    if (!Number.isSafeInteger(uriTotal) || histogram['3+'] === 0 && uriTotal > finiteEntries) throw new Error('S4_REPORT_INVALID');
+    const timestamp = record(timestamps[owner], ['present', 'comparable', 'equal', 'earlier', 'later']);
+    for (const count of Object.values(timestamp)) number(count);
+    const rowsWithMedia = (histogram['1'] as number) + (histogram['2'] as number) + (histogram['3+'] as number);
+    if ((timestamp.present as number) > rowsWithMedia || (timestamp.comparable as number) > (timestamp.present as number)) throw new Error('S4_REPORT_INVALID');
+    let relationships = 0;
+    for (const field of ['equal', 'earlier', 'later']) {
+      if ((timestamp[field] as number) > (timestamp.comparable as number)) throw new Error('S4_REPORT_INVALID');
+      relationships += timestamp[field] as number;
+    }
+    if (!Number.isSafeInteger(relationships) || relationships < (timestamp.comparable as number)) throw new Error('S4_REPORT_INVALID');
+  }
+  if (classTotals.rejected !== rowsRejected || classTotals.text + classTotals.mediaOnly + classTotals.rejected !== rowsSeen) throw new Error('S4_REPORT_INVALID');
 }
 export function validPath(value: unknown): boolean {
   if (typeof value !== 'string' || value.length > 8192 || !value.startsWith('$')) return false;
@@ -164,7 +230,7 @@ function shapePath(value: unknown, diff: boolean): void {
 function rowFiles(value: unknown, owner: Platform): void {
   const rows = array(value);
   for (const [index, value] of rows.entries()) {
-    const row = record(value, ['label', 'pattern', 'rowParser', 'rowsSeen', 'rowsRejected', 'streamError', 'rejectedShapes']);
+    const row = record(value, ['label', 'pattern', 'rowParser', 'rowsSeen', 'rowsRejected', 'streamError', 'rejectedShapes', ...(owner === 'instagram' ? ['mediaStats'] : [])]);
     if (row.label !== `file-${index + 1}` || !validPattern(row.pattern) || typeof row.streamError !== 'boolean') throw new Error('S4_REPORT_INVALID');
     choice(row.rowParser, ROW_PARSERS);
     if (owner === 'x' && row.rowParser !== 'x-tweet' && row.rowParser !== 'seen-only'
@@ -176,6 +242,7 @@ function rowFiles(value: unknown, owner: Platform): void {
       number(row.rowsRejected);
       if (row.rowsRejected > row.rowsSeen) throw new Error('S4_REPORT_INVALID');
     }
+    if (owner === 'instagram') mediaStats(row.mediaStats, row.rowsSeen, row.rowsRejected as number);
     const shapes = array(row.rejectedShapes);
     if (shapes.length > 10 || row.rowsRejected === null && shapes.length) throw new Error('S4_REPORT_INVALID');
     const signatures = new Set<string>();

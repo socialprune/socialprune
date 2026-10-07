@@ -163,8 +163,17 @@ function compare(report: Report, fixture: Fixture): void {
 
 let control: Report | undefined;
 test('synthetic corpus contains both platforms and all registered variants', () => {
-  assert.equal(variants.filter(({ platform }) => platform === 'x').length, 22);
-  assert.equal(variants.filter(({ platform }) => platform === 'instagram').length, 30);
+  return Promise.all([
+    import('../../../tools/fixture-gen/src/x/index.ts'),
+    import('../../../tools/fixture-gen/src/instagram/index.ts'),
+  ]).then(([x, instagram]) => {
+    for (const [platform, registered] of [['x', x.variants], ['instagram', instagram.variants]] as const) {
+      assert.ok(registered.length > 0, `${platform} must register at least one variant`);
+      const corpusIds = variants.filter((variant) => variant.platform === platform).map(({ id }) => id).sort();
+      assert.equal(corpusIds.length, registered.length);
+      assert.deepEqual(corpusIds, registered.map(({ id }) => id).sort());
+    }
+  });
 });
 for (const fixture of variants) {
   test(`${fixture.platform}/${fixture.id}: folder and ZIP counts plus input-derived privacy`, { timeout: 120_000 }, async () => {

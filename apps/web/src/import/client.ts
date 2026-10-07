@@ -1,4 +1,4 @@
-import type { ImportSummary, Item } from '@socialprune/core';
+import type { ImportSummary } from '@socialprune/core';
 import type {
   ImportMessage,
   ImportRequest,
@@ -6,8 +6,9 @@ import type {
 } from './protocol.ts';
 
 export interface ImportSnapshot {
+  /** Legacy diagnostics only: never populated. Item bytes live in the worker. */
+  items: readonly never[];
   phase: 'idle' | 'importing' | 'aborting' | 'complete' | 'aborted' | 'error';
-  items: readonly Item[];
   receivedItems: number;
   batches: number;
   summary: ImportSummary | null;
@@ -19,15 +20,15 @@ export interface ImportSnapshot {
 
 export class ImportClient {
   private readonly workerFactory: () => Worker;
+  private readonly connectWorkspace: ((port: MessagePort) => void) | undefined;
   private worker: Worker | null = null;
   private id = 0;
   private disposed = false;
   private startedAt = 0;
   private abortAt: number | null = null;
-  private items: Item[] = [];
   private state: ImportSnapshot = {
+    items: [],
     phase: 'idle',
-    items: this.items,
     receivedItems: 0,
     batches: 0,
     summary: null,
@@ -38,8 +39,12 @@ export class ImportClient {
   };
   private readonly listeners = new Set<(state: ImportSnapshot) => void>();
 
-  constructor(workerFactory: () => Worker) {
+  constructor(
+    workerFactory: () => Worker,
+    connectWorkspace?: (port: MessagePort) => void,
+  ) {
     this.workerFactory = workerFactory;
+    this.connectWorkspace = connectWorkspace;
     this.createWorker();
   }
 
@@ -48,10 +53,8 @@ export class ImportClient {
     this.worker.onmessage = (event: MessageEvent<ImportMessage>) =>
       this.receive(event.data);
     this.worker.onerror = () => {
-      this.items = [];
       this.update({
         phase: 'error',
-        items: this.items,
         message: 'The import worker stopped unexpectedly.',
       });
       this.worker?.terminate();
@@ -77,13 +80,16 @@ export class ImportClient {
       throw new Error('An import is already running.');
     if (!files.length) throw new Error('Choose at least one ZIP file.');
     if (!this.worker) this.createWorker();
+    if (this.connectWorkspace) {
+      const channel = new MessageChannel();
+      this.connectWorkspace(channel.port1);
+      this.attach(channel.port2);
+    }
     this.id++;
-    this.items = [];
     this.startedAt = performance.now();
     this.abortAt = null;
     this.update({
       phase: 'importing',
-      items: this.items,
       receivedItems: 0,
       batches: 0,
       summary: null,
@@ -105,12 +111,14 @@ export class ImportClient {
     this.disposed = true;
     this.worker?.terminate();
     this.worker = null;
-    this.items = [];
     this.listeners.clear();
   }
 
   private send(request: ImportRequest) {
     this.worker?.postMessage(request);
+  }
+  attach(port: MessagePort): void {
+    this.worker?.postMessage({ type: 'attach', port }, [port]);
   }
 
   private update(changes: Partial<ImportSnapshot>): void {
@@ -130,16 +138,12 @@ export class ImportClient {
     if (this.state.phase !== 'importing' && this.state.phase !== 'aborting')
       return;
     if (message.type === 'items') {
-      // Keep queued batches until the worker acknowledges cancellation, then
-      // discard the partial array. A summary can already be in flight when
-      // the person clicks Abort, and must not describe a truncated array.
-      this.items.push(...message.items);
-      this.update({
-        receivedItems: this.items.length,
-        batches: this.state.batches + 1,
-      });
+      throw new Error('Item batches must not reach the page.');
     } else if (message.type === 'progress') {
-      // Batches, not a separate progress counter, are the source of truth.
+      this.update({
+        receivedItems: message.items,
+        batches: Math.ceil(message.items / 1000),
+      });
     } else if (message.type === 'summary') {
       this.update({
         phase: 'complete',
@@ -147,10 +151,8 @@ export class ImportClient {
         durationMs: performance.now() - this.startedAt,
       });
     } else {
-      this.items = [];
       this.update({
         phase: message.type === 'aborted' ? 'aborted' : 'error',
-        items: this.items,
         message: message.type === 'error' ? message.message : null,
         durationMs: performance.now() - this.startedAt,
         abortLatencyMs:

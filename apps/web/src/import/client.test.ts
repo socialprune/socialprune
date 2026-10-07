@@ -36,11 +36,14 @@ afterEach(() => {
   TestWorker.instances = [];
 });
 
-test('retains real batches and ignores stale or post-terminal messages', () => {
+test('keeps progress only and rejects any item batch addressed to the page', () => {
   const { client, worker } = setup();
   worker.emit({ type: 'items', id: 0, items });
   expect(client.snapshot.items).toEqual([]);
-  worker.emit({ type: 'items', id: 1, items });
+  expect(() => worker.emit({ type: 'items', id: 1, items })).toThrow(
+    'must not reach',
+  );
+  worker.emit({ type: 'progress', id: 1, items: 1000 });
   worker.emit({
     type: 'summary',
     id: 1,
@@ -48,14 +51,14 @@ test('retains real batches and ignores stale or post-terminal messages', () => {
   });
   worker.emit({ type: 'items', id: 1, items });
   expect(client.snapshot.phase).toBe('complete');
-  expect(client.snapshot.items).toEqual(items);
+  expect(client.snapshot.items).toEqual([]);
   expect(client.snapshot.batches).toBe(1);
   client.dispose();
 });
 
 test('discards partial items only on the abort receipt and can start again', () => {
   const { client, worker } = setup();
-  worker.emit({ type: 'items', id: 1, items });
+  worker.emit({ type: 'progress', id: 1, items: 1000 });
   client.abort();
   expect(worker.requests.at(-1)).toEqual({ type: 'abort', id: 1 });
   expect(client.snapshot.phase).toBe('aborting');
@@ -70,14 +73,14 @@ test('discards partial items only on the abort receipt and can start again', () 
 test('preserves queued final batches if completion wins the abort race', () => {
   const { client, worker } = setup();
   client.abort();
-  worker.emit({ type: 'items', id: 1, items });
+  worker.emit({ type: 'progress', id: 1, items: 1000 });
   worker.emit({
     type: 'summary',
     id: 1,
     summary: { status: 'ok', records: [] },
   });
   expect(client.snapshot.phase).toBe('complete');
-  expect(client.snapshot.items).toEqual(items);
+  expect(client.snapshot.receivedItems).toBe(1000);
   client.dispose();
 });
 

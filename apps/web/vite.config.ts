@@ -4,8 +4,8 @@ import { developmentPolicy } from './tooling/development-policy.ts';
 import { shellManifest } from './tooling/manifest.ts';
 
 export default defineConfig(({ mode }) => {
-  // CLI --mode selects the target until the repo owner admits the requested
-  // SP_MODE environment lookup without weakening its credential-read rule.
+  // Build targets use Vite --mode only. No environment-variable lookup is
+  // needed; the matching runtime value is import.meta.env.MODE.
   const target = ['pages', 'e2e-probe', 'review'].includes(mode)
     ? mode
     : 'pages';
@@ -31,7 +31,14 @@ export default defineConfig(({ mode }) => {
     },
     worker: {
       format: 'es',
-      rollupOptions: { output: { entryFileNames: 'assets/[name]-[hash].js' } },
+      rollupOptions: {
+        output: {
+          entryFileNames: (chunk) =>
+            chunk.facadeModuleId?.includes('/workspace/')
+              ? 'assets/workspace-worker-[hash].js'
+              : 'assets/[name]-[hash].js',
+        },
+      },
     },
     css: { transformer: 'postcss' },
     build: { cssMinify: 'esbuild' },

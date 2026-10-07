@@ -5,6 +5,10 @@ import type { ImportMessage, ImportRequest } from './protocol.ts';
 interface RunnerOptions {
   adapters: readonly PlatformAdapter[];
   post: (message: ImportMessage) => void;
+  onItems?: (
+    items: import('@socialprune/core').Item[],
+    id: number,
+  ) => Promise<void>;
   open?: typeof openZipArchives;
 }
 
@@ -21,6 +25,7 @@ function throwIfAborted(signal: AbortSignal): void {
 export function createImportRunner({
   adapters,
   post,
+  onItems,
   open = openZipArchives,
 }: RunnerOptions) {
   let active: { id: number; controller: AbortController } | null = null;
@@ -39,7 +44,8 @@ export function createImportRunner({
         onProgress: ({ items }) => post({ type: 'progress', id, items }),
         onItems: async (items) => {
           throwIfAborted(controller.signal);
-          post({ type: 'items', id, items });
+          if (onItems) await onItems(items, id);
+          else post({ type: 'items', id, items });
           await yieldToMessages();
           throwIfAborted(controller.signal);
         },
@@ -71,6 +77,7 @@ export function createImportRunner({
 
   return {
     handle(request: ImportRequest): void {
+      if (request.type === 'attach') return;
       if (request.type === 'abort') {
         if (active?.id === request.id) active.controller.abort();
         return;

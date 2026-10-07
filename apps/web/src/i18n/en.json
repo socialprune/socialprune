@@ -49,5 +49,7 @@
   "update.failed": "The update could not start because a tab has not finished its work. Try again after the import stops.",
   "page.notFound": "Page not found",
   "page.return": "Return to Start",
-  "development.policy": "Development policy"
+  "development.policy": "Development policy",
+  "workspace.backup": "Download backup",
+  "workspace.storageError": "The browser could not store this review. Download a backup before trying again."
 }

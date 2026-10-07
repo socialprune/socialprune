@@ -12,6 +12,7 @@ import {
   importFiles,
   observeImport,
   waitForApp,
+  workspaceIds,
 } from './helpers.ts';
 import type { ExpectedFixture } from './helpers.ts';
 
@@ -56,7 +57,7 @@ for (const { platform, ids } of discovered) {
         expect(comparableRecords(result.summary?.records ?? [])).toEqual(
           comparableRecords(expected.records),
         );
-        expect(result.items.map(({ id }) => id).sort()).toEqual(
+        expect(await workspaceIds(page)).toEqual(
           expected.items.map(({ id }) => id).sort(),
         );
         expect(result.receivedItems).toBe(expected.items.length);
@@ -175,13 +176,19 @@ test('aborts after real batches, releases the archive and imports again in the s
     const terminalIndex = messages.findIndex(({ type }) => type === 'aborted');
     expect(terminalIndex).toBeGreaterThan(0);
     const aborted = await page.evaluate(() => {
-      const { batches, receivedItems, items, abortLatencyMs } =
+      const { batches, receivedItems, abortLatencyMs } =
         window.socialprune.getImportSnapshot();
-      return { batches, receivedItems, count: items.length, abortLatencyMs };
+      return {
+        batches,
+        receivedItems,
+        pageRows: window.workspace.rows.length,
+        abortLatencyMs,
+      };
     });
     expect(aborted.receivedItems).toBeGreaterThan(0);
     expect(aborted.receivedItems).toBeLessThan(itemCount);
-    expect(aborted.count).toBe(0);
+    expect(aborted.pageRows).toBe(0);
+    expect(await workspaceIds(page)).toEqual([]);
     expect(aborted.abortLatencyMs).toBeLessThan(3000);
     await page.waitForTimeout(200);
     expect(
@@ -210,7 +217,7 @@ test('aborts after real batches, releases the archive and imports again in the s
     try {
       const result = await importFiles(page, fixture.files);
       expect(result.summary?.status).toBe(fixture.expected.status);
-      expect(result.items.map(({ id }) => id).sort()).toEqual(
+      expect(await workspaceIds(page)).toEqual(
         fixture.expected.items.map(({ id }) => id).sort(),
       );
     } finally {

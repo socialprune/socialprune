@@ -49,5 +49,7 @@
   "update.failed": "Das Update konnte nicht starten, weil ein Tab seine Arbeit noch nicht beendet hat. Versuche es noch einmal, wenn der Import beendet ist.",
   "page.notFound": "Seite nicht gefunden",
   "page.return": "Zurück zum Start",
-  "development.policy": "Entwicklungsrichtlinie"
+  "development.policy": "Entwicklungsrichtlinie",
+  "workspace.backup": "Backup herunterladen",
+  "workspace.storageError": "Der Browser konnte diese Durchsicht nicht speichern. Lade ein Backup herunter, bevor du es noch einmal versuchst."
 }

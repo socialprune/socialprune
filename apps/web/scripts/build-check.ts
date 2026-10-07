@@ -28,7 +28,14 @@ async function walk(folder: string) {
         )
           throw new Error('Test mutation reached production output.');
       }
-      if (entry.name === 'probe-worker.js' || entry.name === 'live-probe')
+      if (
+        [
+          'probe-worker.js',
+          'live-probe',
+          'store-contract.js',
+          'storage-measure.js',
+        ].includes(entry.name)
+      )
         throw new Error('Test worker reached production output.');
       rows.push({
         name: path.slice(directory.length),

@@ -1,7 +1,7 @@
 import { readdir, readFile, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir as systemTemp } from 'node:os';
-import { expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page, Request } from '@playwright/test';
 import {
   FIXTURES_ROOT,
@@ -78,7 +78,10 @@ export async function observeImport(
   page: Page,
   options: { abortOnFirstItems?: boolean } = {},
 ) {
-  const origin = 'http://127.0.0.1:4180';
+  const baseURL = test.info().project.use.baseURL;
+  if (!baseURL)
+    throw new Error('Network audit requires the configured preview baseURL.');
+  const origin = new URL(baseURL).origin;
   const requests: { url: string; source: string }[] = [];
   const failures: { url: string; error: string | null }[] = [];
   const errors: string[] = [];
@@ -139,8 +142,12 @@ export async function observeImport(
               type: event.data.type,
               id: event.data.id,
             });
-            if (abortPending && event.data.type === 'items') {
-              // Law 23: enter the real abort path on the first batch, rather
+            if (
+              abortPending &&
+              event.data.type === 'progress' &&
+              (event.data as { items?: number }).items
+            ) {
+              // Law 23: enter the real abort path on the first stored batch, rather
               // than assume it is still running after a Node poll and click.
               abortPending = false;
               const state = window.socialprune.getImportSnapshot();
@@ -230,6 +237,45 @@ export async function importFiles(
     'complete',
   );
   return page.evaluate(() => window.socialprune.getImportSnapshot());
+}
+
+export async function workspaceIds(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const opened = await window.workspace.open();
+    if (opened.type !== 'opened') throw new Error('Workspace did not open.');
+    const ids: string[] = [];
+    for (const account of opened.summary.accounts) {
+      const queryId = crypto.randomUUID();
+      const response = await window.workspace.request({
+        type: 'query',
+        requestId: crypto.randomUUID(),
+        queryId,
+        generation: 1,
+        accountKey: account.key,
+        filter: {},
+        sort: [{ by: 'id', direction: 'asc' }],
+        search: '',
+      });
+      if (response.type !== 'queryResult')
+        throw new Error('Missing workspace query.');
+      for (let offset = 0; offset < response.total; offset += 200) {
+        const result = await window.workspace.request({
+          type: 'window',
+          requestId: crypto.randomUUID(),
+          queryId,
+          generation: 1,
+          offset,
+          limit: 200,
+        });
+        if (result.type !== 'rows')
+          throw new Error('Missing workspace window.');
+        if (window.workspace.rows.length > 200)
+          throw new Error('Unbounded page window.');
+        ids.push(...result.rows.map(({ id }) => id));
+      }
+    }
+    return ids.sort();
+  });
 }
 
 export function comparableRecords(

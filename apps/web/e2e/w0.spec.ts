@@ -5,12 +5,14 @@ import {
   waitForApp,
   fixtureZips,
   importFiles,
+  workspaceIds,
 } from './helpers.ts';
 import { method9Zip } from './archive-method9.ts';
 
 test('W0 first visit claims control, verifies the worker and imports without a reload', async ({
   page,
   context,
+  baseURL,
 }) => {
   const audit = await observeImport(context, page);
   let navigations = 0;
@@ -21,11 +23,11 @@ test('W0 first visit claims control, verifies the worker and imports without a r
   expect(navigations).toBe(1);
   expect(
     await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL),
-  ).toBe('http://127.0.0.1:4180/socialprune/sw.js');
+  ).toBe(new URL('/socialprune/sw.js', baseURL).href);
   const fixture = await fixtureZips('x', 'current-minimal');
   try {
     expect(
-      (await importFiles(page, fixture.files)).items.map(({ id }) => id).sort(),
+      await importFiles(page, fixture.files).then(() => workspaceIds(page)),
     ).toEqual(fixture.expected.items.map(({ id }) => id).sort());
     await audit.assert();
   } finally {
@@ -164,7 +166,7 @@ test('W0 browser rejects generated Deflate64 with a named diagnostic, without WA
     window.socialprune.getImportSnapshot(),
   );
   expect(result.summary?.status).toBe('partial');
-  expect(result.items).toEqual([]);
+  expect(await workspaceIds(page)).toEqual([]);
   expect(
     result.summary?.records.flatMap(({ diagnostics }) => diagnostics),
   ).toEqual(
@@ -213,8 +215,8 @@ test('W0 settled real worker imports a fixture without calling WebAssembly', asy
   });
   const fixture = await fixtureZips('x', 'deleted-tweets');
   try {
-    const result = await importFiles(page, fixture.files);
-    expect(result.items.map(({ id }) => id).sort()).toEqual(
+    await importFiles(page, fixture.files);
+    expect(await workspaceIds(page)).toEqual(
       fixture.expected.items.map(({ id }) => id).sort(),
     );
     expect(
@@ -253,6 +255,9 @@ test('W0 pre-control demo workers are terminated before real export input is ena
     'data-gate',
     'ready',
   );
+  await expect
+    .poll(() => page.workers().some((worker) => /\/worker-/.test(worker.url())))
+    .toBe(true);
   const events = await page.evaluate(
     () =>
       Reflect.get(globalThis, '__workerLife') as {
@@ -276,8 +281,8 @@ test('W0 pre-control demo workers are terminated before real export input is ena
   await expect(page.getByTestId('archives')).toBeEnabled();
   const fixture = await fixtureZips('x', 'current-minimal');
   try {
-    const result = await importFiles(page, fixture.files);
-    expect(result.items.map(({ id }) => id).sort()).toEqual(
+    await importFiles(page, fixture.files);
+    expect(await workspaceIds(page)).toEqual(
       fixture.expected.items.map(({ id }) => id).sort(),
     );
     const workerURL = page

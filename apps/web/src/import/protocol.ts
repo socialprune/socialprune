@@ -1,7 +1,9 @@
 import type { ImportSummary, Item } from '@socialprune/core';
 
 export type ImportRequest =
-  { type: 'import'; id: number; files: File[] } | { type: 'abort'; id: number };
+  | { type: 'import'; id: number; files: File[] }
+  | { type: 'abort'; id: number }
+  | { type: 'attach'; port: MessagePort };
 
 export interface PolicyViolation {
   directive: string;

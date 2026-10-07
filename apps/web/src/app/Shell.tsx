@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { CSPProvider } from '@base-ui/react/csp-provider';
 import { IntlProvider } from 'react-intl';
 import importWorkerURL from '../import/worker.ts?worker&url';
+import workspaceWorkerURL from '../workspace/worker.ts?worker&url';
+import { WorkspaceClient } from '../workspace/client.ts';
 import { ImportClient } from '../import/client.ts';
 import type { ImportSnapshot } from '../import/client.ts';
 import { catalogs, initialLocale, useT } from '../i18n/index.ts';
@@ -35,6 +37,7 @@ function Content({
     () => document.documentElement.dataset.theme ?? 'system',
   );
   const client = useRef<ImportClient | null>(null);
+  const workspace = useRef<WorkspaceClient | null>(null);
   const updates = useRef<AppUpdates | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
@@ -70,14 +73,25 @@ function Content({
     // Start demo-only work immediately on a first-visit demo route. The gate
     // owns its termination; no selected file is passed to this instance.
     if (route === '/demo') gate.startDemo();
-    void gate.ensure().then(() => {
+    void gate.ensure().then(async () => {
       if (gate.serviceWorkerRegistration)
         updater.watch(gate.serviceWorkerRegistration);
       if (gate.state !== 'ready') return;
-      const current = new ImportClient(() => {
-        gate.assertReady();
-        return new Worker(scriptURL(importWorkerURL), { type: 'module' });
-      });
+      const working = new WorkspaceClient(
+        new Worker(scriptURL(workspaceWorkerURL), { type: 'module' }),
+      );
+      workspace.current = working;
+      window.workspace = working;
+      await working.open();
+      const current = new ImportClient(
+        () => {
+          gate.assertReady();
+          return new Worker(scriptURL(importWorkerURL), { type: 'module' });
+        },
+        (port) => {
+          void working.connectImport(port);
+        },
+      );
       client.current = current;
       window.socialprune = { getImportSnapshot: () => current.snapshot };
       current.subscribe(setState);
@@ -92,6 +106,7 @@ function Content({
         updater.handleServiceWorkerMessages,
       );
       client.current?.dispose();
+      workspace.current?.dispose();
     };
   }, [gate]);
   useEffect(() => {
@@ -314,6 +329,13 @@ function Content({
                 >
                   {t('import.cancel')}
                 </button>
+                <button
+                  onClick={() => {
+                    void workspace.current?.downloadBackup();
+                  }}
+                >
+                  {t('workspace.backup')}
+                </button>
               </div>
               <p
                 role="status"
@@ -368,6 +390,18 @@ function Content({
           )}
           {route === '/import' && gateState === 'preparing' && (
             <p role="status">{t('gate.preparing')}</p>
+          )}
+          {state?.phase === 'error' && (
+            <section role="alert">
+              <p>{t('workspace.storageError')}</p>
+              <button
+                onClick={() => {
+                  void workspace.current?.downloadBackup();
+                }}
+              >
+                {t('workspace.backup')}
+              </button>
+            </section>
           )}
           {route === 'not-found' && <a href="#/">{t('page.return')}</a>}
         </main>

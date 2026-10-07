@@ -55,6 +55,22 @@ export function shellManifest(mode: string): Plugin {
           platform: 'browser',
           minify: true,
         });
+        await bundle({
+          entryPoints: [resolve(config.root, 'test/probes/store-contract.ts')],
+          outfile: resolve(directory, 'store-contract.js'),
+          bundle: true,
+          format: 'esm',
+          platform: 'browser',
+          minify: true,
+        });
+        await bundle({
+          entryPoints: [resolve(config.root, 'test/probes/storage-measure.ts')],
+          outfile: resolve(directory, 'storage-measure.js'),
+          bundle: true,
+          format: 'esm',
+          platform: 'browser',
+          minify: true,
+        });
       }
       const output: string[] = [];
       async function walk(path: string) {
@@ -79,7 +95,9 @@ export function shellManifest(mode: string): Plugin {
       const buildId = sha256(JSON.stringify(files)).slice(0, 24);
       const workers = files.filter(
         ({ url }) =>
-          /\/(?:worker|gate-worker|demo-worker)-[\w-]+\.js$/.test(url) ||
+          /\/(?:worker|gate-worker|demo-worker|workspace-worker)-[\w-]+\.js$/.test(
+            url,
+          ) ||
           (probe && url.endsWith('/probe-worker.js')),
       );
       const workerPolicies = Object.fromEntries(

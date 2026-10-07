@@ -58,5 +58,7 @@ declare global {
     'update.later': Record<never, never>;
     'update.ready': Record<never, never>;
     'update.reload': Record<never, never>;
+    'workspace.backup': Record<never, never>;
+    'workspace.storageError': Record<never, never>;
   }
 }

@@ -18,6 +18,7 @@ function fake(
     platform,
     name: `fake-${platform}`,
     version: '1',
+    clickListOrder: 'risk',
     detect: () =>
       Promise.resolve({
         result,

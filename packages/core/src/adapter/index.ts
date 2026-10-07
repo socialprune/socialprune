@@ -25,6 +25,7 @@ export interface PlatformAdapter {
   readonly platform: PlatformId;
   readonly name: string;
   readonly version: string;
+  readonly clickListOrder: 'risk' | 'day';
   detect(archive: ArchiveReader): Promise<Detection>;
   parse(archive: ArchiveReader, ctx: ParseContext): AsyncIterable<ParseEvent>;
   deletionHint(item: Item): DeletionHint;

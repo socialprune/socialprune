@@ -168,6 +168,7 @@ test('workspace runtime and test-support subpaths resolve and have no reachable 
     'merge',
     'payloads',
     'backup',
+    'clicklist',
   ];
   const visited = new Set<string>();
   const visit = async (path: string): Promise<void> => {

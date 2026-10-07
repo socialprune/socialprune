@@ -95,26 +95,8 @@ export const SummarySchema = z.strictObject({
   lastBackupAt: UtcTimestampSchema.nullable(),
 });
 export type Summary = z.infer<typeof SummarySchema>;
-export const ClickListSchema = z.strictObject({
-  timeZone: id,
-  timeZoneSource: z.enum(['flag', 'workspace', 'system']),
-  entries: z.array(
-    z.strictObject({
-      itemId: id,
-      platform: id,
-      action: z.enum(['delete', 'undo-repost', 'delete-comment']),
-      url: z.string().nullable(),
-      day: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .nullable(),
-      text: z.string().nullable(),
-      ownerHandle: z.string().nullable(),
-      via: z.enum(['web-review', 'local-review']),
-    }),
-  ),
-});
-export type ClickList = z.infer<typeof ClickListSchema>;
+export { ClickListSchema } from './clicklist-schema.ts';
+export type { ClickList } from './clicklist-schema.ts';
 export const ReviewReadinessSchema = z.strictObject({
   workspaceId: id,
   revision: count,

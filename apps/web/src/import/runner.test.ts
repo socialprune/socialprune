@@ -31,6 +31,7 @@ function adapter(count = 3): PlatformAdapter {
     platform: 'test',
     name: 'test-only',
     version: '1',
+    clickListOrder: 'risk',
     detect: () =>
       Promise.resolve({
         result: 'match',

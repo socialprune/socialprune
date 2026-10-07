@@ -15,6 +15,11 @@ import {
 } from '../model/index.ts';
 import { WORKSPACE_ERROR_CODES } from './errors.ts';
 import { ROW_SOURCE_LIMIT } from './row-sources.ts';
+import {
+  ClickListFormatSchema,
+  ClickListSummarySchema,
+  ClickListWindowSchema,
+} from './clicklist-schema.ts';
 
 const id = z.string().min(1).max(512);
 const nonnegative = z.number().int().nonnegative();
@@ -222,6 +227,28 @@ const requests = [
   OutcomeRequestSchema,
   z.strictObject({ ...requestBase, type: z.literal('revision') }),
   z.strictObject({ ...requestBase, type: z.literal('shutdown') }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('clickListOpen'),
+    listId: id,
+    accountKey: id,
+    timeZone: z.string().min(1).optional(),
+    workspaceTimeZone: z.string().min(1).nullable().optional(),
+    systemTimeZone: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('clickListWindow'),
+    listId: id,
+    offset: nonnegative,
+    limit: z.number().int().min(1).max(200),
+  }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('clickListExport'),
+    listId: id,
+    format: ClickListFormatSchema,
+  }),
 ] as const;
 export const HttpReviewRequestSchema = z
   .discriminatedUnion('type', requests)
@@ -353,6 +380,36 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     ...replyBase,
     type: z.literal('revision'),
     revision: nonnegative,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('clickListOpened'),
+    ...ClickListSummarySchema.shape,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('clickListEntries'),
+    ...ClickListWindowSchema.shape,
+  }),
+  // The platform decodes UTF-8 incrementally with ignoreBOM: true so CSV keeps
+  // its BOM, or serves the byte stream as a download response over HTTP.
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('clickListExportChunk'),
+    listId: id,
+    revision: nonnegative,
+    format: ClickListFormatSchema,
+    index: nonnegative,
+    chunk: z.string().max(65_536),
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('clickListExported'),
+    listId: id,
+    revision: nonnegative,
+    format: ClickListFormatSchema,
+    entries: nonnegative,
+    bytes: nonnegative,
   }),
 ]);
 export type WorkspaceReply = z.infer<typeof WorkspaceReplySchema>;

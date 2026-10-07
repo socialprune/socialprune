@@ -162,6 +162,9 @@ export const instagramAdapter: PlatformAdapter = {
   platform: PLATFORM,
   name: 'socialprune-instagram',
   version: '0.1.0',
+  // Newest-first matches the planned comment-activity workflow. The platform
+  // direction is unverified until the maintainer reads the help pages in GD.
+  clickListOrder: 'day',
   detect(archive) {
     const files = filesFor(archive);
     const jsonFiles = files.filter((file) => file.format === 'json');

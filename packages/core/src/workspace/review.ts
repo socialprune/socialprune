@@ -273,6 +273,7 @@ export class ReviewService {
       previousRevision: runtime.revision,
       revision: runtime.revision + 1,
       states: projected,
+      ...(domain === 'decision' ? { decisionVia: this.via } : {}),
     });
     return {
       type: 'committed',

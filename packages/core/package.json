@@ -21,7 +21,8 @@
     "./workspace/time": "./src/workspace/time.ts",
     "./workspace/merge": "./src/workspace/merge.ts",
     "./workspace/payloads": "./src/workspace/payloads.ts",
-    "./workspace/backup": "./src/workspace/backup.ts"
+    "./workspace/backup": "./src/workspace/backup.ts",
+    "./workspace/clicklist": "./src/workspace/clicklist.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

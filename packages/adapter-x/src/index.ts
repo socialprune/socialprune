@@ -310,6 +310,7 @@ export const xAdapter: PlatformAdapter = {
   platform: PLATFORM,
   name: 'socialprune-x',
   version: '0.1.0',
+  clickListOrder: 'risk',
   async detect(archive) {
     const selected = files(archive);
     if (

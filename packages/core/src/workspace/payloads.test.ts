@@ -70,6 +70,7 @@ test('neutral payload schemas preserve their exact shapes and reject decision fi
   ).toBe(1);
   expect(
     ClickListSchema.parse({
+      accountKey: 'generated-account',
       timeZone: 'UTC',
       timeZoneSource: 'system',
       entries: [],

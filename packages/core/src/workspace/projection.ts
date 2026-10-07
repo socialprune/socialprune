@@ -1,5 +1,6 @@
 import { AssessmentSourceSchema } from '../model/index.ts';
 import type { Assessment, AssessmentSource, Item } from '../model/index.ts';
+import { WorkspaceError } from './errors.ts';
 import type { QueryFilter, QuerySort, ReviewRow } from './protocol.ts';
 import type { StoredState } from './store.ts';
 import { dayKey } from './time.ts';
@@ -39,6 +40,7 @@ export class QueryProjection {
   private firstSource = new Uint32Array();
   private moreSources = new Uint32Array();
   private decision = new Uint8Array();
+  private decisionVia = new Uint8Array();
   private outcome = new Uint8Array();
   private media = new Float64Array();
   private visible = new Uint8Array();
@@ -47,6 +49,7 @@ export class QueryProjection {
   private readonly sourceTable: AssessmentSource[] = [];
   private readonly sourceIndex = new Map<string, number>();
   private readonly additionalSources = new Map<number, Uint32Array>();
+  private readonly accountPlatforms = new Map<string, string>();
 
   constructor(
     revision: number,
@@ -75,6 +78,7 @@ export class QueryProjection {
       this.accountIndex.set(item.account.key, account);
     }
     this.account[index] = account;
+    this.registerAccount(item.account.key, item.platform);
     this.kind[index] = KINDS.indexOf(item.kind);
     this.createdAt[index] = Date.parse(item.createdAt);
     this.createdIso[index] = item.createdAt;
@@ -91,17 +95,19 @@ export class QueryProjection {
     const index = this.idIndex.get(id);
     if (index !== undefined) this.visible[index] = 0;
   }
-  setState(state: StoredState): void {
+  setState(state: StoredState, via?: 'web-review' | 'local-review'): void {
     const index = this.idIndex.get(state.itemId);
     if (index === undefined) return;
     this.decision[index] = DECISIONS.indexOf(state.decision);
     this.outcome[index] = OUTCOMES.indexOf(state.outcome);
+    if (via) this.decisionVia[index] = via === 'web-review' ? 1 : 2;
   }
   applyEvent(
     itemId: string,
     previous: string,
     value: string,
     domain: 'decision' | 'outcome',
+    via?: 'web-review' | 'local-review',
   ): boolean {
     const index = this.idIndex.get(itemId);
     if (index === undefined) return false;
@@ -109,6 +115,8 @@ export class QueryProjection {
     const column = domain === 'decision' ? this.decision : this.outcome;
     if (values[column[index]!] !== previous) return false;
     column[index] = (values as readonly string[]).indexOf(value);
+    if (domain === 'decision' && via)
+      this.decisionVia[index] = via === 'web-review' ? 1 : 2;
     return true;
   }
   internSource(input: AssessmentSource): number {
@@ -264,6 +272,19 @@ export class QueryProjection {
       outcome: OUTCOMES[this.outcome[index]!]!,
     };
   }
+  accountPlatform(accountKey: string): string | undefined {
+    return this.accountPlatforms.get(accountKey);
+  }
+  registerAccount(accountKey: string, platform: string): void {
+    const prior = this.accountPlatforms.get(accountKey);
+    if (prior && prior !== platform)
+      throw new WorkspaceError('INVALID_WORKSPACE');
+    this.accountPlatforms.set(accountKey, platform);
+  }
+  decisionProvenance(index: number): 'web-review' | 'local-review' | null {
+    const value = this.decisionVia[index];
+    return value === 1 ? 'web-review' : value === 2 ? 'local-review' : null;
+  }
   row(index: number): ReviewRow {
     const sources: AssessmentSource[] = [];
     const first = this.firstSource[index]!;
@@ -317,6 +338,7 @@ export class QueryProjection {
     this.firstSource = grow(this.firstSource);
     this.moreSources = grow(this.moreSources);
     this.decision = grow(this.decision);
+    this.decisionVia = grow(this.decisionVia);
     this.outcome = grow(this.outcome);
     this.media = grow(this.media);
     this.visible = grow(this.visible);

@@ -22,10 +22,20 @@ export interface ReviewProjectionChange {
   previousRevision: number;
   revision: number;
   states: readonly StoredState[];
+  decisionVia?: 'web-review' | 'local-review';
 }
 export interface QueryChange {
   revision: number;
   itemIds: readonly string[] | 'many';
+}
+export interface DecisionWindow {
+  revision: number;
+  entries: {
+    itemId: string;
+    decision: StoredState['decision'];
+    outcome: StoredState['outcome'];
+    via: 'web-review' | 'local-review' | null;
+  }[];
 }
 export interface ProjectionRow {
   item: Item;
@@ -235,6 +245,43 @@ export class QueryEngine implements ReviewQuery {
       result.projection.row(index),
     );
   }
+  /** Bounded provenance/state lookup from the same frozen query projection. */
+  decisionWindow(
+    queryId: string,
+    generation: number,
+    offset: number,
+    limit: number,
+  ): DecisionWindow {
+    this.expireResults();
+    const result = this.results.get(queryId);
+    if (!result || result.generation !== generation)
+      throw new WorkspaceError('QUERY_EXPIRED');
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 200
+    )
+      throw new WorkspaceError('INVALID_QUERY');
+    if (result.selection.revision !== result.projection.revision)
+      throw new WorkspaceError('STALE');
+    result.touchedAt = this.now();
+    return {
+      revision: result.selection.revision,
+      entries: [...result.indices.subarray(offset, offset + limit)].map(
+        (index) => ({
+          itemId: result.projection.ids[index]!,
+          ...result.projection.values(index),
+          via: result.projection.decisionProvenance(index),
+        }),
+      ),
+    };
+  }
+  async accountPlatform(accountKey: string): Promise<string | undefined> {
+    await this.prepareProjection();
+    return this.projection!.accountPlatform(accountKey);
+  }
   release(queryId: string): void {
     this.results.delete(queryId);
     this.generations.delete(queryId);
@@ -267,8 +314,11 @@ export class QueryEngine implements ReviewQuery {
         meta.settings.timeZone,
       );
       const complete = new Set<string>();
-      for await (const record of tx.imports.iterate())
+      for await (const record of tx.imports.iterate()) {
         if (record.status === 'complete') complete.add(record.id);
+        for (const account of record.accounts)
+          result.registerAccount(account.key, record.platform);
+      }
       for await (const stored of tx.items.iterate())
         result.upsert(
           stored.item,
@@ -283,6 +333,7 @@ export class QueryEngine implements ReviewQuery {
             event.previous,
             event.value,
             'decision',
+            event.source.via,
           )
         )
           throw new WorkspaceError('EVENT_CHAIN');
@@ -373,12 +424,14 @@ export class QueryEngine implements ReviewQuery {
             { itemId, decision: 'undecided', outcome: 'unknown' },
           ]),
         );
+        const via = new Map<string, 'web-review' | 'local-review'>();
         for await (const event of tx.decisionEvents.iterate()) {
           const state = states.get(event.itemId);
           if (!state) continue;
           if (state.decision !== event.previous)
             throw new WorkspaceError('EVENT_CHAIN');
           state.decision = event.value;
+          via.set(event.itemId, event.source.via);
         }
         for await (const event of tx.outcomeEvents.iterate()) {
           const state = states.get(event.itemId);
@@ -404,7 +457,7 @@ export class QueryEngine implements ReviewQuery {
           );
           latest.set(assessment.itemId, sources);
         }
-        return { items, latest, states };
+        return { items, latest, states, via };
       });
       if (
         !update ||
@@ -420,7 +473,7 @@ export class QueryEngine implements ReviewQuery {
           continue;
         }
         const index = projection.upsert(stored.item, visible);
-        projection.setState(update.states.get(id)!);
+        projection.setState(update.states.get(id)!, update.via.get(id));
         projection.setAssessments(index, update.latest.get(id)?.values() ?? []);
       }
       projection.revision = change.revision;
@@ -444,7 +497,8 @@ export class QueryEngine implements ReviewQuery {
       this.projection = undefined;
       return;
     }
-    for (const state of change.states) projection.setState(state);
+    for (const state of change.states)
+      projection.setState(state, change.decisionVia);
     projection.revision = change.revision;
   }
 }

@@ -158,12 +158,14 @@ test('v2 committed JSON schemas match zod and encode required strict object shap
     'decision-event': DecisionEventSchema.parse({
       ...decision,
       eventId: 'event-1',
+      seq: 1,
       previous: 'undecided',
       action: { id: 'action-1', kind: 'single', size: 1, reverts: null },
     }),
     'outcome-event': OutcomeEventSchema.parse({
       ...outcome,
       eventId: 'event-2',
+      seq: 2,
       previous: 'skipped',
       source: { kind: 'human', via: 'local-review' },
       action: { id: 'action-2', kind: 'single', size: 1, reverts: null },

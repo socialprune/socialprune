@@ -116,6 +116,7 @@ test('store rejection rolls back events, state and revision and the command repo
     expect(await store.read(readWorkspace)).toEqual(before);
     expect(await store.read(async (tx) => tx.runtime.get())).toEqual({
       revision: 0,
+      lastEventSeq: 0,
     });
     expect(await store.read(async (tx) => tx.state.get('x:1'))).toMatchObject({
       decision: 'undecided',

@@ -72,6 +72,7 @@ export const ActionSchema = z.strictObject({
 export type Action = z.infer<typeof ActionSchema>;
 export const DecisionEventSchema = z.strictObject({
   eventId: id,
+  seq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   itemId: id,
   value: DecisionValueSchema,
   previous: DecisionValueSchema,
@@ -82,6 +83,7 @@ export const DecisionEventSchema = z.strictObject({
 export type DecisionEvent = z.infer<typeof DecisionEventSchema>;
 export const OutcomeEventSchema = z.strictObject({
   eventId: id,
+  seq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   itemId: id,
   value: OutcomeValueSchema,
   previous: OutcomeValueSchema,

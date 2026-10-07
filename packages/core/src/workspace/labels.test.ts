@@ -148,6 +148,7 @@ test('label storage failure rolls back both submission and assessments', async (
     expect(value.assessments).toEqual([]);
     expect(await store.read(async (tx) => tx.runtime.get())).toEqual({
       revision: 0,
+      lastEventSeq: 0,
     });
   } finally {
     await store.close();

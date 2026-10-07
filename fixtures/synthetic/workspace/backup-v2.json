@@ -1,0 +1,33 @@
+{
+  "format": "socialprune-workspace",
+  "schemaVersion": 2,
+  "id": "generated-backup-workspace",
+  "kind": "personal",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-04T00:00:00.000Z",
+  "lastBackupAt": "2026-01-05T00:00:00.000Z",
+  "settings": { "categories": ["unclear", "harmless"], "timeZone": "Europe/Berlin" },
+  "counts": { "imports": 1, "items": 2, "submissions": 0, "assessments": 1, "decisionEvents": 3, "outcomeEvents": 2 },
+  "imports": [{
+    "id": "generated-import", "platform": "x", "importedAt": "2026-01-01T00:00:00.000Z",
+    "archives": ["generated-export"], "exportCreatedAt": null,
+    "accounts": [{ "key": "x:generated-account", "handle": "synth_backup" }],
+    "adapter": { "name": "generated-adapter", "version": "1" }, "variant": "generated",
+    "diagnostics": [], "itemCount": 2, "status": "complete"
+  }],
+  "items": [
+    { "id": "x:1", "platform": "x", "account": { "key": "x:generated-account", "handle": "synth_backup" }, "kind": "post", "text": "Generated first backup text: ä😺.", "createdAt": "2026-01-01T00:00:00.000Z", "engagement": { "likes": null, "reposts": 0 }, "reference": { "replyToId": null, "replyToHandle": null, "quotedId": null, "repostOfHandle": null, "ownerHandle": null }, "url": null, "provenance": { "archive": "generated-export", "file": "data/posts.json", "index": 0 }, "mediaCount": null },
+    { "id": "x:2", "platform": "x", "account": { "key": "x:generated-account", "handle": "synth_backup" }, "kind": "reply", "text": "Generated second backup text.", "createdAt": "2026-01-01T00:00:01.000Z", "engagement": { "likes": 2, "reposts": null }, "reference": { "replyToId": "1", "replyToHandle": null, "quotedId": null, "repostOfHandle": null, "ownerHandle": null }, "url": null, "provenance": { "archive": "generated-export", "file": "data/posts.json", "index": 1 }, "mediaCount": 0 }
+  ],
+  "submissions": [],
+  "assessments": [{ "itemId": "x:1", "source": { "kind": "rules", "name": "generated-rules", "version": null }, "category": "unclear", "risk": 1, "reason": "This generated text needs review.", "evidence": "Generated first", "confidence": null, "createdAt": "2026-01-02T00:00:00.000Z", "assessmentId": "assessment-1", "submissionId": null }],
+  "decisionEvents": [
+    { "eventId": "event-1", "seq": 1, "itemId": "x:1", "value": "delete", "previous": "undecided", "decidedAt": "2026-01-03T00:00:00.000Z", "source": { "kind": "human", "via": "web-review" }, "action": { "id": "action-1", "kind": "single", "size": 1, "reverts": null } },
+    { "eventId": "event-2", "seq": 2, "itemId": "x:2", "value": "later", "previous": "undecided", "decidedAt": "2026-01-02T00:00:00.000Z", "source": { "kind": "human", "via": "local-review" }, "action": { "id": "action-2", "kind": "single", "size": 1, "reverts": null } },
+    { "eventId": "event-3", "seq": 3, "itemId": "x:1", "value": "keep", "previous": "delete", "decidedAt": "2026-01-01T00:00:00.000Z", "source": { "kind": "human", "via": "web-review" }, "action": { "id": "action-3", "kind": "single", "size": 1, "reverts": null } }
+  ],
+  "outcomeEvents": [
+    { "eventId": "outcome-1", "seq": 4, "itemId": "x:1", "value": "deleted-by-user", "previous": "unknown", "recordedAt": "2026-01-04T00:00:00.000Z", "source": { "kind": "human", "via": "local-review" }, "action": { "id": "action-4", "kind": "single", "size": 1, "reverts": null } },
+    { "eventId": "outcome-2", "seq": 5, "itemId": "x:1", "value": "skipped", "previous": "deleted-by-user", "recordedAt": "2026-01-03T00:00:00.000Z", "source": { "kind": "human", "via": "local-review" }, "action": { "id": "action-5", "kind": "single", "size": 1, "reverts": null } }
+  ]
+}

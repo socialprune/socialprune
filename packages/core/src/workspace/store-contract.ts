@@ -67,6 +67,7 @@ function contractEvent(
 ): DecisionEvent {
   return {
     eventId: id,
+    seq: id === 'page-second' || id === 'second' ? 2 : id === 'third' ? 3 : 1,
     itemId: 'x:1',
     previous,
     value,
@@ -87,6 +88,189 @@ async function withStore(
   }
 }
 export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
+  {
+    name: 'shared event sequences survive reopen and reject duplicates or non-increasing log order',
+    run: (factory) =>
+      withStore(factory, async (harness) => {
+        const first = contractEvent(
+          'seq-decision-first',
+          'undecided',
+          'delete',
+        );
+        const third = {
+          ...contractEvent('seq-decision-third', 'delete', 'keep'),
+          seq: 3,
+        };
+        const second = {
+          eventId: 'seq-outcome',
+          seq: 2,
+          itemId: 'x:1',
+          value: 'skipped' as const,
+          previous: 'unknown' as const,
+          recordedAt: first.decidedAt,
+          source: first.source,
+          action: { ...first.action, id: 'seq-outcome' },
+        };
+        await harness.store.write(async (tx) => {
+          await tx.decisionEvents.append([first, third]);
+          await tx.outcomeEvents.append([second]);
+        });
+        const reopened = await harness.reopen();
+        equal(
+          (await reopened.read(async (tx) => tx.runtime.get())).lastEventSeq,
+          3,
+          'shared sequence high-water mark lost',
+        );
+        await rejects(() =>
+          reopened.write(async (tx) => {
+            await tx.outcomeEvents.append([
+              {
+                ...second,
+                eventId: 'seq-duplicate',
+                seq: 3,
+                previous: 'skipped',
+                value: 'unknown',
+              },
+            ]);
+          }),
+        );
+        await rejects(() =>
+          reopened.write(async (tx) => {
+            await tx.decisionEvents.append([
+              {
+                ...third,
+                eventId: 'seq-decreasing',
+                seq: 2,
+                previous: 'keep',
+                value: 'later',
+              },
+            ]);
+          }),
+        );
+        equal(
+          (await reopened.read(readWorkspace)).decisionEvents.map(
+            (event) => event.seq,
+          ),
+          [1, 3],
+          'decision sequence order changed',
+        );
+        equal(
+          (await reopened.read(readWorkspace)).outcomeEvents.map(
+            (event) => event.seq,
+          ),
+          [2],
+          'outcome sequence order changed',
+        );
+      }),
+  },
+  {
+    name: 'temporary v1 staging records iterate by timestamp, decision ties and array index then clear',
+    run: (factory) =>
+      withStore(factory, async ({ store }) => {
+        const decision = {
+          itemId: 'x:1',
+          value: 'keep' as const,
+          decidedAt: '2026-01-01T00:00:00Z',
+          source: { kind: 'human' as const, via: 'web-review' as const },
+        };
+        const outcome = {
+          itemId: 'x:1',
+          value: 'skipped' as const,
+          recordedAt: decision.decidedAt,
+        };
+        await store.write(async (tx) => {
+          await tx.migrationEvents.add({
+            id: 'outcome',
+            kind: 'outcome',
+            index: 0,
+            at: decision.decidedAt,
+            eventId: 'event-outcome',
+            record: outcome,
+          });
+          await tx.migrationEvents.add({
+            id: 'decision-1',
+            kind: 'decision',
+            index: 1,
+            at: decision.decidedAt,
+            eventId: 'event-decision-1',
+            record: decision,
+          });
+          await tx.migrationEvents.add({
+            id: 'decision-0',
+            kind: 'decision',
+            index: 0,
+            at: decision.decidedAt,
+            eventId: 'event-decision-0',
+            record: decision,
+          });
+        });
+        const ids: string[] = [];
+        await store.read(async (tx) => {
+          for await (const record of tx.migrationEvents.iterate())
+            ids.push(record.id);
+        });
+        equal(
+          ids,
+          ['decision-0', 'decision-1', 'outcome'],
+          'legacy timestamp tie order changed',
+        );
+        await store.write(async (tx) => {
+          await tx.migrationEvents.remove('decision-1');
+        });
+        const remaining: string[] = [];
+        await store.read(async (tx) => {
+          for await (const record of tx.migrationEvents.iterate())
+            remaining.push(record.id);
+        });
+        equal(
+          remaining,
+          ['decision-0', 'outcome'],
+          'temporary staging removal failed',
+        );
+        await store.write(async (tx) => {
+          await tx.migrationEvents.clear();
+        });
+        const empty: unknown[] = [];
+        await store.read(async (tx) => {
+          for await (const record of tx.migrationEvents.iterate())
+            empty.push(record);
+        });
+        equal(empty, [], 'temporary migration records survived clear');
+      }),
+  },
+  {
+    name: 'bounded iteration preserves table and log order without skipping or repeating records',
+    run: (factory) =>
+      withStore(factory, async ({ store }) => {
+        await store.write(async (tx) => {
+          const first = await tx.items.get('x:1');
+          assert(first, 'initial item missing');
+          await tx.items.put({ ...first, item: { ...first.item, id: 'x:2' } });
+          await tx.items.put({ ...first, item: { ...first.item, id: 'x:3' } });
+          await tx.decisionEvents.append([
+            contractEvent('page-first', 'undecided', 'delete'),
+            contractEvent('page-second', 'delete', 'keep'),
+          ]);
+        });
+        await store.read(async (tx) => {
+          const ids: string[] = [];
+          for await (const record of tx.items.iterate({ offset: 1, limit: 1 }))
+            ids.push(record.item.id);
+          equal(ids, ['x:2'], 'table offset/limit ignored');
+          const events: string[] = [];
+          for await (const event of tx.decisionEvents.iterate({
+            offset: 1,
+            limit: 1,
+          }))
+            events.push(event.eventId);
+          equal(events, ['page-second'], 'log offset/limit ignored');
+          const empty: unknown[] = [];
+          for await (const record of tx.items.iterate({ limit: 0 }))
+            empty.push(record);
+          equal(empty, [], 'zero limit yielded records');
+        });
+      }),
+  },
   {
     name: 'initial workspace and detached record reads',
     run: (factory) =>
@@ -138,7 +322,7 @@ export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
         );
         equal(
           await store.read(async (tx) => tx.runtime.get()),
-          { revision: 0 },
+          { revision: 0, lastEventSeq: 0 },
           'rollback changed revision',
         );
         equal(
@@ -186,7 +370,7 @@ export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
         );
         equal(
           await reopened.read(async (tx) => tx.runtime.get()),
-          { revision: 1 },
+          { revision: 1, lastEventSeq: 1 },
           'revision did not survive reopen',
         );
         assert(

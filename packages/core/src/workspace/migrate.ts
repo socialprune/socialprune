@@ -30,28 +30,54 @@ export async function migrateV1(input: unknown): Promise<WorkspaceV2> {
   const assessments: Assessment[] = [];
   const lastDecision = new Map<string, DecisionEvent['value']>();
   const lastOutcome = new Map<string, OutcomeEvent['value']>();
-  for (const [index, record] of old.decisions.entries()) {
-    const eventId = `v1-${await hash(JSON.stringify([index, record]))}`;
-    const previous = lastDecision.get(record.itemId) ?? 'undecided';
-    decisions.push({
-      ...record,
-      eventId,
-      previous,
-      action: { id: eventId, kind: 'migrated', size: 1, reverts: null },
-    });
-    lastDecision.set(record.itemId, record.value);
-  }
-  for (const [index, record] of old.outcomes.entries()) {
-    const eventId = `v1-${await hash(JSON.stringify([index, record]))}`;
-    const previous = lastOutcome.get(record.itemId) ?? 'unknown';
-    outcomes.push({
-      ...record,
-      eventId,
-      previous,
-      source: { kind: 'human', via: 'v1-unrecorded' },
-      action: { id: eventId, kind: 'migrated', size: 1, reverts: null },
-    });
-    lastOutcome.set(record.itemId, record.value);
+  // V1 recorded no cross-log order. Timestamp, decision-before-outcome ties
+  // and original array index are the only evidence available for migration.
+  const events = [
+    ...old.decisions.map((record, index) => ({
+      kind: 'decision' as const,
+      record,
+      index,
+      at: record.decidedAt,
+    })),
+    ...old.outcomes.map((record, index) => ({
+      kind: 'outcome' as const,
+      record,
+      index,
+      at: record.recordedAt,
+    })),
+  ].sort(
+    (a, b) =>
+      Date.parse(a.at) - Date.parse(b.at) ||
+      (a.kind === b.kind ? a.index - b.index : a.kind === 'decision' ? -1 : 1),
+  );
+  let seq = 0;
+  for (const event of events) {
+    const { record, index } = event;
+    const eventId = `v1-${await hash(JSON.stringify([event.kind, index, record]))}`;
+    const action = {
+      id: eventId,
+      kind: 'migrated' as const,
+      size: 1,
+      reverts: null,
+    };
+    if (event.kind === 'decision') {
+      const value = record as WorkspaceV1['decisions'][number];
+      const previous = lastDecision.get(value.itemId) ?? 'undecided';
+      decisions.push({ ...value, eventId, seq: ++seq, previous, action });
+      lastDecision.set(value.itemId, value.value);
+    } else {
+      const value = record as WorkspaceV1['outcomes'][number];
+      const previous = lastOutcome.get(value.itemId) ?? 'unknown';
+      outcomes.push({
+        ...value,
+        eventId,
+        seq: ++seq,
+        previous,
+        source: { kind: 'human', via: 'v1-unrecorded' },
+        action,
+      });
+      lastOutcome.set(value.itemId, value.value);
+    }
   }
   for (const [index, record] of old.assessments.entries())
     assessments.push({

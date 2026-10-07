@@ -31,6 +31,13 @@ export const WORKSPACE_ERROR_CODES = [
   'CONTENT_CHANGED',
   'UNKNOWN_CATEGORY',
   'INVALID_REASON',
+  'BACKUP_SCHEMA_UNSUPPORTED',
+  'BACKUP_INVALID_JSON',
+  'BACKUP_INVALID_SCHEMA',
+  'BACKUP_CHANGED',
+  'BACKUP_INCOMPLETE',
+  'RESTORE_TARGET_NOT_EMPTY',
+  'EVENT_SEQUENCE',
 ] as const;
 export type WorkspaceErrorCode = (typeof WORKSPACE_ERROR_CODES)[number];
 export class WorkspaceError extends Error {

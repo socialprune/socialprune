@@ -20,7 +20,8 @@
     "./workspace/query": "./src/workspace/query.ts",
     "./workspace/time": "./src/workspace/time.ts",
     "./workspace/merge": "./src/workspace/merge.ts",
-    "./workspace/payloads": "./src/workspace/payloads.ts"
+    "./workspace/payloads": "./src/workspace/payloads.ts",
+    "./workspace/backup": "./src/workspace/backup.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

@@ -7,9 +7,18 @@ import {
   SubmissionSchema,
   WorkspaceMetaSchema,
 } from '../model/index.ts';
-import type { WorkspaceV2 } from '../model/index.ts';
+import type {
+  WorkspaceV2,
+  DecisionEvent,
+  OutcomeEvent,
+} from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
-import { createWorkspace, importForItem, initialState } from './store.ts';
+import {
+  createWorkspace,
+  importForItem,
+  initialState,
+  iterationBounds,
+} from './store.ts';
 import type {
   AppendWriter,
   CommandReceipt,
@@ -18,6 +27,7 @@ import type {
   StoredState,
   UniqueWriter,
   WorkspaceRuntime,
+  MigrationEvent,
   WorkspaceStore,
   WriteTransaction,
 } from './store.ts';
@@ -37,7 +47,17 @@ function database(workspace: WorkspaceV2) {
   void _counts;
   return {
     meta,
-    runtime: { revision: 0 } satisfies WorkspaceRuntime,
+    runtime: {
+      revision: 0,
+      lastEventSeq: [...decisionEvents, ...outcomeEvents].reduce(
+        (maximum, event) => Math.max(maximum, event.seq),
+        0,
+      ),
+    } satisfies WorkspaceRuntime,
+    sequences: new Set(
+      [...decisionEvents, ...outcomeEvents].map((event) => event.seq),
+    ),
+    migrationEvents: new Map<string, MigrationEvent>(),
     commands: new Map<string, CommandReceipt>(),
     imports: new Map(imports.map((record) => [record.id, record])),
     items: new Map<string, StoredItem>(
@@ -75,6 +95,8 @@ function fork(source: Database): Database {
     submissions: new Map(source.submissions),
     commands: new Map(source.commands),
     state: new Map(source.state),
+    sequences: new Set(source.sequences),
+    migrationEvents: new Map(source.migrationEvents),
     assessments: [...source.assessments],
     decisionEvents: [...source.decisionEvents],
     outcomeEvents: [...source.outcomeEvents],
@@ -85,6 +107,10 @@ export function createMemoryStore(
   backing: MemoryStoreBacking = new MemoryStoreBacking(),
 ): WorkspaceStore {
   let closed = false;
+  const iterationCache = new WeakMap<
+    object,
+    { offset: number; iterator: Iterator<unknown> }
+  >();
   const transact = <T>(
     writable: boolean,
     operation: (tx: WriteTransaction) => Promise<T>,
@@ -106,18 +132,32 @@ export function createMemoryStore(
           guard();
           return Promise.resolve(structuredClone(map.get(id)));
         },
-        async *iterate() {
+        async *iterate(options) {
           await Promise.resolve();
           guard();
-          for (const value of map.values()) {
+          const { offset, limit } = iterationBounds(options);
+          let position = options ? iterationCache.get(map) : undefined;
+          if (!position || position.offset !== offset) {
+            position = { offset: 0, iterator: map.values() };
+            while (position.offset < offset) {
+              if (position.iterator.next().done) break;
+              position.offset++;
+            }
+            if (options) iterationCache.set(map, position);
+          }
+          for (let count = 0; count < limit; count++) {
             guard();
-            yield structuredClone(value);
+            const next = position.iterator.next();
+            if (next.done) break;
+            position.offset++;
+            yield structuredClone(next.value as R);
           }
         },
         put(record) {
           guard(true);
           const value = validate(record);
           map.set(key(value), structuredClone(value));
+          iterationCache.delete(map);
           return Promise.resolve();
         },
         add(record) {
@@ -125,6 +165,7 @@ export function createMemoryStore(
           const value = validate(record);
           if (map.has(key(value))) throw new WorkspaceError('DUPLICATE_ID');
           map.set(key(value), structuredClone(value));
+          iterationCache.delete(map);
           return Promise.resolve();
         },
       });
@@ -132,24 +173,49 @@ export function createMemoryStore(
         array: R[],
         key: (record: R) => string,
         validate: (record: R) => R,
+        eventLog = false,
       ): AppendWriter<R> => ({
-        async *iterate() {
+        async *iterate(options) {
           await Promise.resolve();
           guard();
-          for (const value of array) {
+          const { offset, limit } = iterationBounds(options);
+          for (
+            let index = offset;
+            index < array.length && index < offset + limit;
+            index++
+          ) {
             guard();
-            yield structuredClone(value);
+            yield structuredClone(array[index]!);
           }
         },
         append(records) {
           guard(true);
           const known = new Set(array.map(key));
           const values = records.map(validate);
+          let lastSeq =
+            eventLog && array.length
+              ? (array.at(-1) as DecisionEvent | OutcomeEvent).seq
+              : 0;
+          const batchSeq = new Set<number>();
           for (const value of values) {
             if (known.has(key(value))) throw new WorkspaceError('DUPLICATE_ID');
             known.add(key(value));
+            if (eventLog) {
+              const seq = (value as DecisionEvent | OutcomeEvent).seq;
+              if (seq <= lastSeq || db.sequences.has(seq) || batchSeq.has(seq))
+                throw new WorkspaceError('EVENT_SEQUENCE');
+              batchSeq.add(seq);
+              lastSeq = seq;
+            }
           }
           array.push(...structuredClone(values));
+          for (const seq of batchSeq) {
+            db.sequences.add(seq);
+            db.runtime = {
+              ...db.runtime,
+              lastEventSeq: Math.max(db.runtime.lastEventSeq, seq),
+            };
+          }
           return Promise.resolve();
         },
       });
@@ -177,7 +243,13 @@ export function createMemoryStore(
               value.revision < db.runtime.revision
             )
               throw new WorkspaceError('STORAGE');
-            db.runtime = structuredClone(value);
+            const lastEventSeq = value.lastEventSeq ?? db.runtime.lastEventSeq;
+            if (
+              !Number.isSafeInteger(lastEventSeq) ||
+              lastEventSeq < db.runtime.lastEventSeq
+            )
+              throw new WorkspaceError('EVENT_SEQUENCE');
+            db.runtime = { revision: value.revision, lastEventSeq };
             return Promise.resolve();
           },
         },
@@ -210,17 +282,54 @@ export function createMemoryStore(
           db.decisionEvents,
           (record) => record.eventId,
           (record) => DecisionEventSchema.parse(record),
+          true,
         ),
         outcomeEvents: log(
           db.outcomeEvents,
           (record) => record.eventId,
           (record) => OutcomeEventSchema.parse(record),
+          true,
         ),
         state: table(
           db.state,
           (record) => record.itemId,
           (record: StoredState) => record,
         ),
+        migrationEvents: {
+          ...table(
+            db.migrationEvents,
+            (record) => record.id,
+            (record) => record,
+          ),
+          async *iterate(options) {
+            await Promise.resolve();
+            guard();
+            const { offset, limit } = iterationBounds(options);
+            const sorted = [...db.migrationEvents.values()].sort(
+              (a, b) =>
+                Date.parse(a.at) - Date.parse(b.at) ||
+                (a.kind === b.kind
+                  ? a.index - b.index
+                  : a.kind === 'decision'
+                    ? -1
+                    : 1),
+            );
+            for (const record of sorted.slice(offset, offset + limit)) {
+              guard();
+              yield structuredClone(record);
+            }
+          },
+          clear() {
+            guard(true);
+            db.migrationEvents.clear();
+            return Promise.resolve();
+          },
+          remove(id) {
+            guard(true);
+            db.migrationEvents.delete(id);
+            return Promise.resolve();
+          },
+        },
       };
       try {
         const result = await operation(tx);

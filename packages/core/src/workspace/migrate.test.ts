@@ -18,7 +18,7 @@ async function fixture() {
   );
   return WorkspaceV1Schema.parse(value);
 }
-test('v1 migration is deterministic, preserves sources and uses array order rather than timestamps', async () => {
+test('v1 migration deterministically merges timestamps with decision-first ties and preserves sources', async () => {
   const old = await fixture();
   const original = JSON.stringify(old);
   const migrated = await migrateV1(old);
@@ -42,9 +42,9 @@ test('v1 migration is deterministic, preserves sources and uses array order rath
       event.value,
     ]),
   ).toEqual([
-    ['x:1', 'undecided', 'delete'],
+    ['x:1', 'undecided', 'keep'],
+    ['x:1', 'keep', 'delete'],
     ['x:2', 'undecided', 'later'],
-    ['x:1', 'delete', 'keep'],
   ]);
   expect(
     migrated.outcomeEvents.map((event) => [
@@ -53,11 +53,16 @@ test('v1 migration is deterministic, preserves sources and uses array order rath
       event.source.via,
     ]),
   ).toEqual([
+    ['unknown', 'unknown', 'v1-unrecorded'],
     ['unknown', 'skipped', 'v1-unrecorded'],
-    ['skipped', 'unknown', 'v1-unrecorded'],
   ]);
-  for (const [index, event] of migrated.decisionEvents.entries())
-    expect(event.source).toEqual(old.decisions[index]!.source);
+  expect(migrated.decisionEvents.map((event) => event.source)).toEqual([
+    old.decisions[2]!.source,
+    old.decisions[0]!.source,
+    old.decisions[1]!.source,
+  ]);
+  expect(migrated.decisionEvents.map((event) => event.seq)).toEqual([1, 3, 5]);
+  expect(migrated.outcomeEvents.map((event) => event.seq)).toEqual([2, 4]);
   expect(migrated.assessments[0]).toMatchObject({
     ...old.assessments[0],
     submissionId: null,
@@ -71,11 +76,11 @@ test('v1 migration is deterministic, preserves sources and uses array order rath
     outcomeEvents: 2,
   });
   const state = deriveState(migrated);
-  // Hand-written truth table from the fixture action order, not the migration.
+  // Hand-written truth table from fixture timestamps and decision-first ties.
   expect(
     [...state].map(([id, value]) => [id, value.decision, value.outcome]),
   ).toEqual([
-    ['x:1', 'keep', 'unknown'],
+    ['x:1', 'delete', 'skipped'],
     ['x:2', 'later', 'unknown'],
   ]);
 });
@@ -92,7 +97,7 @@ test('v2 logical validation checks chains, counts, references and fixture-only d
   const valid = await migrateV1(await fixture());
   expect(validateWorkspace(valid)).toEqual(valid);
   const badChain = structuredClone(valid);
-  badChain.decisionEvents[2]!.previous = 'undecided';
+  badChain.decisionEvents[1]!.previous = 'undecided';
   expect(() => validateWorkspace(badChain)).toThrow(WorkspaceError);
   try {
     validateWorkspace(badChain);

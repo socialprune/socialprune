@@ -49,7 +49,39 @@ test('detachment contract fails on a store that exposes mutable read records', a
       dispose: () => broken.close(),
     });
   };
-  await expect(STORE_CONTRACT_CHECKS[0]!.run(factory)).rejects.toThrow(
+  const detachment = STORE_CONTRACT_CHECKS.find(
+    (check) => check.name === 'initial workspace and detached record reads',
+  );
+  expect(detachment).toBeDefined();
+  await expect(detachment!.run(factory)).rejects.toThrow(
     'read returned live mutable data',
+  );
+});
+test('bounded iteration contract rejects a store that ignores offset and limit', async () => {
+  const factory: StoreContractFactory = (initial) => {
+    const original = createMemoryStore(new MemoryStoreBacking(initial));
+    const broken: WorkspaceStore = {
+      read: (operation) =>
+        original.read((tx) =>
+          operation({
+            ...tx,
+            items: { ...tx.items, iterate: () => tx.items.iterate() },
+          }),
+        ),
+      write: (operation) => original.write(operation),
+      close: () => original.close(),
+    };
+    return Promise.resolve({
+      store: broken,
+      reopen: () => Promise.resolve(broken),
+      dispose: () => broken.close(),
+    });
+  };
+  const check = STORE_CONTRACT_CHECKS.find((candidate) =>
+    candidate.name.startsWith('bounded iteration'),
+  );
+  expect(check).toBeDefined();
+  await expect(check!.run(factory)).rejects.toThrow(
+    'table offset/limit ignored',
   );
 });

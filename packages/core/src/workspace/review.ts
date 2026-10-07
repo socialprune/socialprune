@@ -214,11 +214,13 @@ export class ReviewService {
     };
     const decisionEvents: DecisionEvent[] = [];
     const outcomeEvents: OutcomeEvent[] = [];
+    let seq = runtime.lastEventSeq;
     for (const id of ids) {
       const state = states.get(id)!;
       const next = value instanceof Map ? value.get(id)! : value;
       const common = {
         eventId: `${actionId}:${domain}:${encodeURIComponent(id)}`,
+        seq: ++seq,
         itemId: id,
         source: { kind: 'human' as const, via: this.via },
         action,
@@ -243,7 +245,7 @@ export class ReviewService {
     }
     if (decisionEvents.length) await tx.decisionEvents.append(decisionEvents);
     if (outcomeEvents.length) await tx.outcomeEvents.append(outcomeEvents);
-    await tx.runtime.set({ revision: runtime.revision + 1 });
+    await tx.runtime.set({ revision: runtime.revision + 1, lastEventSeq: seq });
     const meta = await tx.meta.get();
     await tx.meta.set({ ...meta, updatedAt: time });
     return {
@@ -409,7 +411,7 @@ export class ReviewService {
       ...(await records(tx.outcomeEvents)),
     ];
     const groups = new Map<string, ActionGroup>();
-    for (const event of events) {
+    for (const event of events.sort((a, b) => a.seq - b.seq)) {
       const group = groups.get(event.action.id) ?? {
         id: event.action.id,
         events: [],
@@ -419,21 +421,9 @@ export class ReviewService {
       group.events.push(event);
       groups.set(group.id, group);
     }
-    // Command receipts preserve cross-log commit order across a store reopen.
-    // Restored logs without receipts retain their document append order.
-    const order = await records(tx.commands);
-    const ordered = new Set(
-      order.flatMap((receipt) =>
-        receipt.result.type === 'committed' && receipt.result.actionId
-          ? [receipt.result.actionId]
-          : [],
-      ),
-    );
-    return [...groups.values()]
-      .filter((group) => !ordered.has(group.id))
-      .concat(
-        [...ordered].flatMap((id) => (groups.has(id) ? [groups.get(id)!] : [])),
-      );
+    // Portable sequence alone determines cross-log order. Receipts only guard
+    // duplicate commands and are deliberately absent from a backup document.
+    return [...groups.values()];
   }
   undo(commandId: string): Promise<ReviewCommandResult> {
     return this.reverse(commandId, 'undo');

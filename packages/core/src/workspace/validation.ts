@@ -44,6 +44,16 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
       (record) => record.eventId,
     ),
   );
+  const sequences = new Set<number>();
+  for (const events of [workspace.decisionEvents, workspace.outcomeEvents]) {
+    let high = 0;
+    for (const event of events) {
+      if (event.seq <= high || sequences.has(event.seq))
+        throw new WorkspaceError('EVENT_SEQUENCE');
+      high = event.seq;
+      sequences.add(event.seq);
+    }
+  }
   for (const item of workspace.items)
     if (!item.id.startsWith(`${item.platform}:`))
       throw new WorkspaceError('INVALID_ITEM_ID');

@@ -48,13 +48,41 @@ export interface CommandReceipt {
 }
 export interface WorkspaceRuntime {
   revision: number;
+  lastEventSeq: number;
+}
+export interface MigrationEvent {
+  id: string;
+  kind: 'decision' | 'outcome';
+  index: number;
+  at: string;
+  eventId: string;
+  record: import('../model/v1.ts').Decision | import('../model/v1.ts').Outcome;
 }
 export interface RecordReader<T> {
   get(id: string): Promise<T | undefined>;
-  iterate(): AsyncIterable<T>;
+  iterate(options?: IterationOptions): AsyncIterable<T>;
+}
+export interface IterationOptions {
+  offset?: number;
+  limit?: number;
 }
 export interface OrderedReader<T> {
-  iterate(): AsyncIterable<T>;
+  iterate(options?: IterationOptions): AsyncIterable<T>;
+}
+export function iterationBounds(options: IterationOptions = {}): {
+  offset: number;
+  limit: number;
+} {
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? Number.MAX_SAFE_INTEGER;
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 0
+  )
+    throw new RangeError('Invalid record iteration bounds.');
+  return { offset, limit };
 }
 export interface RecordWriter<T> extends RecordReader<T> {
   put(value: T): Promise<void>;
@@ -76,11 +104,13 @@ export interface ReadTransaction {
   decisionEvents: OrderedReader<DecisionEvent>;
   outcomeEvents: OrderedReader<OutcomeEvent>;
   state: RecordReader<StoredState>;
+  /** Temporary staging records; ordered by time, decision before outcome, index. */
+  migrationEvents: RecordReader<MigrationEvent>;
 }
 export interface WriteTransaction extends ReadTransaction {
   meta: ReadTransaction['meta'] & { set(value: WorkspaceMeta): Promise<void> };
   runtime: ReadTransaction['runtime'] & {
-    set(value: WorkspaceRuntime): Promise<void>;
+    set(value: { revision: number; lastEventSeq?: number }): Promise<void>;
   };
   commands: UniqueWriter<CommandReceipt>;
   imports: RecordWriter<ImportRecord>;
@@ -90,6 +120,10 @@ export interface WriteTransaction extends ReadTransaction {
   decisionEvents: AppendWriter<DecisionEvent>;
   outcomeEvents: AppendWriter<OutcomeEvent>;
   state: RecordWriter<StoredState>;
+  migrationEvents: UniqueWriter<MigrationEvent> & {
+    remove(id: string): Promise<void>;
+    clear(): Promise<void>;
+  };
 }
 
 /**

@@ -66,6 +66,13 @@ export class JsonCursor {
   unread(value: string | null): void {
     this.pending = value;
   }
+  /** Return an unconsumed suffix after a chunk-level parser reaches a value. */
+  unreadChunk(value: string): void {
+    if (this.pending !== undefined)
+      throw new TypeError('Cursor already has a pending character.');
+    this.chunk = value;
+    this.offset = 0;
+  }
   async nonWhitespace(): Promise<string | null> {
     let character;
     do {

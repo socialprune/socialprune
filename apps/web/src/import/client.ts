@@ -18,6 +18,7 @@ export interface ImportSnapshot {
 }
 
 export class ImportClient {
+  private readonly workerFactory: () => Worker;
   private worker: Worker | null = null;
   private id = 0;
   private disposed = false;
@@ -37,14 +38,13 @@ export class ImportClient {
   };
   private readonly listeners = new Set<(state: ImportSnapshot) => void>();
 
-  constructor() {
+  constructor(workerFactory: () => Worker) {
+    this.workerFactory = workerFactory;
     this.createWorker();
   }
 
   private createWorker(): void {
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), {
-      type: 'module',
-    });
+    this.worker = this.workerFactory();
     this.worker.onmessage = (event: MessageEvent<ImportMessage>) =>
       this.receive(event.data);
     this.worker.onerror = () => {

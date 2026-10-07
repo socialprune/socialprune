@@ -1,0 +1,18 @@
+{
+  "id": "/socialprune/",
+  "name": "SocialPrune",
+  "short_name": "SocialPrune",
+  "start_url": "/socialprune/",
+  "scope": "/socialprune/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#172033",
+  "icons": [
+    {
+      "src": "/socialprune/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

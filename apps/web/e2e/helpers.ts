@@ -11,6 +11,7 @@ import {
 import type { ZipFileEntry } from '@socialprune/fixture-gen';
 import type { ImportRecord, ImportSummary, Item } from '@socialprune/core';
 import type { ImportSnapshot } from '../src/import/client.ts';
+import { PAGE_POLICY } from '../src/sw/policies.ts';
 
 export interface ExpectedFixture {
   status: ImportSummary['status'];
@@ -107,10 +108,22 @@ export async function observeImport(
         phaseBefore: string;
         receivedBefore: number;
       } | null;
+      __insertedStyles: number;
     };
     host.__policy = [];
     host.__workerMessages = [];
     host.__abortTrigger = null;
+    host.__insertedStyles = 0;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element)
+            host.__insertedStyles +=
+              Number(node.tagName === 'STYLE') +
+              node.querySelectorAll('style').length;
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
     let abortPending = abortOnFirstItems;
     document.addEventListener('securitypolicyviolation', (event) =>
       host.__policy.push(event.effectiveDirective),
@@ -136,9 +149,9 @@ export async function observeImport(
                 phaseBefore: state.phase,
                 receivedBefore: state.receivedItems,
               };
-              const button = Array.from(
-                document.querySelectorAll('button'),
-              ).find((button) => button.textContent?.trim() === 'Abort');
+              const button = document.querySelector<HTMLButtonElement>(
+                '[data-testid="abort-button"]',
+              );
               if (!button || button.disabled)
                 throw new Error(
                   'Abort must be enabled on the first item batch.',
@@ -161,6 +174,12 @@ export async function observeImport(
       ).toEqual([]);
       expect(failures).toEqual([]);
       expect(errors).toEqual([]);
+      expect(await page.locator('style').count()).toBe(0);
+      expect(
+        await page.evaluate(
+          () => Reflect.get(globalThis, '__insertedStyles') as number,
+        ),
+      ).toBe(0);
       expect(
         await page.evaluate(
           () =>
@@ -177,27 +196,35 @@ export async function observeImport(
 }
 
 export async function waitForApp(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/socialprune/#/import');
   const policy = await page
     .locator('meta[http-equiv="Content-Security-Policy"]')
     .getAttribute('content');
-  expect(policy).toBe(
-    "default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'none'; style-src 'self'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
-  );
+  expect(policy).toBe(PAGE_POLICY);
   expect(await page.locator('script:not([src])').count()).toBe(0);
   await expect(page.getByTestId('import-state')).toHaveAttribute(
     'data-phase',
     'idle',
   );
-  await expect.poll(() => page.workers().length).toBe(1);
+  await expect(page.locator('main[data-gate]')).toHaveAttribute(
+    'data-gate',
+    'ready',
+  );
+  await expect
+    .poll(
+      () =>
+        page.workers().filter((worker) => /\/worker-/.test(worker.url()))
+          .length,
+    )
+    .toBe(1);
 }
 
 export async function importFiles(
   page: Page,
   files: string[],
 ): Promise<ImportSnapshot> {
-  await page.getByLabel('Export ZIP files').setInputFiles(files);
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByTestId('archives').setInputFiles(files);
+  await page.getByTestId('import-button').click();
   await expect(page.getByTestId('import-state')).toHaveAttribute(
     'data-phase',
     'complete',

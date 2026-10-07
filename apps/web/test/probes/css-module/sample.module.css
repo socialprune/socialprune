@@ -1,0 +1,6 @@
+@layer components {
+  .sample {
+    color: var(--color-text);
+    padding: var(--space-4);
+  }
+}

@@ -98,8 +98,12 @@ test('rejects executable X assignment data without executing it in the page or w
     expect(
       await page.evaluate(() => Reflect.get(globalThis, '__pwned') as unknown),
     ).toBeUndefined();
-    expect(page.workers()).toHaveLength(1);
-    for (const worker of page.workers()) {
+    expect(
+      page.workers().filter((worker) => /\/worker-/.test(worker.url())),
+    ).toHaveLength(1);
+    for (const worker of page
+      .workers()
+      .filter((worker) => /\/worker-/.test(worker.url()))) {
       expect(
         await worker.evaluate(
           () => Reflect.get(globalThis, '__pwned') as unknown,
@@ -141,10 +145,12 @@ test('aborts after real batches, releases the archive and imports again in the s
       { timeout: 30_000 },
     );
     await waitForApp(page);
-    const worker = page.workers()[0];
+    const worker = page
+      .workers()
+      .find((worker) => /\/worker-/.test(worker.url()));
     if (!worker) throw new Error('The import worker did not start.');
-    await page.getByLabel('Export ZIP files').setInputFiles(large);
-    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    await page.getByTestId('archives').setInputFiles(large);
+    await page.getByTestId('import-button').click();
     await expect(page.getByTestId('import-state')).toHaveAttribute(
       'data-phase',
       'aborted',
@@ -190,7 +196,9 @@ test('aborts after real batches, releases the archive and imports again in the s
         return messages.slice(index + 1).filter(({ type }) => type === 'items');
       }, terminalIndex),
     ).toEqual([]);
-    expect(page.workers()[0]).toBe(worker);
+    expect(
+      page.workers().find((worker) => /\/worker-/.test(worker.url())),
+    ).toBe(worker);
     const id = discovered
       .find(({ platform }) => platform === 'x')
       ?.ids.find((id) => /current/.test(id));

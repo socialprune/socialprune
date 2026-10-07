@@ -1,0 +1,183 @@
+@layer reset, tokens, base, components, utilities;
+@layer tokens {
+  :root {
+    --font-family:
+      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --type-xs: 13px;
+    --line-xs: 1.4;
+    --type-sm: 14px;
+    --line-sm: 1.45;
+    --type-md: 16px;
+    --line-md: 1.5;
+    --type-lg: 20px;
+    --line-lg: 1.35;
+    --type-xl: 24px;
+    --line-xl: 1.3;
+    --type-2xl: 30px;
+    --line-2xl: 1.25;
+    --weight-regular: 400;
+    --weight-heading: 600;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --radius-control: 6px;
+    --radius-panel: 8px;
+    --border-width: 1px;
+    --focus-width: 3px;
+    --focus-offset: 2px;
+    --target-size: 44px;
+    --shell-width: 72rem;
+    --color-canvas: #f8fafc;
+    --color-surface: #ffffff;
+    --color-text: #172033;
+    --color-text-secondary: #475569;
+    --color-action: #1d4ed8;
+    --color-on-action: #ffffff;
+    --color-boundary: #64748b;
+    --color-divider: #cbd5e1;
+    --color-selected-bg: #dbeafe;
+    --color-marked: #92400e;
+    --color-marked-bg: #fef3c7;
+    --color-outcome: #166534;
+    --color-outcome-bg: #dcfce7;
+    --color-error: #b91c1c;
+    --color-error-bg: #fee2e2;
+    --color-suggestion: #5b21b6;
+    --color-evidence-bg: #e0e7ff;
+    --motion-duration: 120ms;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --color-canvas: #111827;
+      --color-surface: #1f2937;
+      --color-text: #f8fafc;
+      --color-text-secondary: #cbd5e1;
+      --color-action: #93c5fd;
+      --color-on-action: #111827;
+      --color-boundary: #94a3b8;
+      --color-divider: #475569;
+      --color-selected-bg: #1e3a8a;
+      --color-marked: #fbbf24;
+      --color-marked-bg: #451a03;
+      --color-outcome: #86efac;
+      --color-outcome-bg: #052e16;
+      --color-error: #fca5a5;
+      --color-error-bg: #450a0a;
+      --color-suggestion: #c4b5fd;
+      --color-evidence-bg: #312e81;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --color-canvas: #111827;
+    --color-surface: #1f2937;
+    --color-text: #f8fafc;
+    --color-text-secondary: #cbd5e1;
+    --color-action: #93c5fd;
+    --color-on-action: #111827;
+    --color-boundary: #94a3b8;
+    --color-divider: #475569;
+    --color-selected-bg: #1e3a8a;
+    --color-marked: #fbbf24;
+    --color-marked-bg: #451a03;
+    --color-outcome: #86efac;
+    --color-outcome-bg: #052e16;
+    --color-error: #fca5a5;
+    --color-error-bg: #450a0a;
+    --color-suggestion: #c4b5fd;
+    --color-evidence-bg: #312e81;
+    color-scheme: dark;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --motion-duration: 0ms;
+    }
+  }
+}
+@layer reset {
+  body {
+    margin: 0;
+  }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+}
+@layer base {
+  body {
+    font-family: var(--font-family);
+    font-size: var(--type-md);
+    line-height: var(--line-md);
+    color: var(--color-text);
+    background: var(--color-canvas);
+  }
+  a {
+    color: var(--color-action);
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+  button,
+  select,
+  input[type='file'] {
+    min-height: var(--target-size);
+  }
+  button {
+    padding: var(--space-2) var(--space-4);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+    color: var(--color-text);
+    background: var(--color-surface);
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+    color: var(--color-text-secondary);
+  }
+  :focus-visible {
+    outline: var(--focus-width) solid var(--color-action);
+    outline-offset: var(--focus-offset);
+  }
+  h1 {
+    font-size: var(--type-xl);
+    line-height: var(--line-xl);
+  }
+  h2 {
+    font-size: var(--type-lg);
+    line-height: var(--line-lg);
+  }
+  h1,
+  h2,
+  h3 {
+    font-weight: var(--weight-heading);
+  }
+  .base-ui-disable-scrollbar {
+    scrollbar-width: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+    button {
+      border-color: CanvasText;
+      background: Canvas;
+      color: CanvasText;
+    }
+  }
+}

@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'none'; style-src 'self'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'none'; style-src 'self'; img-src 'self'; font-src 'none'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types socialprune"
     />
-    <!-- GitHub Pages cannot send CSP response headers. The worker needs its own
-         response policy through the service-worker approach from S3 later. -->
+    <!-- GitHub Pages has no response CSP. Verified service-worker control is
+         required before any worker receives a person's export. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>SocialPrune</title>
   </head>
   <body>

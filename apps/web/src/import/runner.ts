@@ -32,7 +32,7 @@ export function createImportRunner({
     try {
       archive = await open(
         files.map((file) => ({ name: file.name, blob: file })),
-        { signal: controller.signal },
+        { signal: controller.signal, allowDeflate64: false },
       );
       const summary = await importArchive(archive, adapters, {
         signal: controller.signal,

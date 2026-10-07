@@ -11,7 +11,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p .",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project chromium",
+    "test:e2e:all": "playwright test && playwright test --config playwright.probe.config.ts && node scripts/build-check.ts",
+    "build:release": "vite build --mode release",
+    "i18n:generate": "node scripts/i18n-generate.ts",
+    "i18n:check": "node scripts/i18n-check.ts",
     "measure:g1": "node scripts/measure-g1.ts"
   },
   "dependencies": {

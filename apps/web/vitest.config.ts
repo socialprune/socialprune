@@ -5,6 +5,10 @@ export default defineProject({
   test: {
     name: 'web',
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'tooling/**/*.test.ts',
+      'scripts/**/*.test.ts',
+    ],
   },
 });

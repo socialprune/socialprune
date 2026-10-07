@@ -25,7 +25,7 @@ class TestWorker {
 
 function setup() {
   vi.stubGlobal('Worker', TestWorker);
-  const client = new ImportClient();
+  const client = new ImportClient(() => new Worker('test-only'));
   const worker = TestWorker.instances.at(-1)!;
   client.start([new File(['generated'], 'test.zip')]);
   return { client, worker };

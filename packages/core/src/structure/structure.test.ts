@@ -182,6 +182,16 @@ function leafValues(input: unknown): string[] {
   return [];
 }
 
+function inputKeyNames(input: unknown): string[] {
+  if (Array.isArray(input)) return input.flatMap(inputKeyNames);
+  if (input && typeof input === 'object')
+    return Object.entries(input).flatMap(([key, value]) => [
+      key,
+      ...inputKeyNames(value),
+    ]);
+  return [];
+}
+
 function containsStringOrNumber(input: unknown): boolean {
   if (typeof input === 'string' || typeof input === 'number') return true;
   if (Array.isArray(input)) return input.some(containsStringOrNumber);
@@ -206,6 +216,20 @@ function literalLeaves(text: string): string[] {
   return leaves;
 }
 
+function literalKeyNames(text: string): string[] {
+  const keys: string[] = [];
+  for (const match of text.matchAll(/"(?:[^"\\]|\\[\s\S])*"/g)) {
+    if (!/^\s*:/.test(text.slice(match.index + match[0].length))) continue;
+    try {
+      const decoded: unknown = JSON.parse(match[0]);
+      if (typeof decoded === 'string') keys.push(decoded);
+    } catch {
+      // Keep scanning malformed files just as literalLeaves does.
+    }
+  }
+  return keys;
+}
+
 async function* fixtureChunks(text: string): AsyncIterable<string> {
   yield await Promise.resolve(text);
 }
@@ -225,15 +249,22 @@ interface FixtureLeafEvidence {
   hasStringOrNumber: boolean;
 }
 
+interface FixturePrivacyEvidence extends FixtureLeafEvidence {
+  keys: string[];
+}
+
 async function fixtureLeafEvidence(
   text: string,
   format: 'json' | 'js',
+  keyNames?: Set<string>,
 ): Promise<FixtureLeafEvidence> {
   let leaves: string[] = [];
+  let keys: string[] = [];
   let parsedCleanly = true;
   let hasStringOrNumber = false;
   const collect = (value: unknown) => {
     leaves.push(...leafValues(value));
+    keys.push(...inputKeyNames(value));
     hasStringOrNumber ||= containsStringOrNumber(value);
   };
   try {
@@ -261,9 +292,11 @@ async function fixtureLeafEvidence(
   } catch {
     parsedCleanly = false;
     leaves = literalLeaves(text);
+    keys = literalKeyNames(text);
   }
   // Type names belong to the report vocabulary; short digit-only values can
   // equal report counts. No other leaf values are exempt from the assertion.
+  for (const key of keys) keyNames?.add(key);
   return {
     leaves: [...new Set(leaves)].filter(
       (leaf) =>
@@ -275,11 +308,52 @@ async function fixtureLeafEvidence(
   };
 }
 
+async function fixturePrivacyEvidence(
+  text: string,
+  format: 'json' | 'js',
+): Promise<FixturePrivacyEvidence> {
+  const keys = new Set<string>();
+  const evidence = await fixtureLeafEvidence(text, format, keys);
+  return { ...evidence, keys: [...keys] };
+}
+
 async function extractFixtureLeaves(
   text: string,
   format: 'json' | 'js',
 ): Promise<string[]> {
   return (await fixtureLeafEvidence(text, format)).leaves;
+}
+
+function maskFixtureKeys(
+  report: string,
+  evidence: readonly FixturePrivacyEvidence[],
+): string {
+  let separator = '\u0000';
+  const leaves = evidence.flatMap(({ leaves }) => leaves);
+  while (leaves.some((leaf) => leaf.includes(separator))) separator += '\u0000';
+  let masked = report.toLowerCase();
+  const keys = [
+    ...new Set(
+      evidence.flatMap(({ keys }) => keys.map((key) => key.toLowerCase())),
+    ),
+  ]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  for (const key of keys) masked = masked.replaceAll(key, separator);
+  return masked;
+}
+
+function fixtureLeafLeaks(
+  report: string,
+  evidence: readonly FixturePrivacyEvidence[],
+  pathLeaves: ReadonlySet<string> = new Set(),
+): string[] {
+  const masked = maskFixtureKeys(report, evidence);
+  return evidence.flatMap(({ leaves }) =>
+    leaves.filter(
+      (leaf) => !pathLeaves.has(leaf) && masked.includes(leaf.toLowerCase()),
+    ),
+  );
 }
 
 test('fixture leaf extraction covers assigned JS, decoded literals and exact vocabulary exclusions', async () => {
@@ -333,6 +407,90 @@ test('malformed and trailing-code fixtures retain decoded non-key string leaves'
       'js',
     ),
   ).toEqual(['Array leaf', 'Trailing code leaf']);
+});
+
+test('fixture key evidence comes from parsed inputs and malformed key literals, longest names masked first', async () => {
+  const parsed = await fixturePrivacyEvidence(
+    '{"video":null,"video_info":{"nested":[{"decoded_key":"Invented leaf"}]}}',
+    'json',
+  );
+  expect(parsed.keys).toEqual(['video', 'video_info', 'nested', 'decoded_key']);
+  expect(maskFixtureKeys('$.video_info / $.video / VIDEO_INFO', [parsed])).toBe(
+    '$.\u0000 / $.\u0000 / \u0000',
+  );
+  const target = ['window', 'YTD', 'tweets', 'part0'].join('.');
+  const assigned = await fixturePrivacyEvidence(
+    `${target} = [{"tweet":{"video_info":null}}];`,
+    'js',
+  );
+  expect(assigned.keys).toEqual(['tweet', 'video_info']);
+  for (const format of ['json', 'js'] as const) {
+    const malformed = await fixturePrivacyEvidence(
+      `${format === 'js' ? `${target} = ` : ''}{"video_info":"video","decoded\\u005fkey":"Invented leaf","broken_key":`,
+      format,
+    );
+    expect(malformed.parsedCleanly).toBe(false);
+    expect(malformed.keys).toEqual(['video_info', 'decoded_key', 'broken_key']);
+    expect(malformed.leaves).toEqual(['video', 'Invented leaf']);
+  }
+});
+
+test('input-key masking removes the real full-field fixture video false positive without omitting leaves', async () => {
+  const root = fileURLToPath(
+    new URL(
+      '../../../../fixtures/synthetic/x/current-full-fields/archive/',
+      import.meta.url,
+    ),
+  );
+  const archive = await openArchivePaths([root]);
+  try {
+    const report = JSON.stringify(await describeStructure(archive));
+    const evidence: FixturePrivacyEvidence[] = [];
+    for (const entry of archive
+      .list()
+      .filter((entry) => /\.(?:json|js)$/i.test(entry.path)))
+      evidence.push(
+        await fixturePrivacyEvidence(
+          await archive.readText(entry),
+          /\.js$/i.test(entry.path) ? 'js' : 'json',
+        ),
+      );
+    const pathLeaves = archivePathLeaves(archive);
+    const oldLeaks = evidence.flatMap(({ leaves }) =>
+      leaves.filter((leaf) => !pathLeaves.has(leaf) && report.includes(leaf)),
+    );
+    expect(oldLeaks).toEqual(['video', 'video']);
+    expect(evidence.flatMap(({ keys }) => keys)).toContain('video_info');
+    expect(evidence.flatMap(({ leaves }) => leaves)).toContain('video');
+    expect(fixtureLeafLeaks(report, evidence, pathLeaves)).toEqual([]);
+  } finally {
+    await archive.close();
+  }
+});
+
+test('input-key masking still catches unrelated leaks and key-name substrings outside keys', async () => {
+  const input =
+    '{"video_info":{"type":"video","description":"planted_leak_value"}}';
+  const archive = createMemoryArchive('key-mask-negative', {
+    'data/posts.json': input,
+  });
+  try {
+    const evidence = await fixturePrivacyEvidence(input, 'json');
+    const report = JSON.stringify(await describeStructure(archive));
+    expect(
+      evidence.keys.some((key) => key.includes('planted_leak_value')),
+    ).toBe(false);
+    expect(fixtureLeafLeaks(report, [evidence])).toEqual([]);
+    expect(
+      fixtureLeafLeaks(`${report} planted_leak_value`, [evidence]),
+    ).toEqual(['planted_leak_value']);
+    expect(fixtureLeafLeaks(`${report} VIDEO`, [evidence])).toEqual(['video']);
+    expect(
+      fixtureLeafLeaks(`${report} video planted_leak_value`, [evidence]),
+    ).toEqual(['video', 'planted_leak_value']);
+  } finally {
+    await archive.close();
+  }
 });
 
 test('object assignments expose only masked key paths and types without object leaf values', async () => {
@@ -875,6 +1033,10 @@ test.skipIf(variants.length === 0)(
     // verification-before-completion Law 32: fixture-wide proof must cover
     // every eligible syntax and malformed input. Zero leaves require proof of
     // clean parsing with no string or number, not merely an empty collector.
+    // D33 / LL-2026-10-002: mask full input key names, longest first, because
+    // values such as video also occur in legitimate keys such as video_info.
+    // Sensitivity is lost exactly where those key names are printed, nowhere
+    // else; an additional video outside a key remains detectable.
     // Inspect actual export roots, not fixture metadata. A manifest's exact
     // same-archive paths, slash-boundary suffixes and their digit-normalized
     // forms disclose only the file list, including nested export-root paths.
@@ -954,21 +1116,26 @@ test.skipIf(variants.length === 0)(
             .list()
             .filter((entry) => /\.(?:json|js)$/i.test(entry.path));
           dataFileCount += dataFiles.length;
+          const archiveEvidence: FixturePrivacyEvidence[] = [];
           for (const entry of dataFiles) {
             const text = await archive.readText(entry);
-            const evidence = await fixtureLeafEvidence(
+            const evidence = await fixturePrivacyEvidence(
               text,
               /\.js$/i.test(entry.path) ? 'js' : 'json',
             );
             leafCount += evidence.leaves.length;
             cleanWithoutScalars &&=
               evidence.parsedCleanly && !evidence.hasStringOrNumber;
-            for (const leaf of evidence.leaves)
-              if (!pathLeaves.has(leaf) && report.includes(leaf))
-                variantFailures.push(
-                  `${variant.label}/${name}: ${JSON.stringify(leaf)}`,
-                );
+            archiveEvidence.push(evidence);
           }
+          for (const leaf of fixtureLeafLeaks(
+            report,
+            archiveEvidence,
+            pathLeaves,
+          ))
+            variantFailures.push(
+              `${variant.label}/${name}: ${JSON.stringify(leaf)}`,
+            );
         } finally {
           await archive.close();
         }

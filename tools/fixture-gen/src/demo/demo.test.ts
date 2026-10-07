@@ -312,7 +312,9 @@ test('all-platform CLI check detects demo byte drift and leaves platform-only ch
     expect(clean.error).toBeUndefined();
     expect(clean.status, clean.stderr).toBe(0);
     expect(clean.stdout).toContain('Demo fixtures checked.');
-    expect(clean.stdout).toContain('52 variant(s), 0 changed file(s).');
+    expect(clean.stdout).toContain(
+      `${[...xVariants, ...instagramVariants].length} variant(s), 0 changed file(s).`,
+    );
     const path = join(temporary, 'demo', 'assessments.json');
     const bytes = await readFile(path);
     bytes[bytes.length - 1] = 32;

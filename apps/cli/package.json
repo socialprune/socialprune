@@ -10,10 +10,11 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@stricli/core": "1.3.0",
-    "@socialprune/core": "workspace:*",
+    "@socialprune/adapter-instagram": "workspace:*",
     "@socialprune/adapter-x": "workspace:*",
-    "@socialprune/adapter-instagram": "workspace:*"
+    "@socialprune/core": "workspace:*",
+    "@stricli/core": "1.3.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

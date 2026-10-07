@@ -93,3 +93,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-004] 2026-10-07 DELIVERY: Read the remote's last CI result before pushing, and let a local gate stand only for the platforms it ran on
+
+**ID:** LL-2026-10-004
+**Severity:** HIGH
+**Category:** DELIVERY
+**Expires:** Never (kernel). Commit IDs, platforms and commands below are dated evidence from 2026-10-07.
+
+**Feedback:** No user correction. The parent detected a repeat: twice on 2026-10-07 it read the CI result of the remote tip and pushed in the same command, so it saw the red result only after the push (at `54e648e`, then at `ad037d7`). The second time, CI had been red since the push that contained W3: eleven browser tests failed on Ubuntu, a 320 px layout overflow in Firefox and WebKit and one click-list test in Chromium. The local three-engine gate on Windows had passed the same code 399/399.
+**Problem:** Two controls were missing. A push went out without anyone having read the previous CI result, so new commits landed on a red branch for an unknown reason. And a green Windows gate was treated as proof for code that CI runs on Linux, where fonts, WebKit builds and timing differ; the WebKit import stall earlier the same day had already shown such a gap.
+**5 Whys Analysis:**
+1. Why was a red CI result seen only after the push? -> The read and the push ran in one shell command.
+2. Why in one command? -> To save a round trip while a gate had just passed.
+3. Why did a passing gate seem enough? -> The local gate ran the same suite as CI, so it was treated as equivalent.
+4. Why was it not equivalent? -> It ran on Windows only, and layout and engine behaviour depend on the platform.
+5. Why? -> Root cause: no step separates reading the remote's last CI result from the push and stops on red, and the gate's proof was never bounded to the platforms it actually ran on.
+**Rule(s):**
+1. Before pushing, read the last CI result of the remote branch in its own step. If it is red, find out why before anything else is pushed; push only the fix for that cause, or work that is proven not to touch it.
+2. A local test run proves behaviour only on the platform it ran on. Do not report a gate as standing for CI's platform unless it ran there too.
+3. In this repository, CI runs on `ubuntu-latest` and the local machine is Windows. For commits that change `apps/web` rendering or the import path, run the affected browser specs on Linux before pushing, in the Playwright Docker image `mcr.microsoft.com/playwright:v1.63.0-noble`, or say plainly that Linux was not covered.
+**Detection Pattern:** a shell command that both reads `gh run list` and runs `git push`; a delivery report that cites a Windows-only gate for a web change without a Linux run or a stated gap.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the parent's own pre-push step. A one-line trigger in the Delivery section of AGENTS.md would make it always-loaded, but that section changes only on the maintainer's request (`.kilo/rules/governance-protection.md`), so it is proposed and not applied.
+**Related Lessons:** LL-2026-10-001 (re-read externally owned state before reporting it).
+**Regression / Verification Note:** applied on 2026-10-07 by stopping further pushes until the Linux-only failures at `ad037d7` are fixed and proven on Linux.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

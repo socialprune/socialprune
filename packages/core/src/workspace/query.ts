@@ -8,6 +8,7 @@ import type { StoredState, WorkspaceStore } from './store.ts';
 import { resolveTimeZone } from './time.ts';
 import { QueryProjection } from './projection.ts';
 import type { CompactAssessment } from './projection.ts';
+import { currentRowSources } from './row-sources.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -61,6 +62,7 @@ export function reviewRow(row: ProjectionRow): ReviewRow {
     decision: row.state.decision,
     outcome: row.state.outcome,
     mediaCount: row.item.mediaCount,
+    ...currentRowSources(row.state.assessments),
   };
 }
 export const DEFAULT_QUERY_SORT: QuerySort = [
@@ -308,6 +310,7 @@ export class QueryEngine implements ReviewQuery {
           risk: assessment.risk,
           category: assessment.category,
           kind: assessment.source.kind,
+          sourceId: result.internSource(assessment.source),
         });
         latest.set(index, current);
       }
@@ -396,6 +399,7 @@ export class QueryEngine implements ReviewQuery {
               risk: assessment.risk,
               category: assessment.category,
               kind: assessment.source.kind,
+              sourceId: projection.internSource(assessment.source),
             },
           );
           latest.set(assessment.itemId, sources);

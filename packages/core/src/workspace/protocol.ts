@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   AccountSchema,
   AssessmentSchema,
+  AssessmentSourceSchema,
   CategoryIdSchema,
   DecisionEventSchema,
   DecisionValueSchema,
@@ -13,6 +14,7 @@ import {
   WorkspaceCountsSchema,
 } from '../model/index.ts';
 import { WORKSPACE_ERROR_CODES } from './errors.ts';
+import { ROW_SOURCE_LIMIT } from './row-sources.ts';
 
 const id = z.string().min(1).max(512);
 const nonnegative = z.number().int().nonnegative();
@@ -92,6 +94,8 @@ export const ReviewRowSchema = z.strictObject({
   text: z.string().max(280),
   highestRisk: z.number().int().min(0).max(3).nullable(),
   categories: z.array(CategoryIdSchema),
+  sources: z.array(AssessmentSourceSchema).max(ROW_SOURCE_LIMIT),
+  moreSources: nonnegative,
   decision: DecisionValueSchema,
   outcome: OutcomeValueSchema,
   mediaCount: nonnegative.nullable(),

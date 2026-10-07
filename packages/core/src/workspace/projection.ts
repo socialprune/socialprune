@@ -1,7 +1,9 @@
-import type { Assessment, Item } from '../model/index.ts';
+import { AssessmentSourceSchema } from '../model/index.ts';
+import type { Assessment, AssessmentSource, Item } from '../model/index.ts';
 import type { QueryFilter, QuerySort, ReviewRow } from './protocol.ts';
 import type { StoredState } from './store.ts';
 import { dayKey } from './time.ts';
+import { compareAssessmentSources, ROW_SOURCE_LIMIT } from './row-sources.ts';
 
 const KINDS = ['post', 'reply', 'quote', 'repost', 'comment'] as const;
 const DECISIONS = ['undecided', 'keep', 'delete', 'later'] as const;
@@ -11,6 +13,7 @@ export interface CompactAssessment {
   risk: number;
   category: string;
   kind: Assessment['source']['kind'];
+  sourceId: number;
 }
 
 /** Query-only columns: no full items, provenance, references or event records. */
@@ -33,12 +36,17 @@ export class QueryProjection {
   private risk = new Int8Array();
   private categoryMask = new Uint32Array();
   private sourceMask = new Uint8Array();
+  private firstSource = new Uint32Array();
+  private moreSources = new Uint32Array();
   private decision = new Uint8Array();
   private outcome = new Uint8Array();
   private media = new Float64Array();
   private visible = new Uint8Array();
   private readonly orders = new Map<string, Uint32Array>();
   private readonly categoryOrder = new Map<number, string[]>();
+  private readonly sourceTable: AssessmentSource[] = [];
+  private readonly sourceIndex = new Map<string, number>();
+  private readonly additionalSources = new Map<number, Uint32Array>();
 
   constructor(
     revision: number,
@@ -103,6 +111,15 @@ export class QueryProjection {
     column[index] = (values as readonly string[]).indexOf(value);
     return true;
   }
+  internSource(input: AssessmentSource): number {
+    const key = JSON.stringify([input.kind, input.name, input.version]);
+    const existing = this.sourceIndex.get(key);
+    if (existing !== undefined) return existing;
+    const id = this.sourceTable.length + 1;
+    this.sourceTable.push(AssessmentSourceSchema.parse(input));
+    this.sourceIndex.set(key, id);
+    return id;
+  }
   setAssessments(
     index: number,
     assessments: Iterable<CompactAssessment>,
@@ -111,12 +128,14 @@ export class QueryProjection {
       categories = 0,
       sources = 0;
     const categoryOrder = new Set<string>();
+    const sourceIds: number[] = [];
     for (const assessment of assessments) {
       risk = Math.max(risk, assessment.risk);
       const category = this.categories.indexOf(assessment.category);
       categoryOrder.add(assessment.category);
       if (category >= 0) categories |= 1 << category;
       sources |= 1 << SOURCES.indexOf(assessment.kind);
+      sourceIds.push(assessment.sourceId);
     }
     if (this.risk[index] !== risk) this.orders.clear();
     this.risk[index] = risk;
@@ -124,6 +143,20 @@ export class QueryProjection {
     this.sourceMask[index] = sources;
     if (categoryOrder.size) this.categoryOrder.set(index, [...categoryOrder]);
     else this.categoryOrder.delete(index);
+    sourceIds.sort((first, second) =>
+      compareAssessmentSources(
+        this.sourceTable[first - 1]!,
+        this.sourceTable[second - 1]!,
+      ),
+    );
+    this.firstSource[index] = sourceIds[0] ?? 0;
+    this.moreSources[index] = Math.max(0, sourceIds.length - ROW_SOURCE_LIMIT);
+    if (sourceIds.length > 1)
+      this.additionalSources.set(
+        index,
+        Uint32Array.from(sourceIds.slice(1, ROW_SOURCE_LIMIT)),
+      );
+    else this.additionalSources.delete(index);
   }
   order(sort: QuerySort): Uint32Array {
     const key = JSON.stringify(sort);
@@ -232,6 +265,11 @@ export class QueryProjection {
     };
   }
   row(index: number): ReviewRow {
+    const sources: AssessmentSource[] = [];
+    const first = this.firstSource[index]!;
+    if (first) sources.push({ ...this.sourceTable[first - 1]! });
+    for (const sourceId of this.additionalSources.get(index) ?? [])
+      sources.push({ ...this.sourceTable[sourceId - 1]! });
     return {
       id: this.ids[index]!,
       kind: KINDS[this.kind[index]!]!,
@@ -239,6 +277,8 @@ export class QueryProjection {
       text: this.excerpt[index]!,
       highestRisk: this.risk[index]! < 0 ? null : this.risk[index]!,
       categories: [...(this.categoryOrder.get(index) ?? [])],
+      sources,
+      moreSources: this.moreSources[index]!,
       ...this.values(index),
       mediaCount: this.media[index]! < 0 ? null : this.media[index]!,
     };
@@ -274,6 +314,8 @@ export class QueryProjection {
     this.risk = grow(this.risk);
     this.categoryMask = grow(this.categoryMask);
     this.sourceMask = grow(this.sourceMask);
+    this.firstSource = grow(this.firstSource);
+    this.moreSources = grow(this.moreSources);
     this.decision = grow(this.decision);
     this.outcome = grow(this.outcome);
     this.media = grow(this.media);

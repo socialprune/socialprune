@@ -3,6 +3,7 @@ import { DecisionValueSchema, OutcomeValueSchema } from '../model/index.ts';
 import type {
   DecisionEvent,
   DecisionValue,
+  Assessment,
   OutcomeEvent,
   OutcomeValue,
 } from '../model/index.ts';
@@ -310,6 +311,19 @@ export class ReviewService {
       const expected = new Map<string, DecisionValue>();
       const byCurrentValue = { keep: 0, delete: 0, later: 0, undecided: 0 };
       const sample = [];
+      const sampleIds = new Set(selection.ids.slice(0, 20));
+      const sampleAssessments = new Map<string, Map<string, Assessment>>();
+      for await (const assessment of tx.assessments.iterate()) {
+        if (!sampleIds.has(assessment.itemId)) continue;
+        const sources =
+          sampleAssessments.get(assessment.itemId) ??
+          new Map<string, Assessment>();
+        sources.set(
+          JSON.stringify([assessment.source.kind, assessment.source.name]),
+          assessment,
+        );
+        sampleAssessments.set(assessment.itemId, sources);
+      }
       let willChange = 0;
       for (const id of selection.ids) {
         const stored = await tx.items.get(id);
@@ -328,7 +342,12 @@ export class ReviewService {
           willChange++;
         if (sample.length < 20)
           sample.push(
-            reviewRow(projectRow(stored.item, { ...state, assessments: [] })),
+            reviewRow(
+              projectRow(stored.item, {
+                ...state,
+                assessments: [...(sampleAssessments.get(id)?.values() ?? [])],
+              }),
+            ),
           );
       }
       return {

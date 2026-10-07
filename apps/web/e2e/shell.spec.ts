@@ -47,7 +47,9 @@ test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motio
   ).toBeFocused();
   expect(await page.locator('style').count()).toBe(0);
   await page.goto('/socialprune/#/review');
-  await expect(page).toHaveURL(/#\/import$/);
+  await expect(
+    page.getByRole('heading', { name: 'Durchsehen', exact: true }),
+  ).toBeVisible();
   await page.goto('/socialprune/#/does-not-exist');
   await expect(
     page.getByRole('heading', { name: 'Seite nicht gefunden' }),

@@ -1,0 +1,349 @@
+import { test, expect } from '@playwright/test';
+import {
+  fixtureZips,
+  importFiles,
+  observeImport,
+  waitForApp,
+} from './helpers.ts';
+import { restoreReview, reviewFixture } from './review-fixture.ts';
+
+test('W2a an imported archive reaches a keyboard-only review without suggestions', async ({
+  page,
+  context,
+}) => {
+  const audit = await observeImport(context, page);
+  const fixture = await fixtureZips('x', 'current-minimal');
+  try {
+    await waitForApp(page);
+    await importFiles(page, fixture.files);
+    const link = page.getByRole('link', { name: 'Review', exact: true });
+    await link.focus();
+    await page.keyboard.press('Enter');
+    const grid = page.getByRole('grid');
+    await expect(grid).toBeVisible();
+    await expect(page.getByRole('row').first()).toBeVisible();
+    await grid.focus();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Enter');
+    await expect(
+      page.getByText(
+        'No suggestion for this entry. Read it and decide what you want to do with it.',
+      ),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(grid).toBeFocused();
+    await page.keyboard.press('m');
+    await expect(
+      page.getByText('1 decision saved. Nothing was deleted on the platform.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(await page.getByRole('row').first().innerText()).toContain(
+      'Marked for deletion',
+    );
+    await page.keyboard.press('Control+z');
+    await expect(
+      page.getByText(
+        '1 entry changed. 0 entries were skipped because their state changed.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await audit.assert();
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('W2a focus and selection never decide; grid-only letters, detail and durable undo are real commands', async ({
+  page,
+  context,
+}) => {
+  const audit = await observeImport(context, page);
+  const fixture = await restoreReview(page);
+  const grid = page.getByRole('grid');
+  await grid.focus();
+  await page.keyboard.press('ArrowDown');
+  expect(await grid.getAttribute('aria-activedescendant')).toBe(
+    'review-cell-1',
+  );
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('row').nth(1)).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  expect(
+    await page.evaluate(
+      (itemId) =>
+        window.workspace.request({
+          type: 'detail',
+          requestId: crypto.randomUUID(),
+          itemId,
+        }),
+      fixture.items[1]!.id,
+    ),
+  ).toMatchObject({ type: 'itemDetail', events: [] });
+  await page
+    .getByRole('button', { name: 'Clear selection', exact: true })
+    .click();
+  await page.getByRole('searchbox').fill('m');
+  expect(
+    await page.evaluate(() =>
+      window.workspace.request({
+        type: 'history',
+        requestId: crypto.randomUUID(),
+        limit: 50,
+      }),
+    ),
+  ).toMatchObject({ type: 'historyEntries', entries: [] });
+  await page.getByRole('searchbox').fill('');
+  await expect(
+    page.getByText('8 entries in this view', { exact: true }),
+  ).toBeVisible();
+  await grid.focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('region', { name: 'Entry details', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('mark')).toHaveText('café note');
+  await expect(
+    page.getByRole('region', { name: 'Entry details' }),
+  ).toContainText('Agent: Synthetic reviewer');
+  expect(
+    await page.evaluate(() => Reflect.get(globalThis, '__pwned') as unknown),
+  ).toBeUndefined();
+  await page.getByRole('button', { name: 'Keep K', exact: true }).click();
+  await expect(
+    page.getByText('1 decision saved. Nothing was deleted on the platform.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Back to list', exact: true }).click();
+  await expect(grid).toBeFocused();
+  await page.reload();
+  await expect(page.getByRole('grid')).toBeVisible();
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('1 entry: Keep');
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Undo', exact: true })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  const detail = await page.evaluate(
+    (itemId) =>
+      window.workspace.request({
+        type: 'detail',
+        requestId: crypto.randomUUID(),
+        itemId,
+      }),
+    fixture.items[0]!.id,
+  );
+  expect(detail).toMatchObject({
+    type: 'itemDetail',
+    events: [
+      { value: 'keep' },
+      { value: 'undecided', action: { kind: 'undo' } },
+    ],
+  });
+  await audit.assert();
+});
+
+test('W2a keyboard setting, modal focus return and paged list preserve row decisions', async ({
+  page,
+}) => {
+  const fixture = await restoreReview(page, reviewFixture('personal', false));
+  const grid = page.getByRole('grid');
+  await grid.focus();
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Toggle single-key shortcuts' })
+    .click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(grid).toBeFocused();
+  await page.keyboard.press('m');
+  expect(
+    await page.evaluate(() =>
+      window.workspace.request({
+        type: 'history',
+        requestId: crypto.randomUUID(),
+        limit: 50,
+      }),
+    ),
+  ).toMatchObject({ type: 'historyEntries', entries: [] });
+  await page.getByRole('button', { name: 'Paged list', exact: true }).click();
+  await expect(
+    page.getByRole('list').filter({
+      has: page.getByRole('button', { name: 'Open details', exact: true }),
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Open details', exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByText(
+      'No suggestion for this entry. Read it and decide what you want to do with it.',
+    ),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      (itemId) =>
+        window.workspace.request({
+          type: 'detail',
+          requestId: crypto.randomUUID(),
+          itemId,
+        }),
+      fixture.items[0]!.id,
+    ),
+  ).toMatchObject({ type: 'itemDetail', events: [] });
+});
+
+test('W2a example badges appear only on a restored demo workspace', async ({
+  page,
+}) => {
+  await restoreReview(page, reviewFixture('demo'));
+  await expect(
+    page.getByText(
+      'Demo with invented posts. The suggestions are examples written for this demo. No classifier produced them.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('grid').getByText('Example', { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole('grid').focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    page
+      .getByRole('region', { name: 'Entry details' })
+      .getByText('Example', { exact: true }),
+  ).toBeVisible();
+});
+
+test('W2a recycled rows keep a valid active descendant and bounded page memory', async ({
+  page,
+}) => {
+  await restoreReview(page, reviewFixture('personal', false, 600));
+  const grid = page.getByRole('grid');
+  await grid.focus();
+  await page.keyboard.press('End');
+  await expect(grid).toHaveAttribute(
+    'aria-activedescendant',
+    'review-cell-599',
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const grid = document.querySelector('[role="grid"]');
+        const active = grid?.getAttribute('aria-activedescendant');
+        return active ? document.getElementById(active)?.textContent : null;
+      }),
+    )
+    .toBeTruthy();
+  expect(await page.getByRole('row').count()).toBeLessThan(30);
+  expect(
+    await page.evaluate(() => window.workspace.rows.length),
+  ).toBeLessThanOrEqual(200);
+  await page.keyboard.press('Home');
+  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-0');
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(page.getByRole('row').nth(0)).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByRole('row').nth(1)).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const before = await page.evaluate(() =>
+    window.workspace.request({
+      type: 'history',
+      requestId: crypto.randomUUID(),
+      limit: 50,
+    }),
+  );
+  expect(before).toMatchObject({ type: 'historyEntries', entries: [] });
+});
+
+test('W2a visible searching state follows a delayed query and rejects a stale reply', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const WorkerClass = Worker;
+    globalThis.Worker = class extends WorkerClass {
+      override postMessage(
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        const transfer = Array.isArray(options)
+          ? options
+          : (options?.transfer ?? []);
+        const value = message as { type?: string; search?: string };
+        if (value.type === 'query' && value.search === 'café')
+          setTimeout(() => super.postMessage(message, transfer ?? []), 300);
+        else super.postMessage(message, transfer ?? []);
+      }
+    };
+  });
+  await restoreReview(page);
+  await page.getByRole('searchbox').fill('café');
+  await expect(page.getByText('Searching...', { exact: true })).toBeVisible();
+  await page.getByRole('searchbox').fill('entry 7');
+  await expect(
+    page.getByText('1 entry in this view', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('row')).toHaveCount(1);
+  await expect(page.getByRole('row')).toContainText('Invented review entry 7');
+  await page.waitForTimeout(350);
+  await expect(page.getByRole('row')).toContainText('Invented review entry 7');
+});
+
+test('W2a cached rows refresh after another tab and undo reverses the latest durable action', async ({
+  page,
+  context,
+}) => {
+  const fixture = await restoreReview(page);
+  const firstId = fixture.items[0]!.id;
+  const second = await context.newPage();
+  try {
+    await page.getByRole('grid').focus();
+    await page.keyboard.press('k');
+    await expect(page.getByRole('row').first()).toContainText('Keep');
+    await second.goto('/socialprune/#/review');
+    await expect(second.getByRole('grid')).toBeVisible();
+    await expect(second.getByRole('row').first()).toContainText('Keep');
+    await second.getByRole('grid').focus();
+    await second.keyboard.press('l');
+    await expect(page.getByRole('row').first()).toContainText('Later');
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(
+      page.getByText(
+        '1 entry changed. 0 entries were skipped because their state changed.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    const detail = await page.evaluate(
+      (itemId) =>
+        window.workspace.request({
+          type: 'detail',
+          requestId: crypto.randomUUID(),
+          itemId,
+        }),
+      firstId,
+    );
+    expect(detail).toMatchObject({
+      type: 'itemDetail',
+      events: [
+        { value: 'keep' },
+        { value: 'later' },
+        { value: 'keep', action: { kind: 'undo' } },
+      ],
+    });
+  } finally {
+    await second.close();
+  }
+});

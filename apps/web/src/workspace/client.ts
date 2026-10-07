@@ -10,6 +10,8 @@ import type {
   ReviewRow,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
+import { AssessmentSourceSchema } from '@socialprune/core';
+import type { AssessmentSource } from '@socialprune/core';
 
 export class WorkspaceClient {
   readonly worker: Worker;
@@ -20,6 +22,14 @@ export class WorkspaceClient {
     string,
     { resolve: (reply: WorkspaceReply) => void; reject: (error: Error) => void }
   >();
+  private readonly metadataPending = new Map<
+    string,
+    {
+      resolve: (rows: Map<string, AssessmentSource[]>) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private readonly pendingWrites = new Set<Promise<WorkspaceReply>>();
   private readonly generations = new Map<string, number>();
   private readonly listeners = new Set<
     (notice: WorkspaceNotification) => void
@@ -28,6 +38,30 @@ export class WorkspaceClient {
   constructor(worker: Worker) {
     this.worker = worker;
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {
+      const metadata = event.data as {
+        type?: string;
+        requestId?: string;
+        rows?: { itemId: string; sources: unknown[] }[];
+      };
+      if (metadata.type === 'rowSources' && metadata.requestId) {
+        const waiting = this.metadataPending.get(metadata.requestId);
+        this.metadataPending.delete(metadata.requestId);
+        try {
+          if (!Array.isArray(metadata.rows) || metadata.rows.length > 200)
+            throw new Error('Invalid row metadata.');
+          waiting?.resolve(
+            new Map(
+              metadata.rows.map(({ itemId, sources }) => [
+                itemId,
+                sources.map((source) => AssessmentSourceSchema.parse(source)),
+              ]),
+            ),
+          );
+        } catch {
+          waiting?.reject(new Error('Invalid row metadata.'));
+        }
+        return;
+      }
       const notice = WorkspaceNotificationSchema.safeParse(event.data);
       if (notice.success) {
         for (const listener of this.listeners) listener(notice.data);
@@ -42,6 +76,11 @@ export class WorkspaceClient {
           requestId: reply.requestId,
           at: new Date().toISOString(),
         });
+      const waitingMetadata = this.metadataPending.get(reply.requestId);
+      if (waitingMetadata && reply.type === 'failed') {
+        this.metadataPending.delete(reply.requestId);
+        waitingMetadata.reject(new Error('Row metadata could not be read.'));
+      }
       if (reply.type === 'progress') return;
       const request = this.pending.get(reply.requestId);
       if (!request) return;
@@ -66,6 +105,18 @@ export class WorkspaceClient {
       for (const pending of this.pending.values())
         pending.reject(new Error('Workspace worker stopped.'));
       this.pending.clear();
+      for (const pending of this.metadataPending.values())
+        pending.reject(new Error('Workspace worker stopped.'));
+      this.metadataPending.clear();
+    });
+  }
+  sources(itemIds: string[]): Promise<Map<string, AssessmentSource[]>> {
+    if (itemIds.length > 200)
+      throw new Error('Metadata window exceeds 200 entries.');
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      this.metadataPending.set(requestId, { resolve, reject });
+      this.worker.postMessage({ type: 'rowSources', requestId, itemIds });
     });
   }
   async backup(save: (file: File) => Promise<void>): Promise<void> {
@@ -134,10 +185,28 @@ export class WorkspaceClient {
     const value = WorkspaceRequestSchema.parse(input);
     if (value.type === 'query')
       this.generations.set(value.queryId, value.generation);
-    return new Promise((resolve, reject) => {
+    const result = new Promise<WorkspaceReply>((resolve, reject) => {
       this.pending.set(value.requestId, { resolve, reject });
       this.worker.postMessage(value, transfer);
     });
+    if (
+      [
+        'decide',
+        'outcome',
+        'confirmBulk',
+        'undo',
+        'redo',
+        'restore',
+        'backup',
+      ].includes(value.type)
+    ) {
+      this.pendingWrites.add(result);
+      return result.finally(() => this.pendingWrites.delete(result));
+    }
+    return result;
+  }
+  async flushCommands(): Promise<void> {
+    await Promise.all([...this.pendingWrites]);
   }
   subscribe(listener: (notice: WorkspaceNotification) => void) {
     this.listeners.add(listener);
@@ -178,6 +247,9 @@ export class WorkspaceClient {
     for (const pending of this.pending.values())
       pending.reject(new Error('Workspace client disposed.'));
     this.pending.clear();
+    for (const pending of this.metadataPending.values())
+      pending.reject(new Error('Workspace client disposed.'));
+    this.metadataPending.clear();
   }
 }
 

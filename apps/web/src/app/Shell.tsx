@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { CSPProvider } from '@base-ui/react/csp-provider';
 import { IntlProvider } from 'react-intl';
 import importWorkerURL from '../import/worker.ts?worker&url';
@@ -16,6 +16,9 @@ import { parseRoute } from './router.ts';
 import { AppUpdates } from './updates.ts';
 import { guides } from './guide.ts';
 import styles from './Shell.module.css';
+const Review = lazy(() =>
+  import('../review/Review.tsx').then((module) => ({ default: module.Review })),
+);
 
 function Content({
   locale,
@@ -35,6 +38,13 @@ function Content({
   const [updateError, setUpdateError] = useState(false);
   const [appearance, setAppearance] = useState(
     () => document.documentElement.dataset.theme ?? 'system',
+  );
+  const [reviewClient, setReviewClient] = useState<WorkspaceClient | null>(
+    null,
+  );
+  const [hasWorkspaceItems, setHasWorkspaceItems] = useState(false);
+  const [singleKeys, setSingleKeys] = useState(
+    () => localStorage.getItem('sp-single-keys') !== 'off',
   );
   const client = useRef<ImportClient | null>(null);
   const workspace = useRef<WorkspaceClient | null>(null);
@@ -63,6 +73,7 @@ function Content({
           });
         });
       }
+      await workspace.current?.flushCommands();
     });
     updates.current = updater;
     const stopUpdates = updater.subscribe(setUpdateReady);
@@ -82,7 +93,10 @@ function Content({
       );
       workspace.current = working;
       window.workspace = working;
-      await working.open();
+      const opened = await working.open();
+      if (opened.type === 'opened')
+        setHasWorkspaceItems(opened.summary.counts.items > 0);
+      setReviewClient(working);
       const current = new ImportClient(
         () => {
           gate.assertReady();
@@ -112,11 +126,7 @@ function Content({
   useEffect(() => {
     heading.current?.focus();
     document.title = `${t('app.name')} · ${route}`;
-    if (
-      ['/review', '/clicklist/x', '/clicklist/instagram', '/backup'].includes(
-        route,
-      )
-    )
+    if (['/clicklist/x', '/clicklist/instagram', '/backup'].includes(route))
       location.hash = '#/import';
   }, [route, locale]);
   const busy = state?.phase === 'importing' || state?.phase === 'aborting';
@@ -131,9 +141,11 @@ function Content({
             ? t('nav.demo')
             : route === '/import'
               ? t('nav.import')
-              : route === 'not-found'
-                ? t('page.notFound')
-                : t('app.name');
+              : route === '/review'
+                ? t('review.title')
+                : route === 'not-found'
+                  ? t('page.notFound')
+                  : t('app.name');
   if (gateState === 'framed')
     return (
       <main className={styles.main}>
@@ -197,6 +209,7 @@ function Content({
           <a href="#/demo">{t('nav.demo')}</a>
           <a href="#/settings">{t('nav.settings')}</a>
           <a href="#/privacy">{t('nav.privacy')}</a>
+          {hasWorkspaceItems && <a href="#/review">{t('review.title')}</a>}
         </nav>
         <main id="main" className={styles.main} data-gate={gateState}>
           <h1
@@ -292,6 +305,23 @@ function Content({
                 </select>
               </label>
               <p>{t('settings.build', { id: buildId })}</p>
+              <label className={styles.field}>
+                {t('review.singleKeys')}
+                <select
+                  value={singleKeys ? 'on' : 'off'}
+                  onChange={(event) => {
+                    const enabled = event.target.value === 'on';
+                    setSingleKeys(enabled);
+                    localStorage.setItem(
+                      'sp-single-keys',
+                      enabled ? 'on' : 'off',
+                    );
+                  }}
+                >
+                  <option value="on">{t('review.on')}</option>
+                  <option value="off">{t('review.off')}</option>
+                </select>
+              </label>
             </>
           )}
           {route === '/import' && gateState === 'ready' && (
@@ -359,6 +389,7 @@ function Content({
                   <h2>
                     {t('import.result')}: {state.summary.status}
                   </h2>
+                  <a href="#/review">{t('review.title')}</a>
                   {state.summary.records.map((record) => (
                     <section key={record.id}>
                       <h3>
@@ -390,6 +421,11 @@ function Content({
           )}
           {route === '/import' && gateState === 'preparing' && (
             <p role="status">{t('gate.preparing')}</p>
+          )}
+          {route === '/review' && gateState === 'ready' && reviewClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <Review client={reviewClient} />
+            </Suspense>
           )}
           {state?.phase === 'error' && (
             <section role="alert">

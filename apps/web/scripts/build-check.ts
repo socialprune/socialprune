@@ -27,6 +27,14 @@ async function walk(folder: string) {
           )
         )
           throw new Error('Test mutation reached production output.');
+        if (
+          /accessibility-checker-engine|IBM_Accessibility|getGuidelineIds|checkDemo|WCAG22|a11yRulesets/.test(
+            text,
+          )
+        )
+          throw new Error(
+            'Test-only accessibility engine reached production output.',
+          );
       }
       if (
         [

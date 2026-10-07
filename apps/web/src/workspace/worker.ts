@@ -29,16 +29,19 @@ let workspaceId = '';
 function post(reply: WorkspaceReply) {
   scope.postMessage(WorkspaceReplySchema.parse(reply));
 }
-function notify(revision: number) {
+function notify(
+  revision: number,
+  itemIds: readonly string[] | 'many' = 'many',
+) {
   scope.postMessage(
     WorkspaceNotificationSchema.parse({
       type: 'changed',
       revision,
-      itemIds: 'many',
+      itemIds,
       countsChanged: true,
     }),
   );
-  changes.postMessage({ workspaceId, revision });
+  changes.postMessage({ workspaceId, revision, itemIds });
 }
 observePolicyViolations(scope, (violation) =>
   scope.postMessage({ type: 'policy-violation', violation }),
@@ -108,6 +111,7 @@ async function open(id: string) {
   });
   query = new QueryEngine(store);
   review = new ReviewService(store, { query, via: 'web-review' });
+  await query.prepareProjection();
   await publishWorkspace({
     id: workspaceId,
     kind: initial.kind,
@@ -203,9 +207,14 @@ async function attach(port: MessagePort, requestId: string) {
             const runtime = await tx.runtime.get();
             await tx.runtime.set({ revision: runtime.revision + 1 });
           });
+          const revision = await target.read(
+            async (tx) => (await tx.runtime.get()).revision,
+          );
+          await query?.noteChanged({ revision, itemIds: 'many' });
+          await query?.prepareProjection();
           port.postMessage({ type: 'settled', token: message.token });
           post({ type: 'done', requestId });
-          notify((await summary()).revision);
+          notify(revision);
         } else {
           // Incomplete owners keep their imported rows hidden; the next import
           // or restore never publishes these unacknowledged partial records.
@@ -273,6 +282,7 @@ async function handle(input: WorkspaceRequest) {
         for (const log of [tx.decisionEvents, tx.outcomeEvents])
           for await (const event of log.iterate())
             if (event.itemId === input.itemId) events.push(event);
+        events.sort((a, b) => a.seq - b.seq);
         return { item: stored.item, assessments, events };
       });
       post({ type: 'itemDetail', requestId, ...result });
@@ -295,7 +305,7 @@ async function handle(input: WorkspaceRequest) {
               expected: input.expected,
             });
       post({ ...result, requestId });
-      if (result.type === 'committed') notify(result.revision);
+      if (result.type === 'committed') notify(result.revision, input.itemIds);
       break;
     }
     case 'previewBulk': {
@@ -365,12 +375,59 @@ async function handle(input: WorkspaceRequest) {
       workspaceId = stage.storageId;
       query = new QueryEngine(store);
       review = new ReviewService(store, { query, via: 'web-review' });
+      await query.prepareProjection();
       post({ type: 'opened', requestId, summary: await summary() });
       break;
     }
   }
 }
 scope.addEventListener('message', (event: MessageEvent<unknown>) => {
+  const metadata = event.data as {
+    type?: string;
+    requestId?: string;
+    itemIds?: unknown;
+  };
+  if (
+    metadata.type === 'rowSources' &&
+    typeof metadata.requestId === 'string'
+  ) {
+    const requestId = metadata.requestId;
+    if (
+      !store ||
+      !Array.isArray(metadata.itemIds) ||
+      metadata.itemIds.length > 200 ||
+      metadata.itemIds.some((id) => typeof id !== 'string')
+    ) {
+      post({ type: 'failed', requestId, code: 'INVALID_REQUEST' });
+      return;
+    }
+    const ids = new Set(metadata.itemIds as string[]);
+    void store
+      .read(async (tx) => {
+        const metadata = new Map<
+          string,
+          Map<string, import('@socialprune/core').AssessmentSource>
+        >();
+        for await (const assessment of tx.assessments.iterate()) {
+          if (!ids.has(assessment.itemId)) continue;
+          let sources = metadata.get(assessment.itemId);
+          if (!sources) {
+            sources = new Map();
+            metadata.set(assessment.itemId, sources);
+          }
+          sources.set(JSON.stringify(assessment.source), assessment.source);
+        }
+        return [...metadata].map(([itemId, sources]) => ({
+          itemId,
+          sources: [...sources.values()],
+        }));
+      })
+      .then((rows) =>
+        scope.postMessage({ type: 'rowSources', requestId, rows }),
+      )
+      .catch(() => post({ type: 'failed', requestId, code: 'STORAGE' }));
+    return;
+  }
   const parsed = WorkspaceRequestSchema.safeParse(event.data);
   if (!parsed.success) {
     const id = (event.data as { requestId?: unknown })?.requestId;
@@ -393,16 +450,34 @@ scope.addEventListener('message', (event: MessageEvent<unknown>) => {
   });
 });
 changes.onmessage = (
-  event: MessageEvent<{ workspaceId: string; revision: number }>,
+  event: MessageEvent<{
+    workspaceId: string;
+    revision: number;
+    itemIds?: string[] | 'many';
+  }>,
 ) => {
   if (event.data.workspaceId === workspaceId) {
-    scope.postMessage(
-      WorkspaceNotificationSchema.parse({
-        type: 'changed',
-        revision: event.data.revision,
-        itemIds: 'many',
-        countsChanged: true,
-      }),
-    );
+    const changed = {
+      revision: event.data.revision,
+      itemIds: event.data.itemIds ?? 'many',
+    };
+    void query
+      ?.noteChanged(changed)
+      .then(() =>
+        scope.postMessage(
+          WorkspaceNotificationSchema.parse({
+            type: 'changed',
+            ...changed,
+            countsChanged: true,
+          }),
+        ),
+      )
+      .catch(() =>
+        scope.postMessage({
+          type: 'storageLifecycle',
+          state: 'projection-refresh-failed',
+          revision: event.data.revision,
+        }),
+      );
   }
 };

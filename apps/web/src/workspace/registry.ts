@@ -34,3 +34,17 @@ export async function publishWorkspace(entry: RegistryEntry): Promise<void> {
     db.close();
   }
 }
+export async function removeWorkspace(id: string): Promise<void> {
+  const db = await database();
+  try {
+    const tx = db.transaction(['workspaces', 'pointers'], 'readwrite', {
+      durability: 'strict',
+    });
+    await tx.objectStore('workspaces').delete(id);
+    if ((await tx.objectStore('pointers').get('active')) === id)
+      await tx.objectStore('pointers').delete('active');
+    await tx.done;
+  } finally {
+    db.close();
+  }
+}

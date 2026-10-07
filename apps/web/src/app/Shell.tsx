@@ -8,7 +8,6 @@ import { ImportClient } from '../import/client.ts';
 import type { ImportSnapshot } from '../import/client.ts';
 import { catalogs, initialLocale, useT } from '../i18n/index.ts';
 import type { Locale } from '../i18n/index.ts';
-import { buildId } from 'virtual:sp-build-info';
 import { WorkerGate } from './gate.ts';
 import type { GateState } from './gate.ts';
 import { scriptURL } from './trusted-urls.ts';
@@ -18,6 +17,19 @@ import { guides } from './guide.ts';
 import styles from './Shell.module.css';
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
+);
+const ClickList = lazy(() =>
+  import('../clicklist/ClickList.tsx').then((module) => ({
+    default: module.ClickList,
+  })),
+);
+const Backup = lazy(() =>
+  import('../backup/Backup.tsx').then((module) => ({ default: module.Backup })),
+);
+const Settings = lazy(() =>
+  import('../settings/Settings.tsx').then((module) => ({
+    default: module.Settings,
+  })),
 );
 
 function Content({
@@ -36,16 +48,10 @@ function Content({
   const [updateReady, setUpdateReady] = useState(false);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [updateError, setUpdateError] = useState(false);
-  const [appearance, setAppearance] = useState(
-    () => document.documentElement.dataset.theme ?? 'system',
-  );
   const [reviewClient, setReviewClient] = useState<WorkspaceClient | null>(
     null,
   );
   const [hasWorkspaceItems, setHasWorkspaceItems] = useState(false);
-  const [singleKeys, setSingleKeys] = useState(
-    () => localStorage.getItem('sp-single-keys') !== 'off',
-  );
   const client = useRef<ImportClient | null>(null);
   const workspace = useRef<WorkspaceClient | null>(null);
   const updates = useRef<AppUpdates | null>(null);
@@ -126,8 +132,6 @@ function Content({
   useEffect(() => {
     heading.current?.focus();
     document.title = `${t('app.name')} · ${route}`;
-    if (['/clicklist/x', '/clicklist/instagram', '/backup'].includes(route))
-      location.hash = '#/import';
   }, [route, locale]);
   const busy = state?.phase === 'importing' || state?.phase === 'aborting';
   const title =
@@ -143,9 +147,13 @@ function Content({
               ? t('nav.import')
               : route === '/review'
                 ? t('review.title')
-                : route === 'not-found'
-                  ? t('page.notFound')
-                  : t('app.name');
+                : route.startsWith('/clicklist/')
+                  ? t('clicklist.title')
+                  : route === '/backup'
+                    ? t('backup.title')
+                    : route === 'not-found'
+                      ? t('page.notFound')
+                      : t('app.name');
   if (gateState === 'framed')
     return (
       <main className={styles.main}>
@@ -168,20 +176,22 @@ function Content({
         </a>
         <header className={styles.header}>
           <a href="#/">{t('app.name')}</a>
-          <label>
-            {t('settings.language')}{' '}
-            <select
-              value={locale}
-              onChange={(event) => changeLocale(event.target.value as Locale)}
-            >
-              <option value="en" lang="en">
-                English
-              </option>
-              <option value="de" lang="de">
-                Deutsch
-              </option>
-            </select>
-          </label>
+          {route !== '/settings' && (
+            <label>
+              {t('settings.language')}{' '}
+              <select
+                value={locale}
+                onChange={(event) => changeLocale(event.target.value as Locale)}
+              >
+                <option value="en" lang="en">
+                  English
+                </option>
+                <option value="de" lang="de">
+                  Deutsch
+                </option>
+              </select>
+            </label>
+          )}
         </header>
         {updateReady && !updateDismissed && (
           <section className={styles.update} aria-label={t('update.ready')}>
@@ -210,6 +220,13 @@ function Content({
           <a href="#/settings">{t('nav.settings')}</a>
           <a href="#/privacy">{t('nav.privacy')}</a>
           {hasWorkspaceItems && <a href="#/review">{t('review.title')}</a>}
+          {hasWorkspaceItems && (
+            <>
+              <a href="#/clicklist/x">{t('clicklist.x')}</a>
+              <a href="#/clicklist/instagram">{t('clicklist.instagram')}</a>
+              <a href="#/backup">{t('backup.title')}</a>
+            </>
+          )}
         </nav>
         <main id="main" className={styles.main} data-gate={gateState}>
           <h1
@@ -279,50 +296,31 @@ function Content({
               ))}
             </>
           )}
-          {route === '/settings' && (
-            <>
-              <p>{t('settings.foundation')}</p>
-              <label className={styles.field}>
-                {t('settings.appearance')}
-                <select
-                  value={appearance}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setAppearance(value);
-                    if (value === 'system')
-                      delete document.documentElement.dataset.theme;
-                    else document.documentElement.dataset.theme = value;
-                    try {
-                      localStorage.setItem('sp-theme', value);
-                    } catch {
-                      /* The preference can remain in memory. */
-                    }
-                  }}
-                >
-                  <option value="system">{t('settings.system')}</option>
-                  <option value="light">{t('settings.light')}</option>
-                  <option value="dark">{t('settings.dark')}</option>
-                </select>
-              </label>
-              <p>{t('settings.build', { id: buildId })}</p>
-              <label className={styles.field}>
-                {t('review.singleKeys')}
-                <select
-                  value={singleKeys ? 'on' : 'off'}
-                  onChange={(event) => {
-                    const enabled = event.target.value === 'on';
-                    setSingleKeys(enabled);
-                    localStorage.setItem(
-                      'sp-single-keys',
-                      enabled ? 'on' : 'off',
-                    );
-                  }}
-                >
-                  <option value="on">{t('review.on')}</option>
-                  <option value="off">{t('review.off')}</option>
-                </select>
-              </label>
-            </>
+          {route === '/settings' && gateState === 'ready' && reviewClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <Settings
+                client={reviewClient}
+                locale={locale}
+                changeLocale={changeLocale}
+                onDeleted={() => setHasWorkspaceItems(false)}
+                beforeDelete={async () => {
+                  const current = client.current;
+                  if (current?.snapshot.phase === 'importing') current.abort();
+                  if (current?.snapshot.phase === 'aborting')
+                    await new Promise<void>((resolve) => {
+                      const unsubscribe = current.subscribe((snapshot) => {
+                        if (
+                          snapshot.phase !== 'aborting' &&
+                          snapshot.phase !== 'importing'
+                        ) {
+                          unsubscribe();
+                          resolve();
+                        }
+                      });
+                    });
+                }}
+              />
+            </Suspense>
           )}
           {route === '/import' && gateState === 'ready' && (
             <section>
@@ -347,7 +345,11 @@ function Content({
                   disabled={!state || busy || !files.length}
                   onClick={() => {
                     gate.assertReady();
-                    client.current?.start(files);
+                    void (async () => {
+                      if (!workspace.current?.summary)
+                        await workspace.current?.open();
+                      client.current?.start(files);
+                    })();
                   }}
                 >
                   {t('import.start')}
@@ -439,6 +441,25 @@ function Content({
           {route === '/review' && gateState === 'ready' && reviewClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
               <Review client={reviewClient} />
+            </Suspense>
+          )}
+          {route.startsWith('/clicklist/') &&
+            gateState === 'ready' &&
+            reviewClient && (
+              <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+                <ClickList
+                  key={route}
+                  client={reviewClient}
+                  platform={route === '/clicklist/x' ? 'x' : 'instagram'}
+                />
+              </Suspense>
+            )}
+          {route === '/backup' && gateState === 'ready' && reviewClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <Backup
+                client={reviewClient}
+                onRestored={() => setHasWorkspaceItems(true)}
+              />
             </Suspense>
           )}
           {state?.phase === 'error' && (

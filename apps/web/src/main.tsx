@@ -9,6 +9,8 @@ try {
   const theme = localStorage.getItem('sp-theme');
   if (theme === 'light' || theme === 'dark')
     document.documentElement.dataset.theme = theme;
+  const density = localStorage.getItem('sp-density');
+  if (density === 'compact') document.documentElement.dataset.density = density;
 } catch {
   /* The shell can start without persistent preferences. */
 }

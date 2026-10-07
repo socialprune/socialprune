@@ -3,6 +3,10 @@ import { createWorkspace, records } from '@socialprune/core/workspace/store';
 import type { StoredItem } from '@socialprune/core/workspace/store';
 import { QueryEngine } from '@socialprune/core/workspace/query';
 import { ReviewService } from '@socialprune/core/workspace/review';
+import { ClickListService } from '@socialprune/core/workspace/clicklist';
+import { SettingsService } from '@socialprune/core/workspace/settings';
+import { xAdapter } from '@socialprune/adapter-x';
+import { instagramAdapter } from '@socialprune/adapter-instagram';
 import {
   WorkspaceRequestSchema,
   WorkspaceReplySchema,
@@ -13,21 +17,43 @@ import type {
   WorkspaceReply,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
+import { ItemSchema } from '@socialprune/core';
 import type { Item, ImportRecord, ImportSummary } from '@socialprune/core';
-import { IndexedDBStore } from './idb-store.ts';
-import { activeWorkspace, publishWorkspace } from './registry.ts';
+import { IndexedDBStore, deleteWorkspaceDatabase } from './idb-store.ts';
+import {
+  activeWorkspace,
+  publishWorkspace,
+  removeWorkspace,
+} from './registry.ts';
 import { observePolicyViolations } from '../sw/observe-policy.ts';
 import { writeBackup, stageRestore } from './backup.ts';
+import { tabChange } from './tab-channel.ts';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const changes = new BroadcastChannel('sp-workspace');
 let store: IndexedDBStore | null = null;
 let query: QueryEngine | null = null;
 let review: ReviewService | null = null;
+let clickList: ClickListService | null = null;
+let settings: SettingsService | null = null;
 let workspaceId = '';
 
 function post(reply: WorkspaceReply) {
   scope.postMessage(WorkspaceReplySchema.parse(reply));
+}
+async function storageState() {
+  const estimate = await navigator.storage
+    .estimate()
+    .catch(() => ({ usage: 0, quota: 0 }));
+  const persisted = await navigator.storage.persisted().catch(() => false);
+  scope.postMessage(
+    WorkspaceNotificationSchema.parse({
+      type: 'storageState',
+      persisted,
+      usage: estimate.usage ?? 0,
+      quota: estimate.quota ?? 0,
+    }),
+  );
 }
 function notify(
   revision: number,
@@ -112,12 +138,17 @@ async function open(id: string) {
   });
   query = new QueryEngine(store);
   review = new ReviewService(store, { query, via: 'web-review' });
+  clickList = new ClickListService(store, [xAdapter, instagramAdapter], {
+    query,
+  });
+  settings = new SettingsService(store);
   await query.prepareProjection();
   await publishWorkspace({
     id: workspaceId,
     kind: initial.kind,
     createdAt: initial.createdAt,
   });
+  await storageState();
   return summary();
 }
 
@@ -142,6 +173,17 @@ async function attach(port: MessagePort, requestId: string) {
   let conflicts = 0;
   port.onmessage = (event: MessageEvent<ImportBatch | ImportTerminal>) => {
     const message = event.data;
+    if (
+      !message ||
+      !Number.isSafeInteger(message.token) ||
+      message.token < 1 ||
+      !['batch', 'summary', 'aborted'].includes(message.type) ||
+      (message.type === 'batch' &&
+        !ItemSchema.array().max(1000).safeParse(message.items).success)
+    ) {
+      post({ type: 'failed', requestId, code: 'INVALID_REQUEST' });
+      return;
+    }
     queue = queue
       .then(async () => {
         if (message.type === 'batch') {
@@ -349,12 +391,114 @@ async function handle(input: WorkspaceRequest) {
       });
       break;
     case 'revision':
+      await storageState();
       post({
         type: 'revision',
         requestId,
         revision: (await summary()).revision,
       });
       break;
+    case 'clickListOpen': {
+      if (!clickList) throw new Error('Click list closed.');
+      const result = await clickList.open({
+        listId: input.listId,
+        accountKey: input.accountKey,
+        timeZone: input.timeZone,
+        workspaceTimeZone: input.workspaceTimeZone,
+        systemTimeZone: input.systemTimeZone,
+      });
+      post({ type: 'clickListOpened', requestId, ...result });
+      break;
+    }
+    case 'setTimeZone': {
+      if (!settings) throw new Error('Workspace settings closed.');
+      const result = await settings.setTimeZone(input.timeZone);
+      await query.noteChanged({ revision: result.revision, itemIds: [] });
+      post({ type: 'settingsChanged', requestId, ...result });
+      notify(result.revision, []);
+      break;
+    }
+    case 'deleteWorkspace': {
+      const meta = await store.read((tx) => tx.meta.get());
+      if (meta.id !== input.workspaceId) {
+        post({ type: 'failed', requestId, code: 'INVALID_REQUEST' });
+        break;
+      }
+      const storageId = workspaceId;
+      review.closeSession();
+      await store.close();
+      store = null;
+      query = null;
+      review = null;
+      clickList = null;
+      settings = null;
+      await deleteWorkspaceDatabase(storageId);
+      await removeWorkspace(storageId);
+      workspaceId = '';
+      post({
+        type: 'workspaceDeleted',
+        requestId,
+        workspaceId: input.workspaceId,
+      });
+      break;
+    }
+    case 'clickListWindow': {
+      if (!clickList) throw new Error('Click list closed.');
+      post({
+        type: 'clickListEntries',
+        requestId,
+        ...(await clickList.window(input)),
+      });
+      break;
+    }
+    case 'clickListExport': {
+      if (!clickList) throw new Error('Click list closed.');
+      const list = await clickList.window({
+        listId: input.listId,
+        offset: 0,
+        limit: 1,
+      });
+      // ignoreBOM:true keeps U+FEFF in string chunks for the page's TextEncoder.
+      const decoder = new TextDecoder('utf-8', {
+        ignoreBOM: true,
+        fatal: true,
+      });
+      let index = 0,
+        bytes = 0;
+      for await (const part of clickList.export(input)) {
+        bytes += part.byteLength;
+        post({
+          type: 'clickListExportChunk',
+          requestId,
+          listId: input.listId,
+          revision: list.revision,
+          format: input.format,
+          index: index++,
+          chunk: decoder.decode(part, { stream: true }),
+        });
+      }
+      const tail = decoder.decode();
+      if (tail)
+        post({
+          type: 'clickListExportChunk',
+          requestId,
+          listId: input.listId,
+          revision: list.revision,
+          format: input.format,
+          index: index++,
+          chunk: tail,
+        });
+      post({
+        type: 'clickListExported',
+        requestId,
+        listId: input.listId,
+        revision: list.revision,
+        format: input.format,
+        entries: list.total,
+        bytes,
+      });
+      break;
+    }
     case 'attachImport':
       await attach(input.port, requestId);
       break;
@@ -376,6 +520,10 @@ async function handle(input: WorkspaceRequest) {
       workspaceId = stage.storageId;
       query = new QueryEngine(store);
       review = new ReviewService(store, { query, via: 'web-review' });
+      clickList = new ClickListService(store, [xAdapter, instagramAdapter], {
+        query,
+      });
+      settings = new SettingsService(store);
       await query.prepareProjection();
       post({ type: 'opened', requestId, summary: await summary() });
       break;
@@ -406,17 +554,12 @@ scope.addEventListener('message', (event: MessageEvent<unknown>) => {
     );
   });
 });
-changes.onmessage = (
-  event: MessageEvent<{
-    workspaceId: string;
-    revision: number;
-    itemIds?: string[] | 'many';
-  }>,
-) => {
-  if (event.data.workspaceId === workspaceId) {
+changes.onmessage = (event: MessageEvent<unknown>) => {
+  const message = tabChange(event.data, workspaceId);
+  if (message) {
     const changed = {
-      revision: event.data.revision,
-      itemIds: event.data.itemIds ?? 'many',
+      revision: message.revision,
+      itemIds: message.itemIds,
     };
     void query
       ?.noteChanged(changed)
@@ -432,7 +575,7 @@ changes.onmessage = (
       .catch(() =>
         post({
           type: 'failed',
-          requestId: `projection-refresh-${event.data.revision}`,
+          requestId: `projection-refresh-${message.revision}`,
           code: 'STORAGE',
         }),
       );

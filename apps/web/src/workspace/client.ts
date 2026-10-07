@@ -15,6 +15,20 @@ export class WorkspaceClient {
   readonly worker: Worker;
   rows: readonly ReviewRow[] = [];
   summary: WorkspaceSummary | null = null;
+  storage: Extract<WorkspaceNotification, { type: 'storageState' }> | null =
+    null;
+  private readonly exportStreams = new Map<
+    string,
+    {
+      listId: string;
+      format: 'csv' | 'json';
+      index: number;
+      revision: number | null;
+      queue: Promise<void>;
+      bytes: number;
+      write: (chunk: string) => Promise<void>;
+    }
+  >();
   readonly diagnostics: { code: string; requestId: string; at: string }[] = [];
   private readonly pending = new Map<
     string,
@@ -31,6 +45,7 @@ export class WorkspaceClient {
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {
       const notice = WorkspaceNotificationSchema.safeParse(event.data);
       if (notice.success) {
+        if (notice.data.type === 'storageState') this.storage = notice.data;
         for (const listener of this.listeners) listener(notice.data);
         return;
       }
@@ -44,6 +59,29 @@ export class WorkspaceClient {
           at: new Date().toISOString(),
         });
       if (reply.type === 'progress') return;
+      if (reply.type === 'clickListExportChunk') {
+        const stream = this.exportStreams.get(reply.requestId);
+        if (!stream) return;
+        if (
+          reply.listId !== stream.listId ||
+          reply.format !== stream.format ||
+          reply.index !== stream.index ||
+          (stream.revision !== null && reply.revision !== stream.revision)
+        ) {
+          this.exportStreams.delete(reply.requestId);
+          this.pending
+            .get(reply.requestId)
+            ?.reject(new Error('Click-list export identity changed.'));
+          this.pending.delete(reply.requestId);
+          return;
+        }
+        stream.revision = reply.revision;
+        stream.index++;
+        stream.bytes += new TextEncoder().encode(reply.chunk).byteLength;
+        stream.queue = stream.queue.then(() => stream.write(reply.chunk));
+        void stream.queue.catch(() => undefined);
+        return;
+      }
       const request = this.pending.get(reply.requestId);
       if (!request) return;
       this.pending.delete(reply.requestId);
@@ -61,13 +99,61 @@ export class WorkspaceClient {
       }
       if (reply.type === 'rows') this.rows = reply.rows;
       if (reply.type === 'opened') this.summary = reply.summary;
+      if (reply.type === 'settingsChanged' && this.summary)
+        this.summary = {
+          ...this.summary,
+          timeZone: reply.timeZone,
+          revision: reply.revision,
+        };
+      if (reply.type === 'workspaceDeleted') {
+        this.summary = null;
+        this.rows = [];
+      }
       request.resolve(reply);
     });
     worker.addEventListener('error', () => {
       for (const pending of this.pending.values())
         pending.reject(new Error('Workspace worker stopped.'));
       this.pending.clear();
+      this.exportStreams.clear();
     });
+  }
+  async exportClickList(
+    listId: string,
+    format: 'csv' | 'json',
+    write: (chunk: string) => Promise<void>,
+  ): Promise<void> {
+    const requestId = crypto.randomUUID();
+    const stream = {
+      listId,
+      format,
+      index: 0,
+      revision: null as number | null,
+      queue: Promise.resolve(),
+      bytes: 0,
+      write,
+    };
+    this.exportStreams.set(requestId, stream);
+    try {
+      const reply = await this.request({
+        type: 'clickListExport',
+        requestId,
+        listId,
+        format,
+      });
+      await stream.queue;
+      if (
+        reply.type !== 'clickListExported' ||
+        reply.listId !== listId ||
+        reply.format !== format ||
+        (stream.revision !== null && reply.revision !== stream.revision)
+      )
+        throw new Error('Click-list export did not complete.');
+      if (reply.bytes !== stream.bytes)
+        throw new Error('Click-list byte receipt differs.');
+    } finally {
+      this.exportStreams.delete(requestId);
+    }
   }
   async backup(save: (file: File) => Promise<void>): Promise<void> {
     const chunks: BlobPart[] = [];
@@ -134,7 +220,7 @@ export class WorkspaceClient {
       }
     ).showSaveFilePicker;
     if (chooser) {
-      const handle = await chooser({
+      const handle = await chooser.call(window, {
         suggestedName: 'socialprune-backup.json',
       });
       await this.backupTo(await handle.createWritable());
@@ -173,6 +259,8 @@ export class WorkspaceClient {
         'redo',
         'restore',
         'backup',
+        'setTimeZone',
+        'deleteWorkspace',
       ].includes(value.type)
     ) {
       this.pendingWrites.add(result);
@@ -222,6 +310,7 @@ export class WorkspaceClient {
     for (const pending of this.pending.values())
       pending.reject(new Error('Workspace client disposed.'));
     this.pending.clear();
+    this.exportStreams.clear();
   }
 }
 

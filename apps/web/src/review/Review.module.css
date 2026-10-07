@@ -42,7 +42,7 @@
     left: 0;
     width: 100%;
     border-bottom: var(--border-width) solid var(--color-divider);
-    padding: var(--space-3) var(--space-4);
+    padding: var(--review-density-space) var(--space-4);
     background: var(--color-surface);
     min-height: var(--target-size);
   }

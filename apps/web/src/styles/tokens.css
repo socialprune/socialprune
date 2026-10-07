@@ -92,6 +92,12 @@
     --color-evidence-bg: #312e81;
     color-scheme: dark;
   }
+  :root[data-density='compact'] {
+    --review-density-space: var(--space-2);
+  }
+  :root {
+    --review-density-space: var(--space-3);
+  }
   @media (prefers-reduced-motion: reduce) {
     :root {
       --motion-duration: 0ms;

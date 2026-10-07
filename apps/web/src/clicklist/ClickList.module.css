@@ -1,0 +1,59 @@
+@layer components {
+  .controls,
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--space-3);
+    margin-block: var(--space-3);
+  }
+  .field {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .field input,
+  .field select {
+    max-width: 100%;
+  }
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .entry,
+  .preview {
+    padding: var(--space-4);
+    margin-block: var(--space-3);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-panel);
+    overflow-wrap: anywhere;
+  }
+  .text {
+    white-space: pre-wrap;
+  }
+  .active {
+    outline: var(--focus-width) solid var(--color-action);
+    outline-offset: var(--focus-offset);
+  }
+  .actions a {
+    min-height: var(--target-size);
+    display: inline-flex;
+    align-items: center;
+  }
+  .day {
+    font-size: var(--type-lg);
+  }
+  .notice {
+    color: var(--color-text-secondary);
+  }
+  .progress {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (forced-colors: active) {
+    .active {
+      outline-color: Highlight;
+    }
+  }
+}

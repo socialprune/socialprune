@@ -15,18 +15,25 @@
     "measure:g1": "node scripts/measure-g1.ts"
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
     "@socialprune/core": "workspace:*",
     "@socialprune/adapter-x": "workspace:*",
     "@socialprune/adapter-instagram": "workspace:*",
+    "@tanstack/react-virtual": "3.14.13",
+    "idb": "8.0.4",
+    "lucide-react": "1.52.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-intl": "12.1.4"
   },
   "devDependencies": {
+    "@formatjs/icu-messageformat-parser": "3.5.21",
     "@socialprune/fixture-gen": "workspace:*",
     "@playwright/test": "1.63.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "accessibility-checker-engine": "4.0.34",
     "esbuild": "0.28.2",
     "vite": "8.3.3"
   }

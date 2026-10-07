@@ -63,4 +63,48 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['apps/web/src/**/*.{js,mjs,cjs,ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            ':matches(JSXAttribute[name.name="dangerouslySetInnerHTML"], Property[key.name="dangerouslySetInnerHTML"], Property[key.value="dangerouslySetInnerHTML"], MemberExpression[property.name="dangerouslySetInnerHTML"], MemberExpression[property.value="dangerouslySetInnerHTML"])',
+          message:
+            'ADR-004: render archive content as text nodes, never with dangerouslySetInnerHTML.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '(?:^|/)test(?:/|$)',
+              message:
+                'ADR-004: production web source must not import test entries or probes.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/cli/src/commands/**/*.{js,mjs,cjs,ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex:
+                '(?:^@socialprune/core/(?:src/)?workspace/review(?:\\.[cm]?[jt]s)?(?:/|$)|(?:^|/)packages/core/src/workspace/review(?:\\.[cm]?[jt]s)?(?:/|$))',
+              message:
+                'ADR-017: CLI commands cannot import the review decision-writing capability. Use the label service.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);

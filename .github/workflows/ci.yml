@@ -27,6 +27,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm guard
+      - run: pnpm licenses:check
+      - run: pnpm copy:check
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
@@ -35,4 +37,5 @@ jobs:
       - run: pnpm schemas:check
       - run: pnpm build
       - run: pnpm --filter @socialprune/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @socialprune/web exec playwright install --with-deps firefox webkit
       - run: pnpm test:e2e

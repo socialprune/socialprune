@@ -1,7 +1,7 @@
 {
   "id": "media-comments",
   "platform": "instagram",
-  "description": "Current-layout media-only shapes A/B from S4 structural facts, invented values only: empty lists on text comments, text plus media, absent text with/without owner, same-second ordinal IDs, split overlap with renamed URI, one contentless rejected row, unknown comment label with an empty media list accepted, and unknown owner label with positive media rejected as ambiguous (D34). URI values never enter expected items; counts come from authored media lists. Public media_list_data and uri field-name sources are in spikes/s4-real-exports/schema.ts.",
+  "description": "Current-layout comments from S4 run 4 structural aggregates, invented values only: every post text row has one non-reference placeholder; uri=\"\" is an assumption because S4 measured only neither link nor path, not emptiness. Media-only rows use invented example-domain HTTPS GIF links, plus one non-reference placeholder that stays importable with mediaCount 0. Same-second ordinal IDs, split overlap with a renamed URI, unknown-label placeholder text, one contentless rejected row and one unknown-owner usable-media rejection remain covered. D37 counts only usable references; expected counts are explicitly authored from invented data, never parsed. No entry has creation_timestamp. URI values never enter expected items; public field-name sources are in spikes/s4-real-exports/schema.ts.",
   "archives": [
     "instagram-synth_media-2026-07-31-c7d8e9_1",
     "instagram-synth_media-2026-07-31-c7d8e9_2"

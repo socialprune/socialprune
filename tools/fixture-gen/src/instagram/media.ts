@@ -8,7 +8,7 @@ const owner = 'synth_media_owner';
 const unknownText = 'Invented text with an unknown translated label.';
 const unknownComment: Row = {
   raw: {
-    [MEDIA_KEY]: [],
+    [MEDIA_KEY]: [{ uri: '' }],
     [MAP_KEY]: {
       'Unknown comment label': { value: unknownText },
       'Media Owner': { value: owner },
@@ -24,7 +24,9 @@ const unknownComment: Row = {
 };
 const unknownOwner: Row = {
   raw: {
-    [MEDIA_KEY]: [{ uri: 'media/other/synthetic_unknown_owner_07.gif' }],
+    [MEDIA_KEY]: [
+      { uri: 'https://media.example.com/synthetic_unknown_owner_07.gif' },
+    ],
     [MAP_KEY]: {
       'Unknown owner label': { value: 'synth_unknown_media_owner' },
       Time: { timestamp: BASE_SECONDS + 8 },
@@ -32,12 +34,31 @@ const unknownOwner: Row = {
   },
   comment: null,
 };
+const unknownPlaceholderText =
+  'Invented unknown-label text with a placeholder.';
+const unknownPlaceholder: Row = {
+  raw: {
+    [MEDIA_KEY]: [{ uri: '' }],
+    [MAP_KEY]: {
+      'Unknown translated comment label': { value: unknownPlaceholderText },
+      'Media Owner': { value: owner },
+      Time: { timestamp: BASE_SECONDS + 10 },
+    },
+  },
+  comment: {
+    text: unknownPlaceholderText,
+    owner,
+    seconds: BASE_SECONDS + 10,
+    mediaCount: 0,
+  },
+};
 
 function mediaRow(
   text: string | null,
   owner: string | null,
   seconds: number,
   uris: string[] | null,
+  mediaCount: number | undefined = uris?.length,
 ): Row {
   return {
     raw: {
@@ -52,7 +73,7 @@ function mediaRow(
     comment:
       text === null && (uris === null || uris.length === 0)
         ? null
-        : { text: text ?? '', owner, seconds, mediaCount: uris?.length },
+        : { text: text ?? '', owner, seconds, mediaCount },
   };
 }
 
@@ -60,7 +81,7 @@ function mediaRow(
 // Public field-name sources are recorded in spikes/s4-real-exports/schema.ts.
 export const mediaComments = variant(
   'media-comments',
-  'Current-layout media-only shapes A/B from S4 structural facts, invented values only: empty lists on text comments, text plus media, absent text with/without owner, same-second ordinal IDs, split overlap with renamed URI, one contentless rejected row, unknown comment label with an empty media list accepted, and unknown owner label with positive media rejected as ambiguous (D34). URI values never enter expected items; counts come from authored media lists. Public media_list_data and uri field-name sources are in spikes/s4-real-exports/schema.ts.',
+  'Current-layout comments from S4 run 4 structural aggregates, invented values only: every post text row has one non-reference placeholder; uri="" is an assumption because S4 measured only neither link nor path, not emptiness. Media-only rows use invented example-domain HTTPS GIF links, plus one non-reference placeholder that stays importable with mediaCount 0. Same-second ordinal IDs, split overlap with a renamed URI, unknown-label placeholder text, one contentless rejected row and one unknown-owner usable-media rejection remain covered. D37 counts only usable references; expected counts are explicitly authored from invented data, never parsed. No entry has creation_timestamp. URI values never enter expected items; public field-name sources are in spikes/s4-real-exports/schema.ts.',
   [
     {
       name: `${archive}_1`,
@@ -71,32 +92,40 @@ export const mediaComments = variant(
             'Invented comment without attachments.',
             owner,
             BASE_SECONDS,
-            [],
+            [''],
+            0,
           ),
           mediaRow(
             'Another invented text-only comment.',
             owner,
             BASE_SECONDS + 1,
-            [],
+            [''],
+            0,
           ),
-          mediaRow('Invented comment with a GIF.', owner, BASE_SECONDS + 2, [
-            'media/other/synthetic_gif_01.gif',
+          mediaRow(
+            'Invented text with a media placeholder.',
+            owner,
+            BASE_SECONDS + 2,
+            [''],
+            0,
+          ),
+          mediaRow(null, owner, BASE_SECONDS + 3, [
+            'https://media.example.com/synthetic_gif_02.gif',
           ]),
           mediaRow(null, owner, BASE_SECONDS + 3, [
-            'media/other/synthetic_gif_02.gif',
-          ]),
-          mediaRow(null, owner, BASE_SECONDS + 3, [
-            'media/other/synthetic_sticker_03.webp',
+            'https://media.example.com/synthetic_gif_03.gif',
           ]),
           mediaRow(null, null, BASE_SECONDS + 4, [
-            'media/other/synthetic_image_04.png',
+            'https://media.example.com/synthetic_gif_04.gif',
           ]),
           mediaRow(null, 'synth_shared_owner', BASE_SECONDS + 5, [
-            'media/other/synthetic_overlap_05.gif',
+            'https://media.example.com/synthetic_overlap_05.gif',
           ]),
           mediaRow(null, owner, BASE_SECONDS + 6, null),
           unknownComment,
           unknownOwner,
+          mediaRow(null, owner, BASE_SECONDS + 9, [''], 0),
+          unknownPlaceholder,
         ]),
         reels([]),
       ],
@@ -107,7 +136,7 @@ export const mediaComments = variant(
       files: [
         post([
           mediaRow(null, 'synth_shared_owner', BASE_SECONDS + 5, [
-            'media/other/synthetic_overlap_renamed_06.gif',
+            'https://media.example.com/synthetic_overlap_renamed_06.gif',
           ]),
         ]),
       ],

@@ -49,6 +49,35 @@ export function object(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
+// S4 run 4 (2026-10-07) measured one non-reference placeholder on every post
+// text row. Count only HTTP(S) links or non-empty relative paths, not entries.
+// Relative paths have no leading slash/backslash, colon, whitespace or control
+// characters, and contain a slash or end in a file extension. Never open URIs.
+export function mediaReferenceCount(
+  entries: readonly unknown[] | null,
+): number | null {
+  if (entries === null) return null;
+  let count = 0;
+  for (const entry of entries) {
+    const uri = object(entry)?.uri;
+    if (typeof uri !== 'string' || !uri || /[\s\p{Cc}]/u.test(uri)) continue;
+    if (/^https?:\/\//i.test(uri)) {
+      try {
+        const link = new URL(uri);
+        if (link.hostname) count++;
+      } catch {
+        // An invalid link is not a usable media reference.
+      }
+    } else if (
+      !/^[\/\\]/.test(uri) &&
+      !uri.includes(':') &&
+      (uri.includes('/') || /\.[a-z0-9]+$/i.test(uri))
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
 function label(key: string): string {
   return repairMojibake(key).trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -89,7 +118,8 @@ export function parseComment(value: unknown): CommentData | null {
   const map = object(row?.[MAP_KEY]);
   if (!row || !map) return null;
   const media = row[MEDIA_KEY];
-  const mediaCount = Array.isArray(media) ? media.length : null;
+  const entries: unknown[] | null = Array.isArray(media) ? media : null;
+  const mediaCount = mediaReferenceCount(entries);
   const fields: Field[] = [];
   for (const [key, value] of Object.entries(map)) {
     const data = object(value);
@@ -150,8 +180,8 @@ export function parseComment(value: unknown): CommentData | null {
       comment = candidates[0];
     } else if (!(
       candidates.length === 0 &&
-      mediaCount !== null &&
-      mediaCount > 0
+      entries !== null &&
+      entries.length > 0
     )) {
       // With media, a lone unknown string could name its owner, not text.
       // Media-only rows need a non-empty list and no unresolved string slots.

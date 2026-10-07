@@ -1,6 +1,10 @@
 [
   {
-    "media_list_data": [],
+    "media_list_data": [
+      {
+        "uri": ""
+      }
+    ],
     "string_map_data": {
       "Comment": {
         "value": "Invented comment without attachments."
@@ -14,7 +18,11 @@
     }
   },
   {
-    "media_list_data": [],
+    "media_list_data": [
+      {
+        "uri": ""
+      }
+    ],
     "string_map_data": {
       "Comment": {
         "value": "Another invented text-only comment."
@@ -30,12 +38,12 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_gif_01.gif"
+        "uri": ""
       }
     ],
     "string_map_data": {
       "Comment": {
-        "value": "Invented comment with a GIF."
+        "value": "Invented text with a media placeholder."
       },
       "Media Owner": {
         "value": "synth_media_owner"
@@ -48,7 +56,7 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_gif_02.gif"
+        "uri": "https://media.example.com/synthetic_gif_02.gif"
       }
     ],
     "string_map_data": {
@@ -63,7 +71,7 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_sticker_03.webp"
+        "uri": "https://media.example.com/synthetic_gif_03.gif"
       }
     ],
     "string_map_data": {
@@ -78,7 +86,7 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_image_04.png"
+        "uri": "https://media.example.com/synthetic_gif_04.gif"
       }
     ],
     "string_map_data": {
@@ -90,7 +98,7 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_overlap_05.gif"
+        "uri": "https://media.example.com/synthetic_overlap_05.gif"
       }
     ],
     "string_map_data": {
@@ -113,7 +121,11 @@
     }
   },
   {
-    "media_list_data": [],
+    "media_list_data": [
+      {
+        "uri": ""
+      }
+    ],
     "string_map_data": {
       "Unknown comment label": {
         "value": "Invented text with an unknown translated label."
@@ -129,7 +141,7 @@
   {
     "media_list_data": [
       {
-        "uri": "media/other/synthetic_unknown_owner_07.gif"
+        "uri": "https://media.example.com/synthetic_unknown_owner_07.gif"
       }
     ],
     "string_map_data": {
@@ -138,6 +150,39 @@
       },
       "Time": {
         "timestamp": 1753920008
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": ""
+      }
+    ],
+    "string_map_data": {
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920009
+      }
+    }
+  },
+  {
+    "media_list_data": [
+      {
+        "uri": ""
+      }
+    ],
+    "string_map_data": {
+      "Unknown translated comment label": {
+        "value": "Invented unknown-label text with a placeholder."
+      },
+      "Media Owner": {
+        "value": "synth_media_owner"
+      },
+      "Time": {
+        "timestamp": 1753920010
       }
     }
   }

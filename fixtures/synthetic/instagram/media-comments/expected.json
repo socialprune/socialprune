@@ -11,7 +11,7 @@
       ],
       "variant": "json-current",
       "exportCreatedAt": null,
-      "itemCount": 8,
+      "itemCount": 10,
       "diagnostics": [
         {
           "category": "account",
@@ -27,7 +27,7 @@
             "your_instagram_activity/comments/post_comments_1.json",
             "your_instagram_activity/comments/post_comments_1.json"
           ],
-          "count": 8,
+          "count": 10,
           "message": "Some comment data could not be read; other readable comments were imported."
         },
         {
@@ -102,16 +102,16 @@
       }
     },
     {
-      "id": "instagram:60f419282db39bbe7e15c09c93b48988885ab1b8a06d9491d0d0f9197328f89a",
+      "id": "instagram:c8305385ea01cc821a2930292284f9befea70f7e759baefcc5d524278d0af001",
       "platform": "instagram",
       "account": {
         "key": "instagram:synth_media",
         "handle": "synth_media"
       },
       "kind": "comment",
-      "text": "Invented comment with a GIF.",
+      "text": "Invented text with a media placeholder.",
       "createdAt": "2025-07-31T00:00:02.000Z",
-      "mediaCount": 1,
+      "mediaCount": 0,
       "engagement": {
         "likes": null,
         "reposts": null
@@ -273,6 +273,64 @@
         "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
         "file": "your_instagram_activity/comments/post_comments_1.json",
         "index": 8
+      }
+    },
+    {
+      "id": "instagram:c90b8c0f8aceb5068ee60486bb3ad12eab1c3073a1c450406ffe431849c0859c",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "",
+      "createdAt": "2025-07-31T00:00:09.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 10
+      }
+    },
+    {
+      "id": "instagram:d4cedb32a9085672d1c14dd983c94d19f8654631b6a366728115552a905cf062",
+      "platform": "instagram",
+      "account": {
+        "key": "instagram:synth_media",
+        "handle": "synth_media"
+      },
+      "kind": "comment",
+      "text": "Invented unknown-label text with a placeholder.",
+      "createdAt": "2025-07-31T00:00:10.000Z",
+      "mediaCount": 0,
+      "engagement": {
+        "likes": null,
+        "reposts": null
+      },
+      "reference": {
+        "replyToId": null,
+        "replyToHandle": null,
+        "quotedId": null,
+        "repostOfHandle": null,
+        "ownerHandle": "synth_media_owner"
+      },
+      "url": null,
+      "provenance": {
+        "archive": "instagram-synth_media-2026-07-31-c7d8e9_1",
+        "file": "your_instagram_activity/comments/post_comments_1.json",
+        "index": 11
       }
     }
   ]

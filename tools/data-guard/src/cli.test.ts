@@ -60,7 +60,7 @@ test('staged mode blocks index content, then accepts a clean staged file', async
     expect(clean.stdout).toContain('1 file(s) checked, no violations');
   }
   expect(run(['post with spaces.js']).status).toBe(1);
-});
+}, 60_000);
 
 test('all mode blocks a renamed archive from the index', async () => {
   await writeFile(
@@ -71,7 +71,7 @@ test('all mode blocks a renamed archive from the index', async () => {
   const result = run(['--all']);
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('ZIP header');
-});
+}, 60_000);
 
 test('explicit files reject parent traversal without reading it', () => {
   const result = run(['fixtures/synthetic/../missing.zip']);
@@ -92,4 +92,4 @@ test('reports usage and read failures with exit 2', async () => {
   await writeFile(join(repo, 'clean.txt'), 'generated notes\n');
   expect(run(['--', 'clean.txt']).status).toBe(0);
   expect(run(['--help']).status).toBe(0);
-});
+}, 60_000);

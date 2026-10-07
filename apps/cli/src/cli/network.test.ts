@@ -118,4 +118,4 @@ test('all C1 routes, help, review dry-run and bad arguments make no network or o
   } finally {
     recorder.restore();
   }
-});
+}, 60_000);

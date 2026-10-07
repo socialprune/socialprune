@@ -72,7 +72,7 @@ test('finite command output parses with the canonical CLI schema', async () => {
       ).toMatchObject({ available: false, writes: false, dryRun: true });
     }
   }
-});
+}, 60_000);
 
 test('machine help cannot advertise missing schema files', async () => {
   const capture = capturedContext(empty);

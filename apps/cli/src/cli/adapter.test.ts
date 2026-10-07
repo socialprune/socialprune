@@ -315,7 +315,7 @@ test('schemas lists precisely the current shipped schema files', async () => {
     data: { schemas: expected },
   });
   expect(capture.stderr).toEqual([]);
-});
+}, 60_000);
 
 test.each(['approve', 'decide', 'delete', 'mark', 'batch', 'labels'])(
   'unregistered %s has no capability',

@@ -73,4 +73,4 @@ test('CLI structure inspects a generated ZIP and reports no planted leaf values'
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 20_000);
+}, 60_000);

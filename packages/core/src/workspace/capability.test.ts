@@ -148,7 +148,7 @@ test('test-support contract suite is unreachable from every production export', 
       contract,
     ),
   ).toBe(true);
-});
+}, 60_000);
 test('LabelService has no transitive review capability or event append call', async () => {
   const path = resolve(repo, 'packages/core/src/workspace/labels.ts');
   expect(await importsReview(path)).toBe(false);

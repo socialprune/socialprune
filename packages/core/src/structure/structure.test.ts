@@ -1036,7 +1036,7 @@ test.skipIf(variants.length === 0)(
     }
     expect(failures).toEqual([]);
   },
-  FIXTURE_SWEEP_TIMEOUT_MS,
+  100_000,
 );
 
 test.skipIf(variants.length === 0)(

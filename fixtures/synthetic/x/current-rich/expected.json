@@ -71,6 +71,7 @@
       "kind": "post",
       "text": "A <b>lantern</b> & \"moss\" '星' 😀\nfrüh &amp;",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": 2,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -99,6 +100,7 @@
       "kind": "reply",
       "text": "@amber_moth invented reply",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": 1,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -127,6 +129,7 @@
       "kind": "repost",
       "text": "RT @moss_badger: invented repost",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": 0,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -155,6 +158,7 @@
       "kind": "quote",
       "text": "An explicit quote https://t.co/quote",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -183,6 +187,7 @@
       "kind": "quote",
       "text": "An archive quote https://t.co/invented",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -211,6 +216,7 @@
       "kind": "post",
       "text": "Counts omitted, text and whitespace stay.  \n",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": null,
         "reposts": null
@@ -239,6 +245,7 @@
       "kind": "reply",
       "text": "@amber_moth replying with a quote",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1

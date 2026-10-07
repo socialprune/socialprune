@@ -208,6 +208,7 @@ export function variant(
           kind: 'comment',
           text,
           createdAt,
+          mediaCount: null,
           engagement: { likes: null, reposts: null },
           reference: {
             replyToId: null,

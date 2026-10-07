@@ -74,6 +74,7 @@
       "kind": "post",
       "text": "Part zero comes first.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -102,6 +103,7 @@
       "kind": "post",
       "text": "Part one comes second.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -130,6 +132,7 @@
       "kind": "post",
       "text": "Part two comes third.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -158,6 +161,7 @@
       "kind": "post",
       "text": "Part ten sorts numerically, not lexically.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1

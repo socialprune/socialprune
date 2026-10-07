@@ -59,7 +59,7 @@ test('both matching adapters import separate records with first-ID wins, batchin
       type: 'item',
       item: sampleItem(`x:${i}`),
     })),
-    { type: 'item', item: { ...sampleItem('x:0'), text: 'Duplicate text.' } },
+    { type: 'item', item: sampleItem('x:0') },
   ];
   const result = await importArchive(
     archive,
@@ -99,6 +99,42 @@ test('both matching adapters import separate records with first-ID wins, batchin
   expect(progress).toEqual([2, 3, 4]);
   expect(result.records[0]?.accounts).toHaveLength(1);
   expect(result.records[0]?.exportCreatedAt).toBe(timestamp);
+  await archive.close();
+});
+test('wrong-prefix IDs and conflicting duplicate content are counted without reaching item consumers', async () => {
+  const archive = createMemoryArchive('test', {});
+  const accepted: Item[] = [];
+  const result = await importArchive(
+    archive,
+    [
+      fake('x', 'match', [
+        { type: 'item', item: sampleItem('123') },
+        { type: 'item', item: sampleItem('x:123') },
+        {
+          type: 'item',
+          item: { ...sampleItem('x:123'), text: 'PLANTED_CONFLICT' },
+        },
+      ]),
+    ],
+    {
+      onItems(batch) {
+        accepted.push(...batch);
+      },
+    },
+  );
+  expect(result.status).toBe('partial');
+  expect(accepted.map((item) => item.id)).toEqual(['x:123']);
+  expect(accepted[0]?.text).toBe('Generated text.');
+  expect(
+    result.records[0]?.diagnostics.find((d) => d.category === 'invalid-items')
+      ?.count,
+  ).toBe(1);
+  expect(
+    result.records[0]?.diagnostics.find(
+      (d) => d.category === 'conflicting-items',
+    )?.count,
+  ).toBe(1);
+  expect(JSON.stringify(result)).not.toContain('PLANTED_CONFLICT');
   await archive.close();
 });
 test('invalid items never reach consumers and unreadable diagnostics yield partial without values', async () => {

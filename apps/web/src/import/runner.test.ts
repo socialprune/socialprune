@@ -7,12 +7,13 @@ import type { ImportMessage } from './protocol.ts';
 const file = new File(['generated'], 'generated.zip');
 function item(index: number): Item {
   return {
-    id: `invented-${index}`,
+    id: `test:invented-${index}`,
     platform: 'test',
     account: { key: 'invented', handle: null },
     kind: 'post',
     text: `Invented text ${index}.`,
     createdAt: '2000-01-01T00:00:00.000Z',
+    mediaCount: null,
     engagement: { likes: null, reposts: null },
     reference: {
       replyToId: null,

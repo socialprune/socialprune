@@ -222,6 +222,7 @@ export function tweetItem(
     ...classifyTweet(tweet, decoded),
     text: decoded,
     createdAt,
+    mediaCount: mediaCount(tweet),
     engagement: {
       likes: count(tweet.favorite_count),
       reposts: count(tweet.retweet_count),
@@ -229,6 +230,13 @@ export function tweetItem(
     url: `https://x.com/i/web/status/${id}`,
     provenance: { archive: entry.archive, file: entry.path, index },
   };
+}
+
+function mediaCount(tweet: Record<string, unknown>): number | null {
+  const extended = object(tweet.extended_entities)?.media;
+  if (Array.isArray(extended)) return extended.length;
+  const ordinary = object(tweet.entities)?.media;
+  return Array.isArray(ordinary) ? ordinary.length : null;
 }
 
 export interface Note {

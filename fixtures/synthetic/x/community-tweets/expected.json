@@ -73,6 +73,7 @@
       "kind": "post",
       "text": "A regular invented post.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -101,6 +102,7 @@
       "kind": "post",
       "text": "An invented community post.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -129,6 +131,7 @@
       "kind": "repost",
       "text": "RT @violet_otter: invented community repost",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1

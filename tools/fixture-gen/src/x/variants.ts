@@ -35,6 +35,7 @@ interface PostOptions {
   rawDate?: string;
   likes?: number | null;
   reposts?: number | null;
+  mediaCount?: number | null;
   replyToId?: string | null;
   replyToHandle?: string | null;
   quotedId?: string | null;
@@ -75,6 +76,7 @@ function post(id: string, value: string, opts: PostOptions = {}): Post {
       kind: opts.kind ?? 'post',
       text: opts.fullText ?? value,
       createdAt: date,
+      mediaCount: opts.mediaCount ?? null,
       engagement: { likes, reposts },
       reference: {
         replyToId: opts.replyToId ?? null,
@@ -317,15 +319,29 @@ output.push(
 const rich = archive();
 addPosts(rich, [
   post('9007199254740995', 'A <b>lantern</b> & "moss" \'星\' 😀\nfrüh &amp;', {
+    mediaCount: 2,
+    source: {
+      extended_entities: {
+        media: [
+          { id_str: '7001', type: 'photo' },
+          { id_str: '7002', type: 'video' },
+        ],
+      },
+      entities: { media: [{ id_str: '7001' }] },
+    },
     rawText:
       'A &lt;b&gt;lantern&lt;/b&gt; &amp; &quot;moss&quot; &#39;&#x661F;&#39; &#128512;\nfrüh &amp;amp;',
   }),
   post('9007199254740997', '@amber_moth invented reply', {
+    mediaCount: 1,
+    source: { entities: { media: [{ id_str: '7003', type: 'photo' }] } },
     kind: 'reply',
     replyToId: '600001',
     replyToHandle: 'amber_moth',
   }),
   post('9007199254740999', 'RT @moss_badger: invented repost', {
+    mediaCount: 0,
+    source: { extended_entities: { media: [] } },
     kind: 'repost',
     repostOfHandle: 'moss_badger',
   }),

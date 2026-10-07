@@ -287,6 +287,7 @@ export const instagramAdapter: PlatformAdapter = {
                 kind: 'comment',
                 text: parsed.text,
                 createdAt: parsed.createdAt,
+                mediaCount: null,
                 engagement: { likes: null, reposts: null },
                 reference: {
                   replyToId: null,

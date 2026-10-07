@@ -80,11 +80,14 @@ export async function importArchive(
   const records: ImportRecord[] = [];
   let totalItems = 0;
   for (const { adapter, detection } of matches) {
+    const initialArchiveDiagnostics = new Set(archive.diagnostics ?? []);
     const importedAt = now().toISOString();
     const diagnostics: Diagnostic[] = [];
     const accounts = new Map<string, ReturnType<typeof AccountSchema.parse>>();
     const ids = new Set<string>();
+    const firstItems = new Map<string, Item>();
     let duplicates = 0;
+    let conflicts = 0;
     let invalid = 0;
     let exportCreatedAt: string | null = null;
     let batch: Item[] = [];
@@ -114,15 +117,27 @@ export async function importArchive(
         const value = event.value;
         if (value.type === 'item') {
           const parsed = ItemSchema.safeParse(value.item);
-          if (!parsed.success || parsed.data.platform !== adapter.platform) {
+          if (
+            !parsed.success ||
+            parsed.data.platform !== adapter.platform ||
+            !parsed.data.id.startsWith(`${parsed.data.platform}:`)
+          ) {
             invalid++;
             continue;
           }
           if (ids.has(parsed.data.id)) {
-            duplicates++;
+            const first = firstItems.get(parsed.data.id)!;
+            if (
+              first.text !== parsed.data.text ||
+              first.kind !== parsed.data.kind ||
+              first.createdAt !== parsed.data.createdAt
+            )
+              conflicts++;
+            else duplicates++;
             continue;
           }
           ids.add(parsed.data.id);
+          firstItems.set(parsed.data.id, parsed.data);
           accounts.set(
             parsed.data.account.key,
             accounts.get(parsed.data.account.key) ?? parsed.data.account,
@@ -169,6 +184,11 @@ export async function importArchive(
       else await cleanup;
     }
     await flush();
+    diagnostics.push(
+      ...(archive.diagnostics ?? []).filter(
+        (diagnostic) => !initialArchiveDiagnostics.has(diagnostic),
+      ),
+    );
     if (invalid)
       diagnostics.push({
         category: 'invalid-items',
@@ -185,6 +205,14 @@ export async function importArchive(
         count: duplicates,
         message: 'Duplicate item IDs were omitted.',
       });
+    if (conflicts)
+      diagnostics.push({
+        category: 'conflicting-items',
+        status: 'skipped',
+        files: [],
+        count: conflicts,
+        message: 'Conflicting item IDs were omitted.',
+      });
     records.push(
       ImportRecordSchema.parse({
         id: `${adapter.platform}:${await stableId([adapter.name, importedAt, ...archive.archives])}`,
@@ -197,6 +225,7 @@ export async function importArchive(
         variant: detection.variant,
         diagnostics,
         itemCount: ids.size,
+        status: 'complete',
       }),
     );
   }

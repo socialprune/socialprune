@@ -97,6 +97,9 @@ export async function openArchivePaths(
         0,
       ),
       list: () => [...owners.keys()],
+      get diagnostics() {
+        return readers.flatMap((reader) => reader.diagnostics ?? []);
+      },
       readText(entry, options) {
         const owner = owners.get(entry);
         if (!owner) throw new TypeError('Unknown archive entry.');

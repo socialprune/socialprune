@@ -8,6 +8,7 @@ export function sampleItem(id = 'x:123', platform = 'x'): Item {
     kind: 'post',
     text: 'Generated text.',
     createdAt: timestamp,
+    mediaCount: null,
     engagement: { likes: null, reposts: null },
     reference: {
       replyToId: null,

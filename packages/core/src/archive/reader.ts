@@ -6,6 +6,7 @@ import {
   ArchiveLimitError,
 } from './limits.ts';
 import type { ImportLimits } from './limits.ts';
+import type { Diagnostic } from '../model/index.ts';
 
 export interface ArchiveEntry {
   readonly archive: string;
@@ -15,6 +16,7 @@ export interface ArchiveEntry {
 export interface ArchiveReader {
   readonly archives: readonly string[];
   readonly rejectedEntries: number;
+  readonly diagnostics?: readonly Diagnostic[];
   list(): readonly ArchiveEntry[];
   readText(
     entry: ArchiveEntry,
@@ -30,6 +32,7 @@ export interface ArchiveOptions {
   signal?: AbortSignal;
   limits?: Partial<ImportLimits>;
   chunkSize?: number;
+  allowDeflate64?: boolean;
 }
 export interface ByteEntry {
   entry: ArchiveEntry;
@@ -54,6 +57,7 @@ export function normalizeArchivePath(path: string): string | null {
 export class ByteArchiveReader implements ArchiveReader {
   readonly archives: readonly string[];
   readonly rejectedEntries: number;
+  readonly diagnostics: readonly Diagnostic[];
   private readonly sources: Map<ArchiveEntry, ByteEntry>;
   private readonly entries: readonly ArchiveEntry[];
   private readonly limits: ImportLimits;
@@ -67,7 +71,9 @@ export class ByteArchiveReader implements ArchiveReader {
     rejectedEntries: number,
     opts: ArchiveOptions = {},
     dispose: () => Promise<void> = async () => {},
+    diagnostics: Diagnostic[] = [],
   ) {
+    this.diagnostics = diagnostics;
     this.dispose = dispose;
     this.archives = Object.freeze([...archives]);
     this.rejectedEntries = rejectedEntries;

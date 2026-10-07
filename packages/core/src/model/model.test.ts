@@ -13,11 +13,16 @@ import {
   OutcomeSchema,
   PlatformIdSchema,
   WorkspaceSchema,
+  DecisionEventSchema,
+  OutcomeEventSchema,
+  SubmissionSchema,
 } from './index.ts';
 import { generateJsonSchemas } from '../node/schemas.ts';
 import { sampleItem, timestamp } from '../testing.ts';
 
 const assessment = {
+  assessmentId: 'assessment-1',
+  submissionId: null,
   itemId: 'x:123',
   source: { kind: 'rules', name: 'test', version: null },
   category: 'unclear',
@@ -35,15 +40,28 @@ const decision = {
 };
 const outcome = { itemId: 'x:123', value: 'unknown', recordedAt: timestamp };
 const workspace = {
-  schemaVersion: 1,
+  format: 'socialprune-workspace',
+  schemaVersion: 2,
+  id: 'test-workspace',
+  kind: 'personal',
+  lastBackupAt: null,
   createdAt: timestamp,
   updatedAt: timestamp,
-  settings: { categories: ['unclear'] },
+  settings: { categories: ['unclear'], timeZone: null },
+  counts: {
+    imports: 0,
+    items: 1,
+    assessments: 1,
+    submissions: 0,
+    decisionEvents: 0,
+    outcomeEvents: 0,
+  },
   imports: [],
   items: [sampleItem()],
   assessments: [assessment],
-  decisions: [decision],
-  outcomes: [outcome],
+  submissions: [],
+  decisionEvents: [],
+  outcomeEvents: [],
 };
 test('strict models accept valid values and extensible platform/category IDs', () => {
   expect(PlatformIdSchema.parse('another-platform')).toBe('another-platform');
@@ -83,6 +101,7 @@ test('strict models accept valid values and extensible platform/category IDs', (
       variant: null,
       diagnostics: [],
       itemCount: 0,
+      status: 'complete',
     }).itemCount,
   ).toBe(0);
 });
@@ -131,13 +150,31 @@ test('verbatim evidence requires an exact case-sensitive substring', () => {
     evidenceIsVerbatim(sampleItem(), { ...parsed, evidence: 'generated' }),
   ).toBe(false);
 });
-test('five committed JSON schemas match zod and encode required strict object shapes', async () => {
+test('v2 committed JSON schemas match zod and encode required strict object shapes', async () => {
   const schemas = await generateJsonSchemas();
   const samples = {
     item: sampleItem(),
     assessment,
-    decision,
-    outcome,
+    'decision-event': DecisionEventSchema.parse({
+      ...decision,
+      eventId: 'event-1',
+      previous: 'undecided',
+      action: { id: 'action-1', kind: 'single', size: 1, reverts: null },
+    }),
+    'outcome-event': OutcomeEventSchema.parse({
+      ...outcome,
+      eventId: 'event-2',
+      previous: 'skipped',
+      source: { kind: 'human', via: 'local-review' },
+      action: { id: 'action-2', kind: 'single', size: 1, reverts: null },
+    }),
+    submission: SubmissionSchema.parse({
+      submissionId: 'labels-1',
+      contentHash: `sha256:${'a'.repeat(64)}`,
+      source: { kind: 'agent', name: 'synthetic', version: null },
+      receivedAt: timestamp,
+      labelCount: 0,
+    }),
     workspace,
   };
   for (const [name, sample] of Object.entries(samples)) {

@@ -8,3 +8,5 @@ export {
   resolveImportLimits,
 } from './limits.ts';
 export type { ImportLimits } from './limits.ts';
+export { ArchiveReadError } from './errors.ts';
+export type { ArchiveReadCode } from './errors.ts';

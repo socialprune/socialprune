@@ -6,7 +6,26 @@ window.YTD.tweets.part0 = [
       "created_at": "Wed Oct 10 20:19:24 +0000 2018",
       "full_text": "A &lt;b&gt;lantern&lt;/b&gt; &amp; &quot;moss&quot; &#39;&#x661F;&#39; &#128512;\nfrüh &amp;amp;",
       "favorite_count": "3",
-      "retweet_count": "1"
+      "retweet_count": "1",
+      "extended_entities": {
+        "media": [
+          {
+            "id_str": "7001",
+            "type": "photo"
+          },
+          {
+            "id_str": "7002",
+            "type": "video"
+          }
+        ]
+      },
+      "entities": {
+        "media": [
+          {
+            "id_str": "7001"
+          }
+        ]
+      }
     }
   },
   {
@@ -18,7 +37,15 @@ window.YTD.tweets.part0 = [
       "favorite_count": "3",
       "retweet_count": "1",
       "in_reply_to_status_id_str": "600001",
-      "in_reply_to_screen_name": "amber_moth"
+      "in_reply_to_screen_name": "amber_moth",
+      "entities": {
+        "media": [
+          {
+            "id_str": "7003",
+            "type": "photo"
+          }
+        ]
+      }
     }
   },
   {
@@ -28,7 +55,10 @@ window.YTD.tweets.part0 = [
       "created_at": "Wed Oct 10 20:19:24 +0000 2018",
       "full_text": "RT @moss_badger: invented repost",
       "favorite_count": "3",
-      "retweet_count": "1"
+      "retweet_count": "1",
+      "extended_entities": {
+        "media": []
+      }
     }
   },
   {

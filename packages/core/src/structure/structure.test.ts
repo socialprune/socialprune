@@ -881,13 +881,14 @@ test.skipIf(variants.length === 0)(
     // No other substring or value is exempt from the negative assertion.
     const failures: string[] = [];
     const leafBearing = new Map<string, number>();
-    // classify is the hand-authored JSONL measurement set, not a platform
-    // archive directory. Every export platform present still needs a sample.
+    // classify and workspace are hand-authored measurement/migration data,
+    // not platform export archives.
     for (const platform of fixturePlatforms)
       if (
         platform.isDirectory() &&
         !platform.isSymbolicLink() &&
-        platform.name !== 'classify'
+        platform.name !== 'classify' &&
+        platform.name !== 'workspace'
       )
         leafBearing.set(platform.name, 0);
     const noScalarVariants: string[] = [];

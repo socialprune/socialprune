@@ -78,6 +78,7 @@
       "kind": "post",
       "text": "Account A invented post.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1
@@ -106,6 +107,7 @@
       "kind": "post",
       "text": "Account B invented post.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1

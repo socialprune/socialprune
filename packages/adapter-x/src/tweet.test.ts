@@ -6,6 +6,7 @@ import {
   notePrefix,
   parseIsoDate,
   parseTweetDate,
+  tweetItem,
 } from './tweet.ts';
 import type { Note } from './tweet.ts';
 import { assignedObject } from './archive.ts';
@@ -19,6 +20,32 @@ test.each([
 ])('date %s', (raw, expected) => {
   expect(parseTweetDate(raw)).toBe(expected);
 });
+test.each([
+  [{ extended_entities: { media: [{}, {}] }, entities: { media: [{}] } }, 2],
+  [{ entities: { media: [{}] } }, 1],
+  [{ extended_entities: { media: [] }, entities: { media: [{}] } }, 0],
+  [{ entities: { media: [] } }, 0],
+  [{ extended_entities: { media: 'not-an-array' } }, null],
+  [{}, null],
+])(
+  'mediaCount comes only from declared attachment arrays: %j',
+  (raw, expected) => {
+    const item = tweetItem(
+      {
+        tweet: {
+          id_str: '123',
+          text: 'Generated media post.',
+          created_at: 'Wed Oct 10 20:19:24 +0000 2018',
+          ...raw,
+        },
+      },
+      { key: 'x:test', handle: null },
+      { archive: 'synthetic', path: 'posts.js', size: 0 },
+      0,
+    );
+    expect(item?.mediaCount).toBe(expected);
+  },
+);
 test.each([
   'bad',
   'Fri Feb 30 10:00:00 +0000 2024',

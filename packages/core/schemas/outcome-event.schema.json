@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "eventId": { "type": "string", "minLength": 1 },
+    "itemId": { "type": "string", "minLength": 1 },
+    "value": {
+      "type": "string",
+      "enum": ["deleted-by-user", "skipped", "unknown"]
+    },
+    "previous": {
+      "type": "string",
+      "enum": ["deleted-by-user", "skipped", "unknown"]
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "const": "human" },
+        "via": {
+          "type": "string",
+          "enum": ["web-review", "local-review", "v1-unrecorded"]
+        }
+      },
+      "required": ["kind", "via"],
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["single", "bulk", "undo", "redo", "migrated"]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reverts": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        }
+      },
+      "required": ["id", "kind", "size", "reverts"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "eventId",
+    "itemId",
+    "value",
+    "previous",
+    "recordedAt",
+    "source",
+    "action"
+  ],
+  "additionalProperties": false,
+  "$id": "https://socialprune.github.io/socialprune/schemas/outcome-event.schema.json"
+}

@@ -3,17 +3,23 @@
   "type": "object",
   "properties": {
     "itemId": { "type": "string", "minLength": 1 },
-    "value": {
-      "type": "string",
-      "enum": ["deleted-by-user", "skipped", "unknown"]
-    },
-    "recordedAt": {
+    "value": { "type": "string", "enum": ["keep", "delete", "later"] },
+    "decidedAt": {
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "const": "human" },
+        "via": { "type": "string", "enum": ["web-review", "local-review"] }
+      },
+      "required": ["kind", "via"],
+      "additionalProperties": false
     }
   },
-  "required": ["itemId", "value", "recordedAt"],
+  "required": ["itemId", "value", "decidedAt", "source"],
   "additionalProperties": false,
-  "$id": "https://socialprune.github.io/socialprune/schemas/outcome.schema.json"
+  "$id": "https://socialprune.github.io/socialprune/schemas/v1/decision.schema.json"
 }

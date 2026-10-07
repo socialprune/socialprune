@@ -6,7 +6,10 @@
     "source": {
       "type": "object",
       "properties": {
-        "kind": { "type": "string", "enum": ["rules", "model", "agent"] },
+        "kind": {
+          "type": "string",
+          "enum": ["rules", "model", "agent", "fixture"]
+        },
         "name": { "type": "string", "minLength": 1 },
         "version": { "type": ["string", "null"] }
       },
@@ -32,6 +35,13 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "assessmentId": { "type": "string", "minLength": 1 },
+    "submissionId": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+        { "type": "null" }
+      ]
     }
   },
   "required": [
@@ -42,7 +52,9 @@
     "reason",
     "evidence",
     "confidence",
-    "createdAt"
+    "createdAt",
+    "assessmentId",
+    "submissionId"
   ],
   "additionalProperties": false,
   "$id": "https://socialprune.github.io/socialprune/schemas/assessment.schema.json"

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-01-02T03:04:05.000Z",
+  "updatedAt": "2026-01-04T00:00:00.000Z",
+  "settings": { "categories": ["unclear", "harmless"] },
+  "imports": [{
+    "id": "synthetic-import", "platform": "x", "importedAt": "2026-01-02T03:04:05.000Z",
+    "archives": ["generated-archive"], "exportCreatedAt": null,
+    "accounts": [{ "key": "x:generated-account", "handle": "synth_migration" }],
+    "adapter": { "name": "synthetic-x", "version": "0.1.0" },
+    "variant": "generated", "diagnostics": [], "itemCount": 2
+  }],
+  "items": [
+    { "id": "x:1", "platform": "x", "account": { "key": "x:generated-account", "handle": "synth_migration" }, "kind": "post", "text": "Generated first migration item.", "createdAt": "2026-01-01T00:00:00.000Z", "engagement": { "likes": null, "reposts": null }, "reference": { "replyToId": null, "replyToHandle": null, "quotedId": null, "repostOfHandle": null, "ownerHandle": null }, "url": null, "provenance": { "archive": "generated-archive", "file": "data/posts.json", "index": 0 } },
+    { "id": "x:2", "platform": "x", "account": { "key": "x:generated-account", "handle": "synth_migration" }, "kind": "reply", "text": "Generated second migration item.", "createdAt": "2026-01-01T00:00:01.000Z", "engagement": { "likes": 1, "reposts": 0 }, "reference": { "replyToId": "1", "replyToHandle": null, "quotedId": null, "repostOfHandle": null, "ownerHandle": null }, "url": null, "provenance": { "archive": "generated-archive", "file": "data/posts.json", "index": 1 } }
+  ],
+  "assessments": [{ "itemId": "x:1", "source": { "kind": "agent", "name": "synthetic-labels", "version": null }, "category": "unclear", "risk": 1, "reason": "This generated sentence needs review.", "evidence": "Generated first", "confidence": null, "createdAt": "2026-01-02T00:00:00.000Z" }],
+  "decisions": [
+    { "itemId": "x:1", "value": "delete", "decidedAt": "2026-01-03T00:00:00.000Z", "source": { "kind": "human", "via": "web-review" } },
+    { "itemId": "x:2", "value": "later", "decidedAt": "2026-01-03T00:00:01.000Z", "source": { "kind": "human", "via": "local-review" } },
+    { "itemId": "x:1", "value": "keep", "decidedAt": "2026-01-02T00:00:00.000Z", "source": { "kind": "human", "via": "web-review" } }
+  ],
+  "outcomes": [
+    { "itemId": "x:1", "value": "skipped", "recordedAt": "2026-01-03T00:00:00.000Z" },
+    { "itemId": "x:1", "value": "unknown", "recordedAt": "2026-01-02T00:00:00.000Z" }
+  ]
+}

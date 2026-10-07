@@ -71,6 +71,7 @@
       "kind": "post",
       "text": "Only the public invented post imports.",
       "createdAt": "2018-10-10T20:19:24.000Z",
+      "mediaCount": null,
       "engagement": {
         "likes": 3,
         "reposts": 1

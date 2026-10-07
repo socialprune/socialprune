@@ -60,9 +60,13 @@ export interface StructureOptions {
   signal?: AbortSignal;
   limits?: Partial<ImportLimits>;
 }
+// Browser and Windows duplicate names keep the export identity, including a
+// suffix after an Instagram part number. Node ZIP readers keep the extension;
+// directory readers carry only the basename, so both forms are recognised.
 const INSTAGRAM_EXPORT_NAME =
-  /^instagram-(.+)-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+(?:_\d+)?$/i;
-const X_EXPORT_NAME = /^twitter-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/i;
+  /^instagram-(.+)-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+(?:_\d+)?(?: ?\(\d+\))?(?:\.zip)?$/i;
+const X_EXPORT_NAME =
+  /^twitter-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+(?: ?\(\d+\))?(?:\.zip)?$/i;
 function containsHandle(value: string, handles: readonly string[]): boolean {
   const lowercase = value.toLowerCase();
   return handles.some((handle) => lowercase.includes(handle));

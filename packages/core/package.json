@@ -22,7 +22,8 @@
     "./workspace/merge": "./src/workspace/merge.ts",
     "./workspace/payloads": "./src/workspace/payloads.ts",
     "./workspace/backup": "./src/workspace/backup.ts",
-    "./workspace/clicklist": "./src/workspace/clicklist.ts"
+    "./workspace/clicklist": "./src/workspace/clicklist.ts",
+    "./workspace/settings": "./src/workspace/settings.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

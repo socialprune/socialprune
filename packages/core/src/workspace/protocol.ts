@@ -20,6 +20,7 @@ import {
   ClickListSummarySchema,
   ClickListWindowSchema,
 } from './clicklist-schema.ts';
+import { TimeZoneSettingSchema } from './settings-schema.ts';
 
 const id = z.string().min(1).max(512);
 const nonnegative = z.number().int().nonnegative();
@@ -249,6 +250,11 @@ const requests = [
     listId: id,
     format: ClickListFormatSchema,
   }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('setTimeZone'),
+    timeZone: TimeZoneSettingSchema,
+  }),
 ] as const;
 export const HttpReviewRequestSchema = z
   .discriminatedUnion('type', requests)
@@ -296,6 +302,11 @@ const browserRequests = [
       (value) =>
         typeof MessagePort !== 'undefined' && value instanceof MessagePort,
     ),
+  }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('deleteWorkspace'),
+    workspaceId: id,
   }),
 ] as const;
 export const WorkspaceRequestSchema = z.union([
@@ -410,6 +421,17 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     format: ClickListFormatSchema,
     entries: nonnegative,
     bytes: nonnegative,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('settingsChanged'),
+    timeZone: TimeZoneSettingSchema,
+    revision: nonnegative,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('workspaceDeleted'),
+    workspaceId: id,
   }),
 ]);
 export type WorkspaceReply = z.infer<typeof WorkspaceReplySchema>;

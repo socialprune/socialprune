@@ -169,6 +169,7 @@ test('workspace runtime and test-support subpaths resolve and have no reachable 
     'payloads',
     'backup',
     'clicklist',
+    'settings',
   ];
   const visited = new Set<string>();
   const visit = async (path: string): Promise<void> => {
@@ -201,4 +202,18 @@ test('workspace runtime and test-support subpaths resolve and have no reachable 
   );
   expect(contract).not.toMatch(/(?:from|import\s*\()\s*['"](?:vitest|node:)/);
   expect(contract).not.toMatch(/\b(?:document|window|HTMLElement)\b/);
+});
+test('SettingsService is neutral and LabelService cannot reach its setting writes', async () => {
+  const settings = resolve(repo, 'packages/core/src/workspace/settings.ts');
+  expect(await importsReview(settings)).toBe(false);
+  expect(
+    await importsReview(
+      resolve(repo, 'packages/core/src/workspace/labels.ts'),
+      undefined,
+      settings,
+    ),
+  ).toBe(false);
+  expect(await readFile(settings, 'utf8')).not.toMatch(
+    /(?:decisionEvents|outcomeEvents|assessments)\s*\.\s*append/,
+  );
 });

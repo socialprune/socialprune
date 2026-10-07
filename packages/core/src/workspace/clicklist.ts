@@ -42,6 +42,10 @@ interface OpenList {
   accountKey: string;
   timeZone: string;
   timeZoneSource: 'flag' | 'workspace' | 'system';
+  flagTimeZone?: string;
+  workspaceTimeZone?: string | null;
+  observedWorkspaceTimeZone: string | null;
+  systemTimeZone: string;
   queryId: string;
   generation: number;
   summary?: ClickListSummary;
@@ -137,12 +141,15 @@ export class ClickListService {
       )
         throw new WorkspaceError('INVALID_REQUEST');
       const meta = await this.store.read((tx) => tx.meta.get());
+      const systemTimeZone =
+        input.systemTimeZone ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone;
       const zone = resolveTimeZone(
         input.timeZone,
         input.workspaceTimeZone === undefined
           ? meta.settings.timeZone
           : input.workspaceTimeZone,
-        input.systemTimeZone,
+        systemTimeZone,
       );
       this.release(input.listId);
       if (this.lists.size >= 4) this.release(this.lists.keys().next().value!);
@@ -151,6 +158,10 @@ export class ClickListService {
         accountKey: input.accountKey,
         timeZone: zone.timeZone,
         timeZoneSource: zone.source,
+        flagTimeZone: input.timeZone,
+        workspaceTimeZone: input.workspaceTimeZone,
+        observedWorkspaceTimeZone: meta.settings.timeZone,
+        systemTimeZone,
         queryId: `click-list:${input.listId}`,
         generation: 0,
       };
@@ -172,38 +183,64 @@ export class ClickListService {
     list: OpenList,
     signal?: AbortSignal,
   ): Promise<ClickListSummary> {
-    const platform = await this.query.accountPlatform(list.accountKey);
-    const adapter = platform ? this.adapters.get(platform) : undefined;
-    if (!adapter) throw new WorkspaceError('INVALID_REQUEST');
-    const result = await this.query.query({
-      queryId: list.queryId,
-      generation: ++list.generation,
-      accountKey: list.accountKey,
-      filter: { decisions: ['delete'] },
-      sort: adapter.clickListOrder === 'risk' ? DEFAULT_QUERY_SORT : DAY_ORDER,
-      timeZone: list.timeZone,
-      signal,
-    });
-    const revision = this.query.decisionWindow(
-      list.queryId,
-      list.generation,
-      0,
-      1,
-    ).revision;
-    list.summary = {
-      listId: list.listId,
-      accountKey: list.accountKey,
-      timeZone: list.timeZone,
-      timeZoneSource: list.timeZoneSource,
-      revision,
-      total: result.total,
-      counts: {
-        deletedByYou: result.counts.outcomes['deleted-by-user'],
-        skipped: result.counts.outcomes.skipped,
-        left: result.counts.outcomes.unknown,
-      },
-    };
-    return list.summary;
+    for (;;) {
+      throwIfAborted(signal);
+      // Automatically reopen against current settings on revision refresh. A
+      // caller's explicit flag remains authoritative; a cleared setting falls
+      // back to the system zone captured when this list was opened.
+      const snapshot = await this.store.read(async (tx) => ({
+        meta: await tx.meta.get(),
+        revision: (await tx.runtime.get()).revision,
+      }));
+      const meta = snapshot.meta;
+      if (meta.settings.timeZone !== list.observedWorkspaceTimeZone) {
+        list.workspaceTimeZone = undefined;
+        list.observedWorkspaceTimeZone = meta.settings.timeZone;
+      }
+      const zone = resolveTimeZone(
+        list.flagTimeZone,
+        list.workspaceTimeZone === undefined
+          ? meta.settings.timeZone
+          : list.workspaceTimeZone,
+        list.systemTimeZone,
+      );
+      list.timeZone = zone.timeZone;
+      list.timeZoneSource = zone.source;
+      const platform = await this.query.accountPlatform(list.accountKey);
+      const adapter = platform ? this.adapters.get(platform) : undefined;
+      if (!adapter) throw new WorkspaceError('INVALID_REQUEST');
+      const result = await this.query.query({
+        queryId: list.queryId,
+        generation: ++list.generation,
+        accountKey: list.accountKey,
+        filter: { decisions: ['delete'] },
+        sort:
+          adapter.clickListOrder === 'risk' ? DEFAULT_QUERY_SORT : DAY_ORDER,
+        timeZone: list.timeZone,
+        signal,
+      });
+      const revision = this.query.decisionWindow(
+        list.queryId,
+        list.generation,
+        0,
+        1,
+      ).revision;
+      if (revision !== snapshot.revision) continue;
+      list.summary = {
+        listId: list.listId,
+        accountKey: list.accountKey,
+        timeZone: list.timeZone,
+        timeZoneSource: list.timeZoneSource,
+        revision,
+        total: result.total,
+        counts: {
+          deletedByYou: result.counts.outcomes['deleted-by-user'],
+          skipped: result.counts.outcomes.skipped,
+          left: result.counts.outcomes.unknown,
+        },
+      };
+      return list.summary;
+    }
   }
   private async current(
     list: OpenList,

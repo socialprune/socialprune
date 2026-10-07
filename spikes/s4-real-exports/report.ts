@@ -9,6 +9,7 @@ import { instagramAdapter } from '../../packages/adapter-instagram/src/index.ts'
 import { difference, mergeFiles, pattern, projectStructure, sizeClass } from './projection.ts';
 import { CATEGORIES, PLATFORMS, validateReport } from './schema.ts';
 import type { DiagnosticCount, Kinds, Platform, Report, ShapeFile } from './schema.ts';
+import { inspectRows } from './rows.ts';
 
 const adapters = [xAdapter, instagramAdapter];
 const fixtures = fileURLToPath(new URL('../../fixtures/synthetic/', import.meta.url));
@@ -134,6 +135,10 @@ export async function checkInputs(paths: string[]): Promise<Report> {
     const importMs = Math.round(performance.now() - start);
     if (trace.denied) throw new Error('S4_PRIVATE_READ');
     const shapes = await readShapes(reader, trace);
+    const rows = {
+      x: await inspectRows(reader, 'x', [...trace.reads.x]),
+      instagram: await inspectRows(reader, 'instagram', [...trace.reads.instagram]),
+    };
     const read = new Set([...trace.reads.x, ...trace.reads.instagram]);
     const other = new Map<string, number>();
     for (const entry of reader.list()) {
@@ -158,6 +163,7 @@ export async function checkInputs(paths: string[]): Promise<Report> {
         };
       }) },
       structure: { parserRead: PLATFORMS.map((platform) => ({ platform, files: shapes[platform],
+        rowFiles: rows[platform],
         onlyInInput: difference(shapes[platform], reference[platform]), onlyInFixtures: difference(reference[platform], shapes[platform]),
       })), otherFiles: [...other].sort(([a], [b]) => a < b ? -1 : 1).map(([pattern, count]) => ({ pattern, count })) },
       performance: { importMs, peakRssBytes: Math.max(peak, process.resourceUsage().maxRSS * 1024) },

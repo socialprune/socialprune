@@ -23,7 +23,7 @@ export function pattern(path: string): string {
   const suffix = extension ? `.${EXTENSIONS.includes(extension as (typeof EXTENSIONS)[number]) ? extension : '<extension>'}` : '';
   return [...normalized, token + suffix].join('/');
 }
-function keyPath(path: string): string {
+export function keyPath(path: string): string {
   if (!path.startsWith('$')) throw new Error('S4_STRUCTURE_INVALID');
   return '$' + path.slice(1).split('.').map((part, index) => {
     if (index === 0) return /^(?:\[\])*$/.test(part) ? part : '';
@@ -33,6 +33,21 @@ function keyPath(path: string): string {
     const normalized = KEYS.includes(key as (typeof KEYS)[number]) ? KEY_ALIASES[key] ?? key : '<key>';
     return `.${normalized === '<key>' ? normalized : `<${normalized}>`}${suffix}`;
   }).join('');
+}
+export function rowShape(value: unknown): ShapePath[] {
+  const paths = new Map<string, Set<ValueType>>();
+  function visit(value: unknown, raw: string, depth: number): void {
+    if (depth > 128 || paths.size >= 200_000) throw new Error('S4_SHAPE_LIMIT');
+    const type: ValueType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value as ValueType;
+    const path = keyPath(raw);
+    const types = paths.get(path) ?? new Set<ValueType>();
+    types.add(type);
+    paths.set(path, types);
+    if (Array.isArray(value)) for (const element of value as unknown[]) visit(element, raw + '[]', depth + 1);
+    else if (type === 'object') for (const [key, element] of Object.entries(value as Record<string, unknown>)) visit(element, `${raw}.${key}`, depth + 1);
+  }
+  visit(value, '$', 0);
+  return [...paths].sort(([a], [b]) => a < b ? -1 : 1).map(([path, types]) => ({ path, types: [...types].sort() }));
 }
 function mergePaths(paths: readonly ShapePath[]): ShapePath[] {
   const merged = new Map<string, Set<ValueType>>();

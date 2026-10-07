@@ -53,6 +53,23 @@ export const KEYS = [
   'title', 'href', 'timestamp', 'value', '<key>',
   ['string', 'map', 'data'].join('_'), ['string', 'list', 'data'].join('_'),
   ['media', 'owner'].join('_'),
+  // Public format snapshot, retrieved 2026-10-07: media-map envelope and
+  // media URI/timestamp/metadata sections, names only (no example values).
+  // https://github.com/anand-loop/picnic/blob/3dc08d728e339e80336e852d1011956532fd6799/docs/instagram-export-format.md
+  'media_map_data', 'uri', 'creation_timestamp', 'media_metadata',
+  // Public description of a downloaded Instagram JSON format, 2022-06-23;
+  // verified through the Stack Exchange question API on 2026-10-07.
+  // https://stackoverflow.com/questions/72731890/how-to-get-a-pandas-dataframe-from-instagram-json-data
+  'media_list_data',
+  // MIT parser type definition, retrieved 2026-10-07: PartialTweetEditInfo.
+  // https://github.com/alkihis/twitter-archive-reader/blob/a23fb890133553efa850b5c886ffbfb9a0892690/ts/types/ClassicTweets.ts
+  'edit_info', 'initial', 'editTweetIds', 'editableUntil', 'editsRemaining', 'isEditEligible',
+  // Public export-format example (tweets.js), field verified 2026-10-07.
+  // https://gist.github.com/bitsgalore/cfdff3ce67f1ffa85f67e87c778a9e75
+  'possibly_sensitive',
+  // MIT parser manifest type definition, retrieved 2026-10-07.
+  // https://github.com/alkihis/twitter-archive-reader/blob/a23fb890133553efa850b5c886ffbfb9a0892690/ts/types/GDPRManifest.ts
+  'userInfo', 'userName', 'displayName', 'mediaDirectory', 'sizeBytes',
 ] as const;
 // Literal fixture names can be ordinary words such as "archive". These
 // aliases retain the field's meaning without echoing that identity token.
@@ -70,6 +87,16 @@ export interface DiagnosticCount {
   fileCount: number;
 }
 export interface Kinds { post: number; reply: number; quote: number; repost: number; comment: number }
+export const ROW_PARSERS = ['x-tweet', 'instagram-comment', 'instagram-legacy-comment', 'seen-only'] as const;
+export interface RowFile {
+  label: string;
+  pattern: string;
+  rowParser: (typeof ROW_PARSERS)[number];
+  rowsSeen: number;
+  rowsRejected: number | null;
+  streamError: boolean;
+  rejectedShapes: { paths: ShapePath[]; count: number }[];
+}
 export interface Report {
   inputs: { label: string; kind: 'zip' | 'folder'; sizeClass: SizeClass; entryCount: number; rejectedEntries: number; privateEntriesSkipped: number }[];
   adapters: { platform: Platform; result: (typeof DETECTIONS)[number]; variant: string | null }[];
@@ -78,7 +105,7 @@ export interface Report {
     records: { platform: Platform; variant: string | null; accountCount: number; accountsWithHandle: number; accountsWithoutHandle: number; itemCount: number; kinds: Kinds; withMedia: number; unknownLikes: number; unknownReposts: number; duplicates: number; conflicts: number; diagnostics: DiagnosticCount[] }[];
   };
   structure: {
-    parserRead: { platform: Platform; files: ShapeFile[]; onlyInInput: Difference[]; onlyInFixtures: Difference[] }[];
+    parserRead: { platform: Platform; files: ShapeFile[]; rowFiles: RowFile[]; onlyInInput: Difference[]; onlyInFixtures: Difference[] }[];
     otherFiles: { pattern: string; count: number }[];
   };
   performance: { importMs: number; peakRssBytes: number };
@@ -134,6 +161,46 @@ function shapePath(value: unknown, diff: boolean): void {
   if (types.length > TYPES.length || new Set(types).size !== types.length) throw new Error('S4_REPORT_INVALID');
   for (const type of types) choice(type, TYPES);
 }
+function rowFiles(value: unknown, owner: Platform): void {
+  const rows = array(value);
+  for (const [index, value] of rows.entries()) {
+    const row = record(value, ['label', 'pattern', 'rowParser', 'rowsSeen', 'rowsRejected', 'streamError', 'rejectedShapes']);
+    if (row.label !== `file-${index + 1}` || !validPattern(row.pattern) || typeof row.streamError !== 'boolean') throw new Error('S4_REPORT_INVALID');
+    choice(row.rowParser, ROW_PARSERS);
+    if (owner === 'x' && row.rowParser !== 'x-tweet' && row.rowParser !== 'seen-only'
+      || owner === 'instagram' && row.rowParser !== 'instagram-comment' && row.rowParser !== 'instagram-legacy-comment') throw new Error('S4_REPORT_INVALID');
+    number(row.rowsSeen);
+    if (row.rowParser === 'seen-only') {
+      if (row.rowsRejected !== null) throw new Error('S4_REPORT_INVALID');
+    } else {
+      number(row.rowsRejected);
+      if (row.rowsRejected > row.rowsSeen) throw new Error('S4_REPORT_INVALID');
+    }
+    const shapes = array(row.rejectedShapes);
+    if (shapes.length > 10 || row.rowsRejected === null && shapes.length) throw new Error('S4_REPORT_INVALID');
+    const signatures = new Set<string>();
+    let total = 0;
+    for (const value of shapes) {
+      const shape = record(value, ['paths', 'count']);
+      number(shape.count);
+      if (!shape.count) throw new Error('S4_REPORT_INVALID');
+      total += shape.count;
+      const paths = array(shape.paths);
+      if (!paths.length) throw new Error('S4_REPORT_INVALID');
+      let previous = '';
+      for (const value of paths) {
+        shapePath(value, false);
+        const path = value as ShapePath;
+        if (path.path <= previous || !path.types.length || path.types.join('\0') !== [...path.types].sort().join('\0')) throw new Error('S4_REPORT_INVALID');
+        previous = path.path;
+      }
+      const signature = JSON.stringify(paths);
+      if (signatures.has(signature)) throw new Error('S4_REPORT_INVALID');
+      signatures.add(signature);
+    }
+    if (total > (row.rowsRejected ?? 0)) throw new Error('S4_REPORT_INVALID');
+  }
+}
 export function validateReport(value: unknown): asserts value is Report {
   const root = record(value, ['inputs', 'adapters', 'import', 'structure', 'performance']);
   const inputs = array(root.inputs);
@@ -179,8 +246,10 @@ export function validateReport(value: unknown): asserts value is Report {
   const read = array(structure.parserRead);
   if (read.length !== 2) throw new Error('S4_REPORT_INVALID');
   for (const [index, value] of read.entries()) {
-    const row = record(value, ['platform', 'files', 'onlyInInput', 'onlyInFixtures']);
-    if (platform(row.platform) !== PLATFORMS[index]) throw new Error('S4_REPORT_INVALID');
+    const row = record(value, ['platform', 'files', 'rowFiles', 'onlyInInput', 'onlyInFixtures']);
+    const owner = platform(row.platform);
+    if (owner !== PLATFORMS[index]) throw new Error('S4_REPORT_INVALID');
+    rowFiles(row.rowFiles, owner);
     for (const value of array(row.files)) {
       const file = record(value, ['pattern', 'count', 'paths']);
       if (!validPattern(file.pattern)) throw new Error('S4_REPORT_INVALID');

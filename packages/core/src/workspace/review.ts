@@ -10,7 +10,7 @@ import { canonicalJson, contentHash } from './canonical.ts';
 import { WorkspaceError } from './errors.ts';
 import type { WorkspaceErrorCode } from './errors.ts';
 import { projectRow, reviewRow } from './query.ts';
-import type { ReviewQuery } from './query.ts';
+import type { ReviewQuery, ReviewProjectionChange } from './query.ts';
 import type { BulkPreview } from './protocol.ts';
 import { records } from './store.ts';
 import type {
@@ -100,21 +100,26 @@ export class ReviewService {
       tx: WriteTransaction,
       time: string,
       actionId: string,
+      projectionChange: (change: ReviewProjectionChange) => void,
     ) => Promise<ReviewCommandResult>,
   ): Promise<ReviewCommandResult> {
     if (!commandId) throw new WorkspaceError('INVALID_REQUEST');
     const hash = await contentHash(canonicalJson(body));
     const time = this.now().toISOString();
     const actionId = this.uuid();
+    let projectionChange: ReviewProjectionChange | undefined;
+    let committed: ReviewCommandResult;
     try {
-      return await this.store.write(async (tx) => {
+      committed = await this.store.write(async (tx) => {
         const prior = await tx.commands.get(commandId);
         if (prior) {
           if (prior.contentHash !== hash)
             return this.rejected(commandId, 'EVENT_CONFLICT');
           return prior.result;
         }
-        const result = await operation(tx, time, actionId);
+        const result = await operation(tx, time, actionId, (change) => {
+          projectionChange = change;
+        });
         await tx.commands.add({ commandId, contentHash: hash, result });
         return result;
       });
@@ -124,6 +129,14 @@ export class ReviewService {
         error instanceof WorkspaceError ? error.code : 'STORAGE',
       );
     }
+    if (projectionChange) {
+      try {
+        this.query.noteReviewCommitted?.(projectionChange);
+      } catch {
+        console.warn('QUERY_PROJECTION_UPDATE_FAILED', actionId);
+      }
+    }
+    return committed;
   }
   private rejected(
     commandId: string,
@@ -145,7 +158,7 @@ export class ReviewService {
     return this.command(
       input.commandId,
       { type: domain, ...input },
-      async (tx, time, actionId) => {
+      async (tx, time, actionId, projectionChange) => {
         const states = new Map<string, StoredState>();
         for (const id of input.itemIds) {
           const item = await tx.items.get(id);
@@ -178,6 +191,8 @@ export class ReviewService {
           null,
           time,
           actionId,
+          undefined,
+          projectionChange,
         );
       },
     );
@@ -195,6 +210,7 @@ export class ReviewService {
     time: string,
     actionId: string,
     skipped?: number,
+    projectionChange?: (change: ReviewProjectionChange) => void,
   ): Promise<ReviewCommandResult> {
     const runtime = await tx.runtime.get();
     if (!ids.length)
@@ -215,6 +231,7 @@ export class ReviewService {
     const decisionEvents: DecisionEvent[] = [];
     const outcomeEvents: OutcomeEvent[] = [];
     let seq = runtime.lastEventSeq;
+    const projected: StoredState[] = [];
     for (const id of ids) {
       const state = states.get(id)!;
       const next = value instanceof Map ? value.get(id)! : value;
@@ -233,6 +250,7 @@ export class ReviewService {
           decidedAt: time,
         });
         await tx.state.put({ ...state, decision: next as DecisionValue });
+        projected.push({ ...state, decision: next as DecisionValue });
       } else {
         outcomeEvents.push({
           ...common,
@@ -241,6 +259,7 @@ export class ReviewService {
           recordedAt: time,
         });
         await tx.state.put({ ...state, outcome: next as OutcomeValue });
+        projected.push({ ...state, outcome: next as OutcomeValue });
       }
     }
     if (decisionEvents.length) await tx.decisionEvents.append(decisionEvents);
@@ -248,6 +267,11 @@ export class ReviewService {
     await tx.runtime.set({ revision: runtime.revision + 1, lastEventSeq: seq });
     const meta = await tx.meta.get();
     await tx.meta.set({ ...meta, updatedAt: time });
+    projectionChange?.({
+      previousRevision: runtime.revision,
+      revision: runtime.revision + 1,
+      states: projected,
+    });
     return {
       type: 'committed',
       commandId,
@@ -361,7 +385,7 @@ export class ReviewService {
     const result = await this.command(
       input.commandId,
       { type: 'confirmBulk', ...input },
-      async (tx, time, actionId) => {
+      async (tx, time, actionId, projectionChange) => {
         if (
           !preview ||
           this.previews.get(input.previewId) !== preview ||
@@ -395,6 +419,8 @@ export class ReviewService {
           null,
           time,
           actionId,
+          undefined,
+          projectionChange,
         );
       },
     );
@@ -438,7 +464,7 @@ export class ReviewService {
     return this.command(
       commandId,
       { type: kind, commandId },
-      async (tx, time, actionId) => {
+      async (tx, time, actionId, projectionChange) => {
         const groups = await this.groups(tx);
         const undo: ActionGroup[] = [],
           redo: ActionGroup[] = [];
@@ -491,6 +517,7 @@ export class ReviewService {
           time,
           actionId,
           skipped,
+          projectionChange,
         );
       },
     );

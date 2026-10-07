@@ -1,13 +1,13 @@
-import type { Assessment, Item } from '../model/index.ts';
+import type { Item } from '../model/index.ts';
 import { throwIfAborted } from '../archive/limits.ts';
 import { WorkspaceError } from './errors.ts';
 import { QueryFilterSchema, QuerySortSchema } from './protocol.ts';
 import type { QueryFilter, QuerySort, ReviewRow } from './protocol.ts';
-import { deriveState } from './state.ts';
 import type { DerivedItemState } from './state.ts';
-import { readWorkspace, records } from './store.ts';
-import type { WorkspaceStore } from './store.ts';
-import { dayKey, resolveTimeZone } from './time.ts';
+import type { StoredState, WorkspaceStore } from './store.ts';
+import { resolveTimeZone } from './time.ts';
+import { QueryProjection } from './projection.ts';
+import type { CompactAssessment } from './projection.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -15,6 +15,16 @@ export interface QuerySelection {
 }
 export interface ReviewQuery {
   selection(queryId: string, generation: number): Promise<QuerySelection>;
+  noteReviewCommitted?(change: ReviewProjectionChange): void;
+}
+export interface ReviewProjectionChange {
+  previousRevision: number;
+  revision: number;
+  states: readonly StoredState[];
+}
+export interface QueryChange {
+  revision: number;
+  itemIds: readonly string[] | 'many';
 }
 export interface ProjectionRow {
   item: Item;
@@ -53,81 +63,6 @@ export function reviewRow(row: ProjectionRow): ReviewRow {
     mediaCount: row.item.mediaCount,
   };
 }
-function rangeMatch(
-  value: number | null,
-  range: {
-    min: number | null;
-    max: number | null;
-    unknown: 'include' | 'exclude' | 'only';
-  },
-): boolean {
-  if (value === null) return range.unknown !== 'exclude';
-  return (
-    range.unknown !== 'only' &&
-    (range.min === null || value >= range.min) &&
-    (range.max === null || value <= range.max)
-  );
-}
-function matches(
-  row: ProjectionRow,
-  filter: QueryFilter,
-  search: string,
-  timeZone: string,
-): boolean {
-  if (filter.decisions && !filter.decisions.includes(row.state.decision))
-    return false;
-  if (filter.outcomes && !filter.outcomes.includes(row.state.outcome))
-    return false;
-  if (filter.kinds && !filter.kinds.includes(row.item.kind)) return false;
-  if (
-    filter.risk &&
-    !rangeMatch(row.highestRisk < 0 ? null : row.highestRisk, filter.risk)
-  )
-    return false;
-  if (
-    filter.categories &&
-    !row.categories.some((category) => filter.categories!.includes(category))
-  )
-    return false;
-  if (
-    filter.sources &&
-    !row.sources.some((source) =>
-      filter.sources!.includes(source as Assessment['source']['kind']),
-    )
-  )
-    return false;
-  if (filter.likes && !rangeMatch(row.item.engagement.likes, filter.likes))
-    return false;
-  if (
-    filter.reposts &&
-    !rangeMatch(row.item.engagement.reposts, filter.reposts)
-  )
-    return false;
-  if (filter.dates) {
-    const day = dayKey(row.item.createdAt, timeZone);
-    if (
-      (filter.dates.from && day < filter.dates.from) ||
-      (filter.dates.to && day > filter.dates.to)
-    )
-      return false;
-  }
-  return !search || row.search.includes(search);
-}
-function compare(a: ProjectionRow, b: ProjectionRow, sort: QuerySort): number {
-  for (const order of sort) {
-    const value = (row: ProjectionRow): number | string => {
-      if (order.by === 'risk') return row.highestRisk;
-      if (order.by === 'id') return row.item.id;
-      if (order.by === 'createdAt') return Date.parse(row.item.createdAt);
-      return row.item.engagement[order.by] ?? -1;
-    };
-    const first = value(a),
-      second = value(b);
-    if (first === second) continue;
-    return (first < second ? -1 : 1) * (order.direction === 'asc' ? 1 : -1);
-  }
-  return a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0;
-}
 export const DEFAULT_QUERY_SORT: QuerySort = [
   { by: 'risk', direction: 'desc' },
   { by: 'createdAt', direction: 'desc' },
@@ -141,12 +76,16 @@ export class QueryEngine implements ReviewQuery {
     {
       generation: number;
       selection: QuerySelection;
-      rows: ProjectionRow[];
+      projection: QueryProjection;
+      indices: Uint32Array;
       touchedAt: number;
     }
   >();
   private readonly yieldChunk: () => Promise<void>;
   private readonly now: () => number;
+  private projection?: QueryProjection;
+  private building?: Promise<QueryProjection>;
+  private changes: Promise<void> = Promise.resolve();
   constructor(
     store: WorkspaceStore,
     options: { yieldChunk?: () => Promise<void>; now?: () => number } = {},
@@ -156,6 +95,21 @@ export class QueryEngine implements ReviewQuery {
     this.yieldChunk =
       options.yieldChunk ??
       (() => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
+  /** Optional open-time warmup; query still builds and revision-checks on demand. */
+  async prepareProjection(): Promise<void> {
+    for (;;) {
+      await this.changes;
+      const revision = await this.store.read(
+        async (tx) => (await tx.runtime.get()).revision,
+      );
+      const projection = await this.atRevision(revision);
+      const current = await this.store.read(
+        async (tx) => (await tx.runtime.get()).revision,
+      );
+      if (projection.revision === current && this.projection === projection)
+        return;
+    }
   }
   async query(input: {
     queryId: string;
@@ -175,71 +129,78 @@ export class QueryEngine implements ReviewQuery {
     if (prior !== undefined && input.generation <= prior)
       throw new WorkspaceError('CANCELLED');
     this.generations.set(input.queryId, input.generation);
-    const snapshot = await this.store.read(async (tx) => ({
-      workspace: await readWorkspace(tx),
-      runtime: await tx.runtime.get(),
-      stored: await records(tx.items),
-    }));
-    const states = deriveState(snapshot.workspace);
-    const complete = new Set(
-      snapshot.workspace.imports
-        .filter((record) => record.status === 'complete')
-        .map((record) => record.id),
-    );
-    const timeZone = resolveTimeZone(
-      input.timeZone,
-      snapshot.workspace.settings.timeZone,
-    ).timeZone;
     const search = (input.search ?? '').normalize('NFC').toLowerCase();
-    const selected: ProjectionRow[] = [];
-    for (let offset = 0; offset < snapshot.stored.length; offset += 5000) {
-      throwIfAborted(input.signal);
-      if (this.generations.get(input.queryId) !== input.generation)
-        throw new WorkspaceError('CANCELLED');
-      for (const { item, importId } of snapshot.stored.slice(
-        offset,
-        offset + 5000,
-      )) {
-        if (
-          (importId && !complete.has(importId)) ||
-          item.account.key !== input.accountKey
-        )
-          continue;
-        const row = projectRow(item, states.get(item.id)!);
-        if (matches(row, filter, search, timeZone)) selected.push(row);
+    for (;;) {
+      await this.changes;
+      this.checkScan(input);
+      const revision = await this.store.read(
+        async (tx) => (await tx.runtime.get()).revision,
+      );
+      const projection = await this.atRevision(revision);
+      this.checkScan(input);
+      const scanRevision = projection.revision;
+      const timeZone = resolveTimeZone(
+        input.timeZone,
+        projection.timeZone,
+      ).timeZone;
+      const order = projection.order(sort);
+      const matches = projection.predicate(
+        input.accountKey,
+        filter,
+        search,
+        timeZone,
+      );
+      const selected: number[] = [];
+      const decisions = { keep: 0, delete: 0, later: 0, undecided: 0 };
+      const outcomes = { 'deleted-by-user': 0, skipped: 0, unknown: 0 };
+      for (let offset = 0; offset < order.length; offset += 5000) {
+        this.checkScan(input);
+        const end = Math.min(offset + 5000, order.length);
+        for (let position = offset; position < end; position++) {
+          const index = order[position]!;
+          if (!matches(index)) continue;
+          selected.push(index);
+          const state = projection.values(index);
+          decisions[state.decision]++;
+          outcomes[state.outcome]++;
+        }
+        if (end < order.length) await this.yieldChunk();
       }
-      if (offset + 5000 < snapshot.stored.length) await this.yieldChunk();
+      this.checkScan(input);
+      const current = await this.store.read(
+        async (tx) => (await tx.runtime.get()).revision,
+      );
+      this.checkScan(input);
+      // A commit during a yielded scan can mutate columns in place. Never
+      // publish that mixed scan; retry against the current store revision.
+      if (
+        current !== scanRevision ||
+        projection.revision !== scanRevision ||
+        this.projection !== projection
+      )
+        continue;
+      const selection = {
+        ids: selected.map((index) => projection.ids[index]!),
+        revision: scanRevision,
+      };
+      this.expireResults();
+      this.results.delete(input.queryId);
+      if (this.results.size >= 4)
+        this.results.delete(this.results.keys().next().value!);
+      this.results.set(input.queryId, {
+        generation: input.generation,
+        selection,
+        projection,
+        indices: Uint32Array.from(selected),
+        touchedAt: this.now(),
+      });
+      return {
+        queryId: input.queryId,
+        generation: input.generation,
+        total: selected.length,
+        counts: { decisions, outcomes },
+      };
     }
-    throwIfAborted(input.signal);
-    if (this.generations.get(input.queryId) !== input.generation)
-      throw new WorkspaceError('CANCELLED');
-    selected.sort((a, b) => compare(a, b, sort));
-    const selection = {
-      ids: selected.map((row) => row.item.id),
-      revision: snapshot.runtime.revision,
-    };
-    this.expireResults();
-    this.results.delete(input.queryId);
-    if (this.results.size >= 4)
-      this.results.delete(this.results.keys().next().value!);
-    this.results.set(input.queryId, {
-      generation: input.generation,
-      selection,
-      rows: selected,
-      touchedAt: this.now(),
-    });
-    const decisions = { keep: 0, delete: 0, later: 0, undecided: 0 };
-    const outcomes = { 'deleted-by-user': 0, skipped: 0, unknown: 0 };
-    for (const row of selected) {
-      decisions[row.state.decision]++;
-      outcomes[row.state.outcome]++;
-    }
-    return {
-      queryId: input.queryId,
-      generation: input.generation,
-      total: selected.length,
-      counts: { decisions, outcomes },
-    };
   }
   selection(queryId: string, generation: number): Promise<QuerySelection> {
     this.expireResults();
@@ -268,7 +229,9 @@ export class QueryEngine implements ReviewQuery {
       limit > 200
     )
       throw new WorkspaceError('INVALID_QUERY');
-    return result.rows.slice(offset, offset + limit).map(reviewRow);
+    return [...result.indices.subarray(offset, offset + limit)].map((index) =>
+      result.projection.row(index),
+    );
   }
   release(queryId: string): void {
     this.results.delete(queryId);
@@ -277,5 +240,207 @@ export class QueryEngine implements ReviewQuery {
   private expireResults(): void {
     for (const [id, result] of this.results)
       if (this.now() - result.touchedAt >= 10 * 60_000) this.results.delete(id);
+  }
+  private checkScan(input: {
+    queryId: string;
+    generation: number;
+    signal?: AbortSignal;
+  }): void {
+    throwIfAborted(input.signal);
+    if (this.generations.get(input.queryId) !== input.generation)
+      throw new WorkspaceError('CANCELLED');
+  }
+  private async atRevision(revision: number): Promise<QueryProjection> {
+    if (this.projection?.revision === revision) return this.projection;
+    if (this.building) {
+      const built = await this.building;
+      if (built.revision === revision) return built;
+    }
+    const build = this.store.read(async (tx) => {
+      const meta = await tx.meta.get();
+      const runtime = await tx.runtime.get();
+      const result = new QueryProjection(
+        runtime.revision,
+        meta.settings.categories,
+        meta.settings.timeZone,
+      );
+      const complete = new Set<string>();
+      for await (const record of tx.imports.iterate())
+        if (record.status === 'complete') complete.add(record.id);
+      for await (const stored of tx.items.iterate())
+        result.upsert(
+          stored.item,
+          !stored.importId || complete.has(stored.importId),
+        );
+      // Event logs remain the canonical decisions/outcomes. Derived backend
+      // state is useful for sparse updates, but cannot redefine rebuild truth.
+      for await (const event of tx.decisionEvents.iterate())
+        if (
+          !result.applyEvent(
+            event.itemId,
+            event.previous,
+            event.value,
+            'decision',
+          )
+        )
+          throw new WorkspaceError('EVENT_CHAIN');
+      for await (const event of tx.outcomeEvents.iterate())
+        if (
+          !result.applyEvent(
+            event.itemId,
+            event.previous,
+            event.value,
+            'outcome',
+          )
+        )
+          throw new WorkspaceError('EVENT_CHAIN');
+      const latest = new Map<number, Map<string, CompactAssessment>>();
+      for await (const assessment of tx.assessments.iterate()) {
+        const index = result.idIndex.get(assessment.itemId);
+        if (index === undefined) throw new WorkspaceError('UNKNOWN_ITEM');
+        const source = JSON.stringify([
+          assessment.source.kind,
+          assessment.source.name,
+        ]);
+        const current =
+          latest.get(index) ?? new Map<string, CompactAssessment>();
+        current.set(source, {
+          risk: assessment.risk,
+          category: assessment.category,
+          kind: assessment.source.kind,
+        });
+        latest.set(index, current);
+      }
+      for (const [index, assessments] of latest)
+        result.setAssessments(index, assessments.values());
+      return result;
+    });
+    this.building = build;
+    try {
+      const result = await build;
+      this.projection = result;
+      return result;
+    } finally {
+      if (this.building === build) this.building = undefined;
+    }
+  }
+  /** Optional post-commit hint. Gaps and 'many' invalidate; correctness is revision-guarded. */
+  noteChanged(change: QueryChange): Promise<void> {
+    const operation = async () => {
+      const projection = this.projection;
+      if (!projection || change.revision <= projection.revision) return;
+      if (
+        change.itemIds === 'many' ||
+        change.revision !== projection.revision + 1
+      ) {
+        this.projection = undefined;
+        return;
+      }
+      const ids = new Set(change.itemIds);
+      if (!ids.size) {
+        this.projection = undefined;
+        return;
+      }
+      const update = await this.store.read(async (tx) => {
+        const runtime = await tx.runtime.get(),
+          meta = await tx.meta.get();
+        if (
+          runtime.revision !== change.revision ||
+          JSON.stringify(meta.settings.categories) !==
+            JSON.stringify(projection.categories) ||
+          meta.settings.timeZone !== projection.timeZone
+        )
+          return null;
+        const items = await Promise.all(
+          [...ids].map(async (id) => {
+            const stored = await tx.items.get(id);
+            const owner = stored?.importId
+              ? await tx.imports.get(stored.importId)
+              : undefined;
+            return {
+              id,
+              stored,
+              visible: !stored?.importId || owner?.status === 'complete',
+            };
+          }),
+        );
+        const states = new Map<string, StoredState>(
+          [...ids].map((itemId) => [
+            itemId,
+            { itemId, decision: 'undecided', outcome: 'unknown' },
+          ]),
+        );
+        for await (const event of tx.decisionEvents.iterate()) {
+          const state = states.get(event.itemId);
+          if (!state) continue;
+          if (state.decision !== event.previous)
+            throw new WorkspaceError('EVENT_CHAIN');
+          state.decision = event.value;
+        }
+        for await (const event of tx.outcomeEvents.iterate()) {
+          const state = states.get(event.itemId);
+          if (!state) continue;
+          if (state.outcome !== event.previous)
+            throw new WorkspaceError('EVENT_CHAIN');
+          state.outcome = event.value;
+        }
+        const latest = new Map<string, Map<string, CompactAssessment>>();
+        for await (const assessment of tx.assessments.iterate()) {
+          if (!ids.has(assessment.itemId)) continue;
+          const sources =
+            latest.get(assessment.itemId) ??
+            new Map<string, CompactAssessment>();
+          sources.set(
+            JSON.stringify([assessment.source.kind, assessment.source.name]),
+            {
+              risk: assessment.risk,
+              category: assessment.category,
+              kind: assessment.source.kind,
+            },
+          );
+          latest.set(assessment.itemId, sources);
+        }
+        return { items, latest, states };
+      });
+      if (
+        !update ||
+        this.projection !== projection ||
+        projection.revision !== change.revision - 1
+      ) {
+        this.projection = undefined;
+        return;
+      }
+      for (const { id, stored, visible } of update.items) {
+        if (!stored) {
+          projection.remove(id);
+          continue;
+        }
+        const index = projection.upsert(stored.item, visible);
+        projection.setState(update.states.get(id)!);
+        projection.setAssessments(index, update.latest.get(id)?.values() ?? []);
+      }
+      projection.revision = change.revision;
+    };
+    const queued = this.changes.then(operation);
+    this.changes = queued.catch(() => {
+      this.projection = undefined;
+    });
+    return queued;
+  }
+  /** ReviewService calls this only after an acknowledged transaction commit. */
+  noteReviewCommitted(change: ReviewProjectionChange): void {
+    const projection = this.projection;
+    if (
+      !projection ||
+      projection.revision !== change.previousRevision ||
+      change.revision !== change.previousRevision + 1
+    )
+      return;
+    if (change.states.some((state) => !projection.idIndex.has(state.itemId))) {
+      this.projection = undefined;
+      return;
+    }
+    for (const state of change.states) projection.setState(state);
+    projection.revision = change.revision;
   }
 }

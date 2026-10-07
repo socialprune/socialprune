@@ -29,8 +29,18 @@ test('CLI structure inspects a generated ZIP and reports no planted leaf values'
     expect(result.stdout).not.toContain(notice);
     expect(result.stdout).not.toContain(planted);
     expect(result.stdout).not.toContain('987654321');
-    const report: unknown = JSON.parse(result.stdout);
-    expect(report).toHaveProperty('files');
+    const envelope = JSON.parse(result.stdout) as {
+      schemaVersion: number;
+      command: string;
+      status: string;
+      data: { files: unknown };
+      warnings: unknown;
+    };
+    expect(envelope.schemaVersion).toBe(1);
+    expect(envelope.command).toBe('structure');
+    expect(envelope.status).toBe('ok');
+    expect(Array.isArray(envelope.data.files)).toBe(true);
+    expect(envelope.warnings).toEqual([]);
     expect(result.stdout).toContain('$[].text');
     const human = spawnSync(process.execPath, [cli, 'structure', file], {
       encoding: 'utf8',

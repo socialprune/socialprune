@@ -7,7 +7,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "schemas:generate": "node src/cli/schema-files.ts generate",
+    "schemas:check": "node src/cli/schema-files.ts check"
   },
   "dependencies": {
     "@socialprune/adapter-instagram": "workspace:*",

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INVALID_ARGUMENTS" },
+        "message": {
+          "type": "string",
+          "const": "Invalid arguments. Use --help."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INVALID_ARCHIVE_PATH" },
+        "message": {
+          "type": "string",
+          "const": "Each path must name an existing ZIP file or directory."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "STRUCTURE_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not describe the archive structure."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "SCHEMAS_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not read the schema catalog."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "GUIDE_UNAVAILABLE" },
+        "message": {
+          "type": "string",
+          "const": "The export guide is not yet verified. No platform was contacted."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "NOT_AVAILABLE" },
+        "message": {
+          "type": "string",
+          "const": "This command is not available in this version."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CANCELLED" },
+        "message": { "type": "string", "const": "The command was cancelled." },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CLI_ERROR" },
+        "message": {
+          "type": "string",
+          "const": "The command could not finish."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    }
+  ],
+  "$id": "https://socialprune.github.io/socialprune/schemas/cli-error.schema.json"
+}

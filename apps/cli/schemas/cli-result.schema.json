@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number", "const": 1 },
+        "command": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)*$"
+        },
+        "status": { "type": "string", "enum": ["ok", "partial"] },
+        "data": { "$ref": "#/$defs/__schema0" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["schemaVersion", "command", "status", "data", "warnings"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number", "const": 1 },
+        "command": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)*$"
+        },
+        "status": { "type": "string", "const": "error" },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "INVALID_ARGUMENTS" },
+                "message": {
+                  "type": "string",
+                  "const": "Invalid arguments. Use --help."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "INVALID_ARCHIVE_PATH" },
+                "message": {
+                  "type": "string",
+                  "const": "Each path must name an existing ZIP file or directory."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "STRUCTURE_FAILED" },
+                "message": {
+                  "type": "string",
+                  "const": "Could not describe the archive structure."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "SCHEMAS_FAILED" },
+                "message": {
+                  "type": "string",
+                  "const": "Could not read the schema catalog."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "GUIDE_UNAVAILABLE" },
+                "message": {
+                  "type": "string",
+                  "const": "The export guide is not yet verified. No platform was contacted."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "NOT_AVAILABLE" },
+                "message": {
+                  "type": "string",
+                  "const": "This command is not available in this version."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "CANCELLED" },
+                "message": {
+                  "type": "string",
+                  "const": "The command was cancelled."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "CLI_ERROR" },
+                "message": {
+                  "type": "string",
+                  "const": "The command could not finish."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["schemaVersion", "command", "status", "error", "warnings"],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/__schema0" } },
+        {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": { "$ref": "#/$defs/__schema0" }
+        }
+      ]
+    }
+  },
+  "$id": "https://socialprune.github.io/socialprune/schemas/cli-result.schema.json"
+}

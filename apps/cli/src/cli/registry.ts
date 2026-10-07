@@ -1,0 +1,178 @@
+import { buildCommand } from '@stricli/core';
+import type { Command } from '@stricli/core';
+import { guideCommand } from '../commands/guide.ts';
+import { schemasCommand } from '../commands/schemas.ts';
+import { structureCommand } from '../commands/structure.ts';
+import { jsonFlag } from './context.ts';
+import type { CommandRunContext } from './context.ts';
+import { CliError, EXIT_MEANINGS } from './errors.ts';
+import type { CliErrorCode } from './errors.ts';
+import { CliHelpSchema, CLI_SCHEMA_IDS } from './schemas.ts';
+
+export interface RegistryEntry {
+  path: readonly string[];
+  command: Command<CommandRunContext>;
+  writes: boolean;
+  dryRun: boolean;
+  available: boolean;
+  outputSchemaIds: readonly string[];
+  failureCode: CliErrorCode;
+}
+
+function unavailableCommand(review = false): Command<CommandRunContext> {
+  if (review)
+    return buildCommand({
+      parameters: {
+        flags: {
+          json: jsonFlag,
+          workspace: {
+            kind: 'parsed',
+            parse: String,
+            brief: 'Explicit workspace directory',
+            optional: true,
+          },
+          dryRun: {
+            kind: 'boolean',
+            brief: 'Describe without starting',
+            default: false,
+          },
+          noOpen: {
+            kind: 'boolean',
+            brief: 'Do not open a browser',
+            default: false,
+          },
+        },
+      },
+      docs: { brief: 'Not available in this version (NOT_AVAILABLE)' },
+      func(
+        this: CommandRunContext,
+        _flags: {
+          json: boolean;
+          workspace?: string;
+          dryRun: boolean;
+          noOpen: boolean;
+        },
+      ) {
+        throw new CliError('NOT_AVAILABLE');
+      },
+    });
+  return buildCommand({
+    parameters: { flags: { json: jsonFlag } },
+    docs: { brief: 'Not available in this version (NOT_AVAILABLE)' },
+    func(
+      this: CommandRunContext,
+      _flags: {
+        json: boolean;
+      },
+    ) {
+      throw new CliError('NOT_AVAILABLE');
+    },
+  });
+}
+
+export function commandRegistry(): readonly RegistryEntry[] {
+  return [
+    {
+      path: ['guide'],
+      command: guideCommand,
+      writes: false,
+      dryRun: false,
+      available: false,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'CLI_ERROR',
+    },
+    {
+      path: ['structure'],
+      command: structureCommand,
+      writes: false,
+      dryRun: false,
+      available: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'STRUCTURE_FAILED',
+    },
+    {
+      path: ['schemas'],
+      command: schemasCommand,
+      writes: false,
+      dryRun: false,
+      available: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'SCHEMAS_FAILED',
+    },
+    ...['scan', 'mcp', 'review'].map((name) => ({
+      path: [name],
+      command: unavailableCommand(name === 'review'),
+      writes: false,
+      dryRun: name === 'review',
+      available: false,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'NOT_AVAILABLE' as const,
+    })),
+  ];
+}
+
+export function machineHelp(
+  entries: readonly RegistryEntry[],
+  schemaIds: ReadonlySet<string>,
+  selected?: RegistryEntry,
+) {
+  return CliHelpSchema.parse({
+    commandPath: selected?.path ?? [],
+    description: selected?.command.brief ?? 'Review export data locally',
+    commands: (selected ? [selected] : entries).map((entry) => {
+      const positional = entry.command.parameters.positional;
+      const positionals =
+        positional?.kind === 'array'
+          ? [
+              {
+                name: positional.parameter.placeholder ?? 'path',
+                description: positional.parameter.brief,
+                type: 'string',
+                variadic: true,
+                minimum: positional.minimum ?? 0,
+              },
+            ]
+          : (positional?.parameters ?? []).map((parameter, index) => ({
+              name: parameter.placeholder ?? `arg${index + 1}`,
+              description: parameter.brief,
+              type: 'string',
+              required: !parameter.optional,
+            }));
+      return {
+        path: entry.path,
+        description: entry.command.brief,
+        positionals,
+        options: Object.entries(entry.command.parameters.flags ?? {}).map(
+          ([name, flag]) => ({
+            name: name.replace(
+              /[A-Z]/g,
+              (letter) => `-${letter.toLowerCase()}`,
+            ),
+            description: flag.brief,
+            type: flag.kind === 'boolean' ? 'boolean' : 'string',
+            default: 'default' in flag ? flag.default : null,
+            required: !flag.optional && !('default' in flag),
+            ...('values' in flag ? { values: flag.values } : {}),
+          }),
+        ),
+        outputSchemaIds: entry.outputSchemaIds.filter((id) =>
+          schemaIds.has(id),
+        ),
+        writes: entry.writes,
+        dryRun: entry.dryRun,
+        available: entry.available,
+      };
+    }),
+    options: [
+      { name: 'help', alias: 'h', type: 'boolean', default: false },
+      { name: 'json', type: 'boolean', default: false },
+    ],
+    exitCodes: EXIT_MEANINGS,
+    outputSchemaIds: [CLI_SCHEMA_IDS.result, CLI_SCHEMA_IDS.help].filter((id) =>
+      schemaIds.has(id),
+    ),
+    errorSchemaId: schemaIds.has(CLI_SCHEMA_IDS.error)
+      ? CLI_SCHEMA_IDS.error
+      : null,
+  });
+}

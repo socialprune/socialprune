@@ -187,34 +187,40 @@ test('W0 settled real worker imports a fixture without calling WebAssembly', asy
 }) => {
   const audit = await observeImport(context, page);
   await waitForApp(page);
-  const worker = page
-    .workers()
-    .find((worker) => /\/worker-/.test(worker.url()));
-  if (!worker) throw new Error('Missing settled import worker.');
-  // Inspector evaluation is awaited after the worker gate, not dispatched
-  // asynchronously against every just-created worker during its startup.
-  await worker.evaluate(() => {
-    Reflect.set(globalThis, '__wasmCalls', 0);
-    for (const name of ['compile', 'instantiate'] as const) {
-      const original = Reflect.get(WebAssembly, name) as (
-        ...args: unknown[]
-      ) => unknown;
-      Reflect.set(WebAssembly, name, (...args: unknown[]) => {
-        Reflect.set(
-          globalThis,
-          '__wasmCalls',
-          (Reflect.get(globalThis, '__wasmCalls') as number) + 1,
-        );
-        return Reflect.apply<typeof WebAssembly, unknown[], unknown>(
-          original,
-          WebAssembly,
-          args,
-        );
-      });
-    }
-  });
   const fixture = await fixtureZips('x', 'deleted-tweets');
   try {
+    await importFiles(page, fixture.files);
+    expect(await workspaceIds(page)).toEqual(
+      fixture.expected.items.map(({ id }) => id).sort(),
+    );
+    const worker = page
+      .workers()
+      .find((worker) => /\/worker-/.test(worker.url()));
+    if (!worker) throw new Error('Missing settled import worker.');
+    // The 2026-10-07 WebKit diagnosis linked pre-import inspector evaluation to
+    // stalls, even for a no-op. Install the counter after a completed import.
+    // apps/web/scripts/build-check.ts proves the build contains no WebAssembly,
+    // covering the first import; the counter observes the second import.
+    await worker.evaluate(() => {
+      Reflect.set(globalThis, '__wasmCalls', 0);
+      for (const name of ['compile', 'instantiate'] as const) {
+        const original = Reflect.get(WebAssembly, name) as (
+          ...args: unknown[]
+        ) => unknown;
+        Reflect.set(WebAssembly, name, (...args: unknown[]) => {
+          Reflect.set(
+            globalThis,
+            '__wasmCalls',
+            (Reflect.get(globalThis, '__wasmCalls') as number) + 1,
+          );
+          return Reflect.apply<typeof WebAssembly, unknown[], unknown>(
+            original,
+            WebAssembly,
+            args,
+          );
+        });
+      }
+    });
     await importFiles(page, fixture.files);
     expect(await workspaceIds(page)).toEqual(
       fixture.expected.items.map(({ id }) => id).sort(),

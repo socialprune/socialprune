@@ -7,9 +7,10 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p e2e",
     "schemas:generate": "node src/cli/schema-files.ts generate",
-    "schemas:check": "node src/cli/schema-files.ts check"
+    "schemas:check": "node src/cli/schema-files.ts check",
+    "test:e2e": "pnpm --filter @socialprune/web build:review && playwright test"
   },
   "dependencies": {
     "@socialprune/adapter-instagram": "workspace:*",

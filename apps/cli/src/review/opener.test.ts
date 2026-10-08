@@ -127,4 +127,5 @@ it.runIf(process.platform === 'win32')(
     expect(defect.stderr).toContain('ParameterArgumentValidationError');
     expect(() => assertReceived(defect)).toThrow();
   },
+  60_000,
 );

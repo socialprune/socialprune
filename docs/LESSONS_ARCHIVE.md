@@ -92,7 +92,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-07 by resuming the CLI lane through its task with the envelope decision and the one test edit it may make.
 **Metrics:**
 - Prevented: 5 times for rules 1 and 3 (2026-10-08: GD w0 test, GD guide-wiring callsites, C3 schema expectation, C3 e2e TypeScript project, C4 error details; each change went through the lane's task, never a board post)
-- Violated: 3 times for rule 2 (2026-10-08: the GD, C3 and C4 tasks each missed a file their deliverable had to change, found only when the lane stopped at it: three CLI tests for the guide wiring, `schemas.test.ts` for `review`, `schemas.ts` and `adapter.ts` for `INVALID_LABELS.details`)
+- Violated: 4 times for rule 2 (2026-10-08: the GD, C3 and C4 tasks each missed a file their deliverable had to change, found only when the lane stopped at it: three CLI tests for the guide wiring, `schemas.test.ts` for `review`, `schemas.ts` and `adapter.ts` for `INVALID_LABELS.details`; the C5 task placed its scripts under the git-ignored `apps/cli/build/` although a pending ADR correction already moved that path to `apps/cli/release/`, and granted a copy-check scope list whose predicate also had to change)
 
 ### [LL-2026-10-004] 2026-10-07 DELIVERY: Read the remote's last CI result before pushing, and let a local gate stand only for the platforms it ran on
 

@@ -230,4 +230,6 @@ test('killed real import leaves hidden incomplete items; rerun completes the sam
     if (importer) await stop(importer.process);
     await rm(directory, { recursive: true, force: true });
   }
-}, 20_000);
+  // Measured 2,794 ms in the full parallel CLI run on 2026-10-08, so the
+  // project rule's 60 s floor applies.
+}, 60_000);

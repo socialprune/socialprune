@@ -233,7 +233,8 @@ test('16 evidence probes reject all hostile requests without changing state or C
   } finally {
     await fixture.dispose();
   }
-});
+  // Measured 2,251 ms in the full parallel CLI and core run on 2026-10-08.
+}, 60_000);
 
 test('wire status table and precedence: Host, method, Origin, content, size, session, CSRF, body', async () => {
   const fixture = await running();

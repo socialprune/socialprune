@@ -43,7 +43,8 @@ test('physical layout and logical schema versions independently refuse newer wor
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+  // Measured 2,100 ms in the full parallel CLI and core run on 2026-10-08.
+}, 60_000);
 
 test('production imports and worker entry cannot reach test mutations; review is confined to its worker', async () => {
   const seen = new Set<string>();

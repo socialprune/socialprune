@@ -49,4 +49,5 @@ test('browser recorder entry and all e2e controls are unreachable from productio
   const source = await readFile(entry, 'utf8');
   expect(source).toContain('executeCli');
   expect(source).not.toContain('process.env');
-});
+  // Measured 2,568 ms in the full parallel CLI and core run on 2026-10-08.
+}, 60_000);

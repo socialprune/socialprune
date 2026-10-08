@@ -19,7 +19,9 @@ beforeAll(async () => {
   );
   await build({ root, configFile, mode: 'review', logLevel: 'silent' });
   await build({ root, configFile, mode: 'production', logLevel: 'silent' });
-});
+  // The two builds took 17,224 ms while the full unit suite ran on 2026-10-08
+  // (4,032 ms alone); the project rule is at least six times the measurement.
+}, 120_000);
 
 test('review policy equals the exact ADR-016 document and built meta text', async () => {
   const adr = await readFile(

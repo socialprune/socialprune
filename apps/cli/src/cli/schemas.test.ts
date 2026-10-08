@@ -317,7 +317,7 @@ test('the product skill has one canonical copy, its required frontmatter and liv
       ).trim().length,
     ).toBeGreaterThan(100);
   }
-  const docs = await readFile(new URL('docs/agents.md', repo), 'utf8');
+  const docs = await readFile(new URL('docs/agent-setup.md', repo), 'utf8');
   for (const text of [skill, docs]) {
     expect(text).toContain('The npm package is not published yet.');
     expect(text).toContain('pnpm -s socialprune');

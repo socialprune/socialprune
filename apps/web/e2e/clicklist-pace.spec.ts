@@ -98,6 +98,10 @@ test('D S and Enter stay inert outside list focus or with single-key shortcuts o
   await restoreClickLists(page);
   await page.goto('/socialprune/#/clicklist/x');
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  const entry = page.locator('[data-item-id="x:102"]');
+  // Start moves focus on the next animation frame. Let that handoff finish
+  // before moving outside the list, so the keys test the intended focus scope.
+  await expect(entry).toBeFocused();
   await page.evaluate(() => {
     Reflect.set(globalThis, '__platformOpens', []);
     document.addEventListener('click', (event) => {
@@ -109,17 +113,22 @@ test('D S and Enter stay inert outside list focus or with single-key shortcuts o
       (Reflect.get(globalThis, '__platformOpens') as string[]).push(link.href);
     });
   });
-  await page
-    .getByRole('spinbutton', { name: 'Seconds per entry', exact: true })
-    .focus();
+  const seconds = page.getByRole('spinbutton', {
+    name: 'Seconds per entry',
+    exact: true,
+  });
+  await seconds.focus();
+  await expect(seconds).toBeFocused();
   await page.keyboard.press('d');
   await page.keyboard.press('s');
+  await page.keyboard.press('Enter');
+  await expect(seconds).toBeFocused();
   await expect(
     page.getByText('0 deleted by you, 0 skipped, 4 left.', { exact: true }),
   ).toBeVisible();
   await page.evaluate(() => localStorage.setItem('sp-single-keys', 'off'));
-  const entry = page.locator('[data-item-id="x:102"]');
   await entry.focus();
+  await expect(entry).toBeFocused();
   await page.keyboard.press('d');
   await page.keyboard.press('s');
   await page.keyboard.press('Enter');

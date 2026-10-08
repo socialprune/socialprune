@@ -12,6 +12,7 @@ import { reviewAssetDirectory } from './static.ts';
 import { resolve } from 'node:path';
 import http from 'node:http';
 import { rawBytes, rawRequest } from './test/raw-http.ts';
+import { startReviewServer } from './server.ts';
 
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
@@ -26,6 +27,133 @@ function headers(result: HttpResult) {
     ),
   ).toEqual([]);
 }
+test('D58 HTTP review view persists across server restart without revision, event or backup-age changes and rejects extra fields', async () => {
+  const fixture = await running();
+  const view = {
+    accountKey: fixture.initial.items[0]!.account.key,
+    filter: { decisions: ['later'] },
+    sort: [{ by: 'createdAt', direction: 'asc' }],
+    search: fixture.initial.items[0]!.text,
+  } as const;
+  let restarted: Awaited<ReturnType<typeof startReviewServer>> | undefined;
+  try {
+    await fixture.authenticate();
+    const result = await fixture.api({
+      type: 'setReviewView',
+      requestId: 'saved-view',
+      view: {
+        ...view,
+        filter: { decisions: ['later'] },
+        sort: [{ by: 'createdAt', direction: 'asc' }],
+      },
+    });
+    expect(result.status).toBe(200);
+    headers(result);
+    expect(result.replies).toEqual([
+      {
+        type: 'reviewViewChanged',
+        requestId: 'saved-view',
+        review: view,
+        revision: 0,
+      },
+    ]);
+    for (const invalid of [
+      { type: 'setReviewView', requestId: 'extra', view, extra: true },
+      {
+        type: 'setReviewView',
+        requestId: 'extra-view',
+        view: { ...view, selected: ['x:101'] },
+      },
+    ]) {
+      const rejected = await request(fixture.origin, {
+        path: '/api/setReviewView',
+        headers: fixture.authHeaders(),
+        body: JSON.stringify(invalid),
+      });
+      expect(rejected.status).toBe(400);
+      headers(rejected);
+    }
+    await fixture.server.stop();
+    const stored = await SQLiteStore.open(
+      join(fixture.workspace, 'socialprune.sqlite'),
+    );
+    try {
+      expect(await stored.read((tx) => tx.runtime.get())).toEqual({
+        revision: 0,
+        lastEventSeq: 0,
+      });
+      expect(await stored.read((tx) => tx.meta.get())).toEqual({
+        format: fixture.initial.format,
+        schemaVersion: 2,
+        id: fixture.initial.id,
+        kind: fixture.initial.kind,
+        createdAt: fixture.initial.createdAt,
+        updatedAt: fixture.initial.updatedAt,
+        lastBackupAt: fixture.initial.lastBackupAt,
+        settings: { ...fixture.initial.settings, review: view },
+      });
+      for (const name of [
+        'decisionEvents',
+        'outcomeEvents',
+        'assessments',
+        'submissions',
+      ] as const) {
+        const rows = await stored.read(async (tx) => {
+          const values = [];
+          for await (const value of tx[name].iterate()) values.push(value);
+          return values;
+        });
+        expect(rows).toEqual(fixture.initial[name]);
+      }
+    } finally {
+      await stored.close();
+    }
+    restarted = await startReviewServer({
+      workspace: fixture.workspace,
+      assetDirectory: fixture.assets,
+      handleSignals: false,
+    });
+    const origin = restarted.url.slice(0, -1);
+    const base = {
+      Host: new URL(origin).host,
+      Origin: origin,
+      'Content-Type': 'application/json',
+    };
+    const session = await request(origin, {
+      path: '/session',
+      headers: {
+        ...base,
+        'X-SocialPrune-Bootstrap': new URL(restarted.launchUrl).hash.slice(
+          '#bootstrap='.length,
+        ),
+      },
+    });
+    expect(session.status).toBe(200);
+    const opened = await request(origin, {
+      path: '/api/open',
+      headers: {
+        ...base,
+        Cookie: session.headers['set-cookie']![0]!.split(';')[0]!,
+        'X-SocialPrune-CSRF': (session.data as { csrf: string }).csrf,
+      },
+      body: JSON.stringify({
+        type: 'open',
+        requestId: 'reopened',
+        workspaceId: 'active',
+      }),
+    });
+    expect(opened.status).toBe(200);
+    expect(WorkspaceReplySchema.array().parse(opened.data)).toMatchObject([
+      {
+        type: 'opened',
+        summary: { review: view, revision: 0, counts: fixture.initial.counts },
+      },
+    ]);
+  } finally {
+    await restarted?.stop();
+    await fixture.dispose();
+  }
+});
 test('missing Host reaches the router and returns 403 with the complete response policy', async () => {
   const fixture = await running();
   try {
@@ -887,6 +1015,20 @@ test('API uses only the shared schema; decisions cannot choose source and acknow
     ).toMatchObject([
       { type: 'settingsChanged', revision: 5, timeZone: 'UTC' },
     ]);
+    expect(
+      (
+        await fixture.api({
+          type: 'setReviewView',
+          requestId: 'view',
+          view: {
+            accountKey: fixture.initial.items[0]!.account.key,
+            filter: { decisions: ['delete'] },
+            sort: [{ by: 'id', direction: 'asc' }],
+            search: '',
+          },
+        })
+      ).replies,
+    ).toMatchObject([{ type: 'reviewViewChanged', revision: 5 }]);
     expect(
       (
         await fixture.api({

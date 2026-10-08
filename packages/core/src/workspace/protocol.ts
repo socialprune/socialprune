@@ -12,7 +12,16 @@ import {
   OutcomeValueSchema,
   UtcTimestampSchema,
   WorkspaceCountsSchema,
+  QueryFilterSchema,
+  QuerySortSchema,
+  ReviewViewSchema,
 } from '../model/index.ts';
+export {
+  QueryFilterSchema,
+  QuerySortSchema,
+  ReviewViewSchema,
+} from '../model/index.ts';
+export type { QueryFilter, QuerySort, ReviewView } from '../model/index.ts';
 import { WORKSPACE_ERROR_CODES } from './errors.ts';
 import { ROW_SOURCE_LIMIT } from './row-sources.ts';
 import {
@@ -51,48 +60,10 @@ export const WorkspaceSummarySchema = z.strictObject({
   outcomes: OutcomeCountsSchema,
   lastBackupAt: UtcTimestampSchema.nullable(),
   timeZone: z.string().min(1).nullable(),
+  review: ReviewViewSchema.optional(),
   revision: nonnegative,
 });
 export type WorkspaceSummary = z.infer<typeof WorkspaceSummarySchema>;
-const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const range = z.strictObject({
-  min: nonnegative.nullable(),
-  max: nonnegative.nullable(),
-  unknown: z.enum(['include', 'exclude', 'only']),
-});
-export const QueryFilterSchema = z.strictObject({
-  decisions: z.array(DecisionValueSchema).optional(),
-  outcomes: z.array(OutcomeValueSchema).optional(),
-  kinds: z.array(ItemKindSchema).optional(),
-  risk: z
-    .strictObject({
-      min: z.number().int().min(0).max(3),
-      max: z.number().int().min(0).max(3),
-      unknown: z.enum(['include', 'exclude', 'only']),
-    })
-    .optional(),
-  categories: z.array(CategoryIdSchema).optional(),
-  sources: z.array(AssessmentSchema.shape.source.shape.kind).optional(),
-  dates: z
-    .strictObject({
-      from: DateKeySchema.nullable(),
-      to: DateKeySchema.nullable(),
-    })
-    .optional(),
-  likes: range.optional(),
-  reposts: range.optional(),
-});
-export type QueryFilter = z.infer<typeof QueryFilterSchema>;
-export const QuerySortSchema = z
-  .array(
-    z.strictObject({
-      by: z.enum(['risk', 'createdAt', 'id', 'likes', 'reposts']),
-      direction: z.enum(['asc', 'desc']),
-    }),
-  )
-  .min(1)
-  .max(5);
-export type QuerySort = z.infer<typeof QuerySortSchema>;
 export const ReviewRowSchema = z.strictObject({
   id,
   kind: ItemKindSchema,
@@ -254,6 +225,11 @@ const requests = [
     ...requestBase,
     type: z.literal('setTimeZone'),
     timeZone: TimeZoneSettingSchema,
+  }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('setReviewView'),
+    view: ReviewViewSchema,
   }),
 ] as const;
 export const HttpReviewRequestSchema = z
@@ -426,6 +402,12 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     ...replyBase,
     type: z.literal('settingsChanged'),
     timeZone: TimeZoneSettingSchema,
+    revision: nonnegative,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('reviewViewChanged'),
+    review: ReviewViewSchema,
     revision: nonnegative,
   }),
   z.strictObject({

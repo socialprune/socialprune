@@ -1,6 +1,9 @@
 import { WorkspaceError } from './errors.ts';
 import { TimeZoneSettingSchema } from './settings-schema.ts';
 import type { WorkspaceStore } from './store.ts';
+import { ReviewViewSchema } from '../model/index.ts';
+import type { ReviewView } from '../model/index.ts';
+export { storedReviewView } from './settings-schema.ts';
 
 export interface SettingsChangeResult {
   timeZone: string | null;
@@ -33,6 +36,26 @@ export class SettingsService {
         const revision = runtime.revision + 1;
         await tx.runtime.set({ revision });
         return { timeZone: setting.data, revision };
+      });
+    } catch {
+      throw new WorkspaceError('STORAGE');
+    }
+  }
+
+  async setReviewView(
+    view: ReviewView,
+  ): Promise<{ review: ReviewView; revision: number }> {
+    const setting = ReviewViewSchema.safeParse(view);
+    if (!setting.success) throw new WorkspaceError('INVALID_REQUEST');
+    try {
+      return await this.store.write(async (tx) => {
+        const meta = await tx.meta.get();
+        const runtime = await tx.runtime.get();
+        await tx.meta.set({
+          ...meta,
+          settings: { ...meta.settings, review: setting.data },
+        });
+        return { review: setting.data, revision: runtime.revision };
       });
     } catch {
       throw new WorkspaceError('STORAGE');

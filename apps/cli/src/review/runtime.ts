@@ -2,7 +2,10 @@ import { QueryEngine } from '@socialprune/core/workspace/query';
 import { ReviewService } from '@socialprune/core/workspace/review';
 import { LabelService } from '@socialprune/core/workspace/labels';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
-import { SettingsService } from '@socialprune/core/workspace/settings';
+import {
+  SettingsService,
+  storedReviewView,
+} from '@socialprune/core/workspace/settings';
 import { records } from '@socialprune/core/workspace/store';
 import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import {
@@ -66,6 +69,7 @@ export class ReviewRuntime {
         outcomes: summary.outcomes,
         lastBackupAt: meta.lastBackupAt,
         timeZone: meta.settings.timeZone,
+        review: storedReviewView(meta.settings.review),
         revision: summary.revision,
       };
     });
@@ -312,6 +316,11 @@ export class ReviewRuntime {
             itemIds: [],
           });
           post({ type: 'settingsChanged', requestId, ...result });
+          break;
+        }
+        case 'setReviewView': {
+          const result = await this.settings.setReviewView(input.view);
+          post({ type: 'reviewViewChanged', requestId, ...result });
           break;
         }
       }

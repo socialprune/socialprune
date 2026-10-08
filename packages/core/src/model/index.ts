@@ -111,6 +111,54 @@ export const WorkspaceCountsSchema = z.strictObject({
   outcomeEvents: count,
 });
 export type WorkspaceCounts = z.infer<typeof WorkspaceCountsSchema>;
+const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const range = z.strictObject({
+  min: count.nullable(),
+  max: count.nullable(),
+  unknown: z.enum(['include', 'exclude', 'only']),
+});
+// Query and stored-view schemas live with the model, below their scalar
+// dependencies, so workspace metadata never imports the transport protocol.
+export const QueryFilterSchema = z.strictObject({
+  decisions: z.array(DecisionValueSchema).optional(),
+  outcomes: z.array(OutcomeValueSchema).optional(),
+  kinds: z.array(v1.ItemKindSchema).optional(),
+  risk: z
+    .strictObject({
+      min: z.number().int().min(0).max(3),
+      max: z.number().int().min(0).max(3),
+      unknown: z.enum(['include', 'exclude', 'only']),
+    })
+    .optional(),
+  categories: z.array(v1.CategoryIdSchema).optional(),
+  sources: z.array(AssessmentSourceSchema.shape.kind).optional(),
+  dates: z
+    .strictObject({
+      from: DateKeySchema.nullable(),
+      to: DateKeySchema.nullable(),
+    })
+    .optional(),
+  likes: range.optional(),
+  reposts: range.optional(),
+});
+export type QueryFilter = z.infer<typeof QueryFilterSchema>;
+export const QuerySortSchema = z
+  .array(
+    z.strictObject({
+      by: z.enum(['risk', 'createdAt', 'id', 'likes', 'reposts']),
+      direction: z.enum(['asc', 'desc']),
+    }),
+  )
+  .min(1)
+  .max(5);
+export type QuerySort = z.infer<typeof QuerySortSchema>;
+export const ReviewViewSchema = z.strictObject({
+  accountKey: z.string().min(1).max(512).nullable(),
+  filter: QueryFilterSchema,
+  sort: QuerySortSchema,
+  search: z.string().max(4096),
+});
+export type ReviewView = z.infer<typeof ReviewViewSchema>;
 export const WorkspaceMetaSchema = z.strictObject({
   format: z.literal('socialprune-workspace'),
   schemaVersion: z.literal(2),
@@ -122,6 +170,7 @@ export const WorkspaceMetaSchema = z.strictObject({
   settings: z.strictObject({
     categories: z.array(v1.CategoryIdSchema).max(32),
     timeZone: z.string().min(1).nullable(),
+    review: ReviewViewSchema.optional(),
   }),
 });
 export type WorkspaceMeta = z.infer<typeof WorkspaceMetaSchema>;

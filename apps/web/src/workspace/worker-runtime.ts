@@ -4,7 +4,10 @@ import type { StoredItem } from '@socialprune/core/workspace/store';
 import { QueryEngine } from '@socialprune/core/workspace/query';
 import { ReviewService } from '@socialprune/core/workspace/review';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
-import { SettingsService } from '@socialprune/core/workspace/settings';
+import {
+  SettingsService,
+  storedReviewView,
+} from '@socialprune/core/workspace/settings';
 import { xAdapter } from '@socialprune/adapter-x';
 import { instagramAdapter } from '@socialprune/adapter-instagram';
 import {
@@ -133,6 +136,7 @@ async function summary(): Promise<WorkspaceSummary> {
       outcomes,
       lastBackupAt: meta.lastBackupAt,
       timeZone: meta.settings.timeZone,
+      review: storedReviewView(meta.settings.review),
       revision: runtime.revision,
     };
   });
@@ -457,6 +461,12 @@ async function handle(input: WorkspaceRequest) {
       await query.noteChanged({ revision: result.revision, itemIds: [] });
       post({ type: 'settingsChanged', requestId, ...result });
       notify(result.revision, []);
+      break;
+    }
+    case 'setReviewView': {
+      if (!settings) throw new Error('Workspace settings closed.');
+      const result = await settings.setReviewView(input.view);
+      post({ type: 'reviewViewChanged', requestId, ...result });
       break;
     }
     case 'deleteWorkspace': {

@@ -12,8 +12,168 @@ import {
   WorkspaceRequestSchema,
 } from './protocol.ts';
 import { instagramAdapter } from '../../../adapter-instagram/src/index.ts';
+import { ReviewViewSchema, WorkspaceV2Schema } from '../model/index.ts';
+import type { ReviewView } from '../model/index.ts';
+import { SettingsService, storedReviewView } from './settings.ts';
+import { ReviewService } from './review.ts';
 
 const INVALID_ZONES = ['Europe/Nowhere', '', 'x'.repeat(200)];
+const REVIEW_VIEW: ReviewView = {
+  accountKey: 'x:contract',
+  filter: {
+    decisions: ['later'],
+    risk: { min: 1, max: 3, unknown: 'include' },
+  },
+  sort: [{ by: 'createdAt', direction: 'asc' }],
+  search: 'Generated café',
+};
+
+test('D58 optional review view validates the existing query shapes and strict worker/HTTP request and reply', () => {
+  const old = contractWorkspace();
+  expect(WorkspaceV2Schema.safeParse(old).success).toBe(true);
+  expect(
+    WorkspaceV2Schema.parse({
+      ...old,
+      settings: { ...old.settings, review: REVIEW_VIEW },
+    }).schemaVersion,
+  ).toBe(2);
+  for (const view of [
+    REVIEW_VIEW,
+    { ...REVIEW_VIEW, accountKey: null },
+    { ...REVIEW_VIEW, search: 'x'.repeat(4096) },
+  ]) {
+    expect(ReviewViewSchema.safeParse(view).success).toBe(true);
+    for (const schema of [WorkspaceRequestSchema, HttpReviewRequestSchema])
+      expect(
+        schema.safeParse({ type: 'setReviewView', requestId: 'view', view })
+          .success,
+      ).toBe(true);
+    expect(
+      WorkspaceReplySchema.safeParse({
+        type: 'reviewViewChanged',
+        requestId: 'view',
+        review: view,
+        revision: 0,
+      }).success,
+    ).toBe(true);
+  }
+  const invalid = [
+    { ...REVIEW_VIEW, accountKey: '' },
+    { ...REVIEW_VIEW, search: 'x'.repeat(4097) },
+    { ...REVIEW_VIEW, filter: { decisions: ['invented'] } },
+    { ...REVIEW_VIEW, sort: [] },
+    { ...REVIEW_VIEW, sort: [{ by: 'text', direction: 'asc' }] },
+    { ...REVIEW_VIEW, selection: ['x:1'] },
+    { ...REVIEW_VIEW, focusedItem: 'x:1' },
+  ];
+  for (const view of invalid) {
+    expect(ReviewViewSchema.safeParse(view).success).toBe(false);
+    expect(storedReviewView(view)).toBeUndefined();
+    for (const schema of [WorkspaceRequestSchema, HttpReviewRequestSchema])
+      expect(
+        schema.safeParse({ type: 'setReviewView', requestId: 'view', view })
+          .success,
+      ).toBe(false);
+  }
+  expect(storedReviewView(undefined)).toBeUndefined();
+  expect(storedReviewView(REVIEW_VIEW)).toEqual(REVIEW_VIEW);
+  expect(
+    HttpReviewRequestSchema.safeParse({
+      type: 'setReviewView',
+      requestId: 'view',
+      view: REVIEW_VIEW,
+      extra: true,
+    }).success,
+  ).toBe(false);
+});
+
+test('D58 a view write preserves revision, updatedAt, logs and projection including the next sparse decision update', async () => {
+  const input = contractWorkspace();
+  const store = createMemoryStore(new MemoryStoreBacking(input));
+  try {
+    const service = new SettingsService(store);
+    const query = new QueryEngine(store);
+    await query.prepareProjection();
+    const projection: unknown = Reflect.get(query, 'projection');
+    const runtime = await store.read((tx) => tx.runtime.get());
+    expect(await service.setReviewView(REVIEW_VIEW)).toEqual({
+      review: REVIEW_VIEW,
+      revision: runtime.revision,
+    });
+    expect(await store.read((tx) => tx.runtime.get())).toEqual(runtime);
+    expect(await store.read(readWorkspace)).toEqual({
+      ...input,
+      settings: { ...input.settings, review: REVIEW_VIEW },
+    });
+    await query.prepareProjection();
+    expect(Reflect.get(query, 'projection')).toBe(projection);
+    const review = new ReviewService(store, { query, via: 'web-review' });
+    expect(
+      await review.decide({
+        commandId: 'after-view',
+        itemIds: [input.items[0]!.id],
+        expected: { [input.items[0]!.id]: 'undecided' },
+        value: 'later',
+      }),
+    ).toMatchObject({ type: 'committed', revision: 1 });
+    await query.prepareProjection();
+    expect(Reflect.get(query, 'projection')).toBe(projection);
+    expect(
+      (
+        await query.query({
+          queryId: 'retained',
+          generation: 1,
+          accountKey: input.items[0]!.account.key,
+          filter: { decisions: ['later'] },
+        })
+      ).total,
+    ).toBe(1);
+  } finally {
+    await store.close();
+  }
+});
+
+test('D58 rejects an invalid view before writing and preserves old and new streamed backups on restore', async () => {
+  const input = contractWorkspace();
+  const base = createMemoryStore(new MemoryStoreBacking(input));
+  let writes = 0;
+  const store: WorkspaceStore = {
+    read: (f) => base.read(f),
+    write: (f) => {
+      writes++;
+      return base.write(f);
+    },
+    close: () => base.close(),
+  };
+  try {
+    const service = new SettingsService(store);
+    await expect(
+      service.setReviewView({ ...REVIEW_VIEW, search: 'x'.repeat(4097) }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(writes).toBe(0);
+    expect(await store.read(readWorkspace)).toEqual(input);
+    for (const view of [undefined, REVIEW_VIEW]) {
+      if (view) await service.setReviewView(view);
+      const backup = createBackup(store, { chunkBytes: 73 });
+      const stage = createMemoryStore();
+      try {
+        const restored = await restoreBackup(stage, backup.chunks, {
+          batchSize: 1,
+        });
+        expect(restored.meta.settings.review).toEqual(view);
+        expect((await stage.read(readWorkspace)).settings).toEqual({
+          ...input.settings,
+          ...(view ? { review: view } : {}),
+        });
+        expect(restored.meta.schemaVersion).toBe(2);
+      } finally {
+        await stage.close();
+      }
+    }
+  } finally {
+    await store.close();
+  }
+});
 
 async function settings(store: WorkspaceStore) {
   // This module and the positive transport cases were executed as missing

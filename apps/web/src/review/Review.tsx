@@ -33,6 +33,8 @@ import { BulkDialog } from './BulkDialog.tsx';
 import { templateMessage } from './filters.ts';
 import type { Template } from './filters.ts';
 import { Filters } from './Filters.tsx';
+import { initialReviewView, ReviewViewWriter } from './view.ts';
+import type { ReviewView } from '@socialprune/core';
 
 const WINDOW = 200;
 const PAGE = 100;
@@ -87,16 +89,13 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const [summary, setSummary] = useState<WorkspaceSummary | null>(
     client.summary,
   );
-  const [accountKey, setAccountKey] = useState(
-    client.summary?.accounts[0]?.key ?? '',
+  const [view, setView] = useState(() =>
+    initialReviewView(client.summary, (value) => client.parseReviewView(value)),
   );
-  const [filter, setFilter] = useState<QueryFilter>({});
-  const [sort, setSort] = useState<QuerySort>([
-    { by: 'risk', direction: 'desc' },
-    { by: 'createdAt', direction: 'desc' },
-    { by: 'id', direction: 'asc' },
-  ]);
-  const [search, setSearch] = useState('');
+  const { filter, sort, search } = view;
+  const accountKey = view.accountKey ?? '';
+  const viewChanged = useRef(false);
+  const viewRef = useRef(view);
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<readonly ReviewRow[]>([]);
   const [offset, setOffset] = useState(0);
@@ -121,6 +120,18 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const [activeCommand, setActiveCommand] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [viewWriter] = useState(
+    () =>
+      new ReviewViewWriter((review) => {
+        void client
+          .request({ type: 'setReviewView', requestId: nextId(), view: review })
+          .then((reply) => {
+            if (reply.type !== 'reviewViewChanged')
+              setError(t('review.storageError'));
+          })
+          .catch(() => setError(t('review.storageError')));
+      }),
+  );
   const [helpOpen, setHelpOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -222,11 +233,13 @@ export function Review({ client }: { client: WorkspaceClient }) {
         setSummary(reply.summary);
         // Preserve a person's account choice made while the initial store read
         // was pending; a late summary must not move the view to another account.
-        setAccountKey((prior) =>
-          reply.summary.accounts.some(({ key }) => key === prior)
-            ? prior
-            : (reply.summary.accounts[0]?.key ?? ''),
-        );
+        if (!viewChanged.current) {
+          const restored = initialReviewView(reply.summary, (value) =>
+            client.parseReviewView(value),
+          );
+          viewRef.current = restored;
+          setView(restored);
+        }
         setLoaded(true);
       })
       .catch(() => {
@@ -238,6 +251,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
   }, [client]);
   useEffect(
     () => () => {
+      viewWriter.flush();
       activeDetail.current = null;
       generation.current++;
       bulkVersion.current++;
@@ -441,8 +455,18 @@ export function Review({ client }: { client: WorkspaceClient }) {
   }
   function updateFilter(value: QueryFilter) {
     resetView();
-    setFilter(value);
+    updateReviewView({ filter: value });
     setError(null);
+  }
+  function updateReviewView(
+    changes: Partial<ReviewView>,
+    debounceSearch = false,
+  ) {
+    viewChanged.current = true;
+    const next = { ...viewRef.current, ...changes };
+    viewRef.current = next;
+    setView(next);
+    viewWriter.change(next, debounceSearch);
   }
   function cancelBulk() {
     bulkVersion.current++;
@@ -967,10 +991,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
               value={accountKey}
               onChange={(event) => {
                 resetView();
-                setSearch('');
-                setFilter({});
+                updateReviewView({
+                  search: '',
+                  filter: {},
+                  accountKey: event.target.value,
+                });
                 setTemplate('none');
-                setAccountKey(event.target.value);
                 setSelection(new Set());
                 setRows([]);
                 client.rows = [];
@@ -988,10 +1014,11 @@ export function Review({ client }: { client: WorkspaceClient }) {
             {t('review.search')}
             <input
               type="search"
+              maxLength={4096}
               value={search}
               onChange={(event) => {
                 resetView();
-                setSearch(event.target.value);
+                updateReviewView({ search: event.target.value }, true);
               }}
             />
           </label>
@@ -1026,12 +1053,14 @@ export function Review({ client }: { client: WorkspaceClient }) {
               value={sort[0]?.by}
               onChange={(event) => {
                 resetView();
-                setSort([
-                  {
-                    by: event.target.value as QuerySort[0]['by'],
-                    direction: 'desc',
-                  },
-                ]);
+                updateReviewView({
+                  sort: [
+                    {
+                      by: event.target.value as QuerySort[0]['by'],
+                      direction: 'desc',
+                    },
+                  ],
+                });
               }}
             >
               <option value="createdAt">{t('review.date')}</option>
@@ -1104,9 +1133,8 @@ export function Review({ client }: { client: WorkspaceClient }) {
               <button
                 onClick={() => {
                   resetView();
-                  setSearch('');
+                  updateReviewView({ search: '', filter: {} });
                   setTemplate('none');
-                  setFilter({});
                 }}
               >
                 {t('review.clearFilters')}

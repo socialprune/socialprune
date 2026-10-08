@@ -162,6 +162,16 @@ test('real review launch/dry-run/refusal/opener failure have zero outbound calls
           limit: 200,
         },
         { type: 'setTimeZone', requestId: 'zone', timeZone: 'UTC' },
+        {
+          type: 'setReviewView',
+          requestId: 'view',
+          view: {
+            accountKey: 'x:generated',
+            filter: { decisions: ['later'] },
+            sort: [{ by: 'id', direction: 'asc' }],
+            search: 'Generated',
+          },
+        },
         { type: 'shutdown', requestId: 'shutdown' },
       ] as const;
       for (const input of inputs)

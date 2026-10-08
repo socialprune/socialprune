@@ -2,6 +2,7 @@ import {
   WorkspaceRequestSchema,
   WorkspaceReplySchema,
   WorkspaceNotificationSchema,
+  ReviewViewSchema,
 } from '@socialprune/core/workspace/protocol';
 import type {
   WorkspaceRequest,
@@ -122,6 +123,8 @@ export class WorkspaceClient {
           timeZone: reply.timeZone,
           revision: reply.revision,
         };
+      if (reply.type === 'reviewViewChanged' && this.summary)
+        this.summary = { ...this.summary, review: reply.review };
       if (reply.type === 'workspaceDeleted') {
         this.summary = null;
         this.rows = [];
@@ -278,6 +281,7 @@ export class WorkspaceClient {
         'restore',
         'backup',
         'setTimeZone',
+        'setReviewView',
         'deleteWorkspace',
       ].includes(value.type)
     ) {
@@ -288,6 +292,10 @@ export class WorkspaceClient {
   }
   async flushCommands(): Promise<void> {
     await Promise.all([...this.pendingWrites]);
+  }
+  parseReviewView(value: unknown) {
+    const result = ReviewViewSchema.safeParse(value);
+    return result.success ? result.data : undefined;
   }
   subscribe(listener: (notice: WorkspaceNotification) => void) {
     this.listeners.add(listener);

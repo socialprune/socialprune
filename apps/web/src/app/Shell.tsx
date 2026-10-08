@@ -14,6 +14,7 @@ import { scriptURL } from './trusted-urls.ts';
 import { parseRoute } from './router.ts';
 import { AppUpdates } from './updates.ts';
 import { guides } from './guide.ts';
+import { DemoSession } from './demo.ts';
 import styles from './Shell.module.css';
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
@@ -52,12 +53,36 @@ function Content({
     null,
   );
   const [hasWorkspaceItems, setHasWorkspaceItems] = useState(false);
+  const [workspaceKind, setWorkspaceKind] = useState<'personal' | 'demo'>(
+    'personal',
+  );
+  const [demoActive, setDemoActive] = useState(() => {
+    if (route === '/demo') return true;
+    if (route === '/' || route === '/import') return false;
+    try {
+      return sessionStorage.getItem('sp-demo-active') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [demoClient, setDemoClient] = useState<WorkspaceClient | null>(null);
+  const [demoPhase, setDemoPhase] = useState<'opening' | 'ready' | 'error'>(
+    'opening',
+  );
+  const [demoSnapshot, setDemoSnapshot] = useState<ImportSnapshot | null>(null);
+  const [demoResetDone, setDemoResetDone] = useState(false);
+  const demo = useRef<DemoSession | null>(null);
   const client = useRef<ImportClient | null>(null);
   const workspace = useRef<WorkspaceClient | null>(null);
   const updates = useRef<AppUpdates | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
-    const changed = () => setRoute(parseRoute(location.hash));
+    const changed = () => {
+      const next = parseRoute(location.hash);
+      setRoute(next);
+      if (next === '/demo') setDemoActive(true);
+      else if (next === '/' || next === '/import') setDemoActive(false);
+    };
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
@@ -87,9 +112,6 @@ function Content({
       'message',
       updater.handleServiceWorkerMessages,
     );
-    // Start demo-only work immediately on a first-visit demo route. The gate
-    // owns its termination; no selected file is passed to this instance.
-    if (route === '/demo') gate.startDemo();
     void gate.ensure().then(async () => {
       if (gate.serviceWorkerRegistration)
         updater.watch(gate.serviceWorkerRegistration);
@@ -98,7 +120,7 @@ function Content({
         new Worker(scriptURL(workspaceWorkerURL), { type: 'module' }),
       );
       workspace.current = working;
-      window.workspace = working;
+      if (!demo.current) window.workspace = working;
       const opened = await working.open();
       if (opened.type === 'opened')
         setHasWorkspaceItems(opened.summary.counts.items > 0);
@@ -113,7 +135,8 @@ function Content({
         },
       );
       client.current = current;
-      window.socialprune = { getImportSnapshot: () => current.snapshot };
+      if (!demo.current)
+        window.socialprune = { getImportSnapshot: () => current.snapshot };
       current.subscribe(setState);
     });
     return () => {
@@ -129,6 +152,82 @@ function Content({
       workspace.current?.dispose();
     };
   }, [gate]);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('sp-demo-active', String(demoActive));
+    } catch {
+      /* The current tab still keeps its in-memory demo mode. */
+    }
+    if (!demoActive || gateState === 'framed') return;
+    // The gate terminated both pre-control instances before reporting ready.
+    // Dispose their clients too, then resume using fresh, controlled entries.
+    let active = true;
+    const session = new DemoSession(gate);
+    demo.current = session;
+    window.workspace = session.workspace;
+    window.socialprune = { getImportSnapshot: () => session.imports.snapshot };
+    setDemoPhase('opening');
+    setDemoResetDone(false);
+    setDemoClient(null);
+    const unsubscribe = session.imports.subscribe(setDemoSnapshot);
+    void session
+      .open()
+      .then(() => {
+        if (active) {
+          setDemoClient(session.workspace);
+          setDemoPhase('ready');
+        }
+      })
+      .catch(() => {
+        if (active) setDemoPhase('error');
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+      session.dispose();
+      if (demo.current === session) demo.current = null;
+      if (workspace.current) window.workspace = workspace.current;
+      if (client.current) {
+        const current = client.current;
+        window.socialprune = { getImportSnapshot: () => current.snapshot };
+      }
+    };
+  }, [demoActive, gateState, gate]);
+  const activeClient = demoActive ? demoClient : reviewClient;
+  const dataReady = demoActive ? demoPhase === 'ready' : gateState === 'ready';
+  const hasItems = demoActive ? demoPhase === 'ready' : hasWorkspaceItems;
+  useEffect(
+    () =>
+      reviewClient?.subscribeSummary((summary) => {
+        setHasWorkspaceItems((summary?.counts.items ?? 0) > 0);
+        setWorkspaceKind(summary?.kind ?? 'personal');
+      }),
+    [reviewClient],
+  );
+  useEffect(() => {
+    if (activeClient) window.workspace = activeClient;
+    const imports = demoActive ? demo.current?.imports : client.current;
+    if (imports)
+      window.socialprune = { getImportSnapshot: () => imports.snapshot };
+  }, [activeClient, demoActive, gateState, state]);
+  async function resetDemo() {
+    const session = demo.current;
+    if (!session) return;
+    setDemoPhase('opening');
+    setDemoResetDone(false);
+    setDemoClient(null);
+    location.hash = '#/demo';
+    try {
+      await session.reset();
+      if (demo.current === session) {
+        setDemoClient(session.workspace);
+        setDemoPhase('ready');
+        setDemoResetDone(true);
+      }
+    } catch {
+      if (demo.current === session) setDemoPhase('error');
+    }
+  }
   useEffect(() => {
     heading.current?.focus();
     document.title = `${t('app.name')} · ${route}`;
@@ -219,8 +318,8 @@ function Content({
           <a href="#/demo">{t('nav.demo')}</a>
           <a href="#/settings">{t('nav.settings')}</a>
           <a href="#/privacy">{t('nav.privacy')}</a>
-          {hasWorkspaceItems && <a href="#/review">{t('review.title')}</a>}
-          {hasWorkspaceItems && (
+          {hasItems && <a href="#/review">{t('review.title')}</a>}
+          {hasItems && (
             <>
               <a href="#/clicklist/x">{t('clicklist.x')}</a>
               <a href="#/clicklist/instagram">{t('clicklist.instagram')}</a>
@@ -236,6 +335,42 @@ function Content({
           >
             {title}
           </h1>
+          {(demoActive || workspaceKind === 'demo') && (
+            <section
+              className={styles.panel}
+              data-testid="demo-banner"
+              aria-label={t('nav.demo')}
+            >
+              <p>{t('demo.banner')}</p>
+              {demoActive && (
+                <button
+                  disabled={demoPhase === 'opening'}
+                  onClick={() => {
+                    void resetDemo();
+                  }}
+                >
+                  {t('demo.reset')}
+                </button>
+              )}
+              {demoActive && demoPhase === 'opening' && (
+                <p
+                  role="status"
+                  data-testid="demo-import-state"
+                  data-phase={demoSnapshot?.phase ?? 'idle'}
+                >
+                  {t('demo.reading', {
+                    count: demoSnapshot?.receivedItems ?? 0,
+                  })}
+                </p>
+              )}
+              {demoActive && demoPhase === 'error' && (
+                <p role="alert">{t('demo.failed')}</p>
+              )}
+              {demoActive && demoResetDone && (
+                <p role="status">{t('demo.resetDone')}</p>
+              )}
+            </section>
+          )}
           {route === '/' && (
             <>
               <p>{t('start.description')}</p>
@@ -276,12 +411,6 @@ function Content({
               <a href="#/guide/instagram">{t('guide.instagram')}</a>
             </section>
           )}
-          {route === '/demo' && (
-            <>
-              <p className={styles.panel}>{t('demo.banner')}</p>
-              <p>{t('demo.pending')}</p>
-            </>
-          )}
           {route === '/privacy' && (
             <>
               {(
@@ -296,13 +425,16 @@ function Content({
               ))}
             </>
           )}
-          {route === '/settings' && gateState === 'ready' && reviewClient && (
+          {route === '/settings' && dataReady && activeClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
               <Settings
-                client={reviewClient}
+                client={activeClient}
                 locale={locale}
                 changeLocale={changeLocale}
-                onDeleted={() => setHasWorkspaceItems(false)}
+                onDeleted={() => {
+                  if (demoActive) setDemoActive(false);
+                  else setHasWorkspaceItems(false);
+                }}
                 beforeDelete={async () => {
                   const current = client.current;
                   if (current?.snapshot.phase === 'importing') current.abort();
@@ -438,26 +570,30 @@ function Content({
           {route === '/import' && gateState === 'preparing' && (
             <p role="status">{t('gate.preparing')}</p>
           )}
-          {route === '/review' && gateState === 'ready' && reviewClient && (
-            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-              <Review client={reviewClient} />
-            </Suspense>
-          )}
-          {route.startsWith('/clicklist/') &&
-            gateState === 'ready' &&
-            reviewClient && (
+          {(route === '/review' || route === '/demo') &&
+            dataReady &&
+            activeClient && (
               <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-                <ClickList
-                  key={route}
-                  client={reviewClient}
-                  platform={route === '/clicklist/x' ? 'x' : 'instagram'}
+                <Review
+                  key={demoActive ? 'demo' : 'personal'}
+                  client={activeClient}
                 />
               </Suspense>
             )}
-          {route === '/backup' && gateState === 'ready' && reviewClient && (
+          {route.startsWith('/clicklist/') && dataReady && activeClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <ClickList
+                key={route}
+                client={activeClient}
+                platform={route === '/clicklist/x' ? 'x' : 'instagram'}
+              />
+            </Suspense>
+          )}
+          {route === '/backup' && dataReady && activeClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
               <Backup
-                client={reviewClient}
+                client={activeClient}
+                allowRestore={!demoActive}
                 onRestored={() => setHasWorkspaceItems(true)}
               />
             </Suspense>

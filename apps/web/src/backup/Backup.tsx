@@ -61,9 +61,11 @@ async function preview(file: File): Promise<RestorePreview> {
 export function Backup({
   client,
   onRestored,
+  allowRestore = true,
 }: {
   client: WorkspaceClient;
   onRestored?: () => void;
+  allowRestore?: boolean;
 }) {
   const t = useT(),
     intl = useIntl();
@@ -183,59 +185,63 @@ export function Backup({
       >
         {t('workspace.backup')}
       </button>
-      <h2>{t('backup.restoreTitle')}</h2>
-      <p>{t('backup.restoreDescription')}</p>
-      <label className={styles.field}>
-        {t('backup.file')}
-        <input
-          type="file"
-          accept=".json,application/json"
-          disabled={busy}
-          onChange={(event) => {
-            void choose(event.target.files?.[0] ?? null);
-          }}
-        />
-      </label>
-      {restorePreview && (
-        <div className={styles.panel}>
-          <h3>{t('backup.preview')}</h3>
-          <p>{restorePreview.name}</p>
-          <p>
-            {t('backup.previewCounts', {
-              items: restorePreview.items,
-              decisions: restorePreview.decisions,
-              outcomes: restorePreview.outcomes,
-              assessments: restorePreview.assessments,
-              accounts: restorePreview.accounts.length,
-            })}
-          </p>
-          <p>
-            {t('backup.previewKind', {
-              kind: restorePreview.kind,
-              version: restorePreview.schema,
-            })}
-          </p>
-          <p>{t('backup.replaceNotice')}</p>
-          <div className={styles.actions}>
-            <button
+      {allowRestore && (
+        <>
+          <h2>{t('backup.restoreTitle')}</h2>
+          <p>{t('backup.restoreDescription')}</p>
+          <label className={styles.field}>
+            {t('backup.file')}
+            <input
+              type="file"
+              accept=".json,application/json"
               disabled={busy}
-              onClick={() => {
-                void restore();
+              onChange={(event) => {
+                void choose(event.target.files?.[0] ?? null);
               }}
-            >
-              {t('backup.confirm')}
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                setFile(null);
-                setRestorePreview(null);
-              }}
-            >
-              {t('bulk.cancel')}
-            </button>
-          </div>
-        </div>
+            />
+          </label>
+          {restorePreview && (
+            <div className={styles.panel}>
+              <h3>{t('backup.preview')}</h3>
+              <p>{restorePreview.name}</p>
+              <p>
+                {t('backup.previewCounts', {
+                  items: restorePreview.items,
+                  decisions: restorePreview.decisions,
+                  outcomes: restorePreview.outcomes,
+                  assessments: restorePreview.assessments,
+                  accounts: restorePreview.accounts.length,
+                })}
+              </p>
+              <p>
+                {t('backup.previewKind', {
+                  kind: restorePreview.kind,
+                  version: restorePreview.schema,
+                })}
+              </p>
+              <p>{t('backup.replaceNotice')}</p>
+              <div className={styles.actions}>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    void restore();
+                  }}
+                >
+                  {t('backup.confirm')}
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    setFile(null);
+                    setRestorePreview(null);
+                  }}
+                >
+                  {t('bulk.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       {busy && <p role="status">{t('backup.working')}</p>}
       {status && <p role="status">{status}</p>}

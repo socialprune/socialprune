@@ -28,7 +28,9 @@ export async function publishWorkspace(entry: RegistryEntry): Promise<void> {
       durability: 'strict',
     });
     await tx.objectStore('workspaces').put(entry);
-    await tx.objectStore('pointers').put(entry.id, 'active');
+    // The bundled demo never replaces the person's active review pointer.
+    if (entry.id !== 'demo')
+      await tx.objectStore('pointers').put(entry.id, 'active');
     await tx.done;
   } finally {
     db.close();

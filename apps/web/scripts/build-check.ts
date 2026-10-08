@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 const directory = fileURLToPath(new URL('../dist/', import.meta.url));
+const demo = JSON.parse(
+  await readFile(
+    new URL('../../../fixtures/synthetic/demo/manifest.json', import.meta.url),
+    'utf8',
+  ),
+) as { exports: { archive: string }[] };
 const rows: { name: string; bytes: number; gzipBytes: number }[] = [];
 async function walk(folder: string) {
   for (const entry of await readdir(folder, { withFileTypes: true })) {
@@ -22,7 +28,7 @@ async function walk(folder: string) {
         )
           throw new Error('Inline or executable WASM in production build.');
         if (
-          /Test-only blocked registration|probe-result|__archiveReads|__abortTrigger|__wasmCalls|socialprune-test|__rejectNextDecision|__recordWorkspacePost|__captureReviewRequest|__releaseHeldDecision|__pickerFiles|__persistCalls|__tabPosts|__platformOpens/.test(
+          /Test-only blocked registration|probe-result|__archiveReads|__abortTrigger|__wasmCalls|socialprune-test|__rejectNextDecision|__recordWorkspacePost|__captureReviewRequest|__releaseHeldDecision|__pickerFiles|__persistCalls|__tabPosts|__platformOpens|__demoLifecycleTrace/.test(
             text,
           )
         )
@@ -54,10 +60,19 @@ async function walk(folder: string) {
   }
 }
 await walk(directory);
+const serviceWorker = await readFile(resolve(directory, 'sw.js'), 'utf8');
+for (const { archive } of demo.exports) {
+  const asset = rows.find(({ name }) =>
+    name.replaceAll('\\', '/').endsWith(`/${archive}`),
+  );
+  if (!asset || !serviceWorker.includes(asset.name.replaceAll('\\', '/')))
+    throw new Error('Demo archive missing from production precache.');
+}
 console.log(
   JSON.stringify({
     bundleRows: rows,
     noWasm: true,
     testEntrypointsAbsent: true,
+    demoArchivesPrecached: true,
   }),
 );

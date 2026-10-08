@@ -32,9 +32,6 @@ export function ClickList({
 }) {
   const t = useT(),
     intl = useIntl();
-  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(
-    client.summary,
-  );
   const [accountKey, setAccountKey] = useState('');
   const [accounts, setAccounts] = useState<WorkspaceSummary['accounts']>([]);
   const [summary, setSummary] = useState<ClickListSummary | null>(null);
@@ -75,7 +72,6 @@ export function ClickList({
           setError(true);
           return;
         }
-        setWorkspace(reply.summary);
         const known = await Promise.all(
           reply.summary.accounts.map(async (account) => {
             const queryId = crypto.randomUUID();
@@ -228,7 +224,6 @@ export function ClickList({
   const time = measured ?? seconds;
   return (
     <section aria-label={t('clicklist.title')}>
-      {workspace?.kind === 'demo' && <p>{t('demo.banner')}</p>}
       <p className={styles.notice}>
         {t(
           platform === 'x' ? 'clicklist.noticeX' : 'clicklist.noticeInstagram',
@@ -290,10 +285,7 @@ export function ClickList({
                       ? summary.timeZone
                       : null
                   }
-                  onChanged={(timeZone) => {
-                    setWorkspace((value) =>
-                      value ? { ...value, timeZone } : null,
-                    );
+                  onChanged={() => {
                     setRefresh((value) => value + 1);
                     setChangeZone(false);
                   }}
@@ -360,7 +352,11 @@ export function ClickList({
           {!started && (
             <div className={styles.preview}>
               <p>{t('clicklist.preview', { count: summary.total })}</p>
-              <p>{entries[0]?.text ?? t('clicklist.empty')}</p>
+              <p>
+                {entries[0]
+                  ? entries[0].text || t('review.noText')
+                  : t('clicklist.empty')}
+              </p>
               <button
                 disabled={!summary.total}
                 onClick={() => {

@@ -39,9 +39,14 @@ export class WorkspaceClient {
   private readonly listeners = new Set<
     (notice: WorkspaceNotification) => void
   >();
+  private readonly workspaceId: string;
+  private readonly summaryListeners = new Set<
+    (summary: WorkspaceSummary | null) => void
+  >();
 
-  constructor(worker: Worker) {
+  constructor(worker: Worker, workspaceId = 'active') {
     this.worker = worker;
+    this.workspaceId = workspaceId;
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {
       const notice = WorkspaceNotificationSchema.safeParse(event.data);
       if (notice.success) {
@@ -98,7 +103,10 @@ export class WorkspaceClient {
         return;
       }
       if (reply.type === 'rows') this.rows = reply.rows;
-      if (reply.type === 'opened') this.summary = reply.summary;
+      if (reply.type === 'opened') {
+        this.summary = reply.summary;
+        for (const listener of this.summaryListeners) listener(this.summary);
+      }
       if (reply.type === 'settingsChanged' && this.summary)
         this.summary = {
           ...this.summary,
@@ -108,6 +116,7 @@ export class WorkspaceClient {
       if (reply.type === 'workspaceDeleted') {
         this.summary = null;
         this.rows = [];
+        for (const listener of this.summaryListeners) listener(null);
       }
       request.resolve(reply);
     });
@@ -277,7 +286,14 @@ export class WorkspaceClient {
       this.listeners.delete(listener);
     };
   }
-  async open(workspaceId = 'active') {
+  subscribeSummary(listener: (summary: WorkspaceSummary | null) => void) {
+    this.summaryListeners.add(listener);
+    listener(this.summary);
+    return () => {
+      this.summaryListeners.delete(listener);
+    };
+  }
+  async open(workspaceId = this.workspaceId) {
     return this.request({
       type: 'open',
       requestId: crypto.randomUUID(),
@@ -307,6 +323,7 @@ export class WorkspaceClient {
     this.worker.terminate();
     this.rows = [];
     this.listeners.clear();
+    this.summaryListeners.clear();
     for (const pending of this.pending.values())
       pending.reject(new Error('Workspace client disposed.'));
     this.pending.clear();

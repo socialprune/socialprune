@@ -804,7 +804,9 @@ export function Review({ client }: { client: WorkspaceClient }) {
         </div>
         <p className={styles.rowText}>
           {row.text ||
-            (row.mediaCount ? t('review.mediaOnly') : t('review.noText'))}
+            (row.mediaCount !== null && row.mediaCount > 0
+              ? t('review.mediaOnly')
+              : t('review.noText'))}
         </p>
         {row.mediaCount !== null && row.mediaCount > 0 && (
           <p>
@@ -932,9 +934,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
         }
       }}
     >
-      {summary?.kind === 'demo' && (
-        <p className={styles.notice}>{t('demo.banner')}</p>
-      )}
       <div className={styles.review}>
         <div className={styles.toolbar}>
           <label className={styles.field}>
@@ -1391,7 +1390,11 @@ export function Review({ client }: { client: WorkspaceClient }) {
               <>
                 <p className={styles.fullText} dir="auto">
                   {evidenceSegments(
-                    detail.item.text,
+                    detail.item.text ||
+                      (detail.item.mediaCount !== null &&
+                      detail.item.mediaCount > 0
+                        ? t('review.mediaOnly')
+                        : t('review.noText')),
                     currentAssessments.map(({ evidence }) => evidence),
                   ).map((segment, index) =>
                     segment.highlight ? (

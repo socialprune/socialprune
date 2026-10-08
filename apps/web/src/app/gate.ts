@@ -15,6 +15,7 @@ export class WorkerGate {
   state: GateState = window.top === window.self ? 'preparing' : 'framed';
   readonly diagnostics: { code: GateReason; at: string }[] = [];
   private readonly beforeControl = new Set<Worker>();
+  private readonly demoCleanup = new Map<Worker, () => Promise<void>>();
   private readonly listeners = new Set<(state: GateState) => void>();
   private pending: Promise<void> | null = null;
   private registration: ServiceWorkerRegistration | null = null;
@@ -41,8 +42,12 @@ export class WorkerGate {
   startDemo(): Worker | null {
     if (this.state === 'framed') return null;
     const worker = new Worker(scriptURL(demoWorkerURL), { type: 'module' });
+    return this.trackDemo(worker);
+  }
+
+  trackDemo(worker: Worker, cleanup?: () => Promise<void>): Worker {
     if (this.state !== 'ready') this.beforeControl.add(worker);
-    worker.postMessage({ type: 'demo-ready' });
+    if (cleanup) this.demoCleanup.set(worker, cleanup);
     return worker;
   }
 
@@ -102,7 +107,14 @@ export class WorkerGate {
       }
       // No File can reach a pre-control instance. Terminate all demo-only
       // workers before constructing the first verified worker or enabling UI.
-      for (const worker of this.beforeControl) worker.terminate();
+      for (const worker of this.beforeControl) {
+        // Close IndexedDB explicitly before terminate. WebKit can retain a
+        // connection opened by an abruptly terminated worker across reloads,
+        // blocking the next demo database recreation.
+        await this.demoCleanup.get(worker)?.();
+        worker.terminate();
+        this.demoCleanup.delete(worker);
+      }
       this.beforeControl.clear();
       const worker = new Worker(scriptURL(gateWorkerURL), { type: 'module' });
       try {
@@ -191,6 +203,7 @@ export class WorkerGate {
     this.disposed = true;
     for (const worker of this.beforeControl) worker.terminate();
     this.beforeControl.clear();
+    this.demoCleanup.clear();
     this.listeners.clear();
     navigator.serviceWorker?.removeEventListener(
       'controllerchange',

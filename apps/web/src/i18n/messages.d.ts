@@ -88,7 +88,10 @@ declare global {
     'clicklist.zoneBrowser': { zone: string };
     'clicklist.zoneChosen': { zone: string };
     'demo.banner': Record<never, never>;
-    'demo.pending': Record<never, never>;
+    'demo.failed': Record<never, never>;
+    'demo.reading': { count: number };
+    'demo.reset': Record<never, never>;
+    'demo.resetDone': Record<never, never>;
     'development.policy': Record<never, never>;
     'gate.framed.body': Record<never, never>;
     'gate.framed.title': Record<never, never>;

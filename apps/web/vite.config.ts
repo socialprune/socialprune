@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { developmentPolicy } from './tooling/development-policy.ts';
 import { shellManifest } from './tooling/manifest.ts';
+import { demoBytes } from './tooling/demo-bytes.ts';
 
 export default defineConfig(({ mode }) => {
   // Build targets use Vite --mode only. No environment-variable lookup is
@@ -19,6 +20,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       developmentPolicy(),
+      demoBytes(),
       shellManifest(target === 'e2e-probe' ? 'e2e-probe' : mode),
     ],
     resolve: {
@@ -31,6 +33,7 @@ export default defineConfig(({ mode }) => {
     },
     worker: {
       format: 'es',
+      plugins: () => [demoBytes()],
       rollupOptions: {
         output: {
           entryFileNames: (chunk) =>

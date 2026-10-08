@@ -95,7 +95,7 @@ export function shellManifest(mode: string): Plugin {
       const buildId = sha256(JSON.stringify(files)).slice(0, 24);
       const workers = files.filter(
         ({ url }) =>
-          /\/(?:worker|gate-worker|demo-worker|workspace-worker)-[\w-]+\.js$/.test(
+          /\/(?:worker|gate-worker|demo-worker|demo-import-worker|workspace-worker)-[\w-]+\.js$/.test(
             url,
           ) ||
           (probe && url.endsWith('/probe-worker.js')),

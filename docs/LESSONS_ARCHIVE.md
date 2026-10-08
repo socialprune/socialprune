@@ -118,5 +118,5 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Related Lessons:** LL-2026-10-001 (re-read externally owned state before reporting it).
 **Regression / Verification Note:** applied on 2026-10-07 by stopping further pushes until the Linux-only failures at `ad037d7` are fixed and proven on Linux.
 **Metrics:**
-- Prevented: 0 times
-- Violated: 0 times
+- Prevented: 1 time (2026-10-08, `b644d80`: CI was read in its own step before the push, and the red result after it stopped further pushes)
+- Violated: 1 time (2026-10-08, `b644d80`: CLI path code went out on a Windows-only gate, because rule 3 names only `apps/web`; one test failed on Linux in CI)

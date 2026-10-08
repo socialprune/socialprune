@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test } from 'vitest';
 import { createWorkspace } from '@socialprune/core/workspace/store';
 import { executeCli } from '../cli/adapter.ts';
@@ -48,6 +48,7 @@ test('physical layout and logical schema versions independently refuse newer wor
 test('production import closure cannot reach test mutations or review capability', async () => {
   const seen = new Set<string>();
   const walk = async (path: string): Promise<void> => {
+    path = resolve(path);
     if (seen.has(path)) return;
     seen.add(path);
     expect(path.replaceAll('\\', '/')).not.toMatch(
@@ -61,9 +62,7 @@ test('production import closure cannot reach test mutations or review capability
       const specifier = match[1]!;
       if (specifier.startsWith('node:')) continue;
       const next = specifier.startsWith('.')
-        ? fileURLToPath(
-            new URL(specifier, `file:///${path.replaceAll('\\', '/')}`),
-          )
+        ? fileURLToPath(new URL(specifier, pathToFileURL(path)))
         : specifier.startsWith('@socialprune/')
           ? fileURLToPath(import.meta.resolve(specifier))
           : null;

@@ -49,22 +49,121 @@ export const CLI_ERRORS = {
     exitCode: 1,
     retryable: false,
   },
+  NODE_TOO_OLD: {
+    message: 'SocialPrune needs Node.js 24.15 or newer for workspaces.',
+    exitCode: 1,
+    retryable: false,
+  },
+  MISSING_WORKSPACE: {
+    message:
+      'Name a workspace directory containing socialprune.sqlite, or an empty directory for import or restore.',
+    exitCode: 2,
+    retryable: false,
+  },
+  WORKSPACE_BUSY: {
+    message:
+      'The workspace is in use. Close the other command or review session and try again.',
+    exitCode: 1,
+    retryable: true,
+  },
+  WORKSPACE_SCHEMA_UNSUPPORTED: {
+    message: 'This workspace needs a newer version of SocialPrune.',
+    exitCode: 3,
+    retryable: false,
+  },
+  WORKSPACE_INVALID: {
+    message: 'The workspace database could not be read.',
+    exitCode: 1,
+    retryable: false,
+  },
+  BACKUP_SCHEMA_UNSUPPORTED: {
+    message: 'This backup needs a newer version of SocialPrune.',
+    exitCode: 3,
+    retryable: false,
+  },
+  BACKUP_INVALID: {
+    message:
+      'The backup did not pass validation. The active workspace was not changed.',
+    exitCode: 1,
+    retryable: false,
+  },
+  BACKUP_CHANGED: {
+    message:
+      'The workspace changed while the backup was written. Export it again.',
+    exitCode: 1,
+    retryable: true,
+  },
+  STORAGE_FULL: {
+    message: 'There is not enough space to write the file or workspace.',
+    exitCode: 1,
+    retryable: false,
+  },
+  IO_ERROR: {
+    message: 'Could not read or write the named file.',
+    exitCode: 1,
+    retryable: false,
+  },
+  UNKNOWN_FORMAT: {
+    message: 'This version does not recognize the export format.',
+    exitCode: 3,
+    retryable: false,
+  },
+  HTML_EXPORT: {
+    message: 'This is an HTML export. Request a JSON export from the platform.',
+    exitCode: 1,
+    retryable: false,
+  },
+  IMPORT_FAILED: {
+    message: 'Could not finish the import. Run it again to complete it.',
+    exitCode: 1,
+    retryable: false,
+  },
+  SUMMARY_FAILED: {
+    message: 'Could not read the workspace summary.',
+    exitCode: 1,
+    retryable: false,
+  },
+  BACKUP_FAILED: {
+    message: 'Could not finish the backup.',
+    exitCode: 1,
+    retryable: false,
+  },
+  EXPORT_FAILED: {
+    message: 'Could not finish the click-list export.',
+    exitCode: 1,
+    retryable: false,
+  },
+  PARTIAL_IMPORT: {
+    message: 'Some export data could not be imported.',
+    exitCode: 4,
+    retryable: false,
+  },
 } as const;
 
 export type CliErrorCode = keyof typeof CLI_ERRORS;
 
 export class CliError extends Error {
   readonly code: CliErrorCode;
+  readonly nodeVersion?: string;
 
-  constructor(code: CliErrorCode) {
+  constructor(code: CliErrorCode, nodeVersion?: string) {
     super(CLI_ERRORS[code].message);
     this.name = 'CliError';
     this.code = code;
+    this.nodeVersion = nodeVersion;
   }
 }
 
-export function errorObject(code: CliErrorCode) {
-  return { code, ...CLI_ERRORS[code] };
+export function errorObject(code: CliErrorCode, nodeVersion?: string) {
+  return {
+    code,
+    ...CLI_ERRORS[code],
+    ...(code === 'NODE_TOO_OLD'
+      ? {
+          message: `${CLI_ERRORS.NODE_TOO_OLD.message} You have ${/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(nodeVersion ?? '') ? nodeVersion : '0.0.0'}.`,
+        }
+      : {}),
+  };
 }
 
 export function normalizeExitCode(code: number): ExitCode {

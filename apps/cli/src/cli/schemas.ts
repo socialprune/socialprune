@@ -12,7 +12,14 @@ export const CliErrorSchema = z.union(
   Object.entries(CLI_ERRORS).map(([code, error]) =>
     z.strictObject({
       code: z.literal(code),
-      message: z.literal(error.message),
+      message:
+        code === 'NODE_TOO_OLD'
+          ? z
+              .string()
+              .regex(
+                /^SocialPrune needs Node\.js 24\.15 or newer for workspaces\. You have \d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.$/,
+              )
+          : z.literal(error.message),
       exitCode: z.literal(error.exitCode),
       retryable: z.literal(error.retryable),
     }),
@@ -27,6 +34,9 @@ export const CliResultSchema = z.union([
     status: z.enum(['ok', 'partial']),
     data: z.json(),
     warnings: z.array(z.string()),
+    workspace: z
+      .strictObject({ id: z.string().min(1), revision: z.int().nonnegative() })
+      .optional(),
   }),
   z.strictObject({
     schemaVersion: z.literal(1),

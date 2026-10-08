@@ -29,16 +29,19 @@ export function writeReply(
   json: boolean,
   reply: CommandReply,
 ): void {
-  if (json) {
+  if (json || reply.envelope) {
     const result = CliResultSchema.safeParse({
       schemaVersion: 1,
       command,
       status: reply.status ?? 'ok',
       data: reply.data,
       warnings: reply.warnings ?? [],
+      ...(reply.workspace ? { workspace: reply.workspace } : {}),
     });
     if (!result.success) throw new CliError('CLI_ERROR');
     context.io.stdout.write(JSON.stringify(result.data, null, 2) + '\n');
+    if (!json && reply.envelope && reply.human)
+      context.io.stderr.write(plainLines(reply.human) + '\n');
   } else {
     context.io.stdout.write(plainLines(reply.human) + '\n');
     for (const notice of reply.humanNotices ?? [])
@@ -53,9 +56,11 @@ export function writeFailure(
   command: string,
   json: boolean,
   code: CliErrorCode,
+  nodeVersion?: string,
+  envelope = false,
 ): void {
-  const error = errorObject(code);
-  if (json) {
+  const error = errorObject(code, nodeVersion);
+  if (json || envelope) {
     context.io.stdout.write(
       JSON.stringify(
         CliResultSchema.parse({

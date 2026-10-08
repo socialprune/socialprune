@@ -4,7 +4,7 @@ SocialPrune helps people review and clean up their old posts and comments on X a
 
 **Status on 2026-10-06.** Phase 1 is built: workspace, data guard and CI, the core data model with JSON schemas, a synthetic fixture generator, the X and Instagram parsers, streaming ZIP import in a web worker, and the `structure` command. Gate G1 is met: the evidence is in `docs/evidence/G1.md`, and an independent review accepted it at commit `feb6748`. Spikes S1 and S3 are recorded in `docs/spikes/`. Spike S2 has its unlabelled evaluation set and harness and waits for the maintainer's labels.
 
-**Phase 2, status on 2026-10-07.** The architecture is proposed in `docs/architecture/` and `docs/design/`: 22 decision records, all `Proposed` until the maintainer approves them. Built so far: the workspace v2 model with its store port, review and label services, queries and streaming backup in `packages/core`; the offline web shell with its policy layers and worker gate, and the workspace worker on IndexedDB in `apps/web`; the review grid with its detail view, single decisions and undo; the CLI on Stricli with one JSON envelope per call; and the demo export under `fixtures/synthetic/demo/`. Measurements are in `docs/evidence/phase2-measurements.md`. Bulk changes, click lists, the demo flow, the CLI workspace commands, the local review server and the Agent Skill do not exist yet, and nothing is deployed, so nothing is usable for end users.
+**Phase 2, status on 2026-10-08.** The architecture is proposed in `docs/architecture/` and `docs/design/`: 22 decision records, all `Proposed` until the maintainer approves them. Built so far: the workspace v2 model with its store port, review, label and click-list services, queries and streaming backup in `packages/core`; the offline web shell with its policy layers and worker gate, and the workspace worker on IndexedDB in `apps/web`; the review grid with its detail view, single and bulk decisions, undo and history, the click lists, the backup and settings screens, and the demo with bundled example data; the CLI on Stricli with one JSON envelope per call, and its SQLite workspace with `import`, `summary`, `backup export`, `backup restore` and `export clicklist`; and the demo export under `fixtures/synthetic/demo/`. Measurements are in `docs/evidence/phase2-measurements.md`. The export guide, the local review server, the agent commands and the Agent Skill do not exist yet, and nothing is deployed, so nothing is usable for end users.
 
 The maintainer's working plan is `PLAN.md` in the repository root. It is written in German, kept out of Git on purpose, and exists only on the maintainer's machine. When it is present, read it before planning work. It holds the decisions, phases, gates and spikes.
 
@@ -43,7 +43,7 @@ Packages run as TypeScript source through Node 24 type stripping, without a buil
 
 ## Commands
 
-Node 24 and pnpm 10.33.0 (`packageManager` in `package.json`).
+Node 24.15 or newer and pnpm 10.33.0 (`packageManager` in `package.json`). On older Node 24, install, build and the web tests still work, but the CLI workspace commands and their tests stop with `NODE_TOO_OLD`, so `pnpm test` fails there (ADR-015).
 
 | Task | Command |
 |---|---|
@@ -65,8 +65,11 @@ Node 24 and pnpm 10.33.0 (`packageManager` in `package.json`).
 | Gate G1 measurements (100,000 tweets, ZIP64 over 4 GiB, abort), Windows only, writes about 4.7 GB to temp and removes it | `pnpm measure:g1`, currently broken: it drives the page import client that the workspace worker replaced and exits 1 until it is ported to the new import path or retired |
 | CLI | `pnpm socialprune --help` |
 | key paths and types of an export, without values (`-s` stops pnpm from printing the command line, which contains the path) | `pnpm -s socialprune structure <zip or folder...> [--json]` |
+| import exports into a local workspace folder, then count its items and decisions; writers take `--dry-run` | `pnpm -s socialprune import <zip or folder...> --workspace <dir>`, `pnpm -s socialprune summary --workspace <dir>` |
+| portable JSON backup of a workspace, and restore into a workspace | `pnpm -s socialprune backup export --workspace <dir> --out <file.json>`, `pnpm -s socialprune backup restore <file.json> --workspace <dir>` |
+| click list of the decisions a person made in review, as CSV or JSON, with calendar days in `--time-zone`, else the workspace setting, else the system zone | `pnpm -s socialprune export clicklist --workspace <dir> --account <key> --format csv --out <file>` |
 
-CI (`.github/workflows/ci.yml`) runs two jobs on every push to `main` and every pull request: checks (install, guard, license check, copy check, catalog check, format check, lint, typecheck, unit tests, fixture check, schema check, build) and e2e (`pnpm test:e2e:all` in Chromium, Firefox and WebKit). Prettier skips Markdown, so prose keeps its exact wording.
+CI (`.github/workflows/ci.yml`) runs three jobs on every push to `main` and every pull request: checks (install, guard, license check, copy check, catalog check, format check, lint, typecheck, unit tests, fixture check, schema check, build), cli-node-floor (the CLI tests on exactly Node 24.15.0) and e2e (`pnpm test:e2e:all` in Chromium, Firefox and WebKit). Prettier skips Markdown, so prose keeps its exact wording.
 
 Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `fixture-gen`, `data-guard`).
 

@@ -3,6 +3,7 @@ import { describeStructure } from '@socialprune/core';
 import { openArchivePaths } from '@socialprune/core/node';
 import { CliError } from './errors.ts';
 import type { CliContext, CliStream, SchemaEntry } from './context.ts';
+import { workspaceServices } from '../workspace/services.ts';
 
 // GD fills the shared guide source after the maintainer's page-reading decision.
 const guides: CliContext['services']['guides'] = [];
@@ -80,9 +81,11 @@ export function createNodeContext(
     io: { stdout, stderr },
     now: () => new Date(),
     signal,
+    nodeVersion: process.versions.node,
     services: {
       guides,
       listSchemas,
+      workspace: workspaceServices,
       async describeStructure(paths, signal) {
         for (const path of paths) {
           signal.throwIfAborted();

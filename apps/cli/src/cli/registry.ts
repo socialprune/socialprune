@@ -3,6 +3,11 @@ import type { Command } from '@stricli/core';
 import { guideCommand } from '../commands/guide.ts';
 import { schemasCommand } from '../commands/schemas.ts';
 import { structureCommand } from '../commands/structure.ts';
+import { importCommand } from '../commands/import.ts';
+import { summaryCommand } from '../commands/summary.ts';
+import { backupExportCommand } from '../commands/backup-export.ts';
+import { backupRestoreCommand } from '../commands/backup-restore.ts';
+import { clickListCommand } from '../commands/export-clicklist.ts';
 import { jsonFlag } from './context.ts';
 import type { CommandRunContext } from './context.ts';
 import { CliError, EXIT_MEANINGS } from './errors.ts';
@@ -17,6 +22,7 @@ export interface RegistryEntry {
   available: boolean;
   outputSchemaIds: readonly string[];
   failureCode: CliErrorCode;
+  envelope?: boolean;
 }
 
 function unavailableCommand(review = false): Command<CommandRunContext> {
@@ -107,6 +113,55 @@ export function commandRegistry(): readonly RegistryEntry[] {
       available: false,
       outputSchemaIds: [CLI_SCHEMA_IDS.result],
       failureCode: 'NOT_AVAILABLE' as const,
+    })),
+    ...[
+      {
+        path: ['import'],
+        command: importCommand,
+        writes: true,
+        dryRun: true,
+        failureCode: 'IMPORT_FAILED' as const,
+      },
+      {
+        path: ['summary'],
+        command: summaryCommand,
+        writes: false,
+        dryRun: false,
+        failureCode: 'SUMMARY_FAILED' as const,
+      },
+      {
+        path: ['backup', 'export'],
+        command: backupExportCommand,
+        writes: true,
+        dryRun: true,
+        failureCode: 'BACKUP_FAILED' as const,
+      },
+      {
+        path: ['backup', 'restore'],
+        command: backupRestoreCommand,
+        writes: true,
+        dryRun: true,
+        failureCode: 'BACKUP_FAILED' as const,
+      },
+      {
+        path: ['export', 'clicklist'],
+        command: clickListCommand,
+        writes: true,
+        dryRun: true,
+        failureCode: 'EXPORT_FAILED' as const,
+      },
+    ].map((entry) => ({
+      ...entry,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [
+        CLI_SCHEMA_IDS.result,
+        ...(entry.path[0] === 'summary'
+          ? [
+              'https://socialprune.github.io/socialprune/schemas/summary.schema.json',
+            ]
+          : []),
+      ],
     })),
   ];
 }

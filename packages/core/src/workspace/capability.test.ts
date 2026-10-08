@@ -80,7 +80,7 @@ test('ordinary CLI command modules cannot reach the review capability', async ()
     resolve(repo, 'apps/cli/src/commands'),
   ))
     expect(await importsReview(command), command).toBe(false);
-});
+}, 60_000);
 test.each([
   "export * from '@socialprune/core/workspace/review';",
   "import { ReviewService } from './review.ts';",

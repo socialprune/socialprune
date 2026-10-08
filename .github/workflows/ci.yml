@@ -38,6 +38,25 @@ jobs:
       - run: pnpm schemas:check
       - run: pnpm build
 
+  # ADR-015: the CLI's workspace floor is Node 24.15.0, where node:sqlite is a
+  # release candidate. This job runs the CLI tests on exactly that version, so a
+  # dependency on a newer 24.x API fails here instead of on a user's machine.
+  cli-node-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.15.0'
+          cache: pnpm
+      - run: node --version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --project cli
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 35

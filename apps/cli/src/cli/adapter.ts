@@ -46,11 +46,12 @@ export async function executeCli(
 ): Promise<ExitCode> {
   const json = requestedJson(args);
   const entries = commandRegistry();
-  let selected: RegistryEntry | undefined = entries.find(
-    (entry) => entry.path[0] === args[0],
+  let selected: RegistryEntry | undefined = entries.find((entry) =>
+    entry.path.every((part, index) => part === args[index]),
   );
   let reply: CommandReply | undefined;
   let failure: CliErrorCode | undefined;
+  let failureNodeVersion: string | undefined;
   let frameworkExit = 0;
   let helpOutput = '';
   let isHelp = false;
@@ -58,14 +59,16 @@ export async function executeCli(
     failure = code;
     return errorObject(code).message;
   };
-  const failFromException = (error: unknown): string =>
-    captureFailure(
+  const failFromException = (error: unknown): string => {
+    if (error instanceof CliError) failureNodeVersion = error.nodeVersion;
+    return captureFailure(
       context.signal.aborted
         ? 'CANCELLED'
         : error instanceof CliError
           ? error.code
           : (selected?.failureCode ?? 'CLI_ERROR'),
     );
+  };
   const helpIntegration = help<CommandRunContext>({
     brief: 'Print help information and exit',
     formatting: {
@@ -74,8 +77,31 @@ export async function executeCli(
       onlyRequiredInUsageLine: false,
     },
   });
-  const routes: Record<string, Command<CommandRunContext>> = {};
-  for (const entry of entries) routes[entry.path[0]!] = entry.command;
+  const routes: Record<
+    string,
+    | Command<CommandRunContext>
+    | ReturnType<typeof buildRouteMap<string, CommandRunContext>>
+  > = {};
+  for (const entry of entries.filter((value) => value.path.length === 1))
+    routes[entry.path[0]!] = entry.command;
+  for (const root of new Set(
+    entries
+      .filter((value) => value.path.length === 2)
+      .map((value) => value.path[0]!),
+  )) {
+    const children: typeof routes = {};
+    for (const entry of entries.filter(
+      (value) => value.path.length === 2 && value.path[0] === root,
+    ))
+      children[entry.path[1]!] = entry.command;
+    routes[root] = buildRouteMap({
+      routes: children,
+      docs: {
+        brief:
+          root === 'backup' ? 'Portable JSON backups' : 'Workspace exports',
+      },
+    });
+  }
   const application = buildApplication(
     buildRouteMap({
       routes,
@@ -185,7 +211,14 @@ export async function executeCli(
   if (failure || frameworkExit !== 0) {
     const code =
       failure ?? (frameworkExit === 2 ? 'INVALID_ARGUMENTS' : 'CLI_ERROR');
-    writeFailure(context, command, json, code);
+    writeFailure(
+      context,
+      command,
+      json,
+      code,
+      failureNodeVersion,
+      selected?.envelope,
+    );
     return errorObject(code).exitCode;
   }
   if (reply) {
@@ -193,7 +226,14 @@ export async function executeCli(
       writeReply(context, command, json, reply);
       return normalizeExitCode(reply.exitCode ?? 0);
     } catch {
-      writeFailure(context, command, json, 'CLI_ERROR');
+      writeFailure(
+        context,
+        command,
+        json,
+        'CLI_ERROR',
+        undefined,
+        selected?.envelope,
+      );
       return 1;
     }
   }

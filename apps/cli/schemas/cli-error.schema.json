@@ -109,6 +109,244 @@
       },
       "required": ["code", "message", "exitCode", "retryable"],
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "NODE_TOO_OLD" },
+        "message": {
+          "type": "string",
+          "pattern": "^SocialPrune needs Node\\.js 24\\.15 or newer for workspaces\\. You have \\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?\\.$"
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "MISSING_WORKSPACE" },
+        "message": {
+          "type": "string",
+          "const": "Name a workspace directory containing socialprune.sqlite, or an empty directory for import or restore."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "WORKSPACE_BUSY" },
+        "message": {
+          "type": "string",
+          "const": "The workspace is in use. Close the other command or review session and try again."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": true }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "WORKSPACE_SCHEMA_UNSUPPORTED" },
+        "message": {
+          "type": "string",
+          "const": "This workspace needs a newer version of SocialPrune."
+        },
+        "exitCode": { "type": "number", "const": 3 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "WORKSPACE_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "The workspace database could not be read."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "BACKUP_SCHEMA_UNSUPPORTED" },
+        "message": {
+          "type": "string",
+          "const": "This backup needs a newer version of SocialPrune."
+        },
+        "exitCode": { "type": "number", "const": 3 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "BACKUP_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "The backup did not pass validation. The active workspace was not changed."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "BACKUP_CHANGED" },
+        "message": {
+          "type": "string",
+          "const": "The workspace changed while the backup was written. Export it again."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": true }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "STORAGE_FULL" },
+        "message": {
+          "type": "string",
+          "const": "There is not enough space to write the file or workspace."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "IO_ERROR" },
+        "message": {
+          "type": "string",
+          "const": "Could not read or write the named file."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "UNKNOWN_FORMAT" },
+        "message": {
+          "type": "string",
+          "const": "This version does not recognize the export format."
+        },
+        "exitCode": { "type": "number", "const": 3 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "HTML_EXPORT" },
+        "message": {
+          "type": "string",
+          "const": "This is an HTML export. Request a JSON export from the platform."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "IMPORT_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not finish the import. Run it again to complete it."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "SUMMARY_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not read the workspace summary."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "BACKUP_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not finish the backup."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "EXPORT_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not finish the click-list export."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "PARTIAL_IMPORT" },
+        "message": {
+          "type": "string",
+          "const": "Some export data could not be imported."
+        },
+        "exitCode": { "type": "number", "const": 4 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
     }
   ],
   "$id": "https://socialprune.github.io/socialprune/schemas/cli-error.schema.json"

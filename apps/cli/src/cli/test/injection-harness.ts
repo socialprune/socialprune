@@ -55,6 +55,8 @@ export interface FailingCommandCase {
   args: readonly string[];
   services: CliContext['services'];
   exitCode: number;
+  nodeVersion?: string;
+  envelope?: boolean;
 }
 
 export async function assertFailureCases(
@@ -66,7 +68,10 @@ export async function assertFailureCases(
       const capture = capturedContext(fixture.services);
       const code = await executeCli(
         [...fixture.args, ...(json ? ['--json'] : [])],
-        capture.context,
+        {
+          ...capture.context,
+          ...(fixture.nodeVersion ? { nodeVersion: fixture.nodeVersion } : {}),
+        },
       );
       expect(code, fixture.name).toBe(fixture.exitCode);
       assertNoFixtureStrings(
@@ -75,7 +80,7 @@ export async function assertFailureCases(
         forbidden,
       );
       expect(capture.opened, fixture.name).toEqual([]);
-      if (json) {
+      if (json || fixture.envelope) {
         expect(capture.stdout, fixture.name).toHaveLength(1);
         expect(
           CliResultSchema.parse(JSON.parse(capture.stdout[0]!)),

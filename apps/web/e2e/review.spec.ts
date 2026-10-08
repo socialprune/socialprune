@@ -269,6 +269,141 @@ test('W2a recycled rows keep a valid active descendant and bounded page memory',
   expect(before).toMatchObject({ type: 'historyEntries', entries: [] });
 });
 
+test('W2a a delayed bottom window cannot replace the settled Home rows', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = {
+      armed: false,
+      bottomOffset: null as number | null,
+      requestId: null as string | null,
+      held: false,
+      released: false,
+      delivered: false,
+    };
+    let held: { worker: Worker; data: unknown } | null = null;
+    Reflect.set(globalThis, '__reviewWindowHold', {
+      state,
+      release() {
+        if (!held) throw new Error('No bottom-window reply was held.');
+        state.released = true;
+        held.worker.dispatchEvent(
+          new MessageEvent('message', { data: held.data }),
+        );
+        held = null;
+      },
+    });
+    const WorkerClass = Worker;
+    globalThis.Worker = class extends WorkerClass {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        // Register before the client so the real reply can arrive out of order.
+        this.addEventListener('message', (event: MessageEvent<unknown>) => {
+          const value = event.data as { type?: string; requestId?: string };
+          if (value.type !== 'rows' || value.requestId !== state.requestId)
+            return;
+          if (state.released) {
+            state.delivered = true;
+            return;
+          }
+          event.stopImmediatePropagation();
+          held = { worker: this, data: event.data };
+          state.held = true;
+        });
+      }
+      override postMessage(
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        const value = message as {
+          type?: string;
+          requestId?: string;
+          offset?: number;
+        };
+        if (value.type === 'window' && value.offset && value.requestId) {
+          state.bottomOffset ??= value.offset;
+          if (
+            state.armed &&
+            value.offset === state.bottomOffset &&
+            !state.requestId
+          )
+            state.requestId = value.requestId;
+        }
+        super.postMessage(
+          message,
+          Array.isArray(options) ? options : (options?.transfer ?? []),
+        );
+      }
+    };
+  });
+  const fixture = reviewFixture('personal', false, 600);
+  // Equal dates make the input's ID order the expected row order.
+  for (const item of fixture.items) item.createdAt = fixture.createdAt;
+  await restoreReview(page, fixture);
+  const grid = page.getByRole('grid');
+  const first = grid.locator('[role="row"][data-index="0"]');
+  const second = grid.locator('[role="row"][data-index="1"]');
+  const holdState = () =>
+    page.evaluate(() => {
+      const hold = Reflect.get(globalThis, '__reviewWindowHold') as {
+        state: { held: boolean; delivered: boolean };
+      };
+      return { held: hold.state.held, delivered: hold.state.delivered };
+    });
+  const frames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  await grid.focus();
+  await page.keyboard.press('End');
+  await expect(grid).toHaveAttribute(
+    'aria-activedescendant',
+    'review-cell-599',
+  );
+  await page.keyboard.press('Home');
+  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-0');
+  await expect(second).toBeAttached();
+  await frames();
+  // Hold a scroll-driven window, not End's asynchronous focus continuation.
+  await page.evaluate(() => {
+    const hold = Reflect.get(globalThis, '__reviewWindowHold') as {
+      state: { armed: boolean };
+    };
+    hold.state.armed = true;
+  });
+  await grid.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(async () => (await holdState()).held).toBe(true);
+  await page.keyboard.press('Home');
+  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-0');
+  await expect(first).toContainText(fixture.items[0]!.text);
+  await expect(second).toBeAttached();
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBe(0);
+  await frames();
+  await page.evaluate(() => {
+    const hold = Reflect.get(globalThis, '__reviewWindowHold') as {
+      release(): void;
+    };
+    hold.release();
+  });
+  await expect.poll(async () => (await holdState()).delivered).toBe(true);
+  await frames();
+  await expect(first).toBeAttached();
+  await expect(second).toBeAttached();
+  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-0');
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(first).toHaveAttribute('aria-selected', 'true');
+  await expect(second).toHaveAttribute('aria-selected', 'true');
+  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-1');
+  await expect(grid.locator('#review-cell-1')).toBeAttached();
+});
+
 test('W2a visible searching state follows a delayed query and rejects a stale reply', async ({
   page,
 }) => {

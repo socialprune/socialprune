@@ -154,6 +154,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const detailInvoker = useRef<HTMLElement | null>(null);
   const windowOffset = useRef(0);
   const loadingWindow = useRef<string | null>(null);
+  const windowRequest = useRef<string | null>(null);
   const selectionAnchor = useRef<number | null>(null);
   const currentQuery = useRef({ generation: 0, total: 0 });
   const focusedIndex = useRef(0);
@@ -300,27 +301,45 @@ export function Review({ client }: { client: WorkspaceClient }) {
   async function loadWindow(
     start: number,
     version = currentQuery.current.generation,
+    forRange = false,
   ) {
     const windowKey = `${version}:${start}`;
     if (!version || loadingWindow.current === windowKey) return;
     loadingWindow.current = windowKey;
+    const requestId = nextId();
+    windowRequest.current = requestId;
     try {
       const reply = await client.request({
         type: 'window',
-        requestId: nextId(),
+        requestId,
         queryId: queryId.current,
         generation: version,
         offset: start,
         limit: paged ? PAGE : WINDOW,
       });
-      if (reply.type !== 'rows' || version !== generation.current) return;
+      if (
+        reply.type !== 'rows' ||
+        version !== generation.current ||
+        windowRequest.current !== requestId
+      )
+        return;
+      // A scroll event can request the old range while a keyboard scroll is
+      // still settling. Its reply must not evict the newly focused window.
+      if (
+        forRange &&
+        visibleIndex(virtualizer.range?.startIndex ?? 0) !== start
+      )
+        return;
       windowOffset.current = start;
       setOffset(start);
       setRows(reply.rows);
     } catch {
       setError(t('review.storageError'));
     } finally {
-      if (loadingWindow.current === windowKey) loadingWindow.current = null;
+      if (windowRequest.current === requestId) {
+        loadingWindow.current = null;
+        windowRequest.current = null;
+      }
     }
   }
   function rowAt(index: number) {
@@ -331,7 +350,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     const first = virtualizer.range?.startIndex;
     if (first !== undefined) {
       if (visibleIndex(first) !== windowOffset.current) {
-        void loadWindow(visibleIndex(first));
+        void loadWindow(visibleIndex(first), undefined, true);
         if (!movingFocus.current) {
           focusedIndex.current = first;
           setFocusIndex(first);
@@ -357,6 +376,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
     const bounded = Math.min(Math.max(0, index), Math.max(0, total - 1));
     if (visibleIndex(bounded) !== windowOffset.current)
       await loadWindow(visibleIndex(bounded));
+    else {
+      // Home can use cached rows without sending a newer request. It still
+      // supersedes an outstanding scroll-driven request for another window.
+      loadingWindow.current = null;
+      windowRequest.current = null;
+    }
     setFocusIndex(bounded);
     focusedIndex.current = bounded;
     if (!paged) virtualizer.scrollToIndex(bounded, { align: 'auto' });

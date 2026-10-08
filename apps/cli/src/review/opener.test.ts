@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { Writable } from 'node:stream';
-import { expect, test, it } from 'vitest';
+import { expect, test, it, vi } from 'vitest';
 import { openReviewBrowser, OPENER_SCRIPT } from './opener.ts';
 
 test('fixed shell-free openers use stdin on Windows and the URL argument on macOS/Linux', async () => {
@@ -96,6 +96,82 @@ function valuesContainToken(args: string[], url: string): boolean {
   const token = new URL(url).hash.slice('#bootstrap='.length);
   return args.some((value) => value.includes(token));
 }
+
+test('exit at 9.9 seconds is reported; running at 10 seconds resolves without killing and ignores later errors', async () => {
+  const url = 'http://127.0.0.1:12345/#bootstrap=' + 'd'.repeat(43);
+  vi.useFakeTimers();
+  try {
+    for (const platform of ['win32', 'darwin', 'linux']) {
+      for (const code of [0, 1]) {
+        const unref = vi.fn();
+        const kill = vi.fn();
+        const stdin = new Writable({
+          write(_chunk, _encoding, callback) {
+            callback();
+          },
+        });
+        const child = Object.assign(new EventEmitter(), { stdin, unref, kill });
+        const result = openReviewBrowser(
+          url,
+          platform,
+          () => child as unknown as ChildProcess,
+        ).then(
+          () => 'launched',
+          (error: unknown) => error,
+        );
+        await vi.advanceTimersByTimeAsync(9_900);
+        child.emit('exit', code);
+        if (code === 0) expect(await result).toBe('launched');
+        else
+          expect(await result).toMatchObject({ code: 'BROWSER_OPEN_FAILED' });
+        expect(unref).not.toHaveBeenCalled();
+        expect(kill).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      }
+      const unref = vi.fn();
+      const kill = vi.fn();
+      const stdin = new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+      });
+      const child = Object.assign(new EventEmitter(), { stdin, unref, kill });
+      let state: unknown = 'pending';
+      const result = openReviewBrowser(
+        url,
+        platform,
+        () => child as unknown as ChildProcess,
+      ).then(
+        () => {
+          state = 'launched';
+        },
+        (error: unknown) => {
+          state = error;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(state).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      await result;
+      expect(state).toBe('launched');
+      expect(unref).toHaveBeenCalledTimes(1);
+      expect(kill).not.toHaveBeenCalled();
+      expect(() => {
+        child.emit('exit', 1);
+        child.emit('close', 1);
+        child.emit('error', new Error(url));
+        if (platform === 'win32')
+          stdin.emit('error', Object.assign(new Error(url), { code: 'EPIPE' }));
+      }).not.toThrow();
+      expect(state).toBe('launched');
+      expect(vi.getTimerCount()).toBe(0);
+      // Avoid holding test-created stream objects beyond their own case.
+      stdin.destroy();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it.runIf(process.platform === 'win32')(
   'real PowerShell receives the stdin URL byte for byte; old argv script fails the same oracle',

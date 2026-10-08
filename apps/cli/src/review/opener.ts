@@ -14,6 +14,7 @@ export function openReviewBrowser(
   url: string,
   platform: string = process.platform,
   start: Spawn = spawn,
+  waitMs = 10_000,
 ): Promise<void> {
   // Only the app-built loopback URL is accepted, never a caller's path or text.
   if (
@@ -44,17 +45,32 @@ export function openReviewBrowser(
       reject(new CliError('BROWSER_OPEN_FAILED'));
       return;
     }
-    const fail = () => reject(new CliError('BROWSER_OPEN_FAILED'));
-    child.once('error', fail);
-    child.once('close', (code) =>
-      code === 0 ? resolve() : reject(new CliError('BROWSER_OPEN_FAILED')),
-    );
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.unref();
+      resolve();
+    }, waitMs);
+    const finish = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (failed) reject(new CliError('BROWSER_OPEN_FAILED'));
+      else resolve();
+    };
+    // Retain harmless listeners: a child or stdin error after the deadline
+    // must neither change the resolved launch nor become an unhandled error.
+    const fail = () => finish(true);
+    child.on('error', fail);
+    child.once('exit', (code) => finish(code !== 0));
+    child.once('close', (code) => finish(code !== 0));
     if (platform === 'win32') {
       if (!child.stdin) {
         fail();
         return;
       }
-      child.stdin.once('error', fail);
+      child.stdin.on('error', fail);
       try {
         child.stdin.write(`${url}\n`);
         child.stdin.end();

@@ -11,8 +11,17 @@ import type {
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
 
+export type WorkspacePort = Pick<
+  Worker,
+  | 'postMessage'
+  | 'addEventListener'
+  | 'removeEventListener'
+  | 'dispatchEvent'
+  | 'terminate'
+>;
+
 export class WorkspaceClient {
-  readonly worker: Worker;
+  readonly worker: WorkspacePort;
   rows: readonly ReviewRow[] = [];
   summary: WorkspaceSummary | null = null;
   storage: Extract<WorkspaceNotification, { type: 'storageState' }> | null =
@@ -44,7 +53,7 @@ export class WorkspaceClient {
     (summary: WorkspaceSummary | null) => void
   >();
 
-  constructor(worker: Worker, workspaceId = 'active') {
+  constructor(worker: WorkspacePort, workspaceId = 'active') {
     this.worker = worker;
     this.workspaceId = workspaceId;
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {

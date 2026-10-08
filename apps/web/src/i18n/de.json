@@ -306,5 +306,15 @@
   "settings.confirmDelete": "Diese Browser-Durchsicht löschen",
   "clicklist.recorded": "Dein Ergebnis wurde auf diesem Gerät vermerkt. Das hat auf der Plattform nichts gemacht.",
   "clicklist.corrected": "Der Ergebnisvermerk wurde korrigiert. Das hat die Plattform nicht geändert.",
-  "backup.changesSince": "Mindestens {count, number} {count, plural, one {Aktion wurde} other {Aktionen wurden}} seit dem letzten Backup vermerkt. Lade eine weitere Kopie herunter, um diese Änderungen zu behalten."
+  "backup.changesSince": "Mindestens {count, number} {count, plural, one {Aktion wurde} other {Aktionen wurden}} seit dem letzten Backup vermerkt. Lade eine weitere Kopie herunter, um diese Änderungen zu behalten.",
+  "localReview.privacy": "Diese Durchsicht läuft über die Kommandozeile auf diesem Computer. Deine Texte bleiben im lokalen Arbeitsbereichsordner.",
+  "localReview.decisions": "Nur deine Aktionen in dieser Durchsicht merken Einträge zum Löschen vor. SocialPrune macht nichts auf X oder Instagram.",
+  "localReview.summary": "{items, number} {items, plural, one {Eintrag} other {Einträge}}. Behalten {keep, number}, vorgemerkt {marked, number}, später {later, number}, unentschieden {undecided, number}.",
+  "localReview.endedTitle": "Diese Sitzung ist beendet",
+  "localReview.endedBody": "Starte den Durchsichtsbefehl erneut in deinem Terminal, um eine neue Sitzung zu öffnen. Diese Seite kann den Arbeitsbereich nicht lesen.",
+  "localReview.framed": "Öffne die Durchsicht direkt im Fenster, das die Kommandozeile geöffnet hat, nicht innerhalb einer anderen Seite.",
+  "localReview.guide": "Lies die Exportanleitung in deinem Terminal mit diesem Befehl.",
+  "localReview.demo": "Um die erfundenen Demo-Exporte in einem lokalen Arbeitsbereich auszuprobieren, importiere sie mit diesem Befehl.",
+  "localReview.import": "Importiere einen Export aus deinem Terminal in den lokalen Arbeitsbereich mit diesem Befehl.",
+  "localReview.backup": "Speichere ein Backup des lokalen Arbeitsbereichs aus deinem Terminal mit diesem Befehl."
 }

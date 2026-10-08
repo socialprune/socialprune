@@ -25,6 +25,7 @@ your_instagram_activity/
 # Dependencies and build output
 node_modules/
 dist/
+dist-review/
 build/
 coverage/
 .turbo/

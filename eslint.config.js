@@ -26,6 +26,7 @@ export default defineConfig([
       'fixtures/**',
       '**/node_modules/**',
       '**/dist/**',
+      '**/dist-review/**',
       '**/build/**',
       '**/coverage/**',
       '**/playwright-report/**',

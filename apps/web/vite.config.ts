@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import { developmentPolicy } from './tooling/development-policy.ts';
 import { shellManifest } from './tooling/manifest.ts';
 import { demoBytes } from './tooling/demo-bytes.ts';
+import { reviewBuild } from './tooling/review-build.ts';
 
 export default defineConfig(({ mode }) => {
   // Build targets use Vite --mode only. No environment-variable lookup is
@@ -10,18 +11,19 @@ export default defineConfig(({ mode }) => {
   const target = ['pages', 'e2e-probe', 'review'].includes(mode)
     ? mode
     : 'pages';
-  // W5 supplies the separate local-review bundle. Never silently ship the
-  // Pages app under a review target before that capability exists.
-  if (target === 'review')
-    throw new Error('The local-review build is not available yet.');
+  const review = target === 'review';
   return {
-    base: '/socialprune/',
+    base: review ? '/' : '/socialprune/',
     appType: 'mpa',
     plugins: [
       react(),
-      developmentPolicy(),
-      demoBytes(),
-      shellManifest(target === 'e2e-probe' ? 'e2e-probe' : mode),
+      ...(review
+        ? [reviewBuild()]
+        : [
+            developmentPolicy(),
+            demoBytes(),
+            shellManifest(target === 'e2e-probe' ? 'e2e-probe' : mode),
+          ]),
     ],
     resolve: {
       alias: [
@@ -44,6 +46,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     css: { transformer: 'postcss' },
-    build: { cssMinify: 'esbuild' },
+    publicDir: review ? false : 'public',
+    build: {
+      cssMinify: 'esbuild',
+      ...(review ? { outDir: 'dist-review' } : {}),
+    },
   };
 });

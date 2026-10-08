@@ -6,6 +6,7 @@ pnpm-lock.yaml
 PLAN.md
 **/node_modules/
 **/dist/
+**/dist-review/
 **/build/
 **/coverage/
 **/playwright-report/

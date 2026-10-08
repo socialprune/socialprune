@@ -20,12 +20,14 @@ export function Settings({
   changeLocale,
   onDeleted,
   beforeDelete,
+  storageMode = 'browser',
 }: {
   client: WorkspaceClient;
   locale: Locale;
   changeLocale: (locale: Locale) => void;
   onDeleted?: () => void;
   beforeDelete?: () => Promise<void>;
+  storageMode?: 'browser' | 'local-review';
 }) {
   const t = useT(),
     intl = useIntl();
@@ -51,6 +53,10 @@ export function Settings({
     [deleteError, setDeleteError] = useState(false),
     [backedUp, setBackedUp] = useState(false);
   useEffect(() => {
+    const stopSummary =
+      storageMode === 'local-review'
+        ? client.subscribeSummary(setSummary)
+        : () => {};
     const unsubscribe = client.subscribe((message) => {
       if (message.type === 'storageState') setStorage(message);
     });
@@ -61,8 +67,11 @@ export function Settings({
         else setDeleteError(true);
       })
       .catch(() => setDeleteError(true));
-    return unsubscribe;
-  }, [client]);
+    return () => {
+      unsubscribe();
+      stopSummary();
+    };
+  }, [client, storageMode]);
   async function persist() {
     setBusy(true);
     try {
@@ -188,81 +197,90 @@ export function Settings({
           }
         />
       )}
-      <h2>{t('settings.storage')}</h2>
-      {storage && (
+      {storageMode === 'browser' && (
         <>
-          <p>
-            {t('settings.storageUsage', {
-              usage: intl.formatNumber(storage.usage / 1024 ** 2, {
-                maximumFractionDigits: 1,
-              }),
-              quota: intl.formatNumber(storage.quota / 1024 ** 2, {
-                maximumFractionDigits: 1,
-              }),
-            })}
-          </p>
-          <p>
-            {t(
-              storage.persisted
-                ? 'settings.persisted'
-                : 'settings.notPersisted',
-            )}
-          </p>
+          <h2>{t('settings.storage')}</h2>
+          {storage && (
+            <>
+              <p>
+                {t('settings.storageUsage', {
+                  usage: intl.formatNumber(storage.usage / 1024 ** 2, {
+                    maximumFractionDigits: 1,
+                  }),
+                  quota: intl.formatNumber(storage.quota / 1024 ** 2, {
+                    maximumFractionDigits: 1,
+                  }),
+                })}
+              </p>
+              <p>
+                {t(
+                  storage.persisted
+                    ? 'settings.persisted'
+                    : 'settings.notPersisted',
+                )}
+              </p>
+            </>
+          )}
+          {deleteError && !deleteOpen && (
+            <p role="alert">{t('workspace.storageError')}</p>
+          )}
+          <button
+            disabled={busy}
+            onClick={() => {
+              void persist();
+            }}
+          >
+            {t('settings.persistAction')}
+          </button>
+          {persistMessage && <p role="status">{persistMessage}</p>}
+          <p>{t('backup.cleared')}</p>
+          <a href="#/backup">{t('workspace.backup')}</a>
+          <h2>{t('settings.deleteTitle')}</h2>
+          <button
+            disabled={!summary || busy}
+            onClick={() => setDeleteOpen(true)}
+          >
+            {t('settings.deleteTitle')}
+          </button>
         </>
       )}
-      {deleteError && !deleteOpen && (
-        <p role="alert">{t('workspace.storageError')}</p>
-      )}
-      <button
-        disabled={busy}
-        onClick={() => {
-          void persist();
-        }}
-      >
-        {t('settings.persistAction')}
-      </button>
-      {persistMessage && <p role="status">{persistMessage}</p>}
-      <p>{t('backup.cleared')}</p>
-      <a href="#/backup">{t('workspace.backup')}</a>
-      <h2>{t('settings.deleteTitle')}</h2>
-      <button disabled={!summary || busy} onClick={() => setDeleteOpen(true)}>
-        {t('settings.deleteTitle')}
-      </button>
       <h2>{t('settings.version')}</h2>
       <p>{version}</p>
       <p>{t('settings.build', { id: buildId })}</p>
-      <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className={reviewStyles.backdrop} />
-          <Dialog.Popup className={reviewStyles.dialog}>
-            <Dialog.Title>{t('settings.deleteTitle')}</Dialog.Title>
-            <Dialog.Description>
-              {t('settings.deleteDescription')}
-            </Dialog.Description>
-            <button
-              disabled={busy}
-              onClick={() => {
-                void backupFirst();
-              }}
-            >
-              {t('settings.backupFirst')}
-            </button>
-            {backedUp && <p role="status">{t('backup.saved')}</p>}
-            <div className={styles.actions}>
+      {storageMode === 'browser' && (
+        <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <Dialog.Portal>
+            <Dialog.Backdrop className={reviewStyles.backdrop} />
+            <Dialog.Popup className={reviewStyles.dialog}>
+              <Dialog.Title>{t('settings.deleteTitle')}</Dialog.Title>
+              <Dialog.Description>
+                {t('settings.deleteDescription')}
+              </Dialog.Description>
               <button
                 disabled={busy}
                 onClick={() => {
-                  void remove();
+                  void backupFirst();
                 }}
               >
-                {t('settings.confirmDelete')}
+                {t('settings.backupFirst')}
               </button>
-              <Dialog.Close disabled={busy}>{t('bulk.cancel')}</Dialog.Close>
-            </div>
-            {deleteError && <p role="alert">{t('workspace.storageError')}</p>}
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+              {backedUp && <p role="status">{t('backup.saved')}</p>}
+              <div className={styles.actions}>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    void remove();
+                  }}
+                >
+                  {t('settings.confirmDelete')}
+                </button>
+                <Dialog.Close disabled={busy}>{t('bulk.cancel')}</Dialog.Close>
+              </div>
+              {deleteError && <p role="alert">{t('workspace.storageError')}</p>}
+            </Dialog.Popup>
+          </Dialog.Portal>
+        </Dialog.Root>
+      )}
     </section>
   );
 }

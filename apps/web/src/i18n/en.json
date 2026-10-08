@@ -306,5 +306,15 @@
   "settings.confirmDelete": "Delete this browser review",
   "clicklist.recorded": "Your outcome was recorded on this device. This did not act on the platform.",
   "clicklist.corrected": "The outcome record was corrected. This did not change the platform.",
-  "backup.changesSince": "At least {count, number} {count, plural, one {action has been recorded} other {actions have been recorded}} since the last backup. Download another copy to keep these changes."
+  "backup.changesSince": "At least {count, number} {count, plural, one {action has been recorded} other {actions have been recorded}} since the last backup. Download another copy to keep these changes.",
+  "localReview.privacy": "This review runs from the command line on this computer. Your texts stay in the local workspace folder.",
+  "localReview.decisions": "Only your actions in this review mark entries for deletion. SocialPrune does nothing on X or Instagram.",
+  "localReview.summary": "{items, number} {items, plural, one {entry} other {entries}}. Keep {keep, number}, marked {marked, number}, later {later, number}, undecided {undecided, number}.",
+  "localReview.endedTitle": "This review session has ended",
+  "localReview.endedBody": "Run the review command again in your terminal to open a new session. This page cannot read the workspace.",
+  "localReview.framed": "Open the review directly in the window launched by the command line, not inside another page.",
+  "localReview.guide": "Read the export instructions in your terminal with this command.",
+  "localReview.demo": "To try the invented demo exports in a local workspace, import them with this command.",
+  "localReview.import": "Import an export into the local workspace from your terminal with this command.",
+  "localReview.backup": "Save a backup of the local workspace from your terminal with this command."
 }

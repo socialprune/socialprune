@@ -9,6 +9,7 @@ export default defineConfig({
   globalSetup: './e2e/build-identity-setup.ts',
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
+  testIgnore: 'review-mode.spec.ts',
   timeout: 30_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

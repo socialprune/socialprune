@@ -137,6 +137,22 @@ declare global {
     'import.result': Record<never, never>;
     'import.start': Record<never, never>;
     'import.unknown': Record<never, never>;
+    'localReview.backup': Record<never, never>;
+    'localReview.decisions': Record<never, never>;
+    'localReview.demo': Record<never, never>;
+    'localReview.endedBody': Record<never, never>;
+    'localReview.endedTitle': Record<never, never>;
+    'localReview.framed': Record<never, never>;
+    'localReview.guide': Record<never, never>;
+    'localReview.import': Record<never, never>;
+    'localReview.privacy': Record<never, never>;
+    'localReview.summary': {
+      items: number;
+      keep: number;
+      later: number;
+      marked: number;
+      undecided: number;
+    };
     'nav.demo': Record<never, never>;
     'nav.guide': Record<never, never>;
     'nav.import': Record<never, never>;

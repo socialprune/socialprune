@@ -5,6 +5,8 @@ import { executeCli } from '../../cli/adapter.ts';
 import { createNodeContext } from '../../cli/node-context.ts';
 import { SQLiteStore } from '../../workspace/sqlite-store.ts';
 import { readWorkspace } from '@socialprune/core/workspace/store';
+import { channel } from 'node:diagnostics_channel';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // A test-only process owns import, the real HTTP/database worker, and cleanup.
 // No normal-runtime environment flag can select this entrypoint.
@@ -13,6 +15,40 @@ const directory = await mkdtemp(join(tmpdir(), 'socialprune-review-browser-'));
 const workspace = join(directory, 'workspace');
 const controller = new AbortController();
 let readback = false;
+const responses = channel('http.server.response.finish');
+const observe = (raw: unknown) => {
+  const { request, response } = raw as {
+    request: IncomingMessage;
+    response: ServerResponse;
+  };
+  // writeHead's header object is not retained by getHeaders(). Read Node's
+  // already-generated wire header at finish, without changing any response.
+  const wire: unknown = Reflect.get(response, '_header');
+  const headers =
+    typeof wire === 'string'
+      ? Object.fromEntries(
+          wire
+            .split('\r\n')
+            .slice(1)
+            .filter((line) => line.includes(':'))
+            .map((line) => {
+              const index = line.indexOf(':');
+              return [
+                line.slice(0, index).toLowerCase(),
+                line.slice(index + 1).trim(),
+              ];
+            }),
+        )
+      : {};
+  process.send?.({
+    type: 'httpResponse',
+    method: request.method,
+    path: request.url,
+    status: response.statusCode,
+    headers,
+  });
+};
+responses.subscribe(observe);
 process.on('message', (message: unknown) => {
   if (message === 'stop') controller.abort();
 });
@@ -23,6 +59,14 @@ try {
     createNodeContext(sink, sink),
   );
   if (imported !== 0) throw new Error('Synthetic import did not complete.');
+  const initial = await SQLiteStore.open(
+    join(workspace, 'socialprune.sqlite'),
+    { readOnly: true },
+  );
+  const initialRevision = await initial.read(
+    async (tx) => (await tx.runtime.get()).revision,
+  );
+  await initial.close();
   const context = createNodeContext(sink, sink, controller.signal);
   const result = await executeCli(['review', '--workspace', workspace], {
     ...context,
@@ -38,7 +82,13 @@ try {
   });
   try {
     const snapshot = await store.read(readWorkspace);
-    process.send?.({ type: 'readback', snapshot });
+    const revision = await store.read(
+      async (tx) => (await tx.runtime.get()).revision,
+    );
+    process.send?.({
+      type: 'readback',
+      snapshot: { ...snapshot, revision, initialRevision },
+    });
     readback = true;
   } finally {
     await store.close();
@@ -46,5 +96,6 @@ try {
 } finally {
   await rm(directory, { recursive: true, force: true });
   process.send?.({ type: 'cleanup', readback });
+  responses.unsubscribe(observe);
   process.disconnect?.();
 }

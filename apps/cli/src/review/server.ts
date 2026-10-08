@@ -77,7 +77,13 @@ export async function startReviewServer(options: {
   const pending = new Set<Promise<void>>();
   const sockets = new Set<Socket>();
   const server = createServer(
-    { headersTimeout: 10_000, requestTimeout: 30_000, keepAliveTimeout: 5_000 },
+    {
+      headersTimeout: 10_000,
+      requestTimeout: 30_000,
+      keepAliveTimeout: 5_000,
+      requireHostHeader: false,
+      connectionsCheckingInterval: 1_000,
+    },
     (request, response) => {
       const task = route(request, response)
         .then(async () => {
@@ -96,6 +102,11 @@ export async function startReviewServer(options: {
       void task.finally(() => pending.delete(task));
     },
   );
+  server.on('checkExpectation', (request, response) => {
+    response.writeHead(417, { ...REVIEW_HEADERS, 'Content-Length': 0 });
+    response.end();
+    request.resume();
+  });
   server.on('connection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));

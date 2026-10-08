@@ -5,6 +5,7 @@ import { test as base, expect } from '@playwright/test';
 import type { BrowserContext, Page, Response } from '@playwright/test';
 import type { Workspace } from '@socialprune/core';
 import type { Item } from '@socialprune/core';
+import { foreignPage, browserSocketAudit } from './foreign-page.ts';
 
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
@@ -44,6 +45,12 @@ async function reviewProcess() {
   let stdout = '',
     stderr = '',
     cleanup = false;
+  const httpResponses: {
+    method: string;
+    path: string;
+    status: number;
+    headers: Record<string, string>;
+  }[] = [];
   const opened = new Promise<string>((resolve, reject) => {
     child.once('error', reject);
     child.once('close', (code) => {
@@ -51,13 +58,26 @@ async function reviewProcess() {
         reject(new Error(`Review startup exit ${code}: ${stderr}`));
     });
     child.on('message', (raw: unknown) => {
-      const message = raw as { type: string; url: string };
+      const message = raw as {
+        type: string;
+        url: string;
+        method: string;
+        path: string;
+        status: number;
+        headers: Record<string, string>;
+      };
       if (message.type === 'opened') resolve(message.url);
+      if (message.type === 'httpResponse') httpResponses.push(message);
     });
   });
-  const snapshot = new Promise<Workspace>((resolve) => {
+  const snapshot = new Promise<
+    Workspace & { revision: number; initialRevision: number }
+  >((resolve) => {
     child.on('message', (raw: unknown) => {
-      const message = raw as { type: string; snapshot: Workspace };
+      const message = raw as {
+        type: string;
+        snapshot: Workspace & { revision: number; initialRevision: number };
+      };
       if (message.type === 'readback') resolve(message.snapshot);
       if (message.type === 'cleanup') cleanup = true;
     });
@@ -75,6 +95,7 @@ async function reviewProcess() {
   return {
     url,
     origin: new URL(url).origin,
+    httpResponses,
     async stop() {
       if (child.connected) child.send('stop');
       expect(await closed).toBe(0);
@@ -421,4 +442,217 @@ test('real CSP observer rejects a planted blocked connection without replacing f
     )
     .toEqual(['connect-src']);
   expect(() => audit.noViolations(['connect-src'])).toThrow();
+});
+
+test('a real foreign-origin page cannot exchange or write decisions', async ({
+  page,
+  context,
+  review,
+}) => {
+  // D40: Windows three-engine focused run measured up to 3.5 s.
+  test.setTimeout(60_000);
+  const hostile = await foreignPage();
+  const audit = browserSocketAudit(context, [hostile.origin, review.origin]);
+  const targetResponses: Response[] = [];
+  const violations: string[] = [];
+  await context.exposeBinding(
+    '__c3PolicyViolation',
+    (_source, value: string) => {
+      violations.push(value);
+    },
+  );
+  await context.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      const report = Reflect.get(globalThis, '__c3PolicyViolation') as (
+        value: string,
+      ) => Promise<void>;
+      void report(event.effectiveDirective);
+    });
+  });
+  context.on('response', (response) => {
+    if (new URL(response.url()).origin === review.origin)
+      targetResponses.push(response);
+  });
+  try {
+    await page.goto(hostile.origin);
+    const body = JSON.stringify({
+      type: 'decide',
+      requestId: 'foreign',
+      commandId: 'foreign',
+      itemIds: [first.id],
+      expected: { [first.id]: 'undecided' },
+      value: 'delete',
+    });
+    // Application/json causes a real preflight. No fetch/network substitution.
+    expect(
+      await page.evaluate(
+        async ({ target, body }) => {
+          try {
+            await fetch(target + '/api/decide?attempt=preflight', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body,
+            });
+            return false;
+          } catch {
+            return true;
+          }
+        },
+        { target: review.origin, body },
+      ),
+    ).toBe(true);
+    const plainResponse = page.waitForResponse(
+      (response) =>
+        response.url() === review.origin + '/api/decide?attempt=plain',
+    );
+    await page.evaluate(
+      async ({ target, body }) => {
+        await fetch(target + '/api/decide?attempt=plain', {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body,
+        });
+      },
+      { target: review.origin, body },
+    );
+    expect((await plainResponse).status()).toBe(403);
+    for (const path of ['/session', '/api/decide']) {
+      const formResponse = context.waitForEvent('response', {
+        predicate: (response) =>
+          response.url() === review.origin + path + '?attempt=form',
+      });
+      const formCommitted = page.waitForURL(
+        review.origin + path + '?attempt=form',
+        { waitUntil: 'commit' },
+      );
+      await page.evaluate(
+        ({ target, path, body }) => {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = target + path + '?attempt=form';
+          const input = document.createElement('input');
+          input.name = 'request';
+          input.value = body;
+          form.append(input);
+          document.body.append(form);
+          form.submit();
+        },
+        { target: review.origin, path, body },
+      );
+      expect((await formResponse).status()).toBe(403);
+      await formCommitted;
+      await page.goto(hostile.origin);
+    }
+    for (const response of targetResponses) {
+      expect(response.status()).toBe(403);
+      expect(
+        Object.keys(await response.allHeaders()).filter((name) =>
+          name.startsWith('access-control-'),
+        ),
+      ).toEqual([]);
+    }
+    expect(
+      targetResponses.filter(
+        (response) =>
+          response.url().includes('attempt=plain') ||
+          response.url().includes('attempt=form'),
+      ),
+    ).toHaveLength(3);
+    const preflight = targetResponses.filter(
+      (response) => response.request().method() === 'OPTIONS',
+    );
+    expect(preflight.every((response) => response.status() === 403)).toBe(true);
+    // Some engines do not expose a CORS-rejected preflight as a Response event.
+    expect(
+      targetResponses.some(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('attempt=preflight'),
+      ),
+    ).toBe(false);
+    await expect
+      .poll(
+        () =>
+          review.httpResponses.filter((response) =>
+            response.path.includes('attempt='),
+          ).length,
+      )
+      .toBe(4);
+    const wire = review.httpResponses.filter((response) =>
+      response.path.includes('attempt='),
+    );
+    expect(
+      wire
+        .filter((response) => response.path.includes('attempt=preflight'))
+        .map((response) => [response.method, response.status]),
+    ).toEqual([['OPTIONS', 403]]);
+    for (const response of wire) {
+      const responseHeaders = Object.fromEntries(
+        Object.entries(response.headers).map(([name, value]) => [
+          name.toLowerCase(),
+          value,
+        ]),
+      );
+      expect(response.status).toBe(403);
+      expect(
+        Object.keys(responseHeaders).filter((name) =>
+          name.startsWith('access-control-'),
+        ),
+      ).toEqual([]);
+      expect(responseHeaders['content-security-policy']).toBe(policy);
+      expect(responseHeaders['x-content-type-options']).toBe('nosniff');
+      expect(responseHeaders['referrer-policy']).toBe('no-referrer');
+      expect(responseHeaders['cache-control']).toBe('no-store');
+    }
+    expect(
+      audit.requests.filter(
+        (url) => !audit.origins.includes(new URL(url).origin),
+      ),
+    ).toEqual([]);
+    expect(violations).toEqual([]);
+    const snapshot = await review.stop();
+    expect(snapshot.decisionEvents).toEqual([]);
+    expect(snapshot.outcomeEvents).toEqual([]);
+    expect(snapshot.assessments).toEqual([]);
+    expect(snapshot.counts.decisionEvents).toBe(0);
+    expect(snapshot.counts.outcomeEvents).toBe(0);
+    expect(snapshot.revision).toBe(snapshot.initialRevision);
+  } finally {
+    await hostile.stop();
+  }
+});
+
+test('real browser navigation with localhost Host receives policy-bearing 403 and mounts nothing', async ({
+  page,
+  context,
+  review,
+}) => {
+  // D40: Windows three-engine focused run measured up to 2.2 s.
+  test.setTimeout(60_000);
+  const url = new URL(review.origin);
+  url.hostname = 'localhost';
+  const audit = browserSocketAudit(context, [url.origin]);
+  const response = await page.goto(url.origin, { waitUntil: 'commit' });
+  expect(response!.status()).toBe(403);
+  const headers = await response!.allHeaders();
+  expect(headers['content-security-policy']).toBe(policy);
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['referrer-policy']).toBe('no-referrer');
+  expect(headers['cache-control']).toBe('no-store');
+  expect(
+    Object.keys(headers).filter((name) => name.startsWith('access-control-')),
+  ).toEqual([]);
+  expect(
+    await page.locator('[data-router-started], [role="grid"]').count(),
+  ).toBe(0);
+  expect(
+    audit.requests.filter((value) => new URL(value).origin !== url.origin),
+  ).toEqual([]);
+  expect(
+    audit.requests.some((value) => new URL(value).pathname.startsWith('/api/')),
+  ).toBe(false);
+  const snapshot = await review.stop();
+  expect(snapshot.decisionEvents).toEqual([]);
+  expect(snapshot.revision).toBe(snapshot.initialRevision);
 });

@@ -11,6 +11,7 @@ import type { HttpResult } from './test/helpers.ts';
 import { reviewAssetDirectory } from './static.ts';
 import { resolve } from 'node:path';
 import http from 'node:http';
+import { rawBytes, rawRequest } from './test/raw-http.ts';
 
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
@@ -25,6 +26,215 @@ function headers(result: HttpResult) {
     ),
   ).toEqual([]);
 }
+test('missing Host reaches the router and returns 403 with the complete response policy', async () => {
+  const fixture = await running();
+  try {
+    const result = await rawRequest(fixture.server.address.port);
+    expect(result.status).toBe(403);
+    headers(result);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test('unsupported Expect returns 417 with the response policy, while Node retains interim 100', async () => {
+  const fixture = await running();
+  try {
+    const port = fixture.server.address.port;
+    const host = `127.0.0.1:${port}`;
+    const result = await rawRequest(port, {
+      headers: [
+        ['Host', host],
+        ['Expect', 'foo'],
+      ],
+    });
+    expect(result.status).toBe(417);
+    headers(result);
+    expect(result.text).toBe('');
+    const interim = await rawBytes(
+      port,
+      `GET / HTTP/1.1\r\nHost: ${host}\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n`,
+    );
+    expect(interim.raw.startsWith('HTTP/1.1 100 Continue\r\n\r\n')).toBe(true);
+    expect(interim.raw.slice(interim.raw.indexOf('\r\n\r\n') + 4)).toContain(
+      `Content-Security-Policy: ${policy}`,
+    );
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test('real incomplete header block closes between 10 and 12 seconds with the response policy', async () => {
+  const fixture = await running();
+  try {
+    const port = fixture.server.address.port;
+    const response = await rawBytes(
+      port,
+      `GET / HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n`,
+    );
+    console.log(
+      JSON.stringify({ headerTimeoutMs: Math.round(response.elapsedMs) }),
+    );
+    expect(response.elapsedMs).toBeGreaterThanOrEqual(10_000);
+    expect(response.elapsedMs).toBeLessThanOrEqual(12_000);
+    for (const line of [
+      `Content-Security-Policy: ${policy}`,
+      'X-Content-Type-Options: nosniff',
+      'Referrer-Policy: no-referrer',
+      'Cache-Control: no-store',
+    ])
+      expect(response.raw).toContain(line);
+  } finally {
+    await fixture.dispose();
+  }
+}, 90_000);
+
+test('gate status regressions preserve state for duplicate authorities and credentials; exact size and concurrent exchange work', async () => {
+  const fixture = await running();
+  try {
+    const exchanges = await Promise.all([
+      fixture.exchange(),
+      fixture.exchange(),
+    ]);
+    expect(exchanges.map((response) => response.status).sort()).toEqual([
+      200, 401,
+    ]);
+    exchanges.forEach(headers);
+    const winner = exchanges.find((response) => response.status === 200)!;
+    const cookie = winner.headers['set-cookie']![0]!.split(';')[0]!;
+    const csrf = (winner.data as { csrf: string }).csrf;
+    const port = fixture.server.address.port,
+      authority = `127.0.0.1:${port}`;
+    const normal: [string, string][] = [
+      ['Host', authority],
+      ['Origin', fixture.origin],
+      ['Content-Type', 'application/json'],
+      ['Cookie', cookie],
+      ['X-SocialPrune-CSRF', csrf],
+    ];
+    const decision = JSON.stringify({
+      type: 'decide',
+      requestId: 'rejected',
+      commandId: 'rejected',
+      itemIds: ['x:101'],
+      expected: { 'x:101': 'undecided' },
+      value: 'delete',
+    });
+    const cases: {
+      name: string;
+      headers: [string, string][];
+      status: number;
+    }[] = [
+      {
+        name: 'duplicate Host',
+        headers: [...normal, ['Host', authority]],
+        status: 403,
+      },
+      {
+        name: 'Host trailing dot',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'Host' ? `127.0.0.1.:${port}` : value,
+        ]),
+        status: 403,
+      },
+      {
+        name: 'Origin other port',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'Origin'
+            ? `http://127.0.0.1:${port === 65535 ? 1 : port + 1}`
+            : value,
+        ]),
+        status: 403,
+      },
+      {
+        name: 'Origin https',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'Origin' ? `https://${authority}` : value,
+        ]),
+        status: 403,
+      },
+      {
+        name: 'duplicate Origin',
+        headers: [...normal, ['Origin', fixture.origin]],
+        status: 403,
+      },
+      {
+        name: 'wrong cookie name right value',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'Cookie'
+            ? `sp_0000000000000000=${cookie.split('=')[1]!}`
+            : value,
+        ]),
+        status: 401,
+      },
+      {
+        name: 'wrong CSRF right length',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'X-SocialPrune-CSRF'
+            ? (csrf[0] === 'A' ? 'B' : 'A').repeat(43)
+            : value,
+        ]),
+        status: 403,
+      },
+      {
+        name: 'JSON charset',
+        headers: normal.map(([name, value]) => [
+          name,
+          name === 'Content-Type' ? 'application/json; charset=utf-8' : value,
+        ]),
+        status: 415,
+      },
+    ];
+    for (const entry of cases) {
+      const result = await rawRequest(port, {
+        method: 'POST',
+        path: '/api/decide',
+        headers: entry.headers,
+        body: decision,
+      });
+      expect(result.status, entry.name).toBe(entry.status);
+      headers(result);
+      const counter = await request(fixture.origin, {
+        path: '/api/open',
+        headers: Object.fromEntries(normal),
+        body: JSON.stringify({
+          type: 'open',
+          requestId: 'counter',
+          workspaceId: 'active',
+        }),
+      });
+      expect(counter.data).toMatchObject([
+        {
+          summary: {
+            revision: 0,
+            counts: { decisionEvents: 0, outcomeEvents: 0 },
+            decisions: { delete: 0 },
+          },
+        },
+      ]);
+    }
+    const prefix = '{"type":"revision","requestId":"exact-size"';
+    const exact = prefix + ' '.repeat(1024 * 1024 - prefix.length - 1) + '}';
+    expect(Buffer.byteLength(exact)).toBe(1024 * 1024);
+    const result = await request(fixture.origin, {
+      path: '/api/revision',
+      headers: Object.fromEntries(normal),
+      body: exact,
+    });
+    expect(result.status).toBe(200);
+    headers(result);
+    expect(result.data).toEqual([
+      { type: 'revision', requestId: 'exact-size', revision: 0 },
+    ]);
+  } finally {
+    await fixture.dispose();
+  }
+});
 test('foundation: real loopback, database thread, committed reply, shutdown and reopen', async () => {
   const fixture = await running();
   try {

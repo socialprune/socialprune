@@ -329,4 +329,6 @@ test('the product skill has one canonical copy, its required frontmatter and liv
     '.github/skills/',
   ])
     expect(docs).toContain(folder);
-});
+  // The repository walk took 341 ms alone and more than 5,022 ms during the
+  // full parallel suite on 2026-10-08, so the project rule's 60 s floor applies.
+}, 60_000);

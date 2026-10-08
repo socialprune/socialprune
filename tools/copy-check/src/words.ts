@@ -81,6 +81,10 @@ export const COPY_SCOPE = {
   catalogs: 'apps/web/src/i18n/',
   cli: 'apps/cli/src/',
   guide: 'packages/core/src/guide/',
+  adapterGuides: [
+    'packages/adapter-x/src/guide.ts',
+    'packages/adapter-instagram/src/guide.ts',
+  ],
   skill: 'skills/socialprune/',
   readme: 'README.md',
   docs: 'docs/',

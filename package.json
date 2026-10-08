@@ -15,7 +15,7 @@
     "copy:check": "node tools/copy-check/src/cli.ts",
     "i18n:generate": "pnpm --filter @socialprune/web run i18n:generate",
     "i18n:check": "pnpm --filter @socialprune/web run i18n:check",
-    "guide:check": "pnpm --filter @socialprune/core run guide:check --",
+    "guide:check": "pnpm --filter @socialprune/web run guide:check --",
     "fixtures:demo": "pnpm --filter @socialprune/fixture-gen run demo --",
     "build:cli": "pnpm --filter socialprune run build",
     "pack:cli": "pnpm --filter socialprune run pack",

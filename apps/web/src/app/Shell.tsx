@@ -13,7 +13,7 @@ import type { GateState } from './gate.ts';
 import { scriptURL } from './trusted-urls.ts';
 import { parseRoute } from './router.ts';
 import { AppUpdates } from './updates.ts';
-import { guides } from './guide.ts';
+import { Guide } from '../guide/Guide.tsx';
 import { DemoSession } from './demo.ts';
 import styles from './Shell.module.css';
 const Review = lazy(() =>
@@ -404,12 +404,7 @@ function Content({
             </section>
           )}
           {route.startsWith('/guide') && (
-            <section data-guide-count={guides.length}>
-              <h2>{t('guide.pending')}</h2>
-              <p>{t('guide.pending.body')}</p>
-              <a href="#/guide/x">{t('guide.x')}</a>{' '}
-              <a href="#/guide/instagram">{t('guide.instagram')}</a>
-            </section>
+            <Guide route={route} locale={locale} />
           )}
           {route === '/privacy' && (
             <>

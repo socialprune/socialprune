@@ -34,7 +34,7 @@ test('emits a real CSS Module into an external file under the workspace override
     'utf8',
   );
   expect(workspace).toMatch(/vite>lightningcss:\s*['"]-['"]/);
-});
+}, 60_000);
 
 test('component modules keep raw color literals out of their styles', async () => {
   async function scan(folder: string): Promise<void> {

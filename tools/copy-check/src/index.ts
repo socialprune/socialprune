@@ -43,6 +43,8 @@ export function copyKind(path: string): CopyKind | null {
     return null;
   }
   if (normalized === COPY_SCOPE.readme) return 'markdown';
+  if (COPY_SCOPE.adapterGuides.some((path) => path === normalized))
+    return 'source';
   if (normalized.startsWith(COPY_SCOPE.docs)) {
     if (/\.mdx?$/i.test(normalized)) return 'markdown';
     if (/\.(?:txt|ics)$/i.test(normalized)) return 'text';

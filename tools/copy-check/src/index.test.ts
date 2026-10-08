@@ -51,6 +51,8 @@ describe('scope and Markdown parsing', () => {
       'apps/cli/src/commands/import.ts',
       'packages/core/src/guide/x.ts',
       'packages/core/src/guide/reminder.ics',
+      'packages/adapter-x/src/guide.ts',
+      'packages/adapter-instagram/src/guide.ts',
       'skills/socialprune/SKILL.md',
       'README.md',
       'docs/LESSONS_ARCHIVE.md',
@@ -64,6 +66,8 @@ describe('scope and Markdown parsing', () => {
       'tools/copy-check/src/fixtures/forbidden.json',
       'apps/cli/src/cli/errors.test.ts',
       'packages/core/src/guide/types.d.ts',
+      'packages/adapter-x/src/guide.test.ts',
+      'packages/adapter-instagram/src/guide.test.ts',
       'PLAN.md',
       'private/export.json',
       'fixtures/synthetic/classify/items.jsonl',
@@ -150,5 +154,33 @@ describe('scope and Markdown parsing', () => {
     expect(
       inspectCopy('apps/cli/src/cli/errors.ts', "const message = '`safe`';"),
     ).toHaveLength(1);
+  });
+
+  it('rejects a forbidden word in either adapter guide and calendar catalog text', () => {
+    for (const path of [
+      'packages/adapter-x/src/guide.ts',
+      'packages/adapter-instagram/src/guide.ts',
+    ]) {
+      expect(
+        inspectCopy(
+          path,
+          "export const fact = { text: { en: 'A safe export', de: 'Erzeugter Text' } };",
+        ),
+        path,
+      ).toMatchObject([{ path, text: 'safe', rule: 'forbidden-word' }]);
+      expect(
+        inspectCopy(
+          path,
+          "export const fact = { text: { en: 'A data export', de: 'Erzeugter Text' } };",
+        ),
+        path,
+      ).toEqual([]);
+    }
+    expect(
+      inspectCopy(
+        'apps/web/src/i18n/en.json',
+        '{"guide.calendarSummary":"Check your safe export"}',
+      ),
+    ).toMatchObject([{ text: 'safe' }]);
   });
 });

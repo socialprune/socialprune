@@ -23,6 +23,8 @@ export function guideHandler(
   if (!guide) throw new CliError('GUIDE_UNAVAILABLE');
   const facts: readonly GuideFact[] = [
     guide.startUrl,
+    ...(guide.paths?.desktop ?? []),
+    ...(guide.paths?.mobile ?? []),
     ...guide.steps,
     ...guide.options,
     guide.waiting,
@@ -32,10 +34,11 @@ export function guideHandler(
   return {
     data: { platform, lang, guide },
     human: facts
-      .map(
-        (fact) =>
-          `${plainText(fact.text[lang])}\n${plainText(fact.source.url)}\n${lang === 'de' ? 'Geprüft am' : 'Checked on'} ${plainText(fact.verifiedOn)}`,
-      )
+      .map((fact) => {
+        const source =
+          lang === 'de' ? (fact.sourceDe ?? fact.source) : fact.source;
+        return `${plainText(fact.text[lang])}\n${plainText(source.url)}\n${fact.verifiedOn === null ? (lang === 'de' ? 'Noch nicht von einer Person geprüft' : 'Not yet checked by a person') : `${lang === 'de' ? 'Geprüft am' : 'Checked on'} ${plainText(fact.verifiedOn)}`}`;
+      })
       .join('\n\n'),
   };
 }
@@ -62,7 +65,7 @@ export const guideCommand = buildCommand({
       ],
     },
   },
-  docs: { brief: 'Export guide (unavailable until its sources are verified)' },
+  docs: { brief: 'Export guide with sources and human-check status' },
   func(
     this: CommandRunContext,
     flags: { json: boolean; lang: GuideLanguage },

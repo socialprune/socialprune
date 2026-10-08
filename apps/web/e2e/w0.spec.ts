@@ -8,6 +8,9 @@ import {
   workspaceIds,
 } from './helpers.ts';
 import { method9Zip } from './archive-method9.ts';
+import { guides } from '../src/app/guide.ts';
+import en from '../src/i18n/en.json' with { type: 'json' };
+import de from '../src/i18n/de.json' with { type: 'json' };
 
 test('W0 first visit claims control, verifies the worker and imports without a reload', async ({
   page,
@@ -306,7 +309,7 @@ test('W0 pre-control demo workers are terminated before real export input is ena
   }
 });
 
-test('W0 empty unverified guide and in-place locale switching make no external requests', async ({
+test('W0 unverified guide and in-place locale switching make no external requests', async ({
   page,
   context,
 }) => {
@@ -317,19 +320,20 @@ test('W0 empty unverified guide and in-place locale switching make no external r
     .click();
   await expect(page.locator('[data-guide-count]')).toHaveAttribute(
     'data-guide-count',
-    '0',
+    String(guides.length),
   );
-  await expect(
-    page.getByRole('heading', { name: 'Not yet verified' }),
-  ).toBeVisible();
+  await page.getByRole('link', { name: en['guide.x'], exact: true }).click();
+  await expect(page.getByTestId('guide-verification')).toHaveText(
+    en['guide.notChecked'],
+  );
   const document = await page.evaluate(() => performance.timeOrigin);
   const requests: string[] = [];
   context.on('request', (request) => requests.push(request.url()));
   await page.getByRole('combobox', { name: 'Language' }).selectOption('de');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-  await expect(
-    page.getByRole('heading', { name: 'Noch nicht geprüft' }),
-  ).toBeVisible();
+  await expect(page.getByTestId('guide-verification')).toHaveText(
+    de['guide.notChecked'],
+  );
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(document);
   expect(requests).toEqual([]);
   await audit.assert();

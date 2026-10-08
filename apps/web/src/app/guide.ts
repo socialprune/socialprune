@@ -1,5 +1,9 @@
 import type { PlatformGuide } from '@socialprune/core/guide/types';
+import { xGuide } from '@socialprune/adapter-x/guide';
+import { instagramGuide } from '@socialprune/adapter-instagram/guide';
 
-// GD has no verified source records yet. Keep the scaffold visibly empty;
-// the release build refuses this state rather than shipping guessed facts.
-export const guides: readonly PlatformGuide[] = [];
+// Separate adapter subpaths keep guide copy out of the import worker.
+export const guides: readonly PlatformGuide<'x' | 'instagram'>[] = [
+  xGuide,
+  instagramGuide,
+];

@@ -4,9 +4,10 @@ import { openArchivePaths } from '@socialprune/core/node';
 import { CliError } from './errors.ts';
 import type { CliContext, CliStream, SchemaEntry } from './context.ts';
 import { workspaceServices } from '../workspace/services.ts';
+import { xGuide } from '@socialprune/adapter-x/guide';
+import { instagramGuide } from '@socialprune/adapter-instagram/guide';
 
-// GD fills the shared guide source after the maintainer's page-reading decision.
-const guides: CliContext['services']['guides'] = [];
+const guides: CliContext['services']['guides'] = [xGuide, instagramGuide];
 
 async function schemaDirectories(): Promise<URL[]> {
   const packed = new URL('../schemas/', import.meta.url);

@@ -1,0 +1,53 @@
+@layer components {
+  .guide {
+    max-width: 70ch;
+    min-width: 0;
+  }
+  .choice,
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .choice a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target-size);
+    padding-inline: var(--space-3);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+  }
+  .choice a[aria-current='page'] {
+    background: var(--color-selected-bg);
+  }
+  .steps {
+    padding-inline-start: var(--space-5);
+  }
+  .steps li {
+    padding-inline-start: var(--space-1);
+  }
+  .field {
+    display: grid;
+    gap: var(--space-2);
+    margin-block: var(--space-4);
+    min-width: 0;
+    max-width: 24rem;
+  }
+  .field input,
+  .field select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .reminder {
+    margin-block: var(--space-5);
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-panel);
+  }
+  .sources {
+    padding-inline-start: var(--space-5);
+    overflow-wrap: anywhere;
+  }
+}

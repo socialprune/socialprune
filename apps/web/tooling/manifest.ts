@@ -7,6 +7,7 @@ import type { Plugin, ResolvedConfig } from 'vite';
 import { DATA_WORKER_POLICY } from '../src/sw/policies.ts';
 import type { BuildManifest } from '../src/sw/policies.ts';
 import { guides } from '../src/app/guide.ts';
+import { checkGuides } from '@socialprune/core/guide/check';
 
 const sha256 = (bytes: string | Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
@@ -20,10 +21,17 @@ export function shellManifest(mode: string): Plugin {
       config = value;
     },
     buildStart() {
-      if (mode === 'release' && !guides.length)
-        throw new Error(
-          'GD guide verification is required before a release build.',
-        );
+      if (mode === 'release') {
+        const findings = checkGuides(guides, {
+          today: new Date().toISOString().slice(0, 10),
+          maxAgeDays: 120,
+          release: true,
+        });
+        if (findings.length)
+          throw new Error(
+            `Guide release check failed: ${JSON.stringify(findings)}`,
+          );
+      }
     },
     transformIndexHtml(html) {
       return probe

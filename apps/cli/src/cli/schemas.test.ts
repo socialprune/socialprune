@@ -39,7 +39,7 @@ test('finite command output parses with the canonical CLI schema', async () => {
     [['--help', '--json'], 0],
     [['structure', archive, '--json'], 0],
     [['schemas', '--json'], 0],
-    [['guide', 'x', '--json'], 2],
+    [['guide', 'x', '--json'], 0],
     [['scan', '--json'], 2],
     [['mcp', '--json'], 2],
     [['review', '--dry-run', '--json'], 2],

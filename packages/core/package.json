@@ -8,6 +8,7 @@
     "./node": "./src/node/index.ts",
     "./browser-init": "./src/browser-init.ts",
     "./guide/types": "./src/guide/types.ts",
+    "./guide/check": "./src/guide/check.ts",
     "./model/v1": "./src/model/v1.ts",
     "./workspace/protocol": "./src/workspace/protocol.ts",
     "./workspace/migrate": "./src/workspace/migrate.ts",

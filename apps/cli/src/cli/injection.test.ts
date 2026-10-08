@@ -94,7 +94,12 @@ test('every C1 failure path rejects fixture data without echoing or executing it
       services,
       exitCode: 2,
     },
-    { name: 'guide unavailable', args: ['guide', 'x'], services, exitCode: 2 },
+    {
+      name: 'guide unavailable',
+      args: ['guide', 'x'],
+      services: { ...services, guides: [] },
+      exitCode: 2,
+    },
     {
       name: 'guide untrusted extra',
       args: ['guide', 'x', input.text],

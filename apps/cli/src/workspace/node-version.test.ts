@@ -85,15 +85,14 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['schemas'],
     ['structure', fixture],
     ['guide', 'x'],
+    ['guide', 'instagram'],
   ]) {
     const node = createNodeContext(
       capture.context.io.stdout,
       capture.context.io.stderr,
     );
     const code = await executeCli(args, { ...node, nodeVersion: '24.14.1' });
-    expect(code).toBe(
-      args[0] === 'guide' && !node.services.guides.length ? 2 : 0,
-    );
+    expect(code).toBe(0);
   }
   const loader = new URL('./test/forbid-sqlite.ts', import.meta.url).href;
   const cli = fileURLToPath(new URL('../main.ts', import.meta.url));
@@ -102,15 +101,21 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['schemas'],
     ['structure', fixture],
     ['guide', 'x'],
+    ['guide', 'instagram'],
   ]) {
     const result = spawnSync(
       process.execPath,
       ['--import', loader, cli, ...args],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
-    expect([0, 2], `${args.join(' ')}: ${result.stderr}`).toContain(
-      result.status,
-    );
+    if (args[0] === 'guide') {
+      expect(result.status, `${args.join(' ')}: ${result.stderr}`).toBe(0);
+      expect(result.stdout).toContain('Not yet checked by a person');
+    } else {
+      expect([0, 2], `${args.join(' ')}: ${result.stderr}`).toContain(
+        result.status,
+      );
+    }
     expect(result.stderr).not.toContain('forbids loading SQLite');
     expect(result.stderr).not.toContain('ExperimentalWarning');
   }

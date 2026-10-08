@@ -10,7 +10,8 @@ test('guide types carry bilingual text and dated sources without guide content',
       publisher: 'Synthetic publisher',
       title: 'Generated source title',
     },
-    verifiedOn: '2026-10-07',
+    retrievedOn: '2026-10-08',
+    verifiedOn: null,
   };
   const guide: PlatformGuide = {
     platform: 'x',
@@ -25,6 +26,8 @@ test('guide types carry bilingual text and dated sources without guide content',
     en: string;
     de: string;
   }>();
+  expectTypeOf<GuideFact['retrievedOn']>().toEqualTypeOf<string>();
+  expectTypeOf<GuideFact['verifiedOn']>().toEqualTypeOf<string | null>();
   expectTypeOf<PlatformGuide['waiting']['typicalDays']>().toEqualTypeOf<{
     min: number;
     max: number;
@@ -32,8 +35,13 @@ test('guide types carry bilingual text and dated sources without guide content',
   expectTypeOf<PlatformGuide['downloadWindow']['days']>().toEqualTypeOf<
     number | null
   >();
-  expectTypeOf<PlatformGuide['platform']>().toEqualTypeOf<'x' | 'instagram'>();
+  expectTypeOf<PlatformGuide['platform']>().toEqualTypeOf<string>();
+  expectTypeOf<
+    PlatformGuide<'generated-platform'>['platform']
+  >().toEqualTypeOf<'generated-platform'>();
   expect(guide.waiting.typicalDays).toBeNull();
   expect(guide.downloadWindow.days).toBeNull();
   expect(guide.startUrl).toBe(fact);
+  expect(guide.startUrl.retrievedOn).toBe('2026-10-08');
+  expect(guide.startUrl.verifiedOn).toBeNull();
 });

@@ -10,6 +10,8 @@ import { capturedContext } from './test/context.ts';
 import type { CliContext } from './context.ts';
 import type { PlatformGuide } from '@socialprune/core/guide/types';
 import { CliResultSchema } from './schemas.ts';
+import { xGuide } from '@socialprune/adapter-x/guide';
+import { instagramGuide } from '@socialprune/adapter-instagram/guide';
 
 const archive = fileURLToPath(
   new URL(
@@ -224,6 +226,7 @@ test('guide consumes injected shared guide facts in the selected language', asyn
       publisher: 'Invented',
       title: 'Invented source',
     },
+    retrievedOn: '2026-10-08',
     verifiedOn: '2026-10-07',
   };
   const guide: PlatformGuide = {
@@ -234,6 +237,29 @@ test('guide consumes injected shared guide facts in the selected language', asyn
     waiting: { ...fact, typicalDays: null },
     downloadWindow: { ...fact, days: null },
     htmlExportHint: fact,
+    paths: {
+      desktop: [
+        {
+          ...fact,
+          id: 'generated-desktop',
+          text: {
+            en: 'Generated computer steps.',
+            de: 'Erzeugte Computerschritte.',
+          },
+        },
+      ],
+      mobile: [
+        {
+          ...fact,
+          id: 'generated-mobile',
+          text: { en: 'Generated phone steps.', de: 'Erzeugte Handyschritte.' },
+          sourceDe: {
+            ...fact.source,
+            url: 'https://example.invalid/de/generated-help',
+          },
+        },
+      ],
+    },
   };
   const capture = capturedContext({ ...services, guides: [guide] });
   expect(
@@ -241,6 +267,26 @@ test('guide consumes injected shared guide facts in the selected language', asyn
   ).toBe(0);
   expect(capture.stdout.join('')).toContain(fact.text.de);
   expect(capture.stdout.join('')).not.toContain(fact.text.en);
+  expect(capture.stdout.join('')).toContain(guide.paths!.desktop[0]!.text.de);
+  expect(capture.stdout.join('')).toContain(guide.paths!.mobile[0]!.text.de);
+  expect(capture.stdout.join('')).toContain(
+    guide.paths!.mobile[0]!.sourceDe!.url,
+  );
+  expect(capture.stdout.join('')).toContain(`Geprüft am ${fact.verifiedOn}`);
+  for (const [lang, message] of [
+    ['en', 'Not yet checked by a person'],
+    ['de', 'Noch nicht von einer Person geprüft'],
+  ]) {
+    const unverified = capturedContext({
+      ...services,
+      guides: [{ ...guide, startUrl: { ...fact, verifiedOn: null } }],
+    });
+    expect(
+      await executeCli(['guide', 'x', '--lang', lang!], unverified.context),
+    ).toBe(0);
+    expect(unverified.stdout.join('')).toContain(message);
+    expect(unverified.stdout.join('')).not.toContain('null');
+  }
   const json = capturedContext({ ...services, guides: [guide] });
   expect(await executeCli(['guide', 'x', '--json'], json.context)).toBe(0);
   expect(JSON.parse(json.stdout.join(''))).toMatchObject({
@@ -249,44 +295,50 @@ test('guide consumes injected shared guide facts in the selected language', asyn
   });
 });
 
-test('production guide stays unavailable until GD supplies verified data', async () => {
+test('production guide returns adapter data with null human verification dates', async () => {
   const capture = capturedContext(services);
   const node = createNodeContext(
     capture.context.io.stdout,
     capture.context.io.stderr,
   );
-  for (const platform of ['x', 'instagram']) {
-    expect(await executeCli(['guide', platform, '--json'], node)).toBe(2);
+  const guides = [xGuide, instagramGuide];
+  for (const guide of guides) {
+    expect(await executeCli(['guide', guide.platform, '--json'], node)).toBe(0);
   }
-  expect(capture.stdout.map((text): unknown => JSON.parse(text))).toEqual([
-    {
+  expect(capture.stdout.map((text): unknown => JSON.parse(text))).toEqual(
+    guides.map((guide) => ({
       schemaVersion: 1,
       command: 'guide',
-      status: 'error',
-      error: {
-        code: 'GUIDE_UNAVAILABLE',
-        message:
-          'The export guide is not yet verified. No platform was contacted.',
-        exitCode: 2,
-        retryable: false,
-      },
+      status: 'ok',
+      data: { platform: guide.platform, lang: 'en', guide },
       warnings: [],
-    },
-    {
-      schemaVersion: 1,
-      command: 'guide',
-      status: 'error',
-      error: {
-        code: 'GUIDE_UNAVAILABLE',
-        message:
-          'The export guide is not yet verified. No platform was contacted.',
-        exitCode: 2,
-        retryable: false,
-      },
-      warnings: [],
-    },
-  ]);
+    })),
+  );
+  expect(capture.stderr).toEqual([]);
 });
+
+test.each([xGuide, instagramGuide])(
+  'production $platform guide prints human-check status in EN and DE',
+  async (guide) => {
+    for (const [lang, message] of [
+      ['en', 'Not yet checked by a person'],
+      ['de', 'Noch nicht von einer Person geprüft'],
+    ] as const) {
+      const capture = capturedContext(services);
+      const node = createNodeContext(
+        capture.context.io.stdout,
+        capture.context.io.stderr,
+      );
+      expect(
+        await executeCli(['guide', guide.platform, '--lang', lang], node),
+      ).toBe(0);
+      expect(capture.stdout.join('')).toContain(message);
+      expect(capture.stdout.join('')).toContain(guide.startUrl.text[lang]);
+      expect(capture.stdout.join('')).not.toContain('GUIDE_UNAVAILABLE');
+      expect(capture.stderr).toEqual([]);
+    }
+  },
+);
 
 test('schemas lists precisely the current shipped schema files', async () => {
   const capture = capturedContext(services);

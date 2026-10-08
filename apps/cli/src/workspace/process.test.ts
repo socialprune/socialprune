@@ -83,7 +83,9 @@ test('two processes use rollback journal: writer times out at 5s then succeeds a
     if (contender) await stop(contender.process);
     await rm(directory, { recursive: true, force: true });
   }
-}, 60_000);
+  // Measured 10,422 ms in the full parallel CLI and core run on 2026-10-08;
+  // the project rule is at least six times the measured duration.
+}, 90_000);
 
 test('restore held Windows file becomes WORKSPACE_BUSY, preserves active bytes and later succeeds', async () => {
   requireWorkspaceNode(process.versions.node);

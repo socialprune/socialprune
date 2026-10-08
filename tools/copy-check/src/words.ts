@@ -86,7 +86,7 @@ export const COPY_SCOPE = {
     'packages/adapter-instagram/src/guide.ts',
   ],
   skill: 'skills/socialprune/',
-  readme: 'README.md',
+  readme: ['README.md', 'apps/cli/README.md'],
   docs: 'docs/',
 } as const;
 

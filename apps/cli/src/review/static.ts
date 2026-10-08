@@ -12,9 +12,14 @@ export const REVIEW_HEADERS = {
   'Cache-Control': 'no-store',
 } as const;
 
-/** C5 changes this one resolution point when the web assets enter the package. */
-export function reviewAssetDirectory(): string {
-  return fileURLToPath(new URL('../../../web/dist-review/', import.meta.url));
+/** Source and release builds share this single asset resolution point. */
+export function reviewAssetDirectory(moduleUrl = import.meta.url): string {
+  return fileURLToPath(
+    new URL(
+      moduleUrl.endsWith('.ts') ? '../../../web/dist-review/' : '../web/',
+      moduleUrl,
+    ),
+  );
 }
 export interface StaticAsset {
   bytes: Buffer;

@@ -42,7 +42,7 @@ export function copyKind(path: string): CopyKind | null {
   ) {
     return null;
   }
-  if (normalized === COPY_SCOPE.readme) return 'markdown';
+  if (COPY_SCOPE.readme.some((path) => path === normalized)) return 'markdown';
   if (COPY_SCOPE.adapterGuides.some((path) => path === normalized))
     return 'source';
   if (normalized.startsWith(COPY_SCOPE.docs)) {

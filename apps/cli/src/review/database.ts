@@ -11,6 +11,12 @@ import type {
 } from '@socialprune/core/workspace/protocol';
 import { CliError, CLI_ERRORS } from '../cli/errors.ts';
 
+export function reviewDatabaseWorkerUrl(): URL {
+  return import.meta.url.endsWith('.ts')
+    ? new URL('./database-worker.ts', import.meta.url)
+    : new URL('./database-worker.mjs', import.meta.url);
+}
+
 export class ReviewDatabase {
   readonly summary: WorkspaceSummary;
   private readonly worker: Worker;
@@ -77,7 +83,7 @@ export class ReviewDatabase {
   ): Promise<ReviewDatabase> {
     const worker = (
       options.createWorker ?? ((url, options) => new Worker(url, options))
-    )(options.workerUrl ?? new URL('./database-worker.ts', import.meta.url), {
+    )(options.workerUrl ?? reviewDatabaseWorkerUrl(), {
       workerData: { path },
       stdout: true,
       stderr: true,

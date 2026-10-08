@@ -44,6 +44,17 @@ describe('ADR-011 vocabulary, independent fixture oracles', () => {
 });
 
 describe('scope and Markdown parsing', () => {
+  it('checks exactly the root and CLI package READMEs', () => {
+    for (const path of ['README.md', 'apps/cli/README.md']) {
+      expect(copyKind(path)).toBe('markdown');
+      expect(inspectCopy(path, 'A safe export.')).toMatchObject([
+        { path, text: 'safe', rule: 'forbidden-word' },
+      ]);
+    }
+    expect(copyKind('apps/web/README.md')).toBeNull();
+    expect(inspectCopy('apps/web/README.md', 'A safe export.')).toEqual([]);
+  });
+
   it('covers every specified source and excludes only non-message tests', () => {
     for (const path of [
       'apps/web/src/i18n/de.json',

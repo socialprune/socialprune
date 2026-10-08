@@ -67,7 +67,7 @@ Node 24.15 or newer and pnpm 10.33.0 (`packageManager` in `package.json`). On ol
 | browser test of the local review against the real review server in Chromium, Firefox and WebKit; it builds `dist-review` first | `pnpm --filter socialprune test:e2e` |
 | npm package of the CLI into `apps/cli/dist/package/`, its file-list check, and an offline install of the packed tarball that runs every command; nothing is published | `pnpm --filter socialprune build:release`, `pnpm --filter socialprune pack:check`, `pnpm --filter socialprune smoke:package` |
 | other test server ports, when 4180, 4181 or 4183 are taken (the offline tests also use 4182) | set `SP_E2E_PORT`, `SP_E2E_PROBE_PORT`, `SP_E2E_DEV_PORT` |
-| Gate G1 measurements (100,000 tweets, ZIP64 over 4 GiB, abort), Windows only, writes about 4.7 GB to temp and removes it | `pnpm measure:g1`, currently broken: it drives the page import client that the workspace worker replaced and exits 1 until it is ported to the new import path or retired |
+| Gate G1 measurements through the workspace import path into IndexedDB (100,000 tweets three times, ZIP64 over 4 GiB, abort halfway), Windows only, writes about 4.7 GB to temp and removes it, one JSON document on stdout | `pnpm -s measure:g1` |
 | CLI | `pnpm socialprune --help` |
 | key paths and types of an export, without values (`-s` stops pnpm from printing the command line, which contains the path) | `pnpm -s socialprune structure <zip or folder...> [--json]` |
 | import exports into a local workspace folder, then count its items and decisions; writers take `--dry-run` | `pnpm -s socialprune import <zip or folder...> --workspace <dir>`, `pnpm -s socialprune summary --workspace <dir>` |

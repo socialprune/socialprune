@@ -1,6 +1,6 @@
 # Phase 2 measurements
 
-This file records the acceptance measurements Phase 2 has taken so far: the bulk-storage check that ADR-005 rule 7 asks for, the substring search latency that ADR-007 names as its revisit trigger, and the memory behaviour of the query projection and of restore. The implementing lanes measured them on 2026-10-07; this file only collects their numbers. Every row names the commit or source hash it belongs to.
+This file records the acceptance measurements Phase 2 has taken so far: the bulk-storage check that ADR-005 rule 7 asks for, the substring search latency that ADR-007 names as its revisit trigger, and the memory behaviour of the query projection and of restore. The implementing lanes measured them on 2026-10-07, and the import measurement in section 6 on 2026-10-08; this file only collects their numbers. Every row names the commit or source hash it belongs to.
 
 All browser runs used the desktop and the Playwright 1.63.0 browsers listed in [section 1 of the architecture evidence](../architecture/evidence-2026-10.md#1-trial-environment): Chromium 153.0.8010.12, Firefox 155.0 and WebKit 26.6, which is Playwright's Windows build and not Safari on macOS or iOS. Node runs used Node 24.14.1. The browser runs and the Node projection run were announced on the shared board, and the other lanes held their heavy work while they ran. The restore run in section 5 was not announced, so it may have shared the machine with other lanes' tests. The machine was never isolated from the operating system's own background tasks. Each browser row is one run per engine unless it says otherwise.
 
@@ -46,7 +46,7 @@ The same runs timed the import from file selection to the terminal receipt.
 
 Since `6e882f7` the import builds the query projection before its terminal receipt, which accounts for part of the increase. **Inference:** the projection build took 1.76 s in Node for the same item count (section 4).
 
-These numbers are not comparable with spike S1, which kept every item on the page and wrote nothing to IndexedDB. An S1-style measurement through the workspace path, with memory, ZIP64 and abort, is still owed. `pnpm measure:g1` drives the old page client and fails until it is ported or retired.
+These numbers are not comparable with spike S1, which kept every item on the page and wrote nothing to IndexedDB. Section 6 has the S1-style measurement through the workspace path, with memory, ZIP64 and abort.
 
 ## 4. Query projection in Node
 
@@ -79,7 +79,31 @@ Restore streams a backup into an empty staging store and keeps only the indexes 
 
 Over the additional 30,000 items, the sampled peak grew by 87.07 bytes per item and the live heap by 70.29 bytes per item, against 429 serialized bytes per item. Before this design, the reader kept the whole parsed document, and reader and writer together peaked at 69,757,848 bytes for 20,000 items.
 
-## 6. Open points
+## 6. Import, ZIP64 and abort through the workspace path
 
-- The S1-style measurement through the workspace path, section 3.
+`pnpm measure:g1` repeats the three Gate G1 measurements on the current path. It was ported in `d8f6300`. It serves the built app, selects a generated archive in headless Chromium and times from file selection to the import's terminal receipt. Items go through the import worker and the workspace worker into IndexedDB, and the page keeps none of them. Every row checks the stored count against the generator's manifest three ways: in IndexedDB, through `window.workspace.open()` and through a projection query. Memory is the sum over all Chromium processes that CDP reports, sampled from the operating system with the S1 sampler. The mean sampling interval was 143.6 to 156.4 ms, the longest gap 204 ms, and no garbage collection was forced.
+
+Two full runs on 2026-10-08, from 22:53 to 22:57 and from 22:58 to 23:03 UTC, both exited 0. They are bound to the executable source and served build `3d4f4aa7…6d97`, 168 files hashed before and after each run: the web, core and adapter source, the lockfile, `apps/web/dist`, the fixture generator, the web tooling and the measurement scripts. The machine was Windows 10.0.26200 on an i9-11900K with 64 GiB of RAM, with Node 24.21.0 and Chromium 153.0.8010.12. Other programs kept running, and the table gives the CPU load at the start of each row.
+
+| Run | Row | Receipt | Abort acknowledged | Peak private memory | CPU at start |
+|---|---|---:|---:|---:|---:|
+| 1 | M1, 100,000 tweets | 19.83 s | | 719.6 MiB | 41 % |
+| 1 | M1, 100,000 tweets | 21.80 s | | 694.1 MiB | 40 % |
+| 1 | M1, 100,000 tweets | 21.93 s | | 746.0 MiB | 40 % |
+| 1 | M2, ZIP64 archive | 18.88 s | | 713.2 MiB | 30 % |
+| 1 | M3, abort halfway | 19.08 s | 8.62 s | 535.4 MiB | 33 % |
+| 2 | M1, 100,000 tweets | 23.92 s | | 716.4 MiB | 60 % |
+| 2 | M1, 100,000 tweets | 22.20 s | | 726.0 MiB | 55 % |
+| 2 | M1, 100,000 tweets | 21.98 s | | 738.3 MiB | 46 % |
+| 2 | M2, ZIP64 archive | 24.95 s | | 680.1 MiB | 46 % |
+| 2 | M3, abort halfway | 21.74 s | 10.04 s | 532.2 MiB | 48 % |
+
+Every M1 and M2 row stored 100,000 items. The M2 archive has 4,703,857,916 bytes, its central directory and all four data entries lie beyond 4 GiB with ZIP64 offsets, and the data entries match M1's CRC32 values and lengths. Its 20 recorded reads came to 12,484,590 bytes, and none touched the padding.
+
+M3 fires Abort at exactly 50,000 stored items. The acknowledgement now waits until the import's rows are deleted for good, so its 8.62 and 10.04 s do not compare with G1's 30.1 ms, which only discarded an array on the page. Right after the acknowledgement and again five seconds later, the import, item, state and event stores held no rows, and the summary and the projection returned no items.
+
+G1 took 7.61 to 8.72 s with a peak of 483 to 497 MiB, but it kept every item on the page, wrote nothing to IndexedDB and built no projection. Section 3 measured the same workspace path in Chromium at 18,467 ms without memory, and the new rows fall in that range. Ten rows from one desktop under 30 to 60 percent foreign CPU load are not a latency distribution and say nothing about other engines, Linux or phones. M3 aborts into an empty workspace, so it shows nothing about an abort into a workspace that already holds a review.
+
+## 7. Open points
+
 - In CI, the WebKit abort test failed once on Ubuntu at `54e648e`. After the atomic purge in `00a7754` it passed in the CI runs of `c66c412` and `dc699cb`. Two passing runs do not prove the fix.

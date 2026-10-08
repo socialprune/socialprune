@@ -11,6 +11,16 @@ const cases = [
   ['review', '--workspace', 'generated', '--dry-run'],
   ['import', 'generated.zip', '--workspace', 'generated'],
   ['summary', '--workspace', 'generated'],
+  ['batch', 'next', '--workspace', 'generated', '--share-with-agent'],
+  ['labels', 'submit', 'generated.json', '--workspace', 'generated'],
+  [
+    'labels',
+    'submit',
+    'generated.json',
+    '--workspace',
+    'generated',
+    '--dry-run',
+  ],
   ['backup', 'export', '--workspace', 'generated', '--out', 'generated.json'],
   ['backup', 'restore', 'generated.json', '--workspace', 'generated'],
   [
@@ -89,6 +99,8 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['guide', 'x'],
     ['guide', 'instagram'],
     ['review', '--help'],
+    ['batch', 'next', '--help'],
+    ['labels', 'submit', '--help'],
   ]) {
     const node = createNodeContext(
       capture.context.io.stdout,
@@ -106,6 +118,8 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['guide', 'x'],
     ['guide', 'instagram'],
     ['review', '--help'],
+    ['batch', 'next', '--help'],
+    ['labels', 'submit', '--help'],
   ]) {
     const result = spawnSync(
       process.execPath,

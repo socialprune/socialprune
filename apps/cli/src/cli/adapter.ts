@@ -9,7 +9,7 @@ import type { Command } from '@stricli/core';
 import { reportNotice } from '../commands/structure.ts';
 import type { CliContext, CommandReply, CommandRunContext } from './context.ts';
 import { CliError, errorObject, normalizeExitCode } from './errors.ts';
-import type { CliErrorCode, ExitCode } from './errors.ts';
+import type { CliErrorCode, ExitCode, LabelFailureDetails } from './errors.ts';
 import { plainLines, writeFailure, writeReply } from './output.ts';
 import { commandRegistry, machineHelp } from './registry.ts';
 import type { RegistryEntry } from './registry.ts';
@@ -52,6 +52,7 @@ export async function executeCli(
   let reply: CommandReply | undefined;
   let failure: CliErrorCode | undefined;
   let failureNodeVersion: string | undefined;
+  let failureDetails: LabelFailureDetails | undefined;
   let frameworkExit = 0;
   let helpOutput = '';
   let isHelp = false;
@@ -60,7 +61,10 @@ export async function executeCli(
     return errorObject(code).message;
   };
   const failFromException = (error: unknown): string => {
-    if (error instanceof CliError) failureNodeVersion = error.nodeVersion;
+    if (error instanceof CliError) {
+      failureNodeVersion = error.nodeVersion;
+      failureDetails = error.details;
+    }
     return captureFailure(
       context.signal.aborted
         ? 'CANCELLED'
@@ -218,6 +222,7 @@ export async function executeCli(
       code,
       failureNodeVersion,
       selected?.envelope,
+      failureDetails,
     );
     return errorObject(code).exitCode;
   }

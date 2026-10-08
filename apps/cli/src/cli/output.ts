@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { CliContext, CommandReply } from './context.ts';
 import { CliError, errorObject } from './errors.ts';
-import type { CliErrorCode } from './errors.ts';
+import type { CliErrorCode, LabelFailureDetails } from './errors.ts';
 import { CliResultSchema } from './schemas.ts';
 
 export function plainText(text: string): string {
@@ -30,6 +30,8 @@ export function writeReply(
   reply: CommandReply,
 ): void {
   if (reply.silent) return;
+  for (const notice of reply.notices ?? [])
+    context.io.stderr.write(plainLines(notice) + '\n');
   if (json || reply.envelope) {
     const result = CliResultSchema.safeParse({
       schemaVersion: 1,
@@ -59,8 +61,9 @@ export function writeFailure(
   code: CliErrorCode,
   nodeVersion?: string,
   envelope = false,
+  details?: LabelFailureDetails,
 ): void {
-  const error = errorObject(code, nodeVersion);
+  const error = errorObject(code, nodeVersion, details);
   if (json || envelope) {
     context.io.stdout.write(
       JSON.stringify(

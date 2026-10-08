@@ -35,6 +35,32 @@ export async function injectionInput() {
   return { text: raw.join('\n'), forbidden: [...forbidden], marker };
 }
 
+export async function injectionData() {
+  const raw = await readFile(
+    join(injectionArchive, 'data', 'tweets.js'),
+    'utf8',
+  );
+  const start = raw.indexOf('[{');
+  const end = raw.lastIndexOf('];');
+  const values: unknown = JSON.parse(raw.slice(start, end + 1));
+  if (!Array.isArray(values) || !values.length)
+    throw new Error('No fixture JSON data.');
+  return values as { tweet: { full_text: string; [key: string]: unknown } }[];
+}
+
+export function assertNoPrivateDetails(
+  envelope: unknown,
+  forbidden: readonly string[],
+): void {
+  const serialized = JSON.stringify(envelope);
+  for (const value of forbidden)
+    if (value) expect(serialized).not.toContain(value);
+  const result = CliResultSchema.parse(envelope);
+  expect(result.status).toBe('error');
+  if (result.status !== 'error') throw new Error('Expected failure.');
+  expect(result.error).toMatchObject({ code: 'INVALID_LABELS' });
+}
+
 export function assertNoFixtureStrings(
   stdout: string,
   stderr: string,

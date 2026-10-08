@@ -9,6 +9,8 @@ import { backupExportCommand } from '../commands/backup-export.ts';
 import { backupRestoreCommand } from '../commands/backup-restore.ts';
 import { clickListCommand } from '../commands/export-clicklist.ts';
 import { reviewCommand } from '../commands/review.ts';
+import { batchNextCommand } from '../commands/batch-next.ts';
+import { labelsSubmitCommand } from '../commands/labels-submit.ts';
 import { jsonFlag } from './context.ts';
 import type { CommandRunContext } from './context.ts';
 import { CliError, EXIT_MEANINGS } from './errors.ts';
@@ -79,6 +81,30 @@ export function commandRegistry(): readonly RegistryEntry[] {
       outputSchemaIds: [CLI_SCHEMA_IDS.result],
       failureCode: 'NOT_AVAILABLE' as const,
     })),
+    {
+      path: ['batch', 'next'],
+      command: batchNextCommand,
+      writes: false,
+      dryRun: false,
+      available: true,
+      outputSchemaIds: [
+        CLI_SCHEMA_IDS.result,
+        'https://socialprune.github.io/socialprune/schemas/batch.schema.json',
+      ],
+      failureCode: 'BATCH_FAILED',
+    },
+    {
+      path: ['labels', 'submit'],
+      command: labelsSubmitCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      outputSchemaIds: [
+        CLI_SCHEMA_IDS.result,
+        'https://socialprune.github.io/socialprune/schemas/label-submission.schema.json',
+      ],
+      failureCode: 'LABELS_FAILED',
+    },
     {
       path: ['review'],
       command: reviewCommand,

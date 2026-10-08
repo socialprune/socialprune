@@ -95,6 +95,8 @@ test('machine help uses the command registry and includes no decision capability
     ['schemas'],
     ['scan'],
     ['mcp'],
+    ['batch', 'next'],
+    ['labels', 'submit'],
     ['review'],
     ['import'],
     ['summary'],
@@ -106,9 +108,7 @@ test('machine help uses the command registry and includes no decision capability
     expect(entry.options.some((option) => option.name === 'json')).toBe(true);
     expect(
       entry.path.some((part) =>
-        ['approve', 'decide', 'delete', 'mark', 'batch', 'labels'].includes(
-          part,
-        ),
+        ['approve', 'decide', 'delete', 'mark'].includes(part),
       ),
     ).toBe(false);
   }
@@ -384,7 +384,7 @@ test('schemas lists precisely the current shipped schema files', async () => {
   expect(capture.stderr).toEqual([]);
 }, 60_000);
 
-test.each(['approve', 'decide', 'delete', 'mark', 'batch', 'labels'])(
+test.each(['approve', 'decide', 'delete', 'mark'])(
   'unregistered %s has no capability',
   async (name) => {
     const capture = capturedContext(services);

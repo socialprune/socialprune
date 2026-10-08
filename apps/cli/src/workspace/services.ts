@@ -1,6 +1,6 @@
-import { lstat, rename, rm } from 'node:fs/promises';
+import { lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { importArchive, stableId } from '@socialprune/core';
+import { importArchive, stableId, UtcTimestampSchema } from '@socialprune/core';
 import type {
   ArchiveReader,
   ImportRecord,
@@ -20,14 +20,17 @@ import {
   createMemoryStore,
   MemoryStoreBacking,
 } from '@socialprune/core/workspace/memory-store';
-import { LabelService } from '@socialprune/core/workspace/labels';
+import {
+  LabelService,
+  LabelValidationError,
+} from '@socialprune/core/workspace/labels';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
 import {
   createBackup,
   restoreBackup,
   RestoreFailure,
 } from '@socialprune/core/workspace/backup';
-import { CliError } from '../cli/errors.ts';
+import { CliError, LABEL_FAILURE_CODES } from '../cli/errors.ts';
 import { SQLiteStore } from './sqlite-store.ts';
 import {
   assertOutput,
@@ -59,6 +62,16 @@ export interface ClickListCall extends BackupExportCall {
   format: 'csv' | 'json';
   timeZone?: string;
   systemTimeZone?: string;
+}
+export interface BatchCall extends WorkspaceCall {
+  shareWithAgent: boolean;
+  account?: string;
+  size?: number;
+  cursor?: string;
+  sourceName?: string;
+}
+export interface LabelsCall extends WorkspaceCall {
+  file: string;
 }
 
 async function identity(store: WorkspaceStore) {
@@ -251,6 +264,131 @@ export async function summarizeWorkspace(input: WorkspaceCall) {
       workspace: { id: data.workspaceId, revision: data.revision },
       data,
     };
+  } finally {
+    await store.close();
+  }
+}
+
+function validateCursor(cursor: string): void {
+  try {
+    const bytes = Buffer.from(cursor, 'base64url');
+    if (!cursor || bytes.toString('base64url') !== cursor)
+      throw new CliError('INVALID_CURSOR');
+    const value: unknown = JSON.parse(
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    );
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Object.keys(value).sort().join(',') !== 'account,after,sourceName,v' ||
+      !('v' in value) ||
+      value.v !== 1 ||
+      !('account' in value) ||
+      typeof value.account !== 'string' ||
+      !value.account ||
+      !('sourceName' in value) ||
+      typeof value.sourceName !== 'string' ||
+      !value.sourceName ||
+      !('after' in value) ||
+      !Array.isArray(value.after) ||
+      value.after.length !== 2 ||
+      !UtcTimestampSchema.safeParse(value.after[0]).success ||
+      typeof value.after[1] !== 'string' ||
+      !value.after[1]
+    )
+      throw new CliError('INVALID_CURSOR');
+  } catch {
+    throw new CliError('INVALID_CURSOR');
+  }
+}
+
+function labelServiceError(error: unknown): never {
+  if (error instanceof LabelValidationError)
+    throw new CliError('INVALID_LABELS', undefined, {
+      failures: error.failures.map((failure) => ({
+        index: failure.index,
+        code:
+          LABEL_FAILURE_CODES.find((code) => code === failure.code) ??
+          'INVALID_LABEL',
+      })),
+    });
+  if (error && typeof error === 'object' && 'code' in error) {
+    switch (error.code) {
+      case 'SHARING_NOT_CONFIRMED':
+      case 'INVALID_CURSOR':
+      case 'ACCOUNT_REQUIRED':
+      case 'SUBMISSION_CONFLICT':
+        throw new CliError(error.code);
+      case 'INVALID_REQUEST':
+        throw new CliError('INVALID_ARGUMENTS');
+      case 'INVALID_LABELS':
+      case 'CONTENT_CHANGED':
+        throw new CliError('INVALID_LABELS', undefined, {
+          failures: [
+            {
+              index: -1,
+              code:
+                error.code === 'CONTENT_CHANGED'
+                  ? 'CONTENT_CHANGED'
+                  : 'INVALID_LABEL',
+            },
+          ],
+        });
+    }
+  }
+  throw error;
+}
+
+export async function nextBatch(input: BatchCall) {
+  input.signal.throwIfAborted();
+  if (input.shareWithAgent !== true)
+    throw new CliError('SHARING_NOT_CONFIRMED');
+  if (input.cursor !== undefined) validateCursor(input.cursor);
+  const store = await readOnlyWorkspace(input);
+  try {
+    const data = await new LabelService(store).batchNext(input);
+    return { workspace: await identity(store), data };
+  } catch (error) {
+    labelServiceError(error);
+  } finally {
+    await store.close();
+  }
+}
+
+export async function submitLabelFile(input: LabelsCall) {
+  input.signal.throwIfAborted();
+  const file = await lstat(input.file).catch(() => null);
+  if (!file?.isFile() || file.isSymbolicLink()) throw new CliError('IO_ERROR');
+  let text: string;
+  try {
+    text = await readFile(input.file, {
+      encoding: 'utf8',
+      signal: input.signal,
+    });
+  } catch (error) {
+    if (input.signal.aborted) throw error;
+    throw fileError(error);
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new CliError('INVALID_LABELS', undefined, {
+      failures: [{ index: -1, code: 'INVALID_LABEL' }],
+    });
+  }
+  const target = await workspacePath(input.workspace, false);
+  const store = await SQLiteStore.open(target.path, {
+    readOnly: Boolean(input.dryRun),
+  });
+  try {
+    const data = await new LabelService(store, { now: input.now }).submitLabels(
+      value,
+      { dryRun: input.dryRun },
+    );
+    return { workspace: await identity(store), data };
+  } catch (error) {
+    labelServiceError(error);
   } finally {
     await store.close();
   }
@@ -450,5 +588,7 @@ export const workspaceServices = {
   exportBackup,
   restoreWorkspace,
   exportClickList,
+  nextBatch,
+  submitLabelFile,
 };
 export type WorkspaceServices = typeof workspaceServices;

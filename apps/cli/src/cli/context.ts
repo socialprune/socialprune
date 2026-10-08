@@ -40,6 +40,7 @@ export interface CommandReply {
   human: string;
   warnings?: readonly string[];
   humanNotices?: readonly string[];
+  notices?: readonly string[];
   status?: 'ok' | 'partial';
   exitCode?: ExitCode;
   workspace?: { id: string; revision: number };

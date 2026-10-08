@@ -4,6 +4,136 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "SHARING_NOT_CONFIRMED" },
+        "message": {
+          "type": "string",
+          "const": "batch next gives item text to the agent that runs it. Pass --share-with-agent once the person has agreed."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INVALID_CURSOR" },
+        "message": {
+          "type": "string",
+          "const": "The cursor is invalid for this account or source name."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ACCOUNT_REQUIRED" },
+        "message": {
+          "type": "string",
+          "const": "This workspace has more than one account. Pass --account."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INVALID_LABELS" },
+        "message": {
+          "type": "string",
+          "const": "Some labels did not pass validation. Nothing was written."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false },
+        "details": {
+          "type": "object",
+          "properties": {
+            "failures": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 9007199254740991
+                  },
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "UNKNOWN_ITEM",
+                      "CONTENT_CHANGED",
+                      "UNKNOWN_CATEGORY",
+                      "INVALID_REASON",
+                      "INVALID_LABEL"
+                    ]
+                  }
+                },
+                "required": ["index", "code"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["failures"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "SUBMISSION_CONFLICT" },
+        "message": {
+          "type": "string",
+          "const": "This submission ID was already used with different content."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "BATCH_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not read the next batch."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "LABELS_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Could not submit the labels."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "NO_TOKEN_CHANNEL" },
         "message": {
           "type": "string",

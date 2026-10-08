@@ -48,6 +48,7 @@ test('physical layout and logical schema versions independently refuse newer wor
 
 test('production imports and worker entry cannot reach test mutations; review is confined to its worker', async () => {
   const seen = new Set<string>();
+  const overrides = new Map<string, string>();
   const walk = async (path: string): Promise<void> => {
     path = resolve(path);
     if (seen.has(path)) return;
@@ -55,7 +56,7 @@ test('production imports and worker entry cannot reach test mutations; review is
     expect(path.replaceAll('\\', '/')).not.toMatch(
       /\/(?:test|tests)\/|\.test\.ts$|\/workspace\/store-contract\.ts$/,
     );
-    const text = await readFile(path, 'utf8');
+    const text = overrides.get(path) ?? (await readFile(path, 'utf8'));
     expect(text).not.toMatch(/process\.env.*(?:fault|mutation|test)/i);
     for (const match of text.matchAll(
       /(?:from\s*|import\s*\(\s*|import\s*)['"]([^'"]+)['"]/g,
@@ -97,4 +98,55 @@ test('production imports and worker entry cannot reach test mutations; review is
   expect(() =>
     expect('/generated/workspace/test/child.ts').not.toMatch(/\/test\//),
   ).toThrow();
+  // The agent routes must not reach any decision-writing service, even
+  // transitively through a newly added workspace service or barrel.
+  const decisionService = fileURLToPath(
+    import.meta.resolve('@socialprune/core/workspace/review'),
+  );
+  for (const command of ['batch-next.ts', 'labels-submit.ts']) {
+    seen.clear();
+    await walk(
+      fileURLToPath(new URL(`../commands/${command}`, import.meta.url)),
+    );
+    expect(seen.has(decisionService), command).toBe(false);
+    expect(
+      seen.has(
+        fileURLToPath(new URL('../review/database-worker.ts', import.meta.url)),
+      ),
+      command,
+    ).toBe(false);
+    for (const path of seen) {
+      expect(await readFile(path, 'utf8'), path).not.toMatch(
+        /\bnew\s+ReviewService\b/,
+      );
+    }
+    const path = fileURLToPath(
+      new URL(`../commands/${command}`, import.meta.url),
+    );
+    overrides.set(
+      path,
+      (await readFile(path, 'utf8')) +
+        "\nimport { ReviewService } from '@socialprune/core/workspace/review';\n",
+    );
+    seen.clear();
+    await expect(walk(path)).rejects.toThrow();
+    overrides.clear();
+  }
+  const services = await readFile(
+    new URL('./services.ts', import.meta.url),
+    'utf8',
+  );
+  const agentFunctions = services.slice(
+    services.indexOf('export async function nextBatch('),
+    services.indexOf('export async function exportBackup('),
+  );
+  expect(agentFunctions).not.toMatch(
+    /(?:decisionEvents|outcomeEvents)\s*\.\s*append|restoreBackup|applyBackup|importWorkspace/,
+  );
+  expect(
+    await readFile(
+      fileURLToPath(import.meta.resolve('@socialprune/core/workspace/labels')),
+      'utf8',
+    ),
+  ).not.toMatch(/(?:decisionEvents|outcomeEvents)\s*\.\s*append/);
 }, 60_000);

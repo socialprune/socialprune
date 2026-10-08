@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CLI_ERRORS, EXIT_MEANINGS } from './errors.ts';
+import { CLI_ERRORS, EXIT_MEANINGS, LABEL_FAILURE_CODES } from './errors.ts';
 
 const base = 'https://socialprune.github.io/socialprune/schemas/';
 export const CLI_SCHEMA_IDS = {
@@ -22,6 +22,20 @@ export const CliErrorSchema = z.union(
           : z.literal(error.message),
       exitCode: z.literal(error.exitCode),
       retryable: z.literal(error.retryable),
+      ...(code === 'INVALID_LABELS'
+        ? {
+            details: z
+              .strictObject({
+                failures: z.array(
+                  z.strictObject({
+                    index: z.int().min(-1),
+                    code: z.enum(LABEL_FAILURE_CODES),
+                  }),
+                ),
+              })
+              .optional(),
+          }
+        : {}),
     }),
   ),
 );

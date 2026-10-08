@@ -90,6 +90,39 @@ test('all C1 routes, help, review dry-run and bad arguments make no network or o
       [['review', '--workspace', archive, '--dry-run', '--json'], 2],
       [['bad-route', '--json'], 2],
       [['--bad'], 2],
+      [['batch', 'next', '--help'], 0],
+      [['batch', 'next', '--help', '--json'], 0],
+      [['batch', 'next'], 2],
+      [['batch', 'next', '--workspace', archive], 2],
+      [['batch', 'next', '--workspace', archive, '--share-with-agent'], 2],
+      [
+        [
+          'batch',
+          'next',
+          '--workspace',
+          archive,
+          '--share-with-agent',
+          '--size',
+          '201',
+        ],
+        2,
+      ],
+      [
+        [
+          'batch',
+          'next',
+          '--workspace',
+          archive,
+          '--share-with-agent',
+          '--dry-run',
+        ],
+        2,
+      ],
+      [['labels', 'submit', '--help'], 0],
+      [['labels', 'submit', '--help', '--json'], 0],
+      [['labels', 'submit'], 2],
+      [['labels', 'submit', archive, '--workspace', archive], 1],
+      [['labels', 'submit', archive, '--workspace', archive, '--dry-run'], 1],
     ];
     for (const [args, exitCode] of cases) {
       const capture = capturedContext({

@@ -69,7 +69,7 @@ test('finite command output parses with the canonical CLI schema', async () => {
         expect(ids).toContain(id);
       expect(
         help.commands.find((command) => command.path[0] === 'review'),
-      ).toMatchObject({ available: false, writes: false, dryRun: true });
+      ).toMatchObject({ available: true, writes: false, dryRun: true });
     }
   }
 }, 60_000);

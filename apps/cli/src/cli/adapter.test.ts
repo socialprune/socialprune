@@ -54,7 +54,7 @@ test.each([
   ['bad root flag with help', ['--bad', '--help']],
   ['reserved scan', ['scan']],
   ['reserved mcp', ['mcp']],
-  ['review preview', ['review', '--workspace', archive, '--dry-run']],
+  ['review missing workspace', ['review', '--dry-run']],
 ] as const)('%s is one fixed JSON failure with exit 2', async (_name, args) => {
   const capture = capturedContext(services);
   expect(await executeCli([...args, '--json'], capture.context)).toBe(2);
@@ -137,14 +137,24 @@ test('help on a command targets its registry entry without reading an archive', 
   });
 });
 
-test('root and command help mark reserved review unavailable', async () => {
-  for (const args of [['--help'], ['review', '--help']]) {
+test('review help is available while scan and mcp remain reserved', async () => {
+  for (const args of [
+    ['review', '--help'],
+    ['review', '--help', '--json'],
+  ]) {
     const capture = capturedContext(services);
     expect(await executeCli(args, capture.context)).toBe(0);
-    expect(capture.stdout.join('')).toContain('NOT_AVAILABLE');
-    expect(capture.stdout.join('')).toContain('Not available in this version');
+    expect(capture.stdout.join('')).not.toContain('NOT_AVAILABLE');
+    expect(capture.stdout.join('')).toContain(
+      'decisions come only from the page',
+    );
     expect(capture.opened).toEqual([]);
   }
+  expect(
+    commandRegistry()
+      .filter((entry) => !entry.available)
+      .map((entry) => entry.path),
+  ).toEqual([['guide'], ['scan'], ['mcp']]);
 });
 
 test('structure emits one envelope without workspace, warnings or stderr notice', async () => {

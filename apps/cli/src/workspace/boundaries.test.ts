@@ -45,14 +45,14 @@ test('physical layout and logical schema versions independently refuse newer wor
   }
 });
 
-test('production import closure cannot reach test mutations or review capability', async () => {
+test('production imports and worker entry cannot reach test mutations; review is confined to its worker', async () => {
   const seen = new Set<string>();
   const walk = async (path: string): Promise<void> => {
     path = resolve(path);
     if (seen.has(path)) return;
     seen.add(path);
     expect(path.replaceAll('\\', '/')).not.toMatch(
-      /\/(?:test|tests)\/|\.test\.ts$|\/workspace\/(?:review|store-contract)\.ts$/,
+      /\/(?:test|tests)\/|\.test\.ts$|\/workspace\/store-contract\.ts$/,
     );
     const text = await readFile(path, 'utf8');
     expect(text).not.toMatch(/process\.env.*(?:fault|mutation|test)/i);
@@ -60,6 +60,10 @@ test('production import closure cannot reach test mutations or review capability
       /(?:from\s*|import\s*\(\s*|import\s*)['"]([^'"]+)['"]/g,
     )) {
       const specifier = match[1]!;
+      if (specifier === '@socialprune/core/workspace/review')
+        expect(path.replaceAll('\\', '/')).toMatch(
+          /\/apps\/cli\/src\/review\//,
+        );
       if (specifier.startsWith('node:')) continue;
       const next = specifier.startsWith('.')
         ? fileURLToPath(new URL(specifier, pathToFileURL(path)))
@@ -68,9 +72,26 @@ test('production import closure cannot reach test mutations or review capability
           : null;
       if (next?.endsWith('.ts')) await walk(next);
     }
+    for (const match of text.matchAll(
+      /new URL\(['"](\.\/[^'"]+\.ts)['"], import\.meta\.url\)/g,
+    ))
+      await walk(fileURLToPath(new URL(match[1]!, pathToFileURL(path))));
   };
   await walk(fileURLToPath(new URL('../main.ts', import.meta.url)));
   expect(seen.size).toBeGreaterThan(30);
+  expect(seen).toContain(
+    fileURLToPath(new URL('../review/database-worker.ts', import.meta.url)),
+  );
+  expect(seen).toContain(
+    fileURLToPath(import.meta.resolve('@socialprune/core/workspace/review')),
+  );
+  const main = await readFile(
+    fileURLToPath(new URL('../review/server.ts', import.meta.url)),
+    'utf8',
+  );
+  expect(main).not.toMatch(
+    /SQLiteStore|ReviewService|QueryEngine|\.\/runtime\.ts/,
+  );
   // This inventory oracle would reject an explicitly planted test-only path.
   expect(() =>
     expect('/generated/workspace/test/child.ts').not.toMatch(/\/test\//),

@@ -57,6 +57,7 @@ export interface FailingCommandCase {
   exitCode: number;
   nodeVersion?: string;
   envelope?: boolean;
+  context?: Partial<CliContext>;
 }
 
 export async function assertFailureCases(
@@ -70,6 +71,7 @@ export async function assertFailureCases(
         [...fixture.args, ...(json ? ['--json'] : [])],
         {
           ...capture.context,
+          ...fixture.context,
           ...(fixture.nodeVersion ? { nodeVersion: fixture.nodeVersion } : {}),
         },
       );

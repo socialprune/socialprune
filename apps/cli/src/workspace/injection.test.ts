@@ -37,6 +37,11 @@ test('every C2 command error class contains no injection fixture values and neve
         method: 'summarizeWorkspace',
       },
       {
+        route: ['review'],
+        valid: ['review', '--workspace', workspace, '--dry-run'],
+        method: 'summarizeWorkspace',
+      },
+      {
         route: ['backup', 'export'],
         valid: ['backup', 'export', '--workspace', workspace, '--out', out],
         method: 'exportBackup',

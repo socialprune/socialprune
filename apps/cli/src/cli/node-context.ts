@@ -6,6 +6,8 @@ import type { CliContext, CliStream, SchemaEntry } from './context.ts';
 import { workspaceServices } from '../workspace/services.ts';
 import { xGuide } from '@socialprune/adapter-x/guide';
 import { instagramGuide } from '@socialprune/adapter-instagram/guide';
+import { openReviewBrowser } from '../review/opener.ts';
+import { reviewAssetDirectory } from '../review/static.ts';
 
 const guides: CliContext['services']['guides'] = [xGuide, instagramGuide];
 
@@ -83,6 +85,10 @@ export function createNodeContext(
     now: () => new Date(),
     signal,
     nodeVersion: process.versions.node,
+    pid: process.pid,
+    stderrIsTerminal: 'isTTY' in stderr && stderr.isTTY === true,
+    openBrowser: openReviewBrowser,
+    reviewAssetDirectory: reviewAssetDirectory(),
     services: {
       guides,
       listSchemas,

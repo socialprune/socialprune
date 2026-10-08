@@ -9,6 +9,29 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  NO_TOKEN_CHANNEL: {
+    message:
+      'The review URL can only be printed to a terminal on stderr. Run review in your own terminal.',
+    exitCode: 2,
+    retryable: false,
+  },
+  BROWSER_OPEN_FAILED: {
+    message:
+      'Could not open the browser. Run review in your own terminal. The server stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  REVIEW_ASSETS_MISSING: {
+    message:
+      'The local review files are missing. Build or reinstall SocialPrune.',
+    exitCode: 1,
+    retryable: false,
+  },
+  REVIEW_FAILED: {
+    message: 'Could not run the local review.',
+    exitCode: 1,
+    retryable: false,
+  },
   INVALID_ARGUMENTS: {
     message: 'Invalid arguments. Use --help.',
     exitCode: 2,

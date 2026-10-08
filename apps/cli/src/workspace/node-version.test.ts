@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { createNodeContext } from '../cli/node-context.ts';
 
 const cases = [
+  ['review', '--workspace', 'generated'],
+  ['review', '--workspace', 'generated', '--dry-run'],
   ['import', 'generated.zip', '--workspace', 'generated'],
   ['summary', '--workspace', 'generated'],
   ['backup', 'export', '--workspace', 'generated', '--out', 'generated.json'],
@@ -86,6 +88,7 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['structure', fixture],
     ['guide', 'x'],
     ['guide', 'instagram'],
+    ['review', '--help'],
   ]) {
     const node = createNodeContext(
       capture.context.io.stdout,
@@ -102,6 +105,7 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     ['structure', fixture],
     ['guide', 'x'],
     ['guide', 'instagram'],
+    ['review', '--help'],
   ]) {
     const result = spawnSync(
       process.execPath,

@@ -30,6 +30,9 @@ export interface CliContext {
   readonly services: CliServices;
   readonly nodeVersion?: string;
   readonly openBrowser?: (url: string) => Promise<void>;
+  readonly stderrIsTerminal?: boolean;
+  readonly reviewAssetDirectory?: string;
+  readonly pid?: number;
 }
 
 export interface CommandReply {
@@ -41,6 +44,7 @@ export interface CommandReply {
   exitCode?: ExitCode;
   workspace?: { id: string; revision: number };
   envelope?: boolean;
+  silent?: boolean;
 }
 
 export interface CommandRunContext extends CommandContext, CliContext {

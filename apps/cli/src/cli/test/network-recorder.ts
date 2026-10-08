@@ -12,10 +12,44 @@ export function networkRecorder() {
   const calls: string[] = [];
   const restore: (() => void)[] = [];
   const probes: { name: string; invoke(): unknown }[] = [];
+  let inboundListen = 0;
+  const originalListen: (this: net.Server, ...args: unknown[]) => net.Server =
+    Reflect.get(net.Server.prototype, 'listen') as (
+      this: net.Server,
+      ...args: unknown[]
+    ) => net.Server;
+  // Node calls dns.lookup even for an IP literal when binding a listener. That
+  // synchronous resolution belongs to listen, not to an outbound connection.
+  net.Server.prototype.listen = function (
+    this: net.Server,
+    ...args: unknown[]
+  ) {
+    const inbound = args[0] === 0 && args[1] === '127.0.0.1';
+    if (inbound) inboundListen++;
+    try {
+      return Reflect.apply(originalListen, this, args);
+    } finally {
+      if (inbound) inboundListen--;
+    }
+  } as typeof originalListen;
+  restore.push(() => {
+    net.Server.prototype.listen = originalListen;
+  });
   const install = (target: object, key: string, name: string): void => {
     const descriptor = Object.getOwnPropertyDescriptor(target, key);
     if (!descriptor || typeof descriptor.value !== 'function') return;
-    const record = function () {
+    const original = descriptor.value as (
+      this: object,
+      ...args: unknown[]
+    ) => unknown;
+    const record = function (...args: unknown[]) {
+      if (
+        target === dns &&
+        key === 'lookup' &&
+        inboundListen &&
+        args[0] === '127.0.0.1'
+      )
+        return Reflect.apply(original, target, args);
       calls.push(name);
       throw new Error('Network recorder stopped a call.');
     };

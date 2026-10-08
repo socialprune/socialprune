@@ -150,16 +150,18 @@ test('every C1 failure path rejects fixture data without echoing or executing it
       exitCode: 2,
     },
     {
-      name: 'review unavailable',
+      name: 'review untrusted workspace',
       args: ['review', '--workspace', input.text, '--dry-run'],
       services,
       exitCode: 2,
+      envelope: true,
     },
     {
       name: 'review untrusted flag',
       args: ['review', `--${input.text}`],
       services,
       exitCode: 2,
+      envelope: true,
     },
     { name: 'untrusted route', args: [input.text], services, exitCode: 2 },
     {

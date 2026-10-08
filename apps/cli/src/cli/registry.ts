@@ -8,6 +8,7 @@ import { summaryCommand } from '../commands/summary.ts';
 import { backupExportCommand } from '../commands/backup-export.ts';
 import { backupRestoreCommand } from '../commands/backup-restore.ts';
 import { clickListCommand } from '../commands/export-clicklist.ts';
+import { reviewCommand } from '../commands/review.ts';
 import { jsonFlag } from './context.ts';
 import type { CommandRunContext } from './context.ts';
 import { CliError, EXIT_MEANINGS } from './errors.ts';
@@ -25,43 +26,7 @@ export interface RegistryEntry {
   envelope?: boolean;
 }
 
-function unavailableCommand(review = false): Command<CommandRunContext> {
-  if (review)
-    return buildCommand({
-      parameters: {
-        flags: {
-          json: jsonFlag,
-          workspace: {
-            kind: 'parsed',
-            parse: String,
-            brief: 'Explicit workspace directory',
-            optional: true,
-          },
-          dryRun: {
-            kind: 'boolean',
-            brief: 'Describe without starting',
-            default: false,
-          },
-          noOpen: {
-            kind: 'boolean',
-            brief: 'Do not open a browser',
-            default: false,
-          },
-        },
-      },
-      docs: { brief: 'Not available in this version (NOT_AVAILABLE)' },
-      func(
-        this: CommandRunContext,
-        _flags: {
-          json: boolean;
-          workspace?: string;
-          dryRun: boolean;
-          noOpen: boolean;
-        },
-      ) {
-        throw new CliError('NOT_AVAILABLE');
-      },
-    });
+function unavailableCommand(): Command<CommandRunContext> {
   return buildCommand({
     parameters: { flags: { json: jsonFlag } },
     docs: { brief: 'Not available in this version (NOT_AVAILABLE)' },
@@ -105,15 +70,25 @@ export function commandRegistry(): readonly RegistryEntry[] {
       outputSchemaIds: [CLI_SCHEMA_IDS.result],
       failureCode: 'SCHEMAS_FAILED',
     },
-    ...['scan', 'mcp', 'review'].map((name) => ({
+    ...['scan', 'mcp'].map((name) => ({
       path: [name],
-      command: unavailableCommand(name === 'review'),
+      command: unavailableCommand(),
       writes: false,
-      dryRun: name === 'review',
+      dryRun: false,
       available: false,
       outputSchemaIds: [CLI_SCHEMA_IDS.result],
       failureCode: 'NOT_AVAILABLE' as const,
     })),
+    {
+      path: ['review'],
+      command: reviewCommand,
+      writes: false,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'REVIEW_FAILED',
+    },
     ...[
       {
         path: ['import'],

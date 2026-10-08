@@ -29,6 +29,7 @@ export function writeReply(
   json: boolean,
   reply: CommandReply,
 ): void {
+  if (reply.silent) return;
   if (json || reply.envelope) {
     const result = CliResultSchema.safeParse({
       schemaVersion: 1,

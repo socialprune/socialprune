@@ -85,6 +85,8 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       [['backup', 'restore', file, '--workspace', second, '--dry-run'], 0],
       [['import', archive, '--workspace', workspace], 0],
       [['import', archive, '--workspace', workspace, '--dry-run'], 0],
+      [['review', '--workspace', workspace, '--dry-run'], 0],
+      [['review', '--workspace', workspace, '--no-open'], 2],
     ];
     for (const route of [
       ['import'],
@@ -92,6 +94,7 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       ['backup', 'export'],
       ['backup', 'restore'],
       ['export', 'clicklist'],
+      ['review'],
     ]) {
       cases.push([[...route, '--help'], 0], [[...route, '--bad'], 2]);
     }

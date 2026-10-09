@@ -1,6 +1,6 @@
 # ADR-010: Styling with CSS Modules, cascade layers and design tokens
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** none directly; the choice is bounded by [ADR-002](ADR-002-dependency-licenses.md) and [ADR-004](ADR-004-content-security-policy.md)
 - **Related:** [ADR-008](ADR-008-review-ui-primitives.md), [design specification](../../design/README.md)
@@ -79,7 +79,7 @@ We chose **Option 1: CSS Modules with one global token file using `@layer`**, be
 - Fonts are the system stack; `font-src 'none'` stays.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

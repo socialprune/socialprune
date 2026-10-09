@@ -1,6 +1,6 @@
 # ADR-015: CLI workspace storage on node:sqlite and the Node baseline
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (no paid storage), 2 (the workspace stays in the folder the person names), 3 (decision history is append-only)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-016](ADR-016-local-review-server.md)
@@ -109,7 +109,7 @@ The same store, with the floor at Node 24.14.0 and the `ExperimentalWarning` lef
 
 We chose **Option 1: node:sqlite with the rollback journal on Node 24.15.0 or newer**, because all writes are short, a single database file is the easiest form for people to copy and back up, and 24.15.0 is the first Node 24 release where the module neither warns nor carries the "Active development" label. Option 2 is the fallback if the maintainer keeps the floor lower; the store design is the same in both.
 
-Needs the maintainer's decision: the Node floor (24.15.0 as proposed, or 24.14.x with the warning as in option 2), and the change of the earlier CLI storage decision from a versioned file to a SQLite database with the JSON document as backup.
+Decided by the maintainer on 2026-10-08: the Node floor is 24.15.0. The CLI workspace is a SQLite database, and the JSON document is its backup.
 
 ### Runtime and version checks
 
@@ -138,14 +138,17 @@ Four separate mechanisms, each with its own job:
 
   | Table | Primary key | Other constraints | Writes |
   |---|---|---|---|
-  | `meta` | single row | | `format`, `schemaVersion`, workspace header, `settings`, `lastBackupAt` |
+  | `meta` | single row | | `format`, `schemaVersion`, workspace header, `settings`, `lastBackupAt`, plus the runtime `revision` and `last_event_seq` |
   | `imports` | `id` | | one row per import, status flipped once |
   | `items` | `id` | | inserted by imports; engagement columns updated by a newer import |
   | `assessments` | `seq INTEGER PRIMARY KEY` (append order) | unique `assessment_id`; index on `item_id` | append only |
   | `submissions` | `submission_id` | | append only |
-  | `decision_events` | `seq INTEGER PRIMARY KEY` | unique `event_id`; index on `item_id` | append only |
-  | `outcome_events` | `seq INTEGER PRIMARY KEY` | unique `event_id`; index on `item_id` | append only |
+  | `event_sequences` | `seq INTEGER PRIMARY KEY` | unique `event_id` | one row per decision or outcome event, so both logs share one `seq` |
+  | `decision_events` | `seq INTEGER PRIMARY KEY` | unique `event_id`; index on `item_id`; `seq` references `event_sequences` | append only |
+  | `outcome_events` | `seq INTEGER PRIMARY KEY` | unique `event_id`; index on `item_id`; `seq` references `event_sequences` | append only |
   | `state` | `item_id` | | current decision and outcome per item, derived |
+  | `commands` | `command_id` | | one receipt per human command, so a repeated command returns its first result |
+  | `migration_events` | `id` | index on time, kind and array position | temporary staging while a v1 workspace migrates |
 
   `PRAGMA user_version` tracks the physical layout. The append-only tables have triggers that raise on `UPDATE` and `DELETE`.
 - Every write uses `BEGIN IMMEDIATE`: import in chunks of 1,000 items per transaction, one transaction per label file (its `submissions` row and all its assessments), one per human command. If the lock is not free within 5,000 ms, the command exits 1 with `WORKSPACE_BUSY` and `retryable: true`.
@@ -156,10 +159,15 @@ Four separate mechanisms, each with its own job:
 
 - A layout migration runs inside `BEGIN EXCLUSIVE`, after copying the file to `socialprune.<UTC timestamp>.before-migration.sqlite` next to it.
 - `backup export` streams the v2 document from one read transaction ([ADR-006](ADR-006-workspace-event-log.md)), including the submission records. It never copies the database file. After the file is written completely, it sets `meta.lastBackupAt`.
-- `backup restore <file>` validates the whole file into a new `socialprune.restore-<random>.sqlite`, writing assessments, submissions and events in the document's array order so `seq` reproduces the log order. It then takes an exclusive lock on the current database to confirm no other process uses it, closes it, renames it to `socialprune.<UTC timestamp>.previous.sqlite`, and renames the new file into place. An `EPERM` from Windows becomes `WORKSPACE_BUSY`. The output names the kept previous file. A downloaded SQLite file is never opened as a workspace; only the JSON document is accepted.
+- `backup restore <file>` validates the whole file into a new `socialprune.restore-<random>.sqlite`, writing assessments, submissions and events in the document's array order so `seq` reproduces the log order. It then takes an exclusive lock on the current database to confirm no other process uses it, closes it, renames it to `socialprune.<UTC timestamp>.previous.sqlite`, and renames the new file into place. On Windows, a restore onto a file another process holds open reports `EBUSY` (observed on Node 24.21.0) or `EPERM`; both become `WORKSPACE_BUSY`. The output names the kept previous file. A downloaded SQLite file is never opened as a workspace; only the JSON document is accepted.
+
+### Changes before acceptance
+
+- The proposal's table had no shared event sequence, command receipts or migration staging. The built layout (`apps/cli/src/workspace/sqlite-store.ts`) adds `event_sequences`, `commands` and `migration_events`, and keeps the runtime revision and `last_event_seq` in `meta`; the table above now lists them.
+- The proposal mapped only `EPERM` from a Windows rename to `WORKSPACE_BUSY`. A restore onto a locked file reported `EBUSY` on Node 24.21.0, so both codes now become `WORKSPACE_BUSY`; the `EPERM` observation of 2026-10-06 in the context above stays as it was measured.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

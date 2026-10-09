@@ -1,6 +1,6 @@
 # ADR-019: GitHub Pages deployment kept manual
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (GitHub Pages only, no paid hosting), 5 (the deployed app makes no promises), 6 (only built app files are published)
 - **Related:** [ADR-003](ADR-003-offline-app-shell.md), [ADR-005](ADR-005-browser-storage.md), [ADR-016](ADR-016-local-review-server.md)
@@ -69,14 +69,18 @@ GitHub's documentation (observed 2026-10-06) requires `pages: write` and `id-tok
 We chose **Option 1: a manual workflow with a default-off publish input**, because deployment stays a deliberate act while the build path is exercised and reviewed now.
 
 - `.github/workflows/pages.yml` has `on: workflow_dispatch` only, with a boolean input `publish` that defaults to `false`.
-- Workflow permissions: `contents: read`. The **build** job checks out, installs with the frozen lockfile, runs the data guard, builds `apps/web` in Pages mode, runs the built-output tests (exact CSP in `index.html`, no `dist-review` files, service worker manifest matches the files) and `pnpm guide:check --max-age 120` ([ADR-022](ADR-022-export-guide-content.md)), and hands `apps/web/dist` to `actions/upload-pages-artifact` pinned to the SHA above.
+- Workflow permissions: `contents: read`. The **build** job checks out, installs with the frozen lockfile, runs the data guard, builds `apps/web` with `build:release`, runs the built-output tests (exact CSP in `index.html`, no `dist-review` files, service worker manifest matches the files) and `pnpm guide:check --max-age 120 --release` ([ADR-022](ADR-022-export-guide-content.md)), so guide facts nobody has checked stop the build, and hands `apps/web/dist` to `actions/upload-pages-artifact` pinned to the SHA above.
 - The **deploy** job `needs: build`, runs only `if: inputs.publish && github.ref == 'refs/heads/main' && vars.PAGES_ENABLED == 'true'`, has `permissions: { pages: write, id-token: write }`, `environment: github-pages`, and uses `actions/deploy-pages` pinned to the SHA above. `concurrency: { group: pages, cancel-in-progress: false }`.
 - `actions/configure-pages` is not used: the Vite `base` is already `/socialprune/`, and the action could change repository settings.
 - Enabling Pages with source "GitHub Actions", creating the variable and running the workflow with `publish: true` are maintainer actions outside Phase 2.
 - The organization publishes no other Pages site, because it would share the app's origin and storage.
 
+### Changes before acceptance
+
+- The proposal built `apps/web` in Pages mode and ran `guide:check --max-age 120`. The build job runs `build:release`, the release build that refuses guide facts no person has checked, and `guide:check --max-age 120 --release`, so a deployment cannot ship an unchecked guide.
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

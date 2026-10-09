@@ -1,8 +1,8 @@
 # ADR-022: Export guide content as verified, dated data
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
-- **Hard constraints touched:** 4 (nothing requests the platform, including checks of its help pages), 5 (no promise about waiting times or results)
+- **Hard constraints touched:** 4 (no code requests the platform; agents read only its public help pages, without login, as the maintainer decided), 5 (no promise about waiting times or results)
 - **Related:** [ADR-011](ADR-011-internationalization.md), [ADR-014](ADR-014-agent-interface.md), [ADR-017](ADR-017-shared-workspace-service.md), [design specification](../../design/README.md)
 
 ## Context
@@ -61,7 +61,7 @@ Platforms change these pages without notice. A guide that was right in October c
 
 ## Decision
 
-We chose **Option 1: typed guide data in `packages/core/src/guide/` with a source and a verification date on every fact**, because it is the only option where one verified fact feeds both the web and the CLI, and where staleness is checkable.
+We chose **Option 1: typed guide data with a source and a verification date on every fact**, because it is the only option where one verified fact feeds both the web and the CLI, and where staleness is checkable. `packages/core/src/guide/` holds only the types and the checker. Each adapter ships its own guide data in its `./guide` export (`@socialprune/adapter-x/guide`, `@socialprune/adapter-instagram/guide`), so a new platform brings its guide without a change in core ([ADR-017](ADR-017-shared-workspace-service.md)).
 
 ### Shape
 
@@ -70,26 +70,29 @@ GuideFact = {
   id: string
   text: { en: string, de: string }      // ICU-free plain text, may contain {placeholders} for the UI
   source: { url: string, publisher: 'X' | 'Meta' | string, title: string }
-  verifiedOn: string                     // YYYY-MM-DD, the day a person read the source
+  sourceDe?: { url: string, publisher: string, title: string }  // the German page, when read
+  retrievedOn: string                    // YYYY-MM-DD, the day the source was read or its access failure recorded
+  verifiedOn: string | null              // YYYY-MM-DD, the day a person checked the fact in a browser; null until then
 }
-PlatformGuide = {
-  platform: 'x' | 'instagram'
+PlatformGuide<Platform extends string = string> = {
+  platform: Platform                     // the adapter's platform name
   startUrl: GuideFact                    // the settings page where the request starts
   steps: GuideFact[]                     // in order, each one action
   options: GuideFact[]                   // format, date range, media quality
   waiting: GuideFact & { typicalDays: { min: number, max: number } | null }
   downloadWindow: GuideFact & { days: number | null }
   htmlExportHint: GuideFact              // how to tell and how to request JSON instead
+  paths?: { desktop: GuideFact[], mobile: GuideFact[] }  // device paths, when the source separates them
 }
 ```
 
 ### What must be verified, by whom, and how
 
-**Who reads the pages.** Hard constraint 4 forbids any program from sending requests to X or Instagram, and the decision drivers above forbid fetching or scraping their pages. Whether an agent may read the platforms' public help-center pages, without a login, to collect these facts is a question this record cannot answer, because a fetch by an agent is a request a program sends to the platform. Until the maintainer decides, no implementation lane, agent or script fetches those pages, and the maintainer reads them himself.
+**Who reads the pages.** Hard constraint 4 forbids any program from sending requests to X or Instagram, and the decision drivers above forbid fetching or scraping their pages. Whether an agent may read the platforms' public help-center pages, without a login, to collect these facts was a question this record could not answer, because a fetch by an agent is a request a program sends to the platform.
 
-Needs the maintainer's decision: either he reads the X and Instagram help pages and records the facts, or he explicitly allows agents to read public help-center pages without login for this purpose, which arguably touches hard constraint 4.
+Decided by the maintainer on 2026-10-08: agents may read the public X and Instagram help pages without login and prepare the guide facts with their sources. The maintainer checks every fact in a browser before a release, and the release build refuses facts nobody has checked.
 
-For each platform, the reader opens the platform's current help pages in a normal browser and records for each fact the URL, the page title and the date:
+For each platform, the reader records for each fact the URL, the page title and the date it was read (`retrievedOn`). The maintainer then opens each page in a normal browser, checks the fact and records that date (`verifiedOn`). The facts to record:
 
 1. The page where the export request starts, and the menu path to it on desktop and on mobile.
 2. Each step in order, with the platform's own button and option names in English and German.
@@ -112,12 +115,18 @@ The `.ics` file is generated on the device and offered through a `blob:` downloa
 
 ### Checks
 
-- `pnpm guide:check` (unit test) asserts that every fact has both languages, an `https` source URL on an allowlisted platform host, and a `verifiedOn` date.
-- The release workflow ([ADR-018](ADR-018-cli-distribution.md)) and the Pages workflow ([ADR-019](ADR-019-pages-deployment.md)) both run `pnpm guide:check --max-age 120`, which fails when any `verifiedOn` is older than 120 days, so a release or a deployment forces a fresh read. Ordinary CI runs `guide:check` without the age limit.
+- `pnpm guide:check` (unit test) asserts that every fact has both languages, an `https` source URL on an allowlisted platform host, a valid `retrievedOn` date, and a valid `verifiedOn` date or `null`.
+- The release workflow ([ADR-018](ADR-018-cli-distribution.md)) and the Pages workflow ([ADR-019](ADR-019-pages-deployment.md)) both run `pnpm guide:check --max-age 120 --release`, which fails when any `verifiedOn` is `null` or older than 120 days, so a release or a deployment forces a fresh check by a person. The release build of the web app runs the same release check and stops on any finding. Ordinary CI runs `guide:check` without the age limit.
 - No test, script or workflow requests the platforms' pages.
 
+### Changes before acceptance
+
+- The proposal put the guide data in `packages/core/src/guide/`. Core holds only the types and the checker, and each adapter ships its facts in its `./guide` export, so adding a platform needs no change in core.
+- The proposal's `PlatformGuide` listed the platforms by name, and each fact had one `verifiedOn` date. `PlatformGuide` is generic over the platform name, and each fact has `retrievedOn` for the day it was read, a nullable `verifiedOn` for the day a person checked it, an optional `sourceDe` for the German page, and the guide may list desktop and mobile paths. An agent can now prepare a fact without claiming that a person checked it.
+- The proposal had the maintainer read the help pages himself until he decided who reads them. He decided that agents may prepare the facts and that he checks each one, so the release checks also run with `--release`, which refuses an unchecked fact.
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

@@ -1,6 +1,6 @@
 # ADR-011: Internationalization with React Intl and checked catalogs
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (no catalog fetch), 5 (forbidden words are checked in both languages)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-022](ADR-022-export-guide-content.md), [design specification](../../design/README.md)
@@ -92,7 +92,7 @@ We chose **Option 1: React Intl 12.1.4 with bundled ICU JSON catalogs**, because
 
 A separate script, `tools/copy-check/`, runs in CI on every pull request. The word list and the allowlist live in one file there, `words.ts`, and the [design specification](../../design/README.md#forbidden-words) points to it.
 
-- **Scope.** The web catalogs (`apps/web/src/i18n/*.json`); CLI human messages and the fixed error-message table in `apps/cli/src/`; the guide data in `packages/core/src/guide/`, including the text of the generated `.ics` reminder; `skills/socialprune/**`; `README.md` and every Markdown file under `docs/` except the exemptions.
+- **Scope.** The web catalogs (`apps/web/src/i18n/*.json`); CLI human messages and the fixed error-message table in `apps/cli/src/`; the guide data in each adapter's `src/guide.ts` and the guide code in `packages/core/src/guide/`; `skills/socialprune/**`; `README.md`, `apps/cli/README.md` and every Markdown file under `docs/` except the exemptions. The text of the generated `.ics` reminder comes from the web catalogs, so the catalog check covers it.
 - **Exemptions**, because they quote the list: `AGENTS.md`, `.kilo/**` (which holds the writing rule), the section "Forbidden words" in `docs/design/README.md`, `tools/copy-check/**`, and the check's own test fixtures. Every other file in scope is checked.
 - **Code is not prose.** In Markdown files, inline code spans, fenced code blocks and link targets (the URL inside the parentheses) are skipped, because they name identifiers such as the CSP keyword `'unsafe-inline'` or the action `actions/upload-pages-artifact`. Link text is checked. Catalogs, CLI messages and guide data have no such exemption.
 - **English patterns**, whole words, case-insensitive: `safe`, `safely`, `safer`, `safest`, `safety`; `undetectable`; `bypass`, `bypasses`, `bypassed`, `bypassing`; `guarantee`, `guarantees`, `guaranteed`, `guaranteeing`; `deletes everything`; `upload`, `uploads`, `uploaded`, `uploading`.
@@ -114,8 +114,12 @@ A separate script, `tools/copy-check/`, runs in CI on every pull request. The wo
 3. Run `pnpm i18n:check` and the browser tests with that locale; they include a pseudo-locale run (`en-XA`, generated in tests only) that lengthens every string by 40 percent to catch clipped layouts.
 4. A native speaker reviews the pull request. A language ships only when every key is present.
 
+### Changes before acceptance
+
+- The proposal placed the guide data in `packages/core/src/guide/`. It moved into each adapter's `src/guide.ts` ([ADR-022](ADR-022-export-guide-content.md)), so the copy check's scope names those files, and it also covers the package README `apps/cli/README.md` (`tools/copy-check/src/words.ts`).
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

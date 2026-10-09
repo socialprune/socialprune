@@ -1,6 +1,6 @@
 # ADR-013: CLI framework, command tree and machine output contract
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (no approve command), 2 (no network from CLI commands in Phase 2)
 - **Related:** [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md)
@@ -123,15 +123,19 @@ Code 3 now also covers workspace and backup files written by a newer schema vers
 {"schemaVersion":1,"command":"labels.submit","status":"error","error":{"code":"INVALID_LABELS","message":"Some labels did not pass validation. Nothing was written.","exitCode":1,"retryable":false,"details":{"failures":[{"index":3,"code":"CONTENT_CHANGED"}]}}}
 ```
 
-  `status` is `ok`, `partial` or `error`. `message` is English, from a fixed table, never from a raw exception. `details` holds IDs and counts, never export text or file system paths beyond those the person passed.
+  `status` is `ok`, `partial` or `error`. `message` is English, from a fixed table, never from a raw exception. `details` holds IDs and counts, never export text or file system paths beyond those the person passed. In `INVALID_LABELS.details.failures`, `index` is the label's position in the file, or -1 when the failure concerns the whole file, for example a file that is not valid JSON.
 - **NDJSON** only where asked with `--format ndjson` (click-list export). Each line has `schemaVersion`, `command`, `operationId`, `seq` and `type`; the stream ends with exactly one `complete` or `error` line, so a missing terminal line means the output is incomplete.
 - **Long-running `review`**: one readiness document with `data.lifecycle: "running"`, then nothing more on stdout ([ADR-016](ADR-016-local-review-server.md)).
 - **`--dry-run`**: a complete description of what would happen, with counts, and no writes, no workspace creation, no lock left behind, no server, no browser.
 - **`--help --json`**: command path, description, positionals, options with types and defaults, output schema IDs, whether it writes, and the exit map. Generated from the same registry as human help.
 - **`schemas`** lists the shipped schema IDs and their package-relative paths. Schemas ship in the npm package ([ADR-018](ADR-018-cli-distribution.md)): the core v2 schemas ([ADR-006](ADR-006-workspace-event-log.md)) plus result, error, batch, label submission, summary, click list and review readiness, generated from zod with the existing drift check.
 
+### Changes before acceptance
+
+- The proposal gave every `INVALID_LABELS` failure the index of one label. A failure that concerns the whole file, such as unreadable JSON, has no label to point at, so it uses `index` -1 (decision D51b).
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

@@ -1,6 +1,6 @@
 # ADR-012: Day grouping in an explicit time zone
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 4 (the Instagram list helps a person use the platform's own date filter; nothing acts on the platform)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md)
@@ -70,7 +70,7 @@ We chose **Option 1: `Intl.DateTimeFormat` with `formatToParts` and an explicit 
 - **Precedence.** The web app uses `settings.timeZone` when it is set, otherwise the browser's zone. The CLI uses `--time-zone <IANA>` when given, otherwise `settings.timeZone` from the workspace, otherwise the system zone. The CLI flag applies to that one command and never changes the stored setting. Every output that groups by day names the zone it used and where the zone came from (flag, workspace setting or system).
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

@@ -1,6 +1,6 @@
 # ADR-005: Browser storage engine and persistence
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (no paid storage), 2 (local first), 5 (no promise that data survives)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md)
@@ -88,7 +88,7 @@ idb for opening, upgrades, typed schema, `blocked`, `blocking` and `terminated` 
 
 We chose **Option 1: idb 8.0.4, with unwrapped bulk writes** because it keeps the measured write speed within reach of raw IndexedDB while giving the lifecycle hooks and types that protect decisions, at the smallest dependency cost.
 
-1. **Databases.** `sp-registry` holds the list of workspaces and the active pointer. Each workspace lives in its own database `sp-ws-<workspaceId>`. A restore or a migration writes a new database and switches the pointer in one transaction afterwards ([ADR-006](ADR-006-workspace-event-log.md)).
+1. **Databases.** `sp-registry` holds the list of workspaces and the active pointer. Each workspace lives in its own database `sp-ws-<workspaceId>`. A restore, including one that migrates a version 1 file, streams into a new staging database under a random ID. Any rejection or cancellation closes and deletes that database, and only a complete, valid restore switches the pointer to it, in one transaction ([ADR-006](ADR-006-workspace-event-log.md)).
 2. **Object stores per workspace.** They mirror the v2 workspace document in [ADR-006](ADR-006-workspace-event-log.md) and the SQLite tables in [ADR-015](ADR-015-cli-storage-node-baseline.md):
 
    | Store | Key | Indexes | Writes |
@@ -98,21 +98,30 @@ We chose **Option 1: idb 8.0.4, with unwrapped bulk writes** because it keeps th
    | `items` | `id` | none; the worker builds its query projection in memory | inserted by imports; engagement fields updated by a newer import |
    | `assessments` | auto-increment `seq` (append order) | unique `assessmentId`; `itemId` | append only |
    | `submissions` | `submissionId` | | append only |
-   | `decisionEvents` | auto-increment `seq` | unique `eventId`; `itemId` | append only |
-   | `outcomeEvents` | auto-increment `seq` | unique `eventId`; `itemId` | append only |
+   | `decisionEvents` | auto-increment (append order) | unique `eventId`; `itemId` | append only; each event carries its `seq` |
+   | `outcomeEvents` | auto-increment (append order) | unique `eventId`; `itemId` | append only; each event carries its `seq` |
+   | `eventSequences` | `seq` | | one record per event, so no `seq` repeats across the two event stores |
    | `state` | `itemId` | | current decision and outcome per item, derived from the event stores |
 
-   IndexedDB allows one key per store, so append order is the key and `assessmentId` is a unique index. An earlier draft keyed assessments by item and source, which would have overwritten older assessments and broken the append-only rule. The worker never calls `put` on an existing key in an append-only store; it uses `add`, which fails on a duplicate.
-3. **Writes.** Items are written in batches of 1,000 per transaction through the unwrapped store. An import first writes an `imports` record with `status: 'incomplete'` and flips it to `complete` in the transaction of the last batch; the review only shows items of completed imports ([ADR-006](ADR-006-workspace-event-log.md)). Each human command writes its events and the `state` change in one `readwrite` transaction with `durability: 'strict'`. A label submission writes its `submissions` record and all its assessments in one transaction. A restore writes assessments and events in the document's array order, so `seq` reproduces the log order.
+   IndexedDB allows one key per store, so append order is the key and `assessmentId` is a unique index. An earlier draft keyed assessments by item and source, which would have overwritten older assessments and broken the append-only rule. The worker never calls `put` on an existing key in an append-only store; it uses `add`, which fails on a duplicate. Decision and outcome events share one `seq` counter ([ADR-006](ADR-006-workspace-event-log.md)): the next value comes from `lastEventSeq` in the workspace's `runtime` record, and the append that writes an event also writes its `eventSequences` record and the new `lastEventSeq` in the same transaction.
+
+   `settings.review` in `meta` holds the review's account, filter, sort and search ([ADR-009](ADR-009-navigation.md)). Its shape is part of schema version 2, so changing it needs a `schemaVersion` bump: SQLite metadata and backups validate it strictly and reject a workspace or file whose stored view does not parse. Only the reads that do not validate, the IndexedDB summary and the UI, fall back to the default view.
+3. **Writes.** Items are written in batches of 1,000 per transaction through the unwrapped store. An import first writes an `imports` record with `status: 'incomplete'` and flips it to `complete` in the transaction of the last batch; the review only shows items of completed imports ([ADR-006](ADR-006-workspace-event-log.md)). Each human command writes its events and the `state` change in one `readwrite` transaction with `durability: 'strict'`. A label submission writes its `submissions` record and all its assessments in one transaction. A restore writes assessments and events in the document's array order, and each event of a version 2 file keeps the `seq` it has there.
 4. **Lifecycle.** On `versionchange` the worker closes the database and tells the UI. `blocked` and `terminated` become visible states with a reload action. Nothing relies on `unload` to commit.
 5. **Persistence.** After the first successful import, and only in reaction to a click, the app calls `navigator.storage.persist()` and shows the result. A denial does not block anything. Settings show `estimate()` usage and quota and the persisted state, and the backup screen says that browser storage can be cleared by the browser or by the person, so a downloaded backup is the copy to keep. Before an import or restore, the worker checks `estimate()` against the file size and refuses with a clear message when the free space is smaller than three times the input; a `QuotaExceededError` mid-import discards the incomplete import and keeps the previous workspace.
 6. **OPFS** is used only as scratch space for writing a backup file ([ADR-006](ADR-006-workspace-event-log.md)), never as the store of record.
 7. **Acceptance measurement.** The import node measures 100,000 generated items into `items` through the production path in Chromium and Firefox, next to a raw IndexedDB control in the same run, and records both in the evidence. If the production path is more than 15 percent slower than the control in either engine, the implementation switches the bulk path to raw requests without changing this record.
 
-Needs the maintainer's decision: approving this record changes the earlier storage decision from IndexedDB and OPFS to IndexedDB as the only store of record, with OPFS as backup scratch space.
+Decided by the maintainer on 2026-10-08: IndexedDB is the only store of record in the browser. OPFS is used only as scratch space for writing a backup.
+
+### Changes before acceptance
+
+- The proposal keyed each event store by its own auto-increment `seq`, so each store had its own order. Decision and outcome events now carry one `seq` from a counter both share, kept unique by `eventSequences`, because two separate store orders cannot say whether a decision or an outcome came first, and a backup has to carry that order.
+- The proposal said a restore writes a new database and switches the pointer afterwards. It now says how: the restore streams into a staging database that every rejection deletes, so a failed or cancelled restore leaves the active workspace as it was.
+- The proposal did not cover the stored review view. `settings.review` is part of schema version 2, and a change to its shape needs a `schemaVersion` bump, because SQLite metadata and backups validate it strictly while only unvalidated reads fall back to defaults (decision D58a).
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

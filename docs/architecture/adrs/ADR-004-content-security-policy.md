@@ -1,6 +1,6 @@
 # ADR-004: Content Security Policy layers, Trusted Types and the worker gate
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (local first), 5 (no promises in copy)
 - **Related:** [ADR-003](ADR-003-offline-app-shell.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-016](ADR-016-local-review-server.md), [ADR-021](ADR-021-archive-media.md)
@@ -90,9 +90,9 @@ We chose **Option 1: gate real-data workers on verified service-worker control**
 5. **No service worker.** If registration throws, the API is missing, or control does not arrive within 10 seconds after activation, real-data actions stay disabled. The screen says why in plain words and offers two ways on: open SocialPrune in a normal browser window, or import the export with `npx socialprune import` and review it with `npx socialprune review`, which serves the same app from the person's computer with real response headers ([ADR-016](ADR-016-local-review-server.md)). There is no override button.
 6. A gate failure is recorded in a local diagnostics entry with its reason code, never with file names or content.
 7. **Gate tests**, in Chromium, Firefox and WebKit against the built app: a first visit passes the gate without a reload; after control, a worker `fetch` to a live local probe fails; the demo started before control, followed by a fixture import after control, uses a new real-data worker instance whose script response satisfies `response.fromServiceWorker()` and carries the worker policy header; every generated fixture imports through the real worker entries under that header policy.
-8. **Local-review mode** (`SP_MODE=review`, [ADR-016](ADR-016-local-review-server.md)) has no service worker, so this gate does not apply there. A successful `/session` exchange, under the server's real response headers, replaces it, and a failed exchange shows the session-ended page. That mode starts no worker and has no import. The test is `apps/cli/e2e/review-session.spec.ts`.
+8. **Local-review mode** (`vite build --mode review`, [ADR-016](ADR-016-local-review-server.md)) has no service worker, so this gate does not apply there. A successful `/session` exchange, under the server's real response headers, replaces it, and a failed exchange shows the session-ended page. That mode starts no worker and has no import. The test is `apps/cli/e2e/review-session.spec.ts`.
 
-Needs the maintainer's decision: real imports in the web app are refused when no service worker can control the page (option 1), with the CLI as the way on, and there is no override.
+Decided by the maintainer on 2026-10-08: the service-worker gate is hard. Without a controlling service worker there is no real import in the browser; the CLI is the way on, and there is no override.
 
 ### Archive codec in the import worker
 
@@ -109,7 +109,7 @@ zip.js 2.23.0's default entry (`index.js`) re-exports `lib/zip-fs-wasm.js`, whos
 
 A test that sees zero `securitypolicyviolation` events proves nothing unless the same observer is shown to catch a real one.
 
-- A test-only worker entry, `apps/web/test/probes/violation-worker.ts`, calls `fetch` against a live local probe under the import worker policy. It is built only by a separate e2e build (`SP_MODE=e2e-probe`), which adds the entry to the service worker's policy map and to the Trusted Types allowlist.
+- A test-only worker entry, `apps/web/test/probes/violation-worker.ts`, calls `fetch` against a live local probe under the import worker policy. It is built only by a separate e2e build (`vite build --mode e2e-probe`), which adds the entry to the service worker's policy map and to the Trusted Types allowlist.
 - In Chromium and Firefox, the e2e spec runs this worker with the same observer the other specs use and expects exactly one `connect-src` violation from it. If the observer reports none, the spec fails.
 - In WebKit, which emits no worker violation event, the spec instead asserts the policy header on the real worker responses (`response.fromServiceWorker()` and the header value) and that the probe request from the worker is rejected.
 - **Unreachable from production.** A test runs after `pnpm build` and asserts that `apps/web/dist` contains no file built from `apps/web/test/`, that the production service worker's policy map and Trusted Types allowlist list no probe URL, and that requesting the probe URL from the production preview returns 404. ESLint forbids imports from `apps/web/test/` in `apps/web/src/`.
@@ -126,8 +126,12 @@ Every browser entry (page, each worker) imports `@socialprune/core/browser-init`
 
 A Vite plugin with `apply: 'serve'` rewrites the meta policy in `transformIndexHtml` to a development policy: it adds `'unsafe-inline'` to `style-src`, allows the React refresh preamble in `script-src`, and allows `connect-src` only to the dev server's own origin for hot reload. The banner "Development policy" appears in the page footer in dev mode. The plugin never runs in `vite build`. A unit test reads `apps/web/dist/index.html` after the build and compares the meta `content` attribute byte for byte with the policy in the table above; a second test asserts the plugin's `apply` value is `'serve'`.
 
+### Changes before acceptance
+
+- The proposal selected the local-review and probe builds with a build constant, `SP_MODE=review` and `SP_MODE=e2e-probe`. The build uses Vite's own `--mode review` and `--mode e2e-probe` and reads no environment variable, so the record names those commands.
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

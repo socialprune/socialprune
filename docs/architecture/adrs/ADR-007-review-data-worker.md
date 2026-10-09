@@ -1,6 +1,6 @@
 # ADR-007: Review data in a workspace worker, its protocol, queries and search
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (local first), 3 (a person decides)
 - **Related:** [ADR-004](ADR-004-content-security-policy.md), [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-008](ADR-008-review-ui-primitives.md)
@@ -106,16 +106,24 @@ The request and reply schemas live in `packages/core/src/workspace/protocol.ts`,
 |---|---|
 | `open { workspaceId }` | `opened { summary }` with accounts, counts per decision and outcome, last backup time, schema version |
 | `query { queryId, generation, accountKey, filter, sort, search }` | `queryResult { queryId, generation, total, counts }`; the worker keeps the ordered ID list for `queryId` |
-| `window { queryId, generation, offset, limit ≤ 200 }` | `rows { queryId, generation, offset, rows }`; each row has ID, kind, date, short text of at most 280 characters, highest risk, categories, decision and outcome |
+| `window { queryId, generation, offset, limit ≤ 200 }` | `rows { queryId, generation, offset, rows }`; each row has ID, kind, date, short text of at most 280 characters, highest risk, categories, the sources of its current assessments (at most 8, sorted by kind, name and version) with `moreSources` counting the rest, decision and outcome |
 | `detail { itemId }` | `itemDetail { item, assessments, events }` with full text and every assessment and event for the item |
 | `decide { commandId, itemIds ≤ 1,000, value, expected }` | `committed { commandId, actionId, revision, changed }` or `rejected { commandId, code: 'STALE' \| 'UNKNOWN_ITEM' \| 'STORAGE' }` |
-| `previewBulk { previewId, queryId, generation, value, overwrite }` | `bulkPreview { previewId, total, willChange, unchanged, byCurrentValue, sample }`; the worker freezes the exact ID list and each item's current value. `overwrite` lists the current values that may change; the UI sends `['undecided', 'later']` unless the person ticks the option to include other decisions |
+| `previewBulk { previewId, queryId, generation, value, overwrite, itemIds? }` | `bulkPreview { previewId, total, willChange, unchanged, byCurrentValue, sample, selection? }`; the worker freezes the exact ID list and each item's current value. `overwrite` lists the current values that may change; the UI sends `['undecided', 'later']` unless the person ticks the option to include other decisions. Without `itemIds` the preview covers the whole query. With `itemIds`, a selection of at most 10,000 unique IDs, it covers only the selected items that are also in the query, and `selection { requested, inView, notInView }` reports how many selected items fell outside it |
 | `confirmBulk { commandId, previewId }` | `committed` or `rejected { code: 'STALE_PREVIEW', changedSince }` or `rejected { code: 'PREVIEW_EXPIRED' }` |
 | `releasePreview { previewId }` | `released` |
 | `undo { commandId }`, `redo { commandId }` | `committed { …, skipped }` or `rejected { code: 'NOTHING_TO_UNDO' }` |
 | `history { limit }` | `historyEntries` with action ID, kind, value, size and time, newest first |
 | `outcome { commandId, itemIds, value, expected }` | as `decide`, writing outcome events |
+| `clickListOpen { listId, accountKey, timeZone?, workspaceTimeZone?, systemTimeZone? }` | `clickListOpened` with the list's revision, total and time zone ([ADR-012](ADR-012-time-zone-grouping.md)) |
+| `clickListWindow { listId, offset, limit ≤ 200 }` | `clickListEntries` |
+| `clickListExport { listId, format }` | `clickListExportChunk` messages, then `clickListExported { entries, bytes }` |
+| `setTimeZone { timeZone }` | `settingsChanged { timeZone, revision }` |
+| `setReviewView { view }` | `reviewViewChanged { review, revision }`; stores the account, filter, sort and search in `settings.review` ([ADR-009](ADR-009-navigation.md)), writes no event and does not change the revision |
 | `backup { target }`, `restore { file }`, `attachImport { port }` | progress messages, then `done` or `failed { code }` |
+| `deleteWorkspace { workspaceId }` | `workspaceDeleted { workspaceId }` after the worker closed and deleted that workspace's database |
+
+The click-list messages, `setTimeZone` and `setReviewView` travel in the browser worker and over the local review server's HTTP API ([ADR-016](ADR-016-local-review-server.md)). `backup`, `restore`, `attachImport` and `deleteWorkspace` exist only in the browser worker.
 
 The worker also sends, unrequested, `changed { revision, itemIds | 'many', countsChanged }` after every commit, including commits made by another tab (each tab runs its own workspace worker; the workers announce new revisions over `BroadcastChannel('sp-workspace')`), and `storageState { persisted, usage, quota }` when it changes.
 
@@ -135,8 +143,14 @@ Rules the protocol enforces:
 - Filters: decision values, outcome values, kinds, risk range, categories (any of), assessment source kinds, date range in the workspace time zone ([ADR-012](ADR-012-time-zone-grouping.md)), engagement thresholds with unknown kept separate, and literal substring.
 - Templates such as "Older than two years without engagement" are saved filter definitions in the design specification, not verdicts. They produce a query; they never produce a decision.
 
+### Changes before acceptance
+
+- The proposal's rows had no assessment sources. Each row now carries the sources of its current assessments, at most 8, and `moreSources` with the count of the rest, so the grid can show source badges without asking for the item's detail.
+- The proposal's `previewBulk` always covered the whole query. It now takes an optional selection of item IDs, intersected with the query, so a bulk action on selected rows uses the same frozen preview and confirm path.
+- The proposal's protocol table had no messages for the click lists, the time zone, the stored review view or deleting a workspace. The table now lists `clickListOpen`, `clickListWindow`, `clickListExport`, `setTimeZone` and `setReviewView`, which also travel over HTTP, and `deleteWorkspace`, which exists only in the browser worker.
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

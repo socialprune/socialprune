@@ -1,6 +1,6 @@
 # ADR-020: Demo data and honest example suggestions
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (suggestions never decide), 5 (no claim of accuracy), 6 (demo data is generated, never real)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [design specification](../../design/README.md)
@@ -85,7 +85,7 @@ We chose **Option 1: hand-written example assessments with `source.kind: 'fixtur
 - The demo shows no accuracy figure, no confidence value and no "AI" wording.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

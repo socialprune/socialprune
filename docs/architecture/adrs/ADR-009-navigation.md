@@ -1,6 +1,6 @@
 # ADR-009: Navigation with hash routes
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (GitHub Pages only), 2 (no export data in URLs)
 - **Related:** [ADR-003](ADR-003-offline-app-shell.md), [ADR-016](ADR-016-local-review-server.md)
@@ -63,13 +63,21 @@ We chose **Option 1: hash routes with a small app-owned router**, because it is 
 Routes: `#/` start, `#/guide`, `#/guide/x`, `#/guide/instagram`, `#/demo`, `#/import`, `#/review`, `#/clicklist/x`, `#/clicklist/instagram`, `#/backup`, `#/settings`, `#/privacy`. Anything else shows a "Page not found" view with a link to `#/`.
 
 - The router listens to `hashchange`, matches against this fixed list, and sets the document title and moves focus to the page's `<h1>` on every change.
-- Filters, sort, selection and the focused item stay in memory and in the workspace settings, never in the hash. The review route never carries an item ID.
+- The review's account, filter, sort and search are kept in the workspace settings (`settings.review`), in the Pages build and in local-review mode alike. They are written only after a person changes one of them; opening the review reads them and writes nothing.
+- Selection and the focused item stay in the page's memory for the session only. A selection restored after a restart could feed a bulk action the person did not prepare, and the protocol cannot report an item's position in a query, so the review reopens at the top of its list ([BL-005](../../BACKLOG.md)).
+- The stored view's shape is part of workspace schema version 2, so changing it needs a `schemaVersion` bump. SQLite metadata and backups validate it strictly; only the reads that do not validate, the IndexedDB summary and the UI, fall back to the default view when the stored one does not parse.
+- None of this state goes into the hash. The review route never carries an item ID.
 - In the Pages build, `#/review` and `#/clicklist/*` render only after the worker gate in [ADR-004](ADR-004-content-security-policy.md) passes and a workspace is open; otherwise they redirect to `#/import`. In local-review mode there is no service worker; there the gate is a successful session exchange ([ADR-016](ADR-016-local-review-server.md)), and a failed exchange shows the session-ended page instead of any route.
 - `404.html` is a static page with one link back to `/socialprune/#/`.
 - **Local-review mode** ([ADR-016](ADR-016-local-review-server.md)) has a smaller route list, because the workspace is imported, backed up and restored with CLI commands there and its HTTP API offers none of that: `#/` (a start view that shows the workspace summary and the local-review privacy line), `#/review`, `#/clicklist/x`, `#/clicklist/instagram`, `#/settings` and `#/privacy`. `#/guide`, `#/demo`, `#/import` and `#/backup` show a short page naming the CLI command that does the job (`socialprune guide`, `socialprune import`, `socialprune backup export`). Settings hides the storage section and the "Delete this review from this browser" action, which belong to browser storage. The session token travels in the fragment once before the router starts and is removed with `history.replaceState`.
 
+### Changes before acceptance
+
+- The proposal kept filters, sort, selection and the focused item together in memory and in the workspace settings. Only the account, filter, sort and search are stored, and only after a person changes them; selection and the focused item stay in the session, because a restored selection could feed an unprepared bulk action and the protocol cannot locate an item in a query (decision D58, backlog BL-005).
+- The proposal said nothing about the stored view's shape. A change to it needs a `schemaVersion` bump, because SQLite metadata and backups reject a view that does not parse, while only unvalidated reads fall back to defaults (decision D58a).
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

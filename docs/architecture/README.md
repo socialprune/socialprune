@@ -2,7 +2,7 @@
 
 This is the map for contributors. It describes how SocialPrune is meant to be built from Phase 2 on: which package owns what, which process runs where, how export data moves, and where the trust boundaries are. The reasons behind each choice are in the [decision records](adrs/README.md), and the measurements behind them in [evidence-2026-10.md](evidence-2026-10.md). The visual and interaction design is in [docs/design/README.md](../design/README.md).
 
-Every record this map relies on is still `Proposed`. The web app, the CLI and the agent interface it describes are built and tested on generated data, and several records leave a choice to the maintainer; the [index](adrs/README.md) lists them. Where a record names a conservative option to use until he decides, this map describes that option.
+Every record this map relies on is `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
 
 ## What the system does
 
@@ -164,9 +164,9 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 
 ## Decision records
 
-All proposed; see the [index](adrs/README.md) for status and open maintainer decisions.
+All accepted; see the [index](adrs/README.md) for status and the maintainer's decisions.
 
-| ADR | Proposed decision |
+| ADR | Decision |
 |---|---|
 | [001](adrs/ADR-001-decision-records.md) | One file per decision; change only by supersession |
 | [002](adrs/ADR-002-dependency-licenses.md) | MIT, ISC, BSD-2/3-Clause, 0BSD, Apache-2.0; exceptions need their own record; checked in CI |

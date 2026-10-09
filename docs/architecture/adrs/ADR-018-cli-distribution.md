@@ -1,6 +1,6 @@
 # ADR-018: CLI release bundle and npm package contents
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (free tooling and free publishing only), 6 (no fixtures or real data in the package)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md)
@@ -75,7 +75,7 @@ We chose **Option 1: Rolldown 1.2.12 used directly**, because it gives the small
 
 ### Build
 
-- `apps/cli/build/release.ts` runs Rolldown with input `apps/cli/src/main.ts`, `platform: 'node'`, aliases from the workspace package names to their `src/index.ts`, every dependency bundled, `format: 'esm'`, `minify: true`, `sourcemap: true`, `codeSplitting: false` and the banner `#!/usr/bin/env node`. zip.js runs without web workers in Node.
+- `apps/cli/release/release.ts` runs Rolldown once for `apps/cli/src/main.ts` and once for `apps/cli/src/review/database-worker.ts`, because the review server starts its database worker thread from a file of its own ([ADR-016](ADR-016-local-review-server.md)). Both runs use `platform: 'node'`, aliases from the workspace package names to their `src/index.ts`, every dependency bundled, `format: 'esm'`, `minify: true`, `sourcemap: true`, `codeSplitting: false` and the banner `#!/usr/bin/env node`. zip.js runs without web workers in Node.
 - The web app is built a second time in local-review mode into `apps/web/dist-review/` ([ADR-016](ADR-016-local-review-server.md)).
 - The script assembles `apps/cli/dist/package/` and writes its `package.json`. Nothing under `dist/` is committed.
 
@@ -85,12 +85,14 @@ We chose **Option 1: Rolldown 1.2.12 used directly**, because it gives the small
 socialprune/
   package.json         name socialprune, version from the release tag, license Apache-2.0,
                        type module, bin { socialprune: ./bin/socialprune.mjs },
-                       engines { node: ">=24.15.0" } (the floor proposed in ADR-015),
+                       engines { node: ">=24.15.0" } (the floor from ADR-015),
                        files limited to the entries below,
                        exports only "./schemas/*" and "./skills/*", publishConfig access public
   bin/socialprune.mjs  the bundle
   bin/socialprune.mjs.map
-  web/                 dist-review: index.html, hashed JS and CSS, icons, no service worker
+  bin/database-worker.mjs  the review server's database worker
+  bin/database-worker.mjs.map
+  web/                 dist-review: index.html, hashed JS and CSS, no icons, no service worker
   schemas/             every JSON schema from ADR-006 and ADR-013
   skills/socialprune/  SKILL.md and references/
   README.md            CLI usage, Node requirement, agent setup pointer
@@ -98,21 +100,34 @@ socialprune/
   THIRD_PARTY_NOTICES  generated from the license files of every bundled package
 ```
 
+The installed `@stricli/core` 1.3.0 package ships no license file, so its notice uses the license text of the upstream `v1.3.0` tag and names that file's URL.
+
 No TypeScript source, no tests, no fixtures, no evidence documents. `packages/core` and the adapters stay private workspace packages; publishing them as libraries is not part of Phase 2.
 
 ### Checks
 
-- CI on every pull request: build the package, run `npm pack --dry-run --json` with the npm that ships with the CI Node, and compare the file list with an expected list in `apps/cli/build/expected-files.txt`. Then install the packed tarball into an empty temporary folder and run `socialprune --help --json`, `structure` on an X fixture, `import`, `summary`, `batch next --share-with-agent`, `labels submit --dry-run` and `review --dry-run` on the generated demo export. One job on Ubuntu runs this with the latest Node 24 and one with the Node floor from [ADR-015](ADR-015-cli-storage-node-baseline.md); the release workflow repeats it on Windows and macOS.
+- CI on every pull request: build the package, run `npm pack --dry-run --json` with the npm that ships with the CI Node, and compare both that file list and the assembled folder with the expected list. Everything outside `web/` is an exact list in `apps/cli/release/expected-files.txt`. The `web/` entries come from a fresh listing of `apps/web/dist-review/`, and each packed `web/` file must be byte-equal to its `dist-review` file and recorded as produced by Vite. Then install the packed tarball into an empty temporary folder and run `socialprune --help --json`, `structure` on an X fixture, `import`, `summary`, `batch next --share-with-agent`, `labels submit --dry-run` and `review --dry-run` on the generated demo export. One job on Ubuntu runs this with the latest Node 24 and one with the Node floor from [ADR-015](ADR-015-cli-storage-node-baseline.md); the release workflow repeats it on Windows and macOS.
 - A test asserts that the package file list contains no path under `fixtures/`, and that every file in it is either generated build output or tracked in Git, so nothing git-ignored can reach the package.
 
 ### Release workflow, present and inert
 
-- `.github/workflows/release-cli.yml` with `on: workflow_dispatch` only. The build-and-smoke job runs on Ubuntu, Windows and macOS, and runs `pnpm guide:check --max-age 120` ([ADR-022](ADR-022-export-guide-content.md)). A CI test parses this workflow file and asserts the trigger list, the permissions and the publish condition. The publish job has `permissions: { contents: read, id-token: write }`, `environment: npm-publish`, and the condition `if: vars.NPM_PUBLISH_ENABLED == 'true'`.
-- It publishes with npm trusted publishing through GitHub OIDC, which produces provenance automatically for a public package from a public repository. No token secret exists. Its first step fails unless `npm --version` is 11.5.1 or newer, because trusted publishing needs that, and the workflow never installs a different npm ([ADR-002](ADR-002-dependency-licenses.md), rule 5).
+- `.github/workflows/release-cli.yml` with `on: workflow_dispatch` only. The build-and-smoke job runs on Ubuntu, Windows and macOS, and runs `pnpm guide:check --max-age 120 --release` ([ADR-022](ADR-022-export-guide-content.md)), so unchecked guide facts stop it. A CI test reads this workflow file with a strict reader that accepts only the restricted block-style YAML the file uses, not full YAML, and asserts the trigger list, the permissions and the publish condition. The publish job has `permissions: { contents: read, id-token: write }`, `environment: npm-publish`, and the condition `if: vars.NPM_PUBLISH_ENABLED == 'true'`.
+- It publishes with npm trusted publishing through GitHub OIDC, which produces provenance automatically for a public package from a public repository. No token secret exists. The step right after `actions/setup-node` fails unless `npm --version` is 11.5.1 or newer, because trusted publishing needs that; running it after setup-node checks the npm that will publish. The workflow never installs a different npm ([ADR-002](ADR-002-dependency-licenses.md), rule 5).
 - Before the first release, the maintainer configures the trusted publisher on npm for `socialprune/socialprune` and this workflow file, creates the `npm-publish` environment with himself as required reviewer, and sets the variable. Phase 2 does none of this, so the publish job cannot run.
 
+### Changes before acceptance
+
+- The proposal put the release scripts and the expected file list in `apps/cli/build/`. They live in `apps/cli/release/`, because the root `.gitignore` ignores every `build/` folder.
+- The proposal bundled one entry. The package also ships `bin/database-worker.mjs` and its map, because the review server's database worker needs its own entry file.
+- The proposal generated every notice from installed license files. The installed Stricli 1.3.0 package has none, so its notice uses the license text of the tagged upstream release.
+- The proposal listed icons in `web/`. The local-review build copies no public files, so `dist-review` has no icons.
+- The proposal compared the packed list with one expected list. The pack check now takes `web/` from a fresh `dist-review` listing, requires each file to be byte-equal and produced by Vite, and keeps an exact list for everything outside `web/`, so a hashed asset rename does not need a hand edit and a stray file still fails (decision D59).
+- The proposal said a CI test parses the workflow. It reads a restricted block-style structure and does not parse full YAML, so anything outside that structure fails the test.
+- The proposal ran `guide:check --max-age 120`. The release workflow runs `--max-age 120 --release`, which also refuses facts nobody has checked.
+- The proposal made the npm version check the publish job's first step. It runs after `actions/setup-node`, because before that step it would read a different npm from the one that publishes.
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

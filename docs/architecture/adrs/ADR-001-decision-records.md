@@ -1,6 +1,6 @@
 # ADR-001: Decision records and supersession
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** none directly. This record governs how every later decision that touches them is written down.
 - **Related:** all ADRs in this folder
@@ -79,10 +79,10 @@ The rules for these records:
 6. **Hard constraints.** Each record names the `AGENTS.md` hard constraints it touches, or says it touches none.
 7. **Replaced defaults and decisions.** Where a record replaces a technology default or a project decision made before Phase 1, it says so in one sentence, such as "This replaces the earlier default X", without linking the private plan. The replacement takes effect only when the maintainer approves the record.
 8. **Authorship line.** `Decision made by` is `maintainer`, as the `adr-creation` skill requires. Records written by an agent on the maintainer's request carry the same line, stay `Proposed`, and pass an independent review before the maintainer decides on them.
-9. **Open questions.** A record that needs a choice only the maintainer can make says so in one line, "Needs the maintainer's decision: …", and stays `Proposed` until he makes it.
+9. **Open questions.** A record that needs a choice only the maintainer can make says so in one line, "Needs the maintainer's decision: …", and stays `Proposed` until he makes it. Once he has decided, that line reads "Decided by the maintainer on YYYY-MM-DD: …" and states his choice.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

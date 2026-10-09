@@ -1,6 +1,6 @@
 # ADR-008: UI primitives, review grid, keyboard model and accessibility checks
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (a person decides), 2 (no third-party requests from tests or UI)
 - **Related:** [ADR-004](ADR-004-content-security-policy.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-010](ADR-010-styling-tokens.md), [design specification](../../design/README.md)
@@ -119,7 +119,7 @@ J and K navigation, common in mail clients, is not offered because K means "keep
 - Screen-reader passes with NVDA on Firefox and VoiceOver on Safari are a release gate, recorded by hand. Automated checks do not replace them.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

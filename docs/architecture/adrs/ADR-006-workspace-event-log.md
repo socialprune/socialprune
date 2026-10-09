@@ -1,6 +1,6 @@
 # ADR-006: Workspace model, decision event log, schema version 2 and portable backup
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (a person decides; every decision records its source), 6 (backups in tests come from generated data)
 - **Related:** [ADR-005](ADR-005-browser-storage.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-020](ADR-020-demo-suggestions.md)
@@ -87,6 +87,7 @@ We chose **Option 3: an append-only event log with a derived state, as schema ve
 DecisionValue = 'keep' | 'delete' | 'later' | 'undecided'
 DecisionEvent = {
   eventId: string          // crypto.randomUUID() when created
+  seq: number              // one counter shared with outcome events, strictly increasing
   itemId: string
   value: DecisionValue
   previous: DecisionValue  // the value the person saw when acting
@@ -101,7 +102,7 @@ DecisionEvent = {
 }
 ```
 
-- **State.** An item's current decision is the `value` of its last event in log order, or `undecided` if it has none. Log order is the store's append order (IndexedDB `seq`, SQLite rowid, array position in the file), never `decidedAt`.
+- **State.** An item's current decision is the `value` of its last event in log order, or `undecided` if it has none. Log order is the event's `seq`, never `decidedAt`. Decision and outcome events take `seq` from one counter, so it also orders the two logs against each other, and the file carries it with every event.
 - **Single change.** One event, `action.kind: 'single'`, `size: 1`.
 - **Bulk change.** One event per item, all sharing one `action.id`, written in one transaction, from a frozen preview ([ADR-007](ADR-007-review-data-worker.md)). Items whose value would not change produce no event.
 - **Undo.** For each event of the reverted action, a new event with `value` set to that event's `previous`, `action.kind: 'undo'`, `reverts` naming the reverted action. Undo is refused for an item whose current value no longer equals the reverted event's `value`; the UI names how many items were skipped.
@@ -111,7 +112,7 @@ DecisionEvent = {
 
 ### Outcome events
 
-`OutcomeEvent` has the same shape with `value` and `previous` in `'deleted-by-user' | 'skipped' | 'unknown'`, `recordedAt` instead of `decidedAt`, and the same `action` object. Its `source` is `{ kind: 'human', via: 'web-review' | 'local-review' | 'v1-unrecorded' }`; `v1-unrecorded` exists only for outcomes migrated from version 1, which stored no source, and no command can write it. `unknown` is the starting value. A person records an outcome in the click list; undo works the same way.
+`OutcomeEvent` has the same shape, including `seq`, with `value` and `previous` in `'deleted-by-user' | 'skipped' | 'unknown'`, `recordedAt` instead of `decidedAt`, and the same `action` object. Its `source` is `{ kind: 'human', via: 'web-review' | 'local-review' | 'v1-unrecorded' }`; `v1-unrecorded` exists only for outcomes migrated from version 1, which stored no source, and no command can write it. `unknown` is the starting value. A person records an outcome in the click list; undo works the same way.
 
 ### Assessments
 
@@ -153,7 +154,7 @@ WorkspaceV2 = {
   createdAt: UtcTimestamp
   updatedAt: UtcTimestamp
   lastBackupAt: UtcTimestamp | null
-  settings: { categories: CategoryId[], timeZone: string | null }
+  settings: { categories: CategoryId[], timeZone: string | null, review?: ReviewView }
   counts: { imports, items, assessments, submissions, decisionEvents, outcomeEvents }  // integers
   imports: ImportRecord[]          // gains status: 'complete' | 'incomplete'
   items: Item[]                    // gains mediaCount: number | null
@@ -164,14 +165,14 @@ WorkspaceV2 = {
 }
 ```
 
-`lastBackupAt` is the time the most recent complete backup of this workspace was written. A backup file carries its own creation time in this field. The store updates its value only after the backup file was written completely, so a cancelled or failed backup leaves the old value. `settings.timeZone` is `null` until the person picks a zone; then readers use it ([ADR-012](ADR-012-time-zone-grouping.md)).
+`lastBackupAt` is the time the most recent complete backup of this workspace was written. A backup file carries its own creation time in this field. The store updates its value only after the backup file was written completely, so a cancelled or failed backup leaves the old value. `settings.timeZone` is `null` until the person picks a zone; then readers use it ([ADR-012](ADR-012-time-zone-grouping.md)). `settings.review` is absent until the person changes the review's account, filter, sort or search; then it holds those four ([ADR-009](ADR-009-navigation.md)).
 
 ### Migration from version 1
 
 Readers accept v1 and v2; writers write only v2. Migration is deterministic, so migrating the same v1 file twice yields the same v2 file:
 
 1. `decisions` becomes `decisionEvents` in array order. Each event gets `eventId = 'v1-' + sha256(JSON.stringify([index, record]))`, `previous` from the preceding migrated value of that item or `undecided`, and `action = { id: eventId, kind: 'migrated', size: 1, reverts: null }`. `source` is copied unchanged.
-2. `outcomes` becomes `outcomeEvents` the same way, with `source: { kind: 'human', via: 'v1-unrecorded' }`, because v1 stored no source for outcomes and the migration does not invent one.
+2. `outcomes` becomes `outcomeEvents` the same way, with `source: { kind: 'human', via: 'v1-unrecorded' }`, because v1 stored no source for outcomes and the migration does not invent one. Migrated decisions and outcomes take `seq` from one counter in the order of their timestamps, decisions before outcomes at the same time, then by array index, because v1 has no order across its two arrays.
 3. Each assessment gets `assessmentId = 'v1-' + sha256(JSON.stringify([index, record]))` and `submissionId: null`.
 4. `id = 'v1-' + sha256(createdAt + every import id)`, `kind: 'personal'`, `format` added, `lastBackupAt: null`, `settings.timeZone: null`, `submissions: []`, every item gets `mediaCount: null`, every import gets `status: 'complete'`, and `counts` is computed last.
 5. A v1 item whose `id` lacks the platform prefix fails the migration with a named error instead of being renamed, because renaming would detach its decisions.
@@ -179,17 +180,23 @@ Readers accept v1 and v2; writers write only v2. Migration is deterministic, so 
 ### Backup and restore
 
 - **Write.** Both the browser and the CLI stream the document in key order in bounded chunks; neither builds the whole JSON string. The browser writes to OPFS scratch, then offers the file through `showSaveFilePicker` (called inside the click, before any long work) or a `blob:` download link. The file name is `socialprune-backup-<YYYY-MM-DD>.json` and never contains a handle or account name.
-- **Read.** `packages/core` provides one streaming reader built on its existing JSON cursor. It validates each record with its zod schema as it arrives, then checks at the end: `counts` match, item IDs, assessment IDs, submission IDs and event IDs are unique, every `itemId` refers to an item, every non-null `submissionId` on an assessment refers to a submission record, each submission's `labelCount` equals the number of assessments that name it, every event chain holds, and `fixture` assessments appear only in `demo` workspaces. Any failure rejects the file with a symbolic error and changes nothing.
+- **Read.** `packages/core` provides one streaming reader built on its existing JSON cursor. It validates each record with its zod schema as it arrives, then checks at the end: `counts` match, item IDs, assessment IDs, submission IDs and event IDs are unique, every `itemId` refers to an item, every non-null `submissionId` on an assessment refers to a submission record, each submission's `labelCount` equals the number of assessments that name it, event `seq` values increase within each log and never repeat across the two, every event chain holds, and `fixture` assessments appear only in `demo` workspaces. Any failure rejects the file with a symbolic error and changes nothing.
 - **Duplicates.** Within one file, a repeated `eventId`, `assessmentId` or `submissionId` with identical content is dropped; the same ID with different content rejects the file.
 - **Submissions after restore.** A restore copies the submission records verbatim, so an agent that resubmits a file it already submitted before the backup gets the same no-op or `SUBMISSION_CONFLICT` as before. `lastBackupAt` keeps the value from the file.
-- **Replace, not merge.** A restore replaces the active workspace. It writes a new store first and switches only after validation ([ADR-005](ADR-005-browser-storage.md), [ADR-015](ADR-015-cli-storage-node-baseline.md)). The confirmation offers to download a backup of the current workspace first. Merging two workspaces is not part of Phase 2.
+- **Replace, not merge.** A restore replaces the active workspace. It streams the file into a separate staging store, never into the active one. Every rejection or cancellation discards the staging store, and only a complete, valid restore switches to it ([ADR-005](ADR-005-browser-storage.md), [ADR-015](ADR-015-cli-storage-node-baseline.md)). The confirmation offers to download a backup of the current workspace first. Merging two workspaces is not part of Phase 2.
 
 ### Schemas
 
 `packages/core/schemas/` keeps the v1 files under `v1/` as the migration input and generates v2 files for the workspace, item, assessment, submission, decision event, outcome event and import record from the zod definitions, with the existing drift check.
 
+### Changes before acceptance
+
+- The proposal took log order from each store's append position (IndexedDB key, SQLite rowid, array position). Every decision and outcome event now carries a `seq` from one counter shared by both logs, because two arrays cannot say whether a decision or an outcome came first; restore checks that `seq` increases and never repeats.
+- The proposal said a restore writes a new store and switches after validation. It now says that the restore streams into a staging store that every rejection discards, so the active workspace is never written during a restore.
+- The proposal's settings held the categories and the time zone. They also hold the stored review view, `settings.review`, written only after a person changes it (decision D58).
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

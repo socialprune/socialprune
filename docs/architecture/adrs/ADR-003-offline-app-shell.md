@@ -1,6 +1,6 @@
 # ADR-003: Offline app shell and update flow
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (no hosting beyond GitHub Pages), 2 (local first)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-004](ADR-004-content-security-policy.md), [ADR-005](ADR-005-browser-storage.md), [ADR-019](ADR-019-pages-deployment.md)
@@ -68,7 +68,7 @@ A small Vite plugin enumerates the real build output after `generateBundle`, has
 
 We chose **Option 2: app-owned service worker with a build-generated manifest** because it is the only option that passes the license policy and also gives the header rewriting the CSP design needs.
 
-1. **Build plugin** in `apps/web/build/` (development code, not shipped): after the bundle is written, list every output file, compute SHA-256, emit `sw.js` at a stable URL with `{ buildId, files: [{ url, sha256 }] }` inlined. No hand-written list of chunk names.
+1. **Build plugin** in `apps/web/tooling/` (development code, not shipped): after the bundle is written, list every output file, compute SHA-256, emit `sw.js` at a stable URL with `{ buildId, files: [{ url, sha256 }] }` inlined. No hand-written list of chunk names.
 2. **Install.** Fetch every listed same-origin URL with `cache: 'reload'`, verify status and hash, store hardened copies (see [ADR-004](ADR-004-content-security-policy.md)) in `sp-app-<buildId>`. Any failure aborts the install and deletes only the incomplete new cache.
 3. **Fetch.** Serve only in-scope GET requests. `/socialprune/` maps to `index.html`. Unknown same-origin URLs go to the network uncached. A missing `.js` path never receives HTML. Cross-origin requests are not intercepted.
 4. **Registration and first activation.** Register with `updateViaCache: 'none'` and a Trusted Types script URL ([ADR-004](ADR-004-content-security-policy.md)). Check `registration.waiting` on start as well as `updatefound`. The `activate` handler calls `self.clients.claim()` after its cache cleanup, so a first visit becomes controlled without a reload and the worker gate in [ADR-004](ADR-004-content-security-policy.md) can pass in the same page load. The trial service worker did the same. Claiming only affects pages that have no controller yet; an update still waits for **Reload now** (rule 5).
@@ -78,10 +78,14 @@ We chose **Option 2: app-owned service worker with a build-generated manifest** 
 
 8. **Browser tests.** In Chromium, Firefox and WebKit: a first visit in a fresh profile passes the worker gate without a reload (control arrives through `clients.claim()`); offline reload of `#/`, `#/guide` and `#/demo`; update held until **Reload now**; two tabs flushed before an update; a failed install keeps the active build.
 
-Needs the maintainer's decision: approving this record replaces the earlier default vite-plugin-pwa with an app-owned service worker.
+Decided by the maintainer on 2026-10-08: SocialPrune uses its own service worker instead of vite-plugin-pwa.
+
+### Changes before acceptance
+
+- The proposal put the build plugin in `apps/web/build/`. It lives in `apps/web/tooling/`, because the root `.gitignore` ignores every `build/` folder and a plugin there would never be committed.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

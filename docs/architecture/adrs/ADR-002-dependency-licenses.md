@@ -1,6 +1,6 @@
 # ADR-002: Dependency license policy
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (nothing costs money), indirectly. A license that forces source disclosure or a commercial grant can turn into a cost or a takedown.
 - **Related:** [ADR-003](ADR-003-offline-app-shell.md), [ADR-010](ADR-010-styling-tokens.md), [ADR-011](ADR-011-internationalization.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-018](ADR-018-cli-distribution.md)
@@ -91,7 +91,7 @@ We chose **Option 1: strict allowlist with a per-package exception record** beca
 9. **Notices.** The Pages build and the npm package each carry a generated `THIRD_PARTY_NOTICES` file covering every bundled package, produced from the installed packages' license files rather than from minifier legal comments.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 

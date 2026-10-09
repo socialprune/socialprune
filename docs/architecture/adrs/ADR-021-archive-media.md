@@ -1,13 +1,13 @@
 # ADR-021: Archive media is not shown in Phase 2
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (local first), 4 (the review never loads anything from the platform)
 - **Related:** [ADR-004](ADR-004-content-security-policy.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md)
 
 ## Context
 
-X archives contain the images and videos a person posted, next to `tweets.js`. Instagram comments, the first Instagram scope, have no media. Some posts consist only of an image, so a text-only review shows them with empty text, and a person cannot judge them.
+X archives contain the images and videos a person posted, next to `tweets.js`. Instagram comments, the first Instagram scope, can carry media references in `media_list_data`. Some posts consist only of an image, so a text-only review shows them with empty text, and a person cannot judge them.
 
 Showing media from the archive would need: reading the media entries from the ZIP on demand (a full export can hold gigabytes of media), turning them into `blob:` URLs, adding `img-src blob:` (and `media-src blob:` for video) to the page policy, keeping a reference from each item to its files, and a memory budget for decoded images in a virtualized list. Images from an archive are untrusted input to the browser's image decoders. None of this was trialed in the Phase 2 research.
 
@@ -66,13 +66,18 @@ The X adapter counts media attachments per post. The review shows "2 images or v
 
 We chose **Option 1: defer media display and show the media count**, because it keeps the person informed without a policy change that nothing has tested yet.
 
-- The v2 `Item` gains `mediaCount: number | null`: the number of media attachments the export lists for the item, or `null` when the adapter cannot tell ([ADR-006](ADR-006-workspace-event-log.md)). The X adapter counts the entries of `extended_entities.media`, falling back to `entities.media`; the Instagram comment adapter sets `null`.
+- The v2 `Item` gains `mediaCount: number | null`: the number of media attachments the export lists for the item, or `null` when the adapter cannot tell ([ADR-006](ADR-006-workspace-event-log.md)). The X adapter counts the entries of `extended_entities.media`, falling back to `entities.media`. The Instagram comment adapter counts only the `media_list_data` entries whose `uri` is an http(s) link with a host or a relative path, and skips every other entry. It sets `null` when the comment has no `media_list_data`.
 - The review row shows a media marker when `mediaCount > 0`; the detail region says "This post has 2 images or videos. SocialPrune does not show them. Open the post on X to see them." For X items it offers the status link with `rel="noopener noreferrer"` and `target="_blank"`. The app never loads anything from that link itself.
-- An item with empty text and `mediaCount > 0` is labelled "Media only" in the list.
+- An item with empty text and `mediaCount > 0` is labelled "Media only" in the list. An item with empty text and no media, a count of 0 or `null`, is labelled "No text".
 - Backlog entry proposed for `docs/BACKLOG.md`: **Show archive media in the review.** What: display images and videos from the export next to their item. Why deferred: needs a trial of on-demand ZIP media access, `img-src blob:` and `media-src blob:` under the worker gate, and a memory budget in the virtualized list on phones. Trigger: reviews of real exports in Phase 3 show that media-only posts are a frequent reason to leave the review, or two user reports ask for it.
 
+### Changes before acceptance
+
+- The proposal said Instagram comments have no media and set their `mediaCount` to `null`. Comments can carry `media_list_data`, so the adapter counts it, but only entries that are http(s) links or relative paths, because a list entry is not always a usable media reference.
+- The proposal named only the "Media only" label. A row with empty text and no media is labelled "No text".
+
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 
@@ -82,7 +87,7 @@ We chose **Option 1: defer media display and show the media count**, because it 
 
 ### Negative
 - Judging image posts takes a trip to X.
-- `adapter-x` and its fixtures change for one field.
+- Both adapters and their fixtures change for one field.
 
 ### Risks
 - **The media count is wrong for some export variants.** Mitigation: fixture tests per X variant with an expected count written into the fixture data; `null` when the structure is not recognized.

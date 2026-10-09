@@ -1,6 +1,6 @@
 # ADR-017: Package boundaries and the shared workspace service
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (the capability to write decisions exists only on the review side)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md)
@@ -9,7 +9,7 @@
 
 Phase 2 has two stores (IndexedDB in a browser worker, SQLite in Node) and three callers (the web review, the local review server, the CLI commands that agents use), with MCP to follow in 0.2. All of them need the same rules: re-import deduplication, the event chain, undo and redo, frozen bulk previews, assessment validation, queries, the backup format. If each store implements those rules on its own, the browser and the CLI will disagree on what a workspace means.
 
-`AGENTS.md` sets one more boundary: a new platform is a new adapter package and must not need changes in `packages/core`. Phase 1 already meets it: `packages/core` defines `PlatformAdapter` with `detect`, `parse`, an `export` description and `clickList`, and both adapters implement it.
+`AGENTS.md` sets one more boundary: a new platform is a new adapter package and must not need changes in `packages/core`. Phase 1 already meets it: `packages/core` defines `PlatformAdapter` with `platform`, `name`, `version`, `detect`, `parse` and `deletionHint`, and both adapters implement it.
 
 ## Decision Drivers
 
@@ -74,7 +74,7 @@ We chose **Option 1: domain logic in `packages/core` behind a storage port, with
 | `packages/core/src/workspace/protocol.ts` | zod schemas for every request and reply of the review protocol ([ADR-007](ADR-007-review-data-worker.md)), shared by the browser worker and the local review HTTP API ([ADR-016](ADR-016-local-review-server.md)) |
 | `packages/core/src/workspace/memory-store.ts` | in-memory `WorkspaceStore` for tests |
 | `packages/core/src/browser-init.ts` | `z.config({ jitless: true })` only ([ADR-004](ADR-004-content-security-policy.md)) |
-| `packages/core/src/guide/` | export guide data for both platforms and both languages ([ADR-022](ADR-022-export-guide-content.md)) |
+| `packages/core/src/guide/` | the export guide types and their checker; each adapter ships its own guide data in its `./guide` export ([ADR-022](ADR-022-export-guide-content.md)) |
 | `apps/web/src/workspace/` | IndexedDB store ([ADR-005](ADR-005-browser-storage.md)), the workspace worker that answers the protocol ([ADR-007](ADR-007-review-data-worker.md)), the HTTP adapter for local review |
 | `apps/cli/src/workspace/` | SQLite store ([ADR-015](ADR-015-cli-storage-node-baseline.md)) |
 | `apps/cli/src/commands/` | one module per command, each exporting a Stricli command and a handler ([ADR-013](ADR-013-cli-framework-output.md)) |
@@ -94,10 +94,15 @@ We chose **Option 1: domain logic in `packages/core` behind a storage port, with
 
 ### Platform adapters
 
-The `PlatformAdapter` contract is unchanged in Phase 2. Click-list rendering per platform stays in the adapter's `clickList` description: X provides the status URL and the action, Instagram provides the day-grouped steps. The review UI reads platform names, item kinds and click-list instructions from the adapter registry, not from platform checks in UI code. The contributor guide "Adding a platform" in `docs/architecture/README.md` lists the steps.
+Phase 2 adds one field to `PlatformAdapter`: `clickListOrder`, either `'risk'`, which lists marked entries from the highest risk down, as X does, or `'day'`, which groups them by day, newest first, as Instagram does. Each entry's action and link come from the adapter's `deletionHint`: X gives the status URL with `delete` or `undo-repost`, Instagram gives `delete-comment` without a link. The review UI reads platform names, item kinds and click-list instructions from the adapter registry, not from platform checks in UI code. The contributor guide "Adding a platform" in `docs/architecture/README.md` lists the steps.
+
+### Changes before acceptance
+
+- The proposal described `PlatformAdapter` with an `export` description and a `clickList` description and called the contract unchanged in Phase 2. The code at the cited Phase 1 commit had `platform`, `name`, `version`, `detect`, `parse` and `deletionHint`, and Phase 2 added `clickListOrder`, so the click list knows how to order each platform's entries.
+- The proposal placed the guide data in `packages/core/src/guide/`. Core holds only the guide types and the checker; each adapter ships its own guide data, so adding a platform needs no change in core ([ADR-022](ADR-022-export-guide-content.md)).
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-09
 
 ## Consequences
 
@@ -115,6 +120,6 @@ The `PlatformAdapter` contract is unchanged in Phase 2. Click-list rendering per
 
 ## Evidence
 
-- Phase 1 code at commit `7263d7d`, read 2026-10-06: `packages/core/src/adapter/index.ts` defines `PlatformAdapter` with `detect`, `parse`, an `export` description and `clickList`; both `packages/adapter-x` and `packages/adapter-instagram` implement it; `packages/core/package.json` exports `./src/index.ts` and a Node-only `./node` entry; `apps/cli/src/main.ts` imports only from `@socialprune/core` and the adapters.
+- Phase 1 code at commit `7263d7d`, read 2026-10-06: `packages/core/src/adapter/index.ts` defines `PlatformAdapter` with `platform`, `name`, `version`, `detect`, `parse` and `deletionHint`; both `packages/adapter-x` and `packages/adapter-instagram` implement it; `packages/core/package.json` exports `./src/index.ts` and a Node-only `./node` entry; `apps/cli/src/main.ts` imports only from `@socialprune/core` and the adapters.
 - `AGENTS.md` (Planned layout): "A new platform is a new adapter package and must not need changes in `packages/core`."
 - No measurement decided this record; it follows from the shared rules in [ADR-006](ADR-006-workspace-event-log.md) and the two stores in [ADR-005](ADR-005-browser-storage.md) and [ADR-015](ADR-015-cli-storage-node-baseline.md).

@@ -120,3 +120,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 1 time (2026-10-08, `b644d80`: CI was read in its own step before the push, and the red result after it stopped further pushes)
 - Violated: 2 times (2026-10-08, `b644d80`: CLI path code went out on a Windows-only gate, because rule 3 names only `apps/web`; one test failed on Linux in CI. 2026-10-08, `e1fa812`: the local gate skipped the package build, pack check and packed smoke that CI's cli-package job runs, so a web change that renamed hashed assets failed the pack check only in CI)
+
+### [LL-2026-10-005] 2026-10-09 COMMUNICATION: Write the maintainer's decisions in his words, one line each
+
+**ID:** LL-2026-10-005
+**Severity:** HIGH
+**Category:** COMMUNICATION
+**Expires:** Never (kernel). The codes and the message below are dated evidence from 2026-10-09.
+
+**Feedback:** The maintainer asked for every pending item with an example, a recommendation and context, concise, so he can decide. The answer used the project's internal codes (G2, S2, I2, ADR, card v8, item numbers) and a multi-bullet layout per item. He replied that it did not say what he had asked for, that he must understand exactly what each item means for the project, and that it must be short, one line per item. His first message of the session had already asked for "knapp und konkret".
+**Problem:** The brief was written from the working vocabulary of the orchestration log, not from the reader's. Codes that are precise for the agent are opaque to the person who has to decide, and a structured block per item hid the one thing he needed: what it is, what it changes for us, and what to answer.
+**5 Whys Analysis:**
+1. Why could he not use the brief? -> It named items by internal codes and spread each over several bullets.
+2. Why internal codes? -> They are the names the board, the plan and the lanes use all day.
+3. Why did that leak into his brief? -> The brief was assembled from the board entries rather than written for him.
+4. Why was it not caught? -> No step checks a maintainer-facing brief against his vocabulary and his stated format before it is sent.
+5. Why? -> Root cause: there was no rule that a decision brief is written in the reader's words and in the shape he asked for; the writing rule covers tone, not this.
+**Rule(s):**
+1. A decision brief for the maintainer is written in his words: each item is one line that says what it is in plain terms, what it means for the project, what I recommend, and the exact reply or action.
+2. No internal code (node IDs such as G2, S2, I2, ADR numbers, card or item numbers, D, E or F entries) appears without its plain meaning in the same line, and only if he needs it to answer.
+3. The shape he asked for wins over any structure I prefer. When he says one line, it is one line.
+**Detection Pattern:** a maintainer-facing message whose items lead with a code instead of a plain description, or that uses headings and several bullets per item after he asked for short.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed for `.kilo/rules/human-writing-style.md` section B (always loaded) as one line, "A decision brief for the maintainer: one line per item in his words, what it is, what it means for us, the recommendation and the exact reply (LL-2026-10-005)". That file is a protected governance surface, so the line waits for his approval; until then the parent applies the rule from this archive before every decision brief.
+**Related Lessons:** none.
+**Regression / Verification Note:** applied on 2026-10-09 by rewriting the pending-items brief as one plain line per item, without unexplained codes.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

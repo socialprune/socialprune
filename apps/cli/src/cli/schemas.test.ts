@@ -321,7 +321,25 @@ test('the product skill has one canonical copy, its required frontmatter and liv
   for (const text of [skill, docs]) {
     expect(text).toContain('The npm package is not published yet.');
     expect(text).toContain('pnpm -s socialprune');
+    expect(text).toContain(
+      'npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz',
+    );
+    expect(text).toContain('node node_modules/socialprune/bin/socialprune.mjs');
+    for (const command of [
+      '`npx socialprune`',
+      '`npm exec socialprune`',
+      '`npm install socialprune`',
+      'global install',
+    ])
+      expect(text).toContain(command);
   }
+  expect(skill).toContain(
+    'If that entry file is missing, stop and ask the person.',
+  );
+  expect(skill).toContain('no build step is needed');
+  expect(skill).toContain(
+    'socialprune review --workspace "<workspace>" --dry-run --json',
+  );
   for (const folder of [
     '.claude/skills/',
     '.agents/skills/',

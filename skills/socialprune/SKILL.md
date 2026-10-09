@@ -9,7 +9,21 @@ compatibility: Requires Node.js 24.15 or newer and the socialprune CLI on a loca
 
 SocialPrune reads an export and records suggestions. The person decides what to keep or remove in the review page, then makes the final clicks on the platform themselves. You never decide for them.
 
-The npm package is not published yet. The commands below use `socialprune` as the CLI name. Until a release exists, run them from the repository root as `pnpm -s socialprune …`, with Node.js 24.15 or newer and the repository's dependencies installed. Read [the command contract](references/commands.md) before running a command.
+The npm package is not published yet. Use Node.js 24.15 or newer and read [the command contract](references/commands.md). Choose the mode that matches the files the person supplied:
+
+1. With a local packed tarball, install only the file the person put in your working folder:
+
+   ```text
+   npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz
+   ```
+
+   Replace `<version>` with that file's version. Never fetch a package from the registry. In this mode, wherever this skill writes `socialprune`, use `node node_modules/socialprune/bin/socialprune.mjs` from the same working folder. If that entry file is missing, stop and ask the person. The packed package includes the review page under `web/`, so no build step is needed.
+
+2. With a repository checkout and its dependencies already installed, replace `socialprune` with `pnpm -s socialprune` and run from the repository root. Before review, the person builds its page with `pnpm --filter @socialprune/web build:review`.
+
+3. Once a release exists and the person has installed it, use the installed `socialprune` command.
+
+Until a release exists, never run `npx socialprune`, `npm exec socialprune`, `npm install socialprune` or any global install; these can fetch an unrelated package of the same name from the registry.
 
 ## Workflow
 
@@ -35,7 +49,13 @@ The npm package is not published yet. The commands below use `socialprune` as th
 
    Check the status and warnings. A partial import needs an explanation, not a claim that everything was read. Use [the error table](references/errors.md) when a command fails.
 
-5. Before the first batch, ask the person this question in plain words:
+5. Show the import counts without returning entry text:
+
+   ```text
+   socialprune summary --workspace "<workspace>" --json
+   ```
+
+   Before the first batch, ask the person this question in plain words:
 
    > To label your entries, I need to give their full text to the model provider used by this agent. Is that all right?
 
@@ -66,10 +86,11 @@ The npm package is not published yet. The commands below use `socialprune` as th
 
     ```text
     socialprune summary --workspace "<workspace>" --json
+    socialprune review --workspace "<workspace>" --dry-run --json
     socialprune review --workspace "<workspace>" --json
     ```
 
-    From the repository, the person must first build the review files with `pnpm --filter @socialprune/web build:review`. The CLI opens their browser without printing the session token. Keep the review process running until they finish. The person reviews the suggestions and makes every decision in that page. Stop deciding. If the browser does not open, ask the person to run `review` in their own terminal. Do not use `--no-open`, inspect a token or call the review API.
+    The dry-run checks the workspace without starting a server or opening a browser. In tarball mode the page is already included; only repository mode needs the build above. Real review opens the person's browser without printing the session token. Keep the review process running until they finish. The person reviews the suggestions and makes every decision in that page. Stop deciding. If the browser does not open, ask the person to run `review` in their own terminal. Do not use `--no-open`, inspect a token or call the review API.
 
 ## Limits
 

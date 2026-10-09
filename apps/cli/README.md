@@ -2,7 +2,11 @@
 
 SocialPrune reads X and Instagram data exports on your computer. Agents can suggest labels; you choose what to remove in the review page. SocialPrune does not operate either platform. You make the final delete click there yourself.
 
-The npm package is not published yet. There is no npm release to install. From a checkout of [the repository](https://github.com/socialprune/socialprune), use Node.js **24.15.0 or newer** and pnpm 10.33.0:
+The npm package is not published yet. There is no npm release to install. Use Node.js **24.15.0 or newer**.
+
+From a local tarball you supplied, install with `npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz`, then run `node node_modules/socialprune/bin/socialprune.mjs …` in that folder. The review page is included, with no build needed. If the entry file is missing, stop. Until a release exists, do not use npx, npm exec, a named registry install or a global install; they can fetch an unrelated package of the same name.
+
+From a checkout of [the repository](https://github.com/socialprune/socialprune), use pnpm 10.33.0:
 
 ```sh
 pnpm -s socialprune --help

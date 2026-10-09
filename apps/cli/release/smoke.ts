@@ -63,6 +63,10 @@ export async function smoke(olderNode?: string): Promise<void> {
         '--no-audit',
         '--no-fund',
         '--ignore-scripts',
+        // Without --prefix, npm installs into the nearest parent folder with a
+        // package.json or node_modules, for example a project in the home folder.
+        '--prefix',
+        install,
         '--cache',
         join(temp, 'empty-cache'),
         join(temp, packed[0]!.filename),

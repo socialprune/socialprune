@@ -322,8 +322,11 @@ test('the product skill has one canonical copy, its required frontmatter and liv
     expect(text).toContain('The npm package is not published yet.');
     expect(text).toContain('pnpm -s socialprune');
     expect(text).toContain(
-      'npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz',
+      'npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz',
     );
+    // Without --prefix, npm installs into the nearest parent folder with a
+    // package.json or node_modules (observed 2026-10-09 in a home folder).
+    expect(text).not.toMatch(/npm install --offline --no-audit --no-fund \.\//);
     expect(text).toContain('node node_modules/socialprune/bin/socialprune.mjs');
     for (const command of [
       '`npx socialprune`',

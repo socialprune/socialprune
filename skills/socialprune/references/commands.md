@@ -2,7 +2,7 @@
 
 Use only these commands in this workflow. The npm package is not published yet. Node.js 24.15 or newer is required for every workspace command.
 
-For a local tarball the person put in your working folder, run `npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz`, replacing `<version>` with the file's version. Install only that local file, never a package from the registry. Then replace `socialprune` in every command below with `node node_modules/socialprune/bin/socialprune.mjs` and keep that working folder. If the entry file is missing, stop and ask the person. The packed review page is included under `web/`; no build is needed.
+For a local tarball the person put in your working folder, run `npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz`, replacing `<version>` with the file's version. `--prefix .` keeps npm from installing into a parent folder's project. Install only that local file, never a package from the registry. Then replace `socialprune` in every command below with `node node_modules/socialprune/bin/socialprune.mjs` and keep that working folder. If the entry file is missing, stop and ask the person. The packed review page is included under `web/`; no build is needed.
 
 In repository mode, replace `socialprune` with `pnpm -s socialprune` and run from the repository root with its dependencies already installed. Build review with `pnpm --filter @socialprune/web build:review` first. Once a release exists and the person has installed it, the installed command is `socialprune`.
 

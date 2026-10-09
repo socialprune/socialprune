@@ -14,10 +14,10 @@ The npm package is not published yet. Use Node.js 24.15 or newer and read [the c
 1. With a local packed tarball, install only the file the person put in your working folder:
 
    ```text
-   npm install --offline --no-audit --no-fund ./socialprune-<version>.tgz
+   npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz
    ```
 
-   Replace `<version>` with that file's version. Never fetch a package from the registry. In this mode, wherever this skill writes `socialprune`, use `node node_modules/socialprune/bin/socialprune.mjs` from the same working folder. If that entry file is missing, stop and ask the person. The packed package includes the review page under `web/`, so no build step is needed.
+   Replace `<version>` with that file's version. Keep `--prefix .`: without it, npm installs into the nearest parent folder that has a `package.json` or `node_modules`, which can change another project of the person. Never fetch a package from the registry. In this mode, wherever this skill writes `socialprune`, use `node node_modules/socialprune/bin/socialprune.mjs` from the same working folder. If that entry file is missing, stop and ask the person. The packed package includes the review page under `web/`, so no build step is needed.
 
 2. With a repository checkout and its dependencies already installed, replace `socialprune` with `pnpm -s socialprune` and run from the repository root. Before review, the person builds its page with `pnpm --filter @socialprune/web build:review`.
 

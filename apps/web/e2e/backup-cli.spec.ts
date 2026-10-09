@@ -140,6 +140,7 @@ async function browserRecords(page: Page) {
           read(tx.objectStore('decisionEvents').getAll()),
         ]);
       return {
+        storageId,
         meta: meta as WorkspaceMeta,
         items: (items as { item: Item }[]).map((row) => row.item),
         assessments: assessments as Assessment[],
@@ -234,19 +235,20 @@ function assertLabels(
   ]);
 }
 
-test('I1 real CLI backup restores in the browser, and a human decision and view return intact to a fresh CLI workspace', async ({
+test('I1 backups carry fixture labels into the browser and a human decision and view through the CLI into a reset browser workspace', async ({
   page,
   context,
 }) => {
-  // D40: 11.8 s in Firefox in the full Windows run on 2026-10-08.
-  test.setTimeout(90_000);
+  // D40: 15.085 s in WebKit on Windows on 2026-10-09; 6x is 90.510 s.
+  test.setTimeout(100_000);
   requireNode();
   const directory = await mkdtemp(join(tmpdir(), 'sp-i1-backup-cli-'));
   const fromCli = join(directory, 'from-cli'),
     toCli = join(directory, 'to-cli');
   const labelPath = join(directory, 'labels.json'),
     cliBackup = join(directory, 'cli.json'),
-    webBackup = join(directory, 'browser.json');
+    webBackup = join(directory, 'browser.json'),
+    derivedBackup = join(directory, 'cli-derived.json');
   try {
     const expected = JSON.parse(
       await readFile(new URL('expected.json', fixture), 'utf8'),
@@ -395,6 +397,112 @@ test('I1 real CLI backup restores in the browser, and a human decision and view 
     const after = await browserRecords(page);
     expect(restored.decisions).toEqual(after.decisions);
     expect(after.meta.settings.review).toEqual(view);
+
+    await cli([
+      'backup',
+      'export',
+      '--workspace',
+      toCli,
+      '--out',
+      derivedBackup,
+    ]);
+    // L3 / LL-002: the initial CLI backup has no human state. Close the loop
+    // after the person removes this generated review through Settings, so the
+    // decision-making workspace cannot supply the restored state by accident.
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page
+      .getByRole('button', {
+        name: 'Delete this review from this browser',
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete this browser review', exact: true })
+      .click();
+    await expect(page).toHaveURL(/#\/$/);
+    expect(await page.evaluate(() => window.workspace.summary)).toBeNull();
+    await audit.assert();
+    await waitForApp(page);
+    const empty = await page.evaluate(() => window.workspace.open());
+    expect(empty.type).toBe('opened');
+    if (empty.type !== 'opened')
+      throw new Error('Fresh workspace did not open.');
+    expect(empty.summary.workspaceId).not.toBe(after.meta.id);
+    expect(empty.summary.counts).toEqual({
+      imports: 0,
+      items: 0,
+      assessments: 0,
+      submissions: 0,
+      decisionEvents: 0,
+      outcomeEvents: 0,
+    });
+    expect(empty.summary.review).toBeUndefined();
+    await page.goto('/socialprune/#/backup');
+    await page
+      .getByLabel('SocialPrune backup file', { exact: true })
+      .setInputFiles(derivedBackup);
+    await expect(
+      page.getByRole('heading', { name: 'Restore preview', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        `${counts.items} entries, 1 decision, 0 outcome records, ${counts.assessments} suggestions, ${new Set(expected.items.map((item) => item.account.key)).size} accounts.`,
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Restore this backup', exact: true })
+      .click();
+    await expect(
+      page.getByText(
+        'The backup was restored. This browser now uses that review.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    expect(await page.evaluate(() => window.workspace.summary?.counts)).toEqual(
+      { ...counts, decisionEvents: 1 },
+    );
+    const returned = await browserRecords(page);
+    expect(returned.storageId).not.toBe(after.storageId);
+    expect(sortItems(returned.items)).toEqual(sortItems(expected.items));
+    assertLabels(returned, input);
+    expect(returned.decisions).toHaveLength(1);
+    expect(returned.decisions[0]).toMatchObject({
+      itemId: chosen.id,
+      value: 'delete',
+      previous: 'undecided',
+      source: { kind: 'human', via: 'web-review' },
+      action: { kind: 'single', size: 1 },
+    });
+    expect(returned.meta.settings.review).toEqual(view);
+    // Receipt identity preservation is separate from the input-derived oracle.
+    expect(returned.decisions).toEqual(restored.decisions);
+    expect(returned.assessments).toEqual(restored.assessments);
+    expect(returned.submissions).toEqual(restored.submissions);
+    await page.getByRole('link', { name: 'Review', exact: true }).click();
+    // Do not set any controls after the reset: they must come from the restore.
+    await expect(
+      page.getByRole('combobox', { name: 'Account', exact: true }),
+    ).toHaveValue(view.accountKey!);
+    await expect(
+      page.getByRole('combobox', { name: 'Decision filter', exact: true }),
+    ).toHaveValue(view.filter.decisions![0]!);
+    await expect(
+      page.getByRole('combobox', { name: 'Sort by', exact: true }),
+    ).toHaveValue(view.sort[0]!.by);
+    await expect(page.getByRole('searchbox')).toHaveValue(view.search);
+    await expect(page.getByRole('row')).toHaveCount(1);
+    await expect(page.getByRole('row')).toContainText(chosen.text);
+    await expect(page.getByRole('row')).toContainText('Marked for deletion');
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    const history = page.getByRole('dialog');
+    await expect(history.getByRole('listitem')).toHaveCount(1);
+    await expect(history.getByRole('listitem')).toContainText(
+      '1 entry: Marked for deletion',
+    );
+    await history.getByRole('button', { name: 'Close', exact: true }).click();
+    await audit.assert();
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

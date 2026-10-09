@@ -238,6 +238,8 @@ test('I1 real CLI backup restores in the browser, and a human decision and view 
   page,
   context,
 }) => {
+  // D40: 11.8 s in Firefox in the full Windows run on 2026-10-08.
+  test.setTimeout(90_000);
   requireNode();
   const directory = await mkdtemp(join(tmpdir(), 'sp-i1-backup-cli-'));
   const fromCli = join(directory, 'from-cli'),

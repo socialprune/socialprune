@@ -6,6 +6,8 @@ test('I1 observeImport rejects a real request to a second loopback origin from a
   page,
   context,
 }) => {
+  // D40: 3.7 s in Firefox in the full Windows run on 2026-10-08.
+  test.setTimeout(60_000);
   const audit = await observeImport(context, page);
   await waitForApp(page);
   await audit.assert();

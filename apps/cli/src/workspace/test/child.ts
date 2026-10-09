@@ -3,17 +3,20 @@ import { createNodeContext } from '../../cli/node-context.ts';
 import { executeCli } from '../../cli/adapter.ts';
 import { createWorkspace } from '@socialprune/core/workspace/store';
 import type { WriteTransaction } from '@socialprune/core/workspace/store';
+import { testIpc } from '../../review/test/ipc.ts';
 
 // Test entrypoint only. No production module imports this file or reads a test flag.
 const [mode, path, ...args] = process.argv.slice(2);
+const ipc = testIpc();
 if (mode === 'hold-read') {
   const store = await SQLiteStore.open(path!, { readOnly: true });
-  process.send?.({ type: 'reading' });
-  await new Promise<void>((resolve) => {
+  const released = new Promise<void>((resolve) => {
     process.once('message', () => resolve());
   });
+  await ipc.send({ type: 'reading' });
+  await released;
   await store.close();
-  process.disconnect?.();
+  await ipc.disconnect();
 } else if (mode === 'hold') {
   const { requireWorkspaceNode } = await import('../node-version.ts');
   requireWorkspaceNode(process.versions.node);
@@ -22,13 +25,14 @@ if (mode === 'hold-read') {
   db.exec(
     'PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE;',
   );
-  process.send?.({ type: 'holding' });
-  await new Promise<void>((resolve) => {
+  const released = new Promise<void>((resolve) => {
     process.once('message', () => resolve());
   });
+  await ipc.send({ type: 'holding' });
+  await released;
   db.exec('ROLLBACK;');
   db.close();
-  process.disconnect?.();
+  await ipc.disconnect();
 } else if (mode === 'write') {
   try {
     const store = await SQLiteStore.open(path!);
@@ -37,12 +41,12 @@ if (mode === 'hold-read') {
         const runtime = await tx.runtime.get();
         await tx.runtime.set({ revision: runtime.revision + 1 });
       });
-      process.send?.({ type: 'committed' });
+      await ipc.send({ type: 'committed' });
     } finally {
       await store.close();
     }
   } catch (error) {
-    process.send?.({
+    await ipc.send({
       type: 'error',
       code:
         error && typeof error === 'object' && 'code' in error
@@ -51,7 +55,7 @@ if (mode === 'hold-read') {
     });
     process.exitCode = 1;
   }
-  process.disconnect?.();
+  await ipc.disconnect();
 } else if (mode === 'import-kill') {
   const store = await SQLiteStore.open(path!, { initial: createWorkspace() });
   await store.close();
@@ -70,7 +74,7 @@ if (mode === 'hold-read') {
       return count;
     });
     if (items >= 1000) {
-      process.send?.({ type: 'batch-committed', items });
+      await ipc.send({ type: 'batch-committed', items });
       await new Promise<void>(() => {});
     }
     return result;

@@ -43,8 +43,7 @@ async function reviewProcess() {
     { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
   );
   let stdout = '',
-    stderr = '',
-    cleanup = false;
+    stderr = '';
   const httpResponses: {
     method: string;
     path: string;
@@ -70,18 +69,45 @@ async function reviewProcess() {
       if (message.type === 'httpResponse') httpResponses.push(message);
     });
   });
+  let snapshotReceived = false;
   const snapshot = new Promise<
     Workspace & { revision: number; initialRevision: number }
-  >((resolve) => {
+  >((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', () => {
+      if (!snapshotReceived)
+        reject(new Error('Review ended without its readback receipt.'));
+    });
     child.on('message', (raw: unknown) => {
       const message = raw as {
         type: string;
         snapshot: Workspace & { revision: number; initialRevision: number };
       };
-      if (message.type === 'readback') resolve(message.snapshot);
-      if (message.type === 'cleanup') cleanup = true;
+      if (message.type === 'readback') {
+        snapshotReceived = true;
+        resolve(message.snapshot);
+      }
     });
   });
+  let cleanupReceived = false;
+  const cleanup = new Promise<void>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', () => {
+      if (!cleanupReceived)
+        reject(new Error('Review ended without its cleanup receipt.'));
+    });
+    child.on('message', (raw: unknown) => {
+      const message = raw as { type: string; readback: boolean };
+      if (message.type === 'cleanup') {
+        cleanupReceived = true;
+        if (message.readback) resolve();
+        else reject(new Error('Review cleanup did not complete a readback.'));
+      }
+    });
+  });
+  // Attach receipt handlers immediately; still propagate either failure at stop.
+  const receipts = Promise.all([snapshot, cleanup]);
+  void receipts.catch(() => undefined);
   child.stdout!.on('data', (part: Buffer) => {
     stdout += part.toString();
   });
@@ -92,18 +118,28 @@ async function reviewProcess() {
     child.once('close', (code) => resolve(code)),
   );
   const url = await opened;
+  let stopped:
+    | Promise<Workspace & { revision: number; initialRevision: number }>
+    | undefined;
   return {
     url,
     origin: new URL(url).origin,
     httpResponses,
-    async stop() {
-      if (child.connected) child.send('stop');
-      expect(await closed).toBe(0);
-      expect(cleanup).toBe(true);
-      const token = new URL(url).hash.slice('#bootstrap='.length);
-      expect(stdout).not.toContain(token);
-      expect(stderr).not.toContain(token);
-      return snapshot;
+    stop() {
+      stopped ??= (async () => {
+        if (child.connected)
+          await new Promise<void>((resolve, reject) => {
+            child.send('stop', (error) => (error ? reject(error) : resolve()));
+          });
+        const [readback] = await receipts;
+        expect(await closed).toBe(0);
+        expect(cleanupReceived).toBe(true);
+        const token = new URL(url).hash.slice('#bootstrap='.length);
+        expect(stdout).not.toContain(token);
+        expect(stderr).not.toContain(token);
+        return readback;
+      })();
+      return stopped;
     },
   };
 }

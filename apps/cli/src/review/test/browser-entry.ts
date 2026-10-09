@@ -7,6 +7,7 @@ import { SQLiteStore } from '../../workspace/sqlite-store.ts';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { channel } from 'node:diagnostics_channel';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { testIpc } from './ipc.ts';
 
 // A test-only process owns import, the real HTTP/database worker, and cleanup.
 // No normal-runtime environment flag can select this entrypoint.
@@ -15,6 +16,7 @@ const directory = await mkdtemp(join(tmpdir(), 'socialprune-review-browser-'));
 const workspace = join(directory, 'workspace');
 const controller = new AbortController();
 let readback = false;
+const ipc = testIpc();
 const responses = channel('http.server.response.finish');
 const observe = (raw: unknown) => {
   const { request, response } = raw as {
@@ -40,7 +42,7 @@ const observe = (raw: unknown) => {
             }),
         )
       : {};
-  process.send?.({
+  void ipc.send({
     type: 'httpResponse',
     method: request.method,
     path: request.url,
@@ -72,8 +74,7 @@ try {
     ...context,
     stderrIsTerminal: false,
     openBrowser(url) {
-      process.send?.({ type: 'opened', url });
-      return Promise.resolve();
+      return ipc.send({ type: 'opened', url });
     },
   });
   if (result !== 0) throw new Error('Review did not stop normally.');
@@ -85,7 +86,7 @@ try {
     const revision = await store.read(
       async (tx) => (await tx.runtime.get()).revision,
     );
-    process.send?.({
+    await ipc.send({
       type: 'readback',
       snapshot: { ...snapshot, revision, initialRevision },
     });
@@ -95,7 +96,10 @@ try {
   }
 } finally {
   await rm(directory, { recursive: true, force: true });
-  process.send?.({ type: 'cleanup', readback });
   responses.unsubscribe(observe);
-  process.disconnect?.();
+  try {
+    await ipc.send({ type: 'cleanup', readback });
+  } finally {
+    await ipc.disconnect();
+  }
 }

@@ -112,7 +112,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Rule(s):**
 1. Before pushing, read the last CI result of the remote branch in its own step. If it is red, find out why before anything else is pushed; push only the fix for that cause, or work that is proven not to touch it.
 2. A local test run proves behaviour only on the platform it ran on. Do not report a gate as standing for CI's platform unless it ran there too.
-3. In this repository, CI runs on `ubuntu-latest` and the local machine is Windows. For commits that change `apps/web` rendering or the import path, run the affected browser specs on Linux before pushing, in the Playwright Docker image `mcr.microsoft.com/playwright:v1.63.0-noble`, or say plainly that Linux was not covered.
+3. In this repository, CI runs on `ubuntu-latest` and the local machine is Windows. For commits that change `apps/web` rendering, the import path, or Node path, file-system or process code, run the affected tests on Linux before pushing, in the Playwright Docker image `mcr.microsoft.com/playwright:v1.63.0-noble`, or say plainly that Linux was not covered.
 **Detection Pattern:** a shell command that both reads `gh run list` and runs `git push`; a delivery report that cites a Windows-only gate for a web change without a Linux run or a stated gap.
 **Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the parent's own pre-push step. A one-line trigger in the Delivery section of AGENTS.md would make it always-loaded, but that section changes only on the maintainer's request (`.kilo/rules/governance-protection.md`), so it is proposed and not applied.
 **Related Lessons:** LL-2026-10-001 (re-read externally owned state before reporting it).

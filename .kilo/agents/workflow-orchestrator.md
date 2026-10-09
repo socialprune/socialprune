@@ -56,6 +56,7 @@ In this template package, that means setting up a reusable orchestration posture
 - Fresh context is selective: prefer it for final acceptance and security, recovery, or transaction review where independent reconstruction matters.
 - Parallelism is legal only for independent DAG nodes with disjoint write sets and distinct acceptance results.
 - Nested delegation is forbidden unless the parent explicitly authorizes a recursive subtree.
+- Before dispatching a task, check its constraints against its deliverables and governing records; change a running lane's authority only through its task (LL-2026-10-003).
 - Verification depth is proportional: bounded work may close through direct proof; shared-contract, convergence-sensitive, irreversible, recovery, migration, or explicitly requested acceptance uses an independent gate.
 - Non-trivial delegated runs must follow the compact CWOS operational companion.
 - Complexity >= 3 requires visible pre-analysis before topology is finalized.

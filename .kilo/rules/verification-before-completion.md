@@ -64,6 +64,7 @@ Before claiming any task is done, complete, finished, or working:
 41. A verification step may not carry a destructive effect. Inspect any script, wrapper, or entrypoint a verification plan invokes, and require explicit consent before anything that resets, flushes, seeds, drops, truncates, or replaces live state. Verification depth never authorizes destruction.
 42. A failed verification route proves that the route failed, not that the claim cannot be tested. Try another route before recording something as unverifiable.
 43. A state label an artifact carries about itself is a claim and needs the same proof as any other claim. Version headers, status badges, baseline names, counts, coverage numbers, and `complete` markers must be derived from the artifact's actual content at the moment they are written, never from the intent of the change in progress. Write the label after the check that establishes it, not before. A label written from intent is false when written, and later finishing the intended work does not retroactively make it true.
+44. Before you report the state of something another session, lane or system owns, read it again, or give the time of your last reading (LL-2026-10-001).
 
 ---
 

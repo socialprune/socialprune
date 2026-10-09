@@ -32,8 +32,9 @@ Phase 1 has built `packages/core`, both adapters, `tools/`, `fixtures/synthetic/
 | `packages/classify` | rules, the local model backend, user-configured endpoints |
 | `packages/mcp` | MCP server, from 0.2 on |
 | `fixtures/synthetic` | generated test data, never real |
-| `tools/` | fixture generator and data guard |
+| `tools/` | fixture generator, data guard, copy check, license check, and the tests of the project's lint restrictions |
 | `skills/socialprune/SKILL.md` | Agent Skill for people who run SocialPrune through their own agent |
+| `docs/architecture`, `docs/design` | the architecture map, the decision records and their evidence; the design specification of the web app |
 
 A new platform is a new adapter package and must not need changes in `packages/core`.
 
@@ -58,14 +59,18 @@ Node 24.15 or newer and pnpm 10.33.0 (`packageManager` in `package.json`). On ol
 | build | `pnpm build` |
 | synthetic fixtures, regenerate and drift check, optionally one platform | `pnpm fixtures:generate`, `pnpm fixtures:check`, add `--platform x` or `--platform instagram` |
 | large synthetic archive | `pnpm fixtures:large --platform x --count 100000 --out <file.zip> [--seed <n>] [--zip64]` |
+| demo export under `fixtures/synthetic/demo/`, regenerate; `fixtures:check` also checks it for drift | `pnpm fixtures:demo` |
 | JSON schemas, regenerate and drift check | `pnpm schemas:generate`, `pnpm schemas:check` |
+| German and English message catalogs: same IDs and arguments in both, and no drift in their generated types; regenerate the types | `pnpm i18n:check`, `pnpm i18n:generate` |
+| words hard constraint 5 rules out, in the catalogs, CLI messages, guide data, skill, READMEs and `docs/` | `pnpm copy:check` |
+| dependency licenses against the list in ADR-002 | `pnpm licenses:check` |
 | export guide facts: shape, sources and dates; with `--release`, also that a person checked every fact within the given number of days, as the release build requires | `pnpm guide:check`, `pnpm guide:check --max-age 120 --release` |
 | export steps in the terminal, from the same guide data | `pnpm -s socialprune guide <x or instagram> [--lang de] [--json]` |
 | browser tests in Chromium (once before: `pnpm --filter @socialprune/web exec playwright install chromium`) | `pnpm test:e2e` |
 | local-review build of the web app into `apps/web/dist-review/`, and its build check | `pnpm --filter @socialprune/web build:review`, `pnpm --filter @socialprune/web build:review:check` |
 | browser tests in Chromium, Firefox and WebKit with the CSP positive controls, the production build check and the local-review build with its session-denial tests, as CI runs them (once before: `pnpm --filter @socialprune/web exec playwright install chromium firefox webkit`) | `pnpm test:e2e:all` |
 | browser test of the local review against the real review server in Chromium, Firefox and WebKit; it builds `dist-review` first | `pnpm --filter socialprune test:e2e` |
-| npm package of the CLI into `apps/cli/dist/package/`, its file-list check, and an offline install of the packed tarball that runs every command; nothing is published | `pnpm --filter socialprune build:release`, `pnpm --filter socialprune pack:check`, `pnpm --filter socialprune smoke:package` |
+| npm package of the CLI into `apps/cli/dist/package/`, its file-list check, and an offline install of the packed tarball that runs every command; nothing is published | `pnpm --filter socialprune build:release`, `pnpm --filter socialprune pack:check`, `pnpm --filter socialprune smoke:package`; the first two also as `pnpm build:cli`, `pnpm pack:cli` |
 | other test server ports, when 4180, 4181 or 4183 are taken (the offline tests also use 4182) | set `SP_E2E_PORT`, `SP_E2E_PROBE_PORT`, `SP_E2E_DEV_PORT` |
 | Gate G1 measurements through the workspace import path into IndexedDB (100,000 tweets three times, ZIP64 over 4 GiB, abort halfway), Windows only, writes about 4.7 GB to temp and removes it, one JSON document on stdout | `pnpm -s measure:g1` |
 | CLI | `pnpm socialprune --help` |
@@ -76,9 +81,9 @@ Node 24.15 or newer and pnpm 10.33.0 (`packageManager` in `package.json`). On ol
 | review a workspace in the browser through the local review server; build `dist-review` first; `--dry-run` binds nothing | `pnpm --filter @socialprune/web build:review`, then `pnpm -s socialprune review --workspace <dir>` |
 | click list of the decisions a person made in review, as CSV or JSON, with calendar days in `--time-zone`, else the workspace setting, else the system zone | `pnpm -s socialprune export clicklist --workspace <dir> --account <key> --format csv --out <file>` |
 
-CI (`.github/workflows/ci.yml`) runs five jobs on every push to `main` and every pull request: checks (install, guard, license check, copy check, catalog check, format check, lint, typecheck, unit tests, fixture check, schema check, build), cli-node-floor (the CLI tests on exactly Node 24.15.0), e2e (`pnpm test:e2e:all` in Chromium, Firefox and WebKit), review-e2e (`pnpm --filter socialprune test:e2e`) and cli-package (the release build, the pack check and the packed-install smoke test on Node 24 and 24.15.0). `.github/workflows/release-cli.yml` runs only when started by hand, and its publish job stays off until the repository variable `NPM_PUBLISH_ENABLED` is `true`. `.github/workflows/pages.yml` also runs only by hand; it deploys only with its `publish` input set, on `main`, and with the repository variable `PAGES_ENABLED` set to `true`. Both refuse to build while any export guide fact is unchecked. Prettier skips Markdown, so prose keeps its exact wording.
+CI (`.github/workflows/ci.yml`) runs five jobs on every push to `main` and every pull request: checks (install, guard, license check, copy check, catalog check, format check, lint, typecheck, unit tests, fixture check, schema check, guide check, build), cli-node-floor (the CLI tests on exactly Node 24.15.0), e2e (`pnpm test:e2e:all` in Chromium, Firefox and WebKit), review-e2e (`pnpm --filter socialprune test:e2e`) and cli-package (the release build, the pack check and the packed-install smoke test on Node 24 and 24.15.0). `.github/workflows/release-cli.yml` runs only when started by hand, and its publish job stays off until the repository variable `NPM_PUBLISH_ENABLED` is `true`. `.github/workflows/pages.yml` also runs only by hand; it deploys only with its `publish` input set, on `main`, and with the repository variable `PAGES_ENABLED` set to `true`. Both refuse to build while any export guide fact is unchecked. Prettier skips Markdown, so prose keeps its exact wording.
 
-Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `fixture-gen`, `data-guard`).
+Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `fixture-gen`, `data-guard`, `copy-check`, `licenses-check`, `lint-rules`).
 
 Spikes under `spikes/` are standalone pnpm projects with their own lockfile, outside the workspace and outside CI. Each one documents how to rerun it in `docs/spikes/`.
 
@@ -86,9 +91,13 @@ Spikes under `spikes/` are standalone pnpm projects with their own lockfile, out
 
 - Parsers are tested against generated fixtures for every known export variant, loaded as folders and as ZIPs.
 - Expected values and forbidden lists in these tests come from the fixture data, never from the code under test (lesson LL-2026-10-002).
-- A Playwright test records every browser network request while demo data is imported and classified, and fails on any request that leaves the app's origin. It observes real requests and never stubs `fetch`, because a stub would only test itself. Today it covers the import of every fixture whose format is recognised, the demo with its example suggestions, bulk decisions, undo, both click lists, backup and restore, and the guide, and a control test proves it fails on a request to a second origin. Classification joins it once `packages/classify` exists.
+- A Playwright test records every browser network request during the app's flows and fails on any request that leaves the app's origin. It observes real requests and never stubs `fetch`, because a stub would only test itself. Today it covers the import of every fixture whose format is recognised, the demo with its example suggestions, bulk decisions, undo, both click lists, backup and restore, and the guide, and a control test proves it fails on a request to a second origin. Classification joins it once `packages/classify` exists.
 - Archive content is parsed as data and never executed. The X `injection` fixture is imported in unit tests and in the browser, and both check that its code did not run.
 - `structure` is tested against every fixture, run on the export folder, on the fixture folder around it and on the whole platform folder: no handle, account key or export folder name may appear in its report, and in the export folder's report no leaf value either. A browser's ` (1)` suffix on an export folder or ZIP is recognised. A third-party handle used as an ordinary key in an unknown file is not detected, and neither is an export folder renamed beyond the export pattern (BL-004). So the CLI asks people, in its human-readable output and in `--help`, to check a report before they share it.
+- The web app's policies are tested in Chromium, Firefox and WebKit, and positive controls prove that a planted violation is caught. A first visit claims the service worker before anything reads an export, and with registration blocked the file input stays absent. The production build check fails on any WebAssembly in the bundle.
+- A restart test closes and reopens a browser profile and finds the decisions, the history and the review's account, filter, sort and search where the person left them. Backups move between the browser and the CLI in both directions: a CLI backup restores in the browser with its items, assessments and submission, and a browser backup with a person's decision and review view restores in the CLI.
+- The local review server is tested over real sockets against the wire status table, hostile Host and Origin values, foreign-origin pages in three browsers and a localhost Host, and none of the rejected requests changes the workspace. The one-use token is checked in every output stream, and on Linux under a real pseudo-terminal.
+- The packed CLI package is installed offline into an empty folder in CI, on Node 24 and 24.15.0, and every command runs through the installed entry.
 - A data guard in pre-commit and CI blocks ZIP files and files with export signatures (an X `window.YTD.<name>.part<n> =` assignment, or the JSON keys `string_map_data`, `string_list_data` and `media_owner`) outside `fixtures/synthetic/`.
 - No classifier tier becomes a default before it is measured on a synthetic set whose expected labels the maintainer set by hand before any tier saw it. A large reference model runs alongside the tiers as one more measured candidate, not as ground truth.
 

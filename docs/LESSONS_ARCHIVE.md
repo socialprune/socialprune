@@ -147,3 +147,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-006] 2026-10-09 PRIVACY: Prove a guard on a decoy, never on the thing it guards
+
+**ID:** LL-2026-10-006
+**Severity:** CRITICAL
+**Category:** PRIVACY
+**Expires:** Never (kernel). The tool, flags and folder names below are dated evidence from 2026-10-09.
+
+**Feedback:** No user correction; the parent detected it. Before running a headless agent on the maintainer's real export, the parent tested whether the agent folder's shell denials worked by asking a fresh agent to run four commands, one of them a listing of the maintainer's Downloads folder, a protected path. The denials did not hold, so the listing ran, and its file names, including the export file names that carry his Instagram handle, reached the model provider and the session log.
+**Problem:** A control that was not yet proven was tested against the real protected surface. When the control failed, the test itself caused the exposure the control was meant to prevent.
+**5 Whys Analysis:**
+1. Why did the listing reach the model? -> The shell denial in the folder's config did not apply.
+2. Why was a protected path in the test at all? -> The test was written to show that the real forbidden target is blocked.
+3. Why was that acceptable at the time? -> The test was framed as a check of the guard, not as an access to a protected path.
+4. Why did that framing win? -> No step at the moment of writing the probe compared its targets against the protected-path list.
+5. Why? -> Root cause: the rule "exercise a protected-content control against synthetic fixtures first" was not applied to permission tests, because a guard test feels like protection rather than access.
+**Rule(s):**
+1. Prove any guard (deny rule, filter, sandbox, redaction) first against a decoy that stands in for the protected thing, and rely on it only after the decoy test shows it holds.
+2. A probe, test command or prompt never names a protected path or protected content, even to show that it is blocked.
+3. In this repository, the decoy for a path guard is a generated folder under the task's temp directory whose name the guard's pattern also matches.
+**Detection Pattern:** a test command, prompt or script that names the maintainer's download folder, the S4 working-copy folder, a real export name or any other protected path; a guard declared working without a decoy run.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: `.kilo/rules/tool-usage-discipline.md`, section "Commands that can surface protected content", already says "Exercise a protected-content control against synthetic fixtures first" and is loaded in every session; this lesson extends its reading to permission and sandbox tests.
+**Related Lessons:** LL-2026-10-002 (a negative proof must fail on a planted defect).
+**Regression / Verification Note:** applied on 2026-10-09 by stopping the cleanup run, testing the shell guard only on a generated decoy folder, and reporting the exposure to the maintainer.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

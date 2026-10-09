@@ -32,17 +32,4 @@ skills/socialprune/references/commands.md
 skills/socialprune/references/errors.md
 skills/socialprune/references/labels.md
 skills/socialprune/references/privacy.md
-web/assets/ClickList-CIUszwte.js
-web/assets/ClickList-we_7KLAH.css
-web/assets/Review-Cmd5f3Rh.js
-web/assets/Review-DU__KCz0.css
-web/assets/Review.module-C7upAJ80.js
-web/assets/ReviewShell-C3dzBGlf.js
-web/assets/ReviewShell-DUd1ug9N.css
-web/assets/Settings-K_ZO3o3q.js
-web/assets/TimeZone-XMeEcL2z.js
-web/assets/i18n-PUh6tAI2.js
-web/assets/index-BzucsEPd.js
-web/assets/model-CsK2927E.js
-web/build-info.js
-web/index.html
+web/** = dist-review

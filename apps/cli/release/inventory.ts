@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { lstat, readFile, readdir } from 'node:fs/promises';
@@ -54,7 +55,8 @@ export async function sourceInventory(
     typeof snapshot !== 'object' ||
     !('commit' in snapshot) ||
     !('files' in snapshot) ||
-    snapshot.commit !== '9fa82e4b90c460fc17daf2035e4ce75ea67d553d' ||
+    typeof snapshot.commit !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(snapshot.commit) ||
     !snapshot.files ||
     typeof snapshot.files !== 'object' ||
     Array.isArray(snapshot.files)
@@ -100,6 +102,50 @@ export interface PackageFile {
         producer: 'rolldown' | 'vite' | 'manifest' | 'readme' | 'notices';
       }
     | { kind: 'tracked'; source: string };
+}
+
+export const REVIEW_FILES_MARKER = 'web/** = dist-review';
+
+/** The producer directory is Vite's output, not the assembled package copy. */
+export async function expectedPackageFiles(
+  entries: readonly string[],
+  reviewDirectory: string,
+): Promise<string[]> {
+  if (
+    entries.filter((entry) => entry === REVIEW_FILES_MARKER).length !== 1 ||
+    entries.some(
+      (entry) =>
+        entry !== REVIEW_FILES_MARKER &&
+        (entry.startsWith('web/') || entry.includes('*')),
+    )
+  )
+    throw new Error('Expected files require exactly one dist-review marker.');
+  const reviewFiles = await filesIn(reviewDirectory);
+  if (!reviewFiles.length) throw new Error('dist-review is empty.');
+  const expected = [
+    ...entries.filter((entry) => entry !== REVIEW_FILES_MARKER),
+    ...reviewFiles.map((path) => `web/${path}`),
+  ].sort();
+  assertFileList(expected, expected);
+  return expected;
+}
+
+export async function assertReviewAsset(
+  record: PackageFile,
+  bytes: Buffer,
+  reviewDirectory: string,
+): Promise<void> {
+  assert.ok(record.path.startsWith('web/'), 'Not a review asset.');
+  assert.deepEqual(
+    record.origin,
+    { kind: 'generated', producer: 'vite' },
+    `Review asset has non-Vite provenance: ${record.path}`,
+  );
+  assert.deepEqual(
+    bytes,
+    await readFile(join(reviewDirectory, record.path.slice('web/'.length))),
+    `Review asset differs from dist-review: ${record.path}`,
+  );
 }
 
 export function assertFileList(

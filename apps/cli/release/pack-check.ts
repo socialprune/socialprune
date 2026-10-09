@@ -3,6 +3,8 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   assertFileList,
+  assertReviewAsset,
+  expectedPackageFiles,
   filesIn,
   sha256,
   sourceInventory,
@@ -11,12 +13,15 @@ import {
 import type { PackageFile } from './inventory.ts';
 import { npm, packageDirectory, root } from './process.ts';
 
+const reviewDirectory = resolve(root, 'apps/web/dist-review');
+
 export async function checkPackage(): Promise<string[]> {
-  const expected = (
+  const entries = (
     await readFile(new URL('./expected-files.txt', import.meta.url), 'utf8')
   )
     .trim()
     .split(/\r?\n/);
+  const expected = await expectedPackageFiles(entries, reviewDirectory);
   const assembled = await filesIn(packageDirectory);
   assertFileList(assembled, expected);
   const packed = JSON.parse(
@@ -34,6 +39,8 @@ export async function checkPackage(): Promise<string[]> {
   for (const record of records) {
     const bytes = await readFile(resolve(packageDirectory, record.path));
     assert.equal(sha256(bytes), record.sha256, record.path);
+    if (record.path.startsWith('web/'))
+      await assertReviewAsset(record, bytes, reviewDirectory);
     if (record.origin.kind === 'tracked')
       assert.deepEqual(
         bytes,
@@ -84,13 +91,36 @@ export async function checkPackage(): Promise<string[]> {
 export async function packCheck(plant = false): Promise<void> {
   const paths = await checkPackage();
   if (plant) {
-    const path = resolve(packageDirectory, 'bin/stray-private.txt');
-    await writeFile(path, 'C5 synthetic planted defect\n', { flag: 'wx' });
+    for (const [relative, message] of [
+      ['bin/stray-private.txt', 'Planted stray assembly file: rejected.'],
+      [
+        'web/assets/c5-stray-not-from-vite.js',
+        'Planted asset absent from dist-review: rejected.',
+      ],
+    ] as const) {
+      const path = resolve(packageDirectory, relative);
+      await writeFile(path, 'C5 synthetic planted defect\n', { flag: 'wx' });
+      try {
+        await assert.rejects(checkPackage(), /Packed file list differs/);
+        console.log(message);
+      } finally {
+        await rm(path);
+      }
+      await checkPackage();
+    }
+    const asset = paths.find((path) => path.startsWith('web/assets/'));
+    assert.ok(
+      asset,
+      'The review build must contain an asset to plant its omission.',
+    );
+    const path = resolve(packageDirectory, asset);
+    const original = await readFile(path);
+    await rm(path);
     try {
       await assert.rejects(checkPackage(), /Packed file list differs/);
-      console.log('Planted stray assembly file: rejected.');
+      console.log('Planted dist-review asset missing from assembly: rejected.');
     } finally {
-      await rm(path);
+      await writeFile(path, original, { flag: 'wx' });
     }
     await checkPackage();
   }

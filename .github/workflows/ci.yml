@@ -36,6 +36,7 @@ jobs:
       - run: pnpm test
       - run: pnpm fixtures:check
       - run: pnpm schemas:check
+      - run: pnpm guide:check
       - run: pnpm build
 
   # ADR-015: the CLI's workspace floor is Node 24.15.0, where node:sqlite is a

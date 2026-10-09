@@ -195,7 +195,7 @@ The SQLite WAL documentation (section 11, updated 2026-08-25) lists the WAL-rese
 
 pnpm and the Node floor, measured during the architecture review on 2026-10-06 in a temporary project with no dependencies: on Node 24.14.1, `pnpm install` with pnpm 10.33.0 and a root `"engines": { "node": ">=24.15.0" }` exited 0 and printed `WARN Unsupported engine`.
 
-Local review server probe: a minimal `node:http` handler on `127.0.0.1` under Node 24.14.1, driven by `node:http` clients, 16 cases:
+Local review server probe: a minimal `node:http` handler on `127.0.0.1` under Node 24.14.1, driven by `node:http` clients, 13 cases:
 
 | Case | Status |
 |---|---:|

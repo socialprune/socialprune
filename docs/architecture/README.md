@@ -2,7 +2,7 @@
 
 This is the map for contributors. It describes how SocialPrune is meant to be built from Phase 2 on: which package owns what, which process runs where, how export data moves, and where the trust boundaries are. The reasons behind each choice are in the [decision records](adrs/README.md), and the measurements behind them in [evidence-2026-10.md](evidence-2026-10.md). The visual and interaction design is in [docs/design/README.md](../design/README.md).
 
-Every record this map relies on is still `Proposed`. Nothing here is built yet, and several records leave a choice to the maintainer; the [index](adrs/README.md) lists them. Where a record names a conservative option to use until he decides, this map describes that option.
+Every record this map relies on is still `Proposed`. The web app, the CLI and the agent interface it describes are built and tested on generated data, and several records leave a choice to the maintainer; the [index](adrs/README.md) lists them. Where a record names a conservative option to use until he decides, this map describes that option.
 
 ## What the system does
 
@@ -32,7 +32,7 @@ Phase 2 builds the web review, the demo, the CLI workspace commands and the agen
 
 | Path | Responsibility |
 |---|---|
-| `packages/core` | Data model and JSON schemas (v1 kept for migration, v2 current); archive reading and the import pipeline; the `PlatformAdapter` contract; the workspace service: storage port, event rules, re-import merge, backup writer and reader, query projection, review and label services; day grouping; export guide data. Runs in browsers and in Node; Node-only code lives under `src/node/`. |
+| `packages/core` | Data model and JSON schemas (v1 kept for migration, v2 current); archive reading and the import pipeline; the `PlatformAdapter` contract; the workspace service: storage port, event rules, re-import merge, backup writer and reader, query projection, review and label services; day grouping; the export guide types and their checker. Runs in browsers and in Node; Node-only code lives under `src/node/`. |
 | `packages/adapter-x`, `packages/adapter-instagram` | Detect an export, parse it into items, describe the click-list steps. A new platform is a new package of this kind. |
 | `apps/web` | The React app: start page, export guide, demo, import, review, click lists, backup, settings. The service worker and its build plugin. The workspace worker with its IndexedDB store. The HTTP adapter used when the CLI serves the app. |
 | `apps/cli` | The `socialprune` command: Stricli command tree and output contract, the SQLite workspace store, the local review server, the release build. |
@@ -157,7 +157,7 @@ Agents use the CLI with `--json`: one JSON document per call on stdout, progress
    - `deletionHint`, which gives the click-list action (`delete`, `undo-repost` or `delete-comment`) and the item's link where the platform has one.
 2. Add a generator module under `tools/fixture-gen/src/<platform>/`, register it in `tools/fixture-gen/src/cli.ts` and in the registry test in `tools/fixture-gen/src/index.test.ts`, and generate fixtures for every known export variant under `fixtures/synthetic/<platform>/`, each with an `expected.json` the generator writes from its own data, plus an `injection` variant.
 3. Add the adapter to the adapter list in `apps/web/src/import/worker.ts`, and to the CLI's adapter list once the CLI imports archives.
-4. Add the platform's guide facts to `packages/core/src/guide/` with sources and verification dates ([ADR-022](adrs/ADR-022-export-guide-content.md)), and its strings to both catalogs.
+4. Add the platform's guide facts to `src/guide.ts` in the adapter, exported as its `./guide` subpath, with sources, the day they were read and an empty human check date ([ADR-022](adrs/ADR-022-export-guide-content.md)); add that file to `COPY_SCOPE.adapterGuides` in `tools/copy-check/src/words.ts`, wire the guide into `apps/cli/src/cli/node-context.ts` and `apps/web/src/app/guide.ts`, and add the platform's strings to both catalogs.
 5. Run the full suite, including the browser network audit, which picks up new fixtures automatically.
 
 No change to `packages/core` should be needed. If one is, that is a gap in the adapter contract and needs its own decision record.

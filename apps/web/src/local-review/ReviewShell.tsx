@@ -9,10 +9,26 @@ import { LocalReviewClient } from './client.ts';
 import type { WorkspaceSummary } from '@socialprune/core/workspace/protocol';
 import { parseReviewRoute } from '../app/router.ts';
 import type { ReviewSession } from './session.ts';
+import { Navigation } from '../app/Navigation.tsx';
 import styles from '../app/Shell.module.css';
 
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
+);
+const CardReview = lazy(() =>
+  import('../review/CardReview.tsx').then((module) => ({
+    default: module.CardReview,
+  })),
+);
+const ArchiveView = lazy(() =>
+  import('../archive/Archive.tsx').then((module) => ({
+    default: module.Archive,
+  })),
+);
+const DeleteMode = lazy(() =>
+  import('../clicklist/DeleteMode.tsx').then((module) => ({
+    default: module.DeleteMode,
+  })),
 );
 const ClickList = lazy(() =>
   import('../clicklist/ClickList.tsx').then((module) => ({
@@ -101,17 +117,21 @@ function ReadyReview({
     : null;
   const title = pointer
     ? t(pointer.title)
-    : route === '/review'
+    : route.startsWith('/review')
       ? t('review.title')
-      : route.startsWith('/clicklist/')
-        ? t('clicklist.title')
-        : route === '/settings'
-          ? t('nav.settings')
-          : route === '/privacy'
-            ? t('nav.privacy')
-            : route === 'not-found'
-              ? t('page.notFound')
-              : t('app.name');
+      : route === '/archive'
+        ? t('proto.archiveTitle')
+        : route.endsWith('/go')
+          ? t('proto.goTitle')
+          : route.startsWith('/clicklist/')
+            ? t('clicklist.title')
+            : route === '/settings'
+              ? t('nav.settings')
+              : route === '/privacy'
+                ? t('nav.privacy')
+                : route === 'not-found'
+                  ? t('page.notFound')
+                  : t('app.name');
   return (
     <CSPProvider disableStyleElements>
       <div className={styles.shell}>
@@ -125,33 +145,7 @@ function ReadyReview({
         >
           {t('nav.skip')}
         </a>
-        <header className={styles.header}>
-          <a href="#/">{t('app.name')}</a>
-          {route !== '/settings' && (
-            <label>
-              {t('settings.language')}{' '}
-              <select
-                value={locale}
-                onChange={(event) => changeLocale(event.target.value as Locale)}
-              >
-                <option value="en" lang="en">
-                  English
-                </option>
-                <option value="de" lang="de">
-                  Deutsch
-                </option>
-              </select>
-            </label>
-          )}
-        </header>
-        <nav className={styles.navigation} aria-label={t('nav.start')}>
-          <a href="#/">{t('nav.start')}</a>
-          <a href="#/review">{t('review.title')}</a>
-          <a href="#/clicklist/x">{t('clicklist.x')}</a>
-          <a href="#/clicklist/instagram">{t('clicklist.instagram')}</a>
-          <a href="#/settings">{t('nav.settings')}</a>
-          <a href="#/privacy">{t('nav.privacy')}</a>
-        </nav>
+        <Navigation route={route} locale={locale} changeLocale={changeLocale} />
         <main
           id="main"
           className={styles.main}
@@ -196,8 +190,22 @@ function ReadyReview({
             </>
           )}
           <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-            {route === '/review' && <Review client={client} />}
-            {route.startsWith('/clicklist/') && (
+            {route === '/review' && <CardReview client={client} />}
+            {route === '/review/list' && (
+              <>
+                <a href="#/review">{t('proto.cardView')}</a>
+                <Review client={client} />
+              </>
+            )}
+            {route === '/archive' && <ArchiveView client={client} />}
+            {route.endsWith('/go') && (
+              <DeleteMode
+                key={route}
+                client={client}
+                platform={route.includes('/x/') ? 'x' : 'instagram'}
+              />
+            )}
+            {route.startsWith('/clicklist/') && !route.endsWith('/go') && (
               <ClickList
                 key={route}
                 client={client}

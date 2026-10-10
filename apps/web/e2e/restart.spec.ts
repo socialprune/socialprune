@@ -31,7 +31,9 @@ test('W1 closes and reopens the disposable browser profile with its decisions, h
     await importFiles(first, fixture.files);
     const item = fixture.expected.items[1]!;
     expect(item.account.key).not.toBe(fixture.expected.items[0]!.account.key);
-    await first.getByRole('link', { name: 'Review', exact: true }).click();
+    await first.evaluate(() => {
+      location.hash = '#/review/list';
+    });
     const account = first.getByRole('combobox', {
       name: 'Account',
       exact: true,
@@ -80,7 +82,9 @@ test('W1 closes and reopens the disposable browser profile with its decisions, h
     expect(await workspaceIds(reopened)).toEqual(
       fixture.expected.items.map(({ id }) => id).sort(),
     );
-    await reopened.getByRole('link', { name: 'Review', exact: true }).click();
+    await reopened.evaluate(() => {
+      location.hash = '#/review/list';
+    });
     await expect(reopened.getByRole('grid')).toBeVisible();
     const reopenedAccount = reopened.getByRole('combobox', {
       name: 'Account',

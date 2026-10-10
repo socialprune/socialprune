@@ -8,6 +8,7 @@ import type { Assessment, WorkspaceV2 } from '@socialprune/core';
 import { observeImport, waitForApp } from './helpers.ts';
 import { reviewFixture } from './review-fixture.ts';
 import { startStaticServer } from './static-server.ts';
+import { menuLink, listView } from './navigation.ts';
 
 async function fixture() {
   const root = join(FIXTURES_ROOT, 'demo');
@@ -58,13 +59,17 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
       dataRequests.push(request.url());
   });
   await page.goto('/socialprune/#/demo');
+  await expect(page.getByTestId('review-card')).toBeVisible();
+  await listView(page);
   await expect(page.getByRole('grid')).toBeVisible();
   await expect(page.locator('main[data-gate]')).toHaveAttribute(
     'data-gate',
     'ready',
   );
   const banner = page.getByTestId('demo-banner');
-  await expect(banner).toContainText(expected.manifest.banner.en);
+  await expect(banner).toContainText(
+    'Made-up posts. Suggestions are examples, not classifier results.',
+  );
   await expect(
     page.getByRole('combobox', { name: 'Account', exact: true }),
   ).toHaveValue(expected.manifest.exports[0]!.account.key);
@@ -165,7 +170,9 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
   await expect(
     page.getByRole('status').filter({ hasText: '1 decision saved.' }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'X click list', exact: true }).click();
+  await page.evaluate(() => {
+    location.hash = '#/clicklist/x';
+  });
   await expect(banner).toBeVisible();
   await page
     .getByRole('main')
@@ -180,6 +187,7 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
     page.getByRole('status').filter({ hasText: '1 deleted by you' }),
   ).toBeVisible();
   await page.getByRole('link', { name: 'Review', exact: true }).click();
+  await listView(page);
   await page
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption(expected.manifest.exports[1]!.account.key);
@@ -191,9 +199,9 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
   await expect(
     page.getByRole('status').filter({ hasText: '1 decision saved.' }),
   ).toBeVisible();
-  await page
-    .getByRole('link', { name: 'Instagram click list', exact: true })
-    .click();
+  await page.evaluate(() => {
+    location.hash = '#/clicklist/instagram';
+  });
   await expect(banner).toBeVisible();
   await page
     .getByRole('main')
@@ -203,9 +211,7 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
   await expect(
     page.locator('li[data-item-id]').getByRole('heading'),
   ).toBeVisible();
-  await page
-    .getByRole('link', { name: 'Backup and restore', exact: true })
-    .click();
+  await (await menuLink(page, 'Backup and restore')).click();
   await expect(banner).toBeVisible();
   expect(await page.locator('input[type="file"]').count()).toBe(0);
   const download = page.waitForEvent('download');
@@ -223,15 +229,16 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
   expect(saved.kind).toBe('demo');
   expect(saved.assessments).toEqual(expected.assessments);
   expect(saved.outcomeEvents).toHaveLength(1);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await (await menuLink(page, 'Settings')).click();
   await expect(banner).toBeVisible();
   await page
     .getByRole('combobox', { name: 'Language', exact: true })
     .selectOption('de');
-  await expect(banner).toContainText(expected.manifest.banner.de);
-  await page
-    .getByRole('link', { name: 'Demo ausprobieren', exact: true })
-    .click();
+  await expect(banner).toContainText(
+    'Erfundene Beiträge. Vorschläge sind Beispiele, nicht von einem Klassifikator.',
+  );
+  await (await menuLink(page, 'Demo ausprobieren')).click();
+  await listView(page);
   await expect(
     grid.getByText('Beispiel', { exact: true }).first(),
   ).toBeVisible();
@@ -267,6 +274,8 @@ test('W4 demo works with no service-worker control and cannot open personal data
     });
   });
   await page.goto('/socialprune/#/demo');
+  await expect(page.getByTestId('review-card')).toBeVisible();
+  await listView(page);
   await expect(page.getByRole('grid')).toBeVisible();
   await expect(page.locator('main[data-gate]')).toHaveAttribute(
     'data-gate',
@@ -293,9 +302,7 @@ test('W4 demo works with no service-worker control and cannot open personal data
     type: 'failed',
     code: 'INVALID_REQUEST',
   });
-  await page
-    .getByRole('link', { name: 'Backup and restore', exact: true })
-    .click();
+  await (await menuLink(page, 'Backup and restore')).click();
   expect(await page.locator('input[type="file"]').count()).toBe(0);
   await audit.assert();
 });
@@ -334,7 +341,8 @@ test('W4 personal review survives demo and reset; fixture restore is refused wit
   );
   expect(denied).toMatchObject({ type: 'failed', code: 'FIXTURE_NOT_ALLOWED' });
   expect((await backup(page)).assessments).toEqual([]);
-  await page.getByRole('link', { name: 'Try the demo', exact: true }).click();
+  await (await menuLink(page, 'Try the demo')).click();
+  await listView(page);
   await expect(page.getByRole('grid')).toBeVisible();
   await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
   await expect(
@@ -354,11 +362,9 @@ test('W4 personal review survives demo and reset; fixture restore is refused wit
   });
   for (const { archive } of expected.manifest.exports)
     expect(cached.some((path) => path.endsWith(`/${archive}`))).toBe(true);
-  await page
-    .getByRole('navigation')
-    .getByRole('link', { name: 'Start', exact: true })
-    .click();
+  await (await menuLink(page, 'Start')).click();
   await page.getByRole('link', { name: 'Review', exact: true }).click();
+  await listView(page);
   await expect(
     page.getByRole('heading', { name: 'Review', exact: true }),
   ).toBeVisible();
@@ -420,6 +426,8 @@ test('W4 demo recreates from precached bytes after reload with its actual server
   const server = await startStaticServer(4182);
   try {
     await page.goto(`${server.origin}/socialprune/#/demo`);
+    await expect(page.getByTestId('review-card')).toBeVisible();
+    await listView(page);
     await expect(page.locator('main[data-gate]')).toHaveAttribute(
       'data-gate',
       'ready',
@@ -461,9 +469,16 @@ test('W4 demo banner and review reflow at 320 pixels in both languages', async (
 }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto('/socialprune/#/demo');
+  await expect(page.getByTestId('review-card')).toBeVisible();
+  await listView(page);
   await expect(page.getByRole('grid')).toBeVisible();
   for (const locale of ['en', 'de']) {
-    await page.getByRole('combobox').first().selectOption(locale);
+    await page.getByRole('button', { name: /^(Menu|Menü)$/ }).click();
+    await page
+      .getByTestId('app-menu')
+      .getByRole('combobox')
+      .selectOption(locale);
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId('demo-banner')).toBeVisible();
     expect(await page.locator('h1').count()).toBe(1);
     expect(

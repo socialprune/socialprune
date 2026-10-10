@@ -47,8 +47,12 @@ test('review routes match the fixed local list including CLI pointers, never Pag
   expect(REVIEW_ROUTES).toEqual([
     '/',
     '/review',
+    '/review/list',
+    '/archive',
     '/clicklist/x',
+    '/clicklist/x/go',
     '/clicklist/instagram',
+    '/clicklist/instagram/go',
     '/settings',
     '/privacy',
     '/guide',

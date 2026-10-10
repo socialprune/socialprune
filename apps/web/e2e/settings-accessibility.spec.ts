@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { restoreClickLists, clickListFixture } from './clicklist-fixture.ts';
 import { checkAccessibility } from './accessibility.ts';
 import { observeImport } from './helpers.ts';
+import { german } from './navigation.ts';
 
 const layouts = [
   { name: 'desktop', width: 1280, zoom: 1, reduced: false },
@@ -18,10 +19,7 @@ for (const locale of ['en', 'de'] as const)
         test.setTimeout(90_000);
         const audit = await observeImport(context, page);
         await restoreClickLists(page);
-        if (locale === 'de')
-          await page
-            .getByRole('combobox', { name: 'Language', exact: true })
-            .selectOption('de');
+        if (locale === 'de') await german(page);
         await page.emulateMedia({
           colorScheme: theme,
           reducedMotion: layout.reduced ? 'reduce' : 'no-preference',

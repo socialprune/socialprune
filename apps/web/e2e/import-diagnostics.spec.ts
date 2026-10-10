@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { waitForApp, observeImport } from './helpers.ts';
 import { method9Zip, encryptedZip } from './archive-method9.ts';
+import { german } from './navigation.ts';
 
 for (const locale of ['en', 'de'] as const) {
   test(`${locale} method-9 and encrypted ZIP diagnostics explain the unreadable entry without a password prompt`, async ({
@@ -9,10 +10,7 @@ for (const locale of ['en', 'de'] as const) {
   }) => {
     const audit = await observeImport(context, page);
     await waitForApp(page);
-    if (locale === 'de')
-      await page
-        .getByRole('combobox', { name: 'Language', exact: true })
-        .selectOption('de');
+    if (locale === 'de') await german(page);
     for (const [buffer, expected] of [
       [method9Zip(), 'Deflate64'],
       [

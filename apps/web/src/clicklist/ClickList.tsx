@@ -224,6 +224,9 @@ export function ClickList({
   const time = measured ?? seconds;
   return (
     <section aria-label={t('clicklist.title')}>
+      <p>
+        <a href={`#/clicklist/${platform}/go`}>{t('proto.goTitle')}</a>
+      </p>
       <p className={styles.notice}>
         {t(
           platform === 'x' ? 'clicklist.noticeX' : 'clicklist.noticeInstagram',

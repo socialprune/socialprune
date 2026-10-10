@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { restoreReview, reviewFixture } from './review-fixture.ts';
 import { observeImport } from './helpers.ts';
+import { menuLink, listView } from './navigation.ts';
 
 test('D58 personal and demo views persist independently and mounting never writes a view', async ({
   page,
@@ -23,7 +24,8 @@ test('D58 personal and demo views persist independently and mounting never write
     )
     .toEqual(['later']);
   const personal = await page.evaluate(() => window.workspace.summary?.review);
-  await page.getByRole('link', { name: 'Try the demo', exact: true }).click();
+  await (await menuLink(page, 'Try the demo')).click();
+  await listView(page);
   await expect(page.getByTestId('demo-banner')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.workspace.summary?.kind))
@@ -44,11 +46,13 @@ test('D58 personal and demo views persist independently and mounting never write
     .poll(() => page.evaluate(() => window.workspace.summary?.workspaceId))
     .toBe(input.id);
   await page.getByRole('link', { name: 'Review', exact: true }).click();
+  await listView(page);
   await expect(status()).toHaveValue('later');
   expect(await page.evaluate(() => window.workspace.summary?.review)).toEqual(
     personal,
   );
-  await page.getByRole('link', { name: 'Try the demo', exact: true }).click();
+  await (await menuLink(page, 'Try the demo')).click();
+  await listView(page);
   await expect(page.getByTestId('demo-banner')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.workspace.summary?.kind))

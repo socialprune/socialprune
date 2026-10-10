@@ -16,7 +16,10 @@ test('W2a an imported archive reaches a keyboard-only review without suggestions
   try {
     await waitForApp(page);
     await importFiles(page, fixture.files);
-    const link = page.getByRole('link', { name: 'Review', exact: true });
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    const link = page
+      .getByTestId('app-menu')
+      .getByRole('link', { name: 'List view', exact: true });
     await link.focus();
     await page.keyboard.press('Enter');
     const grid = page.getByRole('grid');
@@ -208,7 +211,7 @@ test('W2a example badges appear only on a restored demo workspace', async ({
   await restoreReview(page, reviewFixture('demo'));
   await expect(
     page.getByText(
-      'Demo with invented posts. The suggestions are examples written for this demo. No classifier produced them.',
+      'Made-up posts. Suggestions are examples, not classifier results.',
       { exact: true },
     ),
   ).toBeVisible();
@@ -448,7 +451,7 @@ test('W2a cached rows refresh after another tab and undo reverses the latest dur
     await page.getByRole('grid').focus();
     await page.keyboard.press('k');
     await expect(page.getByRole('row').first()).toContainText('Keep');
-    await second.goto('/socialprune/#/review');
+    await second.goto('/socialprune/#/review/list');
     await expect(second.getByRole('grid')).toBeVisible();
     await expect(second.getByRole('row').first()).toContainText('Keep');
     await second.getByRole('grid').focus();

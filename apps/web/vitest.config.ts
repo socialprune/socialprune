@@ -7,6 +7,7 @@ export default defineProject({
     environment: 'node',
     include: [
       'src/**/*.test.ts',
+      'test/**/*.test.ts',
       'tooling/**/*.test.ts',
       'scripts/**/*.test.ts',
     ],

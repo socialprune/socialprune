@@ -1,8 +1,8 @@
 # SocialPrune design specification
 
-This document specifies how the web app is meant to look, behave and speak from Phase 2 on. It covers the visual system, the review interaction, every screen and its states, phones, accessibility and the content rules for German and English. It rests on the proposed decision records in [docs/architecture/](../architecture/README.md), which wait for the maintainer's approval; where a record leaves a choice open, this document follows the conservative option that record names. The records that matter most here are [ADR-008](../architecture/adrs/ADR-008-review-ui-primitives.md) (components, grid, keys), [ADR-010](../architecture/adrs/ADR-010-styling-tokens.md) (tokens), [ADR-011](../architecture/adrs/ADR-011-internationalization.md) (catalogs) and [ADR-020](../architecture/adrs/ADR-020-demo-suggestions.md) (demo).
+This document specifies how the web app looks, behaves and speaks. The existing records in [docs/architecture/](../architecture/README.md) were accepted on 9 October 2026. The card review and archive described here are a person-facing redesign candidate, reviewed as a prototype and awaiting a second screenshot review before acceptance. They use the existing primitives, routes, tokens and catalogs; this document does not supersede a protected decision record.
 
-The direction is a **reading desk**: quiet neutral surfaces, one blue action color, amber for "marked for deletion", green for "deleted by you", and room for the text of each post. People come here to read their own old words and make a decision about each. The screen should help them read and decide, not alarm them.
+The review puts one readable post and its suggestion in front of the person. The archive is a private timeline with profile spacing, threads and engagement counts. Blue opens or navigates, red marks an entry through the card's Delete action, amber remains the stored "marked for deletion" state, and green means "deleted by you". No platform action happens in this app.
 
 ## Visual system
 
@@ -47,6 +47,7 @@ Contrast is the WCAG 2.2 ratio, computed from the sRGB relative luminance of eac
 | `--color-outcome-bg` | #dcfce7 | #052e16 | outcome 6.49 / 10.62 |
 | `--color-error` | #b91c1c | #fca5a5 | 6.47 / 7.73 on surface |
 | `--color-error-bg` | #fee2e2 | #450a0a | error 5.30 / 8.51 |
+| `--color-danger`, `--color-danger-bg` (card Delete action) | aliases of error / error-bg | aliases of error / error-bg | text and border on fill 5.30 / 8.51 |
 | `--color-suggestion` (suggestion badges) | #5b21b6 | #c4b5fd | 8.98 / 7.95 on surface; 7.36 / 5.61 on selected |
 | `--color-evidence-bg` (highlighted evidence) | #e0e7ff | #312e81 | text 13.20 / 10.92 |
 
@@ -70,7 +71,11 @@ A 3 px `--color-action` outline with 2 px offset on every focusable element. In 
 
 ## Layout and density
 
-**Desktop, 1,024 px and wider:** three zones. Left, 240 px: account switcher, status tabs with counts, filters and saved filter templates. Center: the review list. Right, 420 px: the detail region with full text, suggestions, decision buttons and history for the focused entry. A toolbar above the list holds search, sort, selection count, bulk actions, **Keyboard** and **History**.
+The header has exactly three primary destinations in both builds: **Review**, **Delete** and **Archive** (DE: **Durchsehen**, **Löschen**, **Archiv**). One **Menu** button opens ordinary links for Start, Import, Demo, Guide, Backup, Settings, Privacy and List view, plus language. Escape closes the disclosure and returns focus. Links stay native links, not application-menu roles.
+
+**Card review and archive:** a reading column up to 680 px with an optional 300 px side column. Phones use one column. Instructions are compact key rows rather than paragraphs below each block. Delete has a trash icon and danger tokens; Keep is positive, Later is quiet. The distinction between a local mark and a platform deletion remains in the accessible card help and the bulk confirmation.
+
+**List view, 1,024 px and wider:** the existing three zones remain: filters, review grid and entry details. Its selection, keyboard, history and bulk assertions are unchanged. The sections below that describe a grid apply to `#/review/list`, not to the new default card.
 
 **720 to 1,023 px:** filters move into a drawer opened from the toolbar; list and detail stay side by side.
 
@@ -187,7 +192,13 @@ The same review screens with the demo banner on every screen, the **Example** so
 
 Shown when an import contains more than one account. One card per account with platform, handle and count. Accounts are never mixed in one list.
 
-### Review (`#/review`)
+### Card review (`#/review`)
+
+One undecided entry at a time, strongest current suggested risk first and newest date second. The card shows account handle, timestamp in workspace time zone, full text, known likes/reposts, reply/repost/quote context and media count. The strongest current source's category, risk word and one-sentence reason are visible without opening a dialog. J marks for deletion, K keeps, L postpones and U undoes the latest decision. These keys work only on the focused card, ignore held repeats and obey the existing single-key setting. Each saved decision brings the next undecided entry forward. Buttons remain available without keys.
+
+Progress is decided entries out of the account total, not out of the visible risk filter. **Mark suggested entries** uses the existing frozen preview and explicit confirmation; no extra protocol or automatic decision is introduced. A link in the menu opens the list for filters, history, postponed entries and selection.
+
+### List review (`#/review/list`)
 
 - **No suggestions:** the list sorts by date, newest first, and an empty-state line in the detail region explains that suggestions are optional and how an agent can add them.
 - **With suggestions:** default sort strongest risk first, then newest.
@@ -201,6 +212,18 @@ Shown when an import contains more than one account. One card per account with p
 **Create click list** first shows the count of entries marked for deletion, a preview, and the time estimate described above. The list then starts at the highest risk.
 
 Each entry shows its date, text, the action to take on X ("Delete post" or "Undo repost"), **Open on X** (new tab, `rel="noopener noreferrer"`), and **I did it** / **Skip**. Keys, active only while the list has focus and covered by the same on/off setting: Enter opens the focused entry on X, D records "Deleted by you", S records "Skipped"; both move focus to the next entry. A line at the top says SocialPrune cannot see X, cannot tell whether the tab was closed, and only records what the person says. Progress: deleted by you, skipped, left. **Export list** saves CSV or JSON.
+
+### Deletion mode (`#/clicklist/x/go`, `#/clicklist/instagram/go`)
+
+The Delete destination opens one unresolved click-list entry. Platform tabs offer X and Instagram, and **Full click list** returns to the existing list/export view. Enter opens one X link in a new tab, Space or **Done** records `deleted-by-user`, and S or **Skip** records `skipped`. Every outcome is human-sourced. Holding a key never repeats an action. Recording advances to the next unresolved item; **Correct this record** resets the last outcome, not anything on the platform. Progress counts recorded deletions plus skips. Instagram has no invented post URL and retains the notice that its guide steps are not checked.
+
+### Private archive (`#/archive`) and recap
+
+A larger profile block shows the handle, account item count and count recorded as deleted on the platform. Its banner is a deterministic handle-derived choice of locally defined gradient tokens; there are no profile or banner image requests. The newest thread or standalone entry comes first. Same-account self-reply chains are joined chronologically; a conflicting foreign handle prevents joining even if an ID matches. Replies to others, reposts and quotes remain labelled. A `deleted-by-user` badge does not remove the archived entry. Year and literal case-insensitive search retain the complete matching thread. The kind filter can hide reposts.
+
+The recap computes oldest-entry age, the most active calendar year in the workspace time zone, the largest known like count and whole-word occurrences of "lol" locally. Unknown engagement remains unknown, not zero. It does not judge individual items or derive a suggestion.
+
+[ADR-021](../architecture/adrs/ADR-021-archive-media.md) does not permit archive media display in this phase. Cards show media count and media-only labels, not thumbnails, videos or external content. The redesign adds no `blob:` policy permission, media reference field or HTTP request type. The archive reads existing query/window/detail responses in batches and renders a bounded number of groups at a time.
 
 ### Click list Instagram (`#/clicklist/instagram`)
 
@@ -231,7 +254,7 @@ In `pnpm dev` only, the footer says "Development policy". It never appears in a 
 The same app, served from the person's computer by the CLI ([ADR-016](../architecture/adrs/ADR-016-local-review-server.md)). A strip under the header says where the data is: "Local review. Your workspace is on this computer, and SocialPrune's own program on this computer serves this page." The routes are reduced ([ADR-009](../architecture/adrs/ADR-009-navigation.md)):
 
 - **Start** shows the workspace summary (accounts, counts, last backup) and **Start review**, with the local-review privacy line instead of the web one.
-- **Review**, both **click lists**, **Settings** and **Privacy** work as in the web app. Settings has no storage section and no "Delete this review from this browser", because nothing is stored in the browser.
+- **Card review**, **List view**, **Archive** with its recap, both **click lists**, **Deletion mode**, **Settings** and **Privacy** work through the existing HTTP request types. The header and menu match the web app. Settings has no storage section and no "Delete this review from this browser", because nothing is stored in the browser.
 - **Guide**, **Demo**, **Import** and **Backup** each show one short page naming the CLI command that does the job, for example "Import another export with `socialprune import <export> --workspace <folder>`."
 - **Session ended**: when the CLI stops or the session token was already used, the page says "This review session has ended. Run `socialprune review` again to continue." Decisions saved before that are kept.
 
@@ -239,7 +262,7 @@ The Privacy page in this mode says that the page talks only to the program on th
 
 ## Mobile
 
-- One column. The list is the main view; opening an entry shows the detail view with a visible **Back to list** button and the decision buttons. Back returns focus to the same row.
+- One column. Card review is the default; list view keeps its existing detail/back behavior. All three decision buttons fit the column. The three primary links and menu fit 320 px without horizontal scrolling.
 - A sticky bar at the bottom shows the selection count and the bulk actions when a selection exists. The list adds bottom padding of the bar's height so the last row and the focused row are never covered.
 - Buttons are at least 44 by 44 px; rows are at least 48 px tall.
 - File import uses the native picker; the hint about several parts stays. Drag and drop is not offered.
@@ -298,7 +321,7 @@ Some words never appear in the app, the CLI, the guide (including the calendar r
 - Backup words such as "sichern" and "Sicherung" stay allowed; the copy still says "Backup".
 - "Official" and "offiziell" describe only the platform's own export, in the phrases `words.ts` allows.
 
-So German copy never uses "Bist du sicher?"; confirmations name the action instead. The app's own buttons never say "Delete": SocialPrune marks, the person deletes on the platform. "Delete post" appears only as an instruction for what to do on X.
+Confirmations name the action. The redesigned card's short **Delete** / **Löschen** label means a local mark, not platform deletion; its accessible help and the bulk preview state that boundary. Stored state and the list continue to say **Marked for deletion**. Deletion mode only records what the person reports after acting on the platform.
 
 ### Copy examples
 

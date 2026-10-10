@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { reviewFixture, restoreReview } from './review-fixture.ts';
 import { observeImport } from './helpers.ts';
+import { german } from './navigation.ts';
 
 for (const locale of ['en', 'de'] as const) {
   test(`${locale} empty Instagram comments with zero or unknown media show No text in list, detail and click list`, async ({
@@ -20,10 +21,7 @@ for (const locale of ['en', 'de'] as const) {
       url: null,
     }));
     await restoreReview(page, fixture);
-    if (locale === 'de')
-      await page
-        .getByRole('combobox', { name: 'Language', exact: true })
-        .selectOption('de');
+    if (locale === 'de') await german(page);
     const noText = locale === 'en' ? 'No text' : 'Kein Text';
     const grid = page.getByRole('grid');
     await expect(grid.getByText(noText, { exact: true })).toHaveCount(2);

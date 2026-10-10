@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { restoreReview, reviewFixture } from './review-fixture.ts';
 import { observeImport } from './helpers.ts';
+import { german } from './navigation.ts';
 
 for (const locale of ['en', 'de'] as const) {
   test(`${locale} current row sources are capped at eight and labelled overflow comes through shared rows`, async ({
@@ -27,10 +28,7 @@ for (const locale of ['en', 'de'] as const) {
     }));
     fixture.counts.assessments = fixture.assessments.length;
     await restoreReview(page, fixture);
-    if (locale === 'de')
-      await page
-        .getByRole('combobox', { name: 'Language', exact: true })
-        .selectOption('de');
+    if (locale === 'de') await german(page);
     const row = page.getByRole('row').first();
     await expect(
       row.getByText(locale === 'de' ? 'Beispiel' : 'Example', { exact: true }),

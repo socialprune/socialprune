@@ -75,7 +75,11 @@ test('W0 blocked registration keeps File input absent and demo reachable', async
     'unavailable',
   );
   expect(await page.locator('input[type="file"]').count()).toBe(0);
-  await page.getByRole('link', { name: 'Try the demo', exact: true }).click();
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page
+    .getByTestId('app-menu')
+    .getByRole('link', { name: 'Try the demo', exact: true })
+    .click();
   await expect(
     page.getByRole('heading', { name: 'Try the demo' }),
   ).toBeVisible();
@@ -315,7 +319,9 @@ test('W0 unverified guide and in-place locale switching make no external request
 }) => {
   const audit = await observeImport(context, page);
   await waitForApp(page);
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page
+    .getByTestId('app-menu')
     .getByRole('link', { name: 'Get your export', exact: true })
     .click();
   await expect(page.locator('[data-guide-count]')).toHaveAttribute(
@@ -329,7 +335,12 @@ test('W0 unverified guide and in-place locale switching make no external request
   const document = await page.evaluate(() => performance.timeOrigin);
   const requests: string[] = [];
   context.on('request', (request) => requests.push(request.url()));
-  await page.getByRole('combobox', { name: 'Language' }).selectOption('de');
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page
+    .getByTestId('app-menu')
+    .getByRole('combobox', { name: 'Language' })
+    .selectOption('de');
+  await page.keyboard.press('Escape');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   await expect(page.getByTestId('guide-verification')).toHaveText(
     de['guide.notChecked'],

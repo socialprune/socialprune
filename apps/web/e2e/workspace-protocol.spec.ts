@@ -71,7 +71,7 @@ test('every observed workspace worker post is a shared reply or notification', a
         }),
       JSON.stringify(workspace),
     );
-    await page.goto('/socialprune/#/review');
+    await page.goto('/socialprune/#/review/list');
     await expect(page.getByRole('row').first()).toContainText(
       'Agent: Synthetic reviewer',
     );

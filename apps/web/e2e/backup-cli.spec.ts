@@ -325,7 +325,9 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
       counts,
     );
 
-    await page.getByRole('link', { name: 'Review', exact: true }).click();
+    await page.evaluate(() => {
+      location.hash = '#/review/list';
+    });
     await page
       .getByRole('combobox', { name: 'Account', exact: true })
       .selectOption(chosen.account.key);
@@ -352,7 +354,9 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
     await expect
       .poll(() => page.evaluate(() => window.workspace.summary?.review))
       .toEqual(view);
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await page
+      .getByTestId('app-menu')
       .getByRole('link', { name: 'Backup and restore', exact: true })
       .click();
     const downloading = page.waitForEvent('download');
@@ -409,7 +413,11 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
     // L3 / LL-002: the initial CLI backup has no human state. Close the loop
     // after the person removes this generated review through Settings, so the
     // decision-making workspace cannot supply the restored state by accident.
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page
+      .getByTestId('app-menu')
+      .getByRole('link', { name: 'Settings', exact: true })
+      .click();
     await page
       .getByRole('button', {
         name: 'Delete this review from this browser',
@@ -480,7 +488,9 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
     expect(returned.decisions).toEqual(restored.decisions);
     expect(returned.assessments).toEqual(restored.assessments);
     expect(returned.submissions).toEqual(restored.submissions);
-    await page.getByRole('link', { name: 'Review', exact: true }).click();
+    await page.evaluate(() => {
+      location.hash = '#/review/list';
+    });
     // Do not set any controls after the reset: they must come from the restore.
     await expect(
       page.getByRole('combobox', { name: 'Account', exact: true }),

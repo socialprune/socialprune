@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { CSPProvider } from '@base-ui/react/csp-provider';
+import { Navigation } from './Navigation.tsx';
 import { IntlProvider } from 'react-intl';
 import importWorkerURL from '../import/worker.ts?worker&url';
 import workspaceWorkerURL from '../workspace/worker.ts?worker&url';
@@ -18,6 +19,21 @@ import { DemoSession } from './demo.ts';
 import styles from './Shell.module.css';
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
+);
+const CardReview = lazy(() =>
+  import('../review/CardReview.tsx').then((module) => ({
+    default: module.CardReview,
+  })),
+);
+const ArchiveView = lazy(() =>
+  import('../archive/Archive.tsx').then((module) => ({
+    default: module.Archive,
+  })),
+);
+const DeleteMode = lazy(() =>
+  import('../clicklist/DeleteMode.tsx').then((module) => ({
+    default: module.DeleteMode,
+  })),
 );
 const ClickList = lazy(() =>
   import('../clicklist/ClickList.tsx').then((module) => ({
@@ -52,7 +68,6 @@ function Content({
   const [reviewClient, setReviewClient] = useState<WorkspaceClient | null>(
     null,
   );
-  const [hasWorkspaceItems, setHasWorkspaceItems] = useState(false);
   const [workspaceKind, setWorkspaceKind] = useState<'personal' | 'demo'>(
     'personal',
   );
@@ -121,9 +136,7 @@ function Content({
       );
       workspace.current = working;
       if (!demo.current) window.workspace = working;
-      const opened = await working.open();
-      if (opened.type === 'opened')
-        setHasWorkspaceItems(opened.summary.counts.items > 0);
+      await working.open();
       setReviewClient(working);
       const current = new ImportClient(
         () => {
@@ -195,11 +208,9 @@ function Content({
   }, [demoActive, gateState, gate]);
   const activeClient = demoActive ? demoClient : reviewClient;
   const dataReady = demoActive ? demoPhase === 'ready' : gateState === 'ready';
-  const hasItems = demoActive ? demoPhase === 'ready' : hasWorkspaceItems;
   useEffect(
     () =>
       reviewClient?.subscribeSummary((summary) => {
-        setHasWorkspaceItems((summary?.counts.items ?? 0) > 0);
         setWorkspaceKind(summary?.kind ?? 'personal');
       }),
     [reviewClient],
@@ -216,7 +227,7 @@ function Content({
     setDemoPhase('opening');
     setDemoResetDone(false);
     setDemoClient(null);
-    location.hash = '#/demo';
+    location.hash = route === '/review/list' ? '#/review/list' : '#/demo';
     try {
       await session.reset();
       if (demo.current === session) {
@@ -244,15 +255,19 @@ function Content({
             ? t('nav.demo')
             : route === '/import'
               ? t('nav.import')
-              : route === '/review'
+              : route.startsWith('/review')
                 ? t('review.title')
-                : route.startsWith('/clicklist/')
-                  ? t('clicklist.title')
-                  : route === '/backup'
-                    ? t('backup.title')
-                    : route === 'not-found'
-                      ? t('page.notFound')
-                      : t('app.name');
+                : route === '/archive'
+                  ? t('proto.archiveTitle')
+                  : route.endsWith('/go')
+                    ? t('proto.goTitle')
+                    : route.startsWith('/clicklist/')
+                      ? t('clicklist.title')
+                      : route === '/backup'
+                        ? t('backup.title')
+                        : route === 'not-found'
+                          ? t('page.notFound')
+                          : t('app.name');
   if (gateState === 'framed')
     return (
       <main className={styles.main}>
@@ -273,25 +288,7 @@ function Content({
         >
           {t('nav.skip')}
         </a>
-        <header className={styles.header}>
-          <a href="#/">{t('app.name')}</a>
-          {route !== '/settings' && (
-            <label>
-              {t('settings.language')}{' '}
-              <select
-                value={locale}
-                onChange={(event) => changeLocale(event.target.value as Locale)}
-              >
-                <option value="en" lang="en">
-                  English
-                </option>
-                <option value="de" lang="de">
-                  Deutsch
-                </option>
-              </select>
-            </label>
-          )}
-        </header>
+        <Navigation route={route} locale={locale} changeLocale={changeLocale} />
         {updateReady && !updateDismissed && (
           <section className={styles.update} aria-label={t('update.ready')}>
             <p>{t('update.ready')}</p>
@@ -312,21 +309,6 @@ function Content({
             {updateError && <p role="alert">{t('update.failed')}</p>}
           </section>
         )}
-        <nav className={styles.navigation} aria-label={t('nav.start')}>
-          <a href="#/">{t('nav.start')}</a>
-          <a href="#/guide">{t('nav.guide')}</a>
-          <a href="#/demo">{t('nav.demo')}</a>
-          <a href="#/settings">{t('nav.settings')}</a>
-          <a href="#/privacy">{t('nav.privacy')}</a>
-          {hasItems && <a href="#/review">{t('review.title')}</a>}
-          {hasItems && (
-            <>
-              <a href="#/clicklist/x">{t('clicklist.x')}</a>
-              <a href="#/clicklist/instagram">{t('clicklist.instagram')}</a>
-              <a href="#/backup">{t('backup.title')}</a>
-            </>
-          )}
-        </nav>
         <main id="main" className={styles.main} data-gate={gateState}>
           <h1
             tabIndex={-1}
@@ -337,7 +319,7 @@ function Content({
           </h1>
           {(demoActive || workspaceKind === 'demo') && (
             <section
-              className={styles.panel}
+              className={styles.demoBanner}
               data-testid="demo-banner"
               aria-label={t('nav.demo')}
             >
@@ -428,7 +410,6 @@ function Content({
                 changeLocale={changeLocale}
                 onDeleted={() => {
                   if (demoActive) setDemoActive(false);
-                  else setHasWorkspaceItems(false);
                 }}
                 beforeDelete={async () => {
                   const current = client.current;
@@ -569,28 +550,49 @@ function Content({
             dataReady &&
             activeClient && (
               <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-                <Review
+                <CardReview
                   key={demoActive ? 'demo' : 'personal'}
                   client={activeClient}
                 />
               </Suspense>
             )}
-          {route.startsWith('/clicklist/') && dataReady && activeClient && (
+          {route === '/review/list' && dataReady && activeClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-              <ClickList
+              <p>
+                <a href="#/review">{t('proto.cardView')}</a>
+              </p>
+              <Review client={activeClient} />
+            </Suspense>
+          )}
+          {route === '/archive' && dataReady && activeClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <ArchiveView client={activeClient} />
+            </Suspense>
+          )}
+          {route.endsWith('/go') && dataReady && activeClient && (
+            <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+              <DeleteMode
                 key={route}
                 client={activeClient}
-                platform={route === '/clicklist/x' ? 'x' : 'instagram'}
+                platform={route.includes('/x/') ? 'x' : 'instagram'}
               />
             </Suspense>
           )}
+          {route.startsWith('/clicklist/') &&
+            !route.endsWith('/go') &&
+            dataReady &&
+            activeClient && (
+              <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
+                <ClickList
+                  key={route}
+                  client={activeClient}
+                  platform={route === '/clicklist/x' ? 'x' : 'instagram'}
+                />
+              </Suspense>
+            )}
           {route === '/backup' && dataReady && activeClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
-              <Backup
-                client={activeClient}
-                allowRestore={!demoActive}
-                onRestored={() => setHasWorkspaceItems(true)}
-              />
+              <Backup client={activeClient} allowRestore={!demoActive} />
             </Suspense>
           )}
           {state?.phase === 'error' && (

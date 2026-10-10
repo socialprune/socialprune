@@ -45,8 +45,26 @@
     --color-outcome-bg: #dcfce7;
     --color-error: #b91c1c;
     --color-error-bg: #fee2e2;
+    --color-danger: var(--color-error);
+    --color-danger-bg: var(--color-error-bg);
     --color-suggestion: #5b21b6;
     --color-evidence-bg: #e0e7ff;
+    --radius-social: 12px;
+    --color-social-divider: #dce5eb;
+    --color-social-cover: #e8f1f6;
+    --color-social-hint: #f6f9fc;
+    --profile-height: 160px;
+    --profile-avatar: 96px;
+    --profile-overlap: -44px;
+    --cover-angle: 135deg;
+    --cover-start-0: #dbeafe;
+    --cover-end-0: #c4b5fd;
+    --cover-start-1: #dcfce7;
+    --cover-end-1: #a5f3fc;
+    --cover-start-2: #fef3c7;
+    --cover-end-2: #fbcfe8;
+    --cover-start-3: #e0e7ff;
+    --cover-end-3: #bae6fd;
     --motion-duration: 120ms;
     color-scheme: light;
   }
@@ -69,6 +87,9 @@
       --color-error-bg: #450a0a;
       --color-suggestion: #c4b5fd;
       --color-evidence-bg: #312e81;
+      --color-social-divider: #475569;
+      --color-social-cover: #1e3a5a;
+      --color-social-hint: #172338;
       color-scheme: dark;
     }
   }
@@ -90,6 +111,9 @@
     --color-error-bg: #450a0a;
     --color-suggestion: #c4b5fd;
     --color-evidence-bg: #312e81;
+    --color-social-divider: #475569;
+    --color-social-cover: #1e3a5a;
+    --color-social-hint: #172338;
     color-scheme: dark;
   }
   :root[data-density='compact'] {

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { restoreReview } from './review-fixture.ts';
 import { checkAccessibility } from './accessibility.ts';
 import { observeImport } from './helpers.ts';
+import { german } from './navigation.ts';
 
 const layouts = [
   { name: 'desktop', width: 1280, zoom: 1, reduced: false },
@@ -18,10 +19,7 @@ for (const locale of ['en', 'de'] as const) {
         test.setTimeout(60_000);
         const audit = await observeImport(context, page);
         await restoreReview(page);
-        if (locale === 'de')
-          await page
-            .getByRole('combobox', { name: 'Language', exact: true })
-            .selectOption('de');
+        if (locale === 'de') await german(page);
         await page.emulateMedia({
           reducedMotion: layout.reduced ? 'reduce' : 'no-preference',
           colorScheme: theme,

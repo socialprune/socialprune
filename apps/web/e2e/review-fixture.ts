@@ -125,7 +125,7 @@ export async function restoreReview(
     JSON.stringify(workspace),
   );
   expect(reply.type).toBe('opened');
-  await page.goto('/socialprune/#/review');
+  await page.goto('/socialprune/#/review/list');
   await expect(page.getByRole('grid')).toBeVisible();
   if (accountKey)
     await page

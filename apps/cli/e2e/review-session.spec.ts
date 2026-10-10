@@ -363,8 +363,21 @@ test('real session imports fixture rows, commits a UI decision, opens a click li
       .some((response) => new URL(response.url()).pathname.startsWith('/api/')),
   ).toBe(false);
   await page
-    .getByRole('navigation')
+    .getByRole('navigation', { name: 'Primary navigation', exact: true })
     .getByRole('link', { name: 'Review', exact: true })
+    .click();
+  await expect(
+    page.getByTestId('review-card').locator('article'),
+  ).toContainText(first.text);
+  await expect(
+    page.getByRole('progressbar', { name: 'Review', exact: true }),
+  ).toHaveAttribute('max', String(x.itemCount));
+  // The real HTTP build must serve the same fixed route inventory. Keep the
+  // grid's existing decision assertions on its explicit list route.
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page
+    .getByTestId('app-menu')
+    .getByRole('link', { name: 'List view', exact: true })
     .click();
   const grid = page.getByRole('grid', { name: 'Entries to review' });
   await expect(grid).toHaveAttribute('aria-rowcount', String(x.itemCount));
@@ -383,11 +396,40 @@ test('real session imports fixture rows, commits a UI decision, opens a click li
   const list = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/clickListWindow',
   );
-  await page.getByRole('link', { name: 'X click list', exact: true }).click();
+  await page.evaluate(() => {
+    location.hash = '#/clicklist/x';
+  });
   expect((await list).status()).toBe(200);
   await expect(
     page.getByRole('heading', { name: 'Click list', exact: true }),
   ).toBeVisible();
+  await expect(page.getByText(first.text, { exact: true })).toBeVisible();
+  for (const route of [
+    '/review',
+    '/archive',
+    '/clicklist/x/go',
+    '/clicklist/instagram/go',
+  ] as const) {
+    await page.evaluate((value) => {
+      location.hash = `#${value}`;
+    }, route);
+    if (route === '/review')
+      await expect(page.getByTestId('review-card')).toBeVisible();
+    else if (route === '/archive') {
+      await expect(page.getByTestId('recap')).toBeVisible();
+      await expect(page.locator('article').first()).toContainText(first.text);
+      await expect(page.getByTestId('recap')).toContainText('2018');
+    } else await expect(page.getByTestId('delete-mode')).toBeVisible();
+  }
+  for (const route of ['/guide', '/demo', '/import', '/backup'] as const) {
+    await page.evaluate((value) => {
+      location.hash = `#${value}`;
+    }, route);
+    await expect(page.locator('main code')).toContainText('socialprune');
+  }
+  await page.evaluate(() => {
+    location.hash = '#/clicklist/x';
+  });
   await expect(page.getByText(first.text, { exact: true })).toBeVisible();
 
   for (const [mode, url] of [

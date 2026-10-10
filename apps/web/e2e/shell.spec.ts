@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { waitForApp } from './helpers.ts';
 import { startStaticServer } from './static-server.ts';
+import { menuLink } from './navigation.ts';
 
 test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motion', async ({
   page,
 }) => {
   await waitForApp(page);
-  await page.getByRole('link', { name: 'Start', exact: true }).click();
+  await (await menuLink(page, 'Start')).click();
   expect(
     await page
       .getByRole('button', { name: 'Open export', exact: true })
@@ -17,8 +18,12 @@ test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motio
       .getByRole('heading', { name: 'SocialPrune', exact: true })
       .evaluate((heading) => getComputedStyle(heading).fontSize),
   ).toBe('30px');
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('combobox', { name: 'Language' }).selectOption('de');
-  await page.getByRole('link', { name: 'Einstellungen', exact: true }).click();
+  await page
+    .getByTestId('app-menu')
+    .getByRole('link', { name: 'Einstellungen', exact: true })
+    .click();
   await expect(
     page.getByRole('heading', { name: 'Einstellungen' }),
   ).toBeFocused();
@@ -40,7 +45,7 @@ test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motio
         getComputedStyle(element).getPropertyValue('--motion-duration').trim(),
       ),
   ).toBe('0ms');
-  await page.getByRole('link', { name: 'Datenschutz', exact: true }).focus();
+  await (await menuLink(page, 'Datenschutz')).focus();
   await page.keyboard.press('Enter');
   await expect(
     page.getByRole('heading', { name: 'Datenschutz' }),

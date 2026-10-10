@@ -174,3 +174,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-007] 2026-10-10 PRODUCT: Accept a feature by what the person has to do and see, not only by what the tests prove
+
+**ID:** LL-2026-10-007
+**Severity:** HIGH
+**Category:** PRODUCT
+**Expires:** Never (kernel). The screens and steps below are dated evidence from 2026-10-09 and 2026-10-10.
+
+**Feedback:** On his own cleanup the maintainer first got a PowerShell command to start the review, although the agent is meant to start it and the browser opens by itself, and he asked why he should do that at all. Then he opened the review page, said it looks terrible and is no fun to click through, and marked nothing.
+**Problem:** Phase 2 was accepted on function, policy, privacy and accessibility evidence across three browsers and two operating systems, but nobody had looked at the screens as a person who wants the job done quickly, and the handoff text gave the person a step the tool does itself.
+**5 Whys Analysis:**
+1. Why did he stop at the review page? -> It looked bad and took effort he did not want to spend.
+2. Why did that reach him? -> No acceptance step looked at the screens or counted the person's steps.
+3. Why not? -> Every gate measured what tests can prove: behaviour, requests, contrast, keyboard paths.
+4. Why was that taken as done? -> The design specification existed, so meeting its rules in tests read as meeting its intent.
+5. Why? -> Root cause: the acceptance contract had no criterion for the person's effort and the look of the result, and no person or screenshot review before a UI node closed.
+**Rule(s):**
+1. A user-facing feature is accepted only when the person's path is counted (each step they must take, and which of those the tool could take instead) and the screens have been looked at, by the maintainer or against screenshots compared with the design specification.
+2. Before handing the person a step, check whether the tool or agent can take it; hand over only what needs a person.
+3. Green functional gates are reported as functional acceptance, never as "the feature is good".
+**Detection Pattern:** a handoff that gives the person a command the agent could run; a UI node closed without a screenshot or a person's look; a closure report that calls a screen finished on test evidence alone.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed one line for `.kilo/agents/workflow-orchestrator.md` (protected), "A user-facing node closes only after the person's steps are counted and the screens were looked at (LL-2026-10-007)"; until he approves it, the parent applies this before closing any UI node.
+**Related Lessons:** LL-2026-10-005 (write for the person in his words).
+**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

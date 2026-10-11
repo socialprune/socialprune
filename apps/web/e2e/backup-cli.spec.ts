@@ -372,7 +372,14 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
 
     await cli(['backup', 'restore', webBackup, '--workspace', toCli]);
     const summary = (await cli(['summary', '--workspace', toCli])) as Summary;
-    expect(summary.counts).toEqual({ ...counts, decisionEvents: 1 });
+    // The CLI workspace also counts its deletion journal (ADR-027); this
+    // scenario never runs a deletion, so both journal counts are zero.
+    expect(summary.counts).toEqual({
+      ...counts,
+      decisionEvents: 1,
+      browserRuns: 0,
+      browserAttempts: 0,
+    });
     expect(summary.assessments).toEqual([
       { kind: 'agent', name: input.source.name, count: input.labels.length },
     ]);

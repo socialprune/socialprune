@@ -484,7 +484,9 @@ export function Overview({
           />
           <button
             className={social.primary}
-            disabled={loading || !accountKey}
+            // As in the single-card view: a bulk preview waits until the
+            // decision in flight has committed, or its revision goes stale.
+            disabled={loading || busy || !accountKey}
             onClick={onBulk}
           >
             <Sparkles size={18} aria-hidden="true" />

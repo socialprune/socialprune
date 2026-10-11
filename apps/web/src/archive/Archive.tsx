@@ -136,7 +136,7 @@ export function Archive({ client }: { client: WorkspaceClient }) {
               <div className={styles.profileCounts}>
                 <span>
                   <strong>{intl.formatNumber(entries.length)}</strong>{' '}
-                  {t('proto.archiveEntries')}
+                  {t('proto.archiveEntries', { count: entries.length })}
                 </span>
                 <span>
                   <strong>{intl.formatNumber(deleted)}</strong>{' '}
@@ -289,11 +289,13 @@ export function Archive({ client }: { client: WorkspaceClient }) {
                       ? t('proto.unknownCount')
                       : intl.formatNumber(stats.likes)}
                   </strong>
-                  <span>{t('proto.mostLikes')}</span>
+                  <span>
+                    {t('proto.mostLikes', { count: stats.likes ?? -1 })}
+                  </span>
                 </div>
                 <div className={styles.stat}>
                   <strong>{intl.formatNumber(stats.lols)}</strong>
-                  <span>{t('proto.lolCount')}</span>
+                  <span>{t('proto.lolCount', { count: stats.lols })}</span>
                 </div>
               </div>
             </div>

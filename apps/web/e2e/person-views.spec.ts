@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { observeImport, waitForApp } from './helpers.ts';
 import { personExpected, personFixture } from '../test/person-fixture.ts';
 import { checkAccessibility } from './accessibility.ts';
+import { postContextFixture } from '../test/post-context-fixture.ts';
 
 export async function restorePerson(page: Page) {
   await waitForApp(page);
@@ -253,18 +254,24 @@ test('archive joins only own thread, keeps deleted item, year jumps/search inclu
   await page.getByRole('button', { name: 'Done Space', exact: true }).click();
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1');
   await page.goto('/socialprune/#/archive');
-  await page
+  const archive = page.getByTestId('archive');
+  await archive
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption(personExpected.accountKey);
+  await expect(
+    archive.getByRole('combobox', { name: 'Account', exact: true }),
+  ).toHaveValue(personExpected.accountKey);
   await expect(page.getByTestId('recap')).toBeVisible();
   const thread = page.locator('[data-thread-size="3"]');
-  expect(
-    await thread
-      .locator('article')
-      .evaluateAll((rows) =>
-        rows.map((row) => row.getAttribute('data-item-id')),
-      ),
-  ).toEqual(personExpected.thread);
+  await expect
+    .poll(() =>
+      thread
+        .locator('article')
+        .evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute('data-item-id')),
+        ),
+    )
+    .toEqual(personExpected.thread);
   await expect(
     page.locator(`article[data-item-id="${personExpected.deleteIds[0]}"]`),
   ).toContainText('deleted on X');
@@ -285,13 +292,15 @@ test('archive joins only own thread, keeps deleted item, year jumps/search inclu
     String(personExpected.recapAt20261010.lols),
   );
   await page.getByRole('button', { name: '2020', exact: true }).click();
-  expect(
-    await page
-      .locator('article')
-      .evaluateAll((rows) =>
-        rows.map((row) => row.getAttribute('data-item-id')),
-      ),
-  ).toEqual(personExpected.year2020Ids);
+  await expect
+    .poll(() =>
+      page
+        .locator('article')
+        .evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute('data-item-id')),
+        ),
+    )
+    .toEqual(personExpected.year2020Ids);
   await page
     .getByRole('combobox', { name: 'Year', exact: true })
     .selectOption('all');
@@ -299,13 +308,15 @@ test('archive joins only own thread, keeps deleted item, year jumps/search inclu
     .getByRole('searchbox', { name: 'Search the archive', exact: true })
     .fill(personExpected.query);
   await expect(page.locator('article')).toHaveCount(3);
-  expect(
-    await page
-      .locator('article')
-      .evaluateAll((rows) =>
-        rows.map((row) => row.getAttribute('data-item-id')),
-      ),
-  ).toEqual(personExpected.thread);
+  await expect
+    .poll(() =>
+      page
+        .locator('article')
+        .evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute('data-item-id')),
+        ),
+    )
+    .toEqual(personExpected.thread);
   await page.getByRole('searchbox').fill('');
   await page
     .getByRole('combobox', { name: 'Account', exact: true })
@@ -386,5 +397,180 @@ test('three primary destinations and one keyboard-operable menu reflow at 320px 
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await audit.assert();
+});
+
+test('shared cards expose fixture parent links and missing Instagram context without requesting the platform', async ({
+  page,
+  context,
+}) => {
+  const audit = await observeImport(context, page);
+  await waitForApp(page);
+  const fixture = postContextFixture();
+  const reply = fixture.items.find(
+    (item) => item.id === personExpected.foreignReplyId,
+  )!;
+  const quote = fixture.items.find((item) => item.kind === 'quote')!;
+  const restored = await page.evaluate(
+    (text) =>
+      window.workspace.request({
+        type: 'restore',
+        requestId: crypto.randomUUID(),
+        file: new File([text], 'generated-post-context.json'),
+      }),
+    JSON.stringify(fixture),
+  );
+  expect(restored.type).toBe('opened');
+  await page.goto('/socialprune/#/review');
+  await page
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption(personExpected.accountKey);
+  const card = page.getByTestId('review-card');
+  const next = page.getByRole('button', { name: 'Next post', exact: true });
+  await expect(card.locator('article')).toHaveAttribute(
+    'data-item-id',
+    personExpected.suggestionIds[0],
+  );
+  await expect(
+    card.getByRole('link', { name: 'View original on X', exact: true }),
+  ).toHaveCount(0);
+  await next.click();
+  await expect(card.locator('article')).toHaveAttribute(
+    'data-item-id',
+    reply.id,
+  );
+  const original = card.getByRole('link', {
+    name: 'View original on X',
+    exact: true,
+  });
+  // LL-002: exact destinations come from fixture inputs, never the builder.
+  await expect(original).toHaveAttribute(
+    'href',
+    `https://x.com/i/web/status/${reply.reference.replyToId}`,
+  );
+  await expect(original).toHaveAttribute('target', '_blank');
+  await expect(original).toHaveAttribute('rel', 'noopener noreferrer');
+  await next.click();
+  await expect(card.locator('article')).toHaveAttribute(
+    'data-item-id',
+    'x:review-0006',
+  );
+  await next.click();
+  await expect(card.locator('article')).toHaveAttribute(
+    'data-item-id',
+    quote.id,
+  );
+  await expect(original).toHaveAttribute(
+    'href',
+    `https://x.com/i/web/status/${quote.reference.quotedId}`,
+  );
+  await expect(original).toHaveAttribute('target', '_blank');
+  await expect(original).toHaveAttribute('rel', 'noopener noreferrer');
+
+  await page.goto('/socialprune/#/archive');
+  await page
+    .getByTestId('archive')
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption(personExpected.accountKey);
+  await expect(page.getByTestId('recap')).toBeVisible();
+  for (const [item, id] of [
+    [reply, reply.reference.replyToId],
+    [quote, quote.reference.quotedId],
+  ] as const) {
+    const link = page
+      .locator(`article[data-item-id="${item.id}"]`)
+      .getByRole('link', { name: 'View original on X', exact: true });
+    await expect(link).toHaveAttribute(
+      'href',
+      `https://x.com/i/web/status/${id}`,
+    );
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+  // The fixture's self-thread references contain non-digits; they get no link.
+  await expect(
+    page
+      .locator('[data-thread-size="3"]')
+      .getByRole('link', { name: 'View original on X', exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption('synthetic-comment');
+  await expect(page.locator('article')).toHaveCount(1);
+  await expect(page.locator('article')).toContainText(
+    'Comment on @generated_owner',
+  );
+  await expect(page.locator('article')).toContainText(
+    'Instagram does not include the post.',
+  );
+  await expect(page.locator('article').getByRole('link')).toHaveCount(0);
+  await page.goto('/socialprune/#/review');
+  await page
+    .getByTestId('card-review')
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption('synthetic-comment');
+  await expect(card.locator('article')).toContainText(
+    'Comment on @generated_owner',
+  );
+  await expect(card.locator('article')).toContainText(
+    'Instagram does not include the post.',
+  );
+  await expect(card.getByRole('link')).toHaveCount(0);
+  await audit.assert();
+});
+
+test('missing-owner Instagram comments state missing post context in both shared card views', async ({
+  page,
+  context,
+}) => {
+  const audit = await observeImport(context, page);
+  await waitForApp(page);
+  const fixture = postContextFixture();
+  fixture.items.find(
+    (item) => item.platform === 'instagram',
+  )!.reference.ownerHandle = null;
+  const withoutOwner = await page.evaluate(
+    (text) =>
+      window.workspace.request({
+        type: 'restore',
+        requestId: crypto.randomUUID(),
+        file: new File([text], 'generated-missing-owner.json'),
+      }),
+    JSON.stringify(fixture),
+  );
+  expect(withoutOwner.type).toBe('opened');
+  await page.goto('/socialprune/#/review');
+  const card = page.getByTestId('review-card');
+  await page
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption('synthetic-comment');
+  await expect(card.locator('article')).toContainText(
+    'Instagram does not include the post.',
+  );
+  await expect(card.locator('article')).toContainText('Comment on @unknown');
+  await page.goto('/socialprune/#/archive');
+  await page
+    .getByTestId('archive')
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption('synthetic-comment');
+  await expect(page.locator('article')).toHaveCount(1);
+  await expect(page.locator('article')).toContainText(
+    'Instagram does not include the post.',
+  );
+  await expect(page.locator('article').getByRole('link')).toHaveCount(0);
+  await expect(page.getByTestId('archive')).toContainText('1 entry');
+  await expect(page.getByTestId('recap')).toContainText(
+    'your busiest year · 1 entry',
+  );
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page
+    .getByTestId('app-menu')
+    .getByRole('combobox', { name: 'Language', exact: true })
+    .selectOption('de');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('archive')).toContainText('1 Eintrag');
+  await expect(page.getByTestId('recap')).toContainText(
+    'dein aktivstes Jahr · 1 Eintrag',
+  );
   await audit.assert();
 });

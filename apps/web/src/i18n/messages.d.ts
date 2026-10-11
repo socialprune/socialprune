@@ -174,7 +174,7 @@ declare global {
     'proto.ageNumber': { count: number };
     'proto.allYears': Record<never, never>;
     'proto.archiveDeleted': Record<never, never>;
-    'proto.archiveEntries': Record<never, never>;
+    'proto.archiveEntries': { count: number };
     'proto.archiveLoading': Record<never, never>;
     'proto.archiveSearch': Record<never, never>;
     'proto.archiveStays': Record<never, never>;
@@ -197,12 +197,13 @@ declare global {
     'proto.goKeysShort': Record<never, never>;
     'proto.goProgress': { count: number; total: number };
     'proto.goTitle': Record<never, never>;
+    'proto.instagramMissingPost': Record<never, never>;
     'proto.left': { count: number };
     'proto.listView': Record<never, never>;
     'proto.loadMore': Record<never, never>;
-    'proto.lolCount': Record<never, never>;
+    'proto.lolCount': { count: number };
     'proto.manualOnly': Record<never, never>;
-    'proto.mostLikes': Record<never, never>;
+    'proto.mostLikes': { count: number };
     'proto.newestFirst': Record<never, never>;
     'proto.nextCard': Record<never, never>;
     'proto.noReposts': Record<never, never>;
@@ -229,6 +230,7 @@ declare global {
     'proto.unknownCount': Record<never, never>;
     'proto.unknownOwner': Record<never, never>;
     'proto.unreviewed': Record<never, never>;
+    'proto.viewOriginalX': Record<never, never>;
     'proto.year': Record<never, never>;
     'proto.yearsHeading': Record<never, never>;
     'review.account': Record<never, never>;

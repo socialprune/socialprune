@@ -5,11 +5,13 @@ import {
   Image,
   Check,
   Quote,
+  ExternalLink,
 } from 'lucide-react';
 import { useIntl } from 'react-intl';
 import type { Item, OutcomeValue } from '@socialprune/core';
 import { useT } from '../i18n/index.ts';
 import styles from './Social.module.css';
+import { originalXLink } from './originalLink.ts';
 
 export function Avatar({
   handle,
@@ -45,6 +47,16 @@ export function PostCard({
   const t = useT(),
     intl = useIntl();
   const handle = item.account.handle ?? item.account.key;
+  const original =
+    item.platform === 'x'
+      ? originalXLink(
+          item.kind === 'reply'
+            ? item.reference.replyToId
+            : item.kind === 'quote'
+              ? item.reference.quotedId
+              : null,
+        )
+      : null;
   const ownReply =
     item.reference.replyToHandle?.replace(/^@/, '').toLowerCase() ===
     handle.replace(/^@/, '').toLowerCase();
@@ -104,6 +116,20 @@ export function PostCard({
               <Quote size={16} aria-hidden="true" />
               <span>{t('proto.quoteNote')}</span>
             </div>
+          )}
+          {original && (
+            <a
+              className={styles.originalLink}
+              href={original}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink size={16} aria-hidden="true" />
+              {t('proto.viewOriginalX')}
+            </a>
+          )}
+          {item.platform === 'instagram' && item.kind === 'comment' && (
+            <p className={styles.hint}>{t('proto.instagramMissingPost')}</p>
           )}
           {!!item.mediaCount && (
             <div className={styles.media}>

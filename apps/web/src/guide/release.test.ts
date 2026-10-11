@@ -10,7 +10,7 @@ test('a release build runs the production manifest gate and rejects unverified g
   expect(guides.length).toBeGreaterThan(0);
   expect(
     checkGuides(guides, {
-      today: '2026-10-08',
+      today: '2026-10-11',
       maxAgeDays: 120,
       release: true,
     }).every(({ code }) => code === 'unverified'),

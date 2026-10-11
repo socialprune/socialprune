@@ -90,6 +90,12 @@ for (const [locale, messages] of [
       await expect(page.locator('html')).toHaveAttribute('lang', locale);
       const view = page.getByTestId('platform-guide');
       await expect(view).toHaveAttribute('data-platform', guide.platform);
+      const stepList = page.getByTestId('guide-steps');
+      for (const [index, fact] of guide.steps.entries()) {
+        await expect(stepList.locator(':scope > li').nth(index)).toHaveText(
+          fact.text[locale],
+        );
+      }
       const expected = [
         guide.startUrl,
         ...guide.steps,
@@ -146,6 +152,28 @@ for (const [locale, messages] of [
         await expect(
           view.getByRole('tab', { name: messages['guide.mobile'] }),
         ).toHaveAttribute('aria-selected', 'true');
+      }
+      await view.getByText(messages['guide.sources'], { exact: true }).click();
+      const sources = view.locator('footer ul');
+      const sourceFacts = [
+        ...expected,
+        ...(guide.paths?.desktop ?? []),
+        ...(guide.paths?.mobile ?? []),
+      ];
+      await expect(sources.locator(':scope > li')).toHaveCount(
+        sourceFacts.length,
+      );
+      for (const [index, fact] of sourceFacts.entries()) {
+        const source =
+          locale === 'de' ? (fact.sourceDe ?? fact.source) : fact.source;
+        const record = sources.locator(':scope > li').nth(index);
+        await expect(record.getByRole('link')).toHaveAttribute(
+          'href',
+          source.url,
+        );
+        await expect(record.locator('p')).toHaveText(
+          messages['guide.retrieved'].replace('{date}', fact.retrievedOn),
+        );
       }
       await view
         .getByRole('combobox', { name: messages['guide.progress'] })

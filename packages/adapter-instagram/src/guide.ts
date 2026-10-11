@@ -1,17 +1,32 @@
 import type { GuideFact, PlatformGuide } from '@socialprune/core/guide/types';
 
-// Public EN and DE help GETs returned HTTP 400 on this date, without a
-// readable page or redirect. Do not infer Accounts Center paths from planning.
+// Public help evidence supplied from read-only research on 2026-10-11.
+// Only English labels were recorded; do not invent German button names.
 const source = {
-  url: 'https://help.instagram.com/181231772500920/',
+  url: 'https://www.facebook.com/help/instagram/181231772500920/',
   publisher: 'Meta',
-  title: 'Page title unavailable (HTTP 400)',
+  title: 'Instagram export help (page title not recorded)',
 };
-const fact = (id: string, en: string, de: string): GuideFact => ({
+const androidSource = {
+  url: 'https://www.facebook.com/help/instagram/android-app/181231772500920',
+  publisher: 'Meta',
+  title: 'Instagram Android export help (page title not recorded)',
+};
+const editsSource = {
+  url: 'https://www.facebook.com/help/instagram/7130835797039956?locale=en_GB',
+  publisher: 'Meta',
+  title: 'Edits export help (page title not recorded)',
+};
+const fact = (
+  id: string,
+  en: string,
+  de: string,
+  factSource = source,
+): GuideFact => ({
   id: `instagram.${id}`,
   text: { en, de },
-  source,
-  retrievedOn: '2026-10-08',
+  source: factSource,
+  retrievedOn: '2026-10-11',
   verifiedOn: null,
 });
 
@@ -19,57 +34,60 @@ export const instagramGuide: PlatformGuide<'instagram'> = {
   platform: 'instagram',
   startUrl: fact(
     'start',
-    'The public Instagram help page returned HTTP 400 when we tried to read it. The export request page and menu path are not confirmed. Open Instagram help yourself for the current instructions.',
-    'Die öffentliche Instagram-Hilfeseite gab beim Leseversuch HTTP 400 zurück. Die Seite zum Anfordern des Exports und der Menüpfad sind nicht bestätigt. Öffne die Instagram-Hilfe selbst für die aktuellen Schritte.',
+    'On a computer, Meta says to click "More" at the bottom left, then "Settings", "Meta Account" and "Your information and permissions". Customize the export options, then click "Start export". Follow these steps yourself in Instagram; SocialPrune does not open or operate the platform.',
+    'Am Computer sollst du laut Meta unten links "More" und dann "Settings", "Meta Account" und "Your information and permissions" anklicken. Passe die Exportoptionen an und klicke auf "Start export". Die zitierten Menü- und Schaltflächennamen stammen aus englischen Hilfeseiten; die deutschen Namen sind noch nicht bestätigt. Führe die Schritte selbst in Instagram aus. SocialPrune öffnet oder bedient die Plattform nicht.',
   ),
   steps: [
     fact(
       'request',
-      'We could not read the English or German instructions. Instagram’s current button names and request steps are missing here; follow the help page in your own browser.',
-      'Wir konnten die englische und die deutsche Anleitung nicht lesen. Die aktuellen Schaltflächennamen und Schritte von Instagram fehlen hier. Folge der Hilfeseite in deinem eigenen Browser.',
+      'On Android, Meta says to tap "Meta Account", "Your information and permissions", "Export your information" and "Create export". Select the profile, tap "Next" and choose "Export to device". Customize the options, then tap "Start export". Meta notes that some accounts still show "Accounts Center" during the rollout.',
+      'Unter Android sollst du laut Meta auf "Meta Account", "Your information and permissions", "Export your information" und "Create export" tippen. Wähle das Profil, tippe auf "Next" und wähle "Export to device". Passe die Optionen an und tippe auf "Start export". Meta weist darauf hin, dass manche Accounts während der Umstellung noch "Accounts Center" anzeigen.',
+      androidSource,
     ),
     fact(
       'delivery',
-      'We have not confirmed how Instagram tells you an export is ready, or whether it can arrive in several parts.',
-      'Wir haben nicht bestätigt, wie Instagram dich über einen fertigen Export informiert oder ob er in mehreren Teilen kommen kann.',
+      'Meta says that an export to your device brings both an email notification and a notification on Instagram when it is ready. The help pages do not state whether the download can have several parts.',
+      'Meta gibt an, dass du bei einem fertigen Export auf dein Gerät sowohl eine E-Mail als auch eine Benachrichtigung in Instagram erhältst. Die Hilfeseiten sagen nicht, ob der Download mehrere Teile haben kann.',
     ),
   ],
   options: [
     fact(
       'format',
-      'SocialPrune needs JSON, not HTML, for Instagram comments. Choose JSON if offered. We could not confirm the current option names from Instagram help.',
-      'SocialPrune braucht JSON statt HTML für Instagram-Kommentare. Wähle JSON, falls es angeboten wird. Die aktuellen Optionsnamen ließen sich in der Instagram-Hilfe nicht bestätigen.',
+      'SocialPrune needs JSON, not HTML, for Instagram comments. Choose JSON if offered. Meta’s Edits export help describes HTML and JSON formats, but that page is not the main Instagram format selector; its current selector values are unconfirmed.',
+      'SocialPrune braucht JSON statt HTML für Instagram-Kommentare. Wähle JSON, falls es angeboten wird. Meta beschreibt HTML und JSON in der Exporthilfe für Edits. Diese Seite ist aber nicht die Formatauswahl des Instagram-Exports; deren aktuelle Auswahlwerte sind nicht bestätigt.',
+      editsSource,
     ),
     fact(
       'range',
-      'For a review of all your old comments, request the whole time range if offered. Instagram’s current option name is not confirmed.',
-      'Für eine Durchsicht aller alten Kommentare brauchst du den gesamten Zeitraum, falls diese Auswahl angeboten wird. Der aktuelle Optionsname von Instagram ist nicht bestätigt.',
+      'Meta says you can select specific information, a date range and the notification email. For a review of all your old comments, include the relevant information and the whole time range. The help page does not name the whole-range option.',
+      'Meta gibt an, dass du bestimmte Informationen, einen Zeitraum und die E-Mail-Adresse für die Benachrichtigung auswählen kannst. Nimm für eine Durchsicht aller alten Kommentare die passenden Informationen und den gesamten Zeitraum auf. Die Hilfeseite nennt keinen Namen für die Auswahl des gesamten Zeitraums.',
     ),
     fact(
       'media',
-      'SocialPrune does not show export media. Choose the lowest media quality if offered; Instagram’s current choices are not confirmed.',
-      'SocialPrune zeigt keine Medien aus dem Export. Wähle die niedrigste Medienqualität, falls sie angeboten wird. Die aktuellen Auswahlmöglichkeiten von Instagram sind nicht bestätigt.',
+      'Meta says the selected information and media quality can change the file size. SocialPrune does not show export media, so choose the lowest media quality if offered. The help page does not name the quality levels.',
+      'Meta gibt an, dass die ausgewählten Informationen und die Medienqualität die Dateigröße beeinflussen. SocialPrune zeigt keine Medien aus dem Export, also wähle die niedrigste Medienqualität, falls sie angeboten wird. Die Hilfeseite nennt keine Qualitätsstufen.',
     ),
   ],
   waiting: {
     ...fact(
       'waiting',
-      'We could not read Meta’s statement about the Instagram waiting time. No duration is confirmed here. The calendar date you choose is a reminder, not an estimate from Meta.',
-      'Wir konnten die Angabe von Meta zur Instagram-Wartezeit nicht lesen. Hier ist keine Dauer bestätigt. Dein gewählter Kalendertermin ist eine Erinnerung, keine Zeitangabe von Meta.',
+      'Meta says it may take up to 30 days to email you an export link. It gives no minimum or typical duration. The calendar date you choose is a reminder, not a promised delivery date.',
+      'Meta gibt an, dass es bis zu 30 Tage dauern kann, bis du einen Exportlink per E-Mail erhältst. Meta nennt keine Mindestdauer oder typische Wartezeit. Dein gewählter Kalendertermin ist eine Erinnerung, kein zugesagter Bereitstellungstermin.',
     ),
     typicalDays: null,
   },
   downloadWindow: {
     ...fact(
       'download-window',
-      'The Instagram download-link expiry could not be confirmed. Check the date shown with your export when it becomes available.',
-      'Die Gültigkeit des Instagram-Downloadlinks ließ sich nicht bestätigen. Prüfe das Datum, das bei deinem fertigen Export steht.',
+      'Meta says that once the export is ready, you have 4 days to download it from "Available downloads" in the "Export your information" tool in "Accounts Center".',
+      'Meta gibt an, dass du nach der Bereitstellung 4 Tage Zeit hast, den Export unter "Available downloads" im Werkzeug "Export your information" in "Accounts Center" herunterzuladen.',
     ),
-    days: null,
+    days: 4,
   },
   htmlExportHint: fact(
     'html',
-    'If SocialPrune identifies an HTML export, request another export in JSON format. The HTML version cannot be read here. Instagram’s current request steps could not be confirmed.',
-    'Wenn SocialPrune einen HTML-Export erkennt, fordere einen neuen Export im JSON-Format an. Die HTML-Version lässt sich hier nicht einlesen. Die aktuellen Schritte von Instagram ließen sich nicht bestätigen.',
+    'If SocialPrune identifies an HTML export, request another export and choose JSON if offered. The HTML version cannot be read here. Meta’s Edits export help mentions both formats, but does not confirm the main Instagram selector’s labels.',
+    'Wenn SocialPrune einen HTML-Export erkennt, fordere einen neuen Export an und wähle JSON, falls es angeboten wird. Die HTML-Version lässt sich hier nicht einlesen. Meta nennt beide Formate in der Exporthilfe für Edits, bestätigt dort aber nicht die Bezeichnungen der Formatauswahl des Instagram-Exports.',
+    editsSource,
   ),
 };

@@ -2,11 +2,11 @@
 
 This is the map for contributors. It describes how SocialPrune is meant to be built from Phase 2 on: which package owns what, which process runs where, how export data moves, and where the trust boundaries are. The reasons behind each choice are in the [decision records](adrs/README.md), and the measurements behind them in [evidence-2026-10.md](evidence-2026-10.md). The visual and interaction design is in [docs/design/README.md](../design/README.md).
 
-Every record this map relies on is `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
+Records 001 to 022, which this map relies on, are `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. On 2026-10-11 the maintainer changed hard constraint 4, so that SocialPrune may act in the person's own account on the person's order; records 023 and 026 to 028 describe how, and are `Proposed`. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
 
 ## What the system does
 
-A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. SocialPrune itself never contacts the platforms.
+A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. In the accepted design SocialPrune itself never contacts the platforms. The proposed records [ADR-023](adrs/ADR-023-acting-in-own-account.md), [ADR-026](adrs/ADR-026-x-originals-fetch.md), [ADR-027](adrs/ADR-027-x-deletion-browser.md) and [ADR-028](adrs/ADR-028-instagram-signed-in-session.md) add, from the CLI only, fetching the originals of the person's replies and deleting their marked entries through a browser session they signed in to.
 
 There are two ways in:
 
@@ -24,7 +24,7 @@ Phase 2 builds the web review, the demo, the CLI workspace commands and the agen
 | 1. Nothing costs money | Static hosting on GitHub Pages ([ADR-019](adrs/ADR-019-pages-deployment.md)); storage in the browser or a local file ([ADR-005](adrs/ADR-005-browser-storage.md), [ADR-015](adrs/ADR-015-cli-storage-node-baseline.md)); free npm trusted publishing ([ADR-018](adrs/ADR-018-cli-distribution.md)) |
 | 2. Local first | `connect-src 'none'` in the page and in every worker that touches export data, and a gate that keeps real data out of workers until that policy is in force ([ADR-004](adrs/ADR-004-content-security-policy.md)); item text reaches an agent only through `batch next --share-with-agent`, which prints what it shares on every call. The flag records the person's consent; it cannot enforce it ([ADR-014](adrs/ADR-014-agent-interface.md)) |
 | 3. A person decides | Decisions are human events in an append-only log ([ADR-006](adrs/ADR-006-workspace-event-log.md)); only the review UI can write them, enforced by package structure ([ADR-017](adrs/ADR-017-shared-workspace-service.md)); the local review token stays off stdout, off every JSON document, log and error, and off stderr when stderr is not a terminal. It can still reach a pseudo-terminal or the browser's process arguments, which [ADR-016](adrs/ADR-016-local-review-server.md) lists as risks for the maintainer to decide on |
-| 4. Nothing acts on the platform | No code requests X or Instagram, not even their images ([ADR-021](adrs/ADR-021-archive-media.md)) or help pages ([ADR-022](adrs/ADR-022-export-guide-content.md)); the click list is instructions for a person |
+| 4. The tool acts on the platform only in the person's own account, only on the person's order (changed on 2026-10-11) | The web app and the review load nothing from the platforms, not even their images ([ADR-021](adrs/ADR-021-archive-media.md)), and the guide facts are read by a person ([ADR-022](adrs/ADR-022-export-guide-content.md)); the click list is instructions for a person. The proposed rules for the two allowed actions, fetching originals and deleting through a signed-in session, are in [ADR-023](adrs/ADR-023-acting-in-own-account.md) |
 | 5. No promises | Copy rules and the forbidden-word check in the catalogs ([ADR-011](adrs/ADR-011-internationalization.md), [design specification](../design/README.md#content-rules)); demo suggestions say what they are ([ADR-020](adrs/ADR-020-demo-suggestions.md)) |
 | 6. No real data in the repository | Demo and tests use generated exports from `fixtures/synthetic/`; the data guard blocks export signatures |
 
@@ -164,7 +164,7 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 
 ## Decision records
 
-All accepted; see the [index](adrs/README.md) for status and the maintainer's decisions.
+001 to 022 accepted, 023 and 026 to 028 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
 
 | ADR | Decision |
 |---|---|
@@ -190,3 +190,7 @@ All accepted; see the [index](adrs/README.md) for status and the maintainer's de
 | [020](adrs/ADR-020-demo-suggestions.md) | Hand-written example suggestions with source kind `fixture`, demo only |
 | [021](adrs/ADR-021-archive-media.md) | Media count shown, media not displayed |
 | [022](adrs/ADR-022-export-guide-content.md) | Guide facts with sources and dates, re-read by a person before each release |
+| [023](adrs/ADR-023-acting-in-own-account.md) | Proposed: two actions in the person's own account, on their order; rules PA-1 to PA-16; dedicated browser profile; nothing hidden |
+| [026](adrs/ADR-026-x-originals-fetch.md) | Proposed: originals of replies and quotes from X's public embed service, one request per second, stored in the workspace |
+| [027](adrs/ADR-027-x-deletion-browser.md) | Proposed: deletion on X by driving X's own pages in the dedicated profile; journal, one entry first, slow, schema version 3 |
+| [028](adrs/ADR-028-instagram-signed-in-session.md) | Proposed: Instagram context and deletion through the "Your Activity" view, gated by spike S5 |

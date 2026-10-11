@@ -2,9 +2,9 @@
 
 Each record states one decision, the options it was weighed against, the evidence that decided it and what it costs. [ADR-001](ADR-001-decision-records.md) sets the format and the rule for changing a record: once accepted, a record changes only through a new record that supersedes it. Shared measurement tables are in [evidence-2026-10.md](../evidence-2026-10.md). The overview of how the pieces fit is in [docs/architecture/README.md](../README.md).
 
-The maintainer accepted all records below on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made on 2026-10-08 where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance".
+The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance". Records 023, 026, 027 and 028 are `Proposed`: they follow his change of hard constraint 4 on 2026-10-11 and wait for his approval.
 
-| ADR | Title | Status | Date | Decided by the maintainer on 2026-10-08 |
+| ADR | Title | Status | Date | Decided by the maintainer |
 |---|---|---|---|---|
 | [001](ADR-001-decision-records.md) | Decision records and supersession | Accepted | 2026-10-06 | |
 | [002](ADR-002-dependency-licenses.md) | Dependency license policy | Accepted | 2026-10-06 | |
@@ -28,6 +28,12 @@ The maintainer accepted all records below on 2026-10-09, so their status is `Acc
 | [020](ADR-020-demo-suggestions.md) | Demo data and honest example suggestions | Accepted | 2026-10-06 | |
 | [021](ADR-021-archive-media.md) | Archive media is not shown in Phase 2 | Accepted | 2026-10-06 | |
 | [022](ADR-022-export-guide-content.md) | Export guide content as verified, dated data | Accepted | 2026-10-06 | agents prepare the guide facts from the public help pages; the maintainer checks each one before a release |
+| [023](ADR-023-acting-in-own-account.md) | The tool acts in the person's own account, on the person's order | Proposed | 2026-10-11 | on 2026-10-11: hard constraint 4 changes; fetch originals and delete through a signed-in session; no paid API |
+| 024 | not in the repository | | | a draft for deleting through X's paid developer API, rejected by the maintainer on 2026-10-11 because it can cost money; the number is not reused |
+| 025 | reserved | | | a draft "the review session survives a reload", kept outside the repository until the maintainer decides on it; it would supersede ADR-016 |
+| [026](ADR-026-x-originals-fetch.md) | Fetching the originals of the person's replies and quotes on X | Proposed | 2026-10-11 | on 2026-10-11: fetch the originals |
+| [027](ADR-027-x-deletion-browser.md) | Deleting the person's own X entries through their signed-in browser session | Proposed | 2026-10-11 | on 2026-10-11: automated deletion on X, account risk accepted |
+| [028](ADR-028-instagram-signed-in-session.md) | Instagram: context and deletion through the person's signed-in session | Proposed | 2026-10-11 | on 2026-10-11: read context and delete through his signed-in session; gated by spike S5 |
 
 ## Earlier choices these records replace
 

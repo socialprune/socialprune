@@ -198,6 +198,10 @@ One undecided entry at a time, strongest current suggested risk first and newest
 
 Progress is decided entries out of the account total, not out of the visible risk filter. **Mark suggested entries** uses the existing frozen preview and explicit confirmation; no extra protocol or automatic decision is introduced. A link in the menu opens the list for filters, history, postponed entries and selection.
 
+**One at a time / All** switches to a scrolling feed of the account's undecided current Medium or High suggestions. The default order is risk, likes, then date, descending; a stored non-default sort and the existing filter/search state are respected and changes use `setReviewView`. Decisions use the same human review service. Cards stay dimmed in place until the feed is rebuilt so scroll position and focus do not jump; its sticky header counts decisions within that feed session. Large feeds virtualize card rendering. View mode itself stays in component state because the current stored review schema has no mode field.
+
+Core owns the popularity rule for own X entries without reposts and with known likes: the lowest like count in the highest `ceil(n / 10)` entries, at least three. Ties are included; other accounts, unknown likes and Instagram do not qualify. The web uses the same core functions for its star badge and threshold. **Mark suggested entries** freezes the popular IDs and skips them in preview and confirmation, including when the overwrite checkbox is selected. The dialog states the exact skipped count, not a count derived from its twenty samples. An explicit single-entry decision or an ordinary bulk decision still belongs to the person and is not silently blocked. The overview offers **Only popular undecided entries** and shows how many still wait. Confirmation rejects a changed popularity set rather than applying a stale cutoff.
+
 ### List review (`#/review/list`)
 
 - **No suggestions:** the list sorts by date, newest first, and an empty-state line in the detail region explains that suggestions are optional and how an agent can add them.

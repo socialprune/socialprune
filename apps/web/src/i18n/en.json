@@ -392,5 +392,19 @@
   "originals.photosMissing": "Some photos are missing from this workspace.",
   "originals.notFound": "The original was not found when fetched.",
   "originals.tombstone": "X reported the original as private or withheld when fetched.",
-  "originals.failed": "The original could not be fetched."
+  "originals.failed": "The original could not be fetched.",
+  "feed.mode": "View",
+  "feed.single": "One at a time",
+  "feed.all": "All",
+  "feed.title": "Review suggestions",
+  "feed.progress": "{count, number} of {total, number} decided",
+  "feed.popular": "popular with you · {count, number}",
+  "feed.threshold": "from {count, number} likes",
+  "feed.bulkPopular": "{count, number} popular {count, plural, one {entry is} other {entries are}} left out. Decide on them one by one.",
+  "feed.waiting": "{count, number} popular {count, plural, one {entry still waits} other {entries still wait}}",
+  "feed.onlyPopular": "Only popular undecided entries",
+  "feed.onlySuggestions": "Undecided Medium or High suggestions. Decided cards stay dimmed.",
+  "feed.card": "Suggestion {index, number} of {total, number}",
+  "feed.riskLikes": "Risk, likes, date",
+  "feed.reposts": "Reposts"
 }

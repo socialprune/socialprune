@@ -42,6 +42,61 @@ function setup() {
   });
   return { store, query, review };
 }
+
+test('suggestion skip uses the entire own account rather than a selected low-like window', async () => {
+  const data = selectionWorkspace();
+  data.items.slice(0, 10).forEach((item, index) => {
+    item.engagement = {
+      ...item.engagement,
+      likes: index === 9 ? 40 : index === 0 ? 3 : 0,
+    };
+  });
+  const store = createMemoryStore(new MemoryStoreBacking(data));
+  const query = new QueryEngine(store);
+  const review = new ReviewService(store, { query, via: 'web-review' });
+  try {
+    await query.query({
+      queryId: 'selection-query',
+      generation: 1,
+      accountKey: 'x:contract',
+    });
+    const low = await review.previewBulk({
+      pageId: 'page',
+      previewId: 'low',
+      queryId: 'selection-query',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided'],
+      itemIds: ['x:1'],
+      skipPopular: true,
+    });
+    expect(low).toMatchObject({ willChange: 1, skippedPopular: 0 });
+    const high = await review.previewBulk({
+      pageId: 'page',
+      previewId: 'high',
+      queryId: 'selection-query',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided'],
+      itemIds: ['x:10', 'x:1'],
+      skipPopular: true,
+    });
+    expect(high).toMatchObject({ willChange: 1, skippedPopular: 1 });
+    expect(
+      await review.confirmBulk({
+        commandId: 'selected-popular',
+        pageId: 'page',
+        previewId: 'high',
+      }),
+    ).toMatchObject({ type: 'committed', changed: 1 });
+    const workspace = await store.read(readWorkspace);
+    expect(workspace.decisionEvents.map((event) => event.itemId)).toEqual([
+      'x:1',
+    ]);
+  } finally {
+    await store.close();
+  }
+});
 function request(itemIds?: string[]) {
   return {
     requestId: 'selection-request',

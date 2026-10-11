@@ -8,6 +8,7 @@ import {
   Pause,
   Undo2,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import type { DecisionValue } from '@socialprune/core';
 import type {
@@ -26,6 +27,9 @@ import { categoryID, riskMessage } from './model.ts';
 import { BulkDialog } from './BulkDialog.tsx';
 import { deriveState } from '@socialprune/core/workspace/state';
 import styles from '../social/Social.module.css';
+import { Overview, ReviewModes } from './Overview.tsx';
+import overviewStyles from './Overview.module.css';
+import { usePopularity } from './usePopularity.ts';
 
 const riskSort: QuerySort = [
   { by: 'risk', direction: 'desc' },
@@ -42,6 +46,7 @@ export function CardReview({ client }: { client: WorkspaceClient }) {
       '',
   );
   const [riskOnly, setRiskOnly] = useState(false);
+  const [mode, setMode] = useState<'single' | 'all'>('single');
   const [position, setPosition] = useState(0);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Counts | null>(null);
@@ -70,13 +75,20 @@ export function CardReview({ client }: { client: WorkspaceClient }) {
   const account = summary?.accounts.find((entry) => entry.key === accountKey);
   const zone =
     summary?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const popularity = usePopularity(
+    client,
+    accountKey,
+    summary?.workspaceId,
+    summary?.counts.items,
+  );
+  const emptyPopular = useRef(new Set<string>());
 
   useEffect(() => {
     if (!accountKey && summary?.accounts[0])
       setAccountKey(summary.accounts[0].key);
   }, [summary, accountKey]);
   useEffect(() => {
-    if (!accountKey) return;
+    if (!accountKey || mode === 'all') return;
     let active = true;
     const version = ++generation.current;
     setLoading(true);
@@ -140,7 +152,7 @@ export function CardReview({ client }: { client: WorkspaceClient }) {
     return () => {
       active = false;
     };
-  }, [client, accountKey, riskOnly, position, revision, refresh]);
+  }, [client, accountKey, riskOnly, position, revision, refresh, mode]);
   useEffect(() => {
     if (!loading && focusAfter.current) {
       card.current?.focus();
@@ -278,6 +290,7 @@ export function CardReview({ client }: { client: WorkspaceClient }) {
         queryId: nextQuery,
         generation: 1,
         value: 'delete',
+        skipPopular: true,
         overwrite: includeKept
           ? ['undecided', 'later', 'keep', 'delete']
           : ['undecided', 'later'],
@@ -358,238 +371,274 @@ export function CardReview({ client }: { client: WorkspaceClient }) {
   const completed = all - (counts?.decisions.undecided ?? 0);
   return (
     <section data-testid="card-review">
-      <div className={styles.layout}>
-        <div className={styles.column}>
-          <div className={styles.controls}>
-            <label className={styles.field}>
-              {t('review.account')}
-              <select
-                value={accountKey}
-                onChange={(e) => {
-                  setAccountKey(e.target.value);
-                  setPosition(0);
-                  setNotice(null);
-                }}
-              >
-                {summary?.accounts.map((entry) => (
-                  <option key={entry.key} value={entry.key}>
-                    @{entry.handle ?? entry.key}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              {t('proto.reviewQueue')}
-              <select
-                value={riskOnly ? 'risk' : 'all'}
-                onChange={(e) => {
-                  setRiskOnly(e.target.value === 'risk');
-                  setPosition(0);
-                }}
-              >
-                <option value="all">{t('proto.unreviewed')}</option>
-                <option value="risk">{t('proto.riskyOnly')}</option>
-              </select>
-            </label>
-          </div>
-          <div className={styles.progressLine}>
-            <strong>
-              {t('proto.progress', { count: completed, total: all })}
-            </strong>
-            <span>{t('proto.riskFirst')}</span>
-          </div>
-          <progress
-            className={styles.progress}
-            aria-label={t('review.title')}
-            value={completed}
-            max={Math.max(all, 1)}
-          />
-          <div
-            ref={card}
-            tabIndex={0}
-            role="region"
-            aria-label={t('proto.cardKeys')}
-            data-testid="review-card"
-            onKeyDown={(event) => {
-              if (
-                event.target !== event.currentTarget ||
-                event.repeat ||
-                event.altKey ||
-                event.metaKey ||
-                event.ctrlKey ||
-                bulkOpen ||
-                localStorage.getItem('sp-single-keys') === 'off'
-              )
-                return;
-              const key = event.key.toLowerCase();
-              const action = ({ j: 'delete', k: 'keep', l: 'later' } as const)[
-                key as 'j'
-              ];
-              if (action) {
-                event.preventDefault();
-                void decide(action);
-              }
-              if (key === 'u') {
-                event.preventDefault();
-                void undo();
-              }
-            }}
-          >
-            <div className={styles.card}>
-              {detail && row ? (
-                <>
-                  <PostCard item={detail.item} zone={zone} />
-                  <div className={styles.suggestion}>
-                    {current ? (
-                      <>
-                        <div className={styles.suggestionHeader}>
-                          <span
-                            className={styles.chip}
-                            data-risk={current.risk}
-                          >
-                            {t(riskMessage[current.risk] ?? 'review.riskNone')}
-                          </span>
-                          <strong>{t(categoryID(current.category))}</strong>
-                          <span className={styles.source}>{sourceText}</span>
-                        </div>
-                        <p>{current.reason}</p>
-                      </>
+      {mode === 'single' && (
+        <div className={overviewStyles.singleModes}>
+          <ReviewModes mode={mode} onChange={setMode} />
+        </div>
+      )}
+      {mode === 'all' ? (
+        <Overview
+          client={client}
+          summary={summary}
+          revision={revision}
+          accountKey={accountKey}
+          onAccount={(key) => {
+            cancelBulk();
+            setAccountKey(key);
+            setPosition(0);
+          }}
+          onSingle={() => setMode('single')}
+          onBulk={() => {
+            void prepareBulk();
+          }}
+          popular={popularity?.ids ?? emptyPopular.current}
+          threshold={popularity?.threshold ?? null}
+          popularityError={popularity?.error ?? false}
+        />
+      ) : (
+        <div className={styles.layout}>
+          <div className={styles.column}>
+            <div className={styles.controls}>
+              <label className={styles.field}>
+                {t('review.account')}
+                <select
+                  value={accountKey}
+                  onChange={(e) => {
+                    setAccountKey(e.target.value);
+                    setPosition(0);
+                    setNotice(null);
+                  }}
+                >
+                  {summary?.accounts.map((entry) => (
+                    <option key={entry.key} value={entry.key}>
+                      @{entry.handle ?? entry.key}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                {t('proto.reviewQueue')}
+                <select
+                  value={riskOnly ? 'risk' : 'all'}
+                  onChange={(e) => {
+                    setRiskOnly(e.target.value === 'risk');
+                    setPosition(0);
+                  }}
+                >
+                  <option value="all">{t('proto.unreviewed')}</option>
+                  <option value="risk">{t('proto.riskyOnly')}</option>
+                </select>
+              </label>
+            </div>
+            <div className={styles.progressLine}>
+              <strong>
+                {t('proto.progress', { count: completed, total: all })}
+              </strong>
+              <span>{t('proto.riskFirst')}</span>
+            </div>
+            <progress
+              className={styles.progress}
+              aria-label={t('review.title')}
+              value={completed}
+              max={Math.max(all, 1)}
+            />
+            <div
+              ref={card}
+              tabIndex={0}
+              role="region"
+              aria-label={t('proto.cardKeys')}
+              data-testid="review-card"
+              onKeyDown={(event) => {
+                if (
+                  event.target !== event.currentTarget ||
+                  event.repeat ||
+                  event.altKey ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  bulkOpen ||
+                  localStorage.getItem('sp-single-keys') === 'off'
+                )
+                  return;
+                const key = event.key.toLowerCase();
+                const action = (
+                  { j: 'delete', k: 'keep', l: 'later' } as const
+                )[key as 'j'];
+                if (action) {
+                  event.preventDefault();
+                  void decide(action);
+                }
+                if (key === 'u') {
+                  event.preventDefault();
+                  void undo();
+                }
+              }}
+            >
+              <div className={styles.card}>
+                {detail && row ? (
+                  <>
+                    <PostCard item={detail.item} zone={zone} />
+                    {popularity?.ids.has(detail.item.id) && (
+                      <span className={overviewStyles.popular}>
+                        <Star size={16} aria-hidden="true" />
+                        {t('feed.popular', {
+                          count: detail.item.engagement.likes ?? 0,
+                        })}
+                      </span>
+                    )}
+                    <div className={styles.suggestion}>
+                      {current ? (
+                        <>
+                          <div className={styles.suggestionHeader}>
+                            <span
+                              className={styles.chip}
+                              data-risk={current.risk}
+                            >
+                              {t(
+                                riskMessage[current.risk] ?? 'review.riskNone',
+                              )}
+                            </span>
+                            <strong>{t(categoryID(current.category))}</strong>
+                            <span className={styles.source}>{sourceText}</span>
+                          </div>
+                          <p>{current.reason}</p>
+                        </>
+                      ) : (
+                        <p>{t('review.noSuggestions')}</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.empty}>
+                    {loading ? (
+                      t('gate.preparing')
                     ) : (
-                      <p>{t('review.noSuggestions')}</p>
+                      <>
+                        <CheckCircle2 size={36} aria-hidden="true" />
+                        <h2>{t('proto.queueDone')}</h2>
+                        <p>{t('proto.queueDoneBody')}</p>
+                        <a href="#/archive">{t('proto.archiveTitle')}</a>
+                      </>
                     )}
                   </div>
-                </>
-              ) : (
-                <div className={styles.empty}>
-                  {loading ? (
-                    t('gate.preparing')
-                  ) : (
-                    <>
-                      <CheckCircle2 size={36} aria-hidden="true" />
-                      <h2>{t('proto.queueDone')}</h2>
-                      <p>{t('proto.queueDoneBody')}</p>
-                      <a href="#/archive">{t('proto.archiveTitle')}</a>
-                    </>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
+              <div className={styles.decisions}>
+                <button
+                  className={styles.keep}
+                  disabled={busy || loading || !detail}
+                  onClick={() => {
+                    void decide('keep');
+                  }}
+                >
+                  <Check size={20} aria-hidden="true" />
+                  {t('review.keep')}
+                  <kbd className={styles.key}>K</kbd>
+                </button>
+                <button
+                  className={styles.delete}
+                  aria-describedby="card-delete-help"
+                  disabled={busy || loading || !detail}
+                  onClick={() => {
+                    void decide('delete');
+                  }}
+                >
+                  <Trash2 size={20} aria-hidden="true" />
+                  {t('proto.delete')}
+                  <kbd className={styles.key}>J</kbd>
+                </button>
+                <button
+                  className={styles.quiet}
+                  disabled={busy || loading || !detail}
+                  onClick={() => {
+                    void decide('later');
+                  }}
+                >
+                  <Pause size={20} aria-hidden="true" />
+                  {t('review.later')}
+                  <kbd className={styles.key}>L</kbd>
+                </button>
+              </div>
             </div>
-            <div className={styles.decisions}>
-              <button
-                className={styles.keep}
-                disabled={busy || loading || !detail}
-                onClick={() => {
-                  void decide('keep');
-                }}
-              >
-                <Check size={20} aria-hidden="true" />
-                {t('review.keep')}
-                <kbd className={styles.key}>K</kbd>
-              </button>
-              <button
-                className={styles.delete}
-                aria-describedby="card-delete-help"
-                disabled={busy || loading || !detail}
-                onClick={() => {
-                  void decide('delete');
-                }}
-              >
-                <Trash2 size={20} aria-hidden="true" />
-                {t('proto.delete')}
-                <kbd className={styles.key}>J</kbd>
-              </button>
-              <button
-                className={styles.quiet}
-                disabled={busy || loading || !detail}
-                onClick={() => {
-                  void decide('later');
-                }}
-              >
-                <Pause size={20} aria-hidden="true" />
-                {t('review.later')}
-                <kbd className={styles.key}>L</kbd>
-              </button>
-            </div>
-          </div>
-          <div className={styles.smallActions}>
-            <button
-              className={styles.textButton}
-              disabled={busy}
-              onClick={() => {
-                void undo();
-              }}
-            >
-              <Undo2 size={16} aria-hidden="true" />
-              {t('review.undo')}
-              <kbd className={styles.key}>U</kbd>
-            </button>
-            <span className={styles.hint}>
-              {t('proto.remaining', { count: total })}
-            </span>
-            <div>
-              <button
-                className={styles.textButton}
-                aria-label={t('proto.previousCard')}
-                disabled={!position || loading}
-                onClick={() => setPosition((n) => n - 1)}
-              >
-                <ArrowLeft size={18} aria-hidden="true" />
-              </button>
-              <button
-                className={styles.textButton}
-                aria-label={t('proto.nextCard')}
-                disabled={position + 1 >= total || loading}
-                onClick={() => setPosition((n) => n + 1)}
-              >
-                <ArrowRight size={18} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <p className={styles.hint}>
-            {t('proto.cardKeysShort')}
-            <span id="card-delete-help" className={styles.srOnly}>
-              {t('proto.deleteHelp')}
-            </span>
-          </p>
-          <p className={styles.notice} role="status">
-            {notice ?? t('review.saved')}
-          </p>
-          {(error || openError) && (
-            <p className={styles.error} role="alert">
-              {t('workspace.storageError')}
-            </p>
-          )}
-        </div>
-        <aside className={styles.side}>
-          <div className={styles.panel}>
-            <h2>{t('proto.bulkHeading')}</h2>
-            <button
-              className={styles.primary}
-              disabled={!accountKey || busy || loading}
-              onClick={() => {
-                void prepareBulk();
-              }}
-            >
-              <Sparkles size={18} aria-hidden="true" />
-              {t('bulk.markSuggested')}
-            </button>
-          </div>
-          <div className={styles.panel}>
             <div className={styles.smallActions}>
-              <a href="#/archive">{t('proto.archiveTitle')}</a>
+              <button
+                className={styles.textButton}
+                disabled={busy}
+                onClick={() => {
+                  void undo();
+                }}
+              >
+                <Undo2 size={16} aria-hidden="true" />
+                {t('review.undo')}
+                <kbd className={styles.key}>U</kbd>
+              </button>
+              <span className={styles.hint}>
+                {t('proto.remaining', { count: total })}
+              </span>
+              <div>
+                <button
+                  className={styles.textButton}
+                  aria-label={t('proto.previousCard')}
+                  disabled={!position || loading}
+                  onClick={() => setPosition((n) => n - 1)}
+                >
+                  <ArrowLeft size={18} aria-hidden="true" />
+                </button>
+                <button
+                  className={styles.textButton}
+                  aria-label={t('proto.nextCard')}
+                  disabled={position + 1 >= total || loading}
+                  onClick={() => setPosition((n) => n + 1)}
+                >
+                  <ArrowRight size={18} aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <a
-              href={
-                accountKey.startsWith('instagram:')
-                  ? '#/clicklist/instagram/go'
-                  : '#/clicklist/x/go'
-              }
-            >
-              {t('proto.goTitle')}
-            </a>
+            <p className={styles.hint}>
+              {t('proto.cardKeysShort')}
+              <span id="card-delete-help" className={styles.srOnly}>
+                {t('proto.deleteHelp')}
+              </span>
+            </p>
+            <p className={styles.notice} role="status">
+              {notice ?? t('review.saved')}
+            </p>
+            {(error || openError) && (
+              <p className={styles.error} role="alert">
+                {t('workspace.storageError')}
+              </p>
+            )}
           </div>
-        </aside>
-      </div>
+          <aside className={styles.side}>
+            <div className={styles.panel}>
+              <h2>{t('proto.bulkHeading')}</h2>
+              <button
+                className={styles.primary}
+                disabled={!accountKey || busy || loading}
+                onClick={() => {
+                  void prepareBulk();
+                }}
+              >
+                <Sparkles size={18} aria-hidden="true" />
+                {t('bulk.markSuggested')}
+              </button>
+            </div>
+            <div className={styles.panel}>
+              <div className={styles.smallActions}>
+                <a href="#/archive">{t('proto.archiveTitle')}</a>
+              </div>
+              <a
+                href={
+                  accountKey.startsWith('instagram:')
+                    ? '#/clicklist/instagram/go'
+                    : '#/clicklist/x/go'
+                }
+              >
+                {t('proto.goTitle')}
+              </a>
+            </div>
+          </aside>
+        </div>
+      )}
       <BulkDialog
         open={bulkOpen}
         preview={preview}

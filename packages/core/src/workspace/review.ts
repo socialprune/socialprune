@@ -15,6 +15,8 @@ import type { ReviewQuery, ReviewProjectionChange } from './query.ts';
 import type { BulkPreview } from './protocol.ts';
 import { PreviewBulkRequestSchema } from './protocol.ts';
 import { records } from './store.ts';
+import { popularIds } from './popular.ts';
+import type { ReadTransaction } from './store.ts';
 import type {
   ReviewCommandResult,
   StoredState,
@@ -27,6 +29,35 @@ interface FrozenPreview {
   payload: BulkPreview;
   expected: Map<string, DecisionValue>;
   ids: string[];
+  popular: Set<string>;
+}
+
+async function frozenPopular(
+  tx: ReadTransaction,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  const accounts = new Set<string>();
+  for (const id of ids) {
+    const stored = await tx.items.get(id);
+    if (!stored) throw new WorkspaceError('UNKNOWN_ITEM');
+    accounts.add(stored.item.account.key);
+  }
+  const incomplete = new Set(
+    (await records(tx.imports))
+      .filter((record) => record.status === 'incomplete')
+      .map((record) => record.id),
+  );
+  const items = (await records(tx.items))
+    .filter(
+      (record) =>
+        accounts.has(record.item.account.key) &&
+        (!record.importId || !incomplete.has(record.importId)),
+    )
+    .map((record) => record.item);
+  const result = new Set<string>();
+  for (const account of accounts)
+    for (const id of popularIds(items, account)) result.add(id);
+  return new Set(ids.filter((id) => result.has(id)));
 }
 interface CommandInput {
   commandId: string;
@@ -292,12 +323,15 @@ export class ReviewService {
     value: DecisionValue;
     overwrite: DecisionValue[];
     itemIds?: string[];
+    skipPopular?: true;
   }): Promise<BulkPreview> {
     if (
       !input.pageId ||
       !input.previewId ||
       !DecisionValueSchema.safeParse(input.value).success ||
       !input.overwrite.length ||
+      (input.skipPopular !== undefined &&
+        (input.skipPopular !== true || input.value !== 'delete')) ||
       input.overwrite.some(
         (value) => !DecisionValueSchema.safeParse(value).success,
       )
@@ -320,6 +354,9 @@ export class ReviewService {
       if (runtime.revision !== selection.revision)
         throw new WorkspaceError('STALE_PREVIEW');
       const expected = new Map<string, DecisionValue>();
+      const popular = input.skipPopular
+        ? await frozenPopular(tx, frozenIds)
+        : new Set<string>();
       const byCurrentValue = { keep: 0, delete: 0, later: 0, undecided: 0 };
       const sample = [];
       const sampleIds = new Set(frozenIds.slice(0, 20));
@@ -336,6 +373,7 @@ export class ReviewService {
         sampleAssessments.set(assessment.itemId, sources);
       }
       let willChange = 0;
+      let skippedPopular = 0;
       for (const id of frozenIds) {
         const stored = await tx.items.get(id);
         if (!stored) throw new WorkspaceError('UNKNOWN_ITEM');
@@ -349,8 +387,10 @@ export class ReviewService {
         if (
           input.overwrite.includes(state.decision) &&
           state.decision !== input.value
-        )
-          willChange++;
+        ) {
+          if (popular.has(id)) skippedPopular++;
+          else willChange++;
+        }
         if (sample.length < 20)
           sample.push(
             reviewRow(
@@ -366,6 +406,8 @@ export class ReviewService {
         byCurrentValue,
         sample,
         willChange,
+        skippedPopular,
+        popular,
         revision: runtime.revision,
       };
     });
@@ -382,6 +424,7 @@ export class ReviewService {
       total: frozenIds.length,
       unchanged: frozenIds.length - frozen.willChange,
       willChange: frozen.willChange,
+      ...(input.skipPopular ? { skippedPopular: frozen.skippedPopular } : {}),
       byCurrentValue: frozen.byCurrentValue,
       sample: frozen.sample,
       revision: frozen.revision,
@@ -400,6 +443,7 @@ export class ReviewService {
       payload,
       expected: frozen.expected,
       ids: [...frozenIds],
+      popular: frozen.popular,
     });
     return structuredClone(payload);
   }
@@ -442,8 +486,18 @@ export class ReviewService {
         }
         if (changedSince)
           return this.rejected(input.commandId, 'STALE_PREVIEW', changedSince);
+        if (preview.payload.skipPopular) {
+          const currentPopular = await frozenPopular(tx, preview.ids);
+          if (
+            preview.ids.some(
+              (id) => currentPopular.has(id) !== preview.popular.has(id),
+            )
+          )
+            return this.rejected(input.commandId, 'STALE_PREVIEW');
+        }
         const ids = preview.ids.filter(
           (id) =>
+            !preview.popular.has(id) &&
             preview.payload.overwrite.includes(states.get(id)!.decision) &&
             states.get(id)!.decision !== preview.payload.value,
         );

@@ -67,6 +67,11 @@ export function BulkDialog(props: BulkDialogProps) {
                 </p>
               )}
               <p>{t('bulk.counts', { count, unchanged: preview.unchanged })}</p>
+              {!!preview.skippedPopular && (
+                <p data-testid="bulk-popular-count">
+                  {t('feed.bulkPopular', { count: preview.skippedPopular })}
+                </p>
+              )}
               <ul>
                 {(['undecided', 'later', 'keep', 'delete'] as const).map(
                   (value) => (

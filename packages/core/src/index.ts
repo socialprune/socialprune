@@ -5,3 +5,4 @@ export * from './json/index.ts';
 export * from './adapter/index.ts';
 export * from './import/index.ts';
 export * from './structure/index.ts';
+export * from './workspace/popular.ts';

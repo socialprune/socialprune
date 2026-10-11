@@ -392,5 +392,19 @@
   "originals.photosMissing": "Nicht alle Fotos sind in diesem Arbeitsbereich vorhanden.",
   "originals.notFound": "Beim Abruf wurde das Original nicht gefunden.",
   "originals.tombstone": "X hat das Original beim Abruf als privat oder zurückgehalten gemeldet.",
-  "originals.failed": "Das Original konnte nicht abgerufen werden."
+  "originals.failed": "Das Original konnte nicht abgerufen werden.",
+  "feed.mode": "Ansicht",
+  "feed.single": "Einzeln",
+  "feed.all": "Alle",
+  "feed.title": "Vorschläge durchsehen",
+  "feed.progress": "{count, number} von {total, number} entschieden",
+  "feed.popular": "beliebt bei dir · {count, number}",
+  "feed.threshold": "ab {count, number} Gefällt mir",
+  "feed.bulkPopular": "{count, number} {count, plural, one {beliebter Eintrag bleibt} other {beliebte Einträge bleiben}} ausgenommen. Entscheide sie einzeln.",
+  "feed.waiting": "{count, number} {count, plural, one {beliebter Eintrag wartet} other {beliebte Einträge warten}} noch",
+  "feed.onlyPopular": "Nur beliebte offene Einträge",
+  "feed.onlySuggestions": "Offene Vorschläge mit Risiko Mittel oder Hoch. Entschiedene Karten bleiben gedimmt.",
+  "feed.card": "Vorschlag {index, number} von {total, number}",
+  "feed.riskLikes": "Risiko, Gefällt mir, Datum",
+  "feed.reposts": "Reposts"
 }

@@ -94,6 +94,8 @@ export function Review({ client }: { client: WorkspaceClient }) {
   );
   const { filter, sort, search } = view;
   const accountKey = view.accountKey ?? '';
+  const [loaded, setLoaded] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const viewChanged = useRef(false);
   const viewRef = useRef(view);
   const [total, setTotal] = useState(0);
@@ -109,7 +111,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const [queryCounts, setQueryCounts] = useState<
     Extract<WorkspaceReply, { type: 'queryResult' }>['counts'] | null
   >(null);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<BulkPreview | null>(null);
   const [bulkValue, setBulkValue] = useState<DecisionValue>('delete');
   const [bulkOverwrite, setBulkOverwrite] = useState(false);
@@ -146,7 +147,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
     () => localStorage.getItem('sp-review-tip') !== 'off',
   );
   const [revision, setRevision] = useState(0);
-  const [loaded, setLoaded] = useState(false);
   const queryId = useRef(nextId());
   const pageId = useRef(nextId());
   const previewId = useRef<string | null>(null);
@@ -545,6 +545,9 @@ export function Review({ client }: { client: WorkspaceClient }) {
         queryId: bulkQueryId.current,
         generation: queryGeneration,
         value,
+        ...(suggested || (replacement !== null && bulkSuggested)
+          ? { skipPopular: true as const }
+          : {}),
         overwrite: overwrite
           ? ['undecided', 'later', 'keep', 'delete']
           : ['undecided', 'later'],
@@ -559,8 +562,9 @@ export function Review({ client }: { client: WorkspaceClient }) {
         });
         return;
       }
-      if (reply.type === 'bulkPreview') setBulkPreview(reply);
-      else setError(t('review.storageError'));
+      if (reply.type === 'bulkPreview') {
+        setBulkPreview(reply);
+      } else setError(t('review.storageError'));
     } catch {
       setError(t('review.storageError'));
     } finally {

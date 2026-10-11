@@ -106,12 +106,14 @@
   }
   .backdrop {
     position: fixed;
+    z-index: 30;
     inset: 0;
     background: var(--color-text);
     opacity: 0.4;
   }
   .dialog {
     position: fixed;
+    z-index: 31;
     inset: var(--space-4);
     margin: auto;
     height: fit-content;

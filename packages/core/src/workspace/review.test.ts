@@ -5,6 +5,7 @@ import { readWorkspace } from './store.ts';
 import type { WorkspaceStore } from './store.ts';
 import { ReviewService } from './review.ts';
 import type { ReviewQuery } from './query.ts';
+import { QueryEngine } from './query.ts';
 
 function setup() {
   const initial = contractWorkspace();
@@ -46,6 +47,180 @@ function setup() {
     },
   };
 }
+
+function popularWorkspace() {
+  const data = contractWorkspace();
+  const likes = [...Array<number>(16).fill(0), 3, 5, 8, 13];
+  data.items = likes.map((count, index) => ({
+    ...structuredClone(data.items[0]!),
+    id: `x:popular-${index}`,
+    engagement: { likes: count, reposts: 0 },
+    account: { key: 'x:popular', handle: 'generated_popular' },
+    kind: 'post' as const,
+  }));
+  data.counts.items = 20;
+  return data;
+}
+
+test('suggestion bulk preview and apply skip exact popular fixture IDs but a single human decision can mark one', async () => {
+  const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
+  const query = new QueryEngine(store);
+  const service = new ReviewService(store, { query, via: 'web-review' });
+  try {
+    await query.query({
+      queryId: 'popular-query',
+      generation: 1,
+      accountKey: 'x:popular',
+    });
+    const preview = await service.previewBulk({
+      pageId: 'page',
+      previewId: 'popular-preview',
+      queryId: 'popular-query',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided'],
+      skipPopular: true,
+    });
+    expect(preview).toMatchObject({
+      total: 20,
+      willChange: 18,
+      unchanged: 2,
+      skippedPopular: 2,
+      skipPopular: true,
+    });
+    const result = await service.confirmBulk({
+      commandId: 'skip-confirm',
+      pageId: 'page',
+      previewId: 'popular-preview',
+    });
+    expect(result).toMatchObject({ type: 'committed', changed: 18 });
+    expect(
+      await store.read((tx) => tx.state.get('x:popular-18')),
+    ).toMatchObject({ decision: 'undecided' });
+    expect(
+      await store.read((tx) => tx.state.get('x:popular-19')),
+    ).toMatchObject({ decision: 'undecided' });
+    const events = (await store.read(readWorkspace)).decisionEvents;
+    expect(events).toHaveLength(18);
+    expect(
+      events.some((event) =>
+        ['x:popular-18', 'x:popular-19'].includes(event.itemId),
+      ),
+    ).toBe(false);
+    expect(
+      await service.confirmBulk({
+        commandId: 'skip-confirm',
+        pageId: 'page',
+        previewId: 'popular-preview',
+      }),
+    ).toEqual(result);
+    expect(
+      await service.decide({
+        commandId: 'person-popular',
+        itemIds: ['x:popular-19'],
+        value: 'delete',
+        expected: { 'x:popular-19': 'undecided' },
+      }),
+    ).toMatchObject({ type: 'committed', changed: 1 });
+    expect(
+      (await store.read(readWorkspace)).decisionEvents.at(-1),
+    ).toMatchObject({
+      itemId: 'x:popular-19',
+      source: { kind: 'human', via: 'web-review' },
+    });
+  } finally {
+    await store.close();
+  }
+});
+
+test('ordinary bulk remains an explicit human action; overwrite cannot opt suggestion apply into popularity', async () => {
+  const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
+  const query = new QueryEngine(store);
+  const service = new ReviewService(store, { query, via: 'local-review' });
+  try {
+    await query.query({
+      queryId: 'popular-query',
+      generation: 1,
+      accountKey: 'x:popular',
+    });
+    const skip = await service.previewBulk({
+      pageId: 'page',
+      previewId: 'overwrite-popular',
+      queryId: 'popular-query',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided', 'later', 'keep', 'delete'],
+      itemIds: ['x:popular-18', 'x:popular-19'],
+      skipPopular: true,
+    });
+    expect(skip).toMatchObject({
+      willChange: 0,
+      skippedPopular: 2,
+      unchanged: 2,
+    });
+    expect(
+      await service.confirmBulk({
+        commandId: 'all-skipped',
+        pageId: 'page',
+        previewId: 'overwrite-popular',
+      }),
+    ).toMatchObject({ type: 'committed', changed: 0, actionId: null });
+    expect((await store.read(readWorkspace)).decisionEvents).toEqual([]);
+    const direct = await service.previewBulk({
+      pageId: 'page',
+      previewId: 'direct',
+      queryId: 'popular-query',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided'],
+      itemIds: ['x:popular-18', 'x:popular-19'],
+    });
+    expect(direct).toMatchObject({ willChange: 2 });
+    expect(direct.skippedPopular).toBeUndefined();
+    expect(
+      await service.confirmBulk({
+        commandId: 'direct-confirm',
+        pageId: 'page',
+        previewId: 'direct',
+      }),
+    ).toMatchObject({ type: 'committed', changed: 2 });
+  } finally {
+    await store.close();
+  }
+});
+
+test('confirm refuses changed cutoff rather than applying a stale popularity preview', async () => {
+  const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
+  const query = new QueryEngine(store);
+  const service = new ReviewService(store, { query, via: 'web-review' });
+  try {
+    await query.query({ queryId: 'q', generation: 1, accountKey: 'x:popular' });
+    await service.previewBulk({
+      pageId: 'page',
+      previewId: 'p',
+      queryId: 'q',
+      generation: 1,
+      value: 'delete',
+      overwrite: ['undecided'],
+      skipPopular: true,
+    });
+    await store.write(async (tx) => {
+      const item = (await tx.items.get('x:popular-17'))!;
+      item.item.engagement.likes = 20;
+      await tx.items.put(item);
+    });
+    expect(
+      await service.confirmBulk({
+        commandId: 'changed-cutoff',
+        pageId: 'page',
+        previewId: 'p',
+      }),
+    ).toMatchObject({ type: 'rejected', code: 'STALE_PREVIEW' });
+    expect((await store.read(readWorkspace)).decisionEvents).toEqual([]);
+  } finally {
+    await store.close();
+  }
+});
 test('human commands are atomic, expected guarded and idempotent including after reopening', async () => {
   const { backing, store, service, options } = setup();
   try {

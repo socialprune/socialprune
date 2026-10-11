@@ -6,7 +6,7 @@ Records 001 to 022, which this map relies on, are `Accepted`. The web app, the C
 
 ## What the system does
 
-A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. In the accepted design SocialPrune itself never contacts the platforms. The proposed records [ADR-023](adrs/ADR-023-acting-in-own-account.md), [ADR-026](adrs/ADR-026-x-originals-fetch.md), [ADR-027](adrs/ADR-027-x-deletion-browser.md) and [ADR-028](adrs/ADR-028-instagram-signed-in-session.md) add, from the CLI only, fetching the originals of the person's replies and deleting their marked entries through a browser session they signed in to.
+A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. In the accepted design SocialPrune itself never contacts the platforms. The proposed records [ADR-023](adrs/ADR-023-acting-in-own-account.md), [ADR-026](adrs/ADR-026-x-originals-fetch.md), [ADR-027](adrs/ADR-027-x-deletion-browser.md), [ADR-028](adrs/ADR-028-instagram-signed-in-session.md) and [ADR-029](adrs/ADR-029-signed-in-originals-pass.md) add, from the CLI only, fetching the originals of the person's replies, reading through a browser session they signed in to what the anonymous fetch cannot get, and deleting their marked entries through that session.
 
 There are two ways in:
 
@@ -164,7 +164,7 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 
 ## Decision records
 
-001 to 022 accepted, 023 and 026 to 028 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
+001 to 022 accepted, 023 and 026 to 029 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
 
 | ADR | Decision |
 |---|---|
@@ -194,3 +194,4 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 | [026](adrs/ADR-026-x-originals-fetch.md) | Proposed: originals of replies and quotes from X's public embed service, one request per second, stored in the workspace |
 | [027](adrs/ADR-027-x-deletion-browser.md) | Proposed: deletion on X by driving X's own pages in the dedicated profile; journal, one entry first, slow, schema version 3 |
 | [028](adrs/ADR-028-instagram-signed-in-session.md) | Proposed: Instagram context and deletion through the "Your Activity" view, gated by spike S5 |
+| [029](adrs/ADR-029-signed-in-originals-pass.md) | Proposed: a signed-in pass reads only what the anonymous fetch missed, from X's own page answers; videos stored and served with byte ranges; canary first; schema version 4 |

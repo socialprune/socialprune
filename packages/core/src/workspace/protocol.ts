@@ -10,6 +10,8 @@ import {
   ItemSchema,
   OutcomeEventSchema,
   OutcomeValueSchema,
+  OriginalSchema,
+  OriginalIdSchema,
   UtcTimestampSchema,
   WorkspaceCountsSchema,
   QueryFilterSchema,
@@ -174,6 +176,11 @@ const requests = [
     limit: z.number().int().min(1).max(200),
   }),
   z.strictObject({ ...requestBase, type: z.literal('detail'), itemId: id }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('getOriginals'),
+    ids: z.array(OriginalIdSchema).min(1).max(50),
+  }),
   DecideRequestSchema,
   PreviewBulkRequestSchema,
   z.strictObject({
@@ -317,6 +324,11 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     ...replyBase,
     type: z.literal('itemDetail'),
     ...ItemDetailSchema.shape,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('originals'),
+    originals: z.array(OriginalSchema).max(50),
   }),
   z.strictObject({
     ...replyBase,

@@ -178,6 +178,26 @@
     margin-bottom: var(--space-2);
     font-size: var(--type-sm);
   }
+  .original {
+    border: var(--border-width) solid var(--color-social-divider);
+    border-radius: var(--radius-panel);
+    padding: var(--space-3);
+    margin-bottom: var(--space-4);
+    overflow-wrap: anywhere;
+  }
+  .originalPhotos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: var(--space-2);
+  }
+  .originalPhotos img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 320px;
+    object-fit: contain;
+    border-radius: var(--radius-control);
+  }
   .context {
     display: flex;
     align-items: center;

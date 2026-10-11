@@ -383,5 +383,14 @@
   "proto.goDoneBody": "Deine Beiträge bleiben im Archiv. Die Kalenderblätter dürfen weiterziehen.",
   "proto.didIt": "Erledigt",
   "proto.spaceKey": "Leertaste",
-  "proto.deleteHelp": "Nur lokal vormerken. Auf der Plattform löschst du selbst."
+  "proto.deleteHelp": "Nur lokal vormerken. Auf der Plattform löschst du selbst.",
+  "originals.heading": "Gespeichertes Original",
+  "originals.photo": "Foto aus dem gespeicherten Original",
+  "originals.truncated": "Der abgerufene Text ist abgeschnitten.",
+  "originals.completenessUnknown": "Gespeichert wie abgerufen. Lange Beiträge können unvollständig sein.",
+  "originals.videoNotStored": "Das Video wurde nicht gespeichert.",
+  "originals.photosMissing": "Nicht alle Fotos sind in diesem Arbeitsbereich vorhanden.",
+  "originals.notFound": "Beim Abruf wurde das Original nicht gefunden.",
+  "originals.tombstone": "X hat das Original beim Abruf als privat oder zurückgehalten gemeldet.",
+  "originals.failed": "Das Original konnte nicht abgerufen werden."
 }

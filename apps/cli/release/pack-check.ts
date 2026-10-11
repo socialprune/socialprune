@@ -12,6 +12,7 @@ import {
 } from './inventory.ts';
 import type { PackageFile } from './inventory.ts';
 import { npm, packageDirectory, root } from './process.ts';
+import { generateJsonSchemas } from '../../../packages/core/src/node/schemas.ts';
 
 const reviewDirectory = resolve(root, 'apps/web/dist-review');
 
@@ -53,8 +54,15 @@ export async function checkPackage(): Promise<string[]> {
         manifest: /^package\.json$/,
         readme: /^README\.md$/,
         notices: /^THIRD_PARTY_NOTICES$/,
+        schemas: /^schemas\/original\.schema\.json$/,
       };
       assert.match(record.path, allowed[record.origin.producer]);
+      if (record.origin.producer === 'schemas')
+        assert.equal(
+          bytes.toString('utf8'),
+          (await generateJsonSchemas())['original.schema.json'],
+          'Packed original schema must match fresh Zod generation.',
+        );
     }
   }
   const manifest = JSON.parse(
@@ -85,6 +93,16 @@ export async function checkPackage(): Promise<string[]> {
     './skills/*': './skills/*',
   });
   assert.deepEqual(manifest.publishConfig, { access: 'public' });
+  const reusedNotice = await readFile(
+    resolve(root, 'THIRD_PARTY_NOTICES'),
+    'utf8',
+  );
+  assert.ok(
+    (
+      await readFile(resolve(packageDirectory, 'THIRD_PARTY_NOTICES'), 'utf8')
+    ).includes(reusedNotice),
+    'The packed notice must carry the reused token code and its MIT license.',
+  );
   return paths;
 }
 

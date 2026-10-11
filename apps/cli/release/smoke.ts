@@ -186,6 +186,88 @@ export async function smoke(olderNode?: string): Promise<void> {
       (summary.data as { counts: { items: number } }).counts.items,
       fixture.itemCount,
     );
+    const noNetwork = join(temp, 'no-network.mjs');
+    // A test-only preload rejects every outbound primitive before the installed
+    // command starts. It is never imported by a production entrypoint.
+    await writeFile(
+      noNetwork,
+      `
+import {syncBuiltinESMExports} from 'node:module';
+import http from 'node:http'; import https from 'node:https'; import http2 from 'node:http2';
+import net from 'node:net'; import tls from 'node:tls'; import dns from 'node:dns';
+import dnsPromises from 'node:dns/promises'; import dgram from 'node:dgram';
+const deny=()=>{throw Error('PACKED_NETWORK_FORBIDDEN');};
+globalThis.fetch=deny; globalThis.WebSocket=deny;
+for(const [target,names] of [[http,['request','get']],[https,['request','get']],[http2,['connect']],[net,['connect','createConnection']],[tls,['connect']],[dgram,['createSocket']]]) for(const name of names) target[name]=deny;
+for(const target of [dns,dnsPromises]) for(const name of Object.keys(target)) if(name==='lookup'||name==='lookupService'||name.startsWith('resolve')) target[name]=deny;
+syncBuiltinESMExports();
+`,
+    );
+    // First prove the decoy is caught; never exercise this guard on a real host.
+    assert.equal(
+      command(
+        process.execPath,
+        [
+          '--import',
+          pathToFileURL(noNetwork).href,
+          '--input-type=module',
+          '-e',
+          "fetch('https://generated.invalid/')",
+        ],
+        install,
+        1,
+      ),
+      '',
+    );
+    const originalsOutput = command(
+      process.execPath,
+      [
+        '--import',
+        pathToFileURL(noNetwork).href,
+        bin,
+        'originals',
+        'fetch',
+        '--workspace',
+        workspace,
+        '--dry-run',
+        '--json',
+      ],
+      install,
+    );
+    envelopeSchema.parse(JSON.parse(originalsOutput));
+    const originals = JSON.parse(originalsOutput) as Envelope & {
+      data: {
+        dryRun: boolean;
+        referenced: number;
+        planned: number;
+        attempted: number;
+      };
+    };
+    assert.equal(originals.command, 'originals.fetch');
+    assert.equal(originals.status, 'ok');
+    assert.equal(originals.data.dryRun, true);
+    assert.equal(originals.data.attempted, 0);
+    const expectedDemo = JSON.parse(
+      await readFile(
+        resolve(root, 'fixtures/synthetic/demo/x/expected.json'),
+        'utf8',
+      ),
+    ) as {
+      items: {
+        reference: { replyToId: string | null; quotedId: string | null };
+      }[];
+    };
+    const expectedReferences = new Set(
+      expectedDemo.items
+        .flatMap((item) => [item.reference.replyToId, item.reference.quotedId])
+        .filter((id) => id !== null),
+    );
+    assert.equal(originals.data.referenced, expectedReferences.size);
+    assert.equal(originals.data.planned, expectedReferences.size);
+    results.push({
+      command: 'originals fetch --dry-run --json (outbound primitives denied)',
+      exit: 0,
+    });
     const batchResult = checked([
       'batch',
       'next',
@@ -283,6 +365,7 @@ export async function smoke(olderNode?: string): Promise<void> {
         ['batch', 'next', '--share-with-agent'],
         ['labels', 'submit', labelFile, '--dry-run'],
         ['review', '--dry-run'],
+        ['originals', 'fetch', '--dry-run'],
         ['backup', 'export', '--out', join(temp, 'backup.json')],
         ['backup', 'restore', labelFile],
         [

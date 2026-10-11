@@ -19,6 +19,7 @@ test('schema catalogue keeps the canonical v2 and retained v1 JSON files', async
       'import-record.schema.json',
       'item.schema.json',
       'outcome-event.schema.json',
+      'original.schema.json',
       'submission.schema.json',
       'workspace.schema.json',
       'v1/assessment.schema.json',

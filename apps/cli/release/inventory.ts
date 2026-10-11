@@ -99,7 +99,8 @@ export interface PackageFile {
   origin:
     | {
         kind: 'generated';
-        producer: 'rolldown' | 'vite' | 'manifest' | 'readme' | 'notices';
+        producer:
+          'rolldown' | 'vite' | 'manifest' | 'readme' | 'notices' | 'schemas';
       }
     | { kind: 'tracked'; source: string };
 }

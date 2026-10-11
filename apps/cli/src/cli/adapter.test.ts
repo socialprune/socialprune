@@ -90,6 +90,7 @@ test('machine help uses the command registry and includes no decision capability
     commandRegistry().map((entry) => entry.path),
   );
   expect(parsed.data.commands.map((entry) => entry.path)).toEqual([
+    ['originals', 'fetch'],
     ['guide'],
     ['structure'],
     ['schemas'],

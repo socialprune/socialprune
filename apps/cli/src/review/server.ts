@@ -7,6 +7,7 @@ import { REVIEW_HEADERS, staticAssets } from './static.ts';
 import { ReviewDatabase } from './database.ts';
 import { CliError } from '../cli/errors.ts';
 import { workspacePath } from '../workspace/files.ts';
+import { originalMedia } from './original-media.ts';
 
 const bodyLimit = 1024 * 1024;
 const apiTypes = new Set<string>(
@@ -162,6 +163,29 @@ export async function startReviewServer(options: {
       return;
     }
     if (!api && !sessionPath) {
+      if (path.startsWith('/originals/')) {
+        if (!session.authenticated(header(request, 'cookie')) || stopping) {
+          respond(response, 401);
+          return;
+        }
+        const site = header(request, 'sec-fetch-site');
+        if (site !== undefined && site !== 'same-origin') {
+          respond(response, 403);
+          return;
+        }
+        const photo = await originalMedia(options.workspace, path, database);
+        if (!photo) {
+          respond(response, 404);
+          return;
+        }
+        response.writeHead(200, {
+          ...REVIEW_HEADERS,
+          'Content-Type': photo.contentType,
+          'Content-Length': photo.bytes.byteLength,
+        });
+        response.end(request.method === 'HEAD' ? undefined : photo.bytes);
+        return;
+      }
       const asset = assets.get(path);
       if (!asset) {
         respond(response, 404);

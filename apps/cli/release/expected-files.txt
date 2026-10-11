@@ -17,6 +17,7 @@ schemas/import-record.schema.json
 schemas/item.schema.json
 schemas/label-file.schema.json
 schemas/label-submission.schema.json
+schemas/original.schema.json
 schemas/outcome-event.schema.json
 schemas/review-readiness.schema.json
 schemas/submission.schema.json

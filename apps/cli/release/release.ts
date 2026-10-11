@@ -8,6 +8,7 @@ import { filesIn, sha256, sourceInventory, trackedBytes } from './inventory.ts';
 import type { PackageFile } from './inventory.ts';
 import { packageDirectory, root, command } from './process.ts';
 import { inspectCopy } from '../../../tools/copy-check/src/index.ts';
+import { generateJsonSchemas } from '../../../packages/core/src/node/schemas.ts';
 
 export async function workspaceAliases(): Promise<Record<string, string>> {
   const aliases: Record<string, string> = {};
@@ -64,6 +65,16 @@ export async function release(): Promise<void> {
     records.push({ path, sha256: sha256(bytes), origin });
   };
   const alias = await workspaceAliases();
+  const generatedOriginal = (await generateJsonSchemas())[
+    'original.schema.json'
+  ]!;
+  if (
+    (await readFile(
+      resolve(root, 'packages/core/schemas/original.schema.json'),
+      'utf8',
+    )) !== generatedOriginal
+  )
+    throw new Error('The original JSON schema differs from its Zod source.');
   for (const [entry, name] of [
     ['src/main.ts', 'socialprune'],
     ['src/review/database-worker.ts', 'database-worker'],
@@ -113,6 +124,18 @@ export async function release(): Promise<void> {
     'skills/socialprune',
   ]) {
     for (const path of await filesIn(resolve(root, directory))) {
+      if (
+        directory === 'packages/core/schemas' &&
+        path === 'original.schema.json'
+      ) {
+        // This new file is canonical generated output even before the parent
+        // stages the task. Every other source keeps the tracked-input boundary.
+        await put('schemas/original.schema.json', generatedOriginal, {
+          kind: 'generated',
+          producer: 'schemas',
+        });
+        continue;
+      }
       const target = directory.endsWith('schemas')
         ? `schemas/${path}`
         : `${directory}/${path}`;
@@ -137,10 +160,23 @@ export async function release(): Promise<void> {
     throw new Error('Package README violates copy policy.');
   await put('README.md', readme, { kind: 'generated', producer: 'readme' });
   const licenses = await bundledLicenses(modules, root);
-  await put('THIRD_PARTY_NOTICES', renderNotices(licenses), {
-    kind: 'generated',
-    producer: 'notices',
-  });
+  const reusedNotice = await readFile(
+    resolve(root, 'THIRD_PARTY_NOTICES'),
+    'utf8',
+  );
+  if (
+    !reusedNotice.includes('react-tweet 3.3.1') ||
+    !reusedNotice.includes('Copyright (c) 2023 Luis Alvarez.')
+  )
+    throw new Error('The reused syndication-token license notice is missing.');
+  await put(
+    'THIRD_PARTY_NOTICES',
+    renderNotices(licenses) + '\n' + reusedNotice,
+    {
+      kind: 'generated',
+      producer: 'notices',
+    },
+  );
   await put(
     'package.json',
     JSON.stringify(

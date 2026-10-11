@@ -164,6 +164,15 @@ declare global {
     'nav.settings': Record<never, never>;
     'nav.skip': Record<never, never>;
     'nav.start': Record<never, never>;
+    'originals.completenessUnknown': Record<never, never>;
+    'originals.failed': Record<never, never>;
+    'originals.heading': Record<never, never>;
+    'originals.notFound': Record<never, never>;
+    'originals.photo': Record<never, never>;
+    'originals.photosMissing': Record<never, never>;
+    'originals.tombstone': Record<never, never>;
+    'originals.truncated': Record<never, never>;
+    'originals.videoNotStored': Record<never, never>;
     'page.notFound': Record<never, never>;
     'page.return': Record<never, never>;
     'privacy.agent': Record<never, never>;

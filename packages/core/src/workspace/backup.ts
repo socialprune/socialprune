@@ -5,6 +5,7 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
+  OriginalSchema,
   SubmissionSchema,
   UtcTimestampSchema,
   WorkspaceCountsSchema,
@@ -37,6 +38,7 @@ const ARRAY_KEYS = [
   'assessments',
   'decisionEvents',
   'outcomeEvents',
+  'originals',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 export interface BackupOptions {
@@ -143,6 +145,7 @@ export function createBackup(
         return count;
       });
     }
+    if (!counts.originals) delete counts.originals;
     const header = { ...sourceMeta, lastBackupAt: createdAt, counts };
     yield '{';
     let comma = false;
@@ -161,6 +164,7 @@ export function createBackup(
       comma = true;
     }
     for (const key of ARRAY_KEYS) {
+      if (key === 'originals' && !counts.originals) continue;
       yield `,${JSON.stringify(key)}:[`;
       let first = true;
       for (let offset = 0; ; offset += batchSize) {
@@ -337,6 +341,7 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   assessments: AssessmentSchema,
   decisionEvents: DecisionEventSchema,
   outcomeEvents: OutcomeEventSchema,
+  originals: OriginalSchema,
 };
 const v1Records: Record<string, z.ZodType> = {
   imports: v1.ImportRecordSchema,
@@ -496,6 +501,7 @@ export async function readBackup(
           'assessments',
           'decisionEvents',
           'outcomeEvents',
+          'originals',
           'decisions',
           'outcomes',
         ].includes(name)
@@ -585,9 +591,9 @@ export async function readBackup(
     if (!declared.success) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     const counts = { ...declared.data };
     for (const key of ARRAY_KEYS) {
-      if (counts[key] !== (rawCounts[key] ?? 0))
+      if ((counts[key] ?? 0) !== (rawCounts[key] ?? 0))
         throw new WorkspaceError('COUNT_MISMATCH');
-      counts[key] -= duplicates[key] ?? 0;
+      if (counts[key] !== undefined) counts[key] -= duplicates[key] ?? 0;
     }
     document.counts = counts;
     return validateWorkspace(document);
@@ -619,6 +625,7 @@ export async function applyBackup(
     assessments,
     decisionEvents,
     outcomeEvents,
+    originals,
     ...meta
   } = workspace;
   void _counts;
@@ -656,6 +663,7 @@ export async function applyBackup(
       throwIfAborted(options.signal);
       await tx.submissions.add(record);
     }
+    for (const original of originals ?? []) await tx.originals.put(original);
     for (let offset = 0; offset < assessments.length; offset += batchSize) {
       throwIfAborted(options.signal);
       await tx.assessments.append(

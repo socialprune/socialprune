@@ -6,6 +6,7 @@ import type { BrowserContext, Page, Response } from '@playwright/test';
 import type { Workspace } from '@socialprune/core';
 import type { Item } from '@socialprune/core';
 import { foreignPage, browserSocketAudit } from './foreign-page.ts';
+import { fixture as originalsFixture } from '../src/originals/test/server.ts';
 
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
@@ -28,6 +29,79 @@ const x = manifest.exports.find((entry) => entry.platform === 'x')!;
 const first = [...expected.items].sort(
   (a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
 )[0]!;
+
+base(
+  'stored originals appear in both the real card review and archive with only authenticated same-origin photos',
+  async ({ page, context }) => {
+    const child = spawn(
+      process.execPath,
+      [
+        fileURLToPath(
+          new URL(
+            '../src/review/test/originals-browser-entry.ts',
+            import.meta.url,
+          ),
+        ),
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
+    );
+    let stderr = '';
+    child.stderr!.on('data', (part: Buffer) => {
+      stderr += part.toString();
+    });
+    const closed = new Promise<number | null>((resolve) =>
+      child.once('close', resolve),
+    );
+    const opened = new Promise<string>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code) => {
+        if (code !== 0) reject(new Error(`Originals review failed: ${stderr}`));
+      });
+      child.on('message', (raw: unknown) => {
+        const message = raw as { type: string; url: string };
+        if (message.type === 'opened') resolve(message.url);
+      });
+    });
+    try {
+      const url = await opened;
+      const origin = new URL(url).origin;
+      const audit = await observe(context, page, origin);
+      await page.goto(url);
+      await page
+        .getByRole('navigation', { name: 'Primary navigation', exact: true })
+        .getByRole('link', { name: 'Review', exact: true })
+        .click();
+      const original = page.getByTestId('stored-original');
+      await expect(original).toContainText(originalsFixture.fetched.text);
+      await expect(original).toContainText(originalsFixture.fetched.user.name);
+      await expect(original).toContainText(
+        '@' + originalsFixture.fetched.user.screen_name,
+      );
+      await expect(original.locator('img')).toHaveAttribute(
+        'src',
+        `/originals/${originalsFixture.references[0]}/1.png`,
+      );
+      await expect
+        .poll(() =>
+          original
+            .locator('img')
+            .evaluate((node) => (node as HTMLImageElement).naturalWidth),
+        )
+        .toBe(1);
+      await expect(original).toContainText('The fetched text is truncated.');
+      await page.evaluate(() => {
+        location.hash = '#/archive';
+      });
+      await expect(page.getByTestId('stored-original')).toContainText(
+        originalsFixture.fetched.text,
+      );
+      await audit.assert();
+    } finally {
+      if (child.connected) child.send('stop');
+      expect(await closed).toBe(0);
+    }
+  },
+);
 
 async function reviewProcess() {
   const child = spawn(

@@ -11,6 +11,7 @@ import type {
   ReviewRow,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
+import type { Original } from '@socialprune/core';
 
 export type WorkspacePort = Pick<
   Worker,
@@ -316,6 +317,16 @@ export class WorkspaceClient {
       requestId: crypto.randomUUID(),
       workspaceId,
     });
+  }
+  async getOriginals(ids: string[]): Promise<Original[]> {
+    const reply = await this.request({
+      type: 'getOriginals',
+      requestId: crypto.randomUUID(),
+      ids,
+    });
+    if (reply.type !== 'originals')
+      throw new Error('Originals could not be read.');
+    return reply.originals;
   }
   async checkStorage(): Promise<{
     usage: number;

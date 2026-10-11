@@ -33,6 +33,7 @@ import {
 } from '@socialprune/core/workspace/backup';
 import { CliError, LABEL_FAILURE_CODES } from '../cli/errors.ts';
 import { SQLiteStore } from './sqlite-store.ts';
+import { fetchOriginals } from '../originals/fetch.ts';
 import {
   assertOutput,
   fileChunks,
@@ -597,6 +598,7 @@ export async function exportClickList(input: ClickListCall) {
 }
 
 export const workspaceServices = {
+  fetchOriginals,
   importWorkspace,
   summarizeWorkspace,
   exportBackup,

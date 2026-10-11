@@ -171,6 +171,18 @@ export class ReviewRuntime {
           post({ type: 'itemDetail', requestId, ...detail });
           break;
         }
+        case 'getOriginals': {
+          const originals = await this.store.read(async (tx) => {
+            const result = [];
+            for (const originalId of new Set(input.ids)) {
+              const original = await tx.originals.get(originalId);
+              if (original) result.push(original);
+            }
+            return result;
+          });
+          post({ type: 'originals', requestId, originals });
+          break;
+        }
         case 'decide':
         case 'outcome': {
           const { commandId, itemIds } = input;

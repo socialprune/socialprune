@@ -11,6 +11,7 @@ import { clickListCommand } from '../commands/export-clicklist.ts';
 import { reviewCommand } from '../commands/review.ts';
 import { batchNextCommand } from '../commands/batch-next.ts';
 import { labelsSubmitCommand } from '../commands/labels-submit.ts';
+import { originalsFetchCommand } from '../commands/originals-fetch.ts';
 import { jsonFlag } from './context.ts';
 import type { CommandRunContext } from './context.ts';
 import { CliError, EXIT_MEANINGS } from './errors.ts';
@@ -45,6 +46,16 @@ function unavailableCommand(): Command<CommandRunContext> {
 
 export function commandRegistry(): readonly RegistryEntry[] {
   return [
+    {
+      path: ['originals', 'fetch'],
+      command: originalsFetchCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'ORIGINALS_FAILED',
+    },
     {
       path: ['guide'],
       command: guideCommand,

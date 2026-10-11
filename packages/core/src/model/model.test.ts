@@ -177,7 +177,7 @@ test('v2 committed JSON schemas match zod and encode required strict object shap
       receivedAt: timestamp,
       labelCount: 0,
     }),
-    workspace,
+    workspace: { ...workspace, originals: [] },
   };
   for (const [name, sample] of Object.entries(samples)) {
     const path = new URL(`../../schemas/${name}.schema.json`, import.meta.url);

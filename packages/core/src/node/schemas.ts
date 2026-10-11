@@ -10,6 +10,7 @@ import {
   OutcomeEventSchema,
   SubmissionSchema,
   ImportRecordSchema,
+  OriginalSchema,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
 import {
@@ -29,6 +30,7 @@ export const SCHEMA_MODELS = {
   submission: SubmissionSchema,
   'import-record': ImportRecordSchema,
   workspace: WorkspaceSchema,
+  original: OriginalSchema,
   'v1/item': v1.ItemSchema,
   'v1/assessment': v1.AssessmentSchema,
   'v1/decision': v1.DecisionSchema,

@@ -43,6 +43,20 @@
             {
               "type": "object",
               "properties": {
+                "code": { "type": "string", "const": "ORIGINALS_FAILED" },
+                "message": {
+                  "type": "string",
+                  "const": "Could not fetch the originals. Results already recorded remain in the workspace."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
                 "code": { "type": "string", "const": "SHARING_NOT_CONFIRMED" },
                 "message": {
                   "type": "string",

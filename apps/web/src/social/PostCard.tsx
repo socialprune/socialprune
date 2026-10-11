@@ -8,7 +8,9 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useIntl } from 'react-intl';
-import type { Item, OutcomeValue } from '@socialprune/core';
+import { useEffect, useState } from 'react';
+import type { Item, OutcomeValue, Original } from '@socialprune/core';
+import type { WorkspaceClient } from '../workspace/client.ts';
 import { useT } from '../i18n/index.ts';
 import styles from './Social.module.css';
 import { originalXLink } from './originalLink.ts';
@@ -37,16 +39,55 @@ export function PostCard({
   children,
   threaded = false,
   zone,
+  client,
 }: {
   item: Item;
   outcome?: OutcomeValue;
   children?: React.ReactNode;
   threaded?: boolean;
   zone?: string;
+  client?: WorkspaceClient;
 }) {
   const t = useT(),
     intl = useIntl();
   const handle = item.account.handle ?? item.account.key;
+  const originalId =
+    item.platform === 'x'
+      ? item.kind === 'reply'
+        ? item.reference.replyToId
+        : item.kind === 'quote'
+          ? item.reference.quotedId
+          : null
+      : null;
+  const [storedState, setStored] = useState<{
+    client: WorkspaceClient;
+    original: Original | null;
+  } | null>(null);
+  const [missingPhoto, setMissingPhoto] = useState<string | null>(null);
+  const workspace = client ?? window.workspace;
+  const stored =
+    storedState?.client === workspace ? storedState.original : null;
+  useEffect(() => {
+    let active = true;
+    if (originalId && /^[0-9]{1,40}$/.test(originalId) && workspace) {
+      void workspace
+        .getOriginals([originalId])
+        .then((originals) => {
+          if (active)
+            setStored({
+              client: workspace,
+              original:
+                originals.find((entry) => entry.id === originalId) ?? null,
+            });
+        })
+        .catch(() => {
+          if (active) setStored(null);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [originalId, workspace]);
   const original =
     item.platform === 'x'
       ? originalXLink(
@@ -111,7 +152,7 @@ export function PostCard({
             {item.text ||
               t(item.mediaCount ? 'review.mediaOnly' : 'review.noText')}
           </p>
-          {item.kind === 'quote' && (
+          {item.kind === 'quote' && stored?.id !== originalId && (
             <div className={styles.quote}>
               <Quote size={16} aria-hidden="true" />
               <span>{t('proto.quoteNote')}</span>
@@ -127,6 +168,71 @@ export function PostCard({
               <ExternalLink size={16} aria-hidden="true" />
               {t('proto.viewOriginalX')}
             </a>
+          )}
+          {stored && stored.id === originalId && (
+            <section
+              className={styles.original}
+              data-testid="stored-original"
+              aria-label={t('originals.heading')}
+            >
+              {stored.status === 'fetched' ? (
+                <>
+                  <div className={styles.byline}>
+                    <Avatar handle={stored.authorHandle} />
+                    <strong>{stored.authorName}</strong>
+                    <span>@{stored.authorHandle}</span>
+                  </div>
+                  <p className={styles.postText} dir="auto">
+                    {stored.text}
+                  </p>
+                  <div className={styles.originalPhotos}>
+                    {stored.photos
+                      .filter(
+                        (photo) => photo.status === 'stored' && photo.file,
+                      )
+                      .map((photo) => (
+                        <img
+                          key={photo.file}
+                          src={`/originals/${stored.id}/${photo.file}`}
+                          alt={t('originals.photo')}
+                          loading="lazy"
+                          onError={() => setMissingPhoto(stored.id)}
+                        />
+                      ))}
+                  </div>
+                  <p className={styles.hint}>
+                    {t(
+                      stored.textCompleteness === 'truncated'
+                        ? 'originals.truncated'
+                        : 'originals.completenessUnknown',
+                    )}
+                  </p>
+                  {stored.video && (
+                    <p className={styles.hint}>
+                      {t('originals.videoNotStored')}
+                    </p>
+                  )}
+                  {(missingPhoto === stored.id ||
+                    stored.photos.some(
+                      (photo) => photo.status === 'failed',
+                    )) && (
+                    <p className={styles.hint}>
+                      {t('originals.photosMissing')}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className={styles.hint}>
+                  {t(
+                    stored.status === 'not-found'
+                      ? 'originals.notFound'
+                      : stored.status === 'tombstone'
+                        ? 'originals.tombstone'
+                        : 'originals.failed',
+                  )}
+                </p>
+              )}
+            </section>
           )}
           {item.platform === 'instagram' && item.kind === 'comment' && (
             <p className={styles.hint}>{t('proto.instagramMissingPost')}</p>

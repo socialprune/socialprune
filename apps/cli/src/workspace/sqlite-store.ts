@@ -1,15 +1,18 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import { copyFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import {
   AssessmentSchema,
   DecisionEventSchema,
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
+  OriginalSchema,
   SubmissionSchema,
   WorkspaceMetaSchema,
   WorkspaceV2Schema,
 } from '@socialprune/core';
-import type { WorkspaceV2 } from '@socialprune/core';
+import type { WorkspaceV2, Original } from '@socialprune/core';
 import {
   importForItem,
   initialState,
@@ -30,7 +33,20 @@ import type {
 import { CliError } from '../cli/errors.ts';
 import { requireWorkspaceNode } from './node-version.ts';
 
-export const SQLITE_LAYOUT_VERSION = 1;
+export const SQLITE_LAYOUT_VERSION = 2;
+
+const originalsLayout = `
+CREATE TABLE originals (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK(status IN ('fetched','not-found','tombstone','failed')),
+  fetchedAt TEXT NOT NULL, text TEXT, authorName TEXT, authorHandle TEXT,
+  photos TEXT NOT NULL CHECK(json_valid(photos)), quotedId TEXT, parentId TEXT,
+  raw TEXT CHECK(raw IS NULL OR json_valid(raw)),
+  textCompleteness TEXT NOT NULL CHECK(textCompleteness IN ('unknown','truncated')),
+  video TEXT CHECK(video IS NULL OR video='not-stored')
+) STRICT;
+PRAGMA user_version=2;
+`;
 
 // The port exposes rejection codes, not the core's private error constructor.
 class WorkspaceError extends Error {
@@ -95,7 +111,7 @@ CREATE TRIGGER ${table}_no_update BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(A
 CREATE TRIGGER ${table}_no_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT, 'append-only'); END;`,
   )
   .join('\n')}
-PRAGMA user_version=1;
+${originalsLayout}
 `;
 
 export function storageError(error: unknown): Error {
@@ -124,6 +140,21 @@ function parseRow<R>(row: Record<string, unknown> | undefined): R | undefined {
   if (typeof row.data !== 'string') throw new CliError('WORKSPACE_INVALID');
   return JSON.parse(row.data) as R;
 }
+function originalRow(
+  row: Record<string, unknown> | undefined,
+): Original | undefined {
+  if (!row) return undefined;
+  if (
+    typeof row.photos !== 'string' ||
+    (row.raw !== null && typeof row.raw !== 'string')
+  )
+    throw new CliError('WORKSPACE_INVALID');
+  return OriginalSchema.parse({
+    ...row,
+    photos: JSON.parse(row.photos) as unknown,
+    raw: row.raw === null ? null : (JSON.parse(row.raw) as unknown),
+  });
+}
 
 export interface SQLiteOpenOptions {
   initial?: WorkspaceV2;
@@ -139,6 +170,7 @@ export class SQLiteStore implements WorkspaceStore {
   private closing = false;
   private pinned = false;
   private exclusive = false;
+  private hasOriginals = true;
 
   private constructor(db: DatabaseSync, path: string, readOnly: boolean) {
     this.db = db;
@@ -168,7 +200,7 @@ export class SQLiteStore implements WorkspaceStore {
         'PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;',
       );
       const version = db.prepare('PRAGMA user_version').get()?.user_version;
-      if (version !== 0 && version !== SQLITE_LAYOUT_VERSION)
+      if (version !== 0 && version !== 1 && version !== SQLITE_LAYOUT_VERSION)
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
       const store = new SQLiteStore(db, path, Boolean(options.readOnly));
       if (version === 0) {
@@ -176,6 +208,27 @@ export class SQLiteStore implements WorkspaceStore {
           throw new CliError('WORKSPACE_INVALID');
         await store.initialize(options.initial);
       }
+      if (version === 1 && !options.readOnly) {
+        // Refuse unknown logical schemas before a physical migration can write.
+        await store.read(async (tx) => tx.meta.get());
+        db.exec('BEGIN EXCLUSIVE;');
+        try {
+          if (db.prepare('PRAGMA user_version').get()?.user_version === 1) {
+            const stamp = new Date().toISOString().replaceAll(':', '-');
+            await copyFile(
+              path,
+              `${path}.${stamp}-${crypto.randomUUID()}.before-migration.sqlite`,
+              constants.COPYFILE_EXCL,
+            );
+            db.exec(originalsLayout);
+          }
+          db.exec('COMMIT;');
+        } catch (error) {
+          db.exec('ROLLBACK;');
+          throw error;
+        }
+      }
+      store.hasOriginals = version !== 1 || !options.readOnly;
       await store.read(async (tx) => tx.meta.get());
       return store;
     } catch (error) {
@@ -208,6 +261,7 @@ export class SQLiteStore implements WorkspaceStore {
         assessments,
         decisionEvents,
         outcomeEvents,
+        originals,
         ...meta
       } = workspace;
       void _counts;
@@ -222,6 +276,7 @@ export class SQLiteStore implements WorkspaceStore {
           await tx.items.put({ item, importId, metadataImportId: importId });
         }
         for (const value of submissions) await tx.submissions.add(value);
+        for (const value of originals ?? []) await tx.originals.put(value);
         await tx.assessments.append(assessments);
         await tx.decisionEvents.append(decisionEvents);
         await tx.outcomeEvents.append(outcomeEvents);
@@ -241,6 +296,7 @@ export class SQLiteStore implements WorkspaceStore {
     expire: () => void;
   } {
     const db = this.db;
+    const hasOriginals = this.hasOriginals;
     let active = true;
     const guard = (write = false) => {
       if (!active || (write && (!writable || this.readOnly)))
@@ -451,6 +507,63 @@ export class SQLiteStore implements WorkspaceStore {
             value.item.engagement.likes,
             value.item.engagement.reposts,
             JSON.stringify(value),
+          );
+          return Promise.resolve();
+        },
+      },
+      originals: {
+        get: (id) => {
+          guard();
+          return Promise.resolve(
+            this.hasOriginals
+              ? originalRow(
+                  db.prepare('SELECT * FROM originals WHERE id=?').get(id),
+                )
+              : undefined,
+          );
+        },
+        iterate: async function* (options) {
+          await Promise.resolve();
+          guard();
+          const { offset, limit } = iterationBounds(options);
+          if (!hasOriginals) return;
+          for (
+            let position = offset;
+            position < offset + limit;
+            position += 1000
+          ) {
+            guard();
+            const rows = db
+              .prepare('SELECT * FROM originals ORDER BY id LIMIT ? OFFSET ?')
+              .all(Math.min(1000, offset + limit - position), position);
+            for (const row of rows) {
+              guard();
+              yield originalRow(row)!;
+            }
+            if (rows.length < 1000) break;
+          }
+        },
+        put: (input) => {
+          guard(true);
+          const value = OriginalSchema.parse(input);
+          run(
+            `INSERT INTO originals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET status=excluded.status, fetchedAt=excluded.fetchedAt, text=excluded.text,
+            authorName=excluded.authorName, authorHandle=excluded.authorHandle, photos=excluded.photos,
+            quotedId=excluded.quotedId, parentId=excluded.parentId, raw=excluded.raw,
+            textCompleteness=excluded.textCompleteness, video=excluded.video`,
+            value.id,
+            value.status,
+            value.fetchedAt,
+            value.text,
+            value.authorName,
+            value.authorHandle,
+            JSON.stringify(value.photos),
+            value.quotedId,
+            value.parentId,
+            value.raw === null ? null : JSON.stringify(value.raw),
+            value.textCompleteness,
+            value.video,
           );
           return Promise.resolve();
         },

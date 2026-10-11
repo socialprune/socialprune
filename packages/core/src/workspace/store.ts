@@ -6,6 +6,7 @@ import type {
   Item,
   OutcomeEvent,
   OutcomeValue,
+  Original,
   Submission,
   WorkspaceMeta,
   WorkspaceV2,
@@ -99,6 +100,7 @@ export interface ReadTransaction {
   commands: RecordReader<CommandReceipt>;
   imports: RecordReader<ImportRecord>;
   items: RecordReader<StoredItem>;
+  originals: RecordReader<Original>;
   submissions: RecordReader<Submission>;
   assessments: OrderedReader<Assessment>;
   decisionEvents: OrderedReader<DecisionEvent>;
@@ -115,6 +117,7 @@ export interface WriteTransaction extends ReadTransaction {
   commands: UniqueWriter<CommandReceipt>;
   imports: RecordWriter<ImportRecord>;
   items: RecordWriter<StoredItem>;
+  originals: RecordWriter<Original>;
   submissions: UniqueWriter<Submission>;
   assessments: AppendWriter<Assessment>;
   decisionEvents: AppendWriter<DecisionEvent>;
@@ -146,6 +149,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
   const meta = await tx.meta.get();
   const imports = await records(tx.imports);
   const stored = await records(tx.items);
+  const originals = await records(tx.originals);
   const arrays = {
     imports,
     items: stored.map(({ item }) => item),
@@ -153,6 +157,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     assessments: await records(tx.assessments),
     decisionEvents: await records(tx.decisionEvents),
     outcomeEvents: await records(tx.outcomeEvents),
+    ...(originals.length ? { originals } : {}),
   };
   return { ...meta, counts: workspaceCounts(arrays), ...arrays };
 }

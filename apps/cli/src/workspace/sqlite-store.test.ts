@@ -88,7 +88,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
     expect(statement.get('bound-input')).toEqual({ value: 'bound-input' });
     expect(statement.all(7)).toEqual([{ value: 7 }]);
     expect(() => db.enableLoadExtension(true)).toThrow();
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(1);
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
     expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe(
       'delete',
     );
@@ -101,6 +101,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
       'decision_events',
       'outcome_events',
       'state',
+      'originals',
     ]) {
       expect(
         db

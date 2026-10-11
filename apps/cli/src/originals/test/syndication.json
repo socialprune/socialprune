@@ -1,0 +1,35 @@
+{
+  "tokenPair": { "id": "900001", "token": "65kibxk7cu2" },
+  "fetched": {
+    "id_str": "900001",
+    "text": "Generated original: the paper boat floated across the pond.",
+    "user": {
+      "name": "Generated Park Writer",
+      "screen_name": "generated_park"
+    },
+    "photos": [{ "url": "/photo/one.png" }, { "url": "/photo/two.png" }],
+    "quoted_tweet": { "id_str": "900010" },
+    "parent": { "id_str": "900011" },
+    "video": { "videoId": "generated-video" },
+    "truncated": true
+  },
+  "plain": {
+    "id_str": "900002",
+    "text": "Generated original: a second paper boat.",
+    "user": { "name": "Generated Lake Writer", "screen_name": "generated_lake" }
+  },
+  "empty": {},
+  "tombstone": {
+    "__typename": "TweetTombstone",
+    "tombstone": { "text": "Generated withheld post." }
+  },
+  "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+  "references": ["900001", "900002", "900003", "900004", "900005"],
+  "expectedStatuses": [
+    "fetched",
+    "fetched",
+    "not-found",
+    "not-found",
+    "tombstone"
+  ]
+}

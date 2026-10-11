@@ -383,5 +383,14 @@
   "proto.goDoneBody": "Your posts stay in the archive. The calendar pages can move on.",
   "proto.didIt": "Done",
   "proto.spaceKey": "Space",
-  "proto.deleteHelp": "Mark locally only. You delete on the platform yourself."
+  "proto.deleteHelp": "Mark locally only. You delete on the platform yourself.",
+  "originals.heading": "Stored original",
+  "originals.photo": "Photo from the stored original",
+  "originals.truncated": "The fetched text is truncated.",
+  "originals.completenessUnknown": "Stored as fetched. Long posts may be incomplete.",
+  "originals.videoNotStored": "The video was not stored.",
+  "originals.photosMissing": "Some photos are missing from this workspace.",
+  "originals.notFound": "The original was not found when fetched.",
+  "originals.tombstone": "X reported the original as private or withheld when fetched.",
+  "originals.failed": "The original could not be fetched."
 }

@@ -4,6 +4,7 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
+  OriginalSchema,
   SubmissionSchema,
   WorkspaceMetaSchema,
 } from '../model/index.ts';
@@ -42,6 +43,7 @@ function database(workspace: WorkspaceV2) {
     assessments,
     decisionEvents,
     outcomeEvents,
+    originals,
     ...meta
   } = workspace;
   void _counts;
@@ -66,6 +68,7 @@ function database(workspace: WorkspaceV2) {
         return [item.id, { item, importId, metadataImportId: importId }];
       }),
     ),
+    originals: new Map((originals ?? []).map((record) => [record.id, record])),
     submissions: new Map(
       submissions.map((record) => [record.submissionId, record]),
     ),
@@ -92,6 +95,7 @@ function fork(source: Database): Database {
     ...source,
     imports: new Map(source.imports),
     items: new Map(source.items),
+    originals: new Map(source.originals),
     submissions: new Map(source.submissions),
     commands: new Map(source.commands),
     state: new Map(source.state),
@@ -272,6 +276,11 @@ export function createMemoryStore(
           db.submissions,
           (record) => record.submissionId,
           (record) => SubmissionSchema.parse(record),
+        ),
+        originals: table(
+          db.originals,
+          (record) => record.id,
+          (record) => OriginalSchema.parse(record),
         ),
         assessments: log(
           db.assessments,

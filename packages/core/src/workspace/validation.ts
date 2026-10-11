@@ -12,6 +12,7 @@ export function workspaceCounts(
     | 'submissions'
     | 'decisionEvents'
     | 'outcomeEvents'
+    | 'originals'
   >,
 ): WorkspaceCounts {
   return {
@@ -21,6 +22,9 @@ export function workspaceCounts(
     submissions: workspace.submissions.length,
     decisionEvents: workspace.decisionEvents.length,
     outcomeEvents: workspace.outcomeEvents.length,
+    ...(workspace.originals !== undefined
+      ? { originals: workspace.originals.length }
+      : {}),
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
@@ -37,6 +41,9 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   };
   unique(workspace.items.map((item) => item.id));
   unique(workspace.imports.map((record) => record.id));
+  unique((workspace.originals ?? []).map((record) => record.id));
+  if ((workspace.counts.originals ?? 0) !== (workspace.originals?.length ?? 0))
+    throw new WorkspaceError('COUNT_MISMATCH');
   unique(workspace.assessments.map((record) => record.assessmentId));
   unique(workspace.submissions.map((record) => record.submissionId));
   unique(

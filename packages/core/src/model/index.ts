@@ -1,5 +1,12 @@
 import { z } from 'zod';
 import * as v1 from './v1.ts';
+import { OriginalSchema } from './original.ts';
+export {
+  OriginalSchema,
+  OriginalIdSchema,
+  OriginalPhotoSchema,
+} from './original.ts';
+export type { Original } from './original.ts';
 
 export {
   PlatformIdSchema,
@@ -109,6 +116,7 @@ export const WorkspaceCountsSchema = z.strictObject({
   submissions: count,
   decisionEvents: count,
   outcomeEvents: count,
+  originals: count.optional(),
 });
 export type WorkspaceCounts = z.infer<typeof WorkspaceCountsSchema>;
 const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -182,6 +190,7 @@ export const WorkspaceV2Schema = WorkspaceMetaSchema.extend({
   assessments: z.array(AssessmentSchema),
   decisionEvents: z.array(DecisionEventSchema),
   outcomeEvents: z.array(OutcomeEventSchema),
+  originals: z.array(OriginalSchema).optional(),
 });
 export type WorkspaceV2 = z.infer<typeof WorkspaceV2Schema>;
 export const WorkspaceSchema = WorkspaceV2Schema;

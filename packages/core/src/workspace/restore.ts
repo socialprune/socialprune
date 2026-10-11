@@ -4,6 +4,7 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
+  OriginalSchema,
   SubmissionSchema,
   WorkspaceCountsSchema,
   WorkspaceMetaSchema,
@@ -14,6 +15,7 @@ import type {
   DecisionEvent,
   ImportRecord,
   OutcomeEvent,
+  Original,
   Submission,
   WorkspaceCounts,
   WorkspaceMeta,
@@ -52,6 +54,7 @@ const ARRAY_KEYS = [
   'assessments',
   'decisionEvents',
   'outcomeEvents',
+  'originals',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 const decisionValues = ['undecided', 'keep', 'delete', 'later'] as const;
@@ -248,6 +251,8 @@ export async function restoreBackup(
           await tx.decisionEvents.append([record.value as DecisionEvent]);
         else if (record.name === 'outcomeEvents')
           await tx.outcomeEvents.append([record.value as OutcomeEvent]);
+        else if (record.name === 'originals')
+          await tx.originals.put(record.value as Original);
         else await tx.migrationEvents.add(record.value as MigrationEvent);
       }
     });
@@ -289,6 +294,13 @@ export async function restoreBackup(
       references.delete(value.id);
       rawCounts.items++;
       counts.items++;
+      await buffered(name, index, value);
+    } else if (name === 'originals') {
+      if (version !== 2) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      const value = OriginalSchema.parse(record.value);
+      acceptUnique(name, value.id);
+      rawCounts.originals = (rawCounts.originals ?? 0) + 1;
+      counts.originals = (counts.originals ?? 0) + 1;
       await buffered(name, index, value);
     } else if (name === 'assessments') {
       const value =
@@ -417,7 +429,9 @@ export async function restoreBackup(
     const expectedArrays =
       version === 1
         ? ['imports', 'items', 'assessments', 'decisions', 'outcomes']
-        : [...ARRAY_KEYS];
+        : ARRAY_KEYS.filter(
+            (key) => key !== 'originals' || arraysSeen.has('originals'),
+          );
     if (
       expectedArrays.some((name) => !arraysSeen.has(name)) ||
       [...arraysSeen].some((name) => !expectedArrays.includes(name))
@@ -511,7 +525,7 @@ export async function restoreBackup(
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       meta = parsed.data;
       for (const key of ARRAY_KEYS)
-        if (declared.data[key] !== rawCounts[key])
+        if ((declared.data[key] ?? 0) !== (rawCounts[key] ?? 0))
           throw new WorkspaceError('COUNT_MISMATCH');
     }
     for (const id of references)

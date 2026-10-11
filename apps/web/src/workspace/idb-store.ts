@@ -6,10 +6,11 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
+  OriginalSchema,
   SubmissionSchema,
   WorkspaceMetaSchema,
 } from '@socialprune/core';
-import type { WorkspaceV2, WorkspaceMeta } from '@socialprune/core';
+import type { WorkspaceV2, WorkspaceMeta, Original } from '@socialprune/core';
 import {
   createWorkspace,
   initialState,
@@ -38,6 +39,7 @@ const TABLES = [
   'state',
   'eventSequences',
   'migrationEvents',
+  'originals',
 ] as const;
 export type StorageLifecycle = 'blocked' | 'versionchange' | 'terminated';
 const request = <T>(value: IDBRequest<T>) =>
@@ -59,8 +61,10 @@ export class IndexedDBStore implements WorkspaceStore {
     initial: WorkspaceV2 = createWorkspace({ id: workspaceId }),
     onLifecycle: (state: StorageLifecycle) => void = () => {},
   ): Promise<IndexedDBStore> {
-    const db = await openDB(`sp-ws-${workspaceId}`, 1, {
-      upgrade(db) {
+    const db = await openDB(`sp-ws-${workspaceId}`, 2, {
+      upgrade(db, oldVersion) {
+        db.createObjectStore('originals', { keyPath: 'id' });
+        if (oldVersion >= 1) return;
         db.createObjectStore('meta');
         db.createObjectStore('runtime');
         db.createObjectStore('commands', { keyPath: 'commandId' });
@@ -114,6 +118,7 @@ export class IndexedDBStore implements WorkspaceStore {
       assessments,
       decisionEvents,
       outcomeEvents,
+      originals,
       ...meta
     } = workspace;
     void _counts;
@@ -126,6 +131,7 @@ export class IndexedDBStore implements WorkspaceStore {
         await tx.items.put({ item, importId, metadataImportId: importId });
       }
       for (const record of submissions) await tx.submissions.add(record);
+      for (const record of originals ?? []) await tx.originals.put(record);
       await tx.assessments.append(assessments);
       await tx.decisionEvents.append(decisionEvents);
       await tx.outcomeEvents.append(outcomeEvents);
@@ -332,6 +338,7 @@ export class IndexedDBStore implements WorkspaceStore {
         ...value,
         item: ItemSchema.parse(value.item),
       })),
+      originals: table('originals', (value) => OriginalSchema.parse(value)),
       submissions: table('submissions', (value) =>
         SubmissionSchema.parse(value),
       ),
@@ -462,6 +469,11 @@ export class IndexedDBStore implements WorkspaceStore {
     this.closed = true;
     this.database.close();
     return Promise.resolve();
+  }
+  getOriginals(_ids: readonly string[]): Promise<Original[]> {
+    // Browser-only workspaces do not fetch originals. Backups retain records,
+    // but local photo files can currently be shown only by the CLI review server.
+    return Promise.resolve([]);
   }
 }
 

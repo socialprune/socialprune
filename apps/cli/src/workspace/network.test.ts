@@ -86,6 +86,8 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       [['import', archive, '--workspace', workspace], 0],
       [['import', archive, '--workspace', workspace, '--dry-run'], 0],
       [['review', '--workspace', workspace, '--dry-run'], 0],
+      // Explicit network command is covered here only with its offline flag.
+      [['originals', 'fetch', '--workspace', workspace, '--dry-run'], 0],
       [['review', '--workspace', workspace, '--no-open'], 2],
     ];
     for (const route of [
@@ -95,6 +97,7 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       ['backup', 'restore'],
       ['export', 'clicklist'],
       ['review'],
+      ['originals', 'fetch'],
     ]) {
       cases.push([[...route, '--help'], 0], [[...route, '--bad'], 2]);
     }

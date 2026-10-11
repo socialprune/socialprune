@@ -376,6 +376,13 @@ async function handle(input: WorkspaceRequest) {
       post({ type: 'itemDetail', requestId, ...result });
       break;
     }
+    case 'getOriginals':
+      post({
+        type: 'originals',
+        requestId,
+        originals: await store.getOriginals(input.ids),
+      });
+      break;
     case 'decide':
     case 'outcome': {
       const result =

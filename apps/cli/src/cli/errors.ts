@@ -9,6 +9,12 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  ORIGINALS_FAILED: {
+    message:
+      'Could not fetch the originals. Results already recorded remain in the workspace.',
+    exitCode: 1,
+    retryable: false,
+  },
   SHARING_NOT_CONFIRMED: {
     message:
       'batch next gives item text to the agent that runs it. Pass --share-with-agent once the person has agreed.',

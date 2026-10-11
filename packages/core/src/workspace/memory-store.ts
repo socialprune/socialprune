@@ -7,6 +7,8 @@ import {
   OriginalSchema,
   SubmissionSchema,
   WorkspaceMetaSchema,
+  BrowserRunSchema,
+  BrowserAttemptSchema,
 } from '../model/index.ts';
 import type {
   WorkspaceV2,
@@ -44,6 +46,8 @@ function database(workspace: WorkspaceV2) {
     decisionEvents,
     outcomeEvents,
     originals,
+    browserRuns,
+    browserAttempts,
     ...meta
   } = workspace;
   void _counts;
@@ -69,6 +73,12 @@ function database(workspace: WorkspaceV2) {
       }),
     ),
     originals: new Map((originals ?? []).map((record) => [record.id, record])),
+    browserRuns: new Map(
+      (browserRuns ?? []).map((record) => [record.runId, record]),
+    ),
+    browserAttempts: new Map(
+      (browserAttempts ?? []).map((record) => [record.attemptId, record]),
+    ),
     submissions: new Map(
       submissions.map((record) => [record.submissionId, record]),
     ),
@@ -96,6 +106,8 @@ function fork(source: Database): Database {
     imports: new Map(source.imports),
     items: new Map(source.items),
     originals: new Map(source.originals),
+    browserRuns: new Map(source.browserRuns),
+    browserAttempts: new Map(source.browserAttempts),
     submissions: new Map(source.submissions),
     commands: new Map(source.commands),
     state: new Map(source.state),
@@ -282,6 +294,34 @@ export function createMemoryStore(
           (record) => record.id,
           (record) => OriginalSchema.parse(record),
         ),
+        browserRuns: table(
+          db.browserRuns,
+          (record) => record.runId,
+          (record) => BrowserRunSchema.parse(record),
+        ),
+        browserAttempts: {
+          ...table(
+            db.browserAttempts,
+            (record) => record.attemptId,
+            (record) => BrowserAttemptSchema.parse(record),
+          ),
+          async add(input) {
+            guard(true);
+            const value = BrowserAttemptSchema.parse(input);
+            if (
+              db.browserAttempts.has(value.attemptId) ||
+              [...db.browserAttempts.values()].some(
+                (record) =>
+                  record.seq >= value.seq ||
+                  (value.settles !== null && record.settles === value.settles),
+              )
+            )
+              throw new WorkspaceError('DUPLICATE_ID');
+            db.browserAttempts.set(value.attemptId, structuredClone(value));
+            iterationCache.delete(db.browserAttempts);
+            await Promise.resolve();
+          },
+        },
         assessments: log(
           db.assessments,
           (record) => record.assessmentId,

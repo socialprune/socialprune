@@ -90,6 +90,9 @@ test('machine help uses the command registry and includes no decision capability
     commandRegistry().map((entry) => entry.path),
   );
   expect(parsed.data.commands.map((entry) => entry.path)).toEqual([
+    ['browser', 'setup'],
+    ['browser', 'forget'],
+    ['delete', 'x'],
     ['originals', 'fetch'],
     ['guide'],
     ['structure'],
@@ -108,9 +111,7 @@ test('machine help uses the command registry and includes no decision capability
   for (const entry of parsed.data.commands) {
     expect(entry.options.some((option) => option.name === 'json')).toBe(true);
     expect(
-      entry.path.some((part) =>
-        ['approve', 'decide', 'delete', 'mark'].includes(part),
-      ),
+      entry.path.some((part) => ['approve', 'decide', 'mark'].includes(part)),
     ).toBe(false);
   }
   expect(parsed.data.exitCodes).toEqual({

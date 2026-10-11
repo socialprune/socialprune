@@ -394,7 +394,11 @@ export class LabelService {
         kinds[item.kind]++;
         const state = states.get(item.id)!;
         decisions[state.decision]++;
-        outcomes[state.outcome]++;
+        outcomes[
+          state.outcome === 'deleted-via-browser'
+            ? 'deleted-by-user'
+            : state.outcome
+        ]++;
         if (
           !state.assessments.some(
             (assessment) => assessment.source.kind === 'agent',

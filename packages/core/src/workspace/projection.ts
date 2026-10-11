@@ -8,7 +8,12 @@ import { compareAssessmentSources, ROW_SOURCE_LIMIT } from './row-sources.ts';
 
 const KINDS = ['post', 'reply', 'quote', 'repost', 'comment'] as const;
 const DECISIONS = ['undecided', 'keep', 'delete', 'later'] as const;
-const OUTCOMES = ['unknown', 'deleted-by-user', 'skipped'] as const;
+const OUTCOMES = [
+  'unknown',
+  'deleted-by-user',
+  'skipped',
+  'deleted-via-browser',
+] as const;
 const SOURCES = ['rules', 'model', 'agent', 'fixture'] as const;
 export interface CompactAssessment {
   risk: number;

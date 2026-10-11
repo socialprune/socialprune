@@ -16,6 +16,10 @@ import { generateJsonSchemas } from '../../../packages/core/src/node/schemas.ts'
 
 const reviewDirectory = resolve(root, 'apps/web/dist-review');
 
+export function assertRuntimeDependencies(value: unknown): void {
+  assert.deepEqual(value, { 'playwright-core': '1.63.0' });
+}
+
 export async function checkPackage(): Promise<string[]> {
   const entries = (
     await readFile(new URL('./expected-files.txt', import.meta.url), 'utf8')
@@ -72,6 +76,7 @@ export async function checkPackage(): Promise<string[]> {
     Object.keys(manifest).sort(),
     [
       'bin',
+      'dependencies',
       'engines',
       'exports',
       'files',
@@ -83,6 +88,7 @@ export async function checkPackage(): Promise<string[]> {
     ].sort(),
   );
   assert.equal(manifest.name, 'socialprune');
+  assertRuntimeDependencies(manifest.dependencies);
   assert.equal(manifest.version, '0.0.0');
   assert.equal(manifest.license, 'Apache-2.0');
   assert.equal(manifest.type, 'module');
@@ -109,6 +115,13 @@ export async function checkPackage(): Promise<string[]> {
 export async function packCheck(plant = false): Promise<void> {
   const paths = await checkPackage();
   if (plant) {
+    for (const value of [
+      { 'playwright-core': '1.62.0' },
+      { 'playwright-core': '1.63.0', decoy: '1.0.0' },
+    ]) {
+      assert.throws(() => assertRuntimeDependencies(value));
+    }
+    console.log('Planted changed and extra runtime dependencies: rejected.');
     for (const [relative, message] of [
       ['bin/stray-private.txt', 'Planted stray assembly file: rejected.'],
       [

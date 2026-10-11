@@ -31,6 +31,7 @@ export interface CliContext {
   readonly nodeVersion?: string;
   readonly openBrowser?: (url: string) => Promise<void>;
   readonly stderrIsTerminal?: boolean;
+  readonly stdoutIsTerminal?: boolean;
   readonly reviewAssetDirectory?: string;
   readonly pid?: number;
 }

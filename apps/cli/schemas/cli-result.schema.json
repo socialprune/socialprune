@@ -57,6 +57,132 @@
             {
               "type": "object",
               "properties": {
+                "code": { "type": "string", "const": "OUTCOME_FINAL" },
+                "message": {
+                  "type": "string",
+                  "const": "A browser deletion outcome changes only after a read-only check finds the entry again."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "NOT_INTERACTIVE" },
+                "message": {
+                  "type": "string",
+                  "const": "Run deletion in your own terminal, without --json or a pipe."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "STALE_PLAN" },
+                "message": {
+                  "type": "string",
+                  "const": "The deletion list changed. Make a new dry run and use its plan hash."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "PROFILE_INVALID" },
+                "message": {
+                  "type": "string",
+                  "const": "Use a dedicated SocialPrune profile for X without extensions."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "BROWSER_NOT_FOUND" },
+                "message": {
+                  "type": "string",
+                  "const": "Install Chrome or Edge before using browser commands."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "ACCOUNT_MISMATCH" },
+                "message": {
+                  "type": "string",
+                  "const": "The signed-in account does not match the export account. The run stopped."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "PLATFORM_CHECK" },
+                "message": {
+                  "type": "string",
+                  "const": "The page is not recognized, or shows a login, challenge, lock or limit. The run stopped."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "RUN_STOPPED" },
+                "message": {
+                  "type": "string",
+                  "const": "The browser run stopped at the first problem. Check its journal before continuing."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "DELETE_FAILED" },
+                "message": {
+                  "type": "string",
+                  "const": "The browser deletion command could not finish. No automatic retry was made."
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
                 "code": { "type": "string", "const": "SHARING_NOT_CONFIRMED" },
                 "message": {
                   "type": "string",

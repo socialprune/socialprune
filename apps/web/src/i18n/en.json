@@ -188,6 +188,7 @@
   "review.outcomeFilter": "Recorded outcome",
   "review.outcomeUnknown": "Not recorded",
   "review.outcomeDeleted": "Deleted by you",
+  "review.outcomeDeletedBrowser": "Deleted by SocialPrune in your browser",
   "review.outcomeSkipped": "Skipped",
   "review.riskFilter": "Minimum suggested risk",
   "review.noSuggestionsFilter": "Without a suggestion",

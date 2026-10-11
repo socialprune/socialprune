@@ -15,6 +15,57 @@ export const CLI_ERRORS = {
     exitCode: 1,
     retryable: false,
   },
+  OUTCOME_FINAL: {
+    message:
+      'A browser deletion outcome changes only after a read-only check finds the entry again.',
+    exitCode: 1,
+    retryable: false,
+  },
+  NOT_INTERACTIVE: {
+    message: 'Run deletion in your own terminal, without --json or a pipe.',
+    exitCode: 2,
+    retryable: false,
+  },
+  STALE_PLAN: {
+    message:
+      'The deletion list changed. Make a new dry run and use its plan hash.',
+    exitCode: 1,
+    retryable: false,
+  },
+  PROFILE_INVALID: {
+    message: 'Use a dedicated SocialPrune profile for X without extensions.',
+    exitCode: 2,
+    retryable: false,
+  },
+  BROWSER_NOT_FOUND: {
+    message: 'Install Chrome or Edge before using browser commands.',
+    exitCode: 1,
+    retryable: false,
+  },
+  ACCOUNT_MISMATCH: {
+    message:
+      'The signed-in account does not match the export account. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  PLATFORM_CHECK: {
+    message:
+      'The page is not recognized, or shows a login, challenge, lock or limit. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  RUN_STOPPED: {
+    message:
+      'The browser run stopped at the first problem. Check its journal before continuing.',
+    exitCode: 1,
+    retryable: false,
+  },
+  DELETE_FAILED: {
+    message:
+      'The browser deletion command could not finish. No automatic retry was made.',
+    exitCode: 1,
+    retryable: false,
+  },
   SHARING_NOT_CONFIRMED: {
     message:
       'batch next gives item text to the agent that runs it. Pass --share-with-agent once the person has agreed.',

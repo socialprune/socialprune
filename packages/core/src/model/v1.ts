@@ -97,7 +97,12 @@ export const DecisionSchema = z.strictObject({
 export type Decision = z.infer<typeof DecisionSchema>;
 export const OutcomeSchema = z.strictObject({
   itemId: id,
-  value: z.enum(['deleted-by-user', 'skipped', 'unknown']),
+  value: z.enum([
+    'deleted-by-user',
+    'deleted-via-browser',
+    'skipped',
+    'unknown',
+  ]),
   recordedAt: UtcTimestampSchema,
 });
 export type Outcome = z.infer<typeof OutcomeSchema>;

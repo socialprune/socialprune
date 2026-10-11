@@ -10,6 +10,8 @@ import {
   UtcTimestampSchema,
   WorkspaceCountsSchema,
   WorkspaceMetaSchema,
+  BrowserRunSchema,
+  BrowserAttemptSchema,
 } from '../model/index.ts';
 import type {
   WorkspaceCounts,
@@ -39,6 +41,8 @@ const ARRAY_KEYS = [
   'decisionEvents',
   'outcomeEvents',
   'originals',
+  'browserRuns',
+  'browserAttempts',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 export interface BackupOptions {
@@ -146,7 +150,15 @@ export function createBackup(
       });
     }
     if (!counts.originals) delete counts.originals;
-    const header = { ...sourceMeta, lastBackupAt: createdAt, counts };
+    // Every newly written portable document is v3. Reading older logical
+    // workspaces adds only the empty journal arrays and zero counts.
+    const useV3 = true;
+    const header = {
+      ...sourceMeta,
+      schemaVersion: useV3 ? 3 : 2,
+      lastBackupAt: createdAt,
+      counts,
+    };
     yield '{';
     let comma = false;
     for (const key of [
@@ -165,6 +177,8 @@ export function createBackup(
     }
     for (const key of ARRAY_KEYS) {
       if (key === 'originals' && !counts.originals) continue;
+      if ((key === 'browserRuns' || key === 'browserAttempts') && !useV3)
+        continue;
       yield `,${JSON.stringify(key)}:[`;
       let first = true;
       for (let offset = 0; ; offset += batchSize) {
@@ -342,6 +356,8 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   decisionEvents: DecisionEventSchema,
   outcomeEvents: OutcomeEventSchema,
   originals: OriginalSchema,
+  browserRuns: BrowserRunSchema,
+  browserAttempts: BrowserAttemptSchema,
 };
 const v1Records: Record<string, z.ZodType> = {
   imports: v1.ImportRecordSchema,
@@ -423,7 +439,7 @@ export async function* backupParts(
             value < 1
           )
             throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-          if (value > 2) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+          if (value > 3) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
           version = value;
         }
         yield { type: 'header', name, value };
@@ -490,7 +506,7 @@ export async function readBackup(
         const value = await jsonValue(cursor, maxBytes);
         if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
           throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-        if (value > 2) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+        if (value > 3) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
         version = value;
         document[name] = value;
       } else if (
@@ -502,6 +518,8 @@ export async function readBackup(
           'decisionEvents',
           'outcomeEvents',
           'originals',
+          'browserRuns',
+          'browserAttempts',
           'decisions',
           'outcomes',
         ].includes(name)
@@ -586,7 +604,8 @@ export async function readBackup(
       throwIfAborted(options.signal);
       return migrated;
     }
-    if (version !== 2) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version !== 2 && version !== 3)
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     const declared = WorkspaceCountsSchema.safeParse(document.counts);
     if (!declared.success) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     const counts = { ...declared.data };
@@ -626,6 +645,8 @@ export async function applyBackup(
     decisionEvents,
     outcomeEvents,
     originals,
+    browserRuns,
+    browserAttempts,
     ...meta
   } = workspace;
   void _counts;
@@ -664,6 +685,9 @@ export async function applyBackup(
       await tx.submissions.add(record);
     }
     for (const original of originals ?? []) await tx.originals.put(original);
+    for (const run of browserRuns ?? []) await tx.browserRuns.add(run);
+    for (const attempt of browserAttempts ?? [])
+      await tx.browserAttempts.add(attempt);
     for (let offset = 0; offset < assessments.length; offset += batchSize) {
       throwIfAborted(options.signal);
       await tx.assessments.append(

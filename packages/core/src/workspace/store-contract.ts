@@ -2,6 +2,8 @@ import type { DecisionEvent, Item, WorkspaceV2 } from '../model/index.ts';
 import { createWorkspace, readWorkspace } from './store.ts';
 import type { WorkspaceStore, WriteTransaction } from './store.ts';
 import { canonicalJson } from './canonical.ts';
+import { JOURNAL_FIXTURE } from '../model/browser-fixture.ts';
+import { createBackup, restoreBackup } from './backup.ts';
 
 export interface StoreContractHarness {
   store: WorkspaceStore;
@@ -88,6 +90,72 @@ async function withStore(
   }
 }
 export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
+  {
+    name: 'schema v3 browser journal survives reopen and portable streaming restore without acquiring platform capability',
+    run: (factory) =>
+      withStore(factory, async (harness) => {
+        await harness.store.write(async (tx) => {
+          const meta = await tx.meta.get();
+          await tx.meta.set({ ...meta, schemaVersion: 3 });
+          await tx.browserRuns.add(JOURNAL_FIXTURE.run);
+          for (const attempt of JOURNAL_FIXTURE.attempts)
+            await tx.browserAttempts.add(attempt);
+        });
+        const store = await harness.reopen();
+        const workspace = await store.read(readWorkspace);
+        equal(
+          workspace.browserRuns,
+          [JOURNAL_FIXTURE.run],
+          'run lost after reopen',
+        );
+        equal(
+          workspace.browserAttempts,
+          JOURNAL_FIXTURE.attempts,
+          'ambiguous attempt lost after reopen',
+        );
+        equal(workspace.counts.browserAttempts, 2, 'attempt count lost');
+        await rejects(() =>
+          store.write(async (tx) =>
+            tx.browserAttempts.add(JOURNAL_FIXTURE.attempts[0]!),
+          ),
+        );
+        await rejects(() =>
+          store.write(async (tx) =>
+            tx.browserAttempts.add({
+              ...JOURNAL_FIXTURE.attempts[0]!,
+              attemptId: 'generated-sequence-decoy',
+            }),
+          ),
+        );
+        const backup = createBackup(store, { batchSize: 1 });
+        const bytes: Uint8Array[] = [];
+        for await (const chunk of backup.chunks) bytes.push(chunk);
+        const target = await factory(createWorkspace());
+        try {
+          await restoreBackup(
+            target.store,
+            (async function* () {
+              await Promise.resolve();
+              yield* bytes;
+            })(),
+            { batchSize: 1 },
+          );
+          const restored = await target.store.read(readWorkspace);
+          equal(
+            restored.browserRuns,
+            [JOURNAL_FIXTURE.run],
+            'backup lost runs',
+          );
+          equal(
+            restored.browserAttempts,
+            JOURNAL_FIXTURE.attempts,
+            'backup lost ambiguous attempt',
+          );
+        } finally {
+          await target.dispose();
+        }
+      }),
+  },
   {
     name: 'shared event sequences survive reopen and reject duplicates or non-increasing log order',
     run: (factory) =>

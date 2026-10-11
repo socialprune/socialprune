@@ -5,7 +5,12 @@ import { useWorkspace, requestId } from '../social/workspace.ts';
 import { Avatar, PostCard } from '../social/PostCard.tsx';
 import { useT } from '../i18n/index.ts';
 import { useIntl } from 'react-intl';
-import { joinThreads, recap, bannerVariant } from './model.ts';
+import {
+  joinThreads,
+  recap,
+  bannerVariant,
+  isDeletedOnPlatform,
+} from './model.ts';
 import type { ArchivedItem } from './model.ts';
 import styles from '../social/Social.module.css';
 
@@ -115,8 +120,8 @@ export function Archive({ client }: { client: WorkspaceClient }) {
     }),
   );
   const account = summary?.accounts.find((entry) => entry.key === accountKey);
-  const deleted = entries.filter(
-    ({ outcome }) => outcome === 'deleted-by-user',
+  const deleted = entries.filter(({ outcome }) =>
+    isDeletedOnPlatform(outcome),
   ).length;
   return (
     <section data-testid="archive">

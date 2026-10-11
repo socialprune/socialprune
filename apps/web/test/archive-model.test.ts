@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '@socialprune/core';
-import { joinThreads, recap } from '../src/archive/model.ts';
+import { OutcomeValueSchema } from '@socialprune/core';
+import {
+  isDeletedOnPlatform,
+  joinThreads,
+  recap,
+} from '../src/archive/model.ts';
 import { personExpected, personFixture } from './person-fixture.ts';
 
 const item = (
@@ -75,6 +80,23 @@ describe('private archive groups and count-only recap', () => {
     ];
     expect(joinThreads(entries)[0]).toHaveLength(2);
     expect(joinThreads(entries)[0]![1]!.outcome).toBe('deleted-by-user');
+  });
+  it('counts a hand-recorded and a browser-run deletion as deleted, and nothing else', () => {
+    // Every value the core schema allows is classified; a new value fails here
+    // until someone decides whether the archive badges it.
+    expect(
+      Object.fromEntries(
+        OutcomeValueSchema.options.map((value) => [
+          value,
+          isDeletedOnPlatform(value),
+        ]),
+      ),
+    ).toEqual({
+      'deleted-by-user': true,
+      'deleted-via-browser': true,
+      skipped: false,
+      unknown: false,
+    });
   });
   it('uses anniversary age, known likes, local years and whole words without returning item text', () => {
     const first = item('1');

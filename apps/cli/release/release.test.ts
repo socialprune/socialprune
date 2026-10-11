@@ -172,3 +172,18 @@ test.each([
 ])('restricted workflow reader rejects unsupported YAML: %s', (source) => {
   expect(() => readWorkflow(source)).toThrow();
 });
+import { assertRuntimeDependencies } from './pack-check.ts';
+
+test('runtime dependency pin accepts only the exact browser driver and rejects planted changes', () => {
+  expect(() =>
+    assertRuntimeDependencies({ 'playwright-core': '1.63.0' }),
+  ).not.toThrow();
+  for (const dependency of [
+    undefined,
+    {},
+    { 'playwright-core': '1.62.0' },
+    { 'playwright-core': '^1.63.0' },
+    { 'playwright-core': '1.63.0', decoy: '1.0.0' },
+  ])
+    expect(() => assertRuntimeDependencies(dependency)).toThrow();
+});

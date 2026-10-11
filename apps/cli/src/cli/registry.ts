@@ -12,6 +12,11 @@ import { reviewCommand } from '../commands/review.ts';
 import { batchNextCommand } from '../commands/batch-next.ts';
 import { labelsSubmitCommand } from '../commands/labels-submit.ts';
 import { originalsFetchCommand } from '../commands/originals-fetch.ts';
+import { deleteXCommand } from '../commands/delete.ts';
+import {
+  browserSetupCommand,
+  browserForgetCommand,
+} from '../commands/browser.ts';
 import { jsonFlag } from './context.ts';
 import type { CommandRunContext } from './context.ts';
 import { CliError, EXIT_MEANINGS } from './errors.ts';
@@ -46,6 +51,28 @@ function unavailableCommand(): Command<CommandRunContext> {
 
 export function commandRegistry(): readonly RegistryEntry[] {
   return [
+    ...[
+      { path: ['browser', 'setup'], command: browserSetupCommand },
+      { path: ['browser', 'forget'], command: browserForgetCommand },
+    ].map((entry) => ({
+      ...entry,
+      writes: true,
+      dryRun: false,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'DELETE_FAILED' as const,
+    })),
+    {
+      path: ['delete', 'x'],
+      command: deleteXCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'DELETE_FAILED',
+    },
     {
       path: ['originals', 'fetch'],
       command: originalsFetchCommand,

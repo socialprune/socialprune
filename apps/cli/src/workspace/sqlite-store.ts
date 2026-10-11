@@ -11,8 +11,16 @@ import {
   SubmissionSchema,
   WorkspaceMetaSchema,
   WorkspaceV2Schema,
+  BrowserRunSchema,
+  BrowserAttemptSchema,
 } from '@socialprune/core';
-import type { WorkspaceV2, Original } from '@socialprune/core';
+import type {
+  WorkspaceV2,
+  Original,
+  OutcomeEvent,
+  BrowserRun,
+  BrowserAttempt,
+} from '@socialprune/core';
 import {
   importForItem,
   initialState,
@@ -32,8 +40,14 @@ import type {
 } from '@socialprune/core/workspace/store';
 import { CliError } from '../cli/errors.ts';
 import { requireWorkspaceNode } from './node-version.ts';
+import {
+  BrowserOutcomeWriter,
+  readJournal,
+  BROWSER_JOURNAL_LAYOUT,
+} from './browser-journal.ts';
+import { journalExists } from './browser-journal.ts';
 
-export const SQLITE_LAYOUT_VERSION = 2;
+export const SQLITE_LAYOUT_VERSION = 3;
 
 const originalsLayout = `
 CREATE TABLE originals (
@@ -112,6 +126,8 @@ CREATE TRIGGER ${table}_no_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(A
   )
   .join('\n')}
 ${originalsLayout}
+${BROWSER_JOURNAL_LAYOUT}
+PRAGMA user_version=3;
 `;
 
 export function storageError(error: unknown): Error {
@@ -200,7 +216,12 @@ export class SQLiteStore implements WorkspaceStore {
         'PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;',
       );
       const version = db.prepare('PRAGMA user_version').get()?.user_version;
-      if (version !== 0 && version !== 1 && version !== SQLITE_LAYOUT_VERSION)
+      if (
+        version !== 0 &&
+        version !== 1 &&
+        version !== 2 &&
+        version !== SQLITE_LAYOUT_VERSION
+      )
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
       const store = new SQLiteStore(db, path, Boolean(options.readOnly));
       if (version === 0) {
@@ -208,19 +229,24 @@ export class SQLiteStore implements WorkspaceStore {
           throw new CliError('WORKSPACE_INVALID');
         await store.initialize(options.initial);
       }
-      if (version === 1 && !options.readOnly) {
+      if ((version === 1 || version === 2) && !options.readOnly) {
         // Refuse unknown logical schemas before a physical migration can write.
         await store.read(async (tx) => tx.meta.get());
         db.exec('BEGIN EXCLUSIVE;');
         try {
-          if (db.prepare('PRAGMA user_version').get()?.user_version === 1) {
+          if (
+            Number(db.prepare('PRAGMA user_version').get()?.user_version) <
+            SQLITE_LAYOUT_VERSION
+          ) {
             const stamp = new Date().toISOString().replaceAll(':', '-');
             await copyFile(
               path,
               `${path}.${stamp}-${crypto.randomUUID()}.before-migration.sqlite`,
               constants.COPYFILE_EXCL,
             );
-            db.exec(originalsLayout);
+            if (version === 1) db.exec(originalsLayout);
+            db.exec(BROWSER_JOURNAL_LAYOUT);
+            db.exec('PRAGMA user_version=3;');
           }
           db.exec('COMMIT;');
         } catch (error) {
@@ -262,6 +288,8 @@ export class SQLiteStore implements WorkspaceStore {
         decisionEvents,
         outcomeEvents,
         originals,
+        browserRuns,
+        browserAttempts,
         ...meta
       } = workspace;
       void _counts;
@@ -277,6 +305,9 @@ export class SQLiteStore implements WorkspaceStore {
         }
         for (const value of submissions) await tx.submissions.add(value);
         for (const value of originals ?? []) await tx.originals.put(value);
+        for (const value of browserRuns ?? []) await tx.browserRuns.add(value);
+        for (const value of browserAttempts ?? [])
+          await tx.browserAttempts.add(value);
         await tx.assessments.append(assessments);
         await tx.decisionEvents.append(decisionEvents);
         await tx.outcomeEvents.append(outcomeEvents);
@@ -297,6 +328,7 @@ export class SQLiteStore implements WorkspaceStore {
   } {
     const db = this.db;
     const hasOriginals = this.hasOriginals;
+    const hasJournal = journalExists(db);
     let active = true;
     const guard = (write = false) => {
       if (!active || (write && (!writable || this.readOnly)))
@@ -396,6 +428,38 @@ export class SQLiteStore implements WorkspaceStore {
           : 0;
         for (const input of inputs) {
           const value = validate(input);
+          if (name === 'outcome_events') {
+            const event = OutcomeEventSchema.parse(value);
+            const state = get<StoredState>(
+              'SELECT data FROM state WHERE item_id=?',
+              event.itemId,
+            );
+            const prior = get<OutcomeEvent>(
+              'SELECT data FROM outcome_events WHERE item_id=? ORDER BY seq DESC LIMIT 1',
+              event.itemId,
+            );
+            if (state && prior?.value === 'deleted-via-browser') {
+              const attempt = readJournal(db).attempts.find(
+                (attempt) => attempt.attemptId === event.action.id,
+              );
+              if (
+                event.value !== 'unknown' ||
+                event.source.via !== 'browser-x' ||
+                attempt?.state !== 'reappeared' ||
+                attempt.itemId !== event.itemId
+              )
+                throw new CliError('OUTCOME_FINAL');
+            }
+            if (
+              state &&
+              event.value === 'deleted-via-browser' &&
+              (event.source.via !== 'browser-x' ||
+                readJournal(db).attempts.find(
+                  (attempt) => attempt.attemptId === event.action.id,
+                )?.state !== 'deleted')
+            )
+              throw new CliError('OUTCOME_FINAL');
+          }
           if (events) {
             const seq = (value as R & { seq: number }).seq;
             if (
@@ -440,7 +504,7 @@ export class SQLiteStore implements WorkspaceStore {
             typeof value === 'object' &&
             'schemaVersion' in value &&
             typeof value.schemaVersion === 'number' &&
-            value.schemaVersion > 2
+            value.schemaVersion > 3
           )
             throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
           const result = WorkspaceMetaSchema.safeParse(value);
@@ -568,6 +632,88 @@ export class SQLiteStore implements WorkspaceStore {
           return Promise.resolve();
         },
       },
+      browserRuns: {
+        get: (id) =>
+          Promise.resolve(
+            hasJournal
+              ? get<BrowserRun>(
+                  'SELECT data FROM browser_runs WHERE run_id=?',
+                  id,
+                )
+              : undefined,
+          ),
+        iterate: hasJournal
+          ? iterate<BrowserRun>('browser_runs')
+          : async function* () {
+              await Promise.resolve();
+              guard();
+            },
+        async add(input) {
+          guard(true);
+          const value = BrowserRunSchema.parse(input);
+          run(
+            'INSERT INTO browser_runs VALUES(?,?,?,?)',
+            value.runId,
+            value.accountKey,
+            value.endedAt,
+            JSON.stringify(value),
+          );
+          await Promise.resolve();
+        },
+        async put(input) {
+          guard(true);
+          const value = BrowserRunSchema.parse(input);
+          run(
+            'UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?',
+            value.endedAt,
+            JSON.stringify(value),
+            value.runId,
+          );
+          await Promise.resolve();
+        },
+      },
+      browserAttempts: {
+        get: (id) =>
+          Promise.resolve(
+            hasJournal
+              ? get<BrowserAttempt>(
+                  'SELECT data FROM browser_attempts WHERE attempt_id=?',
+                  id,
+                )
+              : undefined,
+          ),
+        iterate: hasJournal
+          ? iterate<BrowserAttempt>('browser_attempts', 'seq')
+          : async function* () {
+              await Promise.resolve();
+              guard();
+            },
+        async add(input) {
+          guard(true);
+          const value = BrowserAttemptSchema.parse(input);
+          if (
+            Number(
+              db
+                .prepare(
+                  'SELECT coalesce(max(seq),0) AS seq FROM browser_attempts',
+                )
+                .get()!.seq,
+            ) >= value.seq
+          )
+            throw new WorkspaceError('EVENT_SEQUENCE');
+          run(
+            'INSERT INTO browser_attempts VALUES(?,?,?,?,?,?,?)',
+            value.seq,
+            value.attemptId,
+            value.runId,
+            value.itemId,
+            value.state,
+            value.settles,
+            JSON.stringify(value),
+          );
+          await Promise.resolve();
+        },
+      },
       submissions: table(
         'submissions',
         'submission_id',
@@ -675,6 +821,20 @@ export class SQLiteStore implements WorkspaceStore {
   }
   write<T>(operation: (tx: WriteTransaction) => Promise<T>): Promise<T> {
     return this.transact(true, operation);
+  }
+
+  browserJournal() {
+    return this.read(async () => {
+      await Promise.resolve();
+      return readJournal(this.db);
+    });
+  }
+
+  browserOutcomeWriter(): BrowserOutcomeWriter {
+    if (this.readOnly) throw new CliError('WORKSPACE_INVALID');
+    return new BrowserOutcomeWriter(this.db, (operation) =>
+      this.write(operation),
+    );
   }
 
   /** Core's paged writer gets one SQLite read transaction, not independent snapshots. */

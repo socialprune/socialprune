@@ -11,6 +11,7 @@
     "schemas:generate": "node src/cli/schema-files.ts generate",
     "schemas:check": "node src/cli/schema-files.ts check",
     "test:e2e": "pnpm --filter @socialprune/web build:review && playwright test",
+    "test:delete": "vitest run --config e2e/delete.vitest.config.ts",
     "build:release": "node release/release.ts",
     "pack:check": "node release/pack-check.ts --plant-defect",
     "smoke:package": "node release/smoke.ts"
@@ -20,6 +21,7 @@
     "@socialprune/adapter-x": "workspace:*",
     "@socialprune/core": "workspace:*",
     "@stricli/core": "1.3.0",
+    "playwright-core": "1.63.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

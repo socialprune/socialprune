@@ -9,6 +9,8 @@ import {
   OriginalSchema,
   SubmissionSchema,
   WorkspaceMetaSchema,
+  BrowserRunSchema,
+  BrowserAttemptSchema,
 } from '@socialprune/core';
 import type { WorkspaceV2, WorkspaceMeta, Original } from '@socialprune/core';
 import {
@@ -40,6 +42,8 @@ const TABLES = [
   'eventSequences',
   'migrationEvents',
   'originals',
+  'browserRuns',
+  'browserAttempts',
 ] as const;
 export type StorageLifecycle = 'blocked' | 'versionchange' | 'terminated';
 const request = <T>(value: IDBRequest<T>) =>
@@ -61,9 +65,18 @@ export class IndexedDBStore implements WorkspaceStore {
     initial: WorkspaceV2 = createWorkspace({ id: workspaceId }),
     onLifecycle: (state: StorageLifecycle) => void = () => {},
   ): Promise<IndexedDBStore> {
-    const db = await openDB(`sp-ws-${workspaceId}`, 2, {
+    const db = await openDB(`sp-ws-${workspaceId}`, 3, {
       upgrade(db, oldVersion) {
-        db.createObjectStore('originals', { keyPath: 'id' });
+        if (oldVersion < 3) {
+          db.createObjectStore('browserRuns', { keyPath: 'runId' });
+          const attempts = db.createObjectStore('browserAttempts', {
+            keyPath: 'attemptId',
+          });
+          attempts.createIndex('seq', 'seq', { unique: true });
+          attempts.createIndex('settles', 'settles', { unique: true });
+        }
+        if (oldVersion < 2)
+          db.createObjectStore('originals', { keyPath: 'id' });
         if (oldVersion >= 1) return;
         db.createObjectStore('meta');
         db.createObjectStore('runtime');
@@ -119,6 +132,8 @@ export class IndexedDBStore implements WorkspaceStore {
       decisionEvents,
       outcomeEvents,
       originals,
+      browserRuns,
+      browserAttempts,
       ...meta
     } = workspace;
     void _counts;
@@ -132,6 +147,9 @@ export class IndexedDBStore implements WorkspaceStore {
       }
       for (const record of submissions) await tx.submissions.add(record);
       for (const record of originals ?? []) await tx.originals.put(record);
+      for (const record of browserRuns ?? []) await tx.browserRuns.add(record);
+      for (const record of browserAttempts ?? [])
+        await tx.browserAttempts.add(record);
       await tx.assessments.append(assessments);
       await tx.decisionEvents.append(decisionEvents);
       await tx.outcomeEvents.append(outcomeEvents);
@@ -183,7 +201,11 @@ export class IndexedDBStore implements WorkspaceStore {
         if (!limit) return;
         const store = native.objectStore(name);
         const source =
-          name === 'migrationEvents' ? store.index('order') : store;
+          name === 'migrationEvents'
+            ? store.index('order')
+            : name === 'browserAttempts'
+              ? store.index('seq')
+              : store;
         if (name !== 'migrationEvents') {
           let range: IDBKeyRange | undefined;
           let skip = offset;
@@ -196,7 +218,12 @@ export class IndexedDBStore implements WorkspaceStore {
             const values = (await request(valuesRequest)) as R[];
             const keys = await request(keysRequest);
             if (!values.length) return;
-            range = IDBKeyRange.lowerBound(keys.at(-1)!, true);
+            range = IDBKeyRange.lowerBound(
+              name === 'browserAttempts'
+                ? (values.at(-1) as { seq: number }).seq
+                : keys.at(-1)!,
+              true,
+            );
             for (const value of values) {
               if (skip) {
                 skip--;
@@ -339,6 +366,12 @@ export class IndexedDBStore implements WorkspaceStore {
         item: ItemSchema.parse(value.item),
       })),
       originals: table('originals', (value) => OriginalSchema.parse(value)),
+      browserRuns: table('browserRuns', (value) =>
+        BrowserRunSchema.parse(value),
+      ),
+      browserAttempts: table('browserAttempts', (value) =>
+        BrowserAttemptSchema.parse(value),
+      ),
       submissions: table('submissions', (value) =>
         SubmissionSchema.parse(value),
       ),

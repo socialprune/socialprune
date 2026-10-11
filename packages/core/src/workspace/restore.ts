@@ -8,6 +8,8 @@ import {
   SubmissionSchema,
   WorkspaceCountsSchema,
   WorkspaceMetaSchema,
+  BrowserRunSchema,
+  BrowserAttemptSchema,
 } from '../model/index.ts';
 import type {
   Action,
@@ -19,8 +21,14 @@ import type {
   Submission,
   WorkspaceCounts,
   WorkspaceMeta,
+  BrowserRun,
+  BrowserAttempt,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
+import {
+  validateBrowserJournal,
+  validateBrowserOutcomes,
+} from '../model/browser.ts';
 import { throwIfAborted } from '../archive/limits.ts';
 import { backupParts } from './backup.ts';
 import type { BackupApplyOptions, BackupReadOptions } from './backup.ts';
@@ -55,10 +63,17 @@ const ARRAY_KEYS = [
   'decisionEvents',
   'outcomeEvents',
   'originals',
+  'browserRuns',
+  'browserAttempts',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 const decisionValues = ['undecided', 'keep', 'delete', 'later'] as const;
-const outcomeValues = ['unknown', 'deleted-by-user', 'skipped'] as const;
+const outcomeValues = [
+  'unknown',
+  'deleted-by-user',
+  'skipped',
+  'deleted-via-browser',
+] as const;
 const STATE_KIND = 4;
 const KNOWN_ITEM = 16;
 interface ActionIndex {
@@ -104,6 +119,9 @@ export async function restoreBackup(
     { source: string; count: number }
   >();
   const categories = new Set<string>();
+  const browserRuns: BrowserRun[] = [],
+    browserAttempts: BrowserAttempt[] = [];
+  const browserOutcomes: OutcomeEvent[] = [];
   let fixtureAssessment = false;
   const rawCounts: WorkspaceCounts = {
     imports: 0,
@@ -253,6 +271,10 @@ export async function restoreBackup(
           await tx.outcomeEvents.append([record.value as OutcomeEvent]);
         else if (record.name === 'originals')
           await tx.originals.put(record.value as Original);
+        else if (record.name === 'browserRuns')
+          await tx.browserRuns.add(record.value as BrowserRun);
+        else if (record.name === 'browserAttempts')
+          await tx.browserAttempts.add(record.value as BrowserAttempt);
         else await tx.migrationEvents.add(record.value as MigrationEvent);
       }
     });
@@ -296,12 +318,29 @@ export async function restoreBackup(
       counts.items++;
       await buffered(name, index, value);
     } else if (name === 'originals') {
-      if (version !== 2) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      if (version !== 2 && version !== 3)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value = OriginalSchema.parse(record.value);
       acceptUnique(name, value.id);
       rawCounts.originals = (rawCounts.originals ?? 0) + 1;
       counts.originals = (counts.originals ?? 0) + 1;
       await buffered(name, index, value);
+    } else if (name === 'browserRuns' || name === 'browserAttempts') {
+      if (version !== 3) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      const value =
+        name === 'browserRuns'
+          ? BrowserRunSchema.parse(record.value)
+          : BrowserAttemptSchema.parse(record.value);
+      acceptUnique(
+        name,
+        name === 'browserRuns'
+          ? (value as BrowserRun).runId
+          : (value as BrowserAttempt).attemptId,
+      );
+      rawCounts[name] = (rawCounts[name] ?? 0) + 1;
+      counts[name] = (counts[name] ?? 0) + 1;
+      if (name === 'browserRuns') browserRuns.push(value as BrowserRun);
+      else browserAttempts.push(value as BrowserAttempt);
     } else if (name === 'assessments') {
       const value =
         version === 1
@@ -360,7 +399,8 @@ export async function restoreBackup(
       });
       pendingLegacyEvents++;
     } else {
-      if (version !== 2) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      if (version !== 2 && version !== 3)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
         name === 'decisionEvents'
           ? DecisionEventSchema.parse(record.value)
@@ -368,6 +408,11 @@ export async function restoreBackup(
       rawCounts[name]++;
       if (!(await acceptDuplicate('event', value.eventId, value))) return;
       checkEvent(value, name === 'decisionEvents' ? 'decision' : 'outcome');
+      if (
+        name === 'outcomeEvents' &&
+        (value as OutcomeEvent).source.via === 'browser-x'
+      )
+        browserOutcomes.push(value as OutcomeEvent);
       counts[name]++;
       await buffered(name, index, value);
     }
@@ -396,24 +441,30 @@ export async function restoreBackup(
       else if (version === undefined) {
         const value = part.value as Record<string, unknown>;
         const inferred =
-          part.name === 'decisions' || part.name === 'outcomes'
-            ? 1
-            : part.name === 'items'
-              ? Object.hasOwn(value, 'mediaCount')
-                ? 2
-                : 1
-              : part.name === 'assessments'
-                ? Object.hasOwn(value, 'assessmentId')
+          part.name === 'browserRuns' || part.name === 'browserAttempts'
+            ? 3
+            : part.name === 'decisions' || part.name === 'outcomes'
+              ? 1
+              : part.name === 'items'
+                ? Object.hasOwn(value, 'mediaCount')
                   ? 2
                   : 1
-                : part.name === 'imports'
-                  ? Object.hasOwn(value, 'status')
+                : part.name === 'assessments'
+                  ? Object.hasOwn(value, 'assessmentId')
                     ? 2
                     : 1
-                  : 2;
-        if (provisionalVersion !== undefined && provisionalVersion !== inferred)
+                  : part.name === 'imports'
+                    ? Object.hasOwn(value, 'status')
+                      ? 2
+                      : 1
+                    : 2;
+        if (
+          provisionalVersion !== undefined &&
+          provisionalVersion !== inferred &&
+          !([2, 3].includes(provisionalVersion) && [2, 3].includes(inferred))
+        )
           throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-        provisionalVersion = inferred;
+        provisionalVersion = Math.max(provisionalVersion ?? inferred, inferred);
         const saved = version;
         version = inferred;
         await accept({ ...part, name: part.name as BufferedRecord['name'] });
@@ -421,16 +472,24 @@ export async function restoreBackup(
       } else
         await accept({ ...part, name: part.name as BufferedRecord['name'] });
     }
-    if (version !== 1 && version !== 2)
+    if (version !== 1 && version !== 2 && version !== 3)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-    if (provisionalVersion !== undefined && provisionalVersion !== version)
+    if (
+      provisionalVersion !== undefined &&
+      provisionalVersion !== version &&
+      !(version === 3 && provisionalVersion === 2)
+    )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     await flush();
     const expectedArrays =
       version === 1
         ? ['imports', 'items', 'assessments', 'decisions', 'outcomes']
-        : ARRAY_KEYS.filter(
-            (key) => key !== 'originals' || arraysSeen.has('originals'),
+        : ARRAY_KEYS.filter((key) =>
+            key === 'originals'
+              ? arraysSeen.has('originals')
+              : ['browserRuns', 'browserAttempts'].includes(key)
+                ? version === 3
+                : true,
           );
     if (
       expectedArrays.some((name) => !arraysSeen.has(name)) ||
@@ -558,6 +617,29 @@ export async function restoreBackup(
         )
           throw new WorkspaceError('ACTION_INVALID');
       }
+    }
+    if (version === 3) {
+      try {
+        validateBrowserJournal(
+          browserRuns,
+          browserAttempts,
+          new Set(
+            [...itemHeads]
+              .filter(([, head]) => head >= KNOWN_ITEM)
+              .map(([id]) => id),
+          ),
+        );
+        validateBrowserOutcomes(browserAttempts, browserOutcomes);
+      } catch {
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      }
+      // Journal references are validated before any journal row enters staging;
+      // property order in a portable JSON document never controls FK order.
+      await store.write(async (tx) => {
+        for (const run of browserRuns) await tx.browserRuns.add(run);
+        for (const attempt of browserAttempts)
+          await tx.browserAttempts.add(attempt);
+      });
     }
     // Association/state projection reads one bounded page from the staging
     // backend; records are dropped after that page is committed.

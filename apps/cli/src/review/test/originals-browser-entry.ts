@@ -69,6 +69,7 @@ try {
     assetDirectory: reviewAssetDirectory(),
     signal: controller.signal,
     handleSignals: false,
+    port: 4234,
   });
   await ipc.send({ type: 'opened', url: server.launchUrl });
   await server.closed;

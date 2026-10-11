@@ -110,7 +110,12 @@ async function summary(): Promise<WorkspaceSummary> {
       accounts.set(item.account.key, item.account);
       const state = await tx.state.get(item.id);
       decisions[state?.decision ?? 'undecided']++;
-      outcomes[state?.outcome ?? 'unknown']++;
+      const outcome = state?.outcome ?? 'unknown';
+      // As in core's queries: a deletion run in the person's browser counts
+      // with the deletions the person recorded by hand.
+      outcomes[
+        outcome === 'deleted-via-browser' ? 'deleted-by-user' : outcome
+      ]++;
     }
     for (const name of [
       'assessments',

@@ -301,7 +301,12 @@
           "itemId": { "type": "string", "minLength": 1 },
           "value": {
             "type": "string",
-            "enum": ["deleted-by-user", "skipped", "unknown"]
+            "enum": [
+              "deleted-by-user",
+              "deleted-via-browser",
+              "skipped",
+              "unknown"
+            ]
           },
           "recordedAt": {
             "type": "string",

@@ -83,7 +83,7 @@ export async function release(): Promise<void> {
       input: resolve(root, 'apps/cli', entry),
       platform: 'node',
       resolve: { alias },
-      external: (id) => id.startsWith('node:'),
+      external: (id) => id.startsWith('node:') || id === 'playwright-core',
       output: {
         format: 'esm',
         minify: true,
@@ -97,8 +97,15 @@ export async function release(): Promise<void> {
       if (file.type === 'chunk') {
         for (const id of Object.keys(file.modules)) modules.add(id);
         if (
-          file.imports.some((id) => !id.startsWith('node:')) ||
-          file.dynamicImports.some((id) => !id.startsWith('node:'))
+          file.imports.some(
+            (id) => !id.startsWith('node:') && id !== 'playwright-core',
+          ) ||
+          file.dynamicImports.some(
+            (id) =>
+              !id.startsWith('node:') &&
+              id !== 'playwright-core' &&
+              id !== file.fileName,
+          )
         )
           throw new Error(`Unbundled dependency in ${name}.`);
       }
@@ -187,6 +194,7 @@ export async function release(): Promise<void> {
         type: 'module',
         bin: { socialprune: './bin/socialprune.mjs' },
         engines: { node: '>=24.15.0' },
+        dependencies: { 'playwright-core': '1.63.0' },
         files: [
           'bin/',
           'web/',

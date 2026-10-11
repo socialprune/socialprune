@@ -2,6 +2,10 @@ import { WorkspaceV2Schema } from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
 import { deriveState } from './state.ts';
+import {
+  validateBrowserJournal,
+  validateBrowserOutcomes,
+} from '../model/browser.ts';
 
 export function workspaceCounts(
   workspace: Pick<
@@ -13,6 +17,8 @@ export function workspaceCounts(
     | 'decisionEvents'
     | 'outcomeEvents'
     | 'originals'
+    | 'browserRuns'
+    | 'browserAttempts'
   >,
 ): WorkspaceCounts {
   return {
@@ -25,12 +31,26 @@ export function workspaceCounts(
     ...(workspace.originals !== undefined
       ? { originals: workspace.originals.length }
       : {}),
+    ...(workspace.browserRuns !== undefined
+      ? { browserRuns: workspace.browserRuns.length }
+      : {}),
+    ...(workspace.browserAttempts !== undefined
+      ? { browserAttempts: workspace.browserAttempts.length }
+      : {}),
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
   const parsed = WorkspaceV2Schema.safeParse(input);
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
+  if (
+    (workspace.schemaVersion === 3 &&
+      (!workspace.browserRuns || !workspace.browserAttempts)) ||
+    (workspace.schemaVersion === 2 &&
+      (workspace.browserRuns !== undefined ||
+        workspace.browserAttempts !== undefined))
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
   const actual = workspaceCounts(workspace);
   for (const key of Object.keys(actual) as (keyof WorkspaceCounts)[])
     if (workspace.counts[key] !== actual[key])
@@ -65,6 +85,20 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     if (!item.id.startsWith(`${item.platform}:`))
       throw new WorkspaceError('INVALID_ITEM_ID');
   const itemIds = new Set(workspace.items.map((item) => item.id));
+  try {
+    validateBrowserJournal(
+      workspace.browserRuns ?? [],
+      workspace.browserAttempts ?? [],
+      itemIds,
+    );
+    if (workspace.schemaVersion === 3)
+      validateBrowserOutcomes(
+        workspace.browserAttempts ?? [],
+        workspace.outcomeEvents,
+      );
+  } catch {
+    throw new WorkspaceError('INVALID_WORKSPACE');
+  }
   const submissions = new Map(
     workspace.submissions.map((record) => [record.submissionId, record]),
   );

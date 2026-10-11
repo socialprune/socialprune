@@ -8,6 +8,8 @@ import { readWorkspace } from '@socialprune/core/workspace/store';
 import { channel } from 'node:diagnostics_channel';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { testIpc } from './ipc.ts';
+import { startReviewServer } from '../server.ts';
+import { reviewAssetDirectory } from '../static.ts';
 
 // A test-only process owns import, the real HTTP/database worker, and cleanup.
 // No normal-runtime environment flag can select this entrypoint.
@@ -69,15 +71,18 @@ try {
     async (tx) => (await tx.runtime.get()).revision,
   );
   await initial.close();
-  const context = createNodeContext(sink, sink, controller.signal);
-  const result = await executeCli(['review', '--workspace', workspace], {
-    ...context,
-    stderrIsTerminal: false,
-    openBrowser(url) {
-      return ipc.send({ type: 'opened', url });
-    },
+  const server = await startReviewServer({
+    workspace,
+    assetDirectory: reviewAssetDirectory(),
+    signal: controller.signal,
+    port: 4234,
   });
-  if (result !== 0) throw new Error('Review did not stop normally.');
+  await ipc.send({ type: 'opened', url: server.launchUrl });
+  try {
+    await server.closed;
+  } finally {
+    await server.stop();
+  }
   const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'), {
     readOnly: true,
   });

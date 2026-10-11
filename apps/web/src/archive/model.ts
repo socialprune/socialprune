@@ -5,6 +5,11 @@ export interface ArchivedItem {
   outcome: OutcomeValue;
 }
 
+/** Deleted on the platform, by the person's hand or by a run in their browser. */
+export function isDeletedOnPlatform(outcome: OutcomeValue): boolean {
+  return outcome === 'deleted-by-user' || outcome === 'deleted-via-browser';
+}
+
 export function bannerVariant(handle: string): number {
   let hash = 0;
   for (const char of handle.normalize('NFC').toLowerCase())

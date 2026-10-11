@@ -952,7 +952,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
         ? `${t('review.sourceFilter')}: ${filter.sources.map((source) => t(({ rules: 'review.sourceRules', model: 'review.sourceModel', agent: 'review.sourceAgent', fixture: 'review.example' } as const)[source])).join(', ')}`
         : null,
       filter.outcomes?.length
-        ? `${t('review.outcomeFilter')}: ${filter.outcomes.map((outcome) => t(({ unknown: 'review.outcomeUnknown', skipped: 'review.outcomeSkipped', 'deleted-by-user': 'review.outcomeDeleted' } as const)[outcome])).join(', ')}`
+        ? `${t('review.outcomeFilter')}: ${filter.outcomes.map((outcome) => t(({ unknown: 'review.outcomeUnknown', skipped: 'review.outcomeSkipped', 'deleted-by-user': 'review.outcomeDeleted', 'deleted-via-browser': 'review.outcomeDeletedBrowser' } as const)[outcome])).join(', ')}`
         : null,
     ]
       .filter(Boolean)

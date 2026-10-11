@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import * as v1 from './v1.ts';
+import { BrowserRunSchema, BrowserAttemptSchema } from './browser.ts';
+export * from './browser.ts';
 import { OriginalSchema } from './original.ts';
 export {
   OriginalSchema,
@@ -96,7 +98,7 @@ export const OutcomeEventSchema = z.strictObject({
   previous: OutcomeValueSchema,
   recordedAt: v1.UtcTimestampSchema,
   source: HumanSourceSchema.extend({
-    via: z.enum(['web-review', 'local-review', 'v1-unrecorded']),
+    via: z.enum(['web-review', 'local-review', 'v1-unrecorded', 'browser-x']),
   }),
   action: ActionSchema,
 });
@@ -117,6 +119,8 @@ export const WorkspaceCountsSchema = z.strictObject({
   decisionEvents: count,
   outcomeEvents: count,
   originals: count.optional(),
+  browserRuns: count.optional(),
+  browserAttempts: count.optional(),
 });
 export type WorkspaceCounts = z.infer<typeof WorkspaceCountsSchema>;
 const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -169,7 +173,7 @@ export const ReviewViewSchema = z.strictObject({
 export type ReviewView = z.infer<typeof ReviewViewSchema>;
 export const WorkspaceMetaSchema = z.strictObject({
   format: z.literal('socialprune-workspace'),
-  schemaVersion: z.literal(2),
+  schemaVersion: z.union([z.literal(2), z.literal(3)]),
   id,
   kind: z.enum(['personal', 'demo']),
   createdAt: v1.UtcTimestampSchema,
@@ -191,7 +195,15 @@ export const WorkspaceV2Schema = WorkspaceMetaSchema.extend({
   decisionEvents: z.array(DecisionEventSchema),
   outcomeEvents: z.array(OutcomeEventSchema),
   originals: z.array(OriginalSchema).optional(),
+  browserRuns: z.array(BrowserRunSchema).optional(),
+  browserAttempts: z.array(BrowserAttemptSchema).optional(),
 });
 export type WorkspaceV2 = z.infer<typeof WorkspaceV2Schema>;
+export const WorkspaceV3Schema = WorkspaceV2Schema.extend({
+  schemaVersion: z.literal(3),
+  browserRuns: z.array(BrowserRunSchema),
+  browserAttempts: z.array(BrowserAttemptSchema),
+});
+export type WorkspaceV3 = z.infer<typeof WorkspaceV3Schema>;
 export const WorkspaceSchema = WorkspaceV2Schema;
 export type Workspace = WorkspaceV2;

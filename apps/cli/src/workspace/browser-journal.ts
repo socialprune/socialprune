@@ -1,0 +1,405 @@
+import type { DatabaseSync } from 'node:sqlite';
+import { BrowserRunSchema, BrowserAttemptSchema } from '@socialprune/core';
+import type { DecisionEvent, Item } from '@socialprune/core';
+import type { WriteTransaction } from '@socialprune/core/workspace/store';
+import { CliError } from '../cli/errors.ts';
+
+export type BrowserAction = 'delete-post' | 'undo-repost' | 'verify';
+export type AttemptState =
+  | 'withdrawn'
+  | 'sending'
+  | 'deleted'
+  | 'not-found'
+  | 'failed'
+  | 'ambiguous'
+  | 'not-deleted'
+  | 'still-gone'
+  | 'reappeared';
+export interface BrowserAttempt {
+  seq: number;
+  attemptId: string;
+  runId: string;
+  itemId: string;
+  action: BrowserAction;
+  state: AttemptState;
+  settles: string | null;
+  at: string;
+  code: string | null;
+  receipt?: { method: string; path: string; status: number; shape: string[] };
+}
+export interface BrowserRequest {
+  runId?: string;
+  requestId: string;
+  method: string;
+  host: string;
+  path: string;
+  status: number | null;
+}
+export interface ProfileReport {
+  accountBefore: string | null;
+  accountAfter: string | null;
+  extensionsBefore: number;
+  extensionsAfter: number;
+  changedFiles: string[];
+  unexpectedRequests: BrowserRequest[];
+}
+export interface BrowserRun {
+  runId: string;
+  platform: 'x';
+  accountKey: string;
+  mode: 'delete' | 'verify';
+  planHash: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  endReason:
+    | 'done'
+    | 'daily-cap'
+    | 'stopped-by-person'
+    | 'error'
+    | 'platform-check'
+    | null;
+  bodyShapes: Record<string, string[]>;
+  profileReport: ProfileReport | null;
+  ownerPid?: number;
+}
+export interface PlannedEntry {
+  item: Item;
+  decision: DecisionEvent;
+  action: 'delete-post' | 'undo-repost';
+}
+
+export const BROWSER_JOURNAL_LAYOUT = `
+CREATE TABLE IF NOT EXISTS browser_runs (
+  run_id TEXT PRIMARY KEY, account_key TEXT NOT NULL, ended_at TEXT,
+  data TEXT NOT NULL CHECK(json_valid(data))
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS browser_runs_active ON browser_runs(account_key) WHERE ended_at IS NULL;
+CREATE TABLE IF NOT EXISTS browser_attempts (
+  seq INTEGER PRIMARY KEY, attempt_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL,
+  item_id TEXT NOT NULL, state TEXT NOT NULL, settles TEXT UNIQUE,
+  data TEXT NOT NULL CHECK(json_valid(data)),
+  FOREIGN KEY(run_id) REFERENCES browser_runs(run_id),
+  FOREIGN KEY(settles) REFERENCES browser_attempts(attempt_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS browser_attempts_item ON browser_attempts(item_id, seq);
+CREATE TABLE IF NOT EXISTS browser_requests (
+  seq INTEGER PRIMARY KEY, run_id TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)),
+  FOREIGN KEY(run_id) REFERENCES browser_runs(run_id)
+) STRICT;
+CREATE TRIGGER IF NOT EXISTS browser_runs_finish_once BEFORE UPDATE ON browser_runs
+WHEN OLD.ended_at IS NOT NULL OR NEW.ended_at IS NULL OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
+OR json_extract(NEW.data,'$.startedAt') != json_extract(OLD.data,'$.startedAt')
+OR json_extract(NEW.data,'$.mode') != json_extract(OLD.data,'$.mode')
+OR json_extract(NEW.data,'$.planHash') IS NOT json_extract(OLD.data,'$.planHash')
+BEGIN SELECT RAISE(ABORT,'run-end-once'); END;
+CREATE TRIGGER IF NOT EXISTS browser_runs_no_delete BEFORE DELETE ON browser_runs BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_attempts_no_update BEFORE UPDATE ON browser_attempts BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_attempts_no_delete BEFORE DELETE ON browser_attempts BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_requests_no_update BEFORE UPDATE ON browser_requests BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_requests_no_delete BEFORE DELETE ON browser_requests BEGIN SELECT RAISE(ABORT,'append-only'); END;
+`;
+
+function decode<T>(rows: Record<string, unknown>[]): T[] {
+  return rows.map((row) => JSON.parse(String(row.data)) as T);
+}
+export function journalExists(db: DatabaseSync): boolean {
+  return Boolean(
+    db
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type='table' AND name='browser_runs'",
+      )
+      .get(),
+  );
+}
+export function readJournal(db: DatabaseSync): {
+  runs: BrowserRun[];
+  attempts: BrowserAttempt[];
+  requests: BrowserRequest[];
+} {
+  if (!journalExists(db)) return { runs: [], attempts: [], requests: [] };
+  return {
+    runs: decode<BrowserRun>(
+      db.prepare('SELECT data FROM browser_runs ORDER BY rowid').all(),
+    ),
+    attempts: decode<BrowserAttempt>(
+      db.prepare('SELECT data FROM browser_attempts ORDER BY seq').all(),
+    ),
+    requests: decode<BrowserRequest>(
+      db.prepare('SELECT data FROM browser_requests ORDER BY seq').all(),
+    ),
+  };
+}
+
+/** CLI-only capability. It cannot create decisions or choose other outcome values. */
+export class BrowserOutcomeWriter {
+  private readonly db: DatabaseSync;
+  private readonly transact: <T>(
+    operation: (tx: WriteTransaction) => Promise<T>,
+  ) => Promise<T>;
+  constructor(
+    db: DatabaseSync,
+    transact: <T>(
+      operation: (tx: WriteTransaction) => Promise<T>,
+    ) => Promise<T>,
+  ) {
+    this.db = db;
+    this.transact = transact;
+  }
+
+  async begin(run: BrowserRun): Promise<void> {
+    BrowserRunSchema.parse(run);
+    await this.transact(async (tx) => {
+      this.db.exec(BROWSER_JOURNAL_LAYOUT);
+      const meta = await tx.meta.get();
+      await tx.meta.set({ ...meta, schemaVersion: 3 });
+      const active = decode<BrowserRun>(
+        this.db
+          .prepare(
+            'SELECT data FROM browser_runs WHERE account_key=? AND ended_at IS NULL',
+          )
+          .all(run.accountKey),
+      )[0];
+      if (active) {
+        let alive = false;
+        if (active.ownerPid) {
+          try {
+            process.kill(active.ownerPid, 0);
+            alive = true;
+          } catch (error) {
+            if (!(
+              error &&
+              typeof error === 'object' &&
+              'code' in error &&
+              error.code === 'ESRCH'
+            ))
+              alive = true;
+          }
+        }
+        // Only a positively dead prior process permits recovery. Old records
+        // without ownership metadata fail closed rather than invent ownership.
+        if (alive || !active.ownerPid) throw new CliError('WORKSPACE_BUSY');
+        for (const attempt of readJournal(this.db).attempts)
+          if (
+            attempt.runId === active.runId &&
+            attempt.state === 'sending' &&
+            !this.db
+              .prepare('SELECT seq FROM browser_attempts WHERE settles=?')
+              .get(attempt.attemptId)
+          )
+            this.append({
+              attemptId: crypto.randomUUID(),
+              runId: active.runId,
+              itemId: attempt.itemId,
+              action: attempt.action,
+              state: 'ambiguous',
+              settles: attempt.attemptId,
+              at: run.startedAt,
+              code: 'PROCESS_LOST',
+            });
+        const recovered = {
+          ...active,
+          endedAt: run.startedAt,
+          endReason: 'error',
+        };
+        this.db
+          .prepare('UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?')
+          .run(run.startedAt, JSON.stringify(recovered), active.runId);
+      }
+      this.db
+        .prepare('INSERT INTO browser_runs VALUES(?,?,NULL,?)')
+        .run(run.runId, run.accountKey, JSON.stringify(run));
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+      await Promise.resolve();
+    });
+  }
+  async finish(run: BrowserRun): Promise<void> {
+    if (!run.endedAt || !run.endReason) throw new CliError('WORKSPACE_INVALID');
+    await this.transact(async (tx) => {
+      const result = this.db
+        .prepare(
+          'UPDATE browser_runs SET ended_at=?, data=? WHERE run_id=? AND ended_at IS NULL',
+        )
+        .run(run.endedAt, JSON.stringify(run), run.runId);
+      if (Number(result.changes) !== 1) throw new CliError('WORKSPACE_INVALID');
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+      await Promise.resolve();
+    });
+  }
+  private append(input: Omit<BrowserAttempt, 'seq'>): BrowserAttempt {
+    const seq = Number(
+      this.db
+        .prepare('SELECT coalesce(max(seq),0)+1 AS seq FROM browser_attempts')
+        .get()!.seq,
+    );
+    const value = BrowserAttemptSchema.parse({ ...input, seq });
+    this.db
+      .prepare('INSERT INTO browser_attempts VALUES(?,?,?,?,?,?,?)')
+      .run(
+        seq,
+        input.attemptId,
+        input.runId,
+        input.itemId,
+        input.state,
+        input.settles,
+        JSON.stringify(value),
+      );
+    return value;
+  }
+  private async eligible(
+    tx: WriteTransaction,
+    row: PlannedEntry,
+  ): Promise<boolean> {
+    const item = await tx.items.get(row.item.id);
+    const state = await tx.state.get(row.item.id);
+    let decision: DecisionEvent | undefined;
+    for await (const event of tx.decisionEvents.iterate())
+      if (event.itemId === row.item.id) decision = event;
+    const imported = item ? await tx.imports.get(item.importId) : undefined;
+    return Boolean(
+      item &&
+      imported?.status === 'complete' &&
+      item.item.platform === 'x' &&
+      item.item.account.key === row.item.account.key &&
+      item.item.kind === row.item.kind &&
+      item.item.createdAt === row.item.createdAt &&
+      item.item.text === row.item.text &&
+      state?.outcome === 'unknown' &&
+      state.decision === 'delete' &&
+      decision?.value === 'delete' &&
+      decision.source.kind === 'human' &&
+      decision.eventId === row.decision.eventId,
+    );
+  }
+  async check(
+    row: PlannedEntry,
+    runId: string,
+    at: string,
+    sending: boolean,
+  ): Promise<BrowserAttempt | null> {
+    return this.transact(async (tx) => {
+      const input = {
+        attemptId: crypto.randomUUID(),
+        runId,
+        itemId: row.item.id,
+        action: row.action,
+        at,
+        settles: null,
+        code: null,
+      };
+      if (!(await this.eligible(tx, row))) {
+        const runtime = await tx.runtime.get();
+        await tx.runtime.set({ revision: runtime.revision + 1 });
+        return this.append({ ...input, state: 'withdrawn' });
+      }
+      if (!sending) return null;
+      const attempts = readJournal(this.db).attempts.filter(
+        (a) => a.itemId === row.item.id,
+      );
+      const open = attempts.some(
+        (a) =>
+          (a.state === 'sending' || a.state === 'ambiguous') &&
+          !attempts.some((other) => other.settles === a.attemptId),
+      );
+      if (open) throw new CliError('RUN_STOPPED');
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+      return this.append({ ...input, state: 'sending' });
+    });
+  }
+  async record(input: Omit<BrowserAttempt, 'seq'>): Promise<BrowserAttempt> {
+    if (
+      input.settles ||
+      (input.state !== 'not-found' &&
+        !(
+          input.action === 'verify' &&
+          ['not-deleted', 'still-gone'].includes(input.state)
+        ))
+    )
+      throw new CliError('WORKSPACE_INVALID');
+    return this.transact(async (tx) => {
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+      await Promise.resolve();
+      return this.append(input);
+    });
+  }
+  async settle(
+    input: Omit<BrowserAttempt, 'seq'>,
+    outcome?: 'deleted-via-browser' | 'unknown',
+  ): Promise<BrowserAttempt> {
+    return this.transact(async (tx) => {
+      if (
+        (outcome === 'deleted-via-browser' && input.state !== 'deleted') ||
+        (outcome === 'unknown' && input.state !== 'reappeared')
+      )
+        throw new CliError('WORKSPACE_INVALID');
+      if (input.settles) {
+        const prior = decode<BrowserAttempt>(
+          this.db
+            .prepare('SELECT data FROM browser_attempts WHERE attempt_id=?')
+            .all(input.settles),
+        )[0];
+        if (
+          !prior ||
+          prior.itemId !== input.itemId ||
+          prior.runId !== input.runId ||
+          prior.action !== input.action ||
+          !['sending', 'ambiguous'].includes(prior.state)
+        )
+          throw new CliError('WORKSPACE_INVALID');
+      } else if (
+        input.action !== 'verify' ||
+        !['still-gone', 'reappeared'].includes(input.state)
+      ) {
+        throw new CliError('WORKSPACE_INVALID');
+      }
+      const attempt = this.append(input);
+      if (!outcome) {
+        const runtime = await tx.runtime.get();
+        await tx.runtime.set({ revision: runtime.revision + 1 });
+      }
+      if (outcome) {
+        const state = await tx.state.get(input.itemId);
+        if (!state) throw new CliError('WORKSPACE_INVALID');
+        if (outcome === 'unknown' && state.outcome !== 'deleted-via-browser')
+          throw new CliError('OUTCOME_FINAL');
+        const runtime = await tx.runtime.get();
+        const meta = await tx.meta.get();
+        await tx.outcomeEvents.append([
+          {
+            eventId: crypto.randomUUID(),
+            seq: runtime.lastEventSeq + 1,
+            itemId: input.itemId,
+            value: outcome,
+            previous: state.outcome,
+            recordedAt: input.at,
+            source: { kind: 'human', via: 'browser-x' },
+            action: {
+              id: input.attemptId,
+              kind: 'single',
+              size: 1,
+              reverts: null,
+            },
+          },
+        ]);
+        await tx.state.put({ ...state, outcome });
+        await tx.runtime.set({
+          revision: runtime.revision + 1,
+          lastEventSeq: runtime.lastEventSeq + 1,
+        });
+        await tx.meta.set({ ...meta, updatedAt: input.at });
+      }
+      return attempt;
+    });
+  }
+  async request(runId: string, record: BrowserRequest): Promise<void> {
+    await this.transact(async () => {
+      this.db
+        .prepare('INSERT INTO browser_requests(run_id,data) VALUES(?,?)')
+        .run(runId, JSON.stringify({ ...record, runId }));
+      await Promise.resolve();
+    });
+  }
+}

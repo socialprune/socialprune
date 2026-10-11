@@ -174,7 +174,11 @@ export class QueryEngine implements ReviewQuery {
           selected.push(index);
           const state = projection.values(index);
           decisions[state.decision]++;
-          outcomes[state.outcome]++;
+          outcomes[
+            state.outcome === 'deleted-via-browser'
+              ? 'deleted-by-user'
+              : state.outcome
+          ]++;
         }
         if (end < order.length) await this.yieldChunk();
       }

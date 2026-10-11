@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { checkPackage } from './pack-check.ts';
 import { command, npm, packageDirectory, root } from './process.ts';
@@ -56,6 +56,25 @@ export async function smoke(olderNode?: string): Promise<void> {
     assert.equal(packed.length, 1);
     const install = join(temp, 'empty install');
     await mkdir(install);
+    // Pack the already installed exact driver locally. Both tarballs are then
+    // explicit install inputs, so an empty npm cache needs no registry lookup.
+    const driver = JSON.parse(
+      npm(
+        [
+          'pack',
+          fileURLToPath(
+            new URL('./', import.meta.resolve('playwright-core/package.json')),
+          ),
+          '--offline',
+          '--json',
+          '--ignore-scripts',
+          '--pack-destination',
+          temp,
+        ],
+        root,
+      ),
+    ) as { filename: string }[];
+    assert.equal(driver.length, 1);
     const installedOutput = npm(
       [
         'install',
@@ -69,6 +88,7 @@ export async function smoke(olderNode?: string): Promise<void> {
         install,
         '--cache',
         join(temp, 'empty-cache'),
+        join(temp, driver[0]!.filename),
         join(temp, packed[0]!.filename),
       ],
       install,
@@ -180,6 +200,18 @@ export async function smoke(olderNode?: string): Promise<void> {
     ]);
     assert.equal(imported.command, 'import');
     assert.equal((imported.data as { items: number }).items, fixture.itemCount);
+    const deletePlan = checked([
+      'delete',
+      'x',
+      '--workspace',
+      workspace,
+      '--account',
+      fixture.account.key,
+      '--dry-run',
+      '--json',
+    ]);
+    assert.equal(deletePlan.command, 'delete.x');
+    assert.equal((deletePlan.data as { planned: number }).planned, 0);
     const summary = checked(['summary', '--workspace', workspace, '--json']);
     (await validator(installed, 'summary')).parse(summary.data);
     assert.equal(
@@ -192,7 +224,7 @@ export async function smoke(olderNode?: string): Promise<void> {
     await writeFile(
       noNetwork,
       `
-import {syncBuiltinESMExports} from 'node:module';
+import {syncBuiltinESMExports,registerHooks} from 'node:module';
 import http from 'node:http'; import https from 'node:https'; import http2 from 'node:http2';
 import net from 'node:net'; import tls from 'node:tls'; import dns from 'node:dns';
 import dnsPromises from 'node:dns/promises'; import dgram from 'node:dgram';
@@ -201,6 +233,7 @@ globalThis.fetch=deny; globalThis.WebSocket=deny;
 for(const [target,names] of [[http,['request','get']],[https,['request','get']],[http2,['connect']],[net,['connect','createConnection']],[tls,['connect']],[dgram,['createSocket']]]) for(const name of names) target[name]=deny;
 for(const target of [dns,dnsPromises]) for(const name of Object.keys(target)) if(name==='lookup'||name==='lookupService'||name.startsWith('resolve')) target[name]=deny;
 syncBuiltinESMExports();
+registerHooks({resolve(specifier,context,nextResolve){if(specifier==='playwright-core')throw Error('PACKED_BROWSER_FORBIDDEN');return nextResolve(specifier,context);}});
 `,
     );
     // First prove the decoy is caught; never exercise this guard on a real host.
@@ -219,6 +252,34 @@ syncBuiltinESMExports();
       ),
       '',
     );
+    const deletionOutput = command(
+      process.execPath,
+      [
+        '--import',
+        pathToFileURL(noNetwork).href,
+        bin,
+        'delete',
+        'x',
+        '--workspace',
+        workspace,
+        '--account',
+        fixture.account.key,
+        '--dry-run',
+        '--json',
+      ],
+      install,
+    );
+    envelopeSchema.parse(JSON.parse(deletionOutput));
+    const deletion = JSON.parse(deletionOutput) as Envelope & {
+      data: { planned: number };
+    };
+    assert.equal(deletion.command, 'delete.x');
+    assert.equal(deletion.status, 'ok');
+    assert.equal(deletion.data.planned, 0);
+    results.push({
+      command: 'delete x --dry-run --json (network and browser import denied)',
+      exit: 0,
+    });
     const originalsOutput = command(
       process.execPath,
       [

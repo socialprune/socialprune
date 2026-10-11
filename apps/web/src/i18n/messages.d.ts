@@ -342,6 +342,7 @@ declare global {
     'review.openX': Record<never, never>;
     'review.otherTab': Record<never, never>;
     'review.outcomeDeleted': Record<never, never>;
+    'review.outcomeDeletedBrowser': Record<never, never>;
     'review.outcomeFilter': Record<never, never>;
     'review.outcomeRecorded': Record<never, never>;
     'review.outcomeSkipped': Record<never, never>;

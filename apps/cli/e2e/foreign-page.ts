@@ -13,7 +13,7 @@ export async function foreignPage() {
     );
   });
   await new Promise<void>((resolve) =>
-    server.listen(0, '127.0.0.1', () => resolve()),
+    server.listen(4235, '127.0.0.1', () => resolve()),
   );
   const address = server.address();
   if (!address || typeof address === 'string')

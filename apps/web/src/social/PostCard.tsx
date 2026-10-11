@@ -14,6 +14,7 @@ import type { WorkspaceClient } from '../workspace/client.ts';
 import { useT } from '../i18n/index.ts';
 import styles from './Social.module.css';
 import { originalXLink } from './originalLink.ts';
+import { isDeletedOnPlatform } from '../archive/model.ts';
 
 export function Avatar({
   handle,
@@ -275,7 +276,7 @@ export function PostCard({
                 : intl.formatNumber(item.engagement.likes)}
             </span>
           </div>
-          {outcome === 'deleted-by-user' && (
+          {outcome !== undefined && isDeletedOnPlatform(outcome) && (
             <span className={styles.deleted}>
               <Check size={16} aria-hidden="true" />
               {t(

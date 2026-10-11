@@ -60,6 +60,8 @@ export async function startReviewServer(options: {
   signal?: AbortSignal;
   now?: () => number;
   handleSignals?: boolean;
+  /** Test/embedding listener selection; not exposed as a CLI or environment flag. */
+  port?: number;
   openDatabase?: typeof ReviewDatabase.open;
 }) {
   const assets = await staticAssets(options.assetDirectory);
@@ -320,7 +322,7 @@ export async function startReviewServer(options: {
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => {
+      server.listen(options.port ?? 0, '127.0.0.1', () => {
         server.removeListener('error', reject);
         resolve();
       });

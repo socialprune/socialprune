@@ -188,6 +188,7 @@
   "review.outcomeFilter": "Vermerktes Ergebnis",
   "review.outcomeUnknown": "Nicht vermerkt",
   "review.outcomeDeleted": "Von dir gelöscht",
+  "review.outcomeDeletedBrowser": "Von SocialPrune in deinem Browser gelöscht",
   "review.outcomeSkipped": "Übersprungen",
   "review.riskFilter": "Mindestens vorgeschlagenes Risiko",
   "review.noSuggestionsFilter": "Ohne Vorschlag",

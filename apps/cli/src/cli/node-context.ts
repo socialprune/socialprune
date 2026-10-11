@@ -87,6 +87,7 @@ export function createNodeContext(
     nodeVersion: process.versions.node,
     pid: process.pid,
     stderrIsTerminal: 'isTTY' in stderr && stderr.isTTY === true,
+    stdoutIsTerminal: 'isTTY' in stdout && stdout.isTTY === true,
     openBrowser: openReviewBrowser,
     reviewAssetDirectory: reviewAssetDirectory(),
     services: {

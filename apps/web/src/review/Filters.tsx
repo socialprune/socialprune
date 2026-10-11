@@ -101,6 +101,9 @@ export function Filters({
             <option value="deleted-by-user">
               {t('review.outcomeDeleted')}
             </option>
+            <option value="deleted-via-browser">
+              {t('review.outcomeDeletedBrowser')}
+            </option>
             <option value="skipped">{t('review.outcomeSkipped')}</option>
           </select>
         </label>

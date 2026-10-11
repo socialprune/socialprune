@@ -131,8 +131,17 @@ test('writer streams bounded chunks in header order and marks the store only aft
       'assessments',
       'decisionEvents',
       'outcomeEvents',
+      'browserRuns',
+      'browserAttempts',
     ]);
-    expect(document).toEqual({ ...input, lastBackupAt: createdAt });
+    expect(document).toEqual({
+      ...input,
+      schemaVersion: 3,
+      browserRuns: [],
+      browserAttempts: [],
+      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
+      lastBackupAt: createdAt,
+    });
     await session.complete();
     await session.complete();
     expect((await source.read(async (tx) => tx.meta.get())).lastBackupAt).toBe(

@@ -10,6 +10,8 @@ import type {
   Submission,
   WorkspaceMeta,
   WorkspaceV2,
+  BrowserRun,
+  BrowserAttempt,
 } from '../model/index.ts';
 import { DEFAULT_CATEGORIES } from '../model/index.ts';
 import type { WorkspaceErrorCode } from './errors.ts';
@@ -101,6 +103,8 @@ export interface ReadTransaction {
   imports: RecordReader<ImportRecord>;
   items: RecordReader<StoredItem>;
   originals: RecordReader<Original>;
+  browserRuns: RecordReader<BrowserRun>;
+  browserAttempts: RecordReader<BrowserAttempt>;
   submissions: RecordReader<Submission>;
   assessments: OrderedReader<Assessment>;
   decisionEvents: OrderedReader<DecisionEvent>;
@@ -118,6 +122,8 @@ export interface WriteTransaction extends ReadTransaction {
   imports: RecordWriter<ImportRecord>;
   items: RecordWriter<StoredItem>;
   originals: RecordWriter<Original>;
+  browserRuns: RecordWriter<BrowserRun> & UniqueWriter<BrowserRun>;
+  browserAttempts: UniqueWriter<BrowserAttempt>;
   submissions: UniqueWriter<Submission>;
   assessments: AppendWriter<Assessment>;
   decisionEvents: AppendWriter<DecisionEvent>;
@@ -150,6 +156,8 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
   const imports = await records(tx.imports);
   const stored = await records(tx.items);
   const originals = await records(tx.originals);
+  const browserRuns = await records(tx.browserRuns);
+  const browserAttempts = await records(tx.browserAttempts);
   const arrays = {
     imports,
     items: stored.map(({ item }) => item),
@@ -158,6 +166,9 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     decisionEvents: await records(tx.decisionEvents),
     outcomeEvents: await records(tx.outcomeEvents),
     ...(originals.length ? { originals } : {}),
+    ...(meta.schemaVersion === 3 || browserRuns.length || browserAttempts.length
+      ? { browserRuns, browserAttempts }
+      : {}),
   };
   return { ...meta, counts: workspaceCounts(arrays), ...arrays };
 }

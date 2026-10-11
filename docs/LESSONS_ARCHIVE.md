@@ -146,7 +146,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-09 by rewriting the pending-items brief as one plain line per item, without unexplained codes.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 0 times
+- Violated: 1 time (2026-10-11 morning message: ADR-025, card AUTO-v2, S2, "Zitat" and "Export-Anleitung" without plain meaning; see LL-2026-10-009. The proposed anchor line had not been placed, and the rule did not run.)
 
 ### [LL-2026-10-006] 2026-10-09 PRIVACY: Prove a guard on a decoy, never on the thing it guards
 
@@ -225,6 +225,33 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the parent's start script `%TEMP%\kilo\cleanup-tools\review.ps1` carries a comment pointing to `browser-check.ps1` and this lesson, at the moment the review is started; the product skill `skills/socialprune/SKILL.md` step 7 already names the own-terminal fallback for agents.
 **Related Lessons:** LL-2026-10-007 (accept by what the person does and sees), LL-2026-10-001 (re-read state someone else owns).
 **Regression / Verification Note:** applied on 2026-10-10 by restarting the review, checking for a browser connection on its port and telling him the browser, the address and the fallback.
+**Metrics:**
+- Prevented: 1 time (2026-10-11 08:50Z, the restarted review was reported only after Edge connected on port 51014)
+- Violated: 0 times
+
+### [LL-2026-10-009] 2026-10-11 COMMUNICATION: Answer the person's goal before reporting the work
+
+**ID:** LL-2026-10-009
+**Severity:** HIGH
+**Category:** COMMUNICATION
+**Expires:** Never (kernel). The counts, codes and routes below are dated evidence from 2026-10-11.
+
+**Feedback:** "Hast du überhaupt mir zugehört? Ich check das überhaupt nicht. Wir wollen das ja automatisiert haben. Eigentlich sollte dir ja schon klar sein, was wir wollen." He also asked what "kein Zitat" and "Export-Anleitung" mean, and said he does not want to use an API.
+**Problem:** After an overnight run the morning message listed commits, draft decision records (ADR-025, ADR-024), a card code (AUTO-v2), "S2", "Zitat" and "Export-Anleitung". It did not say, point by point against what he had asked the evening before (whole thread and context on X, the post, its media and the parent comment on Instagram, deletion without manual work), what was done, what the export cannot give and what needs his choice. It also carried X's paid developer API as the deletion plan although he had never accepted that route.
+**5 Whys Analysis:**
+1. Why did he not understand it? -> The items were named by internal artefacts and codes, and none was tied to a point of his goal.
+2. Why? -> The message was assembled from the overnight log, item by item, in the log's vocabulary.
+3. Why did the API route look like his plan? -> His "automatisiert" was mapped to the nearest route inside the hard constraints, and nobody asked whether that route meets what he wants; his silence on the card was read as pending, not as a mismatch.
+4. Why was it not caught before sending? -> LL-2026-10-005 covers the wording, but its retrieval anchor was never placed, so nothing at the moment of writing asked whether the message answers his goal in his words.
+5. Why? -> Root cause: no step compares a status message for him against his own stated goal points, and a route the agent chose to fit a constraint was carried forward as his plan without his acceptance.
+**Rule(s):**
+1. A status message to a person starts from their goal as they stated it and says for each point: done, not possible and why, or needs their choice. The work log comes after it, short, or not at all.
+2. When a goal has no route inside the constraints, say that plainly with the trade-off, and do not present the nearest permitted route as the plan until the person accepts it as meeting their goal.
+3. LL-2026-10-005 applies to every such message: no code without its plain meaning.
+**Detection Pattern:** a status or morning message whose first lines are commits, file names or codes; a recommendation that builds on a route the person never confirmed; the person asking what a term in the message means.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed together with LL-2026-10-005 as one line in `.kilo/rules/human-writing-style.md` section B, which loads in every session: "A message to the maintainer starts from his stated goal, says per point done, not possible and why, or his choice, and uses his words, one line per item (LL-2026-10-005, LL-2026-10-009)". That file is a protected governance surface, so the line waits for his approval. The repeat on 2026-10-11 shows the rule does not run without it; until then the parent re-reads both lessons before every message to him.
+**Related Lessons:** LL-2026-10-005 (his words, one line per item), LL-2026-10-007 (accept by what the person does and sees).
+**Regression / Verification Note:** applied on 2026-10-11 by answering his questions point by point against his goal, stating what the exports cannot give, laying out the deletion routes with their trade-offs instead of the API route as the plan, and naming the anchor line for his approval.
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times

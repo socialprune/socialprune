@@ -201,3 +201,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-008] 2026-10-10 VERIFICATION: Tell the person something is on their screen only after seeing it arrive
+
+**ID:** LL-2026-10-008
+**Severity:** HIGH
+**Category:** VERIFICATION
+**Expires:** Never (kernel). The port check, script paths and the Windows opener behaviour below are dated evidence from 2026-10-10.
+
+**Feedback:** "Du sagst im Browser, aber ich habe keinen Link bekommen von dir." The agent had told him that his browser had just opened the review of his real entries.
+**Problem:** The agent started the local review and reported it as open in his browser because the server printed "Your browser opens it now". It gave no address, no browser name and no fallback, although `AGENTS.md` records that opening the browser on Windows is proven only up to the PowerShell call.
+**5 Whys Analysis:**
+1. Why did he find nothing? -> The page either did not open or opened where he did not look, and the message named no place to look.
+2. Why did the agent say it was open? -> It relayed the server's readiness line as a fact about his screen.
+3. Why did that pass? -> The start step waited only for the server's own text; nothing observed the browser side.
+4. Why not? -> The start script was built to prove that the server runs, not that the person reaches the page.
+5. Why? -> Root cause: no step observed the person-side effect before the claim, and the handoff had no fallback for an opener known to be unproven.
+**Rule(s):**
+1. A claim about what a person now sees needs an observation from the person's side or the person's confirmation. A program announcing that it will show something is not that observation.
+2. After starting the local review for someone, check that a browser connected to the review port before saying the page is open. With no connection, say so and give the fallback the product skill names: the person starts `review` in their own terminal.
+3. Every such handoff names where to look (which browser, which address) and what to do if nothing is there.
+**Detection Pattern:** a message that says a page, file or window "is open" or "has opened" for the person with no observed connection, readback or confirmation; a tool's "opens now" line repeated as done.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the parent's start script `%TEMP%\kilo\cleanup-tools\review.ps1` carries a comment pointing to `browser-check.ps1` and this lesson, at the moment the review is started; the product skill `skills/socialprune/SKILL.md` step 7 already names the own-terminal fallback for agents.
+**Related Lessons:** LL-2026-10-007 (accept by what the person does and sees), LL-2026-10-001 (re-read state someone else owns).
+**Regression / Verification Note:** applied on 2026-10-10 by restarting the review, checking for a browser connection on its port and telling him the browser, the address and the fallback.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

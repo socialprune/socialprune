@@ -298,6 +298,17 @@ test('the product skill has one canonical copy, its required frontmatter and liv
     'To label your entries, I need to give their full text to the model provider used by this agent. Is that all right?',
   );
   expect(skill).toContain('Wait for an explicit yes');
+  const labelReference = await readFile(
+    new URL('skills/socialprune/references/labels.md', repo),
+    'utf8',
+  );
+  for (const text of [skill, labelReference]) {
+    expect(text).toContain('reading that one entry');
+    expect(text).toContain('verbatim');
+    expect(text).toContain('keyword rules, scripts or bulk templates');
+    expect(text).toContain('each reason for that entry');
+    expect(text).toContain('`unclear` with risk 0 or 1 instead of guessing');
+  }
   for (const term of [
     'Never log in',
     'Never run `review --no-open`',

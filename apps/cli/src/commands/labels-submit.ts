@@ -22,11 +22,14 @@ export async function labelsSubmitHandler(
     human: result.data.duplicate
       ? `Submission already recorded. ${result.data.accepted} suggestions; nothing written.`
       : `${dryRun ? 'Would record' : 'Recorded'} ${result.data.accepted} agent suggestions. No decisions made.`,
-    warnings: result.data.droppedEvidence
-      ? [
-          `Dropped evidence from ${result.data.droppedEvidence} labels because it was not a verbatim substring of the entry text.`,
-        ]
-      : [],
+    warnings: [
+      ...(result.data.droppedEvidence
+        ? [
+            `Dropped evidence from ${result.data.droppedEvidence} labels because it was not a verbatim substring of the entry text.`,
+          ]
+        : []),
+      ...result.warnings,
+    ],
   };
 }
 

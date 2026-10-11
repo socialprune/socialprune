@@ -24,6 +24,7 @@ import {
   LabelService,
   LabelValidationError,
 } from '@socialprune/core/workspace/labels';
+import { LabelFileSchema } from '@socialprune/core/workspace/payloads';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
 import {
   createBackup,
@@ -386,7 +387,20 @@ export async function submitLabelFile(input: LabelsCall) {
       value,
       { dryRun: input.dryRun },
     );
-    return { workspace: await identity(store), data };
+    // Core has accepted the entire file. This advisory count changes neither
+    // the submission receipt nor its nullable-evidence validation contract.
+    const highRiskWithoutEvidence = LabelFileSchema.parse(value).labels.filter(
+      (label) => label.risk >= 2 && label.evidence === null,
+    ).length;
+    return {
+      workspace: await identity(store),
+      data,
+      warnings: highRiskWithoutEvidence
+        ? [
+            `${highRiskWithoutEvidence} labels at risk 2 or 3 have evidence set to null. Review those suggestions individually.`,
+          ]
+        : [],
+    };
   } catch (error) {
     labelServiceError(error);
   } finally {

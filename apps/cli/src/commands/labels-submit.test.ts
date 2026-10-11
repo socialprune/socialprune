@@ -94,6 +94,158 @@ function labels(items: WorkspaceV2['items']): LabelFile {
   };
 }
 
+test('risk 2 and 3 null-evidence warnings are count-only, advisory and consistent for dry-run, submit and duplicate', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-label-evidence-'),
+  );
+  const workspace = join(directory, 'workspace');
+  const file = join(directory, 'labels.json');
+  const fixture = JSON.parse(await readFile(expected, 'utf8')) as {
+    items: WorkspaceV2['items'];
+  };
+  const initial = createWorkspace();
+  initial.items = Array.from({ length: 7 }, (_, index) => ({
+    ...fixture.items[0]!,
+    id: `x:generated-evidence-${index}`,
+    text: `Generated evidence marker ${index}.`,
+  }));
+  initial.counts.items = initial.items.length;
+  const labelFile = labels(initial.items);
+  // The cases are authored with the fixture, not returned by the warning code:
+  // 0/1 with null, 2/3 with null, 2/3 with quotes, and 3 with a dropped quote.
+  labelFile.labels = [
+    { ...labelFile.labels[0]!, risk: 0, evidence: null },
+    { ...labelFile.labels[1]!, risk: 1, evidence: null },
+    { ...labelFile.labels[2]!, risk: 2, evidence: null },
+    { ...labelFile.labels[3]!, risk: 3, evidence: null },
+    { ...labelFile.labels[4]!, risk: 2 },
+    { ...labelFile.labels[5]!, risk: 3 },
+    { ...labelFile.labels[6]!, risk: 3, evidence: 'Generated absent quote.' },
+  ];
+  try {
+    await mkdir(workspace);
+    const store = await SQLiteStore.open(
+      join(workspace, 'socialprune.sqlite'),
+      { initial },
+    );
+    await store.close();
+    await writeFile(file, JSON.stringify(labelFile));
+    const input = JSON.parse(await readFile(file, 'utf8')) as LabelFile;
+    // Expected counts come from the authored cases in the actual fixture file.
+    // Labels 2/3 carry null; labels 0/1 are lower risk and must not count.
+    const warned = input.labels.slice(2, 4);
+    expect(warned.map((label) => [label.risk, label.evidence])).toEqual([
+      [2, null],
+      [3, null],
+    ]);
+    const warning = `${warned.length} labels at risk 2 or 3 have evidence set to null. Review those suggestions individually.`;
+    const dropped = input.labels.slice(6).length;
+    const warnings = [
+      `Dropped evidence from ${dropped} labels because it was not a verbatim substring of the entry text.`,
+      warning,
+    ];
+    const assertWarningPrivacy = (value: string) => {
+      for (const label of input.labels) {
+        expect(value).not.toContain(label.reason);
+        if (label.evidence) expect(value).not.toContain(label.evidence);
+      }
+      for (const item of initial.items) expect(value).not.toContain(item.text);
+      expect(value).not.toContain(file);
+      expect(value).not.toContain(workspace);
+    };
+    // LL-002: this exact fixture-derived absence check must catch a planted leak.
+    for (const leak of [
+      initial.items[2]!.text,
+      input.labels[2]!.reason,
+      input.labels[4]!.evidence!,
+      file,
+    ])
+      expect(() => assertWarningPrivacy(`${warning} ${leak}`)).toThrow();
+    const before = await readFile(join(workspace, 'socialprune.sqlite'));
+    for (const json of [true, false]) {
+      const result = await invoke(
+        ['labels', 'submit', file, '--workspace', workspace, '--dry-run'],
+        json,
+      );
+      expect(result.code).toBe(0);
+      if (json) {
+        expect(result.result).toMatchObject({
+          status: 'ok',
+          data: { accepted: input.labels.length, dryRun: true },
+          warnings,
+        });
+      }
+      expect(result.capture.stderr.join('')).toBe(warnings.join('\n') + '\n');
+      assertWarningPrivacy(
+        json
+          ? JSON.stringify((result.result as { warnings: string[] }).warnings)
+          : result.capture.stderr.join(''),
+      );
+      expect(
+        (await readFile(join(workspace, 'socialprune.sqlite'))).equals(before),
+      ).toBe(true);
+    }
+    const submitted = await invoke([
+      'labels',
+      'submit',
+      file,
+      '--workspace',
+      workspace,
+    ]);
+    expect(submitted.code).toBe(0);
+    expect(submitted.result).toMatchObject({
+      data: { accepted: input.labels.length, dryRun: false, duplicate: false },
+      warnings,
+    });
+    const after = await readFile(join(workspace, 'socialprune.sqlite'));
+    for (const dryRun of [true, false]) {
+      const duplicate = await invoke([
+        'labels',
+        'submit',
+        file,
+        '--workspace',
+        workspace,
+        ...(dryRun ? ['--dry-run'] : []),
+      ]);
+      expect(duplicate.code).toBe(0);
+      expect(duplicate.result).toMatchObject({
+        data: { accepted: input.labels.length, duplicate: true, dryRun },
+        warnings,
+      });
+      expect(
+        (await readFile(join(workspace, 'socialprune.sqlite'))).equals(after),
+      ).toBe(true);
+    }
+    const recorded = await load(workspace);
+    expect(recorded.assessments).toHaveLength(input.labels.length);
+    expect(recorded.assessments[2]!.evidence).toBeNull();
+    expect(recorded.assessments[3]!.evidence).toBeNull();
+    expect(recorded.assessments[6]!.evidence).toBeNull();
+    expect(recorded.decisionEvents).toEqual([]);
+    expect(recorded.outcomeEvents).toEqual([]);
+    const quotedOnly = {
+      ...input,
+      submissionId: 'quoted-and-low-risk',
+      labels: [...input.labels.slice(0, 2), ...input.labels.slice(4, 6)],
+    };
+    await writeFile(file, JSON.stringify(quotedOnly));
+    for (const dryRun of [true, false]) {
+      const result = await invoke([
+        'labels',
+        'submit',
+        file,
+        '--workspace',
+        workspace,
+        ...(dryRun ? ['--dry-run'] : []),
+      ]);
+      expect(result.code).toBe(0);
+      expect(result.result).toMatchObject({ warnings: [] });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('whole hand-built files reject every validation class before writes and cannot name a decision, outcome or human source', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-c4-validation-'));
   const workspace = join(directory, 'workspace');

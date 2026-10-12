@@ -54,12 +54,17 @@ test.each(['note_tweet', 'truncated'])(
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify(raw));
     });
-    await new Promise<void>((resolve) =>
-      server.listen(4236, '127.0.0.1', resolve),
-    );
+    // Port 0: vitest runs test files in parallel, and a fixed port collides.
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Fake server did not listen.');
     try {
       const original = await new SyndicationClient({
-        baseUrl: 'http://127.0.0.1:4236',
+        baseUrl: `http://127.0.0.1:${address.port}`,
       }).fetchOriginal(
         '101',
         '2026-10-12T00:00:00.000Z',

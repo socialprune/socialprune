@@ -109,6 +109,10 @@ socialprune browser forget --profile <dir>
 
 `browser setup` and `browser forget` follow ADR-023, "The dedicated browser profile".
 
+Setup opens an ordinary installed browser as a child process, with the dedicated folder and sign-in URL but without Playwright, a debugging connection or an automation flag. The person signs in by hand. On 2026-10-12 the maintainer's earlier Playwright-driven Edge setup displayed an unsupported `--no-sandbox` warning, X would not progress through sign-in, and Google sign-in refused the browser. He closed it without signing in. No real sign-in was attempted by a development agent. This separation removes the driver only from manual setup, not from any platform run.
+
+A local launch inspection on 2026-10-12 found that the installed Playwright 1.63.0 omitted `--enable-automation` from its default Chromium arguments and added `--disable-infobars`. Program-driven runs therefore explicitly pass `--enable-automation` and exclude the banner-suppression switch. This makes program control visible; it does not change the user agent, hide `navigator.webdriver` or remove the debugging connection. The same test reads the running fake-site browser's command line and confirms the sandbox flag is not disabled.
+
 ### Which entries
 
 An entry enters the plan only when all of these hold (ADR-023 PA-3):
@@ -133,7 +137,7 @@ Posts, replies and quotes get the action "delete post"; reposts get "undo repost
 
 1. **Not for pipes.** The run refuses `--json` and refuses unless stdout is a terminal (`NOT_INTERACTIVE`, exit 2).
 2. **Plan check.** It recomputes the plan hash; a different hash stops it (`STALE_PLAN`, exit 1).
-3. **Profile check.** The folder has the SocialPrune marker for X (`PROFILE_INVALID`, exit 2). The browser is the installed Chrome or Edge, started visible through `playwright-core`, which talks to it over a pipe, not a network port (`BROWSER_NOT_FOUND`, exit 1, when neither is installed). Snapshot and "what a run can change" as ADR-023 describes; any installed extension stops the run.
+3. **Profile check.** The folder has the SocialPrune marker for X (`PROFILE_INVALID`, exit 2). The browser is the installed Chrome or Edge, started visible through `playwright-core`, which talks to it over a pipe, not a network port (`BROWSER_NOT_FOUND`, exit 1, when neither is installed). Its launch passes `chromiumSandbox: true`, so Playwright does not add `--no-sandbox`. It retains `--enable-automation`, the remote-debugging pipe, `navigator.webdriver` and all other marks of program control; none is removed or masked. The same launch rule holds for read-only verify and originals-fill. Snapshot and "what a run can change" as ADR-023 describes; any installed extension stops the run.
 4. **Confirmation page.** The first tab shows a page the run serves on `127.0.0.1` at a random port. The run opens it through `playwright-core` with a random 256-bit page token in the fragment, so the token never appears on stdout, stderr or in a log. The page shows the counts, the bulk count, the first 20 rows with the path of the full list, the time estimate, what the run can change, and the warning, with a **Start** button. Its requests follow [ADR-016](ADR-016-local-review-server.md): exact `Host` and `Origin`, `Sec-Fetch-Site: same-origin` when present, no CORS, JSON bodies only, the token in a header, the local-review page policy. Nothing is sent to X before the person clicks **Start**.
 5. **Account check.** A second tab opens X. The run reads the signed-in account from X's page and compares it with the export's account (`ACCOUNT_MISMATCH`, exit 1).
 6. **One entry first.** The oldest "delete post" entry, then, if the plan has reposts, the oldest "undo repost" entry, each alone. After each, the confirmation page shows the result with a link to the post and the buttons **Continue** and **Stop**.

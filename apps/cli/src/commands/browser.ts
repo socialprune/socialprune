@@ -45,25 +45,13 @@ export const browserSetupCommand = buildCommand({
       await import('../browser/profile.ts');
     const executablePath = await installedBrowser(flags.browser);
     await createProfile(flags.profile);
-    const { chromium } = await import('playwright-core');
-    const context = await chromium.launchPersistentContext(flags.profile, {
+    const { ordinarySetup } = await import('../browser/setup.ts');
+    await ordinarySetup({
+      profile: flags.profile,
       executablePath,
-      headless: false,
-      serviceWorkers: 'block',
-      ignoreDefaultArgs: ['--disable-extensions'],
+      signal: this.signal,
+      notice: (text) => this.io.stderr.write(text),
     });
-    const page = context.pages()[0] ?? (await context.newPage());
-    this.io.stderr.write(
-      'This profile holds your signed-in session. Keep it outside the workspace and synced folders. The website can change cookies, site data, cache, history and settings. Sign in by hand, then close this window. SocialPrune never reads the sign-in form.\n',
-    );
-    try {
-      await page.goto('https://x.com/i/flow/login');
-      await new Promise<void>((resolve) =>
-        context.once('close', () => resolve()),
-      );
-    } finally {
-      await context.close();
-    }
     this.reply({
       data: { platform: flags.platform },
       human: 'Profile setup window closed.',

@@ -5,10 +5,43 @@ import {
   readFile,
   realpath,
   writeFile,
+  open,
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { CliError } from '../cli/errors.ts';
 export const PROFILE_MARKER = 'socialprune-profile.json';
+export async function profileInUse(directory: string): Promise<boolean> {
+  const stat = async (name: string) =>
+    lstat(join(directory, name)).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      )
+        return null;
+      throw new CliError('PROFILE_INVALID');
+    });
+  // POSIX Chromium owns this symlink until profile shutdown. Never follow or remove it.
+  if (await stat('SingletonLock')) return true;
+  const lock = await stat('lockfile');
+  if (!lock) return false;
+  if (!lock.isFile() || lock.isSymbolicLink())
+    throw new CliError('PROFILE_INVALID');
+  // Windows Chromium's lockfile shares reads, not writes. Probe without truncating.
+  try {
+    const handle = await open(join(directory, 'lockfile'), 'r+');
+    await handle.close();
+    return false;
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'ENOENT') return false;
+      if (['EACCES', 'EPERM', 'EBUSY'].includes(String(error.code)))
+        return true;
+    }
+    throw new CliError('PROFILE_INVALID');
+  }
+}
 export async function validateProfile(directory: string): Promise<void> {
   const stat = await lstat(directory).catch(() => null);
   if (

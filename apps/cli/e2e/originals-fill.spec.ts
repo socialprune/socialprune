@@ -14,7 +14,7 @@ import {
 } from '../src/originals/test/detail.ts';
 import { runFillWithDependencies } from '../src/browser/x/fill/run.ts';
 import { planFill, FILL_WARNING } from '../src/browser/x/fill/plan.ts';
-import { createProfile } from '../src/browser/profile.ts';
+import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { productionMedia } from '../src/originals/video.ts';
 import { SyndicationClient } from '../src/originals/syndication.ts';
 import { CliError } from '../src/cli/errors.ts';
@@ -208,7 +208,20 @@ for (const variant of [
             context = await chromium.launchPersistentContext(profile, {
               executablePath: chromium.executablePath(),
               headless: true,
+              chromiumSandbox: true,
+              args: ['--enable-automation'],
+              ignoreDefaultArgs: ['--disable-infobars'],
             });
+            expect(await profileInUse(profile)).toBe(true);
+            const probe = await context.newCDPSession(context.pages()[0]!);
+            const command = await probe.send('Browser.getBrowserCommandLine');
+            expect(command.arguments).not.toContain('--no-sandbox');
+            expect(command.arguments).toContain('--enable-automation');
+            expect(command.arguments).toContain('--remote-debugging-pipe');
+            expect(
+              await context.pages()[0]!.evaluate(() => navigator.webdriver),
+            ).toBe(true);
+            await probe.detach();
             return context;
           },
           async sleep(ms) {
@@ -367,6 +380,7 @@ for (const variant of [
     } finally {
       abort.abort();
       await context?.close();
+      expect(await profileInUse(profile)).toBe(false);
       await running;
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -262,8 +262,11 @@ export async function productionDriver(options: {
   const context = await chromium.launchPersistentContext(options.profile, {
     executablePath: options.executablePath,
     headless: false,
+    // Keep the browser sandbox on and every Playwright automation sign visible.
+    chromiumSandbox: true,
+    args: ['--enable-automation'],
     serviceWorkers: 'block',
-    ignoreDefaultArgs: ['--disable-extensions'],
+    ignoreDefaultArgs: ['--disable-extensions', '--disable-infobars'],
   });
   context.once('close', () => options.onClosed?.());
   const driver = await pageDriver({

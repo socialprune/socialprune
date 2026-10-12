@@ -77,8 +77,11 @@ const production: FillDependencies = {
     return chromium.launchPersistentContext(profile, {
       executablePath,
       headless: false,
+      // Keep the browser sandbox on and every Playwright automation sign visible.
+      chromiumSandbox: true,
+      args: ['--enable-automation'],
       serviceWorkers: 'block',
-      ignoreDefaultArgs: ['--disable-extensions'],
+      ignoreDefaultArgs: ['--disable-extensions', '--disable-infobars'],
     });
   },
   sleep: async (ms, signal) => {

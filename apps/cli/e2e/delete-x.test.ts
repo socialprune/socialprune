@@ -6,7 +6,7 @@ import { beforeAll, afterAll, expect, test } from 'vitest';
 import { chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
-import { createProfile } from '../src/browser/profile.ts';
+import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { planDeletion } from '../src/browser/plan.ts';
 import { runWithDependencies } from '../src/browser/runner.ts';
 import { pageDriver } from '../src/browser/x/driver.ts';
@@ -96,8 +96,21 @@ async function harness(
           context = await chromium.launchPersistentContext(profile, {
             executablePath: chromium.executablePath(),
             headless: true,
+            chromiumSandbox: true,
+            args: ['--enable-automation'],
+            ignoreDefaultArgs: ['--disable-infobars'],
             serviceWorkers: 'block',
           });
+          expect(await profileInUse(profile)).toBe(true);
+          const probe = await context.newCDPSession(context.pages()[0]!);
+          const command = await probe.send('Browser.getBrowserCommandLine');
+          expect(command.arguments).not.toContain('--no-sandbox');
+          expect(command.arguments).toContain('--enable-automation');
+          expect(command.arguments).toContain('--remote-debugging-pipe');
+          expect(
+            await context.pages()[0]!.evaluate(() => navigator.webdriver),
+          ).toBe(true);
+          await probe.detach();
           context.on('request', (request) => network.push(request.url()));
           const driver = await pageDriver({
             context,
@@ -209,6 +222,7 @@ async function harness(
     async close() {
       controller.abort();
       await context?.close();
+      expect(await profileInUse(profile)).toBe(false);
       await Promise.allSettled([...active]);
       await store.close();
       await rm(directory, { recursive: true, force: true });
@@ -1016,6 +1030,9 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
     browser = await chromium.launch({
       executablePath: chromium.executablePath(),
       headless: true,
+      chromiumSandbox: true,
+      args: ['--enable-automation'],
+      ignoreDefaultArgs: ['--disable-infobars'],
     });
     const page = await browser.newPage();
     await page.route('**/*', (route) =>

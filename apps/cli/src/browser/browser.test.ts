@@ -384,4 +384,6 @@ test('browser capability import graph excludes tests/fakes and all other command
     'commands/delete.ts',
     'commands/originals-fill.ts',
   ]);
-});
+  // Parses every CLI source file with the compiler; under the parallel full
+  // suite that exceeds the 5 s default, like the other whole-tree checks.
+}, 60_000);

@@ -146,7 +146,7 @@ export async function storageFailureControls() {
       (await tx.meta.get()).updatedAt !== '2026-02-01T00:00:00.000Z',
   );
   const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open(`sp-ws-${id}`, 4);
+    const open = indexedDB.open(`sp-ws-${id}`, 5);
     open.onsuccess = () => resolve(open.result);
     open.onerror = () =>
       reject(open.error ?? new Error('Versionchange probe failed.'));

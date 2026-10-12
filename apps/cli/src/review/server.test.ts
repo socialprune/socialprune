@@ -15,7 +15,7 @@ import { rawBytes, rawRequest } from './test/raw-http.ts';
 import { startReviewServer } from './server.ts';
 
 const policy =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
 function headers(result: HttpResult) {
   expect(result.headers['content-security-policy']).toBe(policy);
   expect(result.headers['x-content-type-options']).toBe('nosniff');

@@ -381,6 +381,9 @@ async function handle(input: WorkspaceRequest) {
       post({ type: 'itemDetail', requestId, ...result });
       break;
     }
+    case 'getConversation':
+      post({ type: 'conversation', requestId, chain: [], state: 'not-read' });
+      break;
     case 'getOriginals':
       post({
         type: 'originals',

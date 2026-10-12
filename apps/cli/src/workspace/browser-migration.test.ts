@@ -34,7 +34,7 @@ test('v2 SQLite additive migration preserves original bytes, copies first and re
     expect(await readFile(join(directory, copy))).toEqual(bytes);
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(3);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
       expect(
         db
           .prepare("SELECT name FROM sqlite_schema WHERE name='originals'")

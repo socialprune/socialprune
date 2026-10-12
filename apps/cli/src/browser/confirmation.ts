@@ -4,7 +4,7 @@ import { ReviewSession } from '../review/session.ts';
 import { REVIEW_HEADERS, REVIEW_POLICY } from '../review/static.ts';
 
 export interface ConfirmationView {
-  phase: 'start' | 'running' | 'canary' | 'ended';
+  phase: 'start' | 'running' | 'canary' | 'match' | 'ended';
   version: number;
   warning: string;
   profileWarning: string;
@@ -16,7 +16,7 @@ export interface ConfirmationView {
   completed: number;
   result: string;
 }
-const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>SocialPrune browser run</title><script src="/confirmation.js" defer></script></head><body><main><h1>SocialPrune browser run</h1><p id="warning"></p><p id="profile"></p><p id="counts"></p><p id="list"></p><pre id="rows"></pre><p id="result" role="status"></p><button id="start" hidden>Start</button><button id="continue" hidden>Continue</button><button id="stop" hidden>Stop</button></main></body></html>`;
+const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>SocialPrune browser run</title><script src="/confirmation.js" defer></script></head><body><main><h1>SocialPrune browser run</h1><p id="warning"></p><p id="profile"></p><p id="counts"></p><p id="list"></p><pre id="rows"></pre><p id="result" role="status"></p><button id="start" hidden>Start</button><button id="continue" hidden>Continue</button><button id="matches" hidden>Matches</button><button id="does-not-match" hidden>Does not match</button><button id="stop" hidden>Stop</button></main></body></html>`;
 // No template, HTML injection or export text inside JavaScript. The page only
 // renders JSON as text nodes, under the local review's actual response policy.
 const script = `(() => {
@@ -37,9 +37,11 @@ function render(v) {
  document.getElementById('result').textContent=v.result;
  document.getElementById('start').hidden=v.phase!=='start';
  document.getElementById('continue').hidden=v.phase!=='canary';
+ document.getElementById('matches').hidden=v.phase!=='match';
+ document.getElementById('does-not-match').hidden=v.phase!=='match';
  document.getElementById('stop').hidden=v.phase==='ended';
 }
-for(const action of ['start','continue','stop']) document.getElementById(action).addEventListener('click', async event => {
+for(const action of ['start','continue','matches','does-not-match','stop']) document.getElementById(action).addEventListener('click', async event => {
  if(!event.isTrusted || !view) return;
  try { render(await post('/api/action',{action,version:view.version})); } catch { document.getElementById('result').textContent='Session ended. Nothing further will run.'; }
 });
@@ -60,7 +62,11 @@ export async function startConfirmation(
   let view: ConfirmationView = { ...initial, version: 1 };
   let authority = '';
   let pending:
-    { action: 'start' | 'continue'; resolve(value: boolean): void } | undefined;
+    | {
+        action: 'start' | 'continue' | 'matches';
+        resolve(value: boolean): void;
+      }
+    | undefined;
   let stopped = false;
   const session = new ReviewSession();
   const stopListeners = new Set<() => void>();
@@ -192,7 +198,11 @@ export async function startConfirmation(
       reply(response, 409);
       return;
     }
-    if (body.action === 'stop' && view.phase !== 'ended') {
+    if (
+      (body.action === 'stop' ||
+        (body.action === 'does-not-match' && view.phase === 'match')) &&
+      view.phase !== 'ended'
+    ) {
       stopped = true;
       pending?.resolve(false);
       pending = undefined;
@@ -207,7 +217,8 @@ export async function startConfirmation(
       pending &&
       pending.action === body.action &&
       ((body.action === 'start' && view.phase === 'start') ||
-        (body.action === 'continue' && view.phase === 'canary'))
+        (body.action === 'continue' && view.phase === 'canary') ||
+        (body.action === 'matches' && view.phase === 'match'))
     ) {
       pending.resolve(true);
       pending = undefined;
@@ -235,7 +246,7 @@ export async function startConfirmation(
     update(update: Partial<Omit<ConfirmationView, 'version'>>) {
       view = { ...view, ...update, version: view.version + 1 };
     },
-    wait(action: 'start' | 'continue'): Promise<boolean> {
+    wait(action: 'start' | 'continue' | 'matches'): Promise<boolean> {
       if (stopped) return Promise.resolve(false);
       if (pending) throw new Error('Already waiting');
       return new Promise((resolve) => {

@@ -212,6 +212,19 @@ export async function smoke(olderNode?: string): Promise<void> {
     ]);
     assert.equal(deletePlan.command, 'delete.x');
     assert.equal((deletePlan.data as { planned: number }).planned, 0);
+    const fillPlan = checked([
+      'originals',
+      'fill',
+      'x',
+      '--workspace',
+      workspace,
+      '--account',
+      fixture.account.key,
+      '--dry-run',
+      '--json',
+    ]);
+    assert.equal(fillPlan.command, 'originals.fill.x');
+    assert.equal((fillPlan.data as { planned: number }).planned, 0);
     const summary = checked(['summary', '--workspace', workspace, '--json']);
     (await validator(installed, 'summary')).parse(summary.data);
     assert.equal(
@@ -280,6 +293,35 @@ registerHooks({resolve(specifier,context,nextResolve){if(specifier==='playwright
       command: 'delete x --dry-run --json (network and browser import denied)',
       exit: 0,
     });
+    const fillOutput = command(
+      process.execPath,
+      [
+        '--import',
+        pathToFileURL(noNetwork).href,
+        bin,
+        'originals',
+        'fill',
+        'x',
+        '--workspace',
+        workspace,
+        '--account',
+        fixture.account.key,
+        '--dry-run',
+        '--json',
+      ],
+      install,
+    );
+    envelopeSchema.parse(JSON.parse(fillOutput));
+    const fill = JSON.parse(fillOutput) as Envelope & {
+      data: { planned: number };
+    };
+    assert.equal(fill.status, 'ok');
+    assert.equal(fill.data.planned, 0);
+    results.push({
+      command:
+        'originals fill x --dry-run --json (network and browser import denied)',
+      exit: 0,
+    });
     const originalsOutput = command(
       process.execPath,
       [
@@ -315,6 +357,7 @@ registerHooks({resolve(specifier,context,nextResolve){if(specifier==='playwright
       ),
     ) as {
       items: {
+        id: string;
         reference: { replyToId: string | null; quotedId: string | null };
       }[];
     };
@@ -324,7 +367,11 @@ registerHooks({resolve(specifier,context,nextResolve){if(specifier==='playwright
         .filter((id) => id !== null),
     );
     assert.equal(originals.data.referenced, expectedReferences.size);
-    assert.equal(originals.data.planned, expectedReferences.size);
+    const ownIds = new Set(expectedDemo.items.map((item) => item.id.slice(2)));
+    assert.equal(
+      originals.data.planned,
+      [...expectedReferences].filter((id) => !ownIds.has(id)).length,
+    );
     results.push({
       command: 'originals fetch --dry-run --json (outbound primitives denied)',
       exit: 0,

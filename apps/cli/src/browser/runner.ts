@@ -52,17 +52,34 @@ async function dailyCount(
   const journal = await store.browserJournal();
   const runs = new Set(
     journal.runs
-      .filter((run) => run.accountKey === account && run.mode === mode)
+      .filter((run) => run.accountKey === account)
       .map((run) => run.runId),
   );
-  return journal.attempts.filter(
-    (a) =>
-      runs.has(a.runId) &&
-      (mode === 'delete'
-        ? ['sending', 'not-found'].includes(a.state)
-        : a.action === 'verify') &&
-      dateInZone(a.at, zone) === day,
-  ).length;
+  const precise = journal.runs
+    .filter(
+      (run) =>
+        run.accountKey === account &&
+        run.pageOpens !== undefined &&
+        dateInZone(run.startedAt, zone) === day,
+    )
+    .reduce((sum, run) => sum + run.pageOpens!, 0);
+  const legacy = new Set(
+    journal.runs
+      .filter((run) => run.pageOpens === undefined)
+      .map((run) => run.runId),
+  );
+  return (
+    precise +
+    journal.attempts.filter(
+      (a) =>
+        runs.has(a.runId) &&
+        legacy.has(a.runId) &&
+        (a.state === 'sending' ||
+          a.action === 'verify' ||
+          (a.state === 'not-found' && a.settles === null)) &&
+        dateInZone(a.at, zone) === day,
+    ).length
+  );
 }
 function inOrder(rows: PlannedEntry[]): PlannedEntry[] {
   const oldest = [...rows].sort(
@@ -198,21 +215,26 @@ export async function runWithDependencies(
     const priorJournal = await options.store.browserJournal();
     const priorRuns = new Set(
       priorJournal.runs
-        .filter(
-          (value) =>
-            value.accountKey === options.plan.accountKey && value.mode === mode,
-        )
+        .filter((value) => value.accountKey === options.plan.accountKey)
         .map((value) => value.runId),
     );
-    const priorStarts = priorJournal.attempts
-      .filter(
-        (value) =>
-          priorRuns.has(value.runId) &&
-          (mode === 'delete'
-            ? ['sending', 'not-found'].includes(value.state)
-            : value.action === 'verify'),
-      )
-      .map((value) => Date.parse(value.at));
+    const priorStarts = [
+      ...priorJournal.runs
+        .filter(
+          (run) =>
+            run.accountKey === options.plan.accountKey && run.lastPageOpenedAt,
+        )
+        .map((run) => Date.parse(run.lastPageOpenedAt!)),
+      ...priorJournal.attempts
+        .filter(
+          (value) =>
+            priorRuns.has(value.runId) &&
+            (value.state === 'sending' ||
+              value.action === 'verify' ||
+              (value.state === 'not-found' && value.settles === null)),
+        )
+        .map((value) => Date.parse(value.at)),
+    ];
     let previousStart: number | null = priorStarts.length
       ? Math.max(...priorStarts)
       : null;
@@ -273,6 +295,7 @@ export async function runWithDependencies(
       );
       for (const attempt of candidates) {
         if (!(await ready())) break;
+        await writer.pageOpen(run.runId, options.now().toISOString());
         const state = await browser.inspect(attempt.itemId.slice(2));
         const at = options.now().toISOString();
         if (['sending', 'ambiguous'].includes(attempt.state)) {
@@ -329,7 +352,10 @@ export async function runWithDependencies(
           false,
         );
         if (withdrawn) continue;
+        await writer.pageOpen(run.runId, options.now().toISOString());
         const state = await browser.inspect(row.item.id.slice(2));
+        used++;
+        batch++;
         checkStop();
         if (state === 'gone') {
           await writer.record({
@@ -342,8 +368,6 @@ export async function runWithDependencies(
             at: options.now().toISOString(),
             code: null,
           });
-          used++;
-          batch++;
           continue;
         }
         checkStop();
@@ -355,8 +379,6 @@ export async function runWithDependencies(
         );
         if (sending?.state === 'withdrawn') continue;
         if (!sending) throw new CliError('WORKSPACE_INVALID');
-        used++;
-        batch++;
         await deleteOne(writer, browser, row, sending, run, () =>
           options.now(),
         );

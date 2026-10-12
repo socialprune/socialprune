@@ -88,6 +88,19 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       [['review', '--workspace', workspace, '--dry-run'], 0],
       // Explicit network command is covered here only with its offline flag.
       [['originals', 'fetch', '--workspace', workspace, '--dry-run'], 0],
+      [
+        [
+          'originals',
+          'fill',
+          'x',
+          '--workspace',
+          workspace,
+          '--account',
+          'x:generated',
+          '--dry-run',
+        ],
+        0,
+      ],
       [['review', '--workspace', workspace, '--no-open'], 2],
     ];
     for (const route of [
@@ -98,6 +111,7 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       ['export', 'clicklist'],
       ['review'],
       ['originals', 'fetch'],
+      ['originals', 'fill', 'x'],
     ]) {
       cases.push([[...route, '--help'], 0], [[...route, '--bad'], 2]);
     }
@@ -114,7 +128,14 @@ test('every new command success/dry-run/help/error is observed with zero outboun
           [...args, ...(json ? ['--json'] : [])],
           { ...context, openBrowser: capture.context.openBrowser },
         );
-        expect(result, args.join(' ')).toBe(expected);
+        expect(
+          result,
+          args.join(' ') +
+            ' ' +
+            capture.stderr.join(' ') +
+            ' ' +
+            capture.stdout.join(' '),
+        ).toBe(expected);
         expect(recorder.calls, args.join(' ')).toEqual([]);
         expect(capture.opened).toEqual([]);
       }

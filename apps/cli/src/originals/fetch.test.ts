@@ -117,8 +117,8 @@ test('real local HTTP, pacing, all statuses, media, duplicate references, idempo
     const result = await fetchOriginals(data.input, { baseUrl: fake.origin });
     expect(result.data).toMatchObject({
       referenced: 5,
-      attempted: 5,
-      fetched: 2,
+      attempted: fixture.expectedExpandedCount,
+      fetched: 4,
       notFound: 2,
       tombstone: 1,
       failed: 0,
@@ -131,7 +131,7 @@ test('real local HTTP, pacing, all statuses, media, duplicate references, idempo
       ({ url }) => url.pathname === '/tweet-result',
     );
     expect(tweets.map(({ url }) => url.searchParams.get('id'))).toEqual(
-      fixture.references,
+      fixture.expectedRequests,
     );
     expect(tweets[0]!.url.searchParams.get('token')).toBe(
       fixture.tokenPair.token,
@@ -140,7 +140,7 @@ test('real local HTTP, pacing, all statuses, media, duplicate references, idempo
       expect(tweets[i]!.at - tweets[i - 1]!.at).toBeGreaterThanOrEqual(1000);
     const store = await SQLiteStore.open(data.file);
     const values = await store.read((tx) => records(tx.originals));
-    expect(values.map(({ status }) => status)).toEqual(
+    expect(values.map(({ anonymous }) => anonymous?.status)).toEqual(
       fixture.expectedStatuses,
     );
     expect(values[0]).toMatchObject({
@@ -150,7 +150,6 @@ test('real local HTTP, pacing, all statuses, media, duplicate references, idempo
       quotedId: fixture.fetched.quoted_tweet.id_str,
       parentId: fixture.fetched.parent.id_str,
       textCompleteness: 'truncated',
-      video: 'not-stored',
     });
     for (const file of ['1.png', '2.png'])
       expect(
@@ -167,7 +166,7 @@ test('real local HTTP, pacing, all statuses, media, duplicate references, idempo
       })(),
     );
     expect(document.originals).toEqual(values);
-    expect(document.counts.originals).toBe(5);
+    expect(document.counts.originals).toBe(fixture.expectedExpandedCount);
     const restored = createMemoryStore();
     await restoreBackup(
       restored,
@@ -209,7 +208,7 @@ test('five consecutive failures stop without retries; each failed attempt stays 
     const store = await SQLiteStore.open(data.file, { readOnly: true });
     expect(
       (await store.read((tx) => records(tx.originals))).map(
-        ({ status }) => status,
+        ({ anonymous }) => anonymous?.status,
       ),
     ).toEqual(Array<string>(5).fill('failed'));
     await store.close();
@@ -359,7 +358,7 @@ for (const mode of ['redirect', 'foreign-photo', 'bad-photo'] as const)
       expect(result.data).toMatchObject(
         mode === 'redirect'
           ? { failed: 1 }
-          : { fetched: 1, photosFailed: 2, photosStored: 0 },
+          : { fetched: 3, photosFailed: 2, photosStored: 0 },
       );
       expect(targets.every((url) => new URL(url).origin === fake.origin)).toBe(
         true,
@@ -381,10 +380,9 @@ test('photo directories cannot follow a link out of the workspace', async () => 
   await mkdir(outside);
   await symlink(outside, join(data.directory, 'originals'), 'junction');
   try {
-    expect(
-      (await fetchOriginals(data.input, { baseUrl: fake.origin })).data
-        .photosFailed,
-    ).toBe(2);
+    await expect(
+      fetchOriginals(data.input, { baseUrl: fake.origin }),
+    ).rejects.toThrow('ORIGINAL_PATH');
     expect(await readdir(outside)).toEqual([]);
   } finally {
     await fake.stop();

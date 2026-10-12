@@ -3,12 +3,7 @@ import * as v1 from './v1.ts';
 import { BrowserRunSchema, BrowserAttemptSchema } from './browser.ts';
 export * from './browser.ts';
 import { OriginalSchema } from './original.ts';
-export {
-  OriginalSchema,
-  OriginalIdSchema,
-  OriginalPhotoSchema,
-} from './original.ts';
-export type { Original } from './original.ts';
+export * from './original.ts';
 
 export {
   PlatformIdSchema,
@@ -173,7 +168,7 @@ export const ReviewViewSchema = z.strictObject({
 export type ReviewView = z.infer<typeof ReviewViewSchema>;
 export const WorkspaceMetaSchema = z.strictObject({
   format: z.literal('socialprune-workspace'),
-  schemaVersion: z.union([z.literal(2), z.literal(3)]),
+  schemaVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]),
   id,
   kind: z.enum(['personal', 'demo']),
   createdAt: v1.UtcTimestampSchema,

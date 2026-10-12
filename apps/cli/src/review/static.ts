@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { CliError } from '../cli/errors.ts';
 
 export const REVIEW_POLICY =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
 export const REVIEW_HEADERS = {
   'Content-Security-Policy': REVIEW_POLICY,
   'X-Content-Type-Options': 'nosniff',

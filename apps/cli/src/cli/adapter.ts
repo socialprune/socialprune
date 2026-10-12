@@ -106,6 +106,24 @@ export async function executeCli(
       },
     });
   }
+  for (const entry of entries.filter((value) => value.path.length === 3)) {
+    const root = entry.path[0]!,
+      middle = entry.path[1]!,
+      leaf = entry.path[2]!;
+    const children: typeof routes = {};
+    for (const other of entries.filter(
+      (value) => value.path.length === 2 && value.path[0] === root,
+    ))
+      children[other.path[1]!] = other.command;
+    children[middle] = buildRouteMap({
+      routes: { [leaf]: entry.command },
+      docs: { brief: 'Signed-in originals reading' },
+    });
+    routes[root] = buildRouteMap({
+      routes: children,
+      docs: { brief: 'Original content' },
+    });
+  }
   const application = buildApplication(
     buildRouteMap({
       routes,

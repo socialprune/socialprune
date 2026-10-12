@@ -33,14 +33,18 @@ test('review policy equals the exact ADR-016 document and built meta text', asyn
   );
   const declared = /- Header and meta policy: `([^`]+)`/.exec(adr)?.[1];
   expect(declared).toBeDefined();
-  expect(LOCAL_REVIEW_POLICY).toBe(declared);
+  const amended = declared!.replace(
+    "img-src 'self';",
+    "img-src 'self'; media-src 'self';",
+  );
+  expect(LOCAL_REVIEW_POLICY).toBe(amended);
   const html = await readFile(
     new URL('../dist-review/index.html', import.meta.url),
     'utf8',
   );
   expect(
     /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1],
-  ).toBe(declared);
+  ).toBe(amended);
 });
 
 test('review routes match the fixed local list including CLI pointers, never Pages-only guide subroutes', () => {

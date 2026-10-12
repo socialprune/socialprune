@@ -3,14 +3,55 @@
   "type": "object",
   "properties": {
     "id": { "type": "string", "pattern": "^[0-9]{1,40}$" },
-    "status": {
-      "type": "string",
-      "enum": ["fetched", "not-found", "tombstone", "failed"]
+    "anonymous": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["fetched", "not-found", "tombstone", "failed"]
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          "required": ["status", "at"],
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
     },
-    "fetchedAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    "signedIn": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["read", "not-found", "tombstone", "unavailable"]
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "runId": { "type": "string", "minLength": 1 },
+            "attemptId": { "type": "string", "minLength": 1 },
+            "reason": {
+              "anyOf": [
+                { "type": "string", "maxLength": 500 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": ["status", "at", "runId", "attemptId", "reason"],
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
     },
     "text": {
       "anyOf": [{ "type": "string", "maxLength": 1000000 }, { "type": "null" }]
@@ -21,22 +62,104 @@
     "authorHandle": {
       "anyOf": [{ "type": "string", "maxLength": 512 }, { "type": "null" }]
     },
-    "photos": {
+    "createdAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "textSource": {
+      "anyOf": [
+        { "type": "string", "enum": ["anonymous", "signed-in"] },
+        { "type": "null" }
+      ]
+    },
+    "textCompleteness": {
+      "type": "string",
+      "enum": ["unknown", "truncated", "full"]
+    },
+    "media": {
       "maxItems": 4,
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "url": { "type": "string", "maxLength": 4096 },
-          "file": {
+          "n": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "kind": { "type": "string", "enum": ["photo", "video", "gif"] },
+          "source": { "type": "string", "enum": ["anonymous", "signed-in"] },
+          "url": {
             "anyOf": [
-              { "type": "string", "pattern": "^[1-4]\\.(?:jpg|png|gif|webp)$" },
+              { "type": "string", "maxLength": 4096 },
               { "type": "null" }
             ]
           },
-          "status": { "type": "string", "enum": ["stored", "failed"] }
+          "file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-4]\\.(?:jpg|png|gif|webp|mp4)$"
+              },
+              { "type": "null" }
+            ]
+          },
+          "poster": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-4]-poster\\.(?:jpg|png|webp)$"
+              },
+              { "type": "null" }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "failed",
+              "refused",
+              "too-large",
+              "hls-only",
+              "no-variant",
+              "run-cap",
+              "not-stored"
+            ]
+          },
+          "bytes": {
+            "anyOf": [
+              { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              { "type": "null" }
+            ]
+          },
+          "durationMs": {
+            "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+          },
+          "bitrateLabel": {
+            "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+          },
+          "altText": {
+            "anyOf": [
+              { "type": "string", "maxLength": 1000 },
+              { "type": "null" }
+            ]
+          }
         },
-        "required": ["url", "file", "status"],
+        "required": [
+          "n",
+          "kind",
+          "source",
+          "url",
+          "file",
+          "poster",
+          "status",
+          "bytes",
+          "durationMs",
+          "bitrateLabel",
+          "altText"
+        ],
         "additionalProperties": false
       }
     },
@@ -52,6 +175,18 @@
         { "type": "null" }
       ]
     },
+    "conversationId": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]{1,40}$" },
+        { "type": "null" }
+      ]
+    },
+    "chainAbove": {
+      "anyOf": [
+        { "type": "string", "enum": ["complete", "partial"] },
+        { "type": "null" }
+      ]
+    },
     "raw": {
       "anyOf": [
         {
@@ -62,24 +197,122 @@
         { "type": "null" }
       ]
     },
-    "textCompleteness": { "type": "string", "enum": ["unknown", "truncated"] },
-    "video": {
-      "anyOf": [{ "type": "string", "const": "not-stored" }, { "type": "null" }]
+    "signedInRecord": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "rest_id": { "type": "string", "pattern": "^[0-9]{1,40}$" },
+            "text": { "type": "string", "maxLength": 1000000 },
+            "author": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "maxLength": 4096 },
+                "screen_name": { "type": "string", "maxLength": 512 }
+              },
+              "required": ["name", "screen_name"],
+              "additionalProperties": false
+            },
+            "created_at": { "type": ["string", "null"] },
+            "conversation_id_str": {
+              "anyOf": [
+                { "type": "string", "pattern": "^[0-9]{1,40}$" },
+                { "type": "null" }
+              ]
+            },
+            "in_reply_to_status_id_str": {
+              "anyOf": [
+                { "type": "string", "pattern": "^[0-9]{1,40}$" },
+                { "type": "null" }
+              ]
+            },
+            "quoted_status_id_str": {
+              "anyOf": [
+                { "type": "string", "pattern": "^[0-9]{1,40}$" },
+                { "type": "null" }
+              ]
+            },
+            "mediaDetails": {
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["photo", "video", "animated_gif"]
+                  },
+                  "media_url_https": { "type": "string", "maxLength": 4096 },
+                  "ext_alt_text": {
+                    "anyOf": [
+                      { "type": "string", "maxLength": 1000 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "video_info": {
+                    "type": "object",
+                    "properties": {
+                      "duration_millis": {
+                        "anyOf": [
+                          { "type": "number", "minimum": 0 },
+                          { "type": "null" }
+                        ]
+                      },
+                      "variants": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "content_type": {
+                              "type": "string",
+                              "enum": ["video/mp4", "application/x-mpegURL"]
+                            },
+                            "url": { "type": "string", "maxLength": 4096 },
+                            "bitrate": { "type": "number", "minimum": 0 }
+                          },
+                          "required": ["content_type", "url"],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": ["duration_millis", "variants"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "media_url_https",
+                  "ext_alt_text",
+                  "video_info"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["rest_id", "text"],
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
     }
   },
   "required": [
     "id",
-    "status",
-    "fetchedAt",
+    "anonymous",
+    "signedIn",
     "text",
     "authorName",
     "authorHandle",
-    "photos",
+    "createdAt",
+    "textSource",
+    "textCompleteness",
+    "media",
     "quotedId",
     "parentId",
+    "conversationId",
+    "chainAbove",
     "raw",
-    "textCompleteness",
-    "video"
+    "signedInRecord"
   ],
   "additionalProperties": false,
   "$defs": {

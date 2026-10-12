@@ -8,6 +8,8 @@ import {
   ItemSchema,
   OutcomeEventSchema,
   OriginalSchema,
+  migrateOriginal,
+  validateOriginal,
   SubmissionSchema,
   WorkspaceMetaSchema,
   WorkspaceV2Schema,
@@ -47,7 +49,7 @@ import {
 } from './browser-journal.ts';
 import { journalExists } from './browser-journal.ts';
 
-export const SQLITE_LAYOUT_VERSION = 3;
+export const SQLITE_LAYOUT_VERSION = 4;
 
 const originalsLayout = `
 CREATE TABLE originals (
@@ -128,6 +130,9 @@ CREATE TRIGGER ${table}_no_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(A
 ${originalsLayout}
 ${BROWSER_JOURNAL_LAYOUT}
 PRAGMA user_version=3;
+ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));
+ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;
+PRAGMA user_version=4;
 `;
 
 export function storageError(error: unknown): Error {
@@ -160,13 +165,17 @@ function originalRow(
   row: Record<string, unknown> | undefined,
 ): Original | undefined {
   if (!row) return undefined;
+  if (typeof row.data === 'string')
+    return OriginalSchema.parse(JSON.parse(row.data));
   if (
     typeof row.photos !== 'string' ||
     (row.raw !== null && typeof row.raw !== 'string')
   )
     throw new CliError('WORKSPACE_INVALID');
-  return OriginalSchema.parse({
-    ...row,
+  const { data: unused, ...legacy } = row;
+  void unused;
+  return migrateOriginal({
+    ...legacy,
     photos: JSON.parse(row.photos) as unknown,
     raw: row.raw === null ? null : (JSON.parse(row.raw) as unknown),
   });
@@ -220,6 +229,7 @@ export class SQLiteStore implements WorkspaceStore {
         version !== 0 &&
         version !== 1 &&
         version !== 2 &&
+        version !== 3 &&
         version !== SQLITE_LAYOUT_VERSION
       )
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
@@ -229,7 +239,7 @@ export class SQLiteStore implements WorkspaceStore {
           throw new CliError('WORKSPACE_INVALID');
         await store.initialize(options.initial);
       }
-      if ((version === 1 || version === 2) && !options.readOnly) {
+      if ([1, 2, 3].includes(version) && !options.readOnly) {
         // Refuse unknown logical schemas before a physical migration can write.
         await store.read(async (tx) => tx.meta.get());
         db.exec('BEGIN EXCLUSIVE;');
@@ -245,8 +255,41 @@ export class SQLiteStore implements WorkspaceStore {
               constants.COPYFILE_EXCL,
             );
             if (version === 1) db.exec(originalsLayout);
+            db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
             db.exec(BROWSER_JOURNAL_LAYOUT);
             db.exec('PRAGMA user_version=3;');
+            if (
+              !db
+                .prepare('PRAGMA table_info(originals)')
+                .all()
+                .some((column) => column.name === 'data')
+            )
+              db.exec(
+                'ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));',
+              );
+            if (
+              !db
+                .prepare('PRAGMA table_info(browser_attempts)')
+                .all()
+                .some((column) => column.name === 'originalId')
+            )
+              db.exec(
+                'ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;',
+              );
+            for (const row of db.prepare('SELECT * FROM originals').all()) {
+              const original = originalRow(row)!;
+              db.prepare('UPDATE originals SET data=? WHERE id=?').run(
+                JSON.stringify(original),
+                original.id,
+              );
+            }
+            const meta = JSON.parse(
+              String(db.prepare('SELECT data FROM meta').get()!.data),
+            ) as Record<string, unknown>;
+            db.prepare('UPDATE meta SET data=?').run(
+              JSON.stringify({ ...meta, schemaVersion: 4 }),
+            );
+            db.exec('PRAGMA user_version=4;');
           }
           db.exec('COMMIT;');
         } catch (error) {
@@ -504,7 +547,7 @@ export class SQLiteStore implements WorkspaceStore {
             typeof value === 'object' &&
             'schemaVersion' in value &&
             typeof value.schemaVersion === 'number' &&
-            value.schemaVersion > 3
+            value.schemaVersion > 4
           )
             throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
           const result = WorkspaceMetaSchema.safeParse(value);
@@ -609,25 +652,31 @@ export class SQLiteStore implements WorkspaceStore {
         },
         put: (input) => {
           guard(true);
-          const value = OriginalSchema.parse(input);
+          const value = migrateOriginal(input);
+          validateOriginal(value);
           run(
-            `INSERT INTO originals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO originals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET status=excluded.status, fetchedAt=excluded.fetchedAt, text=excluded.text,
             authorName=excluded.authorName, authorHandle=excluded.authorHandle, photos=excluded.photos,
             quotedId=excluded.quotedId, parentId=excluded.parentId, raw=excluded.raw,
-            textCompleteness=excluded.textCompleteness, video=excluded.video`,
+            textCompleteness=excluded.textCompleteness, video=excluded.video,data=excluded.data`,
             value.id,
-            value.status,
-            value.fetchedAt,
+            value.anonymous?.status ?? 'failed',
+            value.anonymous?.at ??
+              value.signedIn?.at ??
+              new Date().toISOString(),
             value.text,
             value.authorName,
             value.authorHandle,
-            JSON.stringify(value.photos),
+            '[]',
             value.quotedId,
             value.parentId,
             value.raw === null ? null : JSON.stringify(value.raw),
-            value.textCompleteness,
-            value.video,
+            value.textCompleteness === 'full'
+              ? 'unknown'
+              : value.textCompleteness,
+            null,
+            JSON.stringify(value),
           );
           return Promise.resolve();
         },
@@ -702,14 +751,15 @@ export class SQLiteStore implements WorkspaceStore {
           )
             throw new WorkspaceError('EVENT_SEQUENCE');
           run(
-            'INSERT INTO browser_attempts VALUES(?,?,?,?,?,?,?)',
+            'INSERT INTO browser_attempts(seq,attempt_id,run_id,item_id,state,settles,data,originalId) VALUES(?,?,?,?,?,?,?,?)',
             value.seq,
             value.attemptId,
             value.runId,
-            value.itemId,
+            value.itemId ?? '',
             value.state,
             value.settles,
             JSON.stringify(value),
+            value.originalId ?? null,
           );
           await Promise.resolve();
         },

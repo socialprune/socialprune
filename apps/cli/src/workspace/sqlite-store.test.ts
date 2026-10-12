@@ -31,7 +31,7 @@ test('SQLite satisfies every framework-neutral core store contract check', async
     },
     (name) => checks.push(name),
   );
-  expect(checks).toHaveLength(11);
+  expect(checks).toHaveLength(12);
 }, 60_000);
 
 test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real', async () => {
@@ -88,7 +88,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
     expect(statement.get('bound-input')).toEqual({ value: 'bound-input' });
     expect(statement.all(7)).toEqual([{ value: 7 }]);
     expect(() => db.enableLoadExtension(true)).toThrow();
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(3);
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
     expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe(
       'delete',
     );

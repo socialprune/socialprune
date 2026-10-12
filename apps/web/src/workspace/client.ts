@@ -328,6 +328,16 @@ export class WorkspaceClient {
       throw new Error('Originals could not be read.');
     return reply.originals;
   }
+  async getConversation(originalId: string) {
+    const reply = await this.request({
+      type: 'getConversation',
+      requestId: crypto.randomUUID(),
+      originalId,
+    });
+    if (reply.type !== 'conversation')
+      throw new Error('Conversation unavailable');
+    return { chain: reply.chain, state: reply.state };
+  }
   async checkStorage(): Promise<{
     usage: number;
     quota: number;

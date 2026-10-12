@@ -27,6 +27,8 @@ Until a release exists, never run `npx socialprune`, `npm exec socialprune`, `np
 
 ## Workflow
 
+`originals fill x` opens a signed-in browser and reads posts as that account. An agent may run only `originals fill x --workspace "<workspace>" --account "<key>" --dry-run --json`, on a workspace the person explicitly named. Never run its signed-in mode, answer its Start/Continue/Matches controls, choose `--include`, or add `--without-originals` to deletion. The person reads the warning and runs it in their own terminal. The dry run gives counts and a plan hash without post text.
+
 1. Explain the boundary before reading anything. Import stays on the person's computer. Labelling through you gives entry text to your model provider, but import does not. Suggestions do not mark anything for deletion. Keep the agent host's command approval on.
 
 2. Show the export guide for the platform the person chose:

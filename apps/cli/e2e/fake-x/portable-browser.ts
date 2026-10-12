@@ -104,7 +104,20 @@ export async function upgradeDecoy(): Promise<{
   const tx = opened.transaction(['meta', 'runtime', 'originals'], 'readwrite');
   tx.objectStore('meta').put(meta, 'workspace');
   tx.objectStore('runtime').put({ revision: 0, lastEventSeq: 0 }, 'runtime');
-  tx.objectStore('originals').put({ id: 'decoy-original', generated: true });
+  tx.objectStore('originals').put({
+    id: '901',
+    status: 'fetched',
+    fetchedAt: '2026-10-12T00:00:00.000Z',
+    text: 'Generated prior record',
+    authorName: 'Generated',
+    authorHandle: 'generated',
+    photos: [],
+    quotedId: null,
+    parentId: null,
+    raw: { note_tweet: {} },
+    textCompleteness: 'unknown',
+    video: null,
+  });
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onabort = () =>
@@ -114,7 +127,7 @@ export async function upgradeDecoy(): Promise<{
   try {
     store = await IndexedDBStore.open(id);
     const originalPreserved = Boolean(
-      await store.read(async (value) => value.originals.get('decoy-original')),
+      await store.read(async (value) => value.originals.get('901')),
     );
     await store.close();
     const raw = await new Promise<IDBDatabase>((resolve, reject) => {

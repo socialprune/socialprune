@@ -181,6 +181,11 @@ const requests = [
   z.strictObject({ ...requestBase, type: z.literal('detail'), itemId: id }),
   z.strictObject({
     ...requestBase,
+    type: z.literal('getConversation'),
+    originalId: OriginalIdSchema,
+  }),
+  z.strictObject({
+    ...requestBase,
     type: z.literal('getOriginals'),
     ids: z.array(OriginalIdSchema).min(1).max(50),
   }),
@@ -332,6 +337,20 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     ...replyBase,
     type: z.literal('originals'),
     originals: z.array(OriginalSchema).max(50),
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('conversation'),
+    chain: z
+      .array(
+        z.strictObject({
+          id: OriginalIdSchema,
+          original: OriginalSchema.nullable(),
+          ownItemId: id.nullable(),
+        }),
+      )
+      .max(21),
+    state: z.enum(['complete', 'partial', 'not-read']),
   }),
   z.strictObject({
     ...replyBase,

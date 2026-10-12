@@ -171,6 +171,22 @@ export class ReviewRuntime {
           post({ type: 'itemDetail', requestId, ...detail });
           break;
         }
+        case 'getConversation': {
+          const result = await this.store.read(async (tx) => {
+            let account = '';
+            for await (const { item } of tx.items.iterate())
+              if (
+                item.reference.replyToId === input.originalId ||
+                item.reference.quotedId === input.originalId
+              ) {
+                account = item.account.key;
+                break;
+              }
+            return conversation(tx, input.originalId, account);
+          });
+          post({ type: 'conversation', requestId, ...result });
+          break;
+        }
         case 'getOriginals': {
           const originals = await this.store.read(async (tx) => {
             const result = [];
@@ -365,3 +381,4 @@ export class ReviewRuntime {
     return replies;
   }
 }
+import { conversation } from '@socialprune/core/workspace/store';

@@ -6,6 +6,7 @@ import {
   ItemSchema,
   OutcomeEventSchema,
   OriginalSchema,
+  migrateOriginal,
   SubmissionSchema,
   UtcTimestampSchema,
   WorkspaceCountsSchema,
@@ -155,7 +156,7 @@ export function createBackup(
     const useV3 = true;
     const header = {
       ...sourceMeta,
-      schemaVersion: useV3 ? 3 : 2,
+      schemaVersion: 4,
       lastBackupAt: createdAt,
       counts,
     };
@@ -439,7 +440,7 @@ export async function* backupParts(
             value < 1
           )
             throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-          if (value > 3) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+          if (value > 4) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
           version = value;
         }
         yield { type: 'header', name, value };
@@ -506,7 +507,7 @@ export async function readBackup(
         const value = await jsonValue(cursor, maxBytes);
         if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
           throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-        if (value > 3) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+        if (value > 4) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
         version = value;
         document[name] = value;
       } else if (
@@ -541,7 +542,12 @@ export async function readBackup(
         if (next !== ']') {
           cursor.unread(next);
           for (;;) {
-            const value = schema.safeParse(await jsonValue(cursor, maxBytes));
+            const rawValue = await jsonValue(cursor, maxBytes);
+            const value = schema.safeParse(
+              name === 'originals' && version !== 4
+                ? migrateOriginal(rawValue)
+                : rawValue,
+            );
             if (!value.success)
               throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
             rawCounts[name] = (rawCounts[name] ?? 0) + 1;
@@ -604,7 +610,7 @@ export async function readBackup(
       throwIfAborted(options.signal);
       return migrated;
     }
-    if (version !== 2 && version !== 3)
+    if (version !== 2 && version !== 3 && version !== 4)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     const declared = WorkspaceCountsSchema.safeParse(document.counts);
     if (!declared.success) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');

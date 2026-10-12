@@ -4,7 +4,8 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
-  OriginalSchema,
+  migrateOriginal,
+  validateOriginal,
   SubmissionSchema,
   WorkspaceMetaSchema,
   BrowserRunSchema,
@@ -292,7 +293,11 @@ export function createMemoryStore(
         originals: table(
           db.originals,
           (record) => record.id,
-          (record) => OriginalSchema.parse(record),
+          (record) => {
+            const value = migrateOriginal(record);
+            validateOriginal(value);
+            return value;
+          },
         ),
         browserRuns: table(
           db.browserRuns,

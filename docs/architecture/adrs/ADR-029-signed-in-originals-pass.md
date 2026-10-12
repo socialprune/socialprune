@@ -383,6 +383,8 @@ When a point fails, the next run stays a canary, the person decides, and the fak
 
 ## Build spec
 
+Build observation on 2026-10-12: the Windows Playwright WebKit build rejects the generated H.264 MP4 with media error 4 even while `canPlayType` reports support. Chromium and Firefox decode and play the same authenticated file. The UI therefore distinguishes a missing local file from a stored file this browser cannot decode. This does not change the reader's media format or its CSP.
+
 For one code lane, after ADR-027's browser module is integrated. Effort not measured.
 
 **Write set.**

@@ -24,6 +24,8 @@ export interface Fixture {
   pngBase64: string;
   references: string[];
   expectedStatuses: string[];
+  expectedRequests: string[];
+  expectedExpandedCount: number;
 }
 export const fixture = JSON.parse(
   await readFile(new URL('./syndication.json', import.meta.url), 'utf8'),
@@ -100,7 +102,7 @@ export async function fakeSyndication(
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(4236, '127.0.0.1', resolve);
   });
   const address = server.address();
   if (!address || typeof address === 'string')

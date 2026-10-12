@@ -30,6 +30,18 @@
     "fetched",
     "not-found",
     "not-found",
-    "tombstone"
-  ]
+    "tombstone",
+    "fetched",
+    "fetched"
+  ],
+  "expectedRequests": [
+    "900001",
+    "900002",
+    "900003",
+    "900004",
+    "900005",
+    "900011",
+    "900010"
+  ],
+  "expectedExpandedCount": 7
 }

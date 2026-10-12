@@ -4,6 +4,8 @@ import type { WorkspaceStore, WriteTransaction } from './store.ts';
 import { canonicalJson } from './canonical.ts';
 import { JOURNAL_FIXTURE } from '../model/browser-fixture.ts';
 import { createBackup, restoreBackup } from './backup.ts';
+import { OriginalsFillWriter } from './originals-fill-writer.ts';
+import { migrateOriginal } from '../model/original.ts';
 
 export interface StoreContractHarness {
   store: WorkspaceStore;
@@ -90,6 +92,139 @@ async function withStore(
   }
 }
 export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
+  {
+    name: 'v4 signed-in fill and deletion journal coexist and survive portable backup with a failed media record',
+    run: (factory) =>
+      withStore(factory, async (harness) => {
+        const at = '2026-01-02T00:00:00.000Z',
+          original = migrateOriginal({
+            id: '910',
+            status: 'fetched',
+            fetchedAt: at,
+            text: 'Generated beginning',
+            authorName: 'Generated',
+            authorHandle: 'generated',
+            photos: [],
+            quotedId: null,
+            parentId: null,
+            raw: { note_tweet: {} },
+            textCompleteness: 'truncated',
+            video: null,
+          });
+        await harness.store.write(async (tx) => {
+          await tx.originals.put(original);
+        });
+        const writer = new OriginalsFillWriter(harness.store);
+        await writer.startRun({
+          runId: 'generated-fill',
+          accountKey: 'x:contract',
+          planHash: 'b'.repeat(64),
+          canary: true,
+          startedAt: at,
+        });
+        await writer.sending({
+          attemptId: 'generated-fill-send',
+          runId: 'generated-fill',
+          originalId: '910',
+          at,
+        });
+        const record = {
+          ...original,
+          text: 'Generated full text',
+          textSource: 'signed-in' as const,
+          textCompleteness: 'full' as const,
+          signedInRecord: { rest_id: '910', text: 'Generated full text' },
+          signedIn: {
+            status: 'read' as const,
+            at,
+            runId: 'generated-fill',
+            attemptId: 'generated-fill-send',
+            reason: null,
+          },
+          media: [
+            {
+              n: 1,
+              kind: 'video' as const,
+              source: 'signed-in' as const,
+              url: 'https://video.twimg.com/generated.mp4',
+              file: null,
+              poster: null,
+              status: 'failed' as const,
+              bytes: null,
+              durationMs: 1000,
+              bitrateLabel: 832000,
+              altText: null,
+            },
+          ],
+        };
+        await writer.settle(
+          { attemptId: 'generated-fill-send', state: 'read', at, code: null },
+          [record],
+        );
+        await writer.endRun({
+          runId: 'generated-fill',
+          endedAt: at,
+          endReason: 'canary',
+          bodyShapes: { 'read-post': ['generated-shape'] },
+          profileReport: {
+            accountBefore: 'generated',
+            accountAfter: 'generated',
+            extensionsBefore: 0,
+            extensionsAfter: 0,
+            changedFiles: [],
+            unexpectedRequests: [],
+          },
+        });
+        await writer.acceptCanary('generated-fill', at);
+        await harness.store.write(async (tx) => {
+          await tx.browserRuns.add({
+            ...JOURNAL_FIXTURE.run,
+            runId: 'generated-delete',
+          });
+          for (const attempt of JOURNAL_FIXTURE.attempts)
+            await tx.browserAttempts.add({
+              ...attempt,
+              runId: 'generated-delete',
+              seq: attempt.seq + 2,
+            });
+        });
+        const source = await harness.store.read(readWorkspace),
+          backup = createBackup(harness.store, { batchSize: 1 }),
+          bytes: Uint8Array[] = [];
+        for await (const chunk of backup.chunks) bytes.push(chunk);
+        const target = await factory(createWorkspace());
+        try {
+          await restoreBackup(
+            target.store,
+            (async function* () {
+              await Promise.resolve();
+              yield* bytes;
+            })(),
+            { batchSize: 1 },
+          );
+          const value = await target.store.read(readWorkspace);
+          equal(value.schemaVersion, 4, 'v4 lost');
+          equal(value.originals, source.originals, 'signed-in projection lost');
+          equal(
+            value.browserAttempts,
+            source.browserAttempts,
+            'both modes lost',
+          );
+          equal(
+            value.decisionEvents,
+            source.decisionEvents,
+            'fill changed decisions',
+          );
+          equal(
+            value.outcomeEvents,
+            source.outcomeEvents,
+            'fill changed outcomes',
+          );
+        } finally {
+          await target.dispose();
+        }
+      }),
+  },
   {
     name: 'schema v3 browser journal survives reopen and portable streaming restore without acquiring platform capability',
     run: (factory) =>

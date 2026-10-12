@@ -5,6 +5,8 @@ import {
   ItemSchema,
   OutcomeEventSchema,
   OriginalSchema,
+  migrateOriginal,
+  validateOriginal,
   SubmissionSchema,
   WorkspaceCountsSchema,
   WorkspaceMetaSchema,
@@ -122,6 +124,7 @@ export async function restoreBackup(
   const browserRuns: BrowserRun[] = [],
     browserAttempts: BrowserAttempt[] = [];
   const browserOutcomes: OutcomeEvent[] = [];
+  const originalRecords: Original[] = [];
   let fixtureAssessment = false;
   const rawCounts: WorkspaceCounts = {
     imports: 0,
@@ -318,15 +321,21 @@ export async function restoreBackup(
       counts.items++;
       await buffered(name, index, value);
     } else if (name === 'originals') {
-      if (version !== 2 && version !== 3)
+      if (version !== 2 && version !== 3 && version !== 4)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-      const value = OriginalSchema.parse(record.value);
+      const value =
+        version === 4
+          ? OriginalSchema.parse(record.value)
+          : migrateOriginal(record.value);
+      validateOriginal(value);
+      originalRecords.push(value);
       acceptUnique(name, value.id);
       rawCounts.originals = (rawCounts.originals ?? 0) + 1;
       counts.originals = (counts.originals ?? 0) + 1;
       await buffered(name, index, value);
     } else if (name === 'browserRuns' || name === 'browserAttempts') {
-      if (version !== 3) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      if (version !== 3 && version !== 4)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
         name === 'browserRuns'
           ? BrowserRunSchema.parse(record.value)
@@ -399,7 +408,7 @@ export async function restoreBackup(
       });
       pendingLegacyEvents++;
     } else {
-      if (version !== 2 && version !== 3)
+      if (version !== 2 && version !== 3 && version !== 4)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
         name === 'decisionEvents'
@@ -472,12 +481,16 @@ export async function restoreBackup(
       } else
         await accept({ ...part, name: part.name as BufferedRecord['name'] });
     }
-    if (version !== 1 && version !== 2 && version !== 3)
+    if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (
       provisionalVersion !== undefined &&
       provisionalVersion !== version &&
-      !(version === 3 && provisionalVersion === 2)
+      !(
+        version >= 3 &&
+        provisionalVersion >= 2 &&
+        provisionalVersion <= version
+      )
     )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     await flush();
@@ -488,7 +501,7 @@ export async function restoreBackup(
             key === 'originals'
               ? arraysSeen.has('originals')
               : ['browserRuns', 'browserAttempts'].includes(key)
-                ? version === 3
+                ? (version ?? 0) >= 3
                 : true,
           );
     if (
@@ -618,7 +631,7 @@ export async function restoreBackup(
           throw new WorkspaceError('ACTION_INVALID');
       }
     }
-    if (version === 3) {
+    if (version >= 3) {
       try {
         validateBrowserJournal(
           browserRuns,
@@ -628,8 +641,38 @@ export async function restoreBackup(
               .filter(([, head]) => head >= KNOWN_ITEM)
               .map(([id]) => id),
           ),
+          new Set(originalRecords.map((value) => value.id)),
         );
         validateBrowserOutcomes(browserAttempts, browserOutcomes);
+        const accountedReads = new Set<string>();
+        for (const original of originalRecords)
+          if (original.signedIn) {
+            const run = browserRuns.find(
+                (run) => run.runId === original.signedIn!.runId,
+              ),
+              attempt = browserAttempts.find(
+                (attempt) => attempt.attemptId === original.signedIn!.attemptId,
+              );
+            if (
+              run?.mode !== 'fill' ||
+              attempt?.action !== 'read-post' ||
+              attempt.state !== original.signedIn.status
+            )
+              throw new Error('INVALID_ORIGINAL_JOURNAL');
+            accountedReads.add(attempt.attemptId);
+          }
+        for (const attempt of browserAttempts)
+          if (
+            attempt.action === 'read-post' &&
+            attempt.state === 'read' &&
+            !accountedReads.has(attempt.attemptId) &&
+            !originalRecords.some(
+              (original) =>
+                original.id === attempt.originalId &&
+                original.signedInRecord !== null,
+            )
+          )
+            throw new Error('INVALID_ORIGINAL_JOURNAL');
       } catch {
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       }

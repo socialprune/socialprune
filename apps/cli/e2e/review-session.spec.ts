@@ -9,7 +9,7 @@ import { foreignPage, browserSocketAudit } from './foreign-page.ts';
 import { fixture as originalsFixture } from '../src/originals/test/server.ts';
 
 const policy =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
 const demo = new URL('../../../fixtures/synthetic/demo/', import.meta.url);
 interface Manifest {
   exports: {
@@ -32,7 +32,7 @@ const first = [...expected.items].sort(
 
 base(
   'stored originals appear in both the real card review and archive with only authenticated same-origin photos',
-  async ({ page, context }) => {
+  async ({ page, context, browserName }) => {
     const child = spawn(
       process.execPath,
       [
@@ -89,6 +89,99 @@ base(
         )
         .toBe(1);
       await expect(original).toContainText('The fetched text is truncated.');
+      expect(
+        await original
+          .locator('img')
+          .evaluate((element) =>
+            Math.round(element.getBoundingClientRect().height),
+          ),
+      ).toBeLessThanOrEqual(160);
+      await expect(original.locator('video')).toHaveAttribute(
+        'src',
+        `/originals/${originalsFixture.references[0]}/2.mp4`,
+      );
+      await expect(original.locator('video')).toHaveAttribute(
+        'preload',
+        'metadata',
+      );
+      const decodes = await original
+        .locator('video')
+        .evaluate(
+          (element) =>
+            (element as HTMLVideoElement).canPlayType(
+              'video/mp4; codecs="avc1.64000A"',
+            ) !== '',
+        );
+      if (
+        decodes &&
+        !(browserName === 'webkit' && process.platform === 'win32')
+      ) {
+        await expect
+          .poll(() =>
+            original.locator('video').evaluate((element) => {
+              const video = element as HTMLVideoElement;
+              return {
+                error: video.error?.code ?? null,
+                width: video.videoWidth,
+              };
+            }),
+          )
+          .toEqual({ error: null, width: 160 });
+        await original.locator('video').evaluate(async (element) => {
+          const video = element as HTMLVideoElement;
+          video.muted = true;
+          await video.play();
+        });
+        await expect
+          .poll(() =>
+            original
+              .locator('video')
+              .evaluate((element) => (element as HTMLVideoElement).currentTime),
+          )
+          .toBeGreaterThan(0.1);
+        await original
+          .locator('video')
+          .evaluate((element) => (element as HTMLVideoElement).pause());
+      } else {
+        await expect
+          .poll(() =>
+            original
+              .locator('video')
+              .evaluate(
+                (element) => (element as HTMLVideoElement).error?.code ?? null,
+              ),
+          )
+          .toBe(4);
+        await expect(original).toContainText(
+          'This browser could not play the stored video.',
+        );
+        await expect(original.locator('video')).toHaveAttribute(
+          'poster',
+          `/originals/${originalsFixture.references[0]}/2-poster.png`,
+        );
+      }
+      const range = await page.evaluate(async (id) => {
+        const answer = await fetch(`/originals/${id}/2.mp4`, {
+          headers: { Range: 'bytes=0-1' },
+        });
+        return {
+          status: answer.status,
+          bytes: (await answer.arrayBuffer()).byteLength,
+        };
+      }, originalsFixture.references[0]!);
+      expect(range).toEqual({ status: 206, bytes: 2 });
+      await original
+        .getByText('Conversation above (1 post)', { exact: true })
+        .click();
+      await expect(original).toContainText(
+        'Generated first post in the conversation above.',
+      );
+      if (browserName === 'chromium')
+        await page.screenshot({
+          path: 'C:/Users/denni/AppData/Local/Temp/kilo/phase2/originals-video-conversation.png',
+          fullPage: true,
+          caret: 'initial',
+        });
       await page.evaluate(() => {
         location.hash = '#/archive';
       });
@@ -669,16 +762,20 @@ test('a real foreign-origin page cannot exchange or write decisions', async ({
       { target: review.origin, body },
     );
     expect((await plainResponse).status()).toBe(403);
+    const formPages: import('@playwright/test').Page[] = [];
     for (const path of ['/session', '/api/decide']) {
+      const formPage = await context.newPage();
+      await formPage.goto(hostile.origin);
+      formPages.push(formPage);
       const formResponse = context.waitForEvent('response', {
         predicate: (response) =>
           response.url() === review.origin + path + '?attempt=form',
       });
-      const formCommitted = page.waitForURL(
+      const formCommitted = formPage.waitForURL(
         review.origin + path + '?attempt=form',
         { waitUntil: 'commit' },
       );
-      await page.evaluate(
+      await formPage.evaluate(
         ({ target, path, body }) => {
           const form = document.createElement('form');
           form.method = 'POST';
@@ -694,7 +791,6 @@ test('a real foreign-origin page cannot exchange or write decisions', async ({
       );
       expect((await formResponse).status()).toBe(403);
       await formCommitted;
-      await page.goto(hostile.origin);
     }
     for (const response of targetResponses) {
       expect(response.status()).toBe(403);
@@ -704,6 +800,7 @@ test('a real foreign-origin page cannot exchange or write decisions', async ({
         ),
       ).toEqual([]);
     }
+    for (const formPage of formPages) await formPage.close();
     expect(
       targetResponses.filter(
         (response) =>

@@ -12,6 +12,7 @@ import { reviewCommand } from '../commands/review.ts';
 import { batchNextCommand } from '../commands/batch-next.ts';
 import { labelsSubmitCommand } from '../commands/labels-submit.ts';
 import { originalsFetchCommand } from '../commands/originals-fetch.ts';
+import { originalsFillCommand } from '../commands/originals-fill.ts';
 import { deleteXCommand } from '../commands/delete.ts';
 import {
   browserSetupCommand,
@@ -51,6 +52,16 @@ function unavailableCommand(): Command<CommandRunContext> {
 
 export function commandRegistry(): readonly RegistryEntry[] {
   return [
+    {
+      path: ['originals', 'fill', 'x'],
+      command: originalsFillCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'ORIGINALS_FAILED',
+    },
     ...[
       { path: ['browser', 'setup'], command: browserSetupCommand },
       { path: ['browser', 'forget'], command: browserForgetCommand },

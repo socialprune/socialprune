@@ -13,6 +13,8 @@ export interface DeletePlan {
   timeZone: string;
   rows: PlannedEntry[];
   hash: string;
+  originalsPending: number;
+  originalsFillable: number;
 }
 export function displayRow(row: PlannedEntry, timeZone: string) {
   return {
@@ -98,7 +100,38 @@ export async function planDeletion(
     const hash = createHash('sha256')
       .update(JSON.stringify(rows.map((row) => displayRow(row, timeZone))))
       .digest('hex');
-    return { rows, hash, accountKey, handle, timeZone };
+    let originalsPending = 0,
+      originalsFillable = 0;
+    for (const row of rows)
+      if (row.item.kind === 'reply' || row.item.kind === 'quote') {
+        const id =
+          row.item.kind === 'reply'
+            ? row.item.reference.replyToId
+            : row.item.reference.quotedId;
+        const original = id ? await tx.originals.get(id) : undefined;
+        if (!original?.anonymous || original.anonymous.status === 'failed')
+          originalsPending++;
+        else if (
+          !original.signedIn &&
+          (original.anonymous.status !== 'fetched' ||
+            original.textCompleteness === 'truncated' ||
+            original.media.some(
+              (media) =>
+                media.kind !== 'photo' &&
+                ['hls-only', 'no-variant', 'not-stored'].includes(media.status),
+            ))
+        )
+          originalsFillable++;
+      }
+    return {
+      rows,
+      hash,
+      accountKey,
+      handle,
+      timeZone,
+      originalsPending,
+      originalsFillable,
+    };
   });
 }
 export function planSummary(plan: DeletePlan, lang: 'en' | 'de' = 'en') {
@@ -111,6 +144,8 @@ export function planSummary(plan: DeletePlan, lang: 'en' | 'de' = 'en') {
     planHash: plan.hash,
     estimateMs: estimate(plan.rows.length),
     timeZone: plan.timeZone,
+    originalsPending: plan.originalsPending,
+    originalsFillable: plan.originalsFillable,
     warning: BROWSER_WARNING[lang],
   };
 }
@@ -118,6 +153,7 @@ export function planText(plan: DeletePlan, lang: 'en' | 'de' = 'en'): string {
   const summary = planSummary(plan, lang);
   return (
     `${summary.planned} planned entries; ${summary.bulk} from bulk actions.\nPlan: ${summary.planHash}\nEstimated active time: ${Math.ceil(summary.estimateMs / 60_000)} minutes; daily caps can spread it across days.\n${summary.warning}\n` +
+    `${plan.originalsPending} unsettled originals block a run without --without-originals. ${plan.originalsFillable} stored originals still have gaps; originals fill x can show its plan.\n` +
     plan.rows
       .map((row) => {
         const value = displayRow(row, plan.timeZone);

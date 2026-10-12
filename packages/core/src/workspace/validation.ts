@@ -1,4 +1,8 @@
-import { WorkspaceV2Schema } from '../model/index.ts';
+import {
+  WorkspaceV2Schema,
+  migrateOriginal,
+  validateOriginal,
+} from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
 import { deriveState } from './state.ts';
@@ -40,11 +44,20 @@ export function workspaceCounts(
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
-  const parsed = WorkspaceV2Schema.safeParse(input);
+  const candidate =
+    input &&
+    typeof input === 'object' &&
+    'schemaVersion' in input &&
+    input.schemaVersion !== 4 &&
+    'originals' in input &&
+    Array.isArray(input.originals)
+      ? { ...input, originals: input.originals.map(migrateOriginal) }
+      : input;
+  const parsed = WorkspaceV2Schema.safeParse(candidate);
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
   if (
-    (workspace.schemaVersion === 3 &&
+    (workspace.schemaVersion >= 3 &&
       (!workspace.browserRuns || !workspace.browserAttempts)) ||
     (workspace.schemaVersion === 2 &&
       (workspace.browserRuns !== undefined ||
@@ -90,12 +103,44 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
       workspace.browserRuns ?? [],
       workspace.browserAttempts ?? [],
       itemIds,
+      new Set((workspace.originals ?? []).map((value) => value.id)),
     );
-    if (workspace.schemaVersion === 3)
+    if (workspace.schemaVersion >= 3)
       validateBrowserOutcomes(
         workspace.browserAttempts ?? [],
         workspace.outcomeEvents,
       );
+    const accountedReads = new Set<string>();
+    for (const original of workspace.originals ?? []) {
+      validateOriginal(original);
+      if (original.signedIn) {
+        const run = (workspace.browserRuns ?? []).find(
+            (run) => run.runId === original.signedIn!.runId,
+          ),
+          attempt = (workspace.browserAttempts ?? []).find(
+            (attempt) => attempt.attemptId === original.signedIn!.attemptId,
+          );
+        if (
+          run?.mode !== 'fill' ||
+          attempt?.action !== 'read-post' ||
+          attempt.state !== original.signedIn.status
+        )
+          throw new Error('INVALID_ORIGINAL_JOURNAL');
+        accountedReads.add(attempt.attemptId);
+      }
+    }
+    for (const attempt of workspace.browserAttempts ?? [])
+      if (
+        attempt.action === 'read-post' &&
+        attempt.state === 'read' &&
+        !accountedReads.has(attempt.attemptId) &&
+        !(workspace.originals ?? []).some(
+          (original) =>
+            original.id === attempt.originalId &&
+            original.signedInRecord !== null,
+        )
+      )
+        throw new Error('INVALID_ORIGINAL_JOURNAL');
   } catch {
     throw new WorkspaceError('INVALID_WORKSPACE');
   }

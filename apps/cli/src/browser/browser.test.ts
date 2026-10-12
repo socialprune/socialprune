@@ -382,5 +382,6 @@ test('browser capability import graph excludes tests/fakes and all other command
   expect([...new Set(browserImports)].sort()).toEqual([
     'commands/browser.ts',
     'commands/delete.ts',
+    'commands/originals-fill.ts',
   ]);
 });

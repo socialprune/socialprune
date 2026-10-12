@@ -6,7 +6,8 @@ import {
   ImportRecordSchema,
   ItemSchema,
   OutcomeEventSchema,
-  OriginalSchema,
+  migrateOriginal,
+  validateOriginal,
   SubmissionSchema,
   WorkspaceMetaSchema,
   BrowserRunSchema,
@@ -65,8 +66,24 @@ export class IndexedDBStore implements WorkspaceStore {
     initial: WorkspaceV2 = createWorkspace({ id: workspaceId }),
     onLifecycle: (state: StorageLifecycle) => void = () => {},
   ): Promise<IndexedDBStore> {
-    const db = await openDB(`sp-ws-${workspaceId}`, 3, {
-      upgrade(db, oldVersion) {
+    const db = await openDB(`sp-ws-${workspaceId}`, 4, {
+      upgrade(db, oldVersion, _newVersion, tx) {
+        if (oldVersion >= 1 && oldVersion < 4) {
+          void (async () => {
+            if (oldVersion >= 2) {
+              let cursor = await tx.objectStore('originals').openCursor();
+              while (cursor) {
+                await cursor.update(migrateOriginal(cursor.value));
+                cursor = await cursor.continue();
+              }
+            }
+            const meta: unknown = await tx.objectStore('meta').get('workspace');
+            if (meta && typeof meta === 'object')
+              await tx
+                .objectStore('meta')
+                .put({ ...meta, schemaVersion: 4 }, 'workspace');
+          })().catch(() => tx.abort());
+        }
         if (oldVersion < 3) {
           db.createObjectStore('browserRuns', { keyPath: 'runId' });
           const attempts = db.createObjectStore('browserAttempts', {
@@ -365,7 +382,11 @@ export class IndexedDBStore implements WorkspaceStore {
         ...value,
         item: ItemSchema.parse(value.item),
       })),
-      originals: table('originals', (value) => OriginalSchema.parse(value)),
+      originals: table('originals', (input) => {
+        const value = migrateOriginal(input);
+        validateOriginal(value);
+        return value;
+      }),
       browserRuns: table('browserRuns', (value) =>
         BrowserRunSchema.parse(value),
       ),

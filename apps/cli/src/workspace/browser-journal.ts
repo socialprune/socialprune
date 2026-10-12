@@ -44,6 +44,9 @@ export interface ProfileReport {
   unexpectedRequests: BrowserRequest[];
 }
 export interface BrowserRun {
+  pageOpens?: number;
+  lastPageOpenedAt?: string | null;
+  canaryAcceptedAt?: string | null;
   runId: string;
   platform: 'x';
   accountKey: string;
@@ -87,7 +90,7 @@ CREATE TABLE IF NOT EXISTS browser_requests (
   FOREIGN KEY(run_id) REFERENCES browser_runs(run_id)
 ) STRICT;
 CREATE TRIGGER IF NOT EXISTS browser_runs_finish_once BEFORE UPDATE ON browser_runs
-WHEN OLD.ended_at IS NOT NULL OR NEW.ended_at IS NULL OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
+WHEN (OLD.ended_at IS NOT NULL AND NOT (json_extract(OLD.data,'$.mode')='fill' AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1)) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
 OR json_extract(NEW.data,'$.startedAt') != json_extract(OLD.data,'$.startedAt')
 OR json_extract(NEW.data,'$.mode') != json_extract(OLD.data,'$.mode')
 OR json_extract(NEW.data,'$.planHash') IS NOT json_extract(OLD.data,'$.planHash')
@@ -151,7 +154,7 @@ export class BrowserOutcomeWriter {
     await this.transact(async (tx) => {
       this.db.exec(BROWSER_JOURNAL_LAYOUT);
       const meta = await tx.meta.get();
-      await tx.meta.set({ ...meta, schemaVersion: 3 });
+      await tx.meta.set({ ...meta, schemaVersion: 4 });
       const active = decode<BrowserRun>(
         this.db
           .prepare(
@@ -216,6 +219,18 @@ export class BrowserOutcomeWriter {
   async finish(run: BrowserRun): Promise<void> {
     if (!run.endedAt || !run.endReason) throw new CliError('WORKSPACE_INVALID');
     await this.transact(async (tx) => {
+      const prior = readJournal(this.db).runs.find(
+        (value) => value.runId === run.runId,
+      );
+      run = {
+        ...run,
+        ...(prior?.pageOpens !== undefined
+          ? {
+              pageOpens: prior.pageOpens,
+              lastPageOpenedAt: prior.lastPageOpenedAt,
+            }
+          : {}),
+      };
       const result = this.db
         .prepare(
           'UPDATE browser_runs SET ended_at=?, data=? WHERE run_id=? AND ended_at IS NULL',
@@ -227,6 +242,19 @@ export class BrowserOutcomeWriter {
       await Promise.resolve();
     });
   }
+  async pageOpen(runId: string, at: string): Promise<void> {
+    await this.transact(async (tx) => {
+      const run = await tx.browserRuns.get(runId);
+      if (!run || run.endedAt) throw new CliError('WORKSPACE_INVALID');
+      await tx.browserRuns.put({
+        ...run,
+        pageOpens: (run.pageOpens ?? 0) + 1,
+        lastPageOpenedAt: at,
+      });
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+    });
+  }
   private append(input: Omit<BrowserAttempt, 'seq'>): BrowserAttempt {
     const seq = Number(
       this.db
@@ -235,7 +263,9 @@ export class BrowserOutcomeWriter {
     );
     const value = BrowserAttemptSchema.parse({ ...input, seq });
     this.db
-      .prepare('INSERT INTO browser_attempts VALUES(?,?,?,?,?,?,?)')
+      .prepare(
+        'INSERT INTO browser_attempts(seq,attempt_id,run_id,item_id,state,settles,data) VALUES(?,?,?,?,?,?,?)',
+      )
       .run(
         seq,
         input.attemptId,
@@ -245,7 +275,7 @@ export class BrowserOutcomeWriter {
         input.settles,
         JSON.stringify(value),
       );
-    return value;
+    return value as BrowserAttempt;
   }
   private async eligible(
     tx: WriteTransaction,

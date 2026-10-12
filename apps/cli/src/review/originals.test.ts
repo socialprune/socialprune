@@ -4,11 +4,11 @@ import { expect, test } from 'vitest';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { request, running } from './test/helpers.ts';
 import { fixture } from '../originals/test/server.ts';
-import type { Original } from '@socialprune/core';
+import { migrateOriginal } from '@socialprune/core';
 
 test('real database worker returns originals only through authenticated bounded HTTP and serves raster files on the same origin', async () => {
   const data = await running();
-  const original: Original = {
+  const original = migrateOriginal({
     id: fixture.references[0]!,
     status: 'fetched',
     fetchedAt: '2026-10-11T00:00:00Z',
@@ -27,7 +27,7 @@ test('real database worker returns originals only through authenticated bounded 
     raw: null,
     textCompleteness: 'unknown',
     video: null,
-  };
+  });
   const path = `/originals/${original.id}/1.png`;
   try {
     const store = await SQLiteStore.open(

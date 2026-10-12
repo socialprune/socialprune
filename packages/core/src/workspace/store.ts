@@ -166,7 +166,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     decisionEvents: await records(tx.decisionEvents),
     outcomeEvents: await records(tx.outcomeEvents),
     ...(originals.length ? { originals } : {}),
-    ...(meta.schemaVersion === 3 || browserRuns.length || browserAttempts.length
+    ...(meta.schemaVersion >= 3 || browserRuns.length || browserAttempts.length
       ? { browserRuns, browserAttempts }
       : {}),
   };
@@ -233,3 +233,5 @@ export function importForItem(
     ''
   );
 }
+export { conversation } from './conversation.ts';
+export { OriginalsFillWriter } from './originals-fill-writer.ts';

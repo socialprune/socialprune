@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { OriginalIdSchema, OriginalSchema } from '@socialprune/core';
+import { OriginalIdSchema, migrateOriginal } from '@socialprune/core';
 import type { Original } from '@socialprune/core';
 
 const productionOrigin = 'https://cdn.syndication.twimg.com';
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
 export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+export const SYNDICATION_ORIGIN = productionOrigin;
 
 /** Reused from react-tweet 3.3.1, MIT; see THIRD_PARTY_NOTICES. */
 export function syndicationToken(id: string): string {
@@ -63,6 +64,7 @@ const responseSchema = z.object({
   parent: z.object({ id_str: OriginalIdSchema.optional() }).optional(),
   in_reply_to_status_id_str: OriginalIdSchema.optional(),
   truncated: z.boolean().optional(),
+  note_tweet: z.unknown().optional(),
   video: z.unknown().optional(),
 });
 
@@ -93,6 +95,7 @@ export class SyndicationClient {
       redirect: 'error',
       credentials: 'omit',
       referrerPolicy: 'no-referrer',
+      headers: { 'User-Agent': 'SocialPrune/0.0.0' },
     });
   }
   async fetchOriginal(
@@ -105,7 +108,7 @@ export class SyndicationClient {
     url.searchParams.set('lang', 'en');
     url.searchParams.set('token', syndicationToken(id));
     const response = await this.request(url, signal);
-    const empty: Original = {
+    const empty = {
       id,
       fetchedAt,
       status: 'not-found',
@@ -121,7 +124,7 @@ export class SyndicationClient {
     };
     if (response.status === 404) {
       await response.body?.cancel();
-      return empty;
+      return migrateOriginal(empty);
     }
     if (!response.ok) {
       await response.body?.cancel();
@@ -140,11 +143,11 @@ export class SyndicationClient {
           ),
         ),
       );
-    if (!Object.keys(raw).length) return { ...empty, raw };
+    if (!Object.keys(raw).length) return migrateOriginal({ ...empty, raw });
     if (raw.__typename === 'TweetTombstone')
-      return { ...empty, status: 'tombstone', raw };
+      return migrateOriginal({ ...empty, status: 'tombstone', raw });
     const data = responseSchema.parse(raw);
-    return OriginalSchema.parse({
+    return migrateOriginal({
       ...empty,
       status: 'fetched',
       text: data.text,
@@ -158,7 +161,10 @@ export class SyndicationClient {
       quotedId: data.quoted_tweet?.id_str ?? null,
       parentId: data.parent?.id_str ?? data.in_reply_to_status_id_str ?? null,
       raw,
-      textCompleteness: data.truncated ? 'truncated' : 'unknown',
+      textCompleteness:
+        data.truncated || Object.hasOwn(raw, 'note_tweet')
+          ? 'truncated'
+          : 'unknown',
       video: data.video ? 'not-stored' : null,
     });
   }
@@ -178,6 +184,10 @@ export class SyndicationClient {
     const response = await this.request(target, signal);
     if (!response.ok) {
       await response.body?.cancel();
+      if (response.status === 429)
+        throw Object.assign(new Error('MEDIA_RATE_LIMIT'), {
+          code: 'MEDIA_RATE_LIMIT',
+        });
       throw new Error('PHOTO_HTTP');
     }
     const contentType = response.headers

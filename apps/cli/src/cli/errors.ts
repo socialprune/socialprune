@@ -9,6 +9,40 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  SHAPE_CHANGED: {
+    message:
+      'X returned a different page structure. The run stopped and the next run stays a canary.',
+    exitCode: 1,
+    retryable: false,
+  },
+  UNEXPECTED_ACTION: {
+    message:
+      'The signed-in page sent a request that changes the account. The reading run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  DISK_LOW: {
+    message:
+      'Less than 5 GiB remains on the workspace drive. The run stopped before writing a file.',
+    exitCode: 1,
+    retryable: false,
+  },
+  MEDIA_RATE_LIMIT: {
+    message: 'The media host returned a rate limit. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  MEDIA_FAILED: {
+    message: 'Five media files failed in a row. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  ORIGINALS_PENDING: {
+    message:
+      'Some marked replies or quotes have no settled original. Fetch originals first, or explicitly pass --without-originals.',
+    exitCode: 2,
+    retryable: false,
+  },
   ORIGINALS_FAILED: {
     message:
       'Could not fetch the originals. Results already recorded remain in the workspace.',

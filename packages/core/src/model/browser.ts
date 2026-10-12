@@ -6,6 +6,7 @@ export const BrowserActionSchema = z.enum([
   'delete-post',
   'undo-repost',
   'verify',
+  'read-post',
 ]);
 export const BrowserAttemptStateSchema = z.enum([
   'withdrawn',
@@ -17,6 +18,9 @@ export const BrowserAttemptStateSchema = z.enum([
   'not-deleted',
   'still-gone',
   'reappeared',
+  'read',
+  'tombstone',
+  'unavailable',
 ]);
 export const BrowserRequestSchema = z.strictObject({
   runId: id.optional(),
@@ -38,7 +42,7 @@ export const BrowserRunSchema = z.strictObject({
   runId: id,
   platform: z.literal('x'),
   accountKey: id,
-  mode: z.enum(['delete', 'verify']),
+  mode: z.enum(['delete', 'verify', 'fill']),
   planHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
@@ -46,17 +50,34 @@ export const BrowserRunSchema = z.strictObject({
   startedAt: UtcTimestampSchema,
   endedAt: UtcTimestampSchema.nullable(),
   endReason: z
-    .enum(['done', 'daily-cap', 'stopped-by-person', 'error', 'platform-check'])
+    .enum([
+      'done',
+      'daily-cap',
+      'stopped-by-person',
+      'error',
+      'platform-check',
+      'canary',
+      'size-cap',
+      'shape-changed',
+    ])
     .nullable(),
   bodyShapes: z.record(z.string(), z.array(z.string())),
   profileReport: BrowserProfileReportSchema.nullable(),
   ownerPid: z.number().int().positive().optional(),
+  canaryAcceptedAt: UtcTimestampSchema.nullable().optional(),
+  pageOpens: z.number().int().nonnegative().optional(),
+  lastPageOpenedAt: UtcTimestampSchema.nullable().optional(),
 });
 export const BrowserAttemptSchema = z.strictObject({
   seq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   attemptId: id,
   runId: id,
-  itemId: id,
+  itemId: id.nullable(),
+  originalId: z
+    .string()
+    .regex(/^\d{1,40}$/)
+    .nullable()
+    .optional(),
   action: BrowserActionSchema,
   state: BrowserAttemptStateSchema,
   settles: id.nullable(),
@@ -82,10 +103,20 @@ export function validateBrowserJournal(
   runs: readonly BrowserRun[],
   attempts: readonly BrowserAttempt[],
   itemIds: ReadonlySet<string>,
+  originalIds: ReadonlySet<string> = new Set(),
 ): void {
   const knownRuns = new Map<string, BrowserRun>();
   for (const input of runs) {
     const run = BrowserRunSchema.parse(input);
+    if (
+      run.canaryAcceptedAt !== undefined &&
+      run.canaryAcceptedAt !== null &&
+      (run.mode !== 'fill' ||
+        run.endReason !== 'canary' ||
+        !run.endedAt ||
+        Date.parse(run.canaryAcceptedAt) < Date.parse(run.endedAt))
+    )
+      throw new Error('INVALID_BROWSER_JOURNAL');
     if (
       knownRuns.has(run.runId) ||
       (run.endedAt === null) !== (run.endReason === null) ||
@@ -102,8 +133,15 @@ export function validateBrowserJournal(
     const run = knownRuns.get(value.runId);
     if (
       !run ||
-      !itemIds.has(value.itemId) ||
-      !value.itemId.startsWith('x:') ||
+      (value.action === 'read-post'
+        ? value.itemId !== null ||
+          !value.originalId ||
+          !originalIds.has(value.originalId) ||
+          run.mode !== 'fill'
+        : value.itemId === null ||
+          !itemIds.has(value.itemId) ||
+          !value.itemId.startsWith('x:') ||
+          Boolean(value.originalId)) ||
       known.has(value.attemptId) ||
       value.seq <= seq
     )
@@ -114,19 +152,25 @@ export function validateBrowserJournal(
         !prior ||
         !['sending', 'ambiguous'].includes(prior.state) ||
         prior.itemId !== value.itemId ||
+        prior.originalId !== value.originalId ||
         prior.runId !== value.runId ||
         prior.action !== value.action ||
         settled.has(prior.attemptId) ||
-        !['deleted', 'failed', 'ambiguous', 'not-deleted'].includes(value.state)
+        !(
+          value.action === 'read-post'
+            ? ['read', 'not-found', 'tombstone', 'unavailable', 'failed']
+            : ['deleted', 'failed', 'ambiguous', 'not-deleted']
+        ).includes(value.state)
       )
         throw new Error('INVALID_BROWSER_JOURNAL');
       settled.add(prior.attemptId);
     } else if (
-      !['sending', 'withdrawn', 'not-found'].includes(value.state) &&
-      !(
-        value.action === 'verify' &&
-        ['still-gone', 'not-deleted', 'reappeared'].includes(value.state)
-      )
+      (value.action === 'read-post' && value.state !== 'sending') ||
+      (!['sending', 'withdrawn', 'not-found'].includes(value.state) &&
+        !(
+          value.action === 'verify' &&
+          ['still-gone', 'not-deleted', 'reappeared'].includes(value.state)
+        ))
     )
       throw new Error('INVALID_BROWSER_JOURNAL');
     seq = value.seq;

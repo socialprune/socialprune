@@ -15,6 +15,7 @@ import { useT } from '../i18n/index.ts';
 import styles from './Social.module.css';
 import { originalXLink } from './originalLink.ts';
 import { isDeletedOnPlatform } from '../archive/model.ts';
+import { StoredMedia, Conversation } from './Conversation.tsx';
 
 export function Avatar({
   handle,
@@ -64,7 +65,6 @@ export function PostCard({
     client: WorkspaceClient;
     original: Original | null;
   } | null>(null);
-  const [missingPhoto, setMissingPhoto] = useState<string | null>(null);
   const workspace = client ?? window.workspace;
   const stored =
     storedState?.client === workspace ? storedState.original : null;
@@ -176,7 +176,8 @@ export function PostCard({
               data-testid="stored-original"
               aria-label={t('originals.heading')}
             >
-              {stored.status === 'fetched' ? (
+              {stored.signedIn?.status === 'read' ||
+              (!stored.signedIn && stored.anonymous?.status === 'fetched') ? (
                 <>
                   <div className={styles.byline}>
                     <Avatar handle={stored.authorHandle} />
@@ -186,52 +187,57 @@ export function PostCard({
                   <p className={styles.postText} dir="auto">
                     {stored.text}
                   </p>
-                  <div className={styles.originalPhotos}>
-                    {stored.photos
-                      .filter(
-                        (photo) => photo.status === 'stored' && photo.file,
-                      )
-                      .map((photo) => (
-                        <img
-                          key={photo.file}
-                          src={`/originals/${stored.id}/${photo.file}`}
-                          alt={t('originals.photo')}
-                          loading="lazy"
-                          onError={() => setMissingPhoto(stored.id)}
-                        />
-                      ))}
-                  </div>
+                  <StoredMedia original={stored} />
                   <p className={styles.hint}>
                     {t(
-                      stored.textCompleteness === 'truncated'
-                        ? 'originals.truncated'
-                        : 'originals.completenessUnknown',
+                      stored.textCompleteness === 'full'
+                        ? 'originals.full'
+                        : stored.textCompleteness === 'truncated'
+                          ? 'originals.truncated'
+                          : 'originals.completenessUnknown',
                     )}
                   </p>
-                  {stored.video && (
-                    <p className={styles.hint}>
-                      {t('originals.videoNotStored')}
-                    </p>
-                  )}
-                  {(missingPhoto === stored.id ||
-                    stored.photos.some(
-                      (photo) => photo.status === 'failed',
-                    )) && (
-                    <p className={styles.hint}>
-                      {t('originals.photosMissing')}
-                    </p>
+                  <p className={styles.hint}>
+                    {t(
+                      stored.textSource === 'signed-in'
+                        ? 'originals.sourceSignedIn'
+                        : 'originals.sourceAnonymous',
+                      {
+                        date: intl.formatDate(
+                          stored.signedIn?.at ?? stored.anonymous!.at,
+                          { day: 'numeric', month: 'long', year: 'numeric' },
+                        ),
+                      },
+                    )}
+                  </p>
+                  {workspace && (
+                    <Conversation id={stored.id} client={workspace} />
                   )}
                 </>
               ) : (
-                <p className={styles.hint}>
-                  {t(
-                    stored.status === 'not-found'
-                      ? 'originals.notFound'
-                      : stored.status === 'tombstone'
-                        ? 'originals.tombstone'
-                        : 'originals.failed',
+                <>
+                  <p className={styles.hint}>
+                    {t(
+                      stored.signedIn?.status === 'unavailable'
+                        ? 'originals.unavailable'
+                        : (stored.signedIn?.status ??
+                              stored.anonymous?.status) === 'not-found'
+                          ? 'originals.notFound'
+                          : (stored.signedIn?.status ??
+                                stored.anonymous?.status) === 'tombstone'
+                            ? 'originals.tombstone'
+                            : 'originals.failed',
+                    )}
+                  </p>
+                  {stored.text && (
+                    <>
+                      <p className={styles.postText} dir="auto">
+                        {stored.text}
+                      </p>
+                      <StoredMedia original={stored} />
+                    </>
                   )}
-                </p>
+                </>
               )}
             </section>
           )}

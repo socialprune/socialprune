@@ -4,6 +4,90 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "SHAPE_CHANGED" },
+        "message": {
+          "type": "string",
+          "const": "X returned a different page structure. The run stopped and the next run stays a canary."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "UNEXPECTED_ACTION" },
+        "message": {
+          "type": "string",
+          "const": "The signed-in page sent a request that changes the account. The reading run stopped."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "DISK_LOW" },
+        "message": {
+          "type": "string",
+          "const": "Less than 5 GiB remains on the workspace drive. The run stopped before writing a file."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "MEDIA_RATE_LIMIT" },
+        "message": {
+          "type": "string",
+          "const": "The media host returned a rate limit. The run stopped."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "MEDIA_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "Five media files failed in a row. The run stopped."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ORIGINALS_PENDING" },
+        "message": {
+          "type": "string",
+          "const": "Some marked replies or quotes have no settled original. Fetch originals first, or explicitly pass --without-originals."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "ORIGINALS_FAILED" },
         "message": {
           "type": "string",

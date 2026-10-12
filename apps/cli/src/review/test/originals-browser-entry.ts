@@ -8,6 +8,8 @@ import { fixture } from '../../originals/test/server.ts';
 import { startReviewServer } from '../server.ts';
 import { reviewAssetDirectory } from '../static.ts';
 import { testIpc } from './ipc.ts';
+import { migrateOriginal } from '@socialprune/core';
+import { generatedVideo } from '../../originals/test/video.ts';
 
 // An isolated synthetic test entrypoint, never selected by the normal CLI.
 const directory = await mkdtemp(
@@ -32,7 +34,7 @@ try {
   data.imports = [{ ...browserWorkspace().imports[0]!, itemCount: 1 }];
   data.counts = { ...data.counts, items: 1, imports: 1, originals: 1 };
   data.originals = [
-    {
+    migrateOriginal({
       id: fixture.references[0]!,
       status: 'fetched',
       fetchedAt: '2026-10-11T00:00:00Z',
@@ -50,9 +52,40 @@ try {
       parentId: null,
       raw: null,
       textCompleteness: 'truncated',
-      video: 'not-stored',
-    },
+      video: null,
+    }),
   ];
+  data.originals[0]!.media.push({
+    n: 2,
+    kind: 'video',
+    source: 'anonymous',
+    url: 'https://video.twimg.com/generated.mp4',
+    file: '2.mp4',
+    poster: '2-poster.png',
+    status: 'stored',
+    bytes: 200,
+    durationMs: 1200,
+    bitrateLabel: 832000,
+    altText: null,
+  });
+  data.originals[0]!.parentId = '900009';
+  data.originals.push(
+    migrateOriginal({
+      id: '900009',
+      status: 'fetched',
+      fetchedAt: '2026-10-11T00:00:00Z',
+      text: 'Generated first post in the conversation above.',
+      authorName: 'Generated Root',
+      authorHandle: 'generated_root',
+      photos: [],
+      quotedId: null,
+      parentId: null,
+      raw: null,
+      textCompleteness: 'unknown',
+      video: null,
+    }),
+  );
+  data.counts.originals = 2;
   const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
     initial: data,
   });
@@ -62,6 +95,14 @@ try {
   });
   await writeFile(
     join(directory, 'originals', fixture.references[0]!, '1.png'),
+    Buffer.from(fixture.pngBase64, 'base64'),
+  );
+  await writeFile(
+    join(directory, 'originals', fixture.references[0]!, '2.mp4'),
+    generatedVideo,
+  );
+  await writeFile(
+    join(directory, 'originals', fixture.references[0]!, '2-poster.png'),
     Buffer.from(fixture.pngBase64, 'base64'),
   );
   const server = await startReviewServer({

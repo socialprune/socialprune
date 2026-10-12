@@ -17,7 +17,11 @@ import {
   createBackup,
   restoreBackup,
 } from '@socialprune/core/workspace/backup';
-import { createWorkspace } from '@socialprune/core/workspace/store';
+import {
+  createWorkspace,
+  OriginalsFillWriter,
+} from '@socialprune/core/workspace/store';
+import { migrateOriginal } from '@socialprune/core';
 
 let fake: Awaited<ReturnType<typeof fakeX>>;
 beforeAll(async () => {
@@ -819,6 +823,7 @@ test('readonly verification uses its calendar cap with no POST to the fake platf
     await writer.finish({ ...run, endedAt: FIXTURE.now, endReason: 'error' });
     fake.variants.clear();
     fake.gone.add('1001');
+    h.setNow('2026-10-12T12:00:00.000Z');
     const verified = h.launch(true, {
       intervalMs: 100,
       batchSize: 100,
@@ -889,13 +894,100 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
     );
     await h.click('Start');
     expect(await failed).toMatchObject({ code: 'RUN_STOPPED' });
+    const original = migrateOriginal({
+      id: '910',
+      status: 'fetched',
+      fetchedAt: FIXTURE.now,
+      text: 'Generated anonymous beginning',
+      authorName: 'Generated context',
+      authorHandle: 'generated_context',
+      photos: [],
+      quotedId: null,
+      parentId: null,
+      raw: { note_tweet: {} },
+      textCompleteness: 'truncated',
+      video: null,
+    });
+    await h.store.write((tx) => tx.originals.put(original));
+    const fill = new OriginalsFillWriter(h.store);
+    await fill.startRun({
+      runId: 'generated-fill-portable',
+      accountKey: FIXTURE.account.key,
+      planHash: 'a'.repeat(64),
+      canary: true,
+      startedAt: FIXTURE.now,
+    });
+    await fill.sending({
+      attemptId: 'generated-read-portable',
+      runId: 'generated-fill-portable',
+      originalId: '910',
+      at: FIXTURE.now,
+    });
+    const projection = {
+      rest_id: '910',
+      text: 'Generated full text through signed-in page',
+    };
+    await fill.settle(
+      {
+        attemptId: 'generated-read-portable',
+        state: 'read',
+        at: FIXTURE.now,
+        code: null,
+      },
+      [
+        {
+          ...original,
+          text: projection.text,
+          textSource: 'signed-in',
+          textCompleteness: 'full',
+          signedInRecord: projection,
+          signedIn: {
+            status: 'read',
+            at: FIXTURE.now,
+            runId: 'generated-fill-portable',
+            attemptId: 'generated-read-portable',
+            reason: null,
+          },
+          media: [
+            {
+              n: 1,
+              kind: 'video',
+              source: 'signed-in',
+              url: 'https://video.twimg.com/generated.mp4',
+              file: null,
+              poster: null,
+              status: 'failed',
+              bytes: null,
+              durationMs: 1000,
+              bitrateLabel: 832000,
+              altText: null,
+            },
+          ],
+        },
+      ],
+    );
+    await fill.endRun({
+      runId: 'generated-fill-portable',
+      endedAt: FIXTURE.now,
+      endReason: 'canary',
+      bodyShapes: { 'read-post': ['generated-path'] },
+      profileReport: {
+        accountBefore: FIXTURE.account.handle,
+        accountAfter: FIXTURE.account.handle,
+        extensionsBefore: 0,
+        extensionsAfter: 0,
+        changedFiles: [],
+        unexpectedRequests: [],
+      },
+    });
+    await fill.acceptCanary('generated-fill-portable', FIXTURE.now);
     const before = await h.store.browserJournal();
     const backup = createBackup(h.store, { batchSize: 1 });
     let text = '';
     for await (const chunk of backup.chunks)
       text += new TextDecoder().decode(chunk);
     expect((JSON.parse(text) as { schemaVersion: number }).schemaVersion).toBe(
-      3,
+      4,
     );
     const { build } = await import('vite');
     const output = await build({
@@ -948,7 +1040,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         }
       ).upgradeJournalDecoy(),
     );
-    expect(upgraded).toMatchObject({ version: 3, originalPreserved: true });
+    expect(upgraded).toMatchObject({ version: 4, originalPreserved: true });
     expect(upgraded.tables).toContain('browserRuns');
     expect(upgraded.tables).toContain('browserAttempts');
     const browserResult = await page.evaluate(async (backupText) => {
@@ -974,6 +1066,16 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
       { batchSize: 1 },
     );
     expect((await restored.browserJournal()).attempts).toEqual(before.attempts);
+    const preserved = await restored.read((tx) => tx.originals.get('910'));
+    expect(preserved).toMatchObject({
+      text: projection.text,
+      textSource: 'signed-in',
+      signedInRecord: projection,
+      media: [{ status: 'failed', kind: 'video' }],
+    });
+    expect(
+      (await restored.browserJournal()).runs.map((run) => run.mode).sort(),
+    ).toEqual(['delete', 'fill']);
     expect(
       (await planDeletion(restored, FIXTURE.account.key, new Set(['x:1001'])))
         .rows,

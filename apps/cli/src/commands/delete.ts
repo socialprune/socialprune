@@ -23,6 +23,7 @@ export interface DeleteFlags {
   perDay?: string;
   browser?: 'chrome' | 'edge';
   lang: 'en' | 'de';
+  withoutOriginals: boolean;
 }
 export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
   if ((flags.dryRun && flags.verify) || (flags.json && flags.list))
@@ -78,6 +79,8 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
     }
     if (!flags.verify && flags.plan !== plan.hash)
       throw new CliError('STALE_PLAN');
+    if (!flags.verify && plan.originalsPending && !flags.withoutOriginals)
+      throw new CliError('ORIGINALS_PENDING');
     const { validateProfile, installedBrowser } =
       await import('../browser/profile.ts');
     await validateProfile(flags.profile!);
@@ -143,6 +146,11 @@ export const deleteXCommand = buildCommand({
         default: false,
         brief:
           'Read back ambiguous attempts and deletions at least seven days old',
+      },
+      withoutOriginals: {
+        kind: 'boolean',
+        default: false,
+        brief: 'Explicitly continue despite unsettled originals',
       },
       profile: {
         kind: 'parsed',

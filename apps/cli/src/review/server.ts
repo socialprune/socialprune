@@ -7,7 +7,7 @@ import { REVIEW_HEADERS, staticAssets } from './static.ts';
 import { ReviewDatabase } from './database.ts';
 import { CliError } from '../cli/errors.ts';
 import { workspacePath } from '../workspace/files.ts';
-import { originalMedia } from './original-media.ts';
+import { originalMedia, byteRange } from './original-media.ts';
 
 const bodyLimit = 1024 * 1024;
 const apiTypes = new Set<string>(
@@ -180,12 +180,39 @@ export async function startReviewServer(options: {
           respond(response, 404);
           return;
         }
-        response.writeHead(200, {
+        const range = byteRange(
+          request.method === 'GET' ? header(request, 'range') : undefined,
+          photo.size,
+          header(request, 'if-range') !== undefined,
+        );
+        response.writeHead(range.status, {
           ...REVIEW_HEADERS,
           'Content-Type': photo.contentType,
-          'Content-Length': photo.bytes.byteLength,
+          'Accept-Ranges': 'bytes',
+          ...(range.status === 416
+            ? { 'Content-Range': `bytes */${photo.size}` }
+            : {
+                'Content-Length': range.end - range.start + 1,
+                ...(range.status === 206
+                  ? {
+                      'Content-Range': `bytes ${range.start}-${range.end}/${photo.size}`,
+                    }
+                  : {}),
+              }),
         });
-        response.end(request.method === 'HEAD' ? undefined : photo.bytes);
+        if (request.method === 'HEAD' || range.status === 416) {
+          await photo.handle.close();
+          response.end();
+        } else {
+          const stream = photo.handle.createReadStream({
+            start: range.start,
+            end: range.end,
+            autoClose: true,
+          });
+          stream.once('error', () => response.destroy());
+          response.once('close', () => stream.destroy());
+          stream.pipe(response);
+        }
         return;
       }
       const asset = assets.get(path);

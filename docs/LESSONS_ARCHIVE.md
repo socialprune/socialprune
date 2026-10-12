@@ -255,3 +255,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-010] 2026-10-12 VERIFICATION: A test that shares a fixed resource with a parallel neighbour is a race, not a load flake
+
+**ID:** LL-2026-10-010
+**Severity:** MEDIUM
+**Category:** VERIFICATION
+**Expires:** Never (kernel). Ports, file names, commit hashes and counts below are dated evidence from 2026-10-12.
+
+**Feedback:** none from the maintainer; found when CI turned red. The `checks` and `cli-node-floor` jobs failed for commit `3e68bb7` with `EADDRINUSE 127.0.0.1:4236` and a 5-second timeout, after the local light gate had been green.
+**Problem:** Two unit test files, a fake syndication server helper and a new test next to it, both listened on the fixed port 4236. Vitest runs test files in parallel, so whichever started second failed. Locally the same test had failed once under heavy machine load and was then classified as a load flake because it passed on its own.
+**5 Whys Analysis:**
+1. Why did CI fail? -> Two parallel test files bound the same fixed port.
+2. Why was it not caught locally? -> The parallel schedule rarely put both files together, and the one local failure happened while the machine ran at 100 % for other work.
+3. Why was the local failure not read as a race? -> Its error text was not captured, and "passes isolated" was taken as proof of load, although isolation removes exactly the neighbour that causes a race.
+4. Why did both files use one port? -> The new test copied the port from the existing helper; nothing in the unit tests forbids fixed ports, while the Playwright suites legitimately use assigned ones.
+5. Why? -> Root cause: no control separates a shared-resource race from load, and no check stops a unit test from taking a fixed port.
+**Rule(s):**
+1. Before calling an intermittent test failure environmental, capture its error. A failure that names a shared resource (address in use, file busy, locked database, a fixed path) is a race to fix, whatever the machine load.
+2. Passing in isolation does not prove load; it is also what a race between parallel files looks like. Rerun inside the full parallel suite as well.
+3. Unit tests and their helpers listen on port 0 and read the assigned port back. Fixed ports stay in the serial browser suites under `e2e/`.
+**Detection Pattern:** `EADDRINUSE`, `EBUSY`, `database is locked` or a timeout next to them; a test that fails only in the full suite; two files with the same literal port or temp path.
+**Affected Files:** `apps/cli/src/originals/test/server.ts`, `apps/cli/src/originals/complete.test.ts` (fixed in `c5f27fd`). Retrieval anchor: `tools/lint-rules/src/test-ports.test.ts`, which runs in every `pnpm test` and in CI, fails on any fixed-port `listen` in a unit test or test helper, and names this lesson.
+**Related Lessons:** LL-2026-10-004 (a local gate proves only what it ran), LL-2026-10-001 (re-read state before reporting it).
+**Regression / Verification Note:** the guard failed against the pre-fix helper (`server.ts:105`) and passes on the fixed tree; the CLI unit project passed six times in a row after the fix.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times

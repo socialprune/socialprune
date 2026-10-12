@@ -26,10 +26,12 @@ export interface SetupOptions {
 export interface SetupWait {
   pollMs: number;
   releaseTimeoutMs: number;
+  appearanceTimeoutMs?: number;
 }
 const normalWait: Readonly<SetupWait> = Object.freeze({
   pollMs: 200,
   releaseTimeoutMs: 30_000,
+  appearanceTimeoutMs: 60_000,
 });
 
 /** An ordinary browser child: no driver, debugging pipe or page access. */
@@ -51,6 +53,9 @@ export async function ordinarySetup(
     stdio: 'ignore',
     shell: false,
     windowsHide: false,
+    // A Windows launcher may hand its window to another process. Keep that
+    // process outside Node's kill-on-close job when the CLI eventually exits.
+    detached: process.platform === 'win32',
   });
   let exited = false,
     exitCode: number | null = null,
@@ -63,6 +68,7 @@ export async function ordinarySetup(
     exitCode = code;
     exited = true;
   });
+  child.unref();
   const inputWasPaused = process.stdin.isPaused();
   const terminal = createInterface({
     input: process.stdin,
@@ -73,7 +79,13 @@ export async function ordinarySetup(
     cancelled = false,
     deadline: number | null = null,
     observedLock = false,
+    confirmedReleased = false,
     stoppedOwnedChild = false;
+  const appearanceDeadline =
+    Date.now() + (wait.appearanceTimeoutMs ?? normalWait.appearanceTimeoutMs!);
+  options.notice(
+    'Waiting for the dedicated browser profile to become active, then for its window to close.\n',
+  );
   terminal.on('line', () => {
     enter = true;
   });
@@ -93,13 +105,17 @@ export async function ordinarySetup(
         throw new CliError('CANCELLED');
       }
       const inUse = await profileInUse(options.profile);
+      if (inUse && !observedLock)
+        options.notice(
+          'The dedicated browser profile is active. Sign in by hand, then close its window.\n',
+        );
       observedLock ||= inUse;
-      if (exited && !inUse) {
+      if (exited && !inUse && (observedLock || confirmedReleased)) {
         if (exitCode !== 0 && !stoppedOwnedChild)
           throw new CliError('DELETE_FAILED');
         return;
       }
-      if (exited && deadline === null)
+      if (observedLock && !inUse && !exited && deadline === null)
         deadline = Date.now() + wait.releaseTimeoutMs;
       if (enter) {
         enter = false;
@@ -107,12 +123,25 @@ export async function ordinarySetup(
           options.notice(
             'The dedicated profile is still in use, or the window has not finished opening. Close the window before pressing Enter.\n',
           );
-        } else if (!exited) {
-          // The observed profile lock is released, so the window is closed.
-          // Stop only the direct child we spawned, never a discovered browser.
-          stoppedOwnedChild = child.kill('SIGTERM');
+        } else {
+          confirmedReleased = true;
+          if (!exited) {
+            // The person confirms closure and the observed profile lock is released.
+            // Stop only the direct child we spawned, never a discovered browser.
+            stoppedOwnedChild = child.kill('SIGTERM');
+          }
         }
         deadline ??= Date.now() + wait.releaseTimeoutMs;
+      }
+      if (
+        !observedLock &&
+        !confirmedReleased &&
+        Date.now() >= appearanceDeadline
+      ) {
+        options.notice(
+          'The dedicated profile never became active within 60 seconds. Setup cannot confirm that a window opened. If a window is visible, sign in and close it yourself; otherwise run setup again. No browser process was stopped.\n',
+        );
+        throw new CliError('PROFILE_INVALID');
       }
       if (deadline !== null && Date.now() >= deadline) {
         options.notice(

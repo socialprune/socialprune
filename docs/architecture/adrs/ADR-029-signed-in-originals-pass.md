@@ -308,7 +308,7 @@ Both texts fall under `pnpm copy:check`.
 
 At this pace 200 posts take about four hours, and 1,000 posts five days. The numbers are ADR-027's chosen limits for deletion, not measured ones. Waits are fixed, never randomized.
 
-The run stops at once, leaves the window open and writes its end reason on: a login page, a challenge or captcha, a lock or limit notice, an error page, a `TweetDetail` answer with a status other than 200, or neither an answer nor a known page state within 30 seconds (`PLATFORM_CHECK`); `SHAPE_CHANGED`; `UNEXPECTED_ACTION` (section 8); `ACCOUNT_MISMATCH`; an installed extension; a closed browser; `DISK_LOW`; a 429 from a media host; five failed media files in a row; and **Stop** or Ctrl+C, which let the current file finish first. It ends without an error at the daily budget, at the run's media limit and at the end of the plan.
+The run stops at once, leaves the window open and writes its end reason on: a login page, a challenge or captcha, a lock or limit notice, an error page, a `TweetDetail` answer with a status other than 200, or neither an answer nor a known page state within 30 seconds (`PLATFORM_CHECK`); `SHAPE_CHANGED`; `UNEXPECTED_ACTION` (section 8); `ACCOUNT_MISMATCH`; a changed extension ID set (`PLATFORM_CHECK`); a closed browser; `DISK_LOW`; a 429 from a media host; five failed media files in a row; and **Stop** or Ctrl+C, which let the current file finish first. It ends without an error at the daily budget, at the run's media limit and at the end of the plan. On 2026-10-12 a new Edge profile was observed to install default extensions on first start. Fill therefore keeps Playwright's `--disable-extensions` active, permits the recorded preinstalled set, and reads only its ID directory names. It compares that set during the run and at read-back, including same-count replacements, and writes the ID sets to the CLI-owned profile report described in ADR-023. The sandbox and every automation mark stay enabled.
 
 ### 8. What the run does in the profile
 
@@ -348,7 +348,7 @@ Before a full run, the canary must show:
 4. for the video, a file from `video.twimg.com` fetched without the session, of the expected type, that plays in the review in the person's Chrome or Edge;
 5. for a reply, the posts above stored as far as X showed them, and whether the first post was reached;
 6. for an `unseen` post, what X answered the account, recorded as one of the four results;
-7. the read-back: the same account, no extension, the changed profile files listed, X's own background requests listed, and no `UNEXPECTED_ACTION`;
+7. the read-back: the same account, unchanged extension IDs with extensions disabled, the changed profile files listed, X's own background requests listed, and no `UNEXPECTED_ACTION`;
 8. no lock or limit notice during the run, and the account working normally afterwards, which only the person can check.
 
 When a point fails, the next run stays a canary, the person decides, and the fake X and the reader are updated from the structure report, never from a real post.

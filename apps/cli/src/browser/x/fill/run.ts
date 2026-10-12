@@ -8,6 +8,8 @@ import {
   validateProfile,
   profileSnapshot,
   changedProfileFiles,
+  extensionsChanged,
+  writeExtensionReport,
 } from '../../profile.ts';
 import { profileWarning } from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
@@ -81,7 +83,7 @@ const production: FillDependencies = {
       chromiumSandbox: true,
       args: ['--enable-automation'],
       serviceWorkers: 'block',
-      ignoreDefaultArgs: ['--disable-extensions', '--disable-infobars'],
+      ignoreDefaultArgs: ['--disable-infobars'],
     });
   },
   sleep: async (ms, signal) => {
@@ -169,7 +171,6 @@ export async function runFillWithDependencies(
 ) {
   await validateProfile(options.profile);
   const before = await profileSnapshot(options.profile);
-  if (before.extensions) throw new CliError('PROFILE_INVALID');
   const summary = fillSummary(options.plan, options.lang),
     confirmation = await startConfirmation(
       {
@@ -178,6 +179,7 @@ export async function runFillWithDependencies(
         profileWarning:
           profileWarning(options.plan.handle) +
           ' Open each listed post by its address and keep what X sends. No clicks, typing or scrolling in the X tab. Download media anonymously. Pages change history, cache, cookies and site data.' +
+          ' Extensions are disabled. SocialPrune writes its own read-back JSON file in this profile with the before/after extension ID sets.' +
           (options.mediaNotice ?? ''),
         planned: summary.planned,
         bulk: 0,
@@ -303,6 +305,8 @@ export async function runFillWithDependencies(
       ownerPid: process.pid,
     });
     began = true;
+    if (extensionsChanged(before, await profileSnapshot(options.profile)))
+      throw new CliError('PLATFORM_CHECK');
     const requestRecords = new WeakMap<object, BrowserRequest>();
     const persist = (value: BrowserRequest) => {
       const task = options.store.browserOutcomeWriter().request(runId, value);
@@ -431,6 +435,8 @@ export async function runFillWithDependencies(
     let batch = recent.length;
     for (const row of candidates) {
       check();
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError('PLATFORM_CHECK');
       const existing = await options.store.read((tx) =>
         tx.originals.get(row.id),
       );
@@ -461,6 +467,8 @@ export async function runFillWithDependencies(
         run.endReason = 'daily-cap';
         break;
       }
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError('PLATFORM_CHECK');
       const attemptId = crypto.randomUUID();
       await writer.sending({
         attemptId,
@@ -473,6 +481,8 @@ export async function runFillWithDependencies(
       batch++;
       try {
         const answer = await pageAnswer(page, row.id, deps);
+        if (extensionsChanged(before, await profileSnapshot(options.profile)))
+          throw new CliError('PLATFORM_CHECK');
         check();
         const extracted =
           answer.body === null
@@ -653,6 +663,17 @@ export async function runFillWithDependencies(
     if (began) {
       try {
         await Promise.all([...pendingRequests]);
+        let matches = false;
+        if (run.endReason === 'canary' && !error) {
+          confirmation.update({
+            phase: 'match',
+            result: `Compare the stored results with the page. Structure report: ${reportPath ?? 'not written'}`,
+          });
+          matches = await Promise.race([
+            confirmation.wait('matches'),
+            cancellation,
+          ]);
+        }
         try {
           accountAfter =
             page && !page.isClosed() ? await xSelectors.account(page) : null;
@@ -670,7 +691,10 @@ export async function runFillWithDependencies(
           changedFiles: changedProfileFiles(before, after),
           unexpectedRequests: requests,
         };
-        if (after.extensions || accountBefore !== accountAfter) {
+        if (
+          extensionsChanged(before, after) ||
+          accountBefore !== accountAfter
+        ) {
           error ??= new CliError('PLATFORM_CHECK');
           run.endReason = 'platform-check';
         }
@@ -681,14 +705,18 @@ export async function runFillWithDependencies(
           bodyShapes: run.bodyShapes,
           profileReport: run.profileReport,
         });
-        if (run.endReason === 'canary' && !error) {
-          confirmation.update({
-            phase: 'match',
-            result: `Compare the stored results with the page. Structure report: ${reportPath ?? 'not written'}`,
-          });
-          if (await Promise.race([confirmation.wait('matches'), cancellation]))
-            await writer.acceptCanary(runId, options.now().toISOString());
-        }
+        const profileReport = await writeExtensionReport(
+          options.profile,
+          runId,
+          before,
+          after,
+          run.profileReport,
+        );
+        options.notice(
+          `Extensions disabled for this run. Before: ${JSON.stringify(before.extensionIds)}; after: ${JSON.stringify(after.extensionIds)}. Profile report: ${profileReport}\n`,
+        );
+        if (matches && run.endReason === 'canary' && !error)
+          await writer.acceptCanary(runId, options.now().toISOString());
         options.notice(`Read-back: ${JSON.stringify(run.profileReport)}\n`);
       } catch (caught) {
         error ??= caught;

@@ -9,6 +9,7 @@ import {
   unlink,
 } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
 import * as readline from 'node:readline';
@@ -23,6 +24,9 @@ import { fixtureWorkspace, FIXTURE } from '../../e2e/fake-x/fixture.ts';
 import { planFill } from './x/fill/plan.ts';
 import { ordinarySetup } from './setup.ts';
 import * as setupModule from './setup.ts';
+import { runWithDependencies } from './runner.ts';
+import { planDeletion } from './plan.ts';
+import type { BrowserDriver } from './x/driver.ts';
 
 const driver = vi.hoisted(() => ({
   launch: vi.fn((_profile: string, _options: unknown) => {
@@ -57,11 +61,11 @@ process.on('message',async message=>{
  if(message==='exit'){process.send({type:'exiting'});clearInterval(hold);process.exit(0);}
 });`;
 
-async function fixture() {
+async function fixture(source = stub) {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-setup-stub-'));
   const profile = join(directory, 'dedicated profile');
   const script = join(directory, 'generated-browser.mjs');
-  await writeFile(script, stub);
+  await writeFile(script, source);
   const stdout: string[] = [],
     stderr: string[] = [],
     input = new PassThrough();
@@ -102,10 +106,18 @@ async function fixture() {
     await vi.importActual<typeof readline>('node:readline')
   ).createInterface;
   const active = new Set<AbortController>();
+  const activeRuns = new Set<Promise<number>>();
   const actualSetup = (await vi.importActual<typeof setupModule>('./setup.ts'))
     .ordinarySetup;
   vi.spyOn(setupModule, 'ordinarySetup').mockImplementation((options, wait) =>
-    actualSetup(options, wait ?? { pollMs: 10, releaseTimeoutMs: 1500 }),
+    actualSetup(
+      options,
+      wait ?? {
+        pollMs: 10,
+        releaseTimeoutMs: 5000,
+        appearanceTimeoutMs: 15000,
+      },
+    ),
   );
   vi.spyOn(readline, 'createInterface').mockImplementation(
     (options: readline.ReadLineOptions) =>
@@ -128,6 +140,8 @@ async function fixture() {
       { ...context, stdoutIsTerminal: terminal, signal: controller.signal },
     );
     void running.finally(() => active.delete(controller));
+    activeRuns.add(running);
+    void running.finally(() => activeRuns.delete(running));
     return running;
   };
   const send = (message: string) =>
@@ -135,6 +149,19 @@ async function fixture() {
       if (!child) throw new Error('Stub not spawned');
       child.send(message, (error) => (error ? reject(error) : resolve()));
     });
+  const released = async () => {
+    await send('release');
+    await expect
+      .poll(
+        () => messages.filter((message) => message.type === 'released').length,
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
+  };
+  const exit = async () => {
+    await send('exit');
+    await expect.poll(() => child?.exitCode, { timeout: 10000 }).toBe(0);
+  };
   return {
     directory,
     profile,
@@ -146,15 +173,20 @@ async function fixture() {
     spawn,
     run,
     send,
+    released,
+    exit,
     get child() {
       return child;
     },
     async ready() {
       await expect
         .poll(() => messages.find((value) => value.type === 'ready'), {
-          timeout: 3000,
+          timeout: 10000,
         })
         .toBeDefined();
+      await expect
+        .poll(() => stderr.join(''), { timeout: 10000 })
+        .toContain('profile is active');
     },
     async close() {
       for (const controller of active) controller.abort();
@@ -165,6 +197,7 @@ async function fixture() {
         );
       }
       input.end();
+      await Promise.allSettled([...activeRuns]);
       await rm(directory, {
         recursive: true,
         force: true,
@@ -195,7 +228,7 @@ test('setup directly spawns exact ordinary-browser argv and returns only after c
       finished = true;
     });
     await f.send('exit');
-    await expect.poll(() => f.child?.exitCode).toBe(0);
+    await expect.poll(() => f.child?.exitCode, { timeout: 10000 }).toBe(0);
     expect(finished).toBe(false);
     await unlink(join(f.profile, 'SingletonLock'));
     expect(await running, f.stderr.join('')).toBe(0);
@@ -229,8 +262,8 @@ test('setup reuses its marked profile and never reports completion after early E
       done = true;
     });
     expect(done).toBe(false);
-    await f.send('release');
-    await f.send('exit');
+    await f.released();
+    await f.exit();
     expect(await running).toBe(0);
     expect(
       await readFile(join(f.profile, profileModule.PROFILE_MARKER), 'utf8'),
@@ -321,6 +354,7 @@ test('an exited browser with a remaining lock fails within the bounded wait with
     await f.ready();
     const kill = vi.spyOn(f.child!, 'kill');
     await f.send('exit');
+    f.input.write('\n');
     expect(await result).toMatchObject({ code: 'PROFILE_INVALID' });
     expect(await readFile(join(f.profile, 'SingletonLock'), 'utf8')).toBe(
       'Generated held lock',
@@ -395,6 +429,279 @@ test('released Windows lockfile residue is probed without truncation and POSIX s
   }
 });
 
+const grandchildStub = `import {writeFile,unlink} from 'node:fs/promises';import {join} from 'node:path';
+const [profile]=process.argv.slice(2);await new Promise(resolve=>setTimeout(resolve,400));await writeFile(join(profile,'SingletonLock'),'Generated grandchild lock',{flag:'wx'});await writeFile(join(profile,'grandchild-ready.json'),JSON.stringify({pid:process.pid}));
+const hold=setInterval(()=>{},20);process.on('message',async message=>{if(message==='finish'){await unlink(join(profile,'SingletonLock'));clearInterval(hold);process.exit(0);}});
+const watch=setInterval(async()=>{try{await import('node:fs/promises').then(value=>value.stat(join(profile,'finish-grandchild')));await unlink(join(profile,'SingletonLock')).catch(()=>undefined);clearInterval(hold);clearInterval(watch);process.exit(0);}catch{}},20);`;
+const handoffStub = `import {spawn} from 'node:child_process';import {join} from 'node:path';import {writeFile} from 'node:fs/promises';
+const profile=process.argv.slice(2).find(arg=>arg.startsWith('--user-data-dir='))?.slice(16);const child=spawn(process.execPath,[join(profile,'..','grandchild.mjs'),profile],{stdio:'ignore',detached:true});child.unref();await writeFile(join(profile,'handoff-pid.json'),JSON.stringify({pid:child.pid}));process.exit(0);`;
+async function stopGeneratedGrandchild(profile: string) {
+  await writeFile(
+    join(profile, 'finish-grandchild'),
+    'Generated window close',
+  ).catch(() => undefined);
+  try {
+    const value = JSON.parse(
+      await readFile(join(profile, 'handoff-pid.json'), 'utf8'),
+    ) as { pid: number };
+    await expect
+      .poll(
+        () => {
+          try {
+            process.kill(value.pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10000 },
+      )
+      .toBe(false);
+  } catch (error) {
+    if (!(
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ))
+      throw error;
+  }
+}
+
+test('fast-exiting browser stub hands off to a lock-holding grandchild and setup never completes before that observed lock releases', async () => {
+  const f = await fixture(handoffStub);
+  let running: Promise<number> | undefined;
+  try {
+    await writeFile(join(f.directory, 'grandchild.mjs'), grandchildStub);
+    let done = false;
+    running = f.run();
+    void running.then(() => {
+      done = true;
+    });
+    await expect.poll(() => f.child?.exitCode, { timeout: 10000 }).toBe(0);
+    expect(done).toBe(false);
+    const options = f.spawn.mock.calls[0]?.[2] as childProcess.SpawnOptions;
+    expect(options.detached).toBe(process.platform === 'win32');
+    await expect
+      .poll(async () => profileModule.profileInUse(f.profile), {
+        timeout: 10000,
+      })
+      .toBe(true);
+    await expect
+      .poll(() => f.stderr.join(''), { timeout: 10000 })
+      .toContain('profile is active');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(done).toBe(false);
+    expect(f.stderr.join('')).toContain(
+      'Waiting for the dedicated browser profile',
+    );
+    await writeFile(
+      join(f.profile, 'finish-grandchild'),
+      'Generated close confirmation',
+    );
+    expect(await running, f.stderr.join('')).toBe(0);
+    expect(await profileModule.profileInUse(f.profile)).toBe(false);
+  } finally {
+    await stopGeneratedGrandchild(f.profile);
+    await f.close();
+    await running;
+  }
+});
+
+test('setup waits through a two-second child startup before the first profile lock appears', async () => {
+  const delayed = stub.replace(
+    "await writeFile(join(profile,'SingletonLock')",
+    "await new Promise(resolve=>setTimeout(resolve,2000));await writeFile(join(profile,'SingletonLock')",
+  );
+  const f = await fixture(delayed);
+  let running: Promise<number> | undefined;
+  try {
+    let done = false;
+    running = f.run();
+    void running.then(() => {
+      done = true;
+    });
+    await expect
+      .poll(() => f.child?.pid, { timeout: 10000 })
+      .toBeTypeOf('number');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(done).toBe(false);
+    await f.ready();
+    expect(done).toBe(false);
+    await f.released();
+    await f.exit();
+    expect(await running, f.stderr.join('')).toBe(0);
+  } finally {
+    await f.close();
+    await running;
+  }
+});
+
+test('an exited launcher without any observed lock fails at the first-lock deadline, never reports a completed window', async () => {
+  const f = await fixture('process.exit(0);');
+  let running: Promise<void> | undefined;
+  try {
+    await profileModule.createProfile(f.profile);
+    running = ordinarySetup(
+      {
+        profile: f.profile,
+        executablePath: process.execPath,
+        signal: new AbortController().signal,
+        notice: (text) => f.stderr.push(text),
+      },
+      {
+        pollMs: 10,
+        releaseTimeoutMs: 100,
+        appearanceTimeoutMs: 100,
+      },
+    );
+    const result = running.then(
+      () => null,
+      (error) => error as unknown,
+    );
+    expect(await result).toMatchObject({ code: 'PROFILE_INVALID' });
+    expect(f.stderr.join('')).toContain('never became active');
+  } finally {
+    await f.close();
+    await running?.catch(() => undefined);
+  }
+});
+
+test('the explicit Enter confirmation can finish a fast launcher after window closure even if a short-lived lock was never sampled', async () => {
+  const f = await fixture('process.exit(0);');
+  let running: Promise<number> | undefined;
+  try {
+    let done = false;
+    running = f.run();
+    void running.then(() => {
+      done = true;
+    });
+    await expect.poll(() => f.child?.exitCode, { timeout: 10000 }).toBe(0);
+    expect(done).toBe(false);
+    f.input.write('\n');
+    expect(await running, f.stderr.join('')).toBe(0);
+  } finally {
+    await f.close();
+    await running;
+  }
+});
+
+test('profile snapshot records only sorted extension ID directory names, not manifest paths or contents', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-extension-set-'));
+  try {
+    for (const id of ['b'.repeat(32), 'a'.repeat(32)]) {
+      await mkdir(join(directory, 'Default', 'Extensions', id, '1.0'), {
+        recursive: true,
+      });
+      await writeFile(
+        join(directory, 'Default', 'Extensions', id, '1.0', 'manifest.json'),
+        'Generated forbidden manifest contents',
+      );
+    }
+    const snapshot = await profileModule.profileSnapshot(directory);
+    expect(Reflect.get(snapshot, 'extensionIds')).toEqual([
+      'a'.repeat(32),
+      'b'.repeat(32),
+    ]);
+    expect(
+      [...snapshot.files.keys()].some((path) => path.includes('/Extensions/')),
+    ).toBe(false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+test('extension-set equality rejects a replacement ID even at the same count and never reads the extension tree', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-extension-change-'),
+  );
+  try {
+    const first = join(directory, 'Default', 'Extensions', 'a'.repeat(32));
+    await mkdir(first, { recursive: true });
+    const before = await profileModule.profileSnapshot(directory);
+    await rm(first, { recursive: true });
+    await mkdir(join(directory, 'Default', 'Extensions', 'b'.repeat(32)), {
+      recursive: true,
+    });
+    const after = await profileModule.profileSnapshot(directory);
+    expect(before.extensions).toBe(after.extensions);
+    expect(profileModule.extensionsChanged(before, after)).toBe(true);
+    expect(
+      profileModule.extensionsChanged(before, {
+        ...before,
+        extensionIds: [...before.extensionIds],
+      }),
+    ).toBe(false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a detached generated window survives the actual setup CLI process ending on Windows', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-setup-job-')),
+    profile = join(directory, 'profile');
+  await profileModule.createProfile(profile);
+  const browser = join(directory, 'window.mjs'),
+    cli = join(directory, 'cli.mjs'),
+    realSpawn = (
+      await vi.importActual<typeof childProcess>('node:child_process')
+    ).spawn;
+  await writeFile(
+    browser,
+    `import {writeFile,stat,unlink} from 'node:fs/promises';import {join} from 'node:path';const profile=process.argv.slice(2).find(value=>value.startsWith('--user-data-dir='))?.slice(16);await writeFile(join(profile,'SingletonLock'),'Generated window owns lock');let count=0;const timer=setInterval(async()=>{await writeFile(join(profile,'heartbeat.json'),JSON.stringify({pid:process.pid,count:++count}));try{await stat(join(profile,'close-window'));clearInterval(timer);await unlink(join(profile,'SingletonLock'));process.exit(0);}catch{}},20);`,
+  );
+  await writeFile(
+    cli,
+    `import cp from 'node:child_process';import {syncBuiltinESMExports}from'node:module';import {readFile,writeFile}from'node:fs/promises';import {join}from'node:path';const real=cp.spawn;cp.spawn=(command,args,options)=>real(command,[${JSON.stringify(browser)},...args],options);syncBuiltinESMExports();const {ordinarySetup}=await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL('./setup.ts', import.meta.url))).href)});const profile=${JSON.stringify(profile)},controller=new AbortController();const timer=setInterval(async()=>{try{await readFile(join(profile,'heartbeat.json'));controller.abort();}catch{}},20);try{await ordinarySetup({profile,executablePath:process.execPath,signal:controller.signal,notice:()=>{}},{pollMs:10,releaseTimeoutMs:100,appearanceTimeoutMs:5000});}catch(error){if(error.code!=='CANCELLED')throw error;}clearInterval(timer);await writeFile(join(profile,'cli-ended'),'Generated CLI cancellation');process.exit(0);`,
+  );
+  const parent = realSpawn(process.execPath, [cli], { stdio: 'ignore' });
+  try {
+    await expect.poll(() => parent.exitCode, { timeout: 10000 }).toBe(0);
+    expect(await readFile(join(profile, 'cli-ended'), 'utf8')).toBe(
+      'Generated CLI cancellation',
+    );
+    const prior = JSON.parse(
+      await readFile(join(profile, 'heartbeat.json'), 'utf8'),
+    ) as { pid: number; count: number };
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (
+              JSON.parse(
+                await readFile(join(profile, 'heartbeat.json'), 'utf8'),
+              ) as { count: number }
+            ).count;
+          } catch {
+            return 0;
+          }
+        },
+        { timeout: 1000 },
+      )
+      .toBeGreaterThan(prior.count);
+    expect(await profileModule.profileInUse(profile)).toBe(true);
+    await writeFile(join(profile, 'close-window'), 'Generated window close');
+    await expect
+      .poll(() => profileModule.profileInUse(profile), { timeout: 3000 })
+      .toBe(false);
+  } finally {
+    await writeFile(join(profile, 'close-window'), 'Generated teardown').catch(
+      () => undefined,
+    );
+    if (parent.exitCode === null && parent.signalCode === null) {
+      parent.kill();
+      await new Promise<void>((resolve) =>
+        parent.once('close', () => resolve()),
+      );
+    }
+    await rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
+});
+
 test('delete and verify driver keep Chromium sandbox enabled and all automation default arguments', async () => {
   await expect(
     productionDriver({
@@ -410,10 +717,7 @@ test('delete and verify driver keep Chromium sandbox enabled and all automation 
     args?: string[];
   };
   expect(options.chromiumSandbox).toBe(true);
-  expect(options.ignoreDefaultArgs).toEqual([
-    '--disable-extensions',
-    '--disable-infobars',
-  ]);
+  expect(options.ignoreDefaultArgs).toEqual(['--disable-infobars']);
   expect(options.args).toEqual(['--enable-automation']);
   expect(options.ignoreDefaultArgs).not.toContain('--enable-automation');
   expect(options.ignoreDefaultArgs).not.toContain('--remote-debugging-pipe');
@@ -451,13 +755,127 @@ test('fill driver keeps Chromium sandbox enabled and all automation default argu
       args?: string[];
     };
     expect(options.chromiumSandbox).toBe(true);
-    expect(options.ignoreDefaultArgs).toEqual([
-      '--disable-extensions',
-      '--disable-infobars',
-    ]);
+    expect(options.ignoreDefaultArgs).toEqual(['--disable-infobars']);
     expect(options.args).toEqual(['--enable-automation']);
     expect(options.ignoreDefaultArgs).not.toContain('--enable-automation');
     expect(options.ignoreDefaultArgs).not.toContain('--remote-debugging-pipe');
+  } finally {
+    await store.close();
+    await rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
+});
+
+test('a preinstalled generated extension set reaches the disabled-extension driver and is persisted in its CLI profile report', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-preinstalled-')),
+    profile = join(directory, 'profile'),
+    id = 'a'.repeat(32),
+    notices: string[] = [];
+  await profileModule.createProfile(profile);
+  await mkdir(join(profile, 'Default', 'Extensions', id, '1.0'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(profile, 'Default', 'Extensions', id, '1.0', 'manifest.json'),
+    'Generated forbidden manifest contents',
+  );
+  const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
+    initial: fixtureWorkspace(['1005']),
+  });
+  const plan = await planDeletion(store, FIXTURE.account.key);
+  let called = false;
+  try {
+    const result = await runWithDependencies(
+      {
+        store,
+        plan,
+        profile,
+        executablePath: 'generated-not-used',
+        verify: false,
+        list: 'generated-list',
+        lang: 'en',
+        signal: new AbortController().signal,
+        now: () => new Date(FIXTURE.now),
+        notice: (text) => notices.push(text),
+      },
+      {
+        pace: { intervalMs: 1, batchSize: 1, pauseMs: 1, perDay: 1 },
+        confirmationPort: 0,
+        sleep: () => Promise.resolve(),
+        driver: async () => {
+          await Promise.resolve();
+          called = true;
+          const driver: BrowserDriver = {
+            async showConfirmation(url) {
+              const target = new URL(url),
+                origin = target.origin,
+                token = new URLSearchParams(target.hash.slice(1)).get(
+                  'bootstrap',
+                )!;
+              const response = await fetch(origin + '/session', {
+                method: 'POST',
+                headers: {
+                  Origin: origin,
+                  'Content-Type': 'application/json',
+                  'X-SocialPrune-Bootstrap': token,
+                },
+                body: '{}',
+              });
+              const data = (await response.json()) as { csrf: string };
+              const answer = await fetch(origin + '/api/action', {
+                method: 'POST',
+                headers: {
+                  Origin: origin,
+                  'Content-Type': 'application/json',
+                  'X-SocialPrune-CSRF': data.csrf,
+                  Cookie: response.headers.get('set-cookie')!.split(';')[0]!,
+                },
+                body: JSON.stringify({ action: 'start', version: 1 }),
+              });
+              expect(answer.status).toBe(200);
+            },
+            account: () => Promise.resolve(FIXTURE.account.handle),
+            inspect: () => {
+              throw new Error('Unexpected page');
+            },
+            delete: () => {
+              throw new Error('Unexpected deletion');
+            },
+            flush: () => Promise.resolve(),
+            close: () => Promise.resolve(),
+          };
+          return driver;
+        },
+      },
+    );
+    expect(called).toBe(true);
+    expect(result).toMatchObject({ completed: 0, endReason: 'done' });
+    const report = JSON.parse(
+      await readFile(
+        join(profile, `socialprune-readback-${result.runId}.json`),
+        'utf8',
+      ),
+    ) as {
+      extensionIdsBefore: string[];
+      extensionIdsAfter: string[];
+      extensionsDisabled: boolean;
+    };
+    expect(report).toMatchObject({
+      extensionIdsBefore: [id],
+      extensionIdsAfter: [id],
+      extensionsDisabled: true,
+    });
+    expect(notices.join('')).toContain('Extensions disabled for this run.');
+    expect(
+      await readFile(
+        join(profile, 'Default', 'Extensions', id, '1.0', 'manifest.json'),
+        'utf8',
+      ),
+    ).toBe('Generated forbidden manifest contents');
   } finally {
     await store.close();
     await rm(directory, {

@@ -266,7 +266,7 @@ export async function productionDriver(options: {
     chromiumSandbox: true,
     args: ['--enable-automation'],
     serviceWorkers: 'block',
-    ignoreDefaultArgs: ['--disable-extensions', '--disable-infobars'],
+    ignoreDefaultArgs: ['--disable-infobars'],
   });
   context.once('close', () => options.onClosed?.());
   const driver = await pageDriver({

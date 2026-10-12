@@ -96,12 +96,13 @@ export async function createProfile(directory: string): Promise<void> {
 export interface ProfileSnapshot {
   files: Map<string, string>;
   extensions: number;
+  extensionIds: string[];
 }
 export async function profileSnapshot(
   directory: string,
 ): Promise<ProfileSnapshot> {
   const files = new Map<string, string>();
-  let extensions = 0;
+  const extensionIds = new Set<string>();
   async function visit(path: string, prefix: string) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       if (entry.isSymbolicLink()) throw new CliError('PROFILE_INVALID');
@@ -109,15 +110,69 @@ export async function profileSnapshot(
       const stat = await lstat(join(path, entry.name)).catch(() => null);
       if (!stat) continue;
       if (entry.isDirectory()) {
-        if (prefix === 'Extensions/' || prefix.endsWith('/Extensions/'))
-          extensions++;
+        if (entry.name === 'Extensions') {
+          for (const extension of await readdir(join(path, entry.name), {
+            withFileTypes: true,
+          })) {
+            if (extension.isSymbolicLink())
+              throw new CliError('PROFILE_INVALID');
+            if (extension.isDirectory()) extensionIds.add(extension.name);
+          }
+          continue;
+        }
         await visit(join(path, entry.name), name + '/');
       } else if (entry.isFile())
         files.set(name, `${stat.size}:${stat.mtimeMs}`);
     }
   }
   await visit(directory, '');
-  return { files, extensions };
+  return {
+    files,
+    extensions: extensionIds.size,
+    extensionIds: [...extensionIds].sort(),
+  };
+}
+export function extensionsChanged(
+  before: ProfileSnapshot,
+  after: ProfileSnapshot,
+): boolean {
+  return (
+    JSON.stringify(before.extensionIds) !== JSON.stringify(after.extensionIds)
+  );
+}
+export interface ExtensionProfileReport {
+  runId: string;
+  extensionsDisabled: true;
+  extensionIdsBefore: string[];
+  extensionIdsAfter: string[];
+  journalReport: unknown;
+}
+export async function writeExtensionReport(
+  profile: string,
+  runId: string,
+  before: ProfileSnapshot,
+  after: ProfileSnapshot,
+  journalReport: unknown,
+): Promise<string> {
+  if (!/^[A-Za-z0-9-]{1,128}$/.test(runId))
+    throw new CliError('PROFILE_INVALID');
+  await validateProfile(profile);
+  const path = join(profile, `socialprune-readback-${runId}.json`);
+  const report: ExtensionProfileReport = {
+    runId,
+    extensionsDisabled: true,
+    extensionIdsBefore: before.extensionIds,
+    extensionIdsAfter: after.extensionIds,
+    journalReport,
+  };
+  const handle = await open(path, 'wx');
+  try {
+    await handle.writeFile(JSON.stringify(report));
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  return path;
 }
 export function changedProfileFiles(
   before: ProfileSnapshot,

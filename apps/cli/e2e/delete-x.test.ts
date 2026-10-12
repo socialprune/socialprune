@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,21 @@ async function harness(
   const profile = join(directory, 'profile');
   await mkdir(profile);
   await createProfile(profile);
+  const preinstalledId = 'a'.repeat(32);
+  await mkdir(join(profile, 'Default', 'Extensions', preinstalledId, '1.0'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(
+      profile,
+      'Default',
+      'Extensions',
+      preinstalledId,
+      '1.0',
+      'manifest.json',
+    ),
+    'Generated contents that must never be read',
+  );
   const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
     initial: fixtureWorkspace(ids),
   });
@@ -48,6 +63,7 @@ async function harness(
   const network: string[] = [];
   const launchUrls: string[] = [];
   let changeBeforeSend = false;
+  let extensionAfterInspect = false;
   let mutateBeforeSend = false;
   fake.variants.clear();
   fake.gone.clear();
@@ -105,6 +121,8 @@ async function harness(
           const probe = await context.newCDPSession(context.pages()[0]!);
           const command = await probe.send('Browser.getBrowserCommandLine');
           expect(command.arguments).not.toContain('--no-sandbox');
+          expect(command.arguments).toContain('--disable-extensions');
+          expect(command.arguments).not.toContain('--disable-infobars');
           expect(command.arguments).toContain('--enable-automation');
           expect(command.arguments).toContain('--remote-debugging-pipe');
           expect(
@@ -130,6 +148,13 @@ async function harness(
             },
             async inspect(id) {
               const result = await driver.inspect(id);
+              if (extensionAfterInspect) {
+                extensionAfterInspect = false;
+                await mkdir(
+                  join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+                  { recursive: true },
+                );
+              }
               if (changeBeforeSend) {
                 changeBeforeSend = false;
                 await store.write(async (tx) => {
@@ -210,6 +235,9 @@ async function harness(
     changeBeforeSend() {
       changeBeforeSend = true;
     },
+    extensionAfterInspect() {
+      extensionAfterInspect = true;
+    },
     mutateBeforeSend() {
       mutateBeforeSend = true;
     },
@@ -246,6 +274,25 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
       FIXTURE.expected.oneSuccessStates,
     );
     expect(journal.runs).toHaveLength(1);
+    const report = JSON.parse(
+      await readFile(
+        join(
+          h.directory,
+          'profile',
+          `socialprune-readback-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      ),
+    ) as {
+      extensionIdsBefore: string[];
+      extensionIdsAfter: string[];
+      extensionsDisabled: boolean;
+    };
+    expect(report).toMatchObject({
+      extensionIdsBefore: ['a'.repeat(32)],
+      extensionIdsAfter: ['a'.repeat(32)],
+      extensionsDisabled: true,
+    });
     expect(journal.runs[0]!.profileReport?.accountAfter).toBe(
       FIXTURE.account.handle,
     );
@@ -619,6 +666,38 @@ test('foreign-origin request decoy trips the host guard and never reaches its se
   }
 });
 
+test('extension IDs added after opening a post stop before any delete click and survive the read-back report', async () => {
+  const h = await harness(['1001']);
+  try {
+    h.extensionAfterInspect();
+    const running = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    await h.click('Start');
+    await expect
+      .poll(async () => (await h.store.browserJournal()).runs[0]?.endReason, {
+        timeout: 10000,
+      })
+      .toBe('platform-check');
+    expect(await running).toMatchObject({ code: 'PLATFORM_CHECK' });
+    expect(
+      fake.requests.filter((request) => request.method === 'POST'),
+    ).toEqual([]);
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'profile', `socialprune-readback-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { extensionIdsBefore: string[]; extensionIdsAfter: string[] };
+    expect(report.extensionIdsBefore).toEqual(['a'.repeat(32)]);
+    expect(report.extensionIdsAfter).toEqual(['a'.repeat(32), 'b'.repeat(32)]);
+  } finally {
+    await h.close();
+  }
+});
+
 test('not-found is journaled without deletion and excluded until explicitly included', async () => {
   const h = await harness(['1001']);
   fake.variants.set('1001', 'not-found');
@@ -860,9 +939,18 @@ test('readonly verification uses its calendar cap with no POST to the fake platf
   }
 });
 
-test('extension decoy prevents browser launch and journal writes', async () => {
+test('a new extension ID appearing during a run stops with PLATFORM_CHECK even when the directory count is unchanged', async () => {
   const h = await harness(['1001']);
   try {
+    const running = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    await h.local();
+    await rm(
+      join(h.directory, 'profile', 'Default', 'Extensions', 'a'.repeat(32)),
+      { recursive: true },
+    );
     await mkdir(
       join(
         h.directory,
@@ -886,10 +974,16 @@ test('extension decoy prevents browser launch and journal writes', async () => {
       ),
       '{}',
     );
-    await expect(h.launch()).rejects.toMatchObject({ code: 'PROFILE_INVALID' });
-    expect(h.launchUrls).toEqual([]);
+    await h.click('Start');
+    expect(await running).toMatchObject({ code: 'PLATFORM_CHECK' });
+    expect(h.launchUrls).toHaveLength(1);
     expect(fake.requests).toEqual([]);
-    expect((await h.store.browserJournal()).runs).toEqual([]);
+    const runs = (await h.store.browserJournal()).runs;
+    expect(runs[0]?.endReason).toBe('platform-check');
+    expect(runs[0]?.profileReport).toMatchObject({
+      extensionsBefore: 1,
+      extensionsAfter: 1,
+    });
   } finally {
     await h.close();
   }

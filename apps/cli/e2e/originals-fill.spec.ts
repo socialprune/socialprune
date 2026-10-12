@@ -1,7 +1,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import type { BrowserContext } from '@playwright/test';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrateOriginal } from '@socialprune/core';
@@ -32,6 +32,7 @@ for (const variant of [
   'stop',
   'stale',
   'extension',
+  'extension-at-matches',
   'canary-five',
   'shared-cap',
   'unavailable',
@@ -81,6 +82,21 @@ for (const variant of [
     const profile = join(directory, 'profile');
     await mkdir(profile);
     await createProfile(profile);
+    const preinstalledId = 'a'.repeat(32);
+    await mkdir(join(profile, 'Default', 'Extensions', preinstalledId, '1.0'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(
+        profile,
+        'Default',
+        'Extensions',
+        preinstalledId,
+        '1.0',
+        'manifest.json',
+      ),
+      'Generated contents that must never be read',
+    );
     if (variant === 'shared-cap') {
       const writer = store.browserOutcomeWriter(),
         run = {
@@ -166,11 +182,6 @@ for (const variant of [
     );
     try {
       const plan = await planFill(store, FIXTURE.account.key);
-      if (variant === 'extension')
-        await mkdir(
-          join(profile, 'Default', 'Extensions', 'generated', '1.0'),
-          { recursive: true },
-        );
       let now = Date.parse(FIXTURE.now);
       const waits: number[] = [];
       const result = runFillWithDependencies(
@@ -216,6 +227,8 @@ for (const variant of [
             const probe = await context.newCDPSession(context.pages()[0]!);
             const command = await probe.send('Browser.getBrowserCommandLine');
             expect(command.arguments).not.toContain('--no-sandbox');
+            expect(command.arguments).toContain('--disable-extensions');
+            expect(command.arguments).not.toContain('--disable-infobars');
             expect(command.arguments).toContain('--enable-automation');
             expect(command.arguments).toContain('--remote-debugging-pipe');
             expect(
@@ -236,11 +249,6 @@ for (const variant of [
         (error) => error as CliError,
       );
       running = result;
-      if (variant === 'extension') {
-        expect(await result).toMatchObject({ code: 'PROFILE_INVALID' });
-        expect(requests).toEqual([]);
-        return;
-      }
       await expect
         .poll(() =>
           context
@@ -253,6 +261,33 @@ for (const variant of [
         page.getByRole('button', { name: 'Start', exact: true }),
       ).toBeVisible();
       expect(requests).toEqual([]);
+      if (variant === 'extension') {
+        await mkdir(
+          join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+          { recursive: true },
+        );
+        await page.getByRole('button', { name: 'Start', exact: true }).click();
+        await expect
+          .poll(async () =>
+            Boolean((await store.browserJournal()).runs.at(-1)?.endedAt),
+          )
+          .toBe(true);
+        expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
+        expect(requests).toEqual([]);
+        const run = (await store.browserJournal()).runs.at(-1)!;
+        const report = JSON.parse(
+          await readFile(
+            join(profile, `socialprune-readback-${run.runId}.json`),
+            'utf8',
+          ),
+        ) as { extensionIdsBefore: string[]; extensionIdsAfter: string[] };
+        expect(report.extensionIdsBefore).toEqual([preinstalledId]);
+        expect(report.extensionIdsAfter).toEqual([
+          preinstalledId,
+          'b'.repeat(32),
+        ]);
+        return;
+      }
       await expect(page.locator('#warning')).toHaveText(FILL_WARNING.en);
       if (variant === 'stop') {
         await page.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -335,16 +370,47 @@ for (const variant of [
       await expect(
         page.getByRole('button', { name: 'Matches', exact: true }),
       ).toBeVisible();
+      if (variant === 'extension-at-matches')
+        await mkdir(
+          join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+          { recursive: true },
+        );
       await page
         .getByRole('button', {
           name: variant === 'does-not-match' ? 'Does not match' : 'Matches',
           exact: true,
         })
         .click();
+      if (variant === 'extension-at-matches') {
+        expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
+        expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+          endReason: 'platform-check',
+          canaryAcceptedAt: null,
+        });
+        return;
+      }
       expect(await result).toMatchObject({
         completed: variant === 'canary-five' ? 5 : 1,
         endReason: 'canary',
       });
+      if (variant === 'success') {
+        const run = (await store.browserJournal()).runs.at(-1)!;
+        const report = JSON.parse(
+          await readFile(
+            join(profile, `socialprune-readback-${run.runId}.json`),
+            'utf8',
+          ),
+        ) as {
+          extensionIdsBefore: string[];
+          extensionIdsAfter: string[];
+          extensionsDisabled: boolean;
+        };
+        expect(report).toMatchObject({
+          extensionIdsBefore: [preinstalledId],
+          extensionIdsAfter: [preinstalledId],
+          extensionsDisabled: true,
+        });
+      }
       if (variant === 'canary-five') {
         const sends = (await store.browserJournal()).attempts.filter(
           (attempt) => attempt.state === 'sending',

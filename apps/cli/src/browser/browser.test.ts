@@ -295,7 +295,7 @@ test('confirmation guards reject hostile decoys and replay without changing the 
   }
 });
 
-test('profile guard proves takeover refusal and extension rejection on generated decoy folders', async () => {
+test('profile guard proves takeover refusal and records extension IDs on generated decoy folders', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-profile-decoy-'));
   try {
     await writeFile(
@@ -314,6 +314,9 @@ test('profile guard proves takeover refusal and extension rejection on generated
       { recursive: true },
     );
     expect((await profileSnapshot(profile)).extensions).toBe(1);
+    expect((await profileSnapshot(profile)).extensionIds).toEqual([
+      'generated-extension',
+    ]);
     expect(await readFile(join(directory, 'existing.txt'), 'utf8')).toBe(
       'Generated ordinary profile',
     );

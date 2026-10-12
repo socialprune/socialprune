@@ -15,6 +15,8 @@ import {
   changedProfileFiles,
   profileSnapshot,
   validateProfile,
+  extensionsChanged,
+  writeExtensionReport,
 } from './profile.ts';
 import type { BrowserDriver } from './x/driver.ts';
 import { productionDriver } from './x/driver.ts';
@@ -98,7 +100,6 @@ export async function runWithDependencies(
 ) {
   await validateProfile(options.profile);
   const before = await profileSnapshot(options.profile);
-  if (before.extensions) throw new CliError('PROFILE_INVALID');
   const mode = options.verify ? 'verify' : 'delete';
   const run: BrowserRun = {
     runId: crypto.randomUUID(),
@@ -119,7 +120,9 @@ export async function runWithDependencies(
     {
       phase: 'start',
       warning: summary.warning,
-      profileWarning: profileWarning(options.plan.handle),
+      profileWarning:
+        profileWarning(options.plan.handle) +
+        ' Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile.',
       planned: summary.planned,
       bulk: summary.bulk,
       estimateMs: summary.estimateMs,
@@ -161,6 +164,9 @@ export async function runWithDependencies(
       summary.warning + '\n' + profileWarning(options.plan.handle) + '\n',
     );
     options.notice(
+      'Extensions are disabled for this run. SocialPrune writes its own profile read-back JSON file with the before/after extension ID sets.\n',
+    );
+    options.notice(
       'Steps: check the signed-in account, open each planned post, use More/Delete/confirm or Undo repost, then read the profile back.\n',
     );
     const started = confirmation.wait('start');
@@ -198,12 +204,14 @@ export async function runWithDependencies(
     await writer.begin(run);
     began = true;
     checkStop();
+    if (extensionsChanged(before, await profileSnapshot(options.profile)))
+      throw new CliError('PLATFORM_CHECK');
     accountBefore = await browser.account();
     checkStop();
     if (accountBefore.toLowerCase() !== options.plan.handle.toLowerCase())
       throw new CliError('ACCOUNT_MISMATCH');
-    if ((await profileSnapshot(options.profile)).extensions)
-      throw new CliError('PROFILE_INVALID');
+    if (extensionsChanged(before, await profileSnapshot(options.profile)))
+      throw new CliError('PLATFORM_CHECK');
     const day = dateInZone(options.now(), options.plan.timeZone);
     let used = await dailyCount(
       options.store,
@@ -242,6 +250,8 @@ export async function runWithDependencies(
     const pace = dependencies.pace;
     const ready = async () => {
       checkStop();
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError('PLATFORM_CHECK');
       if (
         dateInZone(options.now(), options.plan.timeZone) !== day ||
         used >= pace.perDay
@@ -266,6 +276,8 @@ export async function runWithDependencies(
         run.endReason = 'daily-cap';
         return false;
       }
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError('PLATFORM_CHECK');
       previousStart = options.now().getTime();
       return true;
     };
@@ -354,6 +366,8 @@ export async function runWithDependencies(
         if (withdrawn) continue;
         await writer.pageOpen(run.runId, options.now().toISOString());
         const state = await browser.inspect(row.item.id.slice(2));
+        if (extensionsChanged(before, await profileSnapshot(options.profile)))
+          throw new CliError('PLATFORM_CHECK');
         used++;
         batch++;
         checkStop();
@@ -448,7 +462,7 @@ export async function runWithDependencies(
           unexpectedRequests: requests,
         };
         if (
-          after.extensions ||
+          extensionsChanged(before, after) ||
           (accountBefore && accountBefore !== accountAfter)
         ) {
           run.endReason = 'platform-check';
@@ -456,6 +470,16 @@ export async function runWithDependencies(
         }
         run.endedAt = options.now().toISOString();
         await writer.finish(run);
+        const report = await writeExtensionReport(
+          options.profile,
+          run.runId,
+          before,
+          after,
+          run.profileReport,
+        );
+        options.notice(
+          `Extensions disabled for this run. Before: ${JSON.stringify(before.extensionIds)}; after: ${JSON.stringify(after.extensionIds)}. Profile report: ${report}\n`,
+        );
         options.notice(
           `Profile read-back: ${run.profileReport.changedFiles.length} changed files; ${requests.length} unexpected request records. The website's own code may send side requests.\n`,
         );

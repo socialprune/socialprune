@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect } from '@playwright/test';
 import type { BrowserContext, Page, Response } from '@playwright/test';
@@ -178,7 +180,12 @@ base(
       );
       if (browserName === 'chromium')
         await page.screenshot({
-          path: 'C:/Users/denni/AppData/Local/Temp/kilo/phase2/originals-video-conversation.png',
+          // For a person to look at, like the web app's screen scripts.
+          path: join(
+            tmpdir(),
+            'socialprune-screens',
+            'originals-video-conversation.png',
+          ),
           fullPage: true,
           caret: 'initial',
         });

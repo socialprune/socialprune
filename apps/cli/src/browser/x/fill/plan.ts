@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import type { Original } from '@socialprune/core';
 import { CliError } from '../../../cli/errors.ts';
+import { finalNotice } from './final-notice.ts';
+import type { FinalNoticeCounts } from './final-notice.ts';
 export const FILL_WARNING = {
   en: "X's rules do not allow this kind of automation. X can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. This run only reads: it opens posts in your signed-in X window and keeps what X shows. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.",
   de: 'Die Regeln von X erlauben diese Art von Automatisierung nicht. X kann dein Konto dafür sperren oder einschränken, auch wenn SocialPrune langsam vorgeht und beim ersten Problem anhält. Dieser Lauf liest nur: Er öffnet Beiträge in deinem angemeldeten X-Fenster und speichert, was X anzeigt. SocialPrune verbirgt nicht, dass ein Programm in deinem Browser handelt. Nutze es nur für dein eigenes Konto und nur, wenn du das in Kauf nimmst.',
@@ -22,11 +24,15 @@ export interface FillPlan {
   rows: FillRow[];
   canary: boolean;
   bodyShapes: Record<string, string[]>;
+  finalNotices: FinalNoticeCounts;
 }
-export function reasons(value: Original): FillReason[] {
+export function reasons(value: Original, include = false): FillReason[] {
   if (!value.anonymous || value.anonymous.status === 'failed') return [];
   return [
-    ...(['not-found', 'tombstone'].includes(value.anonymous.status)
+    ...(['not-found', 'tombstone'].includes(value.anonymous.status) &&
+    (include ||
+      value.anonymous.status !== 'tombstone' ||
+      finalNotice(value.raw) === null)
       ? ['unseen' as const]
       : []),
     ...(value.textCompleteness === 'truncated' ? ['long-text' as const] : []),
@@ -84,12 +90,25 @@ export async function planFill(
       if (item.platform === 'x' && item.account.key === accountKey)
         own.add(item.id.slice(2));
     const rows: FillRow[] = [];
+    const finalNotices: FinalNoticeCounts = {
+      deleted: 0,
+      suspended: 0,
+      accountGone: 0,
+    };
     for (const [id, reference] of references) {
       if (own.has(id)) continue;
       const original = originals.get(id);
       if (!original) continue;
-      const why = reasons(original);
-      if (!why.length || (original.signedIn && !include.has(id))) continue;
+      if (original.signedIn && !include.has(id)) continue;
+      const why = reasons(original, include.has(id));
+      if (!why.length) {
+        const notice =
+          original.anonymous?.status === 'tombstone'
+            ? finalNotice(original.raw)
+            : null;
+        if (notice !== null && !include.has(id)) finalNotices[notice]++;
+        continue;
+      }
       rows.push({
         id,
         reasons: why,
@@ -136,6 +155,7 @@ export async function planFill(
       hash,
       canary: !accepted || invalidated,
       bodyShapes: accepted?.bodyShapes ?? {},
+      finalNotices,
     };
   });
 }
@@ -147,6 +167,7 @@ export function fillSummary(plan: FillPlan, lang: 'en' | 'de' = 'en') {
     dryRun: true,
     planned: plan.rows.length,
     reasons: counts,
+    finalNotices: plan.finalNotices,
     unseenOnly: plan.rows.filter(
       (row) => row.reasons.length === 1 && row.reasons[0] === 'unseen',
     ).length,

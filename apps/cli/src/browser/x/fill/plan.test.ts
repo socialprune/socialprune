@@ -17,7 +17,276 @@ import { SQLiteStore } from '../../../workspace/sqlite-store.ts';
 import { planDeletion } from '../../plan.ts';
 import { networkRecorder } from '../../../cli/test/network-recorder.ts';
 import { FILL_PACE } from './run.ts';
+import { finalNotice, finalNoticeText } from './final-notice.ts';
 const at = FIXTURE.now;
+
+// Public X notice wording, not a real export. Observed on 2026-10-12:
+// https://github.com/prinsss/twitter-web-exporter/blob/ddf2b0c823680b904daae166f3eb05b81950ce7e/src/types/tweet.ts#L44-L47
+const noticeFixture = {
+  rows: [
+    { id: '910', text: 'This Post was deleted by the Post author. Learn more' },
+    { id: '911', text: 'This Post is from a suspended account. Learn more' },
+    {
+      id: '912',
+      text: 'This Post is from an account that no longer exists. Learn more',
+    },
+    {
+      id: '913',
+      text: 'You’re unable to view this Post because this account owner limits who can view their Posts. Learn more',
+    },
+    { id: '914', text: '' },
+    { id: '915', text: undefined },
+  ],
+  planned: ['915', '914', '913'],
+  included: ['915', '914', '913', '912', '911', '910'],
+  finalNotices: { deleted: 1, suspended: 1, accountGone: 1 },
+};
+
+function noticeWorkspace() {
+  const data = fixtureWorkspace();
+  data.items.forEach((item, index) => {
+    item.reference.replyToId = noticeFixture.rows[index]!.id;
+  });
+  data.originals = noticeFixture.rows.map(({ id, text }) =>
+    migrateOriginal({
+      id,
+      status: 'tombstone',
+      fetchedAt: at,
+      text: null,
+      authorName: null,
+      authorHandle: null,
+      photos: [],
+      quotedId: null,
+      parentId: null,
+      raw: {
+        __typename: 'TweetTombstone',
+        tombstone: { text: text === undefined ? {} : { text } },
+      },
+      textCompleteness: 'unknown',
+      video: null,
+    }),
+  );
+  data.counts.originals = data.originals.length;
+  return data;
+}
+
+test('final tombstone notices skip all three kinds, retain unknown/empty/missing, and --include forces each back', async () => {
+  const store = createMemoryStore(new MemoryStoreBacking(noticeWorkspace()));
+  try {
+    const plan = await planFill(store, FIXTURE.account.key);
+    expect(plan.rows.map((row) => row.id)).toEqual(noticeFixture.planned);
+    expect(fillSummary(plan)).toMatchObject({
+      planned: 3,
+      finalNotices: noticeFixture.finalNotices,
+      reasons: { unseen: 3, 'long-text': 0, media: 0 },
+    });
+    const included = await planFill(
+      store,
+      FIXTURE.account.key,
+      new Set(['910', '911', '912']),
+    );
+    expect(included.rows.map((row) => row.id)).toEqual(noticeFixture.included);
+    expect(fillSummary(included)).toMatchObject({
+      planned: 6,
+      finalNotices: { deleted: 0, suspended: 0, accountGone: 0 },
+    });
+    await store.write(async (tx) => {
+      const value = (await tx.originals.get('910'))!;
+      await tx.originals.put({
+        ...value,
+        raw: {
+          __typename: 'TweetTombstone',
+          tombstone: { text: { text: noticeFixture.rows[1]!.text } },
+        },
+      });
+    });
+    expect((await planFill(store, FIXTURE.account.key)).hash).toBe(plan.hash);
+  } finally {
+    await store.close();
+  }
+});
+
+test('final notice recognition matches whole public English sentences, case-insensitively, and never guesses a changed notice', () => {
+  for (const [index, expected] of [
+    'deleted',
+    'suspended',
+    'accountGone',
+  ].entries()) {
+    const text = noticeFixture.rows[index]!.text!;
+    const body = {
+      __typename: 'TweetTombstone',
+      tombstone: { text: { text } },
+    };
+    expect(finalNotice(body)).toBe(expected);
+    expect(
+      finalNotice({
+        ...body,
+        tombstone: { text: { text: text.toUpperCase() } },
+      }),
+    ).toBe(expected);
+    expect(
+      finalNotice({
+        ...body,
+        tombstone: { richText: { text: text.replace('. Learn more', '.') } },
+      }),
+    ).toBe(expected);
+    expect(
+      finalNotice({
+        ...body,
+        tombstone: { text: { text: text.replace('. Learn more', '') } },
+      }),
+    ).toBe(expected);
+    expect(
+      finalNotice({
+        ...body,
+        tombstone: { text: { text: `Generated example: ${text}` } },
+      }),
+    ).toBeNull();
+    expect(
+      finalNotice({
+        ...body,
+        tombstone: { text: { text: `${text} Try again later.` } },
+      }),
+    ).toBeNull();
+    expect(finalNotice({ ...body, __typename: 'Tweet', text })).toBeNull();
+  }
+  for (const text of [
+    '',
+    ' ',
+    'This Post is unavailable.',
+    'This post has not been deleted by the author.',
+    'This Post is from an account that is not suspended.',
+    'This Post is from an account that no longer exists temporarily.',
+    noticeFixture.rows[3]!.text,
+  ])
+    expect(
+      finalNotice({
+        __typename: 'TweetTombstone',
+        tombstone: { text: { text } },
+      }),
+    ).toBeNull();
+  for (const answer of [
+    null,
+    {},
+    { __typename: 'TweetTombstone' },
+    { __typename: 'TweetTombstone', tombstone: { text: { text: 42 } } },
+  ])
+    expect(finalNotice(answer)).toBeNull();
+});
+
+test('dry-run JSON and bilingual human reply count skipped notices without writes, and --include files restore them', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-final-notices-'));
+  const db = join(directory, 'socialprune.sqlite');
+  const store = await SQLiteStore.open(db, { initial: noticeWorkspace() });
+  await store.close();
+  const digest = async () =>
+    createHash('sha256')
+      .update(await readFile(db))
+      .digest('hex');
+  const before = await digest();
+  const recorder = networkRecorder();
+  try {
+    for (const lang of ['en', 'de'] as const) {
+      const stdout: string[] = [];
+      const context = createNodeContext(
+        { write: (text) => stdout.push(text) },
+        { write: () => {} },
+      );
+      const args = [
+        'originals',
+        'fill',
+        'x',
+        '--workspace',
+        directory,
+        '--account',
+        FIXTURE.account.key,
+        '--dry-run',
+        '--lang',
+        lang,
+      ];
+      expect(await executeCli([...args, '--json'], context)).toBe(0);
+      const envelope = JSON.parse(stdout.join('')) as {
+        data: {
+          planned: number;
+          finalNotices: typeof noticeFixture.finalNotices;
+        };
+      };
+      expect(envelope.data).toMatchObject({
+        planned: 3,
+        finalNotices: noticeFixture.finalNotices,
+      });
+      stdout.length = 0;
+      expect(await executeCli(args, context)).toBe(0);
+      expect(stdout.join('')).toContain(
+        finalNoticeText(noticeFixture.finalNotices, lang),
+      );
+      expect(stdout.join('')).not.toContain(noticeFixture.rows[0]!.text);
+    }
+    const includePath = join(directory, 'generated-include.txt');
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(includePath, '910\n911\n912\n');
+    const stdout: string[] = [];
+    expect(
+      await executeCli(
+        [
+          'originals',
+          'fill',
+          'x',
+          '--workspace',
+          directory,
+          '--account',
+          FIXTURE.account.key,
+          '--dry-run',
+          '--json',
+          '--include',
+          includePath,
+        ],
+        createNodeContext(
+          { write: (text) => stdout.push(text) },
+          { write: () => {} },
+        ),
+      ),
+    ).toBe(0);
+    const envelope = JSON.parse(stdout.join('')) as {
+      data: {
+        planned: number;
+        finalNotices: typeof noticeFixture.finalNotices;
+      };
+    };
+    expect(envelope.data).toMatchObject({
+      planned: 6,
+      finalNotices: { deleted: 0, suspended: 0, accountGone: 0 },
+    });
+    expect(recorder.calls).toEqual([]);
+    expect(await digest()).toBe(before);
+  } finally {
+    recorder.restore();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('only the latest anonymous tombstone suppresses unseen; other gaps and status changes remain planned', async () => {
+  const data = noticeWorkspace();
+  data.originals![0]!.textCompleteness = 'truncated';
+  data.originals![1]!.anonymous = { status: 'not-found', at };
+  const store = createMemoryStore(new MemoryStoreBacking(data));
+  try {
+    const plan = await planFill(store, FIXTURE.account.key);
+    expect(plan.rows.find((row) => row.id === '910')?.reasons).toEqual([
+      'long-text',
+    ]);
+    expect(plan.rows.find((row) => row.id === '911')?.reasons).toEqual([
+      'unseen',
+    ]);
+    expect(plan.finalNotices).toEqual({
+      deleted: 0,
+      suspended: 0,
+      accountGone: 1,
+    });
+  } finally {
+    await store.close();
+  }
+});
 test('fill-specific warning exactly matches ADR-029 in both languages before a person starts reading', async () => {
   const text = await readFile(
     fileURLToPath(

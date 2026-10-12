@@ -7,6 +7,7 @@ import { CliError } from '../cli/errors.ts';
 import { workspacePath, assertOutput } from '../workspace/files.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { planFill, fillSummary, fillList } from '../browser/x/fill/plan.ts';
+import { finalNoticeText } from '../browser/x/fill/final-notice.ts';
 export const originalsFillCommand = buildCommand({
   parameters: {
     flags: {
@@ -137,7 +138,7 @@ export const originalsFillCommand = buildCommand({
         }
         this.reply({
           data,
-          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${data.warning}\n${flags.list ? '' : text}`,
+          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${finalNoticeText(plan.finalNotices, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
         });
         return;
       }

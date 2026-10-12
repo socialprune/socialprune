@@ -197,10 +197,10 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Detection Pattern:** a handoff that gives the person a command the agent could run; a UI node closed without a screenshot or a person's look; a closure report that calls a screen finished on test evidence alone.
 **Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed one line for `.kilo/agents/workflow-orchestrator.md` (protected), "A user-facing node closes only after the person's steps are counted and the screens were looked at (LL-2026-10-007)"; until he approves it, the parent applies this before closing any UI node.
 **Related Lessons:** LL-2026-10-005 (write for the person in his words).
-**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done.
+**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done. Violated on 2026-10-12: `browser setup` was handed to him on fake-X evidence alone. It opened the sign-in page through the automation driver, so the window showed an unsupported `--no-sandbox` warning, X's sign-in did not continue and Google refused the browser as insecure. Nobody had looked at what that window shows a person. Corrected by starting the installed browser itself for sign-in, with no driver attached, and by checking the window's start flags before handing him the step again.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 0 times
+- Violated: 1 time
 
 ### [LL-2026-10-008] 2026-10-10 VERIFICATION: Tell the person something is on their screen only after seeing it arrive
 

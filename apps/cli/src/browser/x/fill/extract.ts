@@ -10,6 +10,7 @@ import { acceptShape } from './lock.ts';
 import type { ShapeLock } from './lock.ts';
 import { mediaURL } from '../../../originals/video.ts';
 import { z } from 'zod';
+import { failureToken } from './report.ts';
 const ProjectionSchema = z.strictObject({
   rest_id: OriginalIdSchema,
   text: z.string().max(1_000_000),
@@ -244,9 +245,14 @@ export function extract(
         continue;
       if (Array.isArray(content.items)) {
         for (const item of content.items) {
-          const result = object(
-            object(object(object(item).item).itemContent).tweet_results,
-          ).result;
+          const itemContent = object(object(object(item).item).itemContent);
+          if (
+            itemContent.cursorType !== undefined ||
+            itemContent.__typename === 'TimelineTimelineCursor' ||
+            itemContent.itemType === 'TimelineTimelineCursor'
+          )
+            continue;
+          const result = object(itemContent.tweet_results).result;
           let tweet = object(result);
           if (tweet.__typename === 'TweetWithVisibilityResults')
             tweet = object(tweet.tweet);
@@ -362,7 +368,13 @@ export function extract(
   } catch (error) {
     return {
       kind: 'shape-changed',
-      path: error instanceof Error ? error.message : 'shape',
+      path: failureToken(
+        error instanceof z.ZodError
+          ? error
+          : error instanceof Error
+            ? error.message
+            : error,
+      ),
     };
   }
 }

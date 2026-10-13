@@ -1,7 +1,20 @@
 import { object } from '@socialprune/core';
-export function structureReport(body: unknown): {
+import { z } from 'zod';
+
+export function failureToken(value: unknown): string {
+  if (value instanceof z.ZodError) return 'projection';
+  return typeof value === 'string' && /^[a-z-]{1,40}$/.test(value)
+    ? value
+    : 'other';
+}
+
+export function structureReport(
+  body: unknown,
+  failure?: unknown,
+): {
   paths: { path: string; type: string }[];
   entries: Record<string, number>;
+  failure?: string;
 } {
   const paths = new Map<string, string>(),
     entries: Record<string, number> = {};
@@ -30,5 +43,9 @@ export function structureReport(body: unknown): {
       }
   }
   walk(body, '');
-  return { paths: [...paths].map(([path, type]) => ({ path, type })), entries };
+  return {
+    paths: [...paths].map(([path, type]) => ({ path, type })),
+    entries,
+    ...(failure === undefined ? {} : { failure: failureToken(failure) }),
+  };
 }

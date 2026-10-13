@@ -542,7 +542,17 @@ export async function runFillWithDependencies(
           answer.body === null
             ? { kind: 'no-entry' as const }
             : extract(answer.body, row.id, lock);
-        if (answer.body !== null) reports.push(structureReport(answer.body));
+        if (answer.body !== null)
+          reports.push(
+            structureReport(
+              answer.body,
+              extracted.kind === 'shape-changed'
+                ? extracted.path
+                : extracted.kind === 'no-entry' && answer.state !== 'gone'
+                  ? 'no-entry'
+                  : undefined,
+            ),
+          );
         if (extracted.kind === 'shape-changed')
           throw new CliError('SHAPE_CHANGED');
         if (extracted.kind === 'no-entry' && answer.state !== 'gone')
@@ -854,21 +864,26 @@ export async function runFillWithDependencies(
     });
     options.notice(finalText + '\n');
     if (options.order && context) {
-      const local = context.pages()[0];
-      if (local && !local.isClosed())
-        await local
-          .waitForFunction(
-            "document.getElementById('result')?.textContent?.startsWith(document.documentElement.lang === 'de' ? 'Beendet:' : 'Ended:')",
-            undefined,
-            { timeout: 3000 },
-          )
-          .catch(() => {
-            options.notice(
-              options.lang === 'de'
-                ? 'Die Statusseite konnte den Endzustand nicht anzeigen; das Browserfenster wird trotzdem geschlossen.\n'
-                : 'The status page could not display the end state; the browser window will still close.\n',
-            );
-          });
+      try {
+        const origin = new URL(confirmation.url).origin;
+        const statusPage = context
+          .pages()
+          .find(
+            (value) =>
+              !value.isClosed() && new URL(value.url()).origin === origin,
+          );
+        if (!statusPage) throw new Error('Confirmation page is not open.');
+        await statusPage.bringToFront();
+        await statusPage
+          .getByText(finalText, { exact: true })
+          .waitFor({ state: 'visible', timeout: 3000 });
+      } catch {
+        options.notice(
+          options.lang === 'de'
+            ? 'Die Statusseite konnte den Endzustand nicht anzeigen; das Browserfenster wird trotzdem geschlossen.\n'
+            : 'The status page could not display the end state; the browser window will still close.\n',
+        );
+      }
     }
     try {
       if (context) await deps.close(context, Boolean(options.order));

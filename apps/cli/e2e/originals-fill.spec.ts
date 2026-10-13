@@ -22,6 +22,7 @@ import { startConfirmation } from '../src/browser/confirmation.ts';
 import { REVIEW_POLICY } from '../src/review/static.ts';
 import { readOrder } from '../src/browser/x/fill/order.ts';
 import { fileURLToPath } from 'node:url';
+import { moduleCursorAnswer } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
   'flag-account',
@@ -54,6 +55,10 @@ for (const variant of [
   'order-wrong-account',
   'order-stale',
   'order-stop',
+  'module-cursor',
+  'unknown-module',
+  'no-focal-entry',
+  'order-status-page',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -164,6 +169,7 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    let statusBroughtToFront = 0;
     let releaseHome: () => void = () => {};
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
@@ -200,7 +206,13 @@ for (const variant of [
         }
         if (variant === 'missing-id')
           delete (post as Partial<typeof post>).rest_id;
-        response.end(JSON.stringify(detailAnswer(post)));
+        const answer =
+          variant === 'module-cursor' || variant === 'unknown-module'
+            ? moduleCursorAnswer(id, variant === 'unknown-module')
+            : detailAnswer(post);
+        if (variant === 'no-focal-entry')
+          answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
+        response.end(JSON.stringify(answer));
         return;
       }
       const nav = `<button data-testid="SideNav_AccountSwitcher_Button">@${variant === 'flag-account-mismatch' ? DETAIL_FIXTURE.handle : FIXTURE.account.handle}</button>`;
@@ -285,7 +297,10 @@ for (const variant of [
           maxRunBytes: 20 * 1024 ** 3,
           include: new Set(),
           order,
-          lang: variant === 'german-ended' ? 'de' : 'en',
+          lang:
+            variant === 'german-ended' || variant === 'order-status-page'
+              ? 'de'
+              : 'en',
           now: () => new Date(now),
           notice: (text) => notices.push(text),
         },
@@ -329,6 +344,24 @@ for (const variant of [
               await context.pages()[0]!.evaluate(() => navigator.webdriver),
             ).toBe(true);
             await probe.detach();
+            if (variant === 'order-status-page') {
+              const actualPages = context.pages.bind(context);
+              const statusPage = actualPages()[0]!;
+              await statusPage.addInitScript(() => {
+                const violations: string[] = [];
+                Reflect.set(window, '__statusPageViolations', violations);
+                document.addEventListener('securitypolicyviolation', (event) =>
+                  violations.push(event.effectiveDirective),
+                );
+              });
+              const front = statusPage.bringToFront.bind(statusPage);
+              statusPage.bringToFront = async () => {
+                statusBroughtToFront++;
+                await front();
+              };
+              // Test-only page-order decoy: the foreground X tab is first.
+              context.pages = () => actualPages().reverse();
+            }
             return context;
           },
           async sleep(ms) {
@@ -338,8 +371,28 @@ for (const variant of [
           },
           async close() {
             if (ordered) {
-              const page = context!.pages()[0]!;
-              await expect(page.locator('#result')).toContainText('Ended:');
+              const page = context!
+                .pages()
+                .find(
+                  (value) =>
+                    new URL(value.url()).origin === 'http://127.0.0.1:4232',
+                )!;
+              if (variant === 'order-status-page') {
+                expect(statusBroughtToFront).toBe(1);
+                expect(context!.pages()[0]).not.toBe(page);
+                expect(
+                  await page.evaluate(
+                    () =>
+                      Reflect.get(window, '__statusPageViolations') as string[],
+                  ),
+                ).toEqual([]);
+                expect(notices.join('')).not.toContain(
+                  'Die Statusseite konnte den Endzustand nicht anzeigen',
+                );
+              }
+              await expect(page.locator('#result')).toContainText(
+                variant === 'order-status-page' ? 'Beendet:' : 'Ended:',
+              );
               await mkdir(join(tmpdir(), 'socialprune-screens'), {
                 recursive: true,
               });
@@ -386,7 +439,11 @@ for (const variant of [
             .some((page) => page.url().startsWith('http://127.0.0.1:4232')),
         )
         .toBe(true);
-      const page = context!.pages()[0]!;
+      const page = context!
+        .pages()
+        .find(
+          (value) => new URL(value.url()).origin === 'http://127.0.0.1:4232',
+        )!;
       if (ordered) {
         const screens = join(tmpdir(), 'socialprune-screens');
         await mkdir(screens, { recursive: true });
@@ -411,13 +468,17 @@ for (const variant of [
           return;
         }
         const outcome = await result;
-        if (variant === 'order-match') {
+        if (variant === 'order-match' || variant === 'order-status-page') {
           expect(outcome).toMatchObject({ completed: 1, endReason: 'canary' });
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
             startedBy: 'agent-on-order',
             acceptedBy: 'automatic-check',
             orderSha256: order!.sha256,
           });
+          if (variant === 'order-status-page')
+            expect(notices.join('')).not.toContain(
+              'Die Statusseite konnte den Endzustand nicht anzeigen',
+            );
         } else {
           expect(outcome).toMatchObject({ code: 'CANARY_MISMATCH' });
           expect(
@@ -547,6 +608,8 @@ for (const variant of [
           '429',
           'never',
           'unexpected',
+          'unknown-module',
+          'no-focal-entry',
         ].includes(variant)
       ) {
         await expect
@@ -556,12 +619,37 @@ for (const variant of [
           .toBe(true);
         expect(await result).toMatchObject({
           code:
-            variant === 'missing-id'
+            variant === 'missing-id' ||
+            variant === 'unknown-module' ||
+            variant === 'no-focal-entry'
               ? 'SHAPE_CHANGED'
               : variant === 'unexpected'
                 ? 'UNEXPECTED_ACTION'
                 : 'PLATFORM_CHECK',
         });
+        if (
+          variant === 'missing-id' ||
+          variant === 'unknown-module' ||
+          variant === 'no-focal-entry'
+        ) {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const report = JSON.parse(
+            await readFile(
+              join(directory, 'originals', `canary-${run.runId}.json`),
+              'utf8',
+            ),
+          ) as { failure?: string }[];
+          expect(report[0]?.failure).toBe(
+            variant === 'missing-id'
+              ? 'other'
+              : variant === 'unknown-module'
+                ? 'module-result-type'
+                : 'no-entry',
+          );
+          expect(JSON.stringify(report)).not.toContain('Generated secret');
+          expect(JSON.stringify(report)).not.toContain('@private_decoy');
+          expect(JSON.stringify(report)).not.toContain('12345678901234567890');
+        }
         return;
       }
       await expect(
@@ -669,6 +757,16 @@ for (const variant of [
         expect(original?.signedIn?.status).toBe(variant);
         expect(original?.text).toBe('Generated beginning');
       } else expect(original?.text).toBe(DETAIL_FIXTURE.longText);
+      if (variant === 'module-cursor') {
+        expect(original?.parentId).toBe('902');
+        expect(original?.chainAbove).toBe('complete');
+        expect(
+          (await store.read((tx) => tx.originals.get('902')))?.parentId,
+        ).toBe('901');
+        expect((await store.read((tx) => tx.originals.get('901')))?.text).toBe(
+          DETAIL_FIXTURE.text,
+        );
+      }
       for (const secret of DETAIL_FIXTURE.forbidden)
         expect(JSON.stringify(original)).not.toContain(secret);
       if (variant === 'does-not-match')

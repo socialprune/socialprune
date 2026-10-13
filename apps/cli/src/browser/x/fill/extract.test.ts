@@ -1,7 +1,8 @@
 import { test, expect } from 'vitest';
 import { extract } from './extract.ts';
 import { isPostAnswer, unexpectedAction } from './read.ts';
-import { structureReport } from './report.ts';
+import { structureReport, failureToken } from './report.ts';
+import { z } from 'zod';
 import {
   DETAIL_FIXTURE,
   detailPost,
@@ -261,4 +262,142 @@ test('four photos and mixed GIF/HLS variants keep filenames metadata, while a fi
     'video',
   ]);
   expect(value.post.media[2]?.status).toBe('hls-only');
+});
+
+test.each([
+  {
+    cursorType: 'ShowMore',
+    value: 'generated-cursor-value',
+    displayTreatment: { actionText: 'Generated show more' },
+  },
+  { __typename: 'TimelineTimelineCursor', value: 'generated-cursor-value' },
+  { itemType: 'TimelineTimelineCursor', value: 'generated-cursor-value' },
+])(
+  'module cursor items are skipped between generated parents without changing focal projection: %j',
+  (cursor) => {
+    const root = detailPost('901');
+    const parent = {
+      ...detailPost('902'),
+      legacy: { ...detailPost('902').legacy, in_reply_to_status_id_str: '901' },
+    };
+    const focal = {
+      ...detailPost(),
+      legacy: { ...detailPost().legacy, in_reply_to_status_id_str: '902' },
+    };
+    const body = detailAnswer(focal);
+    const moduleEntry = {
+      entryId: 'conversationthread-generated',
+      content: {
+        items: [
+          {
+            entryId: 'tweet-901',
+            item: { itemContent: { tweet_results: { result: root } } },
+          },
+          {
+            entryId: 'cursor-show-more-generated',
+            item: { itemContent: cursor },
+          },
+          {
+            entryId: 'tweet-902',
+            item: { itemContent: { tweet_results: { result: parent } } },
+          },
+        ],
+      },
+    };
+    const originalEntries =
+      body.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries;
+    const entries: unknown[] = [moduleEntry, ...originalEntries];
+    const answer = {
+      data: {
+        threaded_conversation_with_injections_v2: {
+          instructions: [{ type: 'TimelineAddEntries', entries }],
+        },
+      },
+    };
+    const result = extract(answer, DETAIL_FIXTURE.id, { instruction: null });
+    expect(result.kind).toBe('read');
+    if (result.kind !== 'read')
+      throw new Error('Generated focal post was not read.');
+    expect(result.post.text).toBe(DETAIL_FIXTURE.text);
+    expect(result.above.map((post) => post.id)).toEqual(['901', '902']);
+    expect(result.chainAbove).toBe('complete');
+    expect(JSON.stringify(result)).not.toContain('generated-cursor-value');
+    expect(JSON.stringify(result)).not.toContain('Generated show more');
+  },
+);
+
+test('an unknown non-cursor module item still fails closed instead of being discarded', () => {
+  const normal = detailAnswer();
+  const entries: unknown[] = [
+    {
+      entryId: 'conversationthread-generated',
+      content: {
+        items: [
+          {
+            entryId: 'generated-unknown',
+            item: {
+              itemContent: {
+                __typename: 'GeneratedUnknownModule',
+                itemType: 'GeneratedUnknown',
+                value: 'Generated private value',
+              },
+            },
+          },
+        ],
+      },
+    },
+    ...normal.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries,
+  ];
+  expect(
+    extract(
+      {
+        data: {
+          threaded_conversation_with_injections_v2: {
+            instructions: [{ type: 'TimelineAddEntries', entries }],
+          },
+        },
+      },
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    ),
+  ).toMatchObject({ kind: 'shape-changed', path: 'module-result-type' });
+});
+
+test('shape-failure report tokens reject decoy values and map projection errors to a fixed token', () => {
+  const decoy = 'Generated secret @private_decoy 12345678901234567890';
+  expect(failureToken('module-result-type')).toBe('module-result-type');
+  expect(failureToken('no-entry')).toBe('no-entry');
+  for (const value of [
+    decoy,
+    new Error(decoy),
+    'REST_ID',
+    'rest_id',
+    'x'.repeat(41),
+    '',
+    null,
+    {},
+    910,
+  ])
+    expect(failureToken(value)).toBe('other');
+  const parsed = z
+    .strictObject({ count: z.number() })
+    .safeParse({ count: decoy });
+  if (parsed.success)
+    throw new Error('Generated projection decoy unexpectedly passed.');
+  expect(failureToken(parsed.error)).toBe('projection');
+  const report = structureReport(detailAnswer(), decoy);
+  expect(report).toMatchObject({ failure: 'other' });
+  expect(JSON.stringify(report)).not.toContain(decoy);
+  for (const value of [
+    DETAIL_FIXTURE.id,
+    DETAIL_FIXTURE.text,
+    DETAIL_FIXTURE.handle,
+    ...DETAIL_FIXTURE.forbidden,
+  ])
+    expect(JSON.stringify(report)).not.toContain(value);
+  expect(structureReport(detailAnswer(), 'no-entry')).toMatchObject({
+    failure: 'no-entry',
+  });
 });

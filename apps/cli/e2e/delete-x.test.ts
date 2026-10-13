@@ -97,6 +97,7 @@ async function harness(
   fake.setHandle(FIXTURE.account.handle);
   fake.setLanguage(false);
   fake.setAccessibleOnly(false);
+  fake.renderOptions({});
   const plan = await planDeletion(store, workspace.items[0]!.account.key);
   let started!: () => void;
   let shown = new Promise<void>((resolve) => {
@@ -857,7 +858,7 @@ test('person Stop and account mismatch never allow the next entry', async () => 
   }
 });
 
-test('foreign-origin request decoy trips the host guard and never reaches its server', async () => {
+test('foreign-origin GET and POST are aborted and counted without stopping a planned delete', async () => {
   const { createServer } = await import('node:http');
   let hits = 0;
   const decoy = createServer((_request, response) => {
@@ -875,12 +876,67 @@ test('foreign-origin request decoy trips the host guard and never reaches its se
       (error) => error as unknown,
     );
     await h.click('Start');
-    expect(await running).toMatchObject({ code: 'PLATFORM_CHECK' });
+    await h.click('Continue');
+    expect(await running).toMatchObject({ completed: 1, endReason: 'done' });
     expect(hits).toBe(0);
-    expect(fake.requests.filter((r) => r.method === 'POST')).toEqual([]);
+    expect(fake.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'profile', `socialprune-readback-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { abortedHosts: Record<string, number> };
+    expect(report.abortedHosts['127.0.0.1:4239']).toBe(2);
   } finally {
     await h.close();
     await new Promise<void>((resolve) => decoy.close(() => resolve()));
+  }
+});
+test('script-rendered account navigation and fourteen articles delete only the focal post and read accountAfter without revisiting home', async () => {
+  const h = await harness(['1001']);
+  fake.renderOptions({ navDelay: 100, articleCount: 14 });
+  try {
+    const result = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    await h.click('Start');
+    await expect
+      .poll(
+        async () => (await h.store.browserJournal()).attempts.at(-1)?.state,
+        { timeout: 10000 },
+      )
+      .toBe('deleted');
+    await h.click('Continue');
+    expect(await result).toMatchObject({ completed: 1, endReason: 'done' });
+    expect(
+      fake.requests
+        .filter((request) => request.method === 'POST')
+        .map((request) => request.id),
+    ).toEqual(['1001']);
+    expect(
+      fake.requests.filter((request) => request.path === '/home'),
+    ).toHaveLength(1);
+  } finally {
+    await h.close();
+  }
+});
+test('an unsolicited allowed-origin mutation still stops delete before any delete click', async () => {
+  const h = await harness(['1001']);
+  fake.variants.set('1001', 'mutation');
+  try {
+    const result = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    await h.click('Start');
+    expect(await result).toMatchObject({ code: 'UNEXPECTED_ACTION' });
+    expect(
+      fake.requests.filter((request) => request.method === 'POST'),
+    ).toEqual([]);
+  } finally {
+    await h.close();
   }
 });
 

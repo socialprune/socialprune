@@ -44,6 +44,9 @@ export interface ProfileReport {
   unexpectedRequests: BrowserRequest[];
 }
 export interface BrowserRun {
+  startedBy?: 'agent-on-order';
+  orderSha256?: string;
+  acceptedBy?: 'automatic-check';
   pageOpens?: number;
   lastPageOpenedAt?: string | null;
   canaryAcceptedAt?: string | null;
@@ -89,6 +92,11 @@ CREATE TABLE IF NOT EXISTS browser_requests (
   seq INTEGER PRIMARY KEY, run_id TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)),
   FOREIGN KEY(run_id) REFERENCES browser_runs(run_id)
 ) STRICT;
+CREATE TABLE IF NOT EXISTS browser_order_audit (
+  run_id TEXT PRIMARY KEY REFERENCES browser_runs(run_id),
+  started_by TEXT NOT NULL CHECK(started_by='agent-on-order'), order_sha256 TEXT NOT NULL,
+  accepted_by TEXT CHECK(accepted_by='automatic-check'), data TEXT NOT NULL CHECK(json_valid(data))
+) STRICT;
 CREATE TRIGGER IF NOT EXISTS browser_runs_finish_once BEFORE UPDATE ON browser_runs
 WHEN (OLD.ended_at IS NOT NULL AND NOT (json_extract(OLD.data,'$.mode')='fill' AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1)) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
 OR json_extract(NEW.data,'$.startedAt') != json_extract(OLD.data,'$.startedAt')
@@ -123,7 +131,25 @@ export function readJournal(db: DatabaseSync): {
   return {
     runs: decode<BrowserRun>(
       db.prepare('SELECT data FROM browser_runs ORDER BY rowid').all(),
-    ),
+    ).map((run) => {
+      if (
+        !db
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE type='table' AND name='browser_order_audit'",
+          )
+          .get()
+      )
+        return run;
+      const row = db
+        .prepare('SELECT data FROM browser_order_audit WHERE run_id=?')
+        .get(run.runId);
+      return row
+        ? {
+            ...run,
+            ...(JSON.parse(String(row.data)) as Record<string, unknown>),
+          }
+        : run;
+    }),
     attempts: decode<BrowserAttempt>(
       db.prepare('SELECT data FROM browser_attempts ORDER BY seq').all(),
     ),
@@ -429,6 +455,122 @@ export class BrowserOutcomeWriter {
       this.db
         .prepare('INSERT INTO browser_requests(run_id,data) VALUES(?,?)')
         .run(runId, JSON.stringify({ ...record, runId }));
+      await Promise.resolve();
+    });
+  }
+  async recordOrder(runId: string, sha256: string): Promise<void> {
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new CliError('ORDER_INVALID');
+    await this.transact(async () => {
+      this.db.exec(BROWSER_JOURNAL_LAYOUT);
+      const run = this.db
+        .prepare('SELECT data FROM browser_runs WHERE run_id=?')
+        .get(runId);
+      if (
+        !run ||
+        (JSON.parse(String(run.data)) as { mode: string }).mode !== 'fill'
+      )
+        throw new CliError('ORDER_INVALID');
+      this.db
+        .prepare('INSERT INTO browser_order_audit VALUES(?,?,?,NULL,?)')
+        .run(
+          runId,
+          'agent-on-order',
+          sha256,
+          JSON.stringify({ startedBy: 'agent-on-order', orderSha256: sha256 }),
+        );
+      await Promise.resolve();
+    });
+  }
+  async recordAutomaticAcceptance(
+    runId: string,
+    at: string,
+    counts: readonly {
+      stored: { textLength: number; photos: number; videos: number };
+      shown: { textLength: number; photos: number; videos: number };
+      matches: boolean;
+    }[],
+  ): Promise<void> {
+    await this.transact(async (tx) => {
+      const run = this.db
+        .prepare('SELECT data FROM browser_runs WHERE run_id=?')
+        .get(runId);
+      const value = run
+        ? BrowserRunSchema.parse(JSON.parse(String(run.data)))
+        : null;
+      const attempts = readJournal(this.db).attempts.filter(
+          (attempt) => attempt.runId === runId,
+        ),
+        sending = attempts.filter((attempt) => attempt.state === 'sending');
+      if (
+        !value ||
+        value.mode !== 'fill' ||
+        value.endReason !== 'canary' ||
+        value.canaryAcceptedAt ||
+        !value.endedAt ||
+        Date.parse(at) < Date.parse(value.endedAt) ||
+        sending.length < 1 ||
+        sending.length > 5 ||
+        counts.length !== sending.length ||
+        counts.some(
+          (count) =>
+            !count.matches ||
+            JSON.stringify(count.stored) !== JSON.stringify(count.shown),
+        ) ||
+        sending.some(
+          (send) =>
+            !attempts.some(
+              (attempt) =>
+                attempt.settles === send.attemptId &&
+                ['read', 'not-found', 'tombstone', 'unavailable'].includes(
+                  attempt.state,
+                ),
+            ),
+        )
+      )
+        throw new CliError('CANARY_MISMATCH');
+      const row = this.db
+        .prepare('SELECT data FROM browser_order_audit WHERE run_id=?')
+        .get(runId);
+      if (!row) throw new CliError('ORDER_INVALID');
+      this.db
+        .prepare('UPDATE browser_runs SET data=? WHERE run_id=?')
+        .run(JSON.stringify({ ...value, canaryAcceptedAt: at }), runId);
+      this.db
+        .prepare(
+          'UPDATE browser_order_audit SET accepted_by=?,data=? WHERE run_id=? AND accepted_by IS NULL',
+        )
+        .run(
+          'automatic-check',
+          JSON.stringify({
+            ...(JSON.parse(String(row.data)) as Record<string, unknown>),
+            acceptedBy: 'automatic-check',
+            canaryCounts: counts,
+          }),
+          runId,
+        );
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
+      await Promise.resolve();
+    });
+  }
+  async recordCanaryMismatch(runId: string, counts: unknown): Promise<void> {
+    await this.transact(async () => {
+      const row = this.db
+        .prepare('SELECT data FROM browser_order_audit WHERE run_id=?')
+        .get(runId);
+      if (!row) throw new CliError('ORDER_INVALID');
+      this.db
+        .prepare(
+          'UPDATE browser_order_audit SET data=? WHERE run_id=? AND accepted_by IS NULL',
+        )
+        .run(
+          JSON.stringify({
+            ...(JSON.parse(String(row.data)) as Record<string, unknown>),
+            displayEndReason: 'canary-mismatch',
+            canaryCounts: counts,
+          }),
+          runId,
+        );
       await Promise.resolve();
     });
   }

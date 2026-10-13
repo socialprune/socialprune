@@ -20,6 +20,7 @@ import { SyndicationClient } from '../src/originals/syndication.ts';
 import { CliError } from '../src/cli/errors.ts';
 import { startConfirmation } from '../src/browser/confirmation.ts';
 import { REVIEW_POLICY } from '../src/review/static.ts';
+import { readOrder } from '../src/browser/x/fill/order.ts';
 import { fileURLToPath } from 'node:url';
 for (const variant of [
   'success',
@@ -44,6 +45,15 @@ for (const variant of [
   'tombstone',
   'removed',
   'german-ended',
+  'order-match',
+  'order-text-mismatch',
+  'order-media-mismatch',
+  'delayed-many',
+  'external-aborted',
+  'order-wrong-scope',
+  'order-wrong-account',
+  'order-stale',
+  'order-stop',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -154,6 +164,7 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    let releaseHome: () => void = () => {};
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
@@ -192,9 +203,19 @@ for (const variant of [
         response.end(JSON.stringify(detailAnswer(post)));
         return;
       }
-      const account = `<button data-testid="SideNav_AccountSwitcher_Button">@${variant === 'flag-account-mismatch' ? DETAIL_FIXTURE.handle : FIXTURE.account.handle}</button>`;
+      const nav = `<button data-testid="SideNav_AccountSwitcher_Button">@${variant === 'flag-account-mismatch' ? DETAIL_FIXTURE.handle : FIXTURE.account.handle}</button>`;
+      const account =
+        variant === 'delayed-many'
+          ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},100)</script>`
+          : nav;
       if (pathname === '/home') {
-        response.end(account);
+        if (variant === 'order-stop') {
+          releaseHome = () => response.end(account);
+          return;
+        }
+        if (variant === 'order-match')
+          setTimeout(() => response.end(account), 500);
+        else response.end(account);
         return;
       }
       if (['login', 'challenge', 'limit', 'german-ended'].includes(variant)) {
@@ -204,7 +225,7 @@ for (const variant of [
         return;
       }
       response.end(
-        `${account}${variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a></article>`}<script>${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
+        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div>' : ''}</article>`}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
     });
     await new Promise<void>((resolve) =>
@@ -217,6 +238,38 @@ for (const variant of [
         plan.handle = FIXTURE.account.handle;
       }
       let now = Date.parse(FIXTURE.now);
+      const ordered = variant.startsWith('order-');
+      let order: Awaited<ReturnType<typeof readOrder>> | undefined;
+      if (ordered) {
+        const file = join(directory, 'generated-order.json');
+        await writeFile(
+          file,
+          JSON.stringify({
+            scope: 'originals-fill-x',
+            account: FIXTURE.account.handle,
+            givenAt: FIXTURE.now,
+            words: 'Read these generated originals in my dedicated profile.',
+            maxPages: 1,
+          }),
+        );
+        order = await readOrder(
+          file,
+          FIXTURE.account.handle,
+          plan.hash,
+          plan.hash,
+        );
+        if (variant === 'order-wrong-scope')
+          order = {
+            ...order,
+            value: { ...order.value, scope: 'delete-x' as 'originals-fill-x' },
+          };
+        if (variant === 'order-wrong-account')
+          order = {
+            ...order,
+            value: { ...order.value, account: 'foreign_account' },
+          };
+        if (variant === 'order-stale') plan.hash = 'b'.repeat(64);
+      }
       const waits: number[] = [];
       const result = runFillWithDependencies(
         {
@@ -231,6 +284,7 @@ for (const variant of [
           maxVideoBytes: 1024 ** 3,
           maxRunBytes: 20 * 1024 ** 3,
           include: new Set(),
+          order,
           lang: variant === 'german-ended' ? 'de' : 'en',
           now: () => new Date(now),
           notice: (text) => notices.push(text),
@@ -283,6 +337,24 @@ for (const variant of [
             now += ms;
           },
           async close() {
+            if (ordered) {
+              const page = context!.pages()[0]!;
+              await expect(page.locator('#result')).toContainText('Ended:');
+              await mkdir(join(tmpdir(), 'socialprune-screens'), {
+                recursive: true,
+              });
+              if (variant === 'order-match')
+                await page.screenshot({
+                  path: join(
+                    tmpdir(),
+                    'socialprune-screens',
+                    'confirmation-order-ended.png',
+                  ),
+                  fullPage: true,
+                  caret: 'initial',
+                });
+              await context!.close();
+            }
             if (variant === 'german-ended')
               await new Promise<void>((resolve) =>
                 context!.once('close', () => resolve()),
@@ -294,6 +366,19 @@ for (const variant of [
         (error) => error as CliError,
       );
       running = result;
+      if (
+        ['order-wrong-scope', 'order-wrong-account', 'order-stale'].includes(
+          variant,
+        )
+      ) {
+        expect(await result).toMatchObject({
+          code: variant === 'order-stale' ? 'STALE_PLAN' : 'ORDER_INVALID',
+        });
+        expect(context).toBeUndefined();
+        expect(requests).toEqual([]);
+        expect((await store.browserJournal()).runs).toEqual([]);
+        return;
+      }
       await expect
         .poll(() =>
           context
@@ -302,6 +387,46 @@ for (const variant of [
         )
         .toBe(true);
       const page = context!.pages()[0]!;
+      if (ordered) {
+        const screens = join(tmpdir(), 'socialprune-screens');
+        await mkdir(screens, { recursive: true });
+        await expect(page.locator('#start')).toBeHidden();
+        await expect(page.locator('#stop')).toBeVisible();
+        if (variant === 'order-match')
+          await page.screenshot({
+            path: join(screens, 'confirmation-order-start.png'),
+            fullPage: true,
+            caret: 'initial',
+          });
+        if (variant === 'order-stop') {
+          await expect.poll(() => requests.includes('/home')).toBe(true);
+          await page.locator('#stop').click();
+          releaseHome();
+          expect(await result).toMatchObject({ code: 'CANCELLED' });
+          expect(
+            (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt ??
+              null,
+          ).toBeNull();
+          return;
+        }
+        const outcome = await result;
+        if (variant === 'order-match') {
+          expect(outcome).toMatchObject({ completed: 1, endReason: 'canary' });
+          expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+            startedBy: 'agent-on-order',
+            acceptedBy: 'automatic-check',
+            orderSha256: order!.sha256,
+          });
+        } else {
+          expect(outcome).toMatchObject({ code: 'CANARY_MISMATCH' });
+          expect(
+            (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
+          ).toBeNull();
+        }
+        expect(context!.pages()).toHaveLength(0);
+        expect(requests.filter((path) => path === '/home')).toHaveLength(1);
+        return;
+      }
       if (variant === 'german-ended') {
         await expect(page.locator('html')).toHaveAttribute('lang', 'de');
         await expect(page.locator('#continue')).toHaveText('Weiter');
@@ -495,6 +620,18 @@ for (const variant of [
           extensionsDisabled: true,
         });
       }
+      if (variant === 'external-aborted') {
+        const run = (await store.browserJournal()).runs.at(-1)!;
+        const report = JSON.parse(
+          await readFile(
+            join(profile, `socialprune-readback-${run.runId}.json`),
+            'utf8',
+          ),
+        ) as { abortedHosts: Record<string, number> };
+        expect(report.abortedHosts['127.0.0.1:4239']).toBe(1);
+      }
+      if (variant === 'delayed-many')
+        expect(requests.filter((path) => path === '/home')).toHaveLength(1);
       if (variant === 'removed') {
         const run = (await store.browserJournal()).runs.at(-1)!;
         const report = JSON.parse(
@@ -542,9 +679,10 @@ for (const variant of [
           (await store.browserJournal()).runs[0]?.canaryAcceptedAt,
         ).not.toBeNull();
     } finally {
+      releaseHome();
       abort.abort();
       await context?.close();
-      expect(await profileInUse(profile)).toBe(false);
+      await expect.poll(() => profileInUse(profile)).toBe(false);
       await running;
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -149,6 +149,7 @@ export interface ExtensionProfileReport {
   extensionIdsRemoved: string[];
   extensionIdsAdded: string[];
   journalReport: unknown;
+  abortedHosts?: Record<string, number>;
 }
 export async function writeExtensionReport(
   profile: string,
@@ -156,6 +157,7 @@ export async function writeExtensionReport(
   before: ProfileSnapshot,
   after: ProfileSnapshot,
   journalReport: unknown,
+  abortedHosts: Record<string, number> = {},
 ): Promise<string> {
   if (!/^[A-Za-z0-9-]{1,128}$/.test(runId))
     throw new CliError('PROFILE_INVALID');
@@ -173,6 +175,7 @@ export async function writeExtensionReport(
       (id) => !before.extensionIds.includes(id),
     ),
     journalReport,
+    abortedHosts,
   };
   const handle = await open(path, 'wx');
   try {

@@ -44,6 +44,12 @@ export const originalsFillCommand = buildCommand({
         optional: true,
         brief: 'Dedicated profile',
       },
+      order: {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief: "Person's written order for originals-fill-x, never deletion",
+      },
       plan: {
         kind: 'parsed',
         parse: String,
@@ -84,7 +90,7 @@ export const originalsFillCommand = buildCommand({
   },
   docs: {
     brief:
-      'Read missing original content in your signed-in X window; agents may use only --dry-run',
+      'Read missing original content in your signed-in X window; an agent needs your written --order for a run',
   },
   async func(
     this: CommandRunContext,
@@ -97,6 +103,7 @@ export const originalsFillCommand = buildCommand({
       include?: string;
       list?: string;
       profile?: string;
+      order?: string;
       plan?: string;
       limit?: string;
       'max-video-mb'?: string;
@@ -107,7 +114,7 @@ export const originalsFillCommand = buildCommand({
   ) {
     const flagHandle = parseHandle(flags.handle);
     if (flags.json && flags.list) throw new CliError('INVALID_ARGUMENTS');
-    if (!flags.dryRun && (flags.json || !this.stdoutIsTerminal))
+    if (!flags.dryRun && !flags.order && (flags.json || !this.stdoutIsTerminal))
       throw new CliError('NOT_INTERACTIVE');
     const integer = (
       value: string | undefined,
@@ -162,6 +169,16 @@ export const originalsFillCommand = buildCommand({
       if (!accountName.handle) throw new CliError('ACCOUNT_NAME_MISSING');
       if (!flags.profile || flags.plan !== plan.hash)
         throw new CliError('STALE_PLAN');
+      const order = flags.order
+        ? await import('../browser/x/fill/order.ts').then((module) =>
+            module.readOrder(
+              flags.order!,
+              accountName.handle,
+              flags.plan!,
+              plan.hash,
+            ),
+          )
+        : undefined;
       const { validateProfile, installedBrowser } =
         await import('../browser/profile.ts');
       await validateProfile(flags.profile);
@@ -198,7 +215,8 @@ export const originalsFillCommand = buildCommand({
         list,
         workspace: flags.workspace,
         signal: this.signal,
-        limit,
+        limit: Math.min(limit, order?.value.maxPages ?? 200),
+        order,
         maxVideoBytes: video * 1024 ** 2,
         maxRunBytes: run * 1024 ** 3,
         include,

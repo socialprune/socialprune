@@ -493,6 +493,7 @@ export async function runWithDependencies(
           before,
           after,
           run.profileReport,
+          browser?.abortedHosts,
         );
         options.notice(
           `Extensions disabled for this run. Before: ${JSON.stringify(before.extensionIds)}; after: ${JSON.stringify(after.extensionIds)}. Profile report: ${report}\n`,

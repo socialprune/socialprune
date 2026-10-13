@@ -136,7 +136,9 @@ function post(input: unknown, id: string): SignedInPost {
     textSource: 'signed-in',
     textCompleteness:
       note.text !== undefined ||
-      (value.note_tweet === undefined && legacy.truncated !== true)
+      ((value.note_tweet === undefined ||
+        object(value.note_tweet).is_expandable === false) &&
+        legacy.truncated !== true)
         ? 'full'
         : 'truncated',
     media: mediaFromAnswer(record, 'signed-in'),
@@ -217,14 +219,69 @@ export function extract(
       ? object(added[0]).entries
       : [object(replaced[0]).entry];
     if (!Array.isArray(entries)) throw new Error('entries');
-    const focal = entries.findIndex(
-      (value) => object(value).entryId === `tweet-${focalId}`,
-    );
+    const timeline: { id: string; result: unknown; module: boolean }[] = [];
+    const add = (id: string, input: unknown, module = false) => {
+      if (timeline.some((value) => value.id === id))
+        throw new Error('duplicate-entry');
+      let value = object(input);
+      if (value.__typename === 'TweetWithVisibilityResults')
+        value = object(value.tweet);
+      if (
+        !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
+          String(value.__typename),
+        )
+      )
+        throw new Error('result-type');
+      timeline.push({ id, result: input, module });
+    };
+    for (const input of entries) {
+      const entry = object(input),
+        content = object(entry.content);
+      if (
+        content.cursorType !== undefined ||
+        content.entryType === 'TimelineTimelineCursor'
+      )
+        continue;
+      if (Array.isArray(content.items)) {
+        for (const item of content.items) {
+          const result = object(
+            object(object(object(item).item).itemContent).tweet_results,
+          ).result;
+          let tweet = object(result);
+          if (tweet.__typename === 'TweetWithVisibilityResults')
+            tweet = object(tweet.tweet);
+          if (
+            !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
+              String(tweet.__typename),
+            )
+          )
+            throw new Error('module-result-type');
+          const entryId = string(object(item).entryId),
+            id =
+              string(tweet.rest_id) ??
+              (entryId && /^tweet-\d{1,40}$/.test(entryId)
+                ? entryId.slice(6)
+                : null);
+          if (!id) continue; // Known incomplete module: retain the focal post and a partial chain.
+          if (!OriginalIdSchema.safeParse(id).success)
+            throw new Error('module-rest_id');
+          add(id, result, true);
+        }
+        continue;
+      }
+      if (
+        typeof entry.entryId !== 'string' ||
+        !/^tweet-\d{1,40}$/.test(entry.entryId)
+      )
+        throw new Error('entry-id');
+      add(
+        entry.entryId.slice(6),
+        object(object(content.itemContent).tweet_results).result,
+      );
+    }
+    const focal = timeline.findIndex((value) => value.id === focalId);
     if (focal < 0) return { kind: 'no-entry' };
-    const result = (entry: unknown) =>
-      object(object(object(object(entry).content).itemContent).tweet_results)
-        .result;
-    const value = object(result(entries[focal]));
+    const value = object(timeline[focal]?.result);
     if (value.__typename === 'TweetTombstone')
       return {
         kind: 'tombstone',
@@ -256,26 +313,36 @@ export function extract(
       };
     const current = post(value, focalId),
       above: SignedInPost[] = [];
-    const candidates = entries.slice(0, focal).slice(-20);
-    for (const input of candidates) {
-      const entry = object(input);
+    const preceding = timeline.slice(0, focal),
+      map = new Map(preceding.map((value) => [value.id, value]));
+    let parent = current.parentId;
+    const chain = new Set([focalId]);
+    while (parent && above.length < 20) {
+      if (chain.has(parent)) throw new Error('parent-cycle');
+      chain.add(parent);
+      const value = map.get(parent);
+      if (!value) break;
+      let raw = object(value.result);
+      if (raw.__typename === 'TweetWithVisibilityResults')
+        raw = object(raw.tweet);
       if (
-        typeof entry.entryId !== 'string' ||
-        !/^tweet-\d{1,40}$/.test(entry.entryId)
+        value.module &&
+        (raw.__typename !== 'Tweet' ||
+          Object.keys(object(object(raw.core).user_results)).length === 0)
       )
-        throw new Error('entry-id');
+        break;
+      const read = post(value.result, value.id);
+      above.unshift(read);
+      parent = read.parentId;
     }
-    for (const input of candidates) {
-      const entry = object(input);
-      if (
-        typeof entry.entryId !== 'string' ||
-        !/^tweet-\d{1,40}$/.test(entry.entryId)
-      )
-        throw new Error('entry-id');
-      above.push(post(result(input), entry.entryId.slice(6)));
-    }
+    // Old generated examples omitted parent IDs. They no longer imply a chain.
     const quoted: SignedInPost[] = [];
-    for (const input of [value, ...entries.slice(0, focal).map(result)]) {
+    for (const input of [
+      value,
+      ...above.map(
+        (value) => timeline.find((entry) => entry.id === value.id)?.result,
+      ),
+    ]) {
       let entry = object(input);
       if (entry.__typename === 'TweetWithVisibilityResults')
         entry = object(entry.tweet);
@@ -290,16 +357,7 @@ export function extract(
       post: current,
       above,
       quoted,
-      chainAbove:
-        focal > 20
-          ? 'partial'
-          : above.length
-            ? above[0]!.parentId
-              ? 'partial'
-              : 'complete'
-            : current.parentId
-              ? 'partial'
-              : 'complete',
+      chainAbove: parent ? 'partial' : 'complete',
     };
   } catch (error) {
     return {

@@ -21,6 +21,11 @@ import {
 } from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
 import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
+import { restrictOrigins } from '../../network.ts';
+import { FillOrderSchema } from './order.ts';
+import type { FillOrder } from './order.ts';
+import { compareFocal, compareNotice } from './compare.ts';
+import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
 import { SQLiteStore } from '../../../workspace/sqlite-store.ts';
 import { CliError } from '../../../cli/errors.ts';
@@ -37,6 +42,7 @@ import type { MediaDependencies } from '../../../originals/video.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface FillOptions {
+  order?: FillOrder;
   store: SQLiteStore;
   plan: FillPlan;
   profile: string;
@@ -64,7 +70,7 @@ export interface FillDependencies {
   syndication: SyndicationClient;
   launch(profile: string, executablePath: string): Promise<BrowserContext>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
-  close(context: BrowserContext): Promise<void>;
+  close(context: BrowserContext, automatic?: boolean): Promise<void>;
 }
 export const FILL_PACE = Object.freeze({
   intervalMs: 30000,
@@ -96,7 +102,11 @@ const production: FillDependencies = {
   sleep: async (ms, signal) => {
     await sleep(ms, undefined, { signal });
   },
-  close: async (context) => {
+  close: async (context, automatic) => {
+    if (automatic) {
+      await context.close();
+      return;
+    }
     if (context.pages().length)
       await new Promise<void>((resolve) =>
         context.once('close', () => resolve()),
@@ -128,7 +138,13 @@ async function pageAnswer(
     waitUntil: 'domcontentloaded',
     timeout: deps.responseMs,
   });
-  await xSelectors.check(page);
+  await xSelectors.rendered(
+    page,
+    page
+      .getByTestId('SideNav_AccountSwitcher_Button')
+      .or(page.getByTestId('error-detail')),
+    Math.min(20_000, deps.responseMs),
+  );
   const answer = await response;
   if (
     answer &&
@@ -169,19 +185,33 @@ async function pageAnswer(
     state:
       classified.kind === 'tombstone' || classified.kind === 'unavailable'
         ? 'gone'
-        : await xSelectors.state(page, id),
+        : await xSelectors.state(page, id, deps.responseMs),
   };
 }
 export async function runFillWithDependencies(
   options: FillOptions,
   deps: FillDependencies,
 ) {
+  if (options.order) {
+    const value = FillOrderSchema.safeParse(options.order.value);
+    if (
+      !value.success ||
+      value.data.account.toLowerCase() !== options.plan.handle.toLowerCase() ||
+      !/^[a-f0-9]{64}$/.test(options.order.sha256)
+    )
+      throw new CliError('ORDER_INVALID');
+  }
+  if (
+    (await planFill(options.store, options.plan.accountKey, options.include))
+      .hash !== options.plan.hash
+  )
+    throw new CliError('STALE_PLAN');
   await validateProfile(options.profile);
   const before = await profileSnapshot(options.profile);
   const summary = fillSummary(options.plan, options.lang),
     confirmation = await startConfirmation(
       {
-        phase: 'start',
+        phase: options.order ? 'running' : 'start',
         lang: options.lang ?? 'en',
         expectedHandle: options.plan.handle,
         warning: summary.warning,
@@ -200,10 +230,13 @@ export async function runFillWithDependencies(
           .slice(0, 20)
           .map(({ id, reasons, reference }) => ({ id, reasons, reference })),
         completed: 0,
-        result:
-          START_STATUS[options.plan.canary ? 'fillCanary' : 'fill'][
-            options.lang ?? 'en'
-          ],
+        result: options.order
+          ? options.lang === 'de'
+            ? 'Auf deinen schriftlichen Auftrag gestartet. Die Stichprobe wird automatisch mit der Seite verglichen.'
+            : 'Started on your written order. The sample is compared with the page automatically.'
+          : START_STATUS[options.plan.canary ? 'fillCanary' : 'fill'][
+              options.lang ?? 'en'
+            ],
       },
       deps.port,
     );
@@ -226,6 +259,8 @@ export async function runFillWithDependencies(
     reports: unknown[] = [],
     requests: BrowserRequest[] = [];
   const pendingRequests = new Set<Promise<void>>();
+  const canaryCounts: CanaryComparison[] = [];
+  const abortedHosts: Record<string, number> = {};
   let context: BrowserContext | undefined,
     page: Page | undefined,
     accountBefore: string | null = null,
@@ -256,28 +291,16 @@ export async function runFillWithDependencies(
   };
   try {
     options.notice(summary.warning + '\n');
-    const started = confirmation.wait('start');
+    const started = options.order
+      ? Promise.resolve(true)
+      : confirmation.wait('start');
     context = await deps.launch(options.profile, options.executablePath);
     const allowed =
       deps.origin === X_ORIGIN
         ? X_ALLOWED_HOSTS.map((host) => `https://${host}`)
         : [deps.origin];
     allowed.push(new URL(confirmation.url).origin);
-    await context.route('**/*', async (route) => {
-      const target = new URL(route.request().url());
-      if (!allowed.includes(target.origin)) {
-        action = true;
-        await route.abort();
-      } else await route.continue();
-    });
-    await context.routeWebSocket('**/*', async (socket) => {
-      const target = new URL(socket.url());
-      target.protocol = target.protocol === 'wss:' ? 'https:' : 'http:';
-      if (!allowed.includes(target.origin)) {
-        action = true;
-        await socket.close();
-      } else socket.connectToServer();
-    });
+    await restrictOrigins(context, allowed, abortedHosts);
     context.once('close', stopped);
     const local = context.pages()[0] ?? (await context.newPage());
     await local.goto(confirmation.launchUrl);
@@ -317,6 +340,10 @@ export async function runFillWithDependencies(
       ownerPid: process.pid,
     });
     began = true;
+    if (options.order)
+      await options.store
+        .browserOutcomeWriter()
+        .recordOrder(runId, options.order.sha256);
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
       throw new CliError('PLATFORM_CHECK');
     const requestRecords = new WeakMap<object, BrowserRequest>();
@@ -353,8 +380,12 @@ export async function runFillWithDependencies(
       if (record) persist({ ...record, status: response.status() });
     });
     page = await context.newPage();
+    // /home is used once for the account check. Read-back uses the current page.
     await page.goto(deps.origin + '/home', { waitUntil: 'domcontentloaded' });
-    accountBefore = await xSelectors.account(page);
+    accountBefore = await xSelectors.account(
+      page,
+      Math.min(20_000, deps.responseMs),
+    );
     if (accountBefore.toLowerCase() !== options.plan.handle.toLowerCase())
       throw new CliError('ACCOUNT_MISMATCH');
     check();
@@ -442,9 +473,20 @@ export async function runFillWithDependencies(
       ...options.plan.rows.filter((row) => !first.includes(row)),
     ].slice(
       0,
-      Math.min(options.limit, options.plan.canary ? 5 : options.limit),
+      Math.min(
+        options.limit,
+        options.order?.value.maxPages ?? 200,
+        options.plan.canary ? 5 : options.limit,
+      ),
     );
     let batch = recent.length;
+    if (options.order)
+      confirmation.update({
+        result:
+          options.lang === 'de'
+            ? 'Kontoprüfung abgeschlossen. Die Seiten werden auf deinen schriftlichen Auftrag gelesen.'
+            : 'Account check complete. Reading pages on your written order.',
+      });
     for (const row of candidates) {
       check();
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
@@ -603,12 +645,52 @@ export async function runFillWithDependencies(
           },
           records,
         );
+        if (options.order) {
+          const stored = await options.store.read((tx) =>
+            tx.originals.get(row.id),
+          );
+          let comparison: CanaryComparison;
+          try {
+            if (!stored) throw new Error('Missing stored original');
+            comparison =
+              extracted.kind === 'read'
+                ? await compareFocal(page, stored)
+                : await compareNotice(
+                    page,
+                    extracted.kind === 'no-entry'
+                      ? 'not-found'
+                      : extracted.kind,
+                  );
+          } catch {
+            comparison = {
+              stored: {
+                textLength: stored?.text?.length ?? 0,
+                photos:
+                  stored?.media.filter((media) => media.kind === 'photo')
+                    .length ?? 0,
+                videos:
+                  stored?.media.filter((media) => media.kind !== 'photo')
+                    .length ?? 0,
+              },
+              shown: { textLength: 0, photos: 0, videos: 0 },
+              matches: false,
+            };
+          }
+          canaryCounts.push(comparison);
+          if (!comparison.matches) {
+            await options.store
+              .browserOutcomeWriter()
+              .recordCanaryMismatch(runId, canaryCounts);
+            options.notice(`Canary counts: ${JSON.stringify(canaryCounts)}\n`);
+            throw new CliError('CANARY_MISMATCH');
+          }
+        }
         if (mediaFailure)
           throw mediaFailure instanceof Error
             ? mediaFailure
             : new CliError('MEDIA_FAILED');
         completed++;
-        if (options.plan.canary) {
+        if (options.plan.canary && !options.order) {
           confirmation.update({
             phase: 'canary',
             completed,
@@ -679,7 +761,7 @@ export async function runFillWithDependencies(
       try {
         await Promise.all([...pendingRequests]);
         let matches = false;
-        if (run.endReason === 'canary' && !error) {
+        if (run.endReason === 'canary' && !error && !options.order) {
           confirmation.update({
             phase: 'match',
             result:
@@ -694,7 +776,12 @@ export async function runFillWithDependencies(
         }
         try {
           accountAfter =
-            page && !page.isClosed() ? await xSelectors.account(page) : null;
+            page && !page.isClosed()
+              ? await xSelectors.account(
+                  page,
+                  Math.min(20_000, deps.responseMs),
+                )
+              : null;
         } catch (caught) {
           accountAfter = null;
           error ??= caught;
@@ -723,12 +810,22 @@ export async function runFillWithDependencies(
           bodyShapes: run.bodyShapes,
           profileReport: run.profileReport,
         });
+        if (options.order && run.endReason === 'canary' && !error) {
+          await options.store
+            .browserOutcomeWriter()
+            .recordAutomaticAcceptance(
+              runId,
+              options.now().toISOString(),
+              canaryCounts,
+            );
+        }
         const profileReport = await writeExtensionReport(
           options.profile,
           runId,
           before,
           after,
           run.profileReport,
+          abortedHosts,
         );
         options.notice(
           `Extensions disabled for this run. Before: ${JSON.stringify(before.extensionIds)}; after: ${JSON.stringify(after.extensionIds)}. Profile report: ${profileReport}\n`,
@@ -740,16 +837,41 @@ export async function runFillWithDependencies(
         error ??= caught;
       }
     }
+    const finalText = options.order
+      ? endText(endReason(run.endReason, error), options.lang).replace(
+          options.lang === 'de'
+            ? 'Schließe das X-Fenster, um den Lauf zu beenden.'
+            : 'Close the X window to finish.',
+          options.lang === 'de'
+            ? 'Das Browserfenster wird automatisch geschlossen.'
+            : 'The browser window closes automatically.',
+        )
+      : endText(endReason(run.endReason, error), options.lang);
     confirmation.update({
       phase: 'ended',
       completed,
-      result: endText(endReason(run.endReason, error), options.lang),
+      result: finalText,
     });
-    options.notice(
-      endText(endReason(run.endReason, error), options.lang) + '\n',
-    );
+    options.notice(finalText + '\n');
+    if (options.order && context) {
+      const local = context.pages()[0];
+      if (local && !local.isClosed())
+        await local
+          .waitForFunction(
+            "document.getElementById('result')?.textContent?.startsWith(document.documentElement.lang === 'de' ? 'Beendet:' : 'Ended:')",
+            undefined,
+            { timeout: 3000 },
+          )
+          .catch(() => {
+            options.notice(
+              options.lang === 'de'
+                ? 'Die Statusseite konnte den Endzustand nicht anzeigen; das Browserfenster wird trotzdem geschlossen.\n'
+                : 'The status page could not display the end state; the browser window will still close.\n',
+            );
+          });
+    }
     try {
-      if (context) await deps.close(context);
+      if (context) await deps.close(context, Boolean(options.order));
     } finally {
       try {
         await confirmation.close();

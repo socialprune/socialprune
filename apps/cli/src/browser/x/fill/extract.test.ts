@@ -85,10 +85,17 @@ test('long text, video/GIF variants, quotes, visibility wrappers and three paren
     },
   });
   post.legacy.extended_entities.media = DETAIL_FIXTURE.media as never[];
+  Object.assign(post.legacy, { in_reply_to_status_id_str: '903' });
   const body = detailAnswer(post, [
     detailPost('901'),
-    detailPost('902'),
-    detailPost('903'),
+    {
+      ...detailPost('902'),
+      legacy: { ...detailPost('902').legacy, in_reply_to_status_id_str: '901' },
+    },
+    {
+      ...detailPost('903'),
+      legacy: { ...detailPost('903').legacy, in_reply_to_status_id_str: '902' },
+    },
   ]);
   const value = extract(body, DETAIL_FIXTURE.id, { instruction: null });
   expect(value).toMatchObject({

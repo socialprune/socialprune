@@ -15,7 +15,8 @@ export type Variant =
   | 'ambiguous'
   | 'shape'
   | 'wrong-id'
-  | 'external';
+  | 'external'
+  | 'mutation';
 export async function fakeX(port = 4231) {
   const variants = new Map<string, Variant>();
   const scripts = new Map<string, string>();
@@ -30,6 +31,9 @@ export async function fakeX(port = 4231) {
   let german = false;
   let accessibleOnly = false;
   let handle: string = FIXTURE.account.handle;
+  let navDelay = 0,
+    articleCount = 1,
+    navMissing = false;
   const names = () =>
     german
       ? {
@@ -96,7 +100,12 @@ export async function fakeX(port = 4231) {
       return;
     }
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    const account = `<button data-testid="SideNav_AccountSwitcher_Button">Generated account @${handle}</button>`;
+    const nav = `<button data-testid="SideNav_AccountSwitcher_Button">Generated account @${handle}</button>`;
+    const account = navMissing
+      ? ''
+      : navDelay
+        ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},${navDelay})</script>`
+        : nav;
     const variant = id ? (variants.get(id) ?? 'success') : 'success';
     const pageId = variant === 'wrong-id' ? '9999' : id;
     if (['login', 'challenge', 'lock', 'limit', 'unknown'].includes(variant)) {
@@ -127,13 +136,19 @@ export async function fakeX(port = 4231) {
     const buttons = repost
       ? `<button ${attr('unretweet')} id="repost">${name.repost}</button>`
       : `<button ${attr('caret')} id="more">${name.more}</button>`;
-    response.end(`<!doctype html><html><body>${account}<article data-testid="tweet"><a href="/fixture/status/${pageId}"><time>2020-01-01</time></a><p>Generated post ${id}</p>${buttons}</article><div id="menu" hidden><button role="menuitem" ${attr(repost ? 'unretweetConfirm' : 'delete')} id="delete">${repost ? name.undo : name.delete}</button></div><div role="dialog" id="dialog" hidden><button ${attr('confirmationSheetConfirm')} id="confirm">${name.delete}</button></div><div data-testid="toast" hidden id="toast"></div><script>
+    const other = Array.from(
+      { length: articleCount - 1 },
+      (_, index) =>
+        `<article data-testid="tweet"><a href="/other/status/${2000 + index}"><time>2020</time></a><p data-testid="tweetText">Generated other post</p><button data-testid="caret" onclick="window.decoyClicked=true">${name.more}</button><button data-testid="unretweet" onclick="window.decoyClicked=true">${name.repost}</button></article>`,
+    ).join('');
+    response.end(`<!doctype html><html><body>${account}${other}<article data-testid="tweet"><a href="/fixture/status/${pageId}"><time>2020-01-01</time></a><p data-testid="tweetText">Generated post ${id}</p>${buttons}</article><div id="menu" hidden><button role="menuitem" ${attr(repost ? 'unretweetConfirm' : 'delete')} id="delete">${repost ? name.undo : name.delete}</button></div><div role="dialog" id="dialog" hidden><button ${attr('confirmationSheetConfirm')} id="confirm">${name.delete}</button></div><div data-testid="toast" hidden id="toast"></div><script>
     const menu=document.getElementById('menu'), dialog=document.getElementById('dialog'), toast=document.getElementById('toast');
     async function send(){ const r=await fetch('/graphql/generated/${repost ? 'DeleteRetweet' : 'DeleteTweet'}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${id}'})}); const b=await r.json(); if(r.status===200&&b.data&&!b.errors){menu.hidden=true;dialog.hidden=true;toast.textContent='${repost ? name.undone : name.deleted}';toast.hidden=false;} }
     document.getElementById('${repost ? 'repost' : 'more'}').onclick=()=>menu.hidden=false;
     document.getElementById('delete').onclick=${repost ? 'send' : '()=>{menu.hidden=true;dialog.hidden=false;}'};
     document.getElementById('confirm').onclick=send;
-    ${variant === 'external' ? "const decoy=document.createElement('img');decoy.src='http://127.0.0.1:4239/decoy';document.body.appendChild(decoy);" : ''}
+    ${variant === 'external' ? "const decoy=document.createElement('img');decoy.src='http://127.0.0.1:4239/decoy';document.body.appendChild(decoy);fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}
+    ${variant === 'mutation' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'}).catch(()=>{});" : ''}
     </script></body></html>`);
   });
   server.on('connection', (socket) => {
@@ -158,6 +173,15 @@ export async function fakeX(port = 4231) {
     },
     setHandle(value: string) {
       handle = value;
+    },
+    renderOptions(options: {
+      navDelay?: number;
+      articleCount?: number;
+      navMissing?: boolean;
+    }) {
+      navDelay = options.navDelay ?? 0;
+      articleCount = options.articleCount ?? 1;
+      navMissing = options.navMissing ?? false;
     },
     async close() {
       for (const socket of sockets) socket.destroy();

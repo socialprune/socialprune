@@ -9,6 +9,18 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  ORDER_INVALID: {
+    message:
+      "The written order must name originals-fill-x and the expected account, with a valid date and the person's words.",
+    exitCode: 2,
+    retryable: false,
+  },
+  CANARY_MISMATCH: {
+    message:
+      'The stored original does not match the text or media counts shown on the page. The run stopped without accepting the canary.',
+    exitCode: 1,
+    retryable: false,
+  },
   SHAPE_CHANGED: {
     message:
       'X returned a different page structure. The run stopped and the next run stays a canary.',

@@ -12,6 +12,7 @@ const reasons: DisplayEndReason[] = [
   'stopped-by-person',
   'error',
   'size-cap',
+  'canary-mismatch',
 ];
 test('every browser-run end reason is a single bilingual terminal line with a window-closing instruction', () => {
   const seenEn = new Set<string>(),
@@ -26,8 +27,8 @@ test('every browser-run end reason is a single bilingual terminal line with a wi
     seenEn.add(en);
     seenDe.add(de);
   }
-  expect(seenEn.size).toBe(9);
-  expect(seenDe.size).toBe(9);
+  expect(seenEn.size).toBe(10);
+  expect(seenDe.size).toBe(10);
   expect(endReason('platform-check', { code: 'ACCOUNT_MISMATCH' })).toBe(
     'account-mismatch',
   );

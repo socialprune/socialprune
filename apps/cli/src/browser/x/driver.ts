@@ -2,6 +2,8 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { CliError } from '../../cli/errors.ts';
 import type { BrowserRequest } from '../../workspace/browser-journal.ts';
 import { xSelectors } from './selectors.ts';
+import { restrictOrigins } from '../network.ts';
+import { unexpectedAction } from './fill/read.ts';
 
 export const X_ORIGIN = 'https://x.com';
 export const X_ALLOWED_HOSTS = Object.freeze([
@@ -42,6 +44,7 @@ export interface BrowserDriver {
   }>;
   flush(): Promise<void>;
   close(): Promise<void>;
+  abortedHosts?: Record<string, number>;
 }
 export async function pageDriver(options: {
   context: BrowserContext;
@@ -56,16 +59,16 @@ export async function pageDriver(options: {
   const local = context.pages()[0] ?? (await context.newPage());
   let platform: Page | undefined;
   let prohibited = false;
+  let mutation = false,
+    expectedMutation: string | null = null;
   const pending = new Set<Promise<void>>();
   const requestIds = new WeakMap<object, BrowserRequest>();
-  await context.routeWebSocket('**/*', async (socket) => {
-    const url = new URL(socket.url());
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-    if (!options.allowedOrigins.includes(url.origin)) {
-      prohibited = true;
-      await socket.close();
-    } else socket.connectToServer();
-  });
+  const abortedHosts: Record<string, number> = {};
+  await restrictOrigins(
+    context,
+    [...options.allowedOrigins, options.confirmationOrigin],
+    abortedHosts,
+  );
   const observe = (task: Promise<void>) => {
     pending.add(task);
     void task.then(
@@ -91,8 +94,7 @@ export async function pageDriver(options: {
       url.origin !== options.confirmationOrigin &&
       !options.allowedOrigins.includes(url.origin)
     ) {
-      prohibited = true;
-      await route.abort('blockedbyclient');
+      await route.fallback();
       return;
     }
     if (
@@ -114,8 +116,16 @@ export async function pageDriver(options: {
         await route.abort();
         return;
       }
+      if (
+        unexpectedAction(request.method(), request.url(), options.origin) &&
+        url.pathname.split('/').at(-1) !== expectedMutation
+      ) {
+        mutation = true;
+        await route.abort('blockedbyclient');
+        return;
+      }
     }
-    await route.continue();
+    await route.fallback();
   });
   context.on('response', (response) => {
     const record = requestIds.get(response.request());
@@ -124,6 +134,7 @@ export async function pageDriver(options: {
   });
   const guard = (checkStop = true) => {
     if (checkStop && options.signal?.aborted) throw new CliError('CANCELLED');
+    if (mutation) throw new CliError('UNEXPECTED_ACTION');
     if (prohibited || platform?.isClosed())
       throw new CliError('PLATFORM_CHECK');
   };
@@ -133,6 +144,7 @@ export async function pageDriver(options: {
     return platform;
   };
   return {
+    abortedHosts,
     async showConfirmation(url) {
       await local.goto(url);
     },
@@ -144,7 +156,10 @@ export async function pageDriver(options: {
           timeout: 30_000,
         });
       guard(false);
-      return xSelectors.account(current);
+      return xSelectors.account(
+        current,
+        Math.min(20_000, options.responseTimeoutMs),
+      );
     },
     async inspect(id) {
       const current = await page();
@@ -162,18 +177,28 @@ export async function pageDriver(options: {
         !new URL(current.url()).pathname.endsWith(`/status/${id}`)
       )
         throw new CliError('PLATFORM_CHECK');
-      return xSelectors.state(current, id);
+      return xSelectors.state(
+        current,
+        id,
+        Math.min(20_000, options.responseTimeoutMs),
+      );
     },
     async delete(id, action) {
       guard();
       const current = await page();
-      if ((await xSelectors.state(current, id)) !== 'present')
+      if (
+        (await xSelectors.state(
+          current,
+          id,
+          Math.min(20_000, options.responseTimeoutMs),
+        )) !== 'present'
+      )
         throw new CliError('PLATFORM_CHECK');
       if (action === 'delete-post') {
-        await (await xSelectors.more(current)).click();
+        await (await xSelectors.more(current, id)).click();
         guard();
         await (await xSelectors.deleteMenu(current)).click();
-      } else await (await xSelectors.repost(current)).click();
+      } else await (await xSelectors.repost(current, id)).click();
       const final =
         action === 'delete-post'
           ? await xSelectors.confirm(current)
@@ -196,13 +221,16 @@ export async function pageDriver(options: {
         .catch(() => null);
       const startingUrl = current.url();
       guard();
+      expectedMutation = operation;
       try {
         await final.click({ timeout: options.responseTimeoutMs });
       } catch {
         await response;
+        expectedMutation = null;
         return { state: 'ambiguous', code: 'CLICK_INTERRUPTED' };
       }
       const answer = await response;
+      expectedMutation = null;
       if (!answer || current.isClosed() || current.url() !== startingUrl)
         return { state: 'ambiguous', code: 'RESPONSE_UNKNOWN' };
       const receipt = {

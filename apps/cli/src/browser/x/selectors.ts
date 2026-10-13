@@ -19,6 +19,29 @@ async function button(
   );
 }
 export const xSelectors = {
+  async rendered(
+    page: Page,
+    ready: Locator,
+    timeoutMs = 20_000,
+  ): Promise<void> {
+    const markers = page.locator(
+      '[data-testid="loginButton"], [data-testid="challenge"], [data-testid="lockedAccount"], [data-testid="rateLimit"]',
+    );
+    const notices = page.getByText(
+      /^(Log in to X|Sign in to X|Bei X anmelden|Verify your identity|Confirm you are human|Bestätige deine Identität|Your account is locked|Dein Account wurde gesperrt|Rate limit exceeded|Du hast dein Limit erreicht)$/,
+    );
+    try {
+      await ready
+        .or(markers)
+        .or(notices)
+        .and(page.locator(':visible'))
+        .first()
+        .waitFor({ state: 'visible', timeout: timeoutMs });
+    } catch {
+      throw new CliError('PLATFORM_CHECK');
+    }
+    await this.check(page);
+  },
   async check(page: Page): Promise<void> {
     const blocked = page.locator(
       '[data-testid="loginButton"], [data-testid="challenge"], [data-testid="lockedAccount"], [data-testid="rateLimit"]',
@@ -29,8 +52,12 @@ export const xSelectors = {
     if ((await blocked.count()) || (await notice.count()))
       throw new CliError('PLATFORM_CHECK');
   },
-  async account(page: Page): Promise<string> {
-    await this.check(page);
+  async account(page: Page, timeoutMs = 20_000): Promise<string> {
+    await this.rendered(
+      page,
+      page.getByTestId('SideNav_AccountSwitcher_Button'),
+      timeoutMs,
+    );
     const switcher = await one(
       page.getByTestId('SideNav_AccountSwitcher_Button'),
     );
@@ -40,28 +67,49 @@ export const xSelectors = {
     if (!handles || handles.length !== 1) throw new CliError('PLATFORM_CHECK');
     return handles[0].slice(1);
   },
-  async state(page: Page, id: string): Promise<'present' | 'gone'> {
-    await this.check(page);
+  async state(
+    page: Page,
+    id: string,
+    timeoutMs = 20_000,
+  ): Promise<'present' | 'gone'> {
+    await this.rendered(
+      page,
+      this.focalLocator(page, id).or(page.getByTestId('error-detail')),
+      timeoutMs,
+    );
     const missing = page.getByTestId('error-detail');
     const notFound = page.getByText(
       /^(This Post was deleted by the Post author\.?|This Post doesn’t exist\.?|This Post doesn't exist\.?|Dieser Post wurde vom Autor gelöscht\.?|Dieser Post existiert nicht\.?)$/,
     );
     if ((await missing.count()) === 1 && (await notFound.count()) === 1)
       return 'gone';
-    const post = await one(page.getByTestId('tweet'));
+    const post = await this.focal(page, id);
     const timestamp = post
       .locator(`a[href$="/status/${id}"]`)
       .filter({ has: page.locator('time') });
     await one(timestamp);
     return 'present';
   },
-  async more(page: Page) {
-    await this.check(page);
-    return button(
-      await one(page.getByTestId('tweet')),
-      'caret',
-      /^(More|Mehr)$/,
+  focalLocator(page: Page, id: string): Locator {
+    if (!/^\d{1,40}$/.test(id)) throw new CliError('PLATFORM_CHECK');
+    return page.locator('article[data-testid="tweet"]').filter({
+      has: page
+        .locator(`a[href$="/status/${id}"]`)
+        .filter({ has: page.locator('time') }),
+    });
+  },
+  async focal(page: Page, id: string): Promise<Locator> {
+    const post = await one(this.focalLocator(page, id));
+    await one(
+      post
+        .locator(`a[href$="/status/${id}"]`)
+        .filter({ has: page.locator('time') }),
     );
+    return post;
+  },
+  async more(page: Page, id: string) {
+    await this.check(page);
+    return button(await this.focal(page, id), 'caret', /^(More|Mehr)$/);
   },
   async deleteMenu(page: Page) {
     await this.check(page);
@@ -79,10 +127,10 @@ export const xSelectors = {
     await this.check(page);
     return button(page, 'confirmationSheetConfirm', /^(Delete|Löschen)$/);
   },
-  async repost(page: Page) {
+  async repost(page: Page, id: string) {
     await this.check(page);
     return button(
-      await one(page.getByTestId('tweet')),
+      await this.focal(page, id),
       'unretweet',
       /^(Repost|Reposted|Repostet)$/,
     );

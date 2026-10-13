@@ -4,6 +4,34 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "ORDER_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "The written order must name originals-fill-x and the expected account, with a valid date and the person's words."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CANARY_MISMATCH" },
+        "message": {
+          "type": "string",
+          "const": "The stored original does not match the text or media counts shown on the page. The run stopped without accepting the canary."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "SHAPE_CHANGED" },
         "message": {
           "type": "string",

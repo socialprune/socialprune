@@ -60,7 +60,8 @@ async function post(path, body, token) {
  if(!response.ok) throw new Error(sessionEnded); return response.json();
 }
 function render(v) {
-  view = v;
+ if(view && v.version < view.version) return;
+ view = v;
   document.getElementById('account').textContent=v.expectedHandle ? (de?'Erwartetes X-Konto: @':'Expected X account: @')+v.expectedHandle : '';
  document.getElementById('warning').textContent=v.warning;
  document.getElementById('profile').textContent=v.profileWarning;

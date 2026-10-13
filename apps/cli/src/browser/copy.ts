@@ -38,6 +38,7 @@ export const START_STATUS = {
   },
 };
 export type DisplayEndReason =
+  | 'canary-mismatch'
   | 'done'
   | 'platform-check'
   | 'account-mismatch'
@@ -48,6 +49,10 @@ export type DisplayEndReason =
   | 'error'
   | 'size-cap';
 const END_REASON = {
+  'canary-mismatch': {
+    en: 'The stored text or media counts did not match the page; the sample was not accepted.',
+    de: 'Der gespeicherte Text oder die Medienanzahl stimmten nicht mit der Seite überein; die Stichprobe wurde nicht akzeptiert.',
+  },
   done: {
     en: 'The planned work is complete.',
     de: 'Die geplanten Schritte sind abgeschlossen.',
@@ -101,6 +106,7 @@ export function endReason(
     error && typeof error === 'object' && 'code' in error ? error.code : null;
   if (code === 'ACCOUNT_MISMATCH') return 'account-mismatch';
   if (code === 'SHAPE_CHANGED') return 'shape-changed';
+  if (code === 'CANARY_MISMATCH') return 'canary-mismatch';
   if (error && (reason === 'done' || reason === 'canary' || reason === null))
     return 'error';
   return reason && Object.hasOwn(END_REASON, reason)

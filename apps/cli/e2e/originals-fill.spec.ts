@@ -209,13 +209,13 @@ for (const variant of [
           ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},100)</script>`
           : nav;
       if (pathname === '/home') {
-        if (variant === 'order-stop') {
+        if (variant.startsWith('order-')) {
+          // An ordered run closes its own window when it ends, so hold the
+          // account page until the test has seen the run's start state.
           releaseHome = () => response.end(account);
           return;
         }
-        if (variant === 'order-match')
-          setTimeout(() => response.end(account), 500);
-        else response.end(account);
+        response.end(account);
         return;
       }
       if (['login', 'challenge', 'limit', 'german-ended'].includes(variant)) {
@@ -398,8 +398,9 @@ for (const variant of [
             fullPage: true,
             caret: 'initial',
           });
+        await expect.poll(() => requests.includes('/home')).toBe(true);
+        if (variant !== 'order-stop') releaseHome();
         if (variant === 'order-stop') {
-          await expect.poll(() => requests.includes('/home')).toBe(true);
           await page.locator('#stop').click();
           releaseHome();
           expect(await result).toMatchObject({ code: 'CANCELLED' });

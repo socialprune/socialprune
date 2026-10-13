@@ -197,10 +197,10 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Detection Pattern:** a handoff that gives the person a command the agent could run; a UI node closed without a screenshot or a person's look; a closure report that calls a screen finished on test evidence alone.
 **Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed one line for `.kilo/agents/workflow-orchestrator.md` (protected), "A user-facing node closes only after the person's steps are counted and the screens were looked at (LL-2026-10-007)"; until he approves it, the parent applies this before closing any UI node.
 **Related Lessons:** LL-2026-10-005 (write for the person in his words).
-**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done. Violated on 2026-10-12: `browser setup` was handed to him on fake-X evidence alone. It opened the sign-in page through the automation driver, so the window showed an unsupported `--no-sandbox` warning, X's sign-in did not continue and Google refused the browser as insecure. Nobody had looked at what that window shows a person. Corrected by starting the installed browser itself for sign-in, with no driver attached, and by checking the window's start flags before handing him the step again. Violated again on 2026-10-13: the first signed-in originals run was handed to him after checking only its plan hash. The run also needs the export's account name, which his workspace does not hold because the account file had been left out of his cleanup copy on purpose, so it refused at once with a message meant for deletion. Before handing a person a run, check every precondition the run's code tests, not only the one the instructions mention.
+**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done. Violated on 2026-10-12: `browser setup` was handed to him on fake-X evidence alone. It opened the sign-in page through the automation driver, so the window showed an unsupported `--no-sandbox` warning, X's sign-in did not continue and Google refused the browser as insecure. Nobody had looked at what that window shows a person. Corrected by starting the installed browser itself for sign-in, with no driver attached, and by checking the window's start flags before handing him the step again. Violated again on 2026-10-13: the first signed-in originals run was handed to him after checking only its plan hash. The run also needs the export's account name, which his workspace does not hold because the account file had been left out of his cleanup copy on purpose, so it refused at once with a message meant for deletion. Before handing a person a run, check every precondition the run's code tests, not only the one the instructions mention. Violated a third time on 2026-10-13: when a run stopped, its page had already closed and showed only "Session ended", and the terminal did not say that the run waited for the window to close. Nobody had looked at the end of a run from the person's side.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 2 times
+- Violated: 3 times
 
 ### [LL-2026-10-008] 2026-10-10 VERIFICATION: Tell the person something is on their screen only after seeing it arrive
 
@@ -306,6 +306,33 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Affected Files:** none in the repository. Retrieval anchor: the first block of section 00 in the maintainer's private handoff file, which the parent reads on every resume and before every step on his workspace, names this lesson. A one-line trigger on an always-loaded surface is proposed to the maintainer and needs his approval.
 **Related Lessons:** LL-2026-10-001 (re-read live state), LL-2026-10-007 (check what the person will meet before handing over a step).
 **Regression / Verification Note:** applied on 2026-10-13 by finding the producing step (the account file left out when the cleanup copy was extracted), telling him so, and choosing a fix that keeps the e-mail out of the workspace.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times
+
+### [LL-2026-10-012] 2026-10-13 PRODUCT: Before asking the person for one more step on an unproven route, weigh what it can still gain against what it costs them
+
+**ID:** LL-2026-10-012
+**Severity:** HIGH
+**Category:** PRODUCT
+**Expires:** Never (kernel). Counts and dates below are dated evidence from 2026-10-13.
+
+**Feedback:** "Ich bin so verwirrt, was wir machen ... wir wollten ja ein super easy ohne Friction Tool haben und jetzt passiert nur ein Haufen Bullshit ... Keine Ahnung, was du überhaupt vorhast oder was jetzt hier passieren soll, was ich machen soll." The maintainer, after his second signed-in test run stopped.
+**Problem:** Over two days the maintainer was handed a chain of manual steps on the signed-in route: sign-in scripts, PowerShell commands, test runs. Each step had passed only against generated fake pages and failed on the real one: an unsupported flag, a window that closed by itself, a missing account name, deleted extensions, then X's bot check. Each failure was answered with a fix and the next step. Nobody stopped to ask whether the route still fit his goal, an easy tool with little friction, or whether its remaining gain was worth his effort: at most 325 posts on top of 1,862 originals and 155 videos already saved without his account.
+**5 Whys Analysis:**
+1. Why was he confused and angry? -> He kept getting new technical steps that failed, with no picture of where it was going.
+2. Why did the steps keep failing? -> The route depends on the real pages of a platform that resists automation, and every proof was against fakes.
+3. Why was he handed step after step anyway? -> Each failure was treated as one more bug to fix, inside the plan.
+4. Why was the plan not questioned? -> The stop-loss rules weigh extra lanes, reviews and reruns for the agent's work, not the person's effort per step against the route's remaining value.
+5. Why? -> Root cause: no control compares, before each new request to the person, what the route can still gain with what it costs them and with a simpler route that reaches the same goal.
+**Rule(s):**
+1. Before asking the person for another manual step on a route not yet proven on the real platform, state in one line what it can still gain, what it costs them, and the simplest other route to the same goal. Recommend the cheaper one when the gain is small.
+2. After a second real-world failure on the same route, stop handing out steps: show the person where the goal stands and let the recommendation decide the next move.
+3. Measure friction by what the person must do and understand, not by how many defects the agent fixed.
+**Detection Pattern:** a third consecutive message that asks the person to run a command or click through a page on the same route; a fix-and-retry loop on a platform behaviour that only the real site shows; a remaining gain that is a small share of what is already done.
+**Affected Files:** none in the repository. Retrieval anchor: the first block of section 00 in the maintainer's private handoff file, read before every step on his workspace, names this lesson. A one-line trigger on an always-loaded surface is proposed to the maintainer and needs his approval.
+**Related Lessons:** LL-2026-10-007 (accept a feature by what the person has to do and see), LL-2026-10-009 (answer the person's goal before the work), LL-2026-10-011 (look up your own record first).
+**Regression / Verification Note:** applied on 2026-10-13 by pausing the signed-in originals pass and laying out his goal, what is done, and one recommended next move.
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times

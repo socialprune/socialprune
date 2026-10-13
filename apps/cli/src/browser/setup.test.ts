@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   rm,
   writeFile,
   unlink,
@@ -12,6 +13,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import * as readline from 'node:readline';
 import { afterEach, expect, test, vi } from 'vitest';
 import * as profileModule from './profile.ts';
@@ -44,9 +46,37 @@ vi.mock('node:readline', async (importOriginal) => {
   const actual = await importOriginal<typeof readline>();
   return { ...actual, createInterface: vi.fn(actual.createInterface) };
 });
-afterEach(() => {
-  vi.restoreAllMocks();
-  driver.launch.mockClear();
+// Capture functions before installing any spy. importActual returns the same
+// module namespace, whose export may already be a spy in a later fixture.
+const actualSetup = setupModule.ordinarySetup;
+const realSpawn = (
+  await vi.importActual<typeof childProcess>('node:child_process')
+).spawn;
+const actualReadline = (await vi.importActual<typeof readline>('node:readline'))
+  .createInterface;
+const cleanups = new Set<() => Promise<void>>();
+async function cleanupOwnedFixtures() {
+  const results = await Promise.allSettled(
+    [...cleanups].map((close) => close()),
+  );
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason as unknown] : [],
+  );
+  if (failures.length)
+    throw new AggregateError(
+      failures,
+      'Generated setup fixture cleanup failed',
+    );
+}
+afterEach(async () => {
+  try {
+    // Vitest can time out the body without waiting for its finally. Join every
+    // fixture here before replacing module hooks or admitting the next test.
+    await cleanupOwnedFixtures();
+  } finally {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  }
 });
 
 const stub = `import {writeFile,unlink} from 'node:fs/promises';
@@ -77,13 +107,12 @@ async function fixture(source = stub) {
     stdoutIsTerminal: true,
   };
   let child: ChildProcess | undefined;
+  const children = new Map<ChildProcess, Promise<void>>();
+  const events = new EventEmitter();
   const messages: { type: string; args?: string[] }[] = [];
   const installed = vi
     .spyOn(profileModule, 'installedBrowser')
     .mockResolvedValue(process.execPath);
-  const realSpawn = (
-    await vi.importActual<typeof childProcess>('node:child_process')
-  ).spawn;
   const spawn = vi
     .spyOn(childProcess, 'spawn')
     .mockImplementation(
@@ -96,34 +125,50 @@ async function fixture(source = stub) {
           ...options,
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
         });
-        child.on('message', (value) =>
-          messages.push(value as { type: string; args?: string[] }),
+        const launched = child;
+        children.set(
+          launched,
+          new Promise((resolve) => launched.once('close', () => resolve())),
         );
+        launched.on('message', (value) => {
+          const message = value as { type: string; args?: string[] };
+          messages.push(message);
+          events.emit(message.type);
+        });
         return child;
       },
     );
-  const actualReadline = (
-    await vi.importActual<typeof readline>('node:readline')
-  ).createInterface;
   const active = new Set<AbortController>();
   const activeRuns = new Set<Promise<number>>();
-  const actualSetup = (await vi.importActual<typeof setupModule>('./setup.ts'))
-    .ordinarySetup;
-  vi.spyOn(setupModule, 'ordinarySetup').mockImplementation((options, wait) =>
-    actualSetup(
-      options,
+  const activeSetups = new Set<Promise<void>>();
+  vi.spyOn(setupModule, 'ordinarySetup').mockImplementation((options, wait) => {
+    const controller = new AbortController();
+    active.add(controller);
+    const running = actualSetup(
+      {
+        ...options,
+        signal: AbortSignal.any([controller.signal, options.signal]),
+      },
       wait ?? {
         pollMs: 10,
         releaseTimeoutMs: 5000,
-        appearanceTimeoutMs: 15000,
+        appearanceTimeoutMs: 60000,
       },
-    ),
-  );
+    );
+    activeSetups.add(running);
+    const settled = () => {
+      active.delete(controller);
+      activeSetups.delete(running);
+    };
+    void running.then(settled, settled);
+    return running;
+  });
   vi.spyOn(readline, 'createInterface').mockImplementation(
     (options: readline.ReadLineOptions) =>
       actualReadline({ ...options, input }),
   );
   const run = (terminal = true) => {
+    if (closing) throw new Error('Generated setup fixture already closed');
     const controller = new AbortController();
     active.add(controller);
     const running = executeCli(
@@ -139,9 +184,12 @@ async function fixture(source = stub) {
       ],
       { ...context, stdoutIsTerminal: terminal, signal: controller.signal },
     );
-    void running.finally(() => active.delete(controller));
     activeRuns.add(running);
-    void running.finally(() => activeRuns.delete(running));
+    const settled = () => {
+      active.delete(controller);
+      activeRuns.delete(running);
+    };
+    void running.then(settled, settled);
     return running;
   };
   const send = (message: string) =>
@@ -151,17 +199,40 @@ async function fixture(source = stub) {
     });
   const released = async () => {
     await send('release');
-    await expect
-      .poll(
-        () => messages.filter((message) => message.type === 'released').length,
-        { timeout: 10000 },
-      )
-      .toBeGreaterThan(0);
+    if (!messages.some((message) => message.type === 'released'))
+      await new Promise<void>((resolve) => events.once('released', resolve));
   };
   const exit = async () => {
     await send('exit');
-    await expect.poll(() => child?.exitCode, { timeout: 10000 }).toBe(0);
+    await children.get(child!);
+    expect(child!.exitCode).toBe(0);
   };
+  let closing: Promise<void> | undefined;
+  const close = () => {
+    closing ??= (async () => {
+      try {
+        for (const controller of active) controller.abort();
+        input.end();
+        await Promise.allSettled([...activeRuns, ...activeSetups]);
+        for (const [owned, ended] of children) {
+          if (owned.exitCode === null && owned.signalCode === null)
+            owned.kill();
+          await ended;
+        }
+        await stopGeneratedGrandchild(profile);
+      } finally {
+        await rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100,
+        });
+        cleanups.delete(close);
+      }
+    })();
+    return closing;
+  };
+  cleanups.add(close);
   return {
     directory,
     profile,
@@ -188,26 +259,58 @@ async function fixture(source = stub) {
         .poll(() => stderr.join(''), { timeout: 10000 })
         .toContain('profile is active');
     },
-    async close() {
-      for (const controller of active) controller.abort();
-      if (child && child.exitCode === null && child.signalCode === null) {
-        child.kill();
-        await new Promise<void>((resolve) =>
-          child!.once('close', () => resolve()),
-        );
-      }
-      input.end();
-      await Promise.allSettled([...activeRuns]);
-      await rm(directory, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      });
-    },
+    close,
   };
 }
 
+test('overlapping fixtures retain a real setup function rather than recursively capturing the installed spy', async () => {
+  const first = await fixture();
+  const next = await fixture('process.exit(0);');
+  try {
+    await profileModule.createProfile(next.profile);
+    const running = ordinarySetup(
+      {
+        profile: next.profile,
+        executablePath: process.execPath,
+        signal: new AbortController().signal,
+        notice: (text) => next.stderr.push(text),
+      },
+      { pollMs: 1, releaseTimeoutMs: 10, appearanceTimeoutMs: 10 },
+    );
+    await expect(running).rejects.toMatchObject({ code: 'PROFILE_INVALID' });
+    expect(next.spawn).toHaveBeenCalledOnce();
+  } finally {
+    await next.close();
+    await first.close();
+  }
+});
+
+// Cleanup must join a real running child before the next test installs its hooks.
+test('fixture cleanup joins a pending setup before clearing hooks for the next test', async () => {
+  const f = await fixture();
+  const pending = f.run();
+  await f.ready();
+  // Emulate the afterEach boundary while the body still has pending work.
+  await cleanupOwnedFixtures();
+  expect(await pending).toBe(1);
+  expect(f.stdout.join('')).toContain('CANCELLED');
+  expect(cleanups.size).toBe(0);
+  for (const child of [f.child].filter((value) => value !== undefined))
+    expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+  const next = await fixture();
+  try {
+    expect(await next.run(false)).toBe(2);
+    expect(next.spawn).not.toHaveBeenCalled();
+    expect(() => f.run()).toThrow('already closed');
+  } finally {
+    await next.close();
+  }
+}, 30000);
+
+// Native child startup and lock/exit IPC are the behavior under test, not a
+// five-second wall-clock promise. Other files keep Vitest's default limits.
 test('setup directly spawns exact ordinary-browser argv and returns only after child exit and profile lock release', async () => {
   const f = await fixture();
   let running: Promise<number> | undefined;
@@ -242,8 +345,9 @@ test('setup directly spawns exact ordinary-browser argv and returns only after c
     await f.close();
     await running;
   }
-});
+}, 30000);
 
+// Real process startup plus held-lock/release acknowledgements need their own bound.
 test('setup reuses its marked profile and never reports completion after early Enter while the window lock remains held', async () => {
   const f = await fixture();
   let running: Promise<number> | undefined;
@@ -272,17 +376,12 @@ test('setup reuses its marked profile and never reports completion after early E
     await f.close();
     await running;
   }
-});
+}, 30000);
 
 test('setup refuses non-terminal calls and foreign nonempty folders before starting a browser', async () => {
   const f = await fixture();
   try {
-    const pipe = f.run(false);
-    await expect
-      .poll(() => f.spawn.mock.calls.length + f.stdout.length)
-      .toBeGreaterThan(0);
-    expect(f.spawn).not.toHaveBeenCalled();
-    expect(await pipe).toBe(2);
+    expect(await f.run(false)).toBe(2);
     expect(f.stdout.join('')).toContain('NOT_INTERACTIVE');
     expect(f.spawn).not.toHaveBeenCalled();
     await mkdir(f.profile);
@@ -291,12 +390,7 @@ test('setup refuses non-terminal calls and foreign nonempty folders before start
       'Generated ordinary profile',
     );
     f.stdout.length = 0;
-    const foreign = f.run();
-    await expect
-      .poll(() => f.spawn.mock.calls.length + f.stdout.length)
-      .toBeGreaterThan(0);
-    expect(f.spawn).not.toHaveBeenCalled();
-    expect(await foreign).toBe(2);
+    expect(await f.run()).toBe(2);
     expect(f.stdout.join('')).toContain('PROFILE_INVALID');
     expect(f.spawn).not.toHaveBeenCalled();
     expect(driver.launch).not.toHaveBeenCalled();
@@ -305,6 +399,7 @@ test('setup refuses non-terminal calls and foreign nonempty folders before start
   }
 });
 
+// Exercises a real lingering child, lock release and signal-driven exit.
 test('Enter ends only the owned lingering child after its observed profile lock is released', async () => {
   const f = await fixture();
   let running: Promise<number> | undefined;
@@ -331,8 +426,9 @@ test('Enter ends only the owned lingering child after its observed profile lock 
     await f.close();
     await running;
   }
-});
+}, 30000);
 
+// A native child must start, then exit while its real lock file remains held.
 test('an exited browser with a remaining lock fails within the bounded wait without deleting the lock', async () => {
   const f = await fixture();
   let running: Promise<void> | undefined;
@@ -365,8 +461,9 @@ test('an exited browser with a remaining lock fails within the bounded wait with
     await f.close();
     await running?.catch(() => undefined);
   }
-});
+}, 30000);
 
+// Cancellation is checked after the native stub has acquired its lock.
 test('an already-held profile is rejected before spawning and cancellation never kills its browser', async () => {
   const f = await fixture();
   let running: Promise<void> | undefined;
@@ -410,7 +507,7 @@ test('an already-held profile is rejected before spawning and cancellation never
     await f.close();
     await running?.catch(() => undefined);
   }
-});
+}, 30000);
 
 test('released Windows lockfile residue is probed without truncation and POSIX singleton links are not followed', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-lock-decoy-'));
@@ -468,6 +565,7 @@ async function stopGeneratedGrandchild(profile: string) {
   }
 }
 
+// This test intentionally crosses two native process startups and a delayed lock.
 test('fast-exiting browser stub hands off to a lock-holding grandchild and setup never completes before that observed lock releases', async () => {
   const f = await fixture(handoffStub);
   let running: Promise<number> | undefined;
@@ -502,12 +600,12 @@ test('fast-exiting browser stub hands off to a lock-holding grandchild and setup
     expect(await running, f.stderr.join('')).toBe(0);
     expect(await profileModule.profileInUse(f.profile)).toBe(false);
   } finally {
-    await stopGeneratedGrandchild(f.profile);
     await f.close();
     await running;
   }
-});
+}, 30000);
 
+// The two-second native startup delay is the regression input, so allow IPC and teardown too.
 test('setup waits through a two-second child startup before the first profile lock appears', async () => {
   const delayed = stub.replace(
     "await writeFile(join(profile,'SingletonLock')",
@@ -535,7 +633,7 @@ test('setup waits through a two-second child startup before the first profile lo
     await f.close();
     await running;
   }
-});
+}, 30000);
 
 test('an exited launcher without any observed lock fails at the first-lock deadline, never reports a completed window', async () => {
   const f = await fixture('process.exit(0);');
@@ -567,6 +665,7 @@ test('an exited launcher without any observed lock fails at the first-lock deadl
   }
 });
 
+// Waits for a real launcher to exit before sending the person's Enter confirmation.
 test('the explicit Enter confirmation can finish a fast launcher after window closure even if a short-lived lock was never sampled', async () => {
   const f = await fixture('process.exit(0);');
   let running: Promise<number> | undefined;
@@ -584,7 +683,7 @@ test('the explicit Enter confirmation can finish a fast launcher after window cl
     await f.close();
     await running;
   }
-});
+}, 30000);
 
 test('profile snapshot records only sorted extension ID directory names, not manifest paths or contents', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-extension-set-'));
@@ -636,71 +735,94 @@ test('extension-set equality rejects a replacement ID even at the same count and
   }
 });
 
+// Real parent/child lifetime on Windows is the point; the default five seconds
+// cannot bound two startups, heartbeat observation, exit and process teardown.
 test('a detached generated window survives the actual setup CLI process ending on Windows', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-setup-job-')),
     profile = join(directory, 'profile');
   await profileModule.createProfile(profile);
   const browser = join(directory, 'window.mjs'),
-    cli = join(directory, 'cli.mjs'),
-    realSpawn = (
-      await vi.importActual<typeof childProcess>('node:child_process')
-    ).spawn;
+    cli = join(directory, 'cli.mjs');
   await writeFile(
     browser,
-    `import {writeFile,stat,unlink} from 'node:fs/promises';import {join} from 'node:path';const profile=process.argv.slice(2).find(value=>value.startsWith('--user-data-dir='))?.slice(16);await writeFile(join(profile,'SingletonLock'),'Generated window owns lock');let count=0;const timer=setInterval(async()=>{await writeFile(join(profile,'heartbeat.json'),JSON.stringify({pid:process.pid,count:++count}));try{await stat(join(profile,'close-window'));clearInterval(timer);await unlink(join(profile,'SingletonLock'));process.exit(0);}catch{}},20);`,
+    `import {writeFile,stat,unlink} from 'node:fs/promises';import {join} from 'node:path';const profile=process.argv.slice(2).find(value=>value.startsWith('--user-data-dir='))?.slice(16);await writeFile(join(profile,'window-pid.json'),JSON.stringify({pid:process.pid}));await writeFile(join(profile,'SingletonLock'),'Generated window owns lock');let count=0;for(;;){await writeFile(join(profile,'heartbeat-'+(++count)), '', {flag:'wx'});try{await stat(join(profile,'close-window'));await unlink(join(profile,'SingletonLock'));process.exit(0);}catch{}await new Promise(resolve=>setTimeout(resolve,20));}`,
   );
   await writeFile(
     cli,
-    `import cp from 'node:child_process';import {syncBuiltinESMExports}from'node:module';import {readFile,writeFile}from'node:fs/promises';import {join}from'node:path';const real=cp.spawn;cp.spawn=(command,args,options)=>real(command,[${JSON.stringify(browser)},...args],options);syncBuiltinESMExports();const {ordinarySetup}=await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL('./setup.ts', import.meta.url))).href)});const profile=${JSON.stringify(profile)},controller=new AbortController();const timer=setInterval(async()=>{try{await readFile(join(profile,'heartbeat.json'));controller.abort();}catch{}},20);try{await ordinarySetup({profile,executablePath:process.execPath,signal:controller.signal,notice:()=>{}},{pollMs:10,releaseTimeoutMs:100,appearanceTimeoutMs:5000});}catch(error){if(error.code!=='CANCELLED')throw error;}clearInterval(timer);await writeFile(join(profile,'cli-ended'),'Generated CLI cancellation');process.exit(0);`,
+    `import cp from 'node:child_process';import {syncBuiltinESMExports}from'node:module';import {readdir,writeFile}from'node:fs/promises';import {join}from'node:path';const real=cp.spawn;cp.spawn=(command,args,options)=>{const child=real(command,[${JSON.stringify(browser)},...args],options);void writeFile(join(profile,'spawned-window-pid.json'),JSON.stringify({pid:child.pid}));return child;};syncBuiltinESMExports();const {ordinarySetup}=await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL('./setup.ts', import.meta.url))).href)});const profile=${JSON.stringify(profile)},controller=new AbortController();const timer=setInterval(async()=>{try{if((await readdir(profile)).some(name=>/^heartbeat-[0-9]+$/.test(name)))controller.abort();}catch{}},20);try{await ordinarySetup({profile,executablePath:process.execPath,signal:controller.signal,notice:()=>{}},{pollMs:10,releaseTimeoutMs:100,appearanceTimeoutMs:60000});}catch(error){if(error.code!=='CANCELLED')throw error;}clearInterval(timer);await writeFile(join(profile,'cli-ended'),'Generated CLI cancellation');process.exit(0);`,
   );
   const parent = realSpawn(process.execPath, [cli], { stdio: 'ignore' });
+  const parentClosed = new Promise<void>((resolve) =>
+    parent.once('close', () => resolve()),
+  );
+  let closing: Promise<void> | undefined;
+  const close = () => {
+    closing ??= (async () => {
+      try {
+        await writeFile(join(profile, 'close-window'), 'Generated teardown');
+        if (parent.exitCode === null && parent.signalCode === null)
+          parent.kill();
+        await parentClosed;
+        const record = await readFile(
+          join(profile, 'window-pid.json'),
+          'utf8',
+        ).catch(() =>
+          readFile(join(profile, 'spawned-window-pid.json'), 'utf8').catch(
+            () => null,
+          ),
+        );
+        if (record) {
+          const pid = (JSON.parse(record) as { pid: number }).pid;
+          await expect
+            .poll(
+              () => {
+                try {
+                  process.kill(pid, 0);
+                  return true;
+                } catch {
+                  return false;
+                }
+              },
+              { timeout: 10000 },
+            )
+            .toBe(false);
+        }
+      } finally {
+        await rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100,
+        });
+        cleanups.delete(close);
+      }
+    })();
+    return closing;
+  };
+  cleanups.add(close);
   try {
-    await expect.poll(() => parent.exitCode, { timeout: 10000 }).toBe(0);
+    await parentClosed;
+    expect(parent.exitCode).toBe(0);
     expect(await readFile(join(profile, 'cli-ended'), 'utf8')).toBe(
       'Generated CLI cancellation',
     );
-    const prior = JSON.parse(
-      await readFile(join(profile, 'heartbeat.json'), 'utf8'),
-    ) as { pid: number; count: number };
-    await expect
-      .poll(
-        async () => {
-          try {
-            return (
-              JSON.parse(
-                await readFile(join(profile, 'heartbeat.json'), 'utf8'),
-              ) as { count: number }
-            ).count;
-          } catch {
-            return 0;
-          }
-        },
-        { timeout: 1000 },
-      )
-      .toBeGreaterThan(prior.count);
+    // Append-only empty files are an observable heartbeat without partial JSON
+    // reads or Windows replacement conflicts with a reader's file handle.
+    const heartbeats = async () =>
+      (await readdir(profile)).filter((name) => /^heartbeat-[0-9]+$/.test(name))
+        .length;
+    const prior = await heartbeats();
+    expect(prior).toBeGreaterThan(0);
+    await expect.poll(heartbeats, { timeout: 10000 }).toBeGreaterThan(prior);
     expect(await profileModule.profileInUse(profile)).toBe(true);
     await writeFile(join(profile, 'close-window'), 'Generated window close');
     await expect
-      .poll(() => profileModule.profileInUse(profile), { timeout: 3000 })
+      .poll(() => profileModule.profileInUse(profile), { timeout: 10000 })
       .toBe(false);
   } finally {
-    await writeFile(join(profile, 'close-window'), 'Generated teardown').catch(
-      () => undefined,
-    );
-    if (parent.exitCode === null && parent.signalCode === null) {
-      parent.kill();
-      await new Promise<void>((resolve) =>
-        parent.once('close', () => resolve()),
-      );
-    }
-    await rm(directory, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 100,
-    });
+    await close();
   }
-});
+}, 30000);
 
 test('delete and verify driver keep Chromium sandbox enabled and all automation default arguments', async () => {
   await expect(

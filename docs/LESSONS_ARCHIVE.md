@@ -197,10 +197,10 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Detection Pattern:** a handoff that gives the person a command the agent could run; a UI node closed without a screenshot or a person's look; a closure report that calls a screen finished on test evidence alone.
 **Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed one line for `.kilo/agents/workflow-orchestrator.md` (protected), "A user-facing node closes only after the person's steps are counted and the screens were looked at (LL-2026-10-007)"; until he approves it, the parent applies this before closing any UI node.
 **Related Lessons:** LL-2026-10-005 (write for the person in his words).
-**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done. Violated on 2026-10-12: `browser setup` was handed to him on fake-X evidence alone. It opened the sign-in page through the automation driver, so the window showed an unsupported `--no-sandbox` warning, X's sign-in did not continue and Google refused the browser as insecure. Nobody had looked at what that window shows a person. Corrected by starting the installed browser itself for sign-in, with no driver attached, and by checking the window's start flags before handing him the step again.
+**Regression / Verification Note:** applied on 2026-10-10 by starting the review for him instead of handing him a command, and by planning the redesign with screenshots for his look before it counts as done. Violated on 2026-10-12: `browser setup` was handed to him on fake-X evidence alone. It opened the sign-in page through the automation driver, so the window showed an unsupported `--no-sandbox` warning, X's sign-in did not continue and Google refused the browser as insecure. Nobody had looked at what that window shows a person. Corrected by starting the installed browser itself for sign-in, with no driver attached, and by checking the window's start flags before handing him the step again. Violated again on 2026-10-13: the first signed-in originals run was handed to him after checking only its plan hash. The run also needs the export's account name, which his workspace does not hold because the account file had been left out of his cleanup copy on purpose, so it refused at once with a message meant for deletion. Before handing a person a run, check every precondition the run's code tests, not only the one the instructions mention.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 1 time
+- Violated: 2 times
 
 ### [LL-2026-10-008] 2026-10-10 VERIFICATION: Tell the person something is on their screen only after seeing it arrive
 
@@ -279,6 +279,33 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Affected Files:** `apps/cli/src/originals/test/server.ts`, `apps/cli/src/originals/complete.test.ts` (fixed in `c5f27fd`). Retrieval anchor: `tools/lint-rules/src/test-ports.test.ts`, which runs in every `pnpm test` and in CI, fails on any fixed-port `listen` in a unit test or test helper, and names this lesson.
 **Related Lessons:** LL-2026-10-004 (a local gate proves only what it ran), LL-2026-10-001 (re-read state before reporting it).
 **Regression / Verification Note:** the guard failed against the pre-fix helper (`server.ts:105`) and passes on the fixed tree; the CLI unit project passed six times in a row after the fix.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 0 times
+
+### [LL-2026-10-011] 2026-10-13 ORCHESTRATION: Look up your own record of a state before explaining it or asking the person about it
+
+**ID:** LL-2026-10-011
+**Severity:** MEDIUM
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). File names, dates and record IDs below are dated evidence from 2026-10-13.
+
+**Feedback:** "Das solltest du eigentlich selber wissen. Aber ja, kann sein, dass du es halt vergessen hast." The maintainer, after being asked for the path of his export.
+**Problem:** His first signed-in run refused because the workspace had no account name. The agent read the current state correctly (no account file in the import) and then offered two outside causes, a missing file in his export or an adapter gap, and asked him for the export's path. Its own run record said otherwise: when it prepared his cleanup workspace, it had left the account file out on purpose because that file holds his e-mail address.
+**5 Whys Analysis:**
+1. Why was the person asked? -> The cause looked unknown.
+2. Why did it look unknown? -> The agent explained the state from the code and the current data only.
+3. Why not from its own record? -> The step that produced the state lay days back, behind context compaction, and the record sat in the shared board, which nothing prompted it to search.
+4. Why did nothing prompt it? -> The existing controls require re-reading live state (LL-2026-10-001), not looking up how that state came about.
+5. Why? -> Root cause: no control makes the agent search its own run records for the producing step before it names a cause or asks the person.
+**Rule(s):**
+1. Before explaining a state that your own earlier work could have produced, or asking the person about it, search your own records (board, handoff, session history) for the step that produced it.
+2. Ask the person only for what those records cannot contain: their decision, their knowledge, or an action only they can take.
+3. When a record shows the state was your own choice, say so plainly before proposing a fix.
+**Detection Pattern:** a diagnosis that says something "was not found", "is missing" or "may be a bug" about data the agent itself copied, filtered or imported; a question to the person about files or steps the agent handled.
+**Affected Files:** none in the repository. Retrieval anchor: the first block of section 00 in the maintainer's private handoff file, which the parent reads on every resume and before every step on his workspace, names this lesson. A one-line trigger on an always-loaded surface is proposed to the maintainer and needs his approval.
+**Related Lessons:** LL-2026-10-001 (re-read live state), LL-2026-10-007 (check what the person will meet before handing over a step).
+**Regression / Verification Note:** applied on 2026-10-13 by finding the producing step (the account file left out when the cleanup copy was extracted), telling him so, and choosing a fix that keeps the e-mail out of the workspace.
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times

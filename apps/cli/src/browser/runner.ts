@@ -10,7 +10,13 @@ import type {
 import { startConfirmation } from './confirmation.ts';
 import { displayRow, planSummary, planDeletion } from './plan.ts';
 import type { DeletePlan } from './plan.ts';
-import { profileWarning } from './copy.ts';
+import {
+  profileWarning,
+  EXTENSION_NOTICE,
+  START_STATUS,
+  endText,
+  endReason,
+} from './copy.ts';
 import {
   changedProfileFiles,
   profileSnapshot,
@@ -119,11 +125,13 @@ export async function runWithDependencies(
   const confirmation = await startConfirmation(
     {
       phase: 'start',
+      lang: options.lang,
       expectedHandle: options.plan.handle,
       warning: summary.warning,
       profileWarning:
-        profileWarning(options.plan.handle) +
-        ' Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile.',
+        profileWarning(options.plan.handle, options.lang) +
+        ' ' +
+        EXTENSION_NOTICE[options.lang],
       planned: summary.planned,
       bulk: summary.bulk,
       estimateMs: summary.estimateMs,
@@ -132,9 +140,7 @@ export async function runWithDependencies(
         .slice(0, 20)
         .map((row) => displayRow(row, options.plan.timeZone)),
       completed: 0,
-      result: options.verify
-        ? 'Read-only verification. No deletion clicks.'
-        : 'Watch the first entry of each action before continuing.',
+      result: START_STATUS[options.verify ? 'verify' : 'delete'][options.lang],
     },
     dependencies.confirmationPort,
   );
@@ -400,14 +406,24 @@ export async function runWithDependencies(
         completed++;
         confirmation.update({
           completed,
-          result: `${completed} entries completed.`,
+          result:
+            options.lang === 'de'
+              ? `${completed} Einträge abgeschlossen.`
+              : `${completed} entries completed.`,
         });
-        options.notice(`${completed} entries completed.\n`);
+        options.notice(
+          options.lang === 'de'
+            ? `${completed} Einträge abgeschlossen.\n`
+            : `${completed} entries completed.\n`,
+        );
         if (!canaries.has(row.action)) {
           canaries.add(row.action);
           confirmation.update({
             phase: 'canary',
-            result: `First ${row.action} completed. Check the platform tab before Continue. Post: https://x.com/i/web/status/${row.item.id.slice(2)}`,
+            result:
+              options.lang === 'de'
+                ? `Die erste Aktion ${row.action === 'delete-post' ? 'Beitrag löschen' : 'Repost rückgängig machen'} ist abgeschlossen. Prüfe den Plattform-Tab, bevor du Weiter klickst. Beitrag: https://x.com/i/web/status/${row.item.id.slice(2)}`
+                : `First ${row.action} completed. Check the platform tab before Continue. Post: https://x.com/i/web/status/${row.item.id.slice(2)}`,
           });
           if (
             !(await Promise.race([confirmation.wait('continue'), cancelWait]))
@@ -501,17 +517,32 @@ export async function runWithDependencies(
       confirmation.update({
         phase: 'ended',
         completed,
-        result: `Run ended: ${run.endReason ?? 'stopped-by-person'}. Close the browser window to finish.`,
+        result: endText(
+          endReason(run.endReason ?? 'stopped-by-person', error),
+          options.lang,
+        ),
       });
-      await confirmation.close();
-      options.signal.removeEventListener('abort', abort);
-      process.removeListener('SIGINT', signalHandler);
-      process.removeListener('SIGTERM', signalHandler);
+      options.notice(
+        endText(
+          endReason(run.endReason ?? 'stopped-by-person', error),
+          options.lang,
+        ) + '\n',
+      );
+      try {
+        if (browser) await browser.close();
+      } finally {
+        try {
+          await confirmation.close();
+        } finally {
+          options.signal.removeEventListener('abort', abort);
+          process.removeListener('SIGINT', signalHandler);
+          process.removeListener('SIGTERM', signalHandler);
+        }
+      }
     }
   }
   // Production keeps its visible window until the person closes it. Tests close
   // their disposable context through their injected driver after the read-back.
-  if (browser) await browser.close();
   if (error && run.endReason !== 'stopped-by-person')
     throw error instanceof CliError ? error : new CliError('RUN_STOPPED');
   return {

@@ -136,15 +136,18 @@ export function extensionsChanged(
   before: ProfileSnapshot,
   after: ProfileSnapshot,
 ): boolean {
-  return (
-    JSON.stringify(before.extensionIds) !== JSON.stringify(after.extensionIds)
-  );
+  // Edge can remove default folders when extensions are disabled. Only a new
+  // ID, including the new side of a replacement, stops the driven run.
+  const known = new Set(before.extensionIds);
+  return after.extensionIds.some((id) => !known.has(id));
 }
 export interface ExtensionProfileReport {
   runId: string;
   extensionsDisabled: true;
   extensionIdsBefore: string[];
   extensionIdsAfter: string[];
+  extensionIdsRemoved: string[];
+  extensionIdsAdded: string[];
   journalReport: unknown;
 }
 export async function writeExtensionReport(
@@ -163,6 +166,12 @@ export async function writeExtensionReport(
     extensionsDisabled: true,
     extensionIdsBefore: before.extensionIds,
     extensionIdsAfter: after.extensionIds,
+    extensionIdsRemoved: before.extensionIds.filter(
+      (id) => !after.extensionIds.includes(id),
+    ),
+    extensionIdsAdded: after.extensionIds.filter(
+      (id) => !before.extensionIds.includes(id),
+    ),
     journalReport,
   };
   const handle = await open(path, 'wx');

@@ -11,7 +11,14 @@ import {
   extensionsChanged,
   writeExtensionReport,
 } from '../../profile.ts';
-import { profileWarning } from '../../copy.ts';
+import {
+  profileWarning,
+  EXTENSION_NOTICE,
+  FILL_STEPS,
+  START_STATUS,
+  endText,
+  endReason,
+} from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
 import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
 import { dateInZone } from '../../pace.ts';
@@ -175,12 +182,15 @@ export async function runFillWithDependencies(
     confirmation = await startConfirmation(
       {
         phase: 'start',
+        lang: options.lang ?? 'en',
         expectedHandle: options.plan.handle,
         warning: summary.warning,
         profileWarning:
-          profileWarning(options.plan.handle) +
-          ' Open each listed post by its address and keep what X sends. No clicks, typing or scrolling in the X tab. Download media anonymously. Pages change history, cache, cookies and site data.' +
-          ' Extensions are disabled. SocialPrune writes its own read-back JSON file in this profile with the before/after extension ID sets.' +
+          profileWarning(options.plan.handle, options.lang) +
+          ' ' +
+          FILL_STEPS[options.lang ?? 'en'] +
+          ' ' +
+          EXTENSION_NOTICE[options.lang ?? 'en'] +
           (options.mediaNotice ?? ''),
         planned: summary.planned,
         bulk: 0,
@@ -190,9 +200,10 @@ export async function runFillWithDependencies(
           .slice(0, 20)
           .map(({ id, reasons, reference }) => ({ id, reasons, reference })),
         completed: 0,
-        result: options.plan.canary
-          ? 'Watch up to five pages. Compare each before Continue, then confirm Matches.'
-          : 'Read the remaining planned pages.',
+        result:
+          START_STATUS[options.plan.canary ? 'fillCanary' : 'fill'][
+            options.lang ?? 'en'
+          ],
       },
       deps.port,
     );
@@ -601,7 +612,10 @@ export async function runFillWithDependencies(
           confirmation.update({
             phase: 'canary',
             completed,
-            result: `Text length ${row.original.text?.length ?? 0} -> ${records[0]?.text?.length ?? 0}. Media: ${JSON.stringify(records[0]?.media.map((media) => ({ kind: media.kind, status: media.status })) ?? [])}. Posts above: ${extracted.kind === 'read' ? extracted.above.length : 0}. Structure: ${lock.instruction ?? 'no entry'}`,
+            result:
+              options.lang === 'de'
+                ? `Textlänge ${row.original.text?.length ?? 0} → ${records[0]?.text?.length ?? 0}. Medien: ${records[0]?.media.length ?? 0}, davon gespeichert: ${records[0]?.media.filter((media) => media.status === 'stored').length ?? 0}. Beiträge darüber: ${extracted.kind === 'read' ? extracted.above.length : 0}. ${lock.instruction ? 'Seitenstruktur erkannt.' : 'Kein Eintrag in der Antwort.'}`
+                : `Text length ${row.original.text?.length ?? 0} -> ${records[0]?.text?.length ?? 0}. Media: ${JSON.stringify(records[0]?.media.map((media) => ({ kind: media.kind, status: media.status })) ?? [])}. Posts above: ${extracted.kind === 'read' ? extracted.above.length : 0}. Structure: ${lock.instruction ?? 'no entry'}`,
           });
           if (
             !(await Promise.race([confirmation.wait('continue'), cancellation]))
@@ -668,7 +682,10 @@ export async function runFillWithDependencies(
         if (run.endReason === 'canary' && !error) {
           confirmation.update({
             phase: 'match',
-            result: `Compare the stored results with the page. Structure report: ${reportPath ?? 'not written'}`,
+            result:
+              options.lang === 'de'
+                ? `Vergleiche die gespeicherten Ergebnisse mit der Seite. Strukturbericht: ${reportPath ?? 'nicht geschrieben'}`
+                : `Compare the stored results with the page. Structure report: ${reportPath ?? 'not written'}`,
           });
           matches = await Promise.race([
             confirmation.wait('matches'),
@@ -726,13 +743,22 @@ export async function runFillWithDependencies(
     confirmation.update({
       phase: 'ended',
       completed,
-      result: `Ended: ${run.endReason ?? 'cancelled'}. Close the window.`,
+      result: endText(endReason(run.endReason, error), options.lang),
     });
-    await confirmation.close();
-    options.signal.removeEventListener('abort', stopped);
-    process.removeListener('SIGINT', stopped);
-    process.removeListener('SIGTERM', stopped);
-    if (context) await deps.close(context);
+    options.notice(
+      endText(endReason(run.endReason, error), options.lang) + '\n',
+    );
+    try {
+      if (context) await deps.close(context);
+    } finally {
+      try {
+        await confirmation.close();
+      } finally {
+        options.signal.removeEventListener('abort', stopped);
+        process.removeListener('SIGINT', stopped);
+        process.removeListener('SIGTERM', stopped);
+      }
+    }
   }
   if (error)
     throw error instanceof CliError ? error : new CliError('ORIGINALS_FAILED');

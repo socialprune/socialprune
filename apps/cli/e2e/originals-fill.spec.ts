@@ -18,6 +18,8 @@ import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { productionMedia } from '../src/originals/video.ts';
 import { SyndicationClient } from '../src/originals/syndication.ts';
 import { CliError } from '../src/cli/errors.ts';
+import { startConfirmation } from '../src/browser/confirmation.ts';
+import { REVIEW_POLICY } from '../src/review/static.ts';
 import { fileURLToPath } from 'node:url';
 for (const variant of [
   'success',
@@ -40,6 +42,8 @@ for (const variant of [
   'shared-cap',
   'unavailable',
   'tombstone',
+  'removed',
+  'german-ended',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -117,6 +121,11 @@ for (const variant of [
       ),
       'Generated contents that must never be read',
     );
+    if (variant === 'removed')
+      await mkdir(
+        join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+        { recursive: true },
+      );
     if (variant === 'shared-cap') {
       const writer = store.browserOutcomeWriter(),
         run = {
@@ -144,6 +153,7 @@ for (const variant of [
     let running: Promise<unknown> | undefined;
     const abort = new AbortController();
     const requests: string[] = [];
+    const notices: string[] = [];
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
@@ -187,9 +197,9 @@ for (const variant of [
         response.end(account);
         return;
       }
-      if (['login', 'challenge', 'limit'].includes(variant)) {
+      if (['login', 'challenge', 'limit', 'german-ended'].includes(variant)) {
         response.end(
-          `${account}<p data-testid="${variant === 'login' ? 'loginButton' : variant === 'challenge' ? 'challenge' : 'rateLimit'}">${variant === 'login' ? 'Log in to X' : variant === 'challenge' ? 'Confirm you are human' : 'Rate limit exceeded'}</p>`,
+          `${account}<p data-testid="${variant === 'login' || variant === 'german-ended' ? 'loginButton' : variant === 'challenge' ? 'challenge' : 'rateLimit'}">${variant === 'login' || variant === 'german-ended' ? 'Log in to X' : variant === 'challenge' ? 'Confirm you are human' : 'Rate limit exceeded'}</p>`,
         );
         return;
       }
@@ -221,8 +231,9 @@ for (const variant of [
           maxVideoBytes: 1024 ** 3,
           maxRunBytes: 20 * 1024 ** 3,
           include: new Set(),
+          lang: variant === 'german-ended' ? 'de' : 'en',
           now: () => new Date(now),
-          notice: () => {},
+          notice: (text) => notices.push(text),
         },
         {
           origin: 'http://127.0.0.1:4231',
@@ -248,6 +259,11 @@ for (const variant of [
               ignoreDefaultArgs: ['--disable-infobars'],
             });
             expect(await profileInUse(profile)).toBe(true);
+            if (variant === 'removed')
+              await rm(join(profile, 'Default', 'Extensions'), {
+                recursive: true,
+                force: true,
+              });
             const probe = await context.newCDPSession(context.pages()[0]!);
             const command = await probe.send('Browser.getBrowserCommandLine');
             expect(command.arguments).not.toContain('--no-sandbox');
@@ -266,7 +282,12 @@ for (const variant of [
             waits.push(ms);
             now += ms;
           },
-          async close() {},
+          async close() {
+            if (variant === 'german-ended')
+              await new Promise<void>((resolve) =>
+                context!.once('close', () => resolve()),
+              );
+          },
         },
       ).then(
         (value) => value,
@@ -281,6 +302,20 @@ for (const variant of [
         )
         .toBe(true);
       const page = context!.pages()[0]!;
+      if (variant === 'german-ended') {
+        await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+        await expect(page.locator('#continue')).toHaveText('Weiter');
+        await expect(page.locator('#matches')).toHaveText('Passt');
+        await expect(page.locator('#does-not-match')).toHaveText('Passt nicht');
+        await expect(page.locator('#stop')).toHaveText('Stopp');
+        await page.locator('#start').click();
+        await expect(page.locator('#result')).toContainText('Beendet');
+        expect(notices.join('')).toContain('Schließe das X-Fenster');
+        expect((await page.request.get(page.url())).status()).toBe(200);
+        await context!.close();
+        expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
+        return;
+      }
       await expect(
         page.getByRole('button', { name: 'Start', exact: true }),
       ).toBeVisible();
@@ -460,6 +495,20 @@ for (const variant of [
           extensionsDisabled: true,
         });
       }
+      if (variant === 'removed') {
+        const run = (await store.browserJournal()).runs.at(-1)!;
+        const report = JSON.parse(
+          await readFile(
+            join(profile, `socialprune-readback-${run.runId}.json`),
+            'utf8',
+          ),
+        ) as { extensionIdsRemoved: string[]; extensionIdsAdded: string[] };
+        expect(report.extensionIdsRemoved).toEqual([
+          preinstalledId,
+          'b'.repeat(32),
+        ]);
+        expect(report.extensionIdsAdded).toEqual([]);
+      }
       if (variant === 'canary-five') {
         const sends = (await store.browserJournal()).attempts.filter(
           (attempt) => attempt.state === 'sending',
@@ -508,3 +557,89 @@ for (const variant of [
       });
     }
   });
+
+test('confirmation page loads only its same-origin stylesheet and rejects a second-origin style and connection', async ({
+  page,
+}) => {
+  let hits = 0;
+  const decoy = createServer((_request, response) => {
+    hits++;
+    response.setHeader('Content-Type', 'text/css');
+    response.end('body{color:red}');
+  });
+  await new Promise<void>((resolve) =>
+    decoy.listen(4238, '127.0.0.1', resolve),
+  );
+  const server = await startConfirmation(
+    {
+      lang: 'de',
+      phase: 'start',
+      expectedHandle: 'generated',
+      warning: 'Generierte Warnung',
+      profileWarning: 'Generiertes Profil',
+      planned: 1,
+      bulk: 0,
+      estimateMs: 30000,
+      list: 'generierte-liste.txt',
+      rows: [],
+      completed: 0,
+      result: 'Beobachte die Stichprobe.',
+    },
+    4232,
+  );
+  try {
+    await page.addInitScript(() => {
+      const directives: string[] = [];
+      Reflect.set(window, '__confirmationViolations', directives);
+      document.addEventListener('securitypolicyviolation', (event) =>
+        directives.push(event.effectiveDirective),
+      );
+    });
+    const response = await page.goto(server.launchUrl);
+    expect(response?.headers()['content-security-policy']).toBe(REVIEW_POLICY);
+    expect(
+      await page
+        .locator('meta[http-equiv="Content-Security-Policy"]')
+        .getAttribute('content'),
+    ).toBe(REVIEW_POLICY);
+    await expect(page.locator('#start')).toBeVisible();
+    expect(
+      await page
+        .locator('#start')
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe('rgb(37, 77, 190)');
+    expect(
+      (await page.request.get(server.url + 'confirmation.css')).headers()[
+        'content-type'
+      ],
+    ).toBe('text/css; charset=utf-8');
+    await page.evaluate(() => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'http://127.0.0.1:4238/decoy.css';
+      document.head.appendChild(link);
+    });
+    expect(
+      await page.evaluate(async () => {
+        try {
+          await fetch('http://127.0.0.1:4238/decoy');
+          return false;
+        } catch {
+          return true;
+        }
+      }),
+    ).toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => Reflect.get(window, '__confirmationViolations') as string[],
+        ),
+      )
+      .toEqual(expect.arrayContaining(['style-src-elem', 'connect-src']));
+    expect(hits).toBe(0);
+  } finally {
+    await server.close();
+    decoy.closeAllConnections();
+    await new Promise<void>((resolve) => decoy.close(() => resolve()));
+  }
+});

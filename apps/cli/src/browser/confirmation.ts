@@ -2,8 +2,11 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ReviewSession } from '../review/session.ts';
 import { REVIEW_HEADERS, REVIEW_POLICY } from '../review/static.ts';
+import { endText } from './copy.ts';
+import type { BrowserLanguage } from './copy.ts';
 
 export interface ConfirmationView {
+  lang?: BrowserLanguage;
   phase: 'start' | 'running' | 'canary' | 'match' | 'ended';
   version: number;
   warning: string;
@@ -17,25 +20,54 @@ export interface ConfirmationView {
   completed: number;
   result: string;
 }
-const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>SocialPrune browser run</title><script src="/confirmation.js" defer></script></head><body><main><h1>SocialPrune browser run</h1><p id="account"></p><p id="warning"></p><p id="profile"></p><p id="counts"></p><p id="list"></p><pre id="rows"></pre><p id="result" role="status"></p><button id="start" hidden>Start</button><button id="continue" hidden>Continue</button><button id="matches" hidden>Matches</button><button id="does-not-match" hidden>Does not match</button><button id="stop" hidden>Stop</button></main></body></html>`;
+const LABELS = {
+  en: {
+    title: 'SocialPrune browser run',
+    continue: 'Continue',
+    matches: 'Matches',
+    mismatch: 'Does not match',
+    stop: 'Stop',
+    rows: 'Planned entries',
+    status: 'Run status',
+  },
+  de: {
+    title: 'SocialPrune im Browser',
+    continue: 'Weiter',
+    matches: 'Passt',
+    mismatch: 'Passt nicht',
+    stop: 'Stopp',
+    rows: 'Geplante Einträge',
+    status: 'Laufstatus',
+  },
+};
+function document(lang: BrowserLanguage): string {
+  const labels = LABELS[lang];
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>${labels.title}</title><link rel="stylesheet" href="/confirmation.css"><script src="/confirmation.js" defer></script></head><body><main><header><p class="brand">SocialPrune</p><h1>${labels.title}</h1></header><section class="plan"><p id="account"></p><p id="counts"></p><p id="list"></p><details><summary>${labels.rows}</summary><pre id="rows"></pre></details></section><section class="warning"><p id="warning"></p><p id="profile"></p></section><section class="state" aria-label="${labels.status}"><p id="result" role="status" aria-live="polite"></p></section><nav class="actions"><button id="start" class="primary" hidden>Start</button><button id="continue" class="primary" hidden>${labels.continue}</button><button id="matches" class="primary" hidden>${labels.matches}</button><button id="does-not-match" hidden>${labels.mismatch}</button><button id="stop" hidden>${labels.stop}</button></nav></main></body></html>`;
+}
+const stylesheet = `:root{color-scheme:light;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17243d;background:#f5f7fb;line-height:1.55}*{box-sizing:border-box}body{margin:0;padding:1.5rem}main{max-width:58rem;margin:0 auto}header{padding:.5rem 0 1rem}.brand{color:#3159c9;font-weight:700;margin:0}h1{font-size:clamp(1.5rem,4vw,2rem);line-height:1.2;margin:.35rem 0 1rem}section{background:#fff;border:1px solid #d5dceb;border-radius:.65rem;padding:1.1rem 1.3rem;margin-bottom:1rem}p{margin:.2rem 0 .8rem}p:last-child{margin-bottom:0}.warning{border-left:4px solid #a36b11;background:#fffaf0}.plan #account{font-weight:650}.plan #list{overflow-wrap:anywhere}details{margin-top:.8rem}summary{cursor:pointer;font-weight:600}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.9rem;line-height:1.5}.state{border-left:4px solid #3159c9}#result{font-weight:600}.actions{display:flex;gap:.75rem;flex-wrap:wrap;padding-bottom:1.5rem}button{font:inherit;min-height:2.9rem;padding:.65rem 1.4rem;border:1px solid #6a7895;border-radius:.45rem;color:inherit;background:#fff;cursor:pointer}.primary{background:#254dbe;color:#fff;border-color:#254dbe;font-weight:650}button:hover{filter:brightness(.94)}button:focus-visible,summary:focus-visible{outline:3px solid #d68808;outline-offset:3px}[hidden]{display:none!important}@media(max-width:32rem){body{padding:1rem}section{padding:1rem}.actions button{flex:1}}`;
 // No template, HTML injection or export text inside JavaScript. The page only
 // renders JSON as text nodes, under the local review's actual response policy.
 const script = `(() => {
 const bootstrap = new URLSearchParams(location.hash.slice(1)).get('bootstrap');
 history.replaceState(null, '', '/');
 let csrf, view;
+const de = document.documentElement.lang==='de';
+const sessionEnded = de ? 'Sitzung beendet. Es laufen keine weiteren Schritte.' : 'Session ended. Nothing further will run.';
+const rowLabels = de ? {id:'Beitrag',itemId:'Eintrag',eventId:'Entscheidung',date:'Datum',kind:'Art',action:'Aktion',firstLine:'Erste Zeile',decisionTime:'Entschieden am',via:'Quelle',origin:'Ursprung',reasons:'Gründe',reference:'Bezug'} : {};
+const values = de ? {'post':'Beitrag','reply':'Antwort','quote':'Zitat','repost':'Repost','delete-post':'Beitrag löschen','undo-repost':'Repost rückgängig machen','bulk':'Sammelaktion','single':'Einzelentscheidung','unseen':'Bisher nicht sichtbar','long-text':'Langer Text','media':'Medien'} : {};
 async function post(path, body, token) {
  const response = await fetch(path, {method:'POST',headers:{'Content-Type':'application/json', ...(token ? {'X-SocialPrune-Bootstrap':token} : {'X-SocialPrune-CSRF':csrf})}, body:JSON.stringify(body)});
- if(!response.ok) throw new Error('Session ended'); return response.json();
+ if(!response.ok) throw new Error(sessionEnded); return response.json();
 }
 function render(v) {
   view = v;
-  document.getElementById('account').textContent=v.expectedHandle ? 'Expected X account: @'+v.expectedHandle : '';
+  document.getElementById('account').textContent=v.expectedHandle ? (de?'Erwartetes X-Konto: @':'Expected X account: @')+v.expectedHandle : '';
  document.getElementById('warning').textContent=v.warning;
  document.getElementById('profile').textContent=v.profileWarning;
- document.getElementById('counts').textContent=v.planned+' planned; '+v.bulk+' from bulk actions; '+v.completed+' completed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.';
- document.getElementById('list').textContent='Full list: '+v.list;
- document.getElementById('rows').textContent=JSON.stringify(v.rows,null,2);
+ document.getElementById('counts').textContent=de ? v.planned+' geplant; '+v.bulk+' aus Sammelaktionen; '+v.completed+' abgeschlossen. Geschätzte aktive Dauer: '+Math.ceil(v.estimateMs/60000)+' Minuten.' : v.planned+' planned; '+v.bulk+' from bulk actions; '+v.completed+' completed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.';
+ document.getElementById('list').textContent=(de?'Vollständige Liste: ':'Full list: ')+v.list;
+ const show = value => Array.isArray(value) ? value.map(show).join(', ') : typeof value==='string' ? values[value] || value : String(value);
+ document.getElementById('rows').textContent=v.rows.map(row=>Object.entries(row).map(([key,value])=>(rowLabels[key] || key)+': '+show(value)).join('\\n')).join('\\n\\n');
  document.getElementById('result').textContent=v.result;
  document.getElementById('start').hidden=v.phase!=='start';
  document.getElementById('continue').hidden=v.phase!=='canary';
@@ -45,9 +77,9 @@ function render(v) {
 }
 for(const action of ['start','continue','matches','does-not-match','stop']) document.getElementById(action).addEventListener('click', async event => {
  if(!event.isTrusted || !view) return;
- try { render(await post('/api/action',{action,version:view.version})); } catch { document.getElementById('result').textContent='Session ended. Nothing further will run.'; }
+  try { render(await post('/api/action',{action,version:view.version})); } catch { if(view?.phase!=='ended') document.getElementById('result').textContent=sessionEnded; }
 });
-(async () => {try {const session=await post('/session',{},bootstrap); csrf=session.csrf; render(await post('/api/view',{})); const poll=async()=>{try {render(await post('/api/view',{})); if(view.phase!=='ended') setTimeout(poll,200);} catch {document.getElementById('result').textContent='Session ended';}}; setTimeout(poll,200);} catch {document.getElementById('result').textContent='Session ended';}})();
+(async () => {try {const session=await post('/session',{},bootstrap); csrf=session.csrf; render(await post('/api/view',{})); const poll=async()=>{try {render(await post('/api/view',{})); setTimeout(poll,200);} catch {if(view?.phase!=='ended')document.getElementById('result').textContent=sessionEnded;}}; setTimeout(poll,200);} catch {document.getElementById('result').textContent=sessionEnded;}})();
 })();`;
 
 function header(request: IncomingMessage, name: string): string | undefined {
@@ -62,6 +94,7 @@ export async function startConfirmation(
   port = 0,
 ) {
   let view: ConfirmationView = { ...initial, version: 1 };
+  const lang = initial.lang ?? 'en';
   let authority = '';
   let pending:
     | {
@@ -103,16 +136,24 @@ export async function startConfirmation(
     }
     if (
       request.method === 'GET' &&
-      ['/', '/confirmation.js'].includes(request.url ?? '')
+      ['/', '/confirmation.js', '/confirmation.css'].includes(request.url ?? '')
     ) {
       response.writeHead(200, {
         ...REVIEW_HEADERS,
         'Content-Type':
           request.url === '/'
             ? 'text/html; charset=utf-8'
-            : 'text/javascript; charset=utf-8',
+            : request.url === '/confirmation.css'
+              ? 'text/css; charset=utf-8'
+              : 'text/javascript; charset=utf-8',
       });
-      response.end(request.url === '/' ? document : script);
+      response.end(
+        request.url === '/'
+          ? document(lang)
+          : request.url === '/confirmation.css'
+            ? stylesheet
+            : script,
+      );
       return;
     }
     if (request.method !== 'POST') {
@@ -213,7 +254,7 @@ export async function startConfirmation(
         ...view,
         phase: 'ended',
         version: view.version + 1,
-        result: 'Stopped by you.',
+        result: endText('stopped-by-person', lang),
       };
     } else if (
       pending &&

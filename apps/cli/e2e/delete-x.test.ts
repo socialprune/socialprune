@@ -84,6 +84,13 @@ async function harness(
   let changeBeforeSend = false;
   let extensionAfterInspect = false;
   let mutateBeforeSend = false;
+  let removePreinstalled = false,
+    holdClose = false,
+    closeWaiting = false;
+  let finishClose: () => void = () => {};
+  const closeGate = new Promise<void>((resolve) => {
+    finishClose = resolve;
+  });
   fake.variants.clear();
   fake.gone.clear();
   fake.requests.length = 0;
@@ -101,6 +108,7 @@ async function harness(
     verify = false,
     pace = { intervalMs: 100, batchSize: 20, pauseMs: 100, perDay: 200 },
     handle?: string,
+    lang: 'en' | 'de' = 'en',
   ) => {
     shown = new Promise<void>((resolve) => {
       started = resolve;
@@ -113,7 +121,7 @@ async function harness(
         executablePath: chromium.executablePath(),
         verify,
         list: 'generated full list',
-        lang: 'en',
+        lang,
         signal: controller.signal,
         now: () => new Date(now),
         notice: (text) => notices.push(text),
@@ -137,6 +145,11 @@ async function harness(
             ignoreDefaultArgs: ['--disable-infobars'],
             serviceWorkers: 'block',
           });
+          if (removePreinstalled)
+            await rm(join(profile, 'Default', 'Extensions'), {
+              recursive: true,
+              force: true,
+            });
           expect(await profileInUse(profile)).toBe(true);
           const probe = await context.newCDPSession(context.pages()[0]!);
           const command = await probe.send('Browser.getBrowserCommandLine');
@@ -164,7 +177,8 @@ async function harness(
             // The harness owns context teardown after awaited human clicks.
             // Production waits for the person to close the visible window.
             async close() {
-              await Promise.resolve();
+              closeWaiting = true;
+              if (holdClose) await closeGate;
             },
             async inspect(id) {
               const result = await driver.inspect(id);
@@ -252,6 +266,22 @@ async function harness(
     launch,
     local,
     click,
+    async removeExtensionsOnLaunch() {
+      await mkdir(
+        join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+        { recursive: true },
+      );
+      removePreinstalled = true;
+    },
+    holdWindowOpen() {
+      holdClose = true;
+    },
+    get waitingForClose() {
+      return closeWaiting;
+    },
+    finishWindow() {
+      finishClose();
+    },
     changeBeforeSend() {
       changeBeforeSend = true;
     },
@@ -268,6 +298,7 @@ async function harness(
       now = Date.parse(value);
     },
     async close() {
+      finishClose();
       controller.abort();
       await context?.close();
       await Promise.allSettled([...active]);
@@ -345,6 +376,129 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     ).toBe(true);
     const token = h.launchUrls[0]!.split('#bootstrap=')[1]!;
     expect(h.notices.join('')).not.toContain(token);
+  } finally {
+    await h.close();
+  }
+});
+
+test('a disabled browser can remove two preinstalled extension IDs and the run still reaches X', async () => {
+  const h = await harness(['1001']);
+  try {
+    await h.removeExtensionsOnLaunch();
+    const result = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    await h.click('Start');
+    await expect
+      .poll(
+        async () => (await h.store.browserJournal()).attempts.at(-1)?.state,
+        { timeout: 10000 },
+      )
+      .toBe('deleted');
+    await h.click('Continue');
+    expect(await result).toMatchObject({ completed: 1, endReason: 'done' });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'profile', `socialprune-readback-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { extensionIdsRemoved: string[]; extensionIdsAdded: string[] };
+    expect(report.extensionIdsRemoved).toEqual([
+      'a'.repeat(32),
+      'b'.repeat(32),
+    ]);
+    expect(report.extensionIdsAdded).toEqual([]);
+  } finally {
+    await h.close();
+  }
+});
+
+test('German stop state remains served and terminal explains the end before waiting for window closure', async () => {
+  const h = await harness(['1001']);
+  try {
+    h.holdWindowOpen();
+    fake.variants.set('1001', 'login');
+    const result = h.launch(false, undefined, undefined, 'de').then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    let returned = false;
+    void result.then(() => {
+      returned = true;
+    });
+    const page = await h.local();
+    await expect
+      .poll(() => page.locator('html').getAttribute('lang'))
+      .toBe('de');
+    expect(await page.locator('#start').innerText()).toBe('Start');
+    expect(await page.locator('#continue').innerText()).toBe('Weiter');
+    expect(await page.locator('#matches').innerText()).toBe('Passt');
+    expect(await page.locator('#does-not-match').innerText()).toBe(
+      'Passt nicht',
+    );
+    expect(await page.locator('#stop').innerText()).toBe('Stopp');
+    expect(await page.locator('#account').innerText()).toBe(
+      `Erwartetes X-Konto: @${FIXTURE.account.handle}`,
+    );
+    expect(await page.locator('#counts').innerText()).toContain('geplant');
+    const screens = join(tmpdir(), 'socialprune-screens');
+    await mkdir(screens, { recursive: true });
+    await page.screenshot({
+      path: join(screens, 'confirmation-de-start.png'),
+      fullPage: true,
+      caret: 'initial',
+    });
+    await page.locator('#start').click();
+    await expect.poll(() => h.waitingForClose, { timeout: 10000 }).toBe(true);
+    expect(returned).toBe(false);
+    expect(h.notices.join('')).toContain('Die Seite wurde nicht erkannt');
+    expect(h.notices.join('')).toContain('Schließe das X-Fenster');
+    await expect
+      .poll(() => page.locator('#result').innerText())
+      .toContain('Beendet');
+    expect(await page.locator('#result').innerText()).not.toContain(
+      'Session ended',
+    );
+    const response = await page.request.get(page.url());
+    expect(response.status()).toBe(200);
+    await page.screenshot({
+      path: join(screens, 'confirmation-de-ended.png'),
+      fullPage: true,
+      caret: 'initial',
+    });
+    h.finishWindow();
+    expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
+  } finally {
+    await h.close();
+  }
+});
+
+test('English final state and stderr survive a platform stop until the person closes the context', async () => {
+  const h = await harness(['1001']);
+  try {
+    h.holdWindowOpen();
+    fake.variants.set('1001', 'login');
+    const result = h.launch().then(
+      (value) => value,
+      (error) => error as unknown,
+    );
+    let returned = false;
+    void result.then(() => {
+      returned = true;
+    });
+    await h.click('Start');
+    await expect.poll(() => h.waitingForClose, { timeout: 10000 }).toBe(true);
+    expect(returned).toBe(false);
+    expect(h.notices.join('')).toContain('Close the X window to finish.');
+    const page = await h.local();
+    await expect
+      .poll(() => page.locator('#result').innerText())
+      .toContain('The page was not recognized');
+    expect((await page.request.get(page.url())).status()).toBe(200);
+    h.finishWindow();
+    expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
   } finally {
     await h.close();
   }

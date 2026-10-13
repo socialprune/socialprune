@@ -735,6 +735,48 @@ test('extension-set equality rejects a replacement ID even at the same count and
   }
 });
 
+test('extension removal by a disabled browser is allowed and reported, while added or replaced IDs remain blocked', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-extension-removal-'),
+  );
+  try {
+    await profileModule.createProfile(directory);
+    const ids = ['a'.repeat(32), 'b'.repeat(32)];
+    for (const id of ids)
+      await mkdir(join(directory, 'Default', 'Extensions', id), {
+        recursive: true,
+      });
+    const before = await profileModule.profileSnapshot(directory);
+    await rm(join(directory, 'Default', 'Extensions'), { recursive: true });
+    const after = await profileModule.profileSnapshot(directory);
+    expect(profileModule.extensionsChanged(before, after)).toBe(false);
+    const file = await profileModule.writeExtensionReport(
+      directory,
+      'generated-removal',
+      before,
+      after,
+      {},
+    );
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+      extensionIdsBefore: ids,
+      extensionIdsAfter: [],
+      extensionIdsRemoved: ids,
+      extensionIdsAdded: [],
+    });
+    await mkdir(join(directory, 'Default', 'Extensions', 'c'.repeat(32)), {
+      recursive: true,
+    });
+    expect(
+      profileModule.extensionsChanged(
+        before,
+        await profileModule.profileSnapshot(directory),
+      ),
+    ).toBe(true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 // Real parent/child lifetime on Windows is the point; the default five seconds
 // cannot bound two startups, heartbeat observation, exit and process teardown.
 test('a detached generated window survives the actual setup CLI process ending on Windows', async () => {

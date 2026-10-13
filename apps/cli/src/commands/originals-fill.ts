@@ -203,7 +203,10 @@ export const originalsFillCommand = buildCommand({
         maxRunBytes: run * 1024 ** 3,
         include,
         lang: flags.lang,
-        mediaNotice: ` This run allows at most ${video} MiB per video and ${run} GiB of new media. Limits above the defaults may use more local disk.`,
+        mediaNotice:
+          flags.lang === 'de'
+            ? ` Dieser Lauf erlaubt höchstens ${video} MiB je Video und ${run} GiB neue Medien. Höhere Grenzen können mehr lokalen Speicher belegen.`
+            : ` This run allows at most ${video} MiB per video and ${run} GiB of new media. Limits above the defaults may use more local disk.`,
         now: () => this.now(),
         notice: (text) => this.io.stderr.write(text),
       });

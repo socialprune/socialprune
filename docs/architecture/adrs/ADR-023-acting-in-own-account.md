@@ -146,6 +146,8 @@ Everything else. In particular SocialPrune never posts, likes, follows, unfollow
 | PA-15 | **Tests never reach a platform.** Every test runs against local fakes; no CI job, test or development step sends a request to X or Instagram. |
 | PA-16 | **Narrow writers.** Each action records its results through a writer that can append only its own outcome values and records, never a decision event ([ADR-017](ADR-017-shared-workspace-service.md)). |
 
+2026-10-13: X exports without the account file support `--handle`, compared with the signed-in account before acting, because the account file also holds private fields.
+
 ### The warning
 
 Shown before every deletion run in the terminal, on the confirmation page above the Start button, and in the documentation:

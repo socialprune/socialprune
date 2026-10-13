@@ -191,6 +191,7 @@ test('confirmation guards reject hostile decoys and replay without changing the 
   const server = await startConfirmation(
     {
       phase: 'start',
+      expectedHandle: FIXTURE.account.handle,
       warning: BROWSER_WARNING.en,
       profileWarning: 'Generated profile',
       planned: 1,
@@ -201,7 +202,7 @@ test('confirmation guards reject hostile decoys and replay without changing the 
       completed: 0,
       result: '',
     },
-    4233,
+    0,
   );
   const origin = new URL(server.url).origin,
     host = new URL(server.url).host;
@@ -239,7 +240,7 @@ test('confirmation guards reject hostile decoys and replay without changing the 
   try {
     const token = server.launchUrl.split('#bootstrap=')[1]!;
     const hostileHeaders: Record<string, string>[] = [
-      { Host: 'localhost:4233' },
+      { Host: host.replace('127.0.0.1', 'localhost') },
       { Host: host + '.decoy' },
       { Origin: 'http://127.0.0.1:4239' },
       { Origin: 'null' },
@@ -289,7 +290,13 @@ test('confirmation guards reject hostile decoys and replay without changing the 
       'X-SocialPrune-CSRF': csrf,
       Cookie: cookie,
     });
-    expect(JSON.parse(view.body)).toMatchObject({ phase: 'start', version: 1 });
+    expect(JSON.parse(view.body)).toMatchObject({
+      phase: 'start',
+      version: 1,
+      expectedHandle: FIXTURE.account.handle,
+    });
+    const script = await (await fetch(server.url + 'confirmation.js')).text();
+    expect(script).toContain("document.getElementById('account').textContent");
   } finally {
     await server.close();
   }

@@ -144,6 +144,8 @@ Posts, replies and quotes get the action "delete post"; reposts get "undo repost
 7. **The paced run.** One entry at a time, then the pauses below. The confirmation page shows progress and keeps **Stop**. The terminal shows counts only.
 8. **End.** At the daily cap, at the end of the plan, on **Stop**, on Ctrl+C or at the first error. The run writes its end reason and the profile read-back, and leaves the window open.
 
+2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading or deleting an entry, because the account file also holds private fields.
+
 ### One entry
 
 1. **Check before acting.** In one transaction ([ADR-015](ADR-015-cli-storage-node-baseline.md)), re-read the entry: its current delete decision is still the plan's event and its outcome is still `unknown`. If not, append an attempt with state `withdrawn` and move on without opening the post.

@@ -119,6 +119,7 @@ export async function runWithDependencies(
   const confirmation = await startConfirmation(
     {
       phase: 'start',
+      expectedHandle: options.plan.handle,
       warning: summary.warning,
       profileWarning:
         profileWarning(options.plan.handle) +

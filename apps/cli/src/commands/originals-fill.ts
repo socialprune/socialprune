@@ -8,11 +8,22 @@ import { workspacePath, assertOutput } from '../workspace/files.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { planFill, fillSummary, fillList } from '../browser/x/fill/plan.ts';
 import { finalNoticeText } from '../browser/x/fill/final-notice.ts';
+import {
+  parseHandle,
+  resolveAccountName,
+  accountNameText,
+} from '../browser/plan.ts';
 export const originalsFillCommand = buildCommand({
   parameters: {
     flags: {
       workspace: workspaceFlag,
       account: { kind: 'parsed', parse: String, brief: 'X export account key' },
+      handle: {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief: 'X account name when the export has none',
+      },
       dryRun: dryRunFlag,
       json: jsonFlag,
       include: {
@@ -80,6 +91,7 @@ export const originalsFillCommand = buildCommand({
     flags: {
       workspace: string;
       account: string;
+      handle?: string;
       dryRun: boolean;
       json: boolean;
       include?: string;
@@ -93,6 +105,7 @@ export const originalsFillCommand = buildCommand({
       lang: 'en' | 'de';
     },
   ) {
+    const flagHandle = parseHandle(flags.handle);
     if (flags.json && flags.list) throw new CliError('INVALID_ARGUMENTS');
     if (!flags.dryRun && (flags.json || !this.stdoutIsTerminal))
       throw new CliError('NOT_INTERACTIVE');
@@ -123,7 +136,11 @@ export const originalsFillCommand = buildCommand({
       store = await SQLiteStore.open(path.path, { readOnly: flags.dryRun });
     try {
       const plan = await planFill(store, flags.account, include),
-        data = fillSummary(plan, flags.lang),
+        accountName = resolveAccountName(plan.handle, flagHandle),
+        data = {
+          ...fillSummary(plan, flags.lang),
+          accountName: accountName.source,
+        },
         text = fillList(plan);
       if (flags.dryRun) {
         if (flags.list) {
@@ -138,11 +155,12 @@ export const originalsFillCommand = buildCommand({
         }
         this.reply({
           data,
-          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${finalNoticeText(plan.finalNotices, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
+          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${accountNameText(accountName.source, flags.lang)}\n${finalNoticeText(plan.finalNotices, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
         });
         return;
       }
-      if (!flags.profile || !plan.handle || flags.plan !== plan.hash)
+      if (!accountName.handle) throw new CliError('ACCOUNT_NAME_MISSING');
+      if (!flags.profile || flags.plan !== plan.hash)
         throw new CliError('STALE_PLAN');
       const { validateProfile, installedBrowser } =
         await import('../browser/profile.ts');
@@ -174,7 +192,7 @@ export const originalsFillCommand = buildCommand({
       const { runFill } = await import('../browser/x/fill/run.ts');
       const result = await runFill({
         store,
-        plan,
+        plan: { ...plan, handle: accountName.handle },
         profile: flags.profile,
         executablePath,
         list,

@@ -61,8 +61,7 @@ export const CLI_ERRORS = {
     retryable: false,
   },
   STALE_PLAN: {
-    message:
-      'The deletion list changed. Make a new dry run and use its plan hash.',
+    message: 'The plan changed. Make a new dry run and use its plan hash.',
     exitCode: 1,
     retryable: false,
   },
@@ -80,6 +79,12 @@ export const CLI_ERRORS = {
     message:
       'The signed-in account does not match the export account. The run stopped.',
     exitCode: 1,
+    retryable: false,
+  },
+  ACCOUNT_NAME_MISSING: {
+    message:
+      'The export holds no account name. Pass --handle with the X name of the account signed in to the dedicated profile.',
+    exitCode: 2,
     retryable: false,
   },
   PLATFORM_CHECK: {

@@ -175,6 +175,7 @@ export async function runFillWithDependencies(
     confirmation = await startConfirmation(
       {
         phase: 'start',
+        expectedHandle: options.plan.handle,
         warning: summary.warning,
         profileWarning:
           profileWarning(options.plan.handle) +

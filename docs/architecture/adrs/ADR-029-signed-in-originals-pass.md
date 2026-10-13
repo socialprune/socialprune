@@ -286,6 +286,8 @@ It is a command of its own, not a flag on `originals fetch`, because it is anoth
 
 **A run** follows ADR-027's steps 1 to 5. It refuses pipes and `--json` (`NOT_INTERACTIVE`), refuses a changed plan (`STALE_PLAN`), checks the profile marker (`PROFILE_INVALID`) and the browser (`BROWSER_NOT_FOUND`), takes the profile snapshot, and shows the confirmation page on `127.0.0.1` with its page token in the fragment. That page shows the counts per reason, the first 20 rows with the path of the full list, the estimates, what the run can change and the warning, with **Start**. Nothing is opened on X before that click. After it, a second tab opens X and the run compares the signed-in account with the export's (`ACCOUNT_MISMATCH`). Then come the canary or the paced run, and at the end the read-back.
 
+2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
+
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:
 
 > X's rules do not allow this kind of automation. X can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. This run only reads: it opens posts in your signed-in X window and keeps what X shows. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.

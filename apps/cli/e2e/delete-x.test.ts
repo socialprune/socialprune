@@ -33,6 +33,7 @@ afterAll(async () => {
 
 async function harness(
   ids: readonly string[] = ['1001', '1002', '1003', '1004'],
+  missingAccount = false,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-fake-x-'));
   const profile = join(directory, 'profile');
@@ -53,8 +54,26 @@ async function harness(
     ),
     'Generated contents that must never be read',
   );
+  const workspace = fixtureWorkspace(ids);
+  if (missingAccount) {
+    const expected = JSON.parse(
+      await readFile(
+        fileURLToPath(
+          new URL(
+            '../../../fixtures/synthetic/x/missing-account/expected.json',
+            import.meta.url,
+          ),
+        ),
+        'utf8',
+      ),
+    ) as { items: { account: { key: string; handle: null } }[] };
+    workspace.items.forEach((item) => {
+      item.account = { ...expected.items[0]!.account };
+    });
+    workspace.imports[0]!.accounts = [{ ...expected.items[0]!.account }];
+  }
   const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
-    initial: fixtureWorkspace(ids),
+    initial: workspace,
   });
   let context: BrowserContext | undefined;
   let now = new Date(FIXTURE.now).getTime();
@@ -71,7 +90,7 @@ async function harness(
   fake.setHandle(FIXTURE.account.handle);
   fake.setLanguage(false);
   fake.setAccessibleOnly(false);
-  const plan = await planDeletion(store, FIXTURE.account.key);
+  const plan = await planDeletion(store, workspace.items[0]!.account.key);
   let started!: () => void;
   let shown = new Promise<void>((resolve) => {
     started = resolve;
@@ -81,6 +100,7 @@ async function harness(
   const launch = (
     verify = false,
     pace = { intervalMs: 100, batchSize: 20, pauseMs: 100, perDay: 200 },
+    handle?: string,
   ) => {
     shown = new Promise<void>((resolve) => {
       started = resolve;
@@ -88,7 +108,7 @@ async function harness(
     const running = runWithDependencies(
       {
         store,
-        plan,
+        plan: handle === undefined ? plan : { ...plan, handle },
         profile,
         executablePath: chromium.executablePath(),
         verify,
@@ -250,10 +270,20 @@ async function harness(
     async close() {
       controller.abort();
       await context?.close();
-      expect(await profileInUse(profile)).toBe(false);
       await Promise.allSettled([...active]);
-      await store.close();
-      await rm(directory, { recursive: true, force: true });
+      try {
+        await expect
+          .poll(() => profileInUse(profile), { timeout: 10000 })
+          .toBe(false);
+      } finally {
+        await store.close();
+        await rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100,
+        });
+      }
     },
   };
 }
@@ -263,6 +293,9 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
   try {
     const running = h.launch();
     await h.local();
+    await expect
+      .poll(async () => (await h.local()).locator('#account').textContent())
+      .toBe(`Expected X account: @${FIXTURE.account.handle}`);
     expect(fake.requests).toEqual([]);
     expect((await h.store.browserJournal()).runs).toEqual([]);
     await h.click('Start');
@@ -316,6 +349,37 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     await h.close();
   }
 });
+
+for (const verify of [false, true])
+  test(`flag account name mismatch stops ${verify ? 'verify' : 'delete'} before reading a post or deleting`, async () => {
+    const h = await harness(['1001'], true);
+    try {
+      expect(h.plan.handle).toBe('');
+      const expected = FIXTURE.account.handle;
+      fake.setHandle(FIXTURE.rows[0].via.replace('-', '_'));
+      const running = h
+        .launch(verify, undefined, expected)
+        .catch((error: unknown) => error);
+      await h.local();
+      await expect
+        .poll(async () => (await h.local()).locator('#account').textContent(), {
+          timeout: 10000,
+        })
+        .toBe(`Expected X account: @${expected}`);
+      expect(fake.requests).toEqual([]);
+      await h.click('Start');
+      expect(await running).toMatchObject({ code: 'ACCOUNT_MISMATCH' });
+      expect(
+        fake.requests.filter((request) => request.path !== '/home'),
+      ).toEqual([]);
+      const journal = await h.store.browserJournal();
+      expect(journal.attempts).toEqual([]);
+      expect(journal.runs.at(-1)?.pageOpens ?? 0).toBe(0);
+      expect(journal.runs.at(-1)?.endedAt).not.toBeNull();
+    } finally {
+      await h.close();
+    }
+  });
 
 test('posts and reposts each require watched canaries, pace, batch pause and no duplicates on resume', async () => {
   const h = await harness();
@@ -736,7 +800,10 @@ test('changed plan at Start refuses before platform contact', async () => {
       });
     });
     await h.click('Start');
-    expect(await running).toMatchObject({ code: 'STALE_PLAN' });
+    expect(await running).toMatchObject({
+      code: 'STALE_PLAN',
+      message: 'The plan changed. Make a new dry run and use its plan hash.',
+    });
     expect(fake.requests).toEqual([]);
     expect((await h.store.browserJournal()).runs).toEqual([]);
   } finally {

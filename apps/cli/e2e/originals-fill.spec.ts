@@ -18,8 +18,11 @@ import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { productionMedia } from '../src/originals/video.ts';
 import { SyndicationClient } from '../src/originals/syndication.ts';
 import { CliError } from '../src/cli/errors.ts';
+import { fileURLToPath } from 'node:url';
 for (const variant of [
   'success',
+  'flag-account',
+  'flag-account-mismatch',
   'missing-id',
   'login',
   'challenge',
@@ -38,7 +41,7 @@ for (const variant of [
   'unavailable',
   'tombstone',
 ] as const)
-  test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async () => {
+  test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
     const workspace =
       variant === 'canary-five'
@@ -46,6 +49,23 @@ for (const variant of [
         : fixtureWorkspace(['1001']);
     workspace.items[0]!.kind = 'reply';
     workspace.items[0]!.reference.replyToId = DETAIL_FIXTURE.id;
+    if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
+      const expected = JSON.parse(
+        await readFile(
+          fileURLToPath(
+            new URL(
+              '../../../fixtures/synthetic/x/missing-account/expected.json',
+              import.meta.url,
+            ),
+          ),
+          'utf8',
+        ),
+      ) as { items: { account: { key: string; handle: null } }[] };
+      workspace.items.forEach((item) => {
+        item.account = { ...expected.items[0]!.account };
+      });
+      workspace.imports[0]!.accounts = [{ ...expected.items[0]!.account }];
+    }
     workspace.originals = [
       migrateOriginal({
         id: DETAIL_FIXTURE.id,
@@ -162,7 +182,7 @@ for (const variant of [
         response.end(JSON.stringify(detailAnswer(post)));
         return;
       }
-      const account = `<button data-testid="SideNav_AccountSwitcher_Button">@${FIXTURE.account.handle}</button>`;
+      const account = `<button data-testid="SideNav_AccountSwitcher_Button">@${variant === 'flag-account-mismatch' ? DETAIL_FIXTURE.handle : FIXTURE.account.handle}</button>`;
       if (pathname === '/home') {
         response.end(account);
         return;
@@ -181,7 +201,11 @@ for (const variant of [
       server.listen(4231, '127.0.0.1', resolve),
     );
     try {
-      const plan = await planFill(store, FIXTURE.account.key);
+      const plan = await planFill(store, workspace.items[0]!.account.key);
+      if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
+        expect(plan.handle).toBe('');
+        plan.handle = FIXTURE.account.handle;
+      }
       let now = Date.parse(FIXTURE.now);
       const waits: number[] = [];
       const result = runFillWithDependencies(
@@ -261,6 +285,14 @@ for (const variant of [
         page.getByRole('button', { name: 'Start', exact: true }),
       ).toBeVisible();
       expect(requests).toEqual([]);
+      await expect(page.locator('#account')).toHaveText(
+        `Expected X account: @${FIXTURE.account.handle}`,
+      );
+      if (variant === 'flag-account')
+        await page.screenshot({
+          path: testInfo.outputPath('expected-account.png'),
+          fullPage: true,
+        });
       if (variant === 'extension') {
         await mkdir(
           join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
@@ -304,11 +336,28 @@ for (const variant of [
           });
         });
         await page.getByRole('button', { name: 'Start', exact: true }).click();
-        expect(await result).toMatchObject({ code: 'STALE_PLAN' });
+        expect(await result).toMatchObject({
+          code: 'STALE_PLAN',
+          message:
+            'The plan changed. Make a new dry run and use its plan hash.',
+        });
         expect(requests).toEqual([]);
         return;
       }
       await page.getByRole('button', { name: 'Start', exact: true }).click();
+      if (variant === 'flag-account-mismatch') {
+        expect(await result).toMatchObject({ code: 'ACCOUNT_MISMATCH' });
+        expect(requests.every((path) => path === '/home')).toBe(true);
+        const journal = await store.browserJournal();
+        expect(journal.attempts).toEqual([]);
+        expect(journal.runs.at(-1)?.pageOpens ?? 0).toBe(0);
+        expect(journal.runs.at(-1)?.endedAt).not.toBeNull();
+        expect(
+          (await store.read((tx) => tx.originals.get(DETAIL_FIXTURE.id)))
+            ?.signedIn,
+        ).toBeNull();
+        return;
+      }
       if (variant === 'shared-cap') {
         await expect
           .poll(async () =>

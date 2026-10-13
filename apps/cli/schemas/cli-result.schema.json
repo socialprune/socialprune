@@ -172,7 +172,7 @@
                 "code": { "type": "string", "const": "STALE_PLAN" },
                 "message": {
                   "type": "string",
-                  "const": "The deletion list changed. Make a new dry run and use its plan hash."
+                  "const": "The plan changed. Make a new dry run and use its plan hash."
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -217,6 +217,20 @@
                   "const": "The signed-in account does not match the export account. The run stopped."
                 },
                 "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "ACCOUNT_NAME_MISSING" },
+                "message": {
+                  "type": "string",
+                  "const": "The export holds no account name. Pass --handle with the X name of the account signed in to the dedicated profile."
+                },
+                "exitCode": { "type": "number", "const": 2 },
                 "retryable": { "type": "boolean", "const": false }
               },
               "required": ["code", "message", "exitCode", "retryable"],

@@ -7,12 +7,20 @@ import { CliError } from '../cli/errors.ts';
 import { requireWorkspaceNode } from '../workspace/node-version.ts';
 import { workspacePath, assertOutput } from '../workspace/files.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
-import { planDeletion, planSummary, planText } from '../browser/plan.ts';
+import {
+  planDeletion,
+  planSummary,
+  planText,
+  parseHandle,
+  resolveAccountName,
+  accountNameText,
+} from '../browser/plan.ts';
 import { productionPace } from '../browser/pace.ts';
 
 export interface DeleteFlags {
   workspace: string;
   account: string;
+  handle?: string;
   dryRun: boolean;
   json: boolean;
   verify: boolean;
@@ -26,6 +34,7 @@ export interface DeleteFlags {
   withoutOriginals: boolean;
 }
 export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
+  const flagHandle = parseHandle(flags.handle);
   if ((flags.dryRun && flags.verify) || (flags.json && flags.list))
     throw new CliError('INVALID_ARGUMENTS');
   if (!flags.dryRun && (flags.json || !context.stdoutIsTerminal))
@@ -52,6 +61,7 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
         include.add(line.trim());
       }
     const plan = await planDeletion(store, flags.account, include);
+    const accountName = resolveAccountName(plan.handle, flagHandle);
     const text = planText(plan, flags.lang);
     if (flags.dryRun) {
       if (flags.list) {
@@ -70,13 +80,19 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
       }));
       return {
         workspace,
-        data: planSummary(plan, flags.lang),
+        data: {
+          ...planSummary(plan, flags.lang),
+          accountName: accountName.source,
+        },
         human:
-          context.stdoutIsTerminal && !flags.list
+          accountNameText(accountName.source, flags.lang) +
+          '\n' +
+          (context.stdoutIsTerminal && !flags.list
             ? text
-            : `${plan.rows.length} planned entries. Plan: ${plan.hash}. Use --list for the full list.\n${planSummary(plan, flags.lang).warning}`,
+            : `${plan.rows.length} planned entries. Plan: ${plan.hash}. Use --list for the full list.\n${planSummary(plan, flags.lang).warning}`),
       };
     }
+    if (!accountName.handle) throw new CliError('ACCOUNT_NAME_MISSING');
     if (!flags.verify && flags.plan !== plan.hash)
       throw new CliError('STALE_PLAN');
     if (!flags.verify && plan.originalsPending && !flags.withoutOriginals)
@@ -110,7 +126,7 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
     }
     const data = await runBrowser({
       store,
-      plan,
+      plan: { ...plan, handle: accountName.handle },
       profile: flags.profile!,
       executablePath,
       verify: flags.verify,
@@ -138,6 +154,12 @@ export const deleteXCommand = buildCommand({
         kind: 'parsed',
         parse: String,
         brief: 'X account key from the workspace',
+      },
+      handle: {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief: 'X account name when the export has none',
       },
       dryRun: dryRunFlag,
       json: jsonFlag,

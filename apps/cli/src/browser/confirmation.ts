@@ -8,6 +8,7 @@ export interface ConfirmationView {
   version: number;
   warning: string;
   profileWarning: string;
+  expectedHandle?: string;
   planned: number;
   bulk: number;
   estimateMs: number;
@@ -16,7 +17,7 @@ export interface ConfirmationView {
   completed: number;
   result: string;
 }
-const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>SocialPrune browser run</title><script src="/confirmation.js" defer></script></head><body><main><h1>SocialPrune browser run</h1><p id="warning"></p><p id="profile"></p><p id="counts"></p><p id="list"></p><pre id="rows"></pre><p id="result" role="status"></p><button id="start" hidden>Start</button><button id="continue" hidden>Continue</button><button id="matches" hidden>Matches</button><button id="does-not-match" hidden>Does not match</button><button id="stop" hidden>Stop</button></main></body></html>`;
+const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REVIEW_POLICY}"><title>SocialPrune browser run</title><script src="/confirmation.js" defer></script></head><body><main><h1>SocialPrune browser run</h1><p id="account"></p><p id="warning"></p><p id="profile"></p><p id="counts"></p><p id="list"></p><pre id="rows"></pre><p id="result" role="status"></p><button id="start" hidden>Start</button><button id="continue" hidden>Continue</button><button id="matches" hidden>Matches</button><button id="does-not-match" hidden>Does not match</button><button id="stop" hidden>Stop</button></main></body></html>`;
 // No template, HTML injection or export text inside JavaScript. The page only
 // renders JSON as text nodes, under the local review's actual response policy.
 const script = `(() => {
@@ -28,7 +29,8 @@ async function post(path, body, token) {
  if(!response.ok) throw new Error('Session ended'); return response.json();
 }
 function render(v) {
- view = v;
+  view = v;
+  document.getElementById('account').textContent=v.expectedHandle ? 'Expected X account: @'+v.expectedHandle : '';
  document.getElementById('warning').textContent=v.warning;
  document.getElementById('profile').textContent=v.profileWarning;
  document.getElementById('counts').textContent=v.planned+' planned; '+v.bulk+' from bulk actions; '+v.completed+' completed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.';

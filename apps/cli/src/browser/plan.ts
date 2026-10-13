@@ -7,6 +7,44 @@ import { CliError } from '../cli/errors.ts';
 import { dateInZone, estimate } from './pace.ts';
 import { BROWSER_WARNING } from './copy.ts';
 
+export type AccountNameSource = 'export' | 'flag' | 'missing';
+export function parseHandle(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const handle = value.replace(/^@/, '');
+  if (/^[A-Za-z0-9_]{1,15}$/.exec(handle)?.[0] !== handle)
+    throw new CliError('INVALID_ARGUMENTS');
+  return handle;
+}
+export function resolveAccountName(
+  exportHandle: string,
+  flagHandle?: string,
+): { handle: string; source: AccountNameSource } {
+  if (
+    exportHandle &&
+    flagHandle &&
+    exportHandle.toLowerCase() !== flagHandle.toLowerCase()
+  )
+    throw new CliError('ACCOUNT_MISMATCH');
+  return {
+    handle: exportHandle || flagHandle || '',
+    source: exportHandle ? 'export' : flagHandle ? 'flag' : 'missing',
+  };
+}
+export function accountNameText(source: AccountNameSource, lang: 'en' | 'de') {
+  if (lang === 'de') {
+    return source === 'export'
+      ? 'Der Kontoname stammt aus dem Export.'
+      : source === 'flag'
+        ? 'Der Kontoname stammt aus --handle.'
+        : 'Der Export enthält keinen Kontonamen; gib beim Lauf mit --handle den X-Namen des Kontos an, das im eigenen Browserprofil angemeldet ist.';
+  }
+  return source === 'export'
+    ? 'The account name comes from the export.'
+    : source === 'flag'
+      ? 'The account name comes from --handle.'
+      : 'The export holds no account name; the run will need --handle with the X name of the account signed in to the dedicated profile.';
+}
+
 export interface DeletePlan {
   accountKey: string;
   handle: string;
@@ -48,12 +86,16 @@ export async function planDeletion(
       decisions.set(event.itemId, event);
     const rows: PlannedEntry[] = [];
     let handle: string | null = null;
+    let accountFound = false;
     for await (const imported of tx.imports.iterate())
       if (imported.platform === 'x') {
         const account = imported.accounts.find((a) => a.key === accountKey);
-        if (account) handle = account.handle;
+        if (account) {
+          accountFound = true;
+          handle = account.handle;
+        }
       }
-    if (!handle || !/^[A-Za-z0-9_]{1,50}$/.test(handle))
+    if (!accountFound || (handle && !/^[A-Za-z0-9_]{1,50}$/.test(handle)))
       throw new CliError('ACCOUNT_REQUIRED');
     for await (const stored of tx.items.iterate()) {
       const item = stored.item;
@@ -127,7 +169,7 @@ export async function planDeletion(
       rows,
       hash,
       accountKey,
-      handle,
+      handle: handle ?? '',
       timeZone,
       originalsPending,
       originalsFillable,

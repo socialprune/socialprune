@@ -163,6 +163,15 @@ export function Backup({
     <section aria-label={t('backup.title')}>
       <p>{t('backup.description')}</p>
       <p>{t('backup.cleared')}</p>
+      <p>{t('backup.warning')}</p>
+      <button
+        disabled={busy}
+        onClick={() => {
+          void download();
+        }}
+      >
+        {t('workspace.backup')}
+      </button>
       <p>
         {summary?.lastBackupAt
           ? t('backup.last', {
@@ -173,18 +182,9 @@ export function Backup({
             })
           : t('backup.never')}
       </p>
-      <p>{t('backup.warning')}</p>
       {backupAge !== null && backupAge > 0 && (
         <p>{t('backup.changesSince', { count: backupAge })}</p>
       )}
-      <button
-        disabled={busy}
-        onClick={() => {
-          void download();
-        }}
-      >
-        {t('workspace.backup')}
-      </button>
       {allowRestore && (
         <>
           <h2>{t('backup.restoreTitle')}</h2>

@@ -355,3 +355,53 @@ test('persist allowed and picker backup-first save are both explicit user action
     summary: { counts: { items: fixture.items.length } },
   });
 });
+
+test('a rejected backup file choice shows an error without a saved label or advancing the saved receipt', async ({
+  page,
+  context,
+}) => {
+  await page.addInitScript(() => {
+    Reflect.set(window, '__failedBackupWrites', 0);
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: () => {
+        Reflect.set(
+          window,
+          '__failedBackupWrites',
+          (Reflect.get(window, '__failedBackupWrites') as number) + 1,
+        );
+        return Promise.reject(new Error('Generated rejected save destination'));
+      },
+    });
+  });
+  const audit = await observeImport(context, page);
+  await restoreClickLists(page);
+  const before = await page.evaluate(
+    () => window.workspace.summary?.lastBackupAt,
+  );
+  await page.goto('/socialprune/#/backup');
+  await page
+    .getByRole('button', { name: 'Download backup', exact: true })
+    .click();
+  await expect(page.getByRole('alert')).toHaveText(
+    'The backup could not be read or saved. Your current review has not been replaced.',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Download backup', exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByText('The backup file was saved.', { exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => Reflect.get(window, '__failedBackupWrites') as number,
+    ),
+  ).toBeGreaterThan(0);
+  expect(
+    await page.evaluate(async () => {
+      const reply = await window.workspace.open();
+      return reply.type === 'opened' ? reply.summary.lastBackupAt : undefined;
+    }),
+  ).toBe(before);
+  await audit.assert();
+});

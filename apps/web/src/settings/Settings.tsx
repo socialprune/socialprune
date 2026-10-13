@@ -187,19 +187,26 @@ export function Settings({
           <option value="off">{t('review.off')}</option>
         </select>
       </label>
-      <h2>{t('settings.timeZone')}</h2>
-      {summary && (
-        <TimeZone
-          client={client}
-          value={summary.timeZone}
-          onChanged={(timeZone) =>
-            setSummary((value) => (value ? { ...value, timeZone } : null))
-          }
-        />
-      )}
       {storageMode === 'browser' && (
         <>
           <h2>{t('settings.storage')}</h2>
+          <button
+            disabled={!summary || busy}
+            onClick={() => {
+              void persist();
+            }}
+          >
+            {t('settings.persistAction')}
+          </button>
+          <p>{t('backup.cleared')}</p>
+          <a href="#/backup">{t('workspace.backup')}</a>
+          <h2>{t('settings.deleteTitle')}</h2>
+          <button
+            disabled={!summary || busy}
+            onClick={() => setDeleteOpen(true)}
+          >
+            {t('settings.deleteTitle')}
+          </button>
           {storage && (
             <>
               <p>
@@ -224,25 +231,18 @@ export function Settings({
           {deleteError && !deleteOpen && (
             <p role="alert">{t('workspace.storageError')}</p>
           )}
-          <button
-            disabled={busy}
-            onClick={() => {
-              void persist();
-            }}
-          >
-            {t('settings.persistAction')}
-          </button>
           {persistMessage && <p role="status">{persistMessage}</p>}
-          <p>{t('backup.cleared')}</p>
-          <a href="#/backup">{t('workspace.backup')}</a>
-          <h2>{t('settings.deleteTitle')}</h2>
-          <button
-            disabled={!summary || busy}
-            onClick={() => setDeleteOpen(true)}
-          >
-            {t('settings.deleteTitle')}
-          </button>
         </>
+      )}
+      <h2>{t('settings.timeZone')}</h2>
+      {summary && (
+        <TimeZone
+          client={client}
+          value={summary.timeZone}
+          onChanged={(timeZone) =>
+            setSummary((value) => (value ? { ...value, timeZone } : null))
+          }
+        />
       )}
       <h2>{t('settings.version')}</h2>
       <p>{version}</p>

@@ -24,7 +24,7 @@ import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
 import { restrictOrigins } from '../../network.ts';
 import { FillOrderSchema } from './order.ts';
 import type { FillOrder } from './order.ts';
-import { compareFocal, compareNotice } from './compare.ts';
+import { compareFocal, compareNotice, normalizedLength } from './compare.ts';
 import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
 import { SQLiteStore } from '../../../workspace/sqlite-store.ts';
@@ -664,7 +664,12 @@ export async function runFillWithDependencies(
             if (!stored) throw new Error('Missing stored original');
             comparison =
               extracted.kind === 'read'
-                ? await compareFocal(page, stored)
+                ? await compareFocal(
+                    page,
+                    stored,
+                    extracted.displayText,
+                    extracted.displayLinks,
+                  )
                 : await compareNotice(
                     page,
                     extracted.kind === 'no-entry'
@@ -674,7 +679,11 @@ export async function runFillWithDependencies(
           } catch {
             comparison = {
               stored: {
-                textLength: stored?.text?.length ?? 0,
+                textLength: normalizedLength(
+                  extracted.kind === 'read'
+                    ? extracted.displayText
+                    : (stored?.text ?? ''),
+                ),
                 photos:
                   stored?.media.filter((media) => media.kind === 'photo')
                     .length ?? 0,

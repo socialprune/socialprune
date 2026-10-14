@@ -22,7 +22,18 @@ import { startConfirmation } from '../src/browser/confirmation.ts';
 import { REVIEW_POLICY } from '../src/review/static.ts';
 import { readOrder } from '../src/browser/x/fill/order.ts';
 import { fileURLToPath } from 'node:url';
-import { moduleCursorAnswer } from './fake-x/fill-detail.ts';
+import {
+  moduleCursorAnswer,
+  displayComparisonAnswer,
+  displayComparisonMarkup,
+  DISPLAY_COMPARISON_FIXTURE,
+  cardComparisonAnswer,
+  cardComparisonMarkup,
+  CARD_COMPARISON_FIXTURE,
+  ownPhotoAnswer,
+  ownPhotoMarkup,
+  OWN_PHOTO_FIXTURE,
+} from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
   'flag-account',
@@ -59,6 +70,17 @@ for (const variant of [
   'unknown-module',
   'no-focal-entry',
   'order-status-page',
+  'order-display-match',
+  'order-display-alt-mismatch',
+  'order-display-tail-mismatch',
+  'order-card-quote',
+  'order-card-link',
+  'order-card-video',
+  'order-card-rendered-link',
+  'order-card-missing-rendered-link',
+  'order-card-full-match',
+  'order-card-full-mismatch',
+  'order-own-photos',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -174,7 +196,17 @@ for (const variant of [
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
-      response.setHeader('Content-Type', 'text/html');
+      if (
+        pathname === '/generated-emoji.png' ||
+        pathname === '/generated-photo.png'
+      ) {
+        response.setHeader('Content-Type', 'image/png');
+        response.end(
+          Buffer.from(DISPLAY_COMPARISON_FIXTURE.pngBase64, 'base64'),
+        );
+        return;
+      }
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
       if (pathname?.startsWith('/i/api/graphql/')) {
         const id = (
           JSON.parse(
@@ -206,10 +238,34 @@ for (const variant of [
         }
         if (variant === 'missing-id')
           delete (post as Partial<typeof post>).rest_id;
+        const cardKind =
+          variant === 'order-card-quote'
+            ? 'quote'
+            : variant === 'order-card-video'
+              ? 'video'
+              : variant === 'order-card-rendered-link'
+                ? 'rendered-link'
+                : variant === 'order-card-missing-rendered-link' ||
+                    variant === 'order-card-full-mismatch'
+                  ? 'missing-rendered-link'
+                  : 'link';
         const answer =
-          variant === 'module-cursor' || variant === 'unknown-module'
-            ? moduleCursorAnswer(id, variant === 'unknown-module')
-            : detailAnswer(post);
+          variant === 'order-own-photos'
+            ? ownPhotoAnswer(id)
+            : variant.startsWith('order-card-')
+              ? cardComparisonAnswer(id, cardKind)
+              : variant.startsWith('order-display-')
+                ? displayComparisonAnswer(
+                    id,
+                    variant === 'order-display-alt-mismatch'
+                      ? 'alt'
+                      : variant === 'order-display-tail-mismatch'
+                        ? 'tail'
+                        : 'none',
+                  )
+                : variant === 'module-cursor' || variant === 'unknown-module'
+                  ? moduleCursorAnswer(id, variant === 'unknown-module')
+                  : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -237,7 +293,7 @@ for (const variant of [
         return;
       }
       response.end(
-        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div>' : ''}</article>`}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
+        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
     });
     await new Promise<void>((resolve) =>
@@ -245,6 +301,11 @@ for (const variant of [
     );
     try {
       const plan = await planFill(store, workspace.items[0]!.account.key);
+      if (
+        variant === 'order-card-full-match' ||
+        variant === 'order-card-full-mismatch'
+      )
+        plan.canary = false;
       if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
         expect(plan.handle).toBe('');
         plan.handle = FIXTURE.account.handle;
@@ -283,6 +344,17 @@ for (const variant of [
         if (variant === 'order-stale') plan.hash = 'b'.repeat(64);
       }
       const waits: number[] = [];
+      const fakeMediaClient = new SyndicationClient({
+        baseUrl: 'http://127.0.0.1:4231',
+      });
+      const fakePhoto = fakeMediaClient.photo.bind(fakeMediaClient);
+      fakeMediaClient.photo = (url, signal) =>
+        fakePhoto(
+          url === 'https://pbs.twimg.com/generated-photo.png'
+            ? 'http://127.0.0.1:4231/generated-photo.png'
+            : url,
+          signal,
+        );
       const result = runFillWithDependencies(
         {
           store,
@@ -316,9 +388,7 @@ for (const variant of [
             origin: 'http://127.0.0.1:4231',
             free: () => Promise.resolve(10 * 1024 ** 3),
           },
-          syndication: new SyndicationClient({
-            baseUrl: 'http://127.0.0.1:4231',
-          }),
+          syndication: fakeMediaClient,
           async launch() {
             context = await chromium.launchPersistentContext(profile, {
               executablePath: chromium.executablePath(),
@@ -468,13 +538,110 @@ for (const variant of [
           return;
         }
         const outcome = await result;
-        if (variant === 'order-match' || variant === 'order-status-page') {
-          expect(outcome).toMatchObject({ completed: 1, endReason: 'canary' });
+        if (
+          variant === 'order-match' ||
+          variant === 'order-status-page' ||
+          variant === 'order-display-match' ||
+          variant === 'order-card-quote' ||
+          variant === 'order-card-link' ||
+          variant === 'order-card-video' ||
+          variant === 'order-card-rendered-link' ||
+          variant === 'order-card-full-match' ||
+          variant === 'order-own-photos'
+        ) {
+          expect(
+            outcome,
+            notices.find((value) => value.startsWith('Canary counts:')),
+          ).toMatchObject({
+            completed: 1,
+            endReason: variant === 'order-card-full-match' ? 'done' : 'canary',
+          });
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
             startedBy: 'agent-on-order',
-            acceptedBy: 'automatic-check',
+            ...(variant === 'order-card-full-match'
+              ? {}
+              : { acceptedBy: 'automatic-check' }),
             orderSha256: order!.sha256,
           });
+          if (variant === 'order-card-full-match')
+            expect(
+              (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
+            ).toBeNull();
+          if (variant === 'order-own-photos') {
+            const original = await store.read((tx) =>
+              tx.originals.get(DETAIL_FIXTURE.id),
+            );
+            expect(original?.media).toHaveLength(OWN_PHOTO_FIXTURE.photos);
+            expect(
+              original?.media.every(
+                (media) => media.kind === 'photo' && media.status === 'stored',
+              ),
+            ).toBe(true);
+            expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+              canaryCounts: [
+                {
+                  stored: { photos: OWN_PHOTO_FIXTURE.photos },
+                  shown: { photos: OWN_PHOTO_FIXTURE.photos },
+                  matches: true,
+                },
+              ],
+            });
+          }
+          if (
+            variant === 'order-card-quote' ||
+            variant === 'order-card-video'
+          ) {
+            const focal = await store.read((tx) =>
+              tx.originals.get(DETAIL_FIXTURE.id),
+            );
+            expect(focal?.media.map((media) => media.kind)).toEqual(
+              variant === 'order-card-video' ? ['video'] : [],
+            );
+            expect(
+              (await store.read((tx) => tx.originals.get('909')))?.media,
+            ).toHaveLength(2);
+            expect(
+              (await store.read((tx) => tx.originals.get('909')))?.text,
+            ).toBe(CARD_COMPARISON_FIXTURE.quotedText);
+          }
+          if (variant === 'order-display-match') {
+            const original = await store.read((tx) =>
+              tx.originals.get(DETAIL_FIXTURE.id),
+            );
+            expect(original?.text).toBe(
+              DISPLAY_COMPARISON_FIXTURE.mention +
+                DISPLAY_COMPARISON_FIXTURE.encodedDisplay +
+                ' ' +
+                DISPLAY_COMPARISON_FIXTURE.mediaUrl,
+            );
+            expect(original?.media[0]).toMatchObject({
+              kind: 'photo',
+              status: 'stored',
+            });
+            const visibleLength =
+              DISPLAY_COMPARISON_FIXTURE.decodedDisplay.replace(
+                'https://t.co/generatedLink',
+                DISPLAY_COMPARISON_FIXTURE.renderedLink,
+              ).length;
+            const shownLength =
+              DISPLAY_COMPARISON_FIXTURE.shownInnerText.trim().length;
+            expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+              canaryCounts: [
+                {
+                  stored: { textLength: visibleLength, photos: 1, videos: 0 },
+                  shown: { textLength: visibleLength, photos: 1, videos: 0 },
+                  text: {
+                    storedPlainLength: shownLength,
+                    shownInnerTextLength: shownLength,
+                    imageAltUnits: 2,
+                    matchedImageAlts: 1,
+                    imageSpacingUnits: 1,
+                  },
+                  matches: true,
+                },
+              ],
+            });
+          }
           if (variant === 'order-status-page')
             expect(notices.join('')).not.toContain(
               'Die Statusseite konnte den Endzustand nicht anzeigen',
@@ -484,6 +651,10 @@ for (const variant of [
           expect(
             (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
           ).toBeNull();
+          expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+            endReason: 'error',
+            displayEndReason: 'canary-mismatch',
+          });
         }
         expect(context!.pages()).toHaveLength(0);
         expect(requests.filter((path) => path === '/home')).toHaveLength(1);

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { xSelectors } from '../src/browser/x/selectors.ts';
-import { compareFocal } from '../src/browser/x/fill/compare.ts';
+import { compareFocal, compareNotice } from '../src/browser/x/fill/compare.ts';
 import { migrateOriginal } from '@socialprune/core';
 import { startConfirmation } from '../src/browser/confirmation.ts';
 import { extract } from '../src/browser/x/fill/extract.ts';
@@ -18,6 +18,8 @@ import {
   notePhotoMarkup,
   NOTE_RENDER_FIXTURE,
   gatedLatePlayerMarkup,
+  protectedNoticeMarkup,
+  protectedNoticeText,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -386,6 +388,55 @@ test('focal render wait catches a gated player added 1.5 seconds after the shown
     matches: false,
   });
 });
+
+for (const kind of [
+  'match',
+  'different',
+  'duplicate',
+  'missing',
+  'missing-link',
+  'long-tail',
+  'long-match',
+  'delayed',
+  'error-detail',
+] as const)
+  test(`protected tombstone notice ${kind} matches the whole answer independently of language and parent posts`, async ({
+    page,
+  }) => {
+    await page.setContent(protectedNoticeMarkup('de', kind));
+    const result = await compareNotice(
+      page,
+      'tombstone',
+      protectedNoticeText('de', kind === 'long-tail' || kind === 'long-match'),
+    );
+    expect(result).toMatchObject({
+      stored: { textLength: 0, photos: 0, videos: 0 },
+      shown: { textLength: 0, photos: 0, videos: 0 },
+      matches: ['match', 'delayed', 'error-detail', 'long-match'].includes(
+        kind,
+      ),
+    });
+    expect(JSON.stringify(result)).not.toContain(protectedNoticeText('de'));
+  });
+
+for (const [status, en, de] of [
+  ['not-found', "This Post doesn't exist.", 'Dieser Post existiert nicht.'],
+  [
+    'unavailable',
+    'This Post is unavailable.',
+    'Dieser Post ist nicht verfügbar.',
+  ],
+] as const)
+  test(`${status} notice keeps its existing error-detail markers and does not admit an unlabelled article`, async ({
+    page,
+  }) => {
+    for (const text of [en, de]) {
+      await page.setContent(`<p data-testid="error-detail">${text}</p>`);
+      expect((await compareNotice(page, status)).matches).toBe(true);
+      await page.setContent(`<div role="article">${text}</div>`);
+      expect((await compareNotice(page, status)).matches).toBe(false);
+    }
+  });
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({
   page,

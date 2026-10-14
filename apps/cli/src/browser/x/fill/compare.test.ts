@@ -448,3 +448,74 @@ test('a locator count read returning after the fixed deadline cannot accept even
   );
   expect(result).toEqual({ counts, settled: false });
 });
+
+test('tombstone notice text requires the full normalized answer including the link, without language matching', () => {
+  const match = comparison.tombstoneNoticeMatches;
+  const answer = 'Generated protected notice. Learn more';
+  expect(match('  Generated\nprotected\tnotice.\n Learn more  ', answer)).toBe(
+    true,
+  );
+  expect(
+    match('Generated extra heading ' + answer + ' Generated footer', answer),
+  ).toBe(true);
+  expect(match('Generated protected notice.', answer)).toBe(false);
+  expect(match('Generated different notice. Learn more', answer)).toBe(false);
+  expect(match('This Post was deleted by the Post author.', answer)).toBe(
+    false,
+  );
+  expect(match(answer, '')).toBe(false);
+  expect(match(answer, ' \n\t')).toBe(false);
+  const long = 'Generated long context. '.repeat(30) + answer;
+  expect(match(long.slice(0, 500) + 'Generated changed tail', long)).toBe(
+    false,
+  );
+  expect(match(long, long)).toBe(true);
+});
+
+test.each(['direct', 'replace', 'module', 'wrapped'])(
+  'full focal tombstone text stays transient and selects the exact %s entry',
+  (kind) => {
+    const text =
+      'Generated protected context. '.repeat(24) + 'Generated link text';
+    const notice = {
+      __typename: 'TweetTombstone',
+      tombstone: { __typename: 'TextTombstone', text: { text } },
+    };
+    const result =
+      kind === 'wrapped'
+        ? { __typename: 'TweetWithVisibilityResults', tweet: notice }
+        : notice;
+    const body = detailAnswer(result, [detailPost('901')]);
+    const instruction =
+      body.data.threaded_conversation_with_injections_v2.instructions[0]!;
+    if (kind === 'replace') {
+      Object.assign(instruction, {
+        type: 'TimelineReplaceEntry',
+        entry: instruction.entries[1],
+      });
+    }
+    if (kind === 'module') {
+      instruction.entries[1] = {
+        entryId: 'conversationthread-generated',
+        content: {
+          items: [
+            {
+              entryId: `tweet-${DETAIL_FIXTURE.id}`,
+              item: { itemContent: { tweet_results: { result } } },
+            },
+          ],
+        },
+      } as never;
+    }
+    expect(comparison.tombstoneTextFromAnswer(body, DETAIL_FIXTURE.id)).toBe(
+      text,
+    );
+    expect(comparison.tombstoneTextFromAnswer(body, '901')).toBeNull();
+    const projected = extract(body, DETAIL_FIXTURE.id, { instruction: null });
+    expect(projected).toEqual({
+      kind: 'tombstone',
+      reason: text.slice(0, 500),
+    });
+    expect(text.length).toBeGreaterThan(500);
+  },
+);

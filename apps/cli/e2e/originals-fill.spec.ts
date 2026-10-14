@@ -43,6 +43,9 @@ import {
   notePhotoMarkup,
   NOTE_RENDER_FIXTURE,
   gatedLatePlayerMarkup,
+  protectedNoticeAnswer,
+  protectedNoticeMarkup,
+  protectedNoticeText,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -100,6 +103,14 @@ for (const variant of [
   'order-note-missing-photo',
   'order-note-delayed-text',
   'order-visibility-late-player',
+  'order-protected-de',
+  'order-protected-en',
+  'order-protected-different',
+  'order-protected-duplicate',
+  'order-protected-missing',
+  'order-protected-long-tail',
+  'order-protected-long-match',
+  'order-protected-missing-link',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -307,26 +318,34 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = variant.startsWith('order-visibility-')
-          ? gatedMediaAnswer(id, variant === 'order-visibility-family')
-          : variant.startsWith('order-note-')
-            ? notePhotoAnswer(id)
-            : variant === 'order-own-photos'
-              ? ownPhotoAnswer(id)
-              : variant.startsWith('order-card-')
-                ? cardComparisonAnswer(id, cardKind)
-                : variant.startsWith('order-display-')
-                  ? displayComparisonAnswer(
-                      id,
-                      variant === 'order-display-alt-mismatch'
-                        ? 'alt'
-                        : variant === 'order-display-tail-mismatch'
-                          ? 'tail'
-                          : 'none',
-                    )
-                  : variant === 'module-cursor' || variant === 'unknown-module'
-                    ? moduleCursorAnswer(id, variant === 'unknown-module')
-                    : detailAnswer(post);
+        const answer = variant.startsWith('order-protected-')
+          ? protectedNoticeAnswer(
+              id,
+              variant === 'order-protected-en' ? 'en' : 'de',
+              variant === 'order-protected-long-tail' ||
+                variant === 'order-protected-long-match',
+            )
+          : variant.startsWith('order-visibility-')
+            ? gatedMediaAnswer(id, variant === 'order-visibility-family')
+            : variant.startsWith('order-note-')
+              ? notePhotoAnswer(id)
+              : variant === 'order-own-photos'
+                ? ownPhotoAnswer(id)
+                : variant.startsWith('order-card-')
+                  ? cardComparisonAnswer(id, cardKind)
+                  : variant.startsWith('order-display-')
+                    ? displayComparisonAnswer(
+                        id,
+                        variant === 'order-display-alt-mismatch'
+                          ? 'alt'
+                          : variant === 'order-display-tail-mismatch'
+                            ? 'tail'
+                            : 'none',
+                      )
+                    : variant === 'module-cursor' ||
+                        variant === 'unknown-module'
+                      ? moduleCursorAnswer(id, variant === 'unknown-module')
+                      : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -353,8 +372,24 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup =
-        variant === 'order-visibility-late-player'
+      const visibilityMarkup = variant.startsWith('order-protected-')
+        ? protectedNoticeMarkup(
+            variant === 'order-protected-en' ? 'en' : 'de',
+            variant === 'order-protected-different'
+              ? 'different'
+              : variant === 'order-protected-duplicate'
+                ? 'duplicate'
+                : variant === 'order-protected-missing'
+                  ? 'missing'
+                  : variant === 'order-protected-long-tail'
+                    ? 'long-tail'
+                    : variant === 'order-protected-long-match'
+                      ? 'long-match'
+                      : variant === 'order-protected-missing-link'
+                        ? 'missing-link'
+                        : 'match',
+          )
+        : variant === 'order-visibility-late-player'
           ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
           : variant.startsWith('order-note-')
             ? notePhotoMarkup(
@@ -644,6 +679,9 @@ for (const variant of [
           variant === 'order-own-photos' ||
           variant === 'order-note-delayed-photo' ||
           variant === 'order-note-delayed-text' ||
+          variant === 'order-protected-de' ||
+          variant === 'order-protected-en' ||
+          variant === 'order-protected-long-match' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -762,6 +800,45 @@ for (const variant of [
             endReason: 'error',
             displayEndReason: 'canary-mismatch',
           });
+        }
+        if (variant.startsWith('order-protected-')) {
+          const expected = protectedNoticeText(
+            variant === 'order-protected-en' ? 'en' : 'de',
+            variant === 'order-protected-long-tail' ||
+              variant === 'order-protected-long-match',
+          );
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          expect(original?.signedIn).toMatchObject({
+            status: 'tombstone',
+            reason: expected.slice(0, 500),
+          });
+          const journal = await store.browserJournal();
+          expect(journal.runs.at(-1)).toMatchObject({
+            canaryCounts: [
+              {
+                stored: { textLength: 0, photos: 0, videos: 0 },
+                shown: { textLength: 0, photos: 0, videos: 0 },
+                matches:
+                  variant === 'order-protected-de' ||
+                  variant === 'order-protected-en' ||
+                  variant === 'order-protected-long-match',
+              },
+            ],
+          });
+          expect(JSON.stringify(journal)).not.toContain(expected.slice(0, 100));
+          expect(notices.join('')).not.toContain(expected.slice(0, 100));
+          const report = await readFile(
+            join(
+              directory,
+              'originals',
+              `canary-${journal.runs.at(-1)!.runId}.json`,
+            ),
+            'utf8',
+          );
+          expect(report).not.toContain(expected.slice(0, 100));
+          expect(mediaRequests).toEqual([]);
         }
         if (variant.startsWith('order-note-')) {
           const original = await store.read((tx) =>

@@ -29,6 +29,7 @@ import {
   compareNotice,
   normalizedLength,
   expectedFocalMediaCounts,
+  tombstoneTextFromAnswer,
 } from './compare.ts';
 import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
@@ -693,19 +694,22 @@ export async function runFillWithDependencies(
                     extracted.kind === 'no-entry'
                       ? 'not-found'
                       : extracted.kind,
+                    extracted.kind === 'tombstone'
+                      ? tombstoneTextFromAnswer(answer.body, row.id)
+                      : null,
                   );
           } catch {
             comparison = {
               stored: {
                 textLength: normalizedLength(
-                  extracted.kind === 'read'
-                    ? extracted.displayText
-                    : (stored?.text ?? ''),
+                  extracted.kind === 'read' ? extracted.displayText : '',
                 ),
-                ...expectedFocalMediaCounts(
-                  stored?.media ?? [],
-                  gated.has(row.id),
-                ),
+                ...(extracted.kind === 'read'
+                  ? expectedFocalMediaCounts(
+                      stored?.media ?? [],
+                      gated.has(row.id),
+                    )
+                  : { photos: 0, videos: 0 }),
               },
               shown: { textLength: 0, photos: 0, videos: 0 },
               matches: false,

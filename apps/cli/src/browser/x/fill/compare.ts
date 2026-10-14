@@ -181,7 +181,33 @@ export function compareDisplayText(
 export async function compareNotice(
   page: Page,
   status: 'not-found' | 'tombstone' | 'unavailable',
+  tombstoneText: string | null = null,
 ): Promise<CanaryComparison> {
+  const zero = { textLength: 0, photos: 0, videos: 0 };
+  if (status === 'tombstone') {
+    const candidates = page.locator(
+      '[role="article"]:not([data-testid="tweet"]):not(article[data-testid="tweet"] *):not([data-testid="error-detail"] *),[data-testid="error-detail"]',
+    );
+    const read = async () => {
+      const count = await candidates.count();
+      const matches =
+        count === 1 &&
+        (await candidates.isVisible()) &&
+        tombstoneNoticeMatches(await candidates.innerText(), tombstoneText);
+      return { text: matches ? 1 : 0, photos: count, videos: 0 };
+    };
+    const render = await waitForFocalCounts(read, {
+      text: 1,
+      photos: 1,
+      videos: 0,
+    });
+    const current = await read();
+    return {
+      stored: zero,
+      shown: { ...zero },
+      matches: render.settled && current.text === 1 && current.photos === 1,
+    };
+  }
   const marker =
     status === 'not-found'
       ? page.getByTestId('error-detail').filter({
@@ -190,16 +216,71 @@ export async function compareNotice(
         })
       : page.getByTestId('error-detail').filter({
           hasText:
-            status === 'tombstone'
-              ? /^(?:This Post was deleted by the Post author\.?|Dieser Post wurde vom Autor gelöscht\.?)$/
-              : /^(?:This Post is unavailable\.?|Dieser Post ist nicht verfügbar\.?)$/,
+            /^(?:This Post is unavailable\.?|Dieser Post ist nicht verfügbar\.?)$/,
         });
-  const zero = { textLength: 0, photos: 0, videos: 0 };
   return {
     stored: zero,
     shown: { ...zero },
     matches: (await marker.count()) === 1 && (await marker.isVisible()),
   };
+}
+export function tombstoneNoticeMatches(
+  shown: string,
+  answer: string | null,
+): boolean {
+  const normalized = answer?.replace(/\s+/gu, ' ').trim() ?? '';
+  return (
+    normalized.length > 0 &&
+    shown.replace(/\s+/gu, ' ').trim().includes(normalized)
+  );
+}
+
+/** Called only after extract accepted this page's focal tombstone; never persisted. */
+export function tombstoneTextFromAnswer(
+  body: unknown,
+  focalId: string,
+): string | null {
+  const instructions = object(
+    object(object(body).data).threaded_conversation_with_injections_v2,
+  ).instructions;
+  for (const input of Array.isArray(instructions) ? instructions : []) {
+    const instruction = object(input);
+    const entries =
+      instruction.type === 'TimelineReplaceEntry'
+        ? [instruction.entry]
+        : instruction.type === 'TimelineAddEntries' &&
+            Array.isArray(instruction.entries)
+          ? instruction.entries
+          : [];
+    for (const input of entries) {
+      const entry = object(input),
+        content = object(entry.content);
+      const entries = Array.isArray(content.items)
+        ? content.items.map((input) => ({
+            id: object(input).entryId,
+            content: object(object(input).item).itemContent,
+          }))
+        : [{ id: entry.entryId, content: content.itemContent }];
+      for (const candidate of entries) {
+        let result = object(
+          object(object(candidate.content).tweet_results).result,
+        );
+        if (result.__typename === 'TweetWithVisibilityResults')
+          result = object(result.tweet);
+        if (
+          (result.rest_id ??
+            (typeof candidate.id === 'string'
+              ? candidate.id.replace(/^tweet-/, '')
+              : null)) !== focalId ||
+          result.__typename !== 'TweetTombstone'
+        )
+          continue;
+        const text = object(object(result.tombstone).text).text;
+        return typeof text === 'string' ? text : null;
+      }
+    }
+  }
+  return null;
 }
 export function normalizedLength(text: string): number {
   return text.replace(/\s+/gu, ' ').trim().length;

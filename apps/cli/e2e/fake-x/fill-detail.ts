@@ -437,3 +437,86 @@ export function gatedLatePlayerMarkup(focalId: string): string {
     `<script>setTimeout(()=>document.querySelector('article[data-testid="tweet"]').insertAdjacentHTML('beforeend','<div data-testid="videoPlayer"><video preload="none"></video></div>'),${NOTE_RENDER_FIXTURE.delayMs})</script>`
   );
 }
+
+export const PROTECTED_NOTICE_FIXTURE = {
+  de: [
+    'Generierter Hinweis.',
+    'Dieses Konto begrenzt,',
+    'wer diesen Beitrag sehen kann.',
+    'Der Beitrag ist geschützt.',
+  ],
+  en: [
+    'Generated notice.',
+    'This account limits',
+    'who can view this post.',
+    'The post is protected.',
+  ],
+  link: { de: 'Mehr erfahren', en: 'Learn more' },
+  longPrefix: 'Generated protected context. '.repeat(24),
+  tail: 'Generated final notice detail.',
+  wrongTail: 'Generated changed notice detail.',
+};
+
+export function protectedNoticeText(lang: 'de' | 'en', long = false): string {
+  return (
+    (long ? PROTECTED_NOTICE_FIXTURE.longPrefix : '') +
+    PROTECTED_NOTICE_FIXTURE[lang].join(' ') +
+    ' ' +
+    PROTECTED_NOTICE_FIXTURE.link[lang] +
+    (long ? ' ' + PROTECTED_NOTICE_FIXTURE.tail : '')
+  );
+}
+
+export function protectedNoticeAnswer(
+  focalId: string,
+  lang: 'de' | 'en',
+  long = false,
+) {
+  return detailAnswer(
+    {
+      __typename: 'TweetTombstone',
+      tombstone: {
+        __typename: 'TextTombstone',
+        text: { text: protectedNoticeText(lang, long), entities: [] },
+      },
+    },
+    [detailPost('901')],
+  );
+}
+
+export function protectedNoticeMarkup(
+  lang: 'de' | 'en',
+  kind:
+    | 'match'
+    | 'different'
+    | 'duplicate'
+    | 'missing'
+    | 'long-tail'
+    | 'long-match'
+    | 'missing-link'
+    | 'delayed'
+    | 'error-detail' = 'match',
+): string {
+  const spans = PROTECTED_NOTICE_FIXTURE[lang]
+    .map((text) => `<span>${text}</span>`)
+    .join(' ');
+  const link = `<a href="/generated-learn-more">${PROTECTED_NOTICE_FIXTURE.link[lang]}</a>`;
+  const content =
+    (kind === 'long-tail' || kind === 'long-match'
+      ? PROTECTED_NOTICE_FIXTURE.longPrefix
+      : '') +
+    spans +
+    ' ' +
+    (kind === 'missing-link' ? '' : link) +
+    (kind === 'long-tail'
+      ? ' ' + PROTECTED_NOTICE_FIXTURE.wrongTail
+      : kind === 'long-match'
+        ? ' ' + PROTECTED_NOTICE_FIXTURE.tail
+        : '');
+  const notice =
+    kind === 'error-detail'
+      ? `<div data-testid="error-detail">${content}</div>`
+      : `<div data-testid="cellInnerDiv"><div role="article">${kind === 'different' ? 'Generated different notice.' : content}</div></div>`;
+  const parent = `<article data-testid="tweet"><a href="/generated/status/901"><time>2026</time></a><p data-testid="tweetText">Generated parent post above the notice</p></article>`;
+  return `<main lang="${lang}">${parent}<div id="generated-notice">${kind === 'missing' || kind === 'delayed' ? '' : notice}${kind === 'duplicate' ? notice : ''}</div></main>${kind === 'delayed' ? `<script>setTimeout(()=>document.getElementById('generated-notice').innerHTML=${JSON.stringify(notice)},1500)</script>` : ''}`;
+}

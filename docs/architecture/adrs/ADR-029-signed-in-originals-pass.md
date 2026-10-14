@@ -296,6 +296,8 @@ The additional audit is CLI-local: an additive `browser_order_audit` table linke
 
 On 2026-10-14 X rendered a note tweet's photo after its text, so the comparison reads focal locators for up to 10 seconds, observes at least two seconds even for zero expected media and requires the expected text and media counts to remain unchanged for one second before comparing them.
 
+On 2026-10-14 X showed a protected account's post, signed in, as a text notice in an unlabelled article, so the comparison now matches that notice by the answer's own full tombstone text.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

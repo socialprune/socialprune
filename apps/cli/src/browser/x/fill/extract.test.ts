@@ -8,6 +8,10 @@ import {
   detailPost,
   detailAnswer,
 } from '../../../originals/test/detail.ts';
+import {
+  emptyResultsAnswer,
+  EMPTY_RESULTS_FIXTURE,
+} from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
     valid = {
@@ -400,6 +404,154 @@ test('shape-failure report tokens reject decoy values and map projection errors 
   expect(structureReport(detailAnswer(), 'no-entry')).toMatchObject({
     failure: 'no-entry',
   });
+});
+
+test.each(['module', 'entry'] as const)(
+  'known non-focal empty %s result is skipped while focal and complete parents survive',
+  (kind) => {
+    const result = extract(
+      emptyResultsAnswer(DETAIL_FIXTURE.id, kind),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    );
+    expect(result.kind).toBe('read');
+    if (result.kind !== 'read')
+      throw new Error('Generated focal was not read.');
+    expect(result.post.text).toBe(DETAIL_FIXTURE.longText);
+    expect(result.above.map((post) => post.id)).toEqual([
+      EMPTY_RESULTS_FIXTURE.rootId,
+      EMPTY_RESULTS_FIXTURE.parentId,
+    ]);
+    expect(result.quoted).toEqual([]);
+    expect(result.chainAbove).toBe('complete');
+    expect(Reflect.get(result, 'emptyResults')).toBe(
+      EMPTY_RESULTS_FIXTURE.skipped,
+    );
+    expect(JSON.stringify(result)).not.toContain(EMPTY_RESULTS_FIXTURE.emptyId);
+  },
+);
+
+test('a skipped empty parent ends the chain as partial without dropping the readable nearer parent', () => {
+  const result = extract(
+    emptyResultsAnswer(DETAIL_FIXTURE.id, 'parent'),
+    DETAIL_FIXTURE.id,
+    { instruction: null },
+  );
+  expect(result.kind).toBe('read');
+  if (result.kind !== 'read') throw new Error('Generated focal was not read.');
+  expect(result.above.map((post) => post.id)).toEqual([
+    EMPTY_RESULTS_FIXTURE.parentId,
+  ]);
+  expect(result.chainAbove).toBe('partial');
+  expect(Reflect.get(result, 'emptyResults')).toBe(
+    EMPTY_RESULTS_FIXTURE.skipped,
+  );
+});
+
+test.each(['direct', 'module'] as const)(
+  'a focal empty %s result remains a shape stop, never a successful skip',
+  (location) => {
+    const answer = emptyResultsAnswer(DETAIL_FIXTURE.id, 'focal');
+    if (location === 'module') {
+      const entries =
+        answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+          .entries;
+      const focal = entries[2]!;
+      entries[2] = {
+        entryId: 'conversationthread-generated-focal',
+        content: {
+          items: [
+            {
+              entryId: focal.entryId,
+              item: { itemContent: focal.content.itemContent },
+            },
+          ],
+        },
+      } as never;
+    }
+    expect(
+      extract(answer, DETAIL_FIXTURE.id, { instruction: null }),
+    ).toMatchObject({
+      kind: 'shape-changed',
+      path: location === 'module' ? 'module-result-type' : 'result-type',
+    });
+  },
+);
+
+test('an unknown module result type still stops after known empty items were skipped', () => {
+  expect(
+    extract(
+      emptyResultsAnswer(DETAIL_FIXTURE.id, 'unknown'),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    ),
+  ).toMatchObject({ kind: 'shape-changed', path: 'module-result-type' });
+});
+
+test('skipped counts remain value-free on notices and failures, while skipped IDs still take part in duplicate checks', () => {
+  const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
+  const entries =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries;
+  const focal = entries[2]!.content.itemContent!;
+  focal.tweet_results.result = {
+    __typename: 'TweetTombstone',
+    tombstone: { text: { text: 'Generated notice' } },
+  };
+  expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'tombstone',
+    reason: 'Generated notice',
+    emptyResults: 1,
+  });
+  const reply = entries[1]!.content.items![0]!;
+  reply.entryId = `tweet-${EMPTY_RESULTS_FIXTURE.emptyId}`;
+  reply.item.itemContent.tweet_results.result = detailPost(
+    EMPTY_RESULTS_FIXTURE.emptyId,
+  );
+  const result = extract(answer, DETAIL_FIXTURE.id, { instruction: null });
+  expect(result).toEqual({
+    kind: 'shape-changed',
+    path: 'duplicate-entry',
+    emptyResults: 1,
+  });
+  expect(JSON.stringify(result)).not.toContain(EMPTY_RESULTS_FIXTURE.emptyId);
+});
+
+test.each([undefined, { result: undefined }])(
+  'an explicitly undefined result has the same recognized empty-item semantics: %j',
+  (results) => {
+    const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
+    const items =
+      answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries[0]!.content.items!;
+    if (results)
+      Object.assign(items[1]!.item.itemContent, { tweet_results: results });
+    const result = extract(answer, DETAIL_FIXTURE.id, { instruction: null });
+    expect(result.kind).toBe('read');
+    expect(Reflect.get(result, 'emptyResults')).toBe(1);
+  },
+);
+
+test.each([
+  { __typename: 'GeneratedUnknownItem', tweet_results: {} },
+  {
+    __typename: 'TimelineTweet',
+    itemType: 'GeneratedUnknownItem',
+    tweet_results: {},
+  },
+  { __typename: 'TimelineTweet', tweet_results: null },
+  { __typename: 'TimelineTweet', tweet_results: [] },
+  { __typename: 'TimelineTweet' },
+  { __typename: 'TimelineTweet', tweet_results: { result: null } },
+])('nearby unknown empty-looking shapes still fail closed: %j', (content) => {
+  const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
+  const items =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content.items!;
+  items[1]!.item.itemContent = content as never;
+  expect(
+    extract(answer, DETAIL_FIXTURE.id, { instruction: null }),
+  ).toMatchObject({ kind: 'shape-changed', path: 'module-result-type' });
 });
 
 function visibilityPost(id = DETAIL_FIXTURE.id, gated = false) {

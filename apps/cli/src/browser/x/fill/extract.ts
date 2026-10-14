@@ -41,6 +41,21 @@ const ProjectionSchema = z.strictObject({
 export type SignedInPost = Omit<Original, 'anonymous' | 'signedIn'>;
 const string = (value: unknown): string | null =>
   typeof value === 'string' ? value : null;
+/** An absent result is known only in this exact TimelineTweet container. */
+function emptyTweetResult(itemContent: Record<string, unknown>): boolean {
+  const results = itemContent.tweet_results;
+  return (
+    itemContent.__typename === 'TimelineTweet' &&
+    (itemContent.itemType === undefined ||
+      itemContent.itemType === 'TimelineTweet') &&
+    (itemContent.tweetDisplayType === undefined ||
+      itemContent.tweetDisplayType === 'Tweet') &&
+    results !== null &&
+    typeof results === 'object' &&
+    !Array.isArray(results) &&
+    object(results).result === undefined
+  );
+}
 /** Only this known wrapper may omit its inner Tweet's type name. */
 function tweetResult(input: unknown): Record<string, unknown> {
   let value = object(input);
@@ -203,10 +218,12 @@ export function extract(
       displayText: string;
       displayLinks: string[];
       gated: { id: string; mediaItems: number }[];
+      emptyResults: number;
     }
-  | { kind: 'tombstone' | 'unavailable'; reason: string }
-  | { kind: 'no-entry' }
-  | { kind: 'shape-changed'; path: string } {
+  | { kind: 'tombstone' | 'unavailable'; reason: string; emptyResults?: number }
+  | { kind: 'no-entry'; emptyResults?: number }
+  | { kind: 'shape-changed'; path: string; emptyResults?: number } {
+  let emptyResults = 0;
   try {
     const root = object(body),
       instructions = object(
@@ -254,9 +271,9 @@ export function extract(
       : [object(replaced[0]).entry];
     if (!Array.isArray(entries)) throw new Error('entries');
     const timeline: { id: string; result: unknown; module: boolean }[] = [];
+    const seen = new Set<string>();
     const add = (id: string, input: unknown, module = false) => {
-      if (timeline.some((value) => value.id === id))
-        throw new Error('duplicate-entry');
+      if (seen.has(id)) throw new Error('duplicate-entry');
       const value = tweetResult(input);
       if (
         !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
@@ -264,6 +281,7 @@ export function extract(
         )
       )
         throw new Error('result-type');
+      seen.add(id);
       timeline.push({ id, result: input, module });
     };
     for (const input of entries) {
@@ -283,6 +301,19 @@ export function extract(
             itemContent.itemType === 'TimelineTimelineCursor'
           )
             continue;
+          const entryId = string(object(item).entryId);
+          if (
+            emptyTweetResult(itemContent) &&
+            entryId !== null &&
+            /^tweet-\d{1,40}$/.test(entryId) &&
+            entryId.slice(6) !== focalId
+          ) {
+            const id = entryId.slice(6);
+            if (seen.has(id)) throw new Error('duplicate-entry');
+            seen.add(id);
+            emptyResults++;
+            continue;
+          }
           const result = object(itemContent.tweet_results).result;
           const tweet = tweetResult(result);
           if (
@@ -291,12 +322,11 @@ export function extract(
             )
           )
             throw new Error('module-result-type');
-          const entryId = string(object(item).entryId),
-            id =
-              string(tweet.rest_id) ??
-              (entryId && /^tweet-\d{1,40}$/.test(entryId)
-                ? entryId.slice(6)
-                : null);
+          const id =
+            string(tweet.rest_id) ??
+            (entryId && /^tweet-\d{1,40}$/.test(entryId)
+              ? entryId.slice(6)
+              : null);
           if (!id) continue; // Known incomplete module: retain the focal post and a partial chain.
           if (!OriginalIdSchema.safeParse(id).success)
             throw new Error('module-rest_id');
@@ -309,17 +339,24 @@ export function extract(
         !/^tweet-\d{1,40}$/.test(entry.entryId)
       )
         throw new Error('entry-id');
-      add(
-        entry.entryId.slice(6),
-        object(object(content.itemContent).tweet_results).result,
-      );
+      const itemContent = object(content.itemContent);
+      if (entry.entryId.slice(6) !== focalId && emptyTweetResult(itemContent)) {
+        const id = entry.entryId.slice(6);
+        if (seen.has(id)) throw new Error('duplicate-entry');
+        seen.add(id);
+        emptyResults++;
+        continue;
+      }
+      add(entry.entryId.slice(6), object(itemContent.tweet_results).result);
     }
     const focal = timeline.findIndex((value) => value.id === focalId);
-    if (focal < 0) return { kind: 'no-entry' };
+    if (focal < 0)
+      return { kind: 'no-entry', ...(emptyResults ? { emptyResults } : {}) };
     const value = object(timeline[focal]?.result);
     if (value.__typename === 'TweetTombstone')
       return {
         kind: 'tombstone',
+        ...(emptyResults ? { emptyResults } : {}),
         reason: (string(object(object(value.tombstone).text).text) ?? '').slice(
           0,
           500,
@@ -328,12 +365,14 @@ export function extract(
     if (value.__typename === 'TweetUnavailable')
       return {
         kind: 'unavailable',
+        ...(emptyResults ? { emptyResults } : {}),
         reason: (string(value.reason) ?? '').slice(0, 64),
       };
     const unwrapped = tweetResult(value);
     if (unwrapped.__typename === 'TweetTombstone')
       return {
         kind: 'tombstone',
+        ...(emptyResults ? { emptyResults } : {}),
         reason: (
           string(object(object(unwrapped.tombstone).text).text) ?? ''
         ).slice(0, 500),
@@ -341,6 +380,7 @@ export function extract(
     if (unwrapped.__typename === 'TweetUnavailable')
       return {
         kind: 'unavailable',
+        ...(emptyResults ? { emptyResults } : {}),
         reason: (string(unwrapped.reason) ?? '').slice(0, 64),
       };
     const gated = new Map<string, number>();
@@ -397,10 +437,12 @@ export function extract(
       quoted,
       chainAbove: parent ? 'partial' : 'complete',
       gated: [...gated].map(([id, mediaItems]) => ({ id, mediaItems })),
+      emptyResults,
     };
   } catch (error) {
     return {
       kind: 'shape-changed',
+      ...(emptyResults ? { emptyResults } : {}),
       path: failureToken(
         error instanceof z.ZodError
           ? error

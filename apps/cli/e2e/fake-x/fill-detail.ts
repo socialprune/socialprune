@@ -520,3 +520,103 @@ export function protectedNoticeMarkup(
   const parent = `<article data-testid="tweet"><a href="/generated/status/901"><time>2026</time></a><p data-testid="tweetText">Generated parent post above the notice</p></article>`;
   return `<main lang="${lang}">${parent}<div id="generated-notice">${kind === 'missing' || kind === 'delayed' ? '' : notice}${kind === 'duplicate' ? notice : ''}</div></main>${kind === 'delayed' ? `<script>setTimeout(()=>document.getElementById('generated-notice').innerHTML=${JSON.stringify(notice)},1500)</script>` : ''}`;
 }
+
+export const EMPTY_RESULTS_FIXTURE = {
+  rootId: '901',
+  parentId: '902',
+  replyId: '903',
+  emptyId: '905',
+  modules: 2,
+  skipped: 1,
+};
+
+export function emptyResultsAnswer(
+  focalId: string,
+  kind: 'module' | 'entry' | 'parent' | 'focal' | 'unknown' = 'module',
+) {
+  const { rootId, parentId, replyId, emptyId } = EMPTY_RESULTS_FIXTURE;
+  const content = (result?: unknown) => ({
+    __typename: 'TimelineTweet',
+    itemType: 'TimelineTweet',
+    tweetDisplayType: 'Tweet',
+    tweet_results: result === undefined ? {} : { result },
+  });
+  const item = (id: string, result?: unknown) => ({
+    entryId: `tweet-${id}`,
+    item: { itemContent: content(result) },
+  });
+  const root = detailPost(rootId);
+  const parent = detailPost(parentId);
+  Object.assign(parent.legacy, {
+    in_reply_to_status_id_str: kind === 'parent' ? emptyId : rootId,
+  });
+  const focal = detailPost(focalId);
+  Object.assign(focal.legacy, { in_reply_to_status_id_str: parentId });
+  Object.assign(focal, {
+    note_tweet: {
+      note_tweet_results: { result: { text: DETAIL_FIXTURE.longText } },
+    },
+  });
+  const empty = item(
+    emptyId,
+    kind === 'unknown' ? { __typename: 'GeneratedUnknownResult' } : undefined,
+  );
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              {
+                entryId: 'conversationthread-generated-a',
+                content: {
+                  entryType: 'TimelineTimelineModule',
+                  displayType: 'VerticalConversation',
+                  items: [
+                    item(rootId, root),
+                    ...(kind === 'entry' ? [] : [empty]),
+                    item(parentId, parent),
+                  ],
+                },
+              },
+              {
+                entryId: 'conversationthread-generated-b',
+                content: {
+                  entryType: 'TimelineTimelineModule',
+                  displayType: 'VerticalConversation',
+                  items: [item(replyId, detailPost(replyId))],
+                },
+              },
+              ...(kind === 'entry'
+                ? [
+                    {
+                      entryId: `tweet-${emptyId}`,
+                      content: {
+                        entryType: 'TimelineTimelineItem',
+                        itemContent: content(),
+                      },
+                    },
+                  ]
+                : []),
+              {
+                entryId: `tweet-${focalId}`,
+                content: {
+                  entryType: 'TimelineTimelineItem',
+                  itemContent: content(kind === 'focal' ? undefined : focal),
+                },
+              },
+              {
+                entryId: 'cursor-bottom-generated',
+                content: {
+                  entryType: 'TimelineTimelineCursor',
+                  cursorType: 'Bottom',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}

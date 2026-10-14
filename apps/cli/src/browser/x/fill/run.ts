@@ -567,6 +567,9 @@ export async function runFillWithDependencies(
                   ? 'no-entry'
                   : undefined,
             ),
+            ...('emptyResults' in extracted && extracted.emptyResults
+              ? { emptyResults: extracted.emptyResults }
+              : {}),
             ...(gated.size
               ? {
                   gated: {

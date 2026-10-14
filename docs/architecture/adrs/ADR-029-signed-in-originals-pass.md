@@ -298,6 +298,8 @@ On 2026-10-14 X rendered a note tweet's photo after its text, so the comparison 
 
 On 2026-10-14 X showed a protected account's post, signed in, as a text notice in an unlabelled article, so the comparison now matches that notice by the answer's own full tombstone text.
 
+On 2026-10-14 X listed a reply in a conversation module without its content, so the projector skips such an empty item outside the focal post and still stops on every other unknown shape.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

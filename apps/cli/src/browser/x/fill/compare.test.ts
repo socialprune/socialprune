@@ -836,3 +836,23 @@ test('notice prefix matching cannot substitute another index or ignore earlier t
     comparison.noticeAlignmentFromAnswer(broken, DETAIL_FIXTURE.id),
   ).toBeNull();
 });
+
+test('empty focal agreement requires absence of the exact post and error-detail with one visible account switcher', () => {
+  const counts = {
+    focalArticles: 0,
+    errorDetails: 0,
+    accountSwitchers: 1,
+    accountVisible: true,
+  };
+  expect(comparison.emptyFocalAgrees(counts)).toBe(true);
+  for (const delta of [
+    { focalArticles: 1 },
+    { focalArticles: 2 },
+    { errorDetails: 1 },
+    { errorDetails: 2 },
+    { accountSwitchers: 0 },
+    { accountSwitchers: 2 },
+    { accountVisible: false },
+  ])
+    expect(comparison.emptyFocalAgrees({ ...counts, ...delta })).toBe(false);
+});

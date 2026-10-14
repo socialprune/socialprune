@@ -940,3 +940,80 @@ export function noticeParentMarkup(focalId: string): string {
   const fixture = NOTICE_PARENT_FIXTURE;
   return `<div data-testid="cellInnerDiv"><div role="article"><span>${fixture.text.slice(0, -fixture.linkText.length)}</span><a href="/generated-learn-more">${fixture.linkText}</a></div></div><div data-testid="cellInnerDiv"><article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><p data-testid="tweetText">${fixture.focalText}</p></article></div>`;
 }
+
+export const EMPTY_FOCAL_FIXTURE = {
+  parentId: '901',
+  replyId: '912',
+  nextId: '909',
+  delayMs: 1500,
+  oldText: 'Generated earlier anonymous text',
+};
+export type EmptyFocalKind =
+  'empty' | 'present' | 'late' | 'transient' | 'error' | 'module' | 'unknown';
+
+export function emptyFocalAnswer(
+  focalId: string,
+  kind: EmptyFocalKind = 'empty',
+) {
+  const entry = (id: string, result?: unknown) => ({
+    entryId: `tweet-${id}`,
+    content: {
+      entryType: 'TimelineTimelineItem',
+      itemContent: {
+        __typename: 'TimelineTweet',
+        itemType: 'TimelineTweet',
+        tweetDisplayType: 'Tweet',
+        tweet_results: result === undefined ? {} : { result },
+      },
+    },
+  });
+  const focal = entry(
+    focalId,
+    kind === 'unknown' ? { __typename: 'GeneratedUnknownFocal' } : undefined,
+  );
+  const entries = [
+    entry(
+      EMPTY_FOCAL_FIXTURE.parentId,
+      detailPost(EMPTY_FOCAL_FIXTURE.parentId),
+    ),
+    ...(kind === 'module'
+      ? [
+          {
+            entryId: `conversationthread-${focalId}`,
+            content: {
+              entryType: 'TimelineTimelineModule',
+              displayType: 'VerticalConversation',
+              items: [
+                {
+                  entryId: `conversationthread-${focalId}-tweet-${focalId}`,
+                  item: { itemContent: focal.content.itemContent },
+                },
+              ],
+            },
+          },
+        ]
+      : [focal]),
+    entry(EMPTY_FOCAL_FIXTURE.replyId, detailPost(EMPTY_FOCAL_FIXTURE.replyId)),
+  ];
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [{ type: 'TimelineAddEntries', entries }],
+      },
+    },
+  };
+}
+
+export function emptyFocalMarkup(
+  focalId: string,
+  kind: EmptyFocalKind = 'empty',
+): string {
+  const post = (id: string) =>
+    `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><p data-testid="tweetText">Generated neighbour post</p></article>`;
+  const focal = post(focalId);
+  const script =
+    kind === 'late' || kind === 'transient'
+      ? `<script>setTimeout(()=>{document.getElementById('generated-focal').innerHTML=${JSON.stringify(focal)};${kind === 'transient' ? "setTimeout(()=>document.getElementById('generated-focal').innerHTML='',300);" : ''}},${EMPTY_FOCAL_FIXTURE.delayMs})</script>`
+      : '';
+  return `${post(EMPTY_FOCAL_FIXTURE.parentId)}<div id="generated-focal">${kind === 'present' ? focal : ''}</div>${post(EMPTY_FOCAL_FIXTURE.replyId)}${kind === 'error' ? '<p data-testid="error-detail">Generated error notice</p>' : ''}${script}`;
+}

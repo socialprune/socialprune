@@ -19,6 +19,11 @@ export interface CanaryComparison {
     candidatesSeen: number;
     matchedIndex: number | null;
   };
+  absence?: EmptyFocalCounts & {
+    focalAbsent: boolean;
+    focalObserved: boolean;
+    errorObserved: boolean;
+  };
 }
 
 /** Same one-pass decoder as adapter-x's internal tweet parser; no HTML parsing. */
@@ -307,6 +312,73 @@ export async function compareNotice(
     stored: zero,
     shown: { ...zero },
     matches: (await marker.count()) === 1 && (await marker.isVisible()),
+  };
+}
+export interface EmptyFocalCounts {
+  focalArticles: number;
+  errorDetails: number;
+  accountSwitchers: number;
+  accountVisible: boolean;
+}
+export function emptyFocalAgrees(counts: EmptyFocalCounts): boolean {
+  return (
+    counts.focalArticles === 0 &&
+    counts.errorDetails === 0 &&
+    counts.accountSwitchers === 1 &&
+    counts.accountVisible
+  );
+}
+/** No post content is inferred from absent neighbours or a matching notice. */
+export async function compareEmptyFocal(
+  page: Page,
+  focalId: string,
+): Promise<CanaryComparison> {
+  const focal = xSelectors.focalLocator(page, focalId);
+  const errors = page.getByTestId('error-detail');
+  const switchers = page.getByTestId('SideNav_AccountSwitcher_Button');
+  let focalObserved = false,
+    errorObserved = false;
+  const read = async (): Promise<EmptyFocalCounts> => {
+    await xSelectors.check(page);
+    const counts = {
+      focalArticles: await focal.count(),
+      errorDetails: await errors.count(),
+      accountSwitchers: await switchers.count(),
+      accountVisible: false,
+    };
+    counts.accountVisible =
+      counts.accountSwitchers === 1 && (await switchers.isVisible());
+    focalObserved ||= counts.focalArticles > 0;
+    errorObserved ||= counts.errorDetails > 0;
+    return counts;
+  };
+  const render = await waitForFocalCounts(
+    async () => {
+      const counts = await read();
+      return {
+        text: emptyFocalAgrees(counts) ? 1 : 0,
+        photos: focalObserved ? Math.max(1, counts.focalArticles) : 0,
+        videos: errorObserved ? Math.max(1, counts.errorDetails) : 0,
+      };
+    },
+    { text: 1, photos: 0, videos: 0 },
+  );
+  const counts = await read();
+  const zero = { textLength: 0, photos: 0, videos: 0 };
+  return {
+    stored: zero,
+    shown: { ...zero },
+    absence: {
+      ...counts,
+      focalAbsent: counts.focalArticles === 0,
+      focalObserved,
+      errorObserved,
+    },
+    matches:
+      render.settled &&
+      emptyFocalAgrees(counts) &&
+      !focalObserved &&
+      !errorObserved,
   };
 }
 export interface NoticeAlignment {

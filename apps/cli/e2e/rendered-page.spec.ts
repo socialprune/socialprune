@@ -4,6 +4,7 @@ import {
   compareFocal,
   compareNotice,
   noticeAlignmentFromAnswer,
+  compareEmptyFocal,
 } from '../src/browser/x/fill/compare.ts';
 import { migrateOriginal } from '@socialprune/core';
 import { startConfirmation } from '../src/browser/confirmation.ts';
@@ -31,6 +32,7 @@ import {
   noticeAlignmentMarkup,
   noticeAlignmentAnswer,
   NOTICE_ALIGNMENT_FIXTURE,
+  emptyFocalMarkup,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -566,6 +568,51 @@ for (const kind of [
       NOTICE_ALIGNMENT_FIXTURE.replyText,
     ])
       expect(JSON.stringify(compared)).not.toContain(text);
+  });
+
+for (const kind of ['empty', 'present', 'late', 'transient', 'error'] as const)
+  test(`empty direct focal ${kind} agrees only with bounded observed absence, not neighbouring articles`, async ({
+    page,
+  }) => {
+    await page.setContent(
+      '<button data-testid="SideNav_AccountSwitcher_Button">Generated account</button>' +
+        emptyFocalMarkup('910', kind),
+    );
+    const compared = await compareEmptyFocal(page, '910');
+    expect(compared).toMatchObject({
+      stored: { textLength: 0, photos: 0, videos: 0 },
+      shown: { textLength: 0, photos: 0, videos: 0 },
+      matches: kind === 'empty',
+      absence: {
+        focalArticles: kind === 'present' || kind === 'late' ? 1 : 0,
+        errorDetails: kind === 'error' ? 1 : 0,
+        accountSwitchers: 1,
+        accountVisible: true,
+        focalObserved: ['present', 'late', 'transient'].includes(kind),
+        errorObserved: kind === 'error',
+        focalAbsent: kind !== 'present' && kind !== 'late',
+      },
+    });
+    expect(await page.getByTestId('tweet').count()).toBe(
+      kind === 'present' || kind === 'late' ? 3 : 2,
+    );
+    expect(JSON.stringify(compared)).not.toContain('Generated neighbour post');
+  });
+
+for (const account of ['absent', 'hidden', 'duplicate'] as const)
+  test(`empty focal with ${account} account switcher does not prove signed-in absence`, async ({
+    page,
+  }) => {
+    const button =
+      '<button data-testid="SideNav_AccountSwitcher_Button">Generated account</button>';
+    await page.setContent(
+      (account === 'absent'
+        ? ''
+        : account === 'hidden'
+          ? button.replace('<button ', '<button style="display:none" ')
+          : button + button) + emptyFocalMarkup('910'),
+    );
+    expect((await compareEmptyFocal(page, '910')).matches).toBe(false);
   });
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({

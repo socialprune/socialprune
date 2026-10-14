@@ -15,6 +15,8 @@ import {
   MODULE_ITEM_IDS_FIXTURE,
   noticeParentAnswer,
   NOTICE_PARENT_FIXTURE,
+  emptyFocalAnswer,
+  EMPTY_FOCAL_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
@@ -578,7 +580,7 @@ test('a skipped empty parent ends the chain as partial without dropping the read
 });
 
 test.each(['direct', 'module'] as const)(
-  'a focal empty %s result remains a shape stop, never a successful skip',
+  'a focal empty %s result classifies only the observed direct form, never a successful skip',
   (location) => {
     const answer = emptyResultsAnswer(DETAIL_FIXTURE.id, 'focal');
     if (location === 'module') {
@@ -600,12 +602,99 @@ test.each(['direct', 'module'] as const)(
     }
     expect(
       extract(answer, DETAIL_FIXTURE.id, { instruction: null }),
-    ).toMatchObject({
+    ).toMatchObject(
+      location === 'module'
+        ? { kind: 'shape-changed', path: 'module-result-type' }
+        : {
+            kind: 'unavailable',
+            reason: 'EmptyResult',
+            empty: true,
+            emptyResults: 1,
+          },
+    );
+  },
+);
+
+test('the exact direct focal empty shape returns a fixed unavailable reason without projecting neighbours', () => {
+  const answer = emptyFocalAnswer(DETAIL_FIXTURE.id);
+  expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'unavailable',
+    reason: 'EmptyResult',
+    empty: true,
+  });
+  const entries =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries;
+  const focal = entries[1]!.content;
+  if (!('itemContent' in focal))
+    throw new Error('Generated focal entry absent.');
+  Object.assign(focal.itemContent.tweet_results, { result: undefined });
+  expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'unavailable',
+    reason: 'EmptyResult',
+    empty: true,
+  });
+});
+
+test.each([
+  { __typename: 'GeneratedUnknownItem', tweet_results: {} },
+  {
+    __typename: 'TimelineTweet',
+    itemType: 'GeneratedUnknownItem',
+    tweet_results: {},
+  },
+  {
+    __typename: 'TimelineTweet',
+    tweetDisplayType: 'GeneratedUnknownDisplay',
+    tweet_results: {},
+  },
+  { __typename: 'TimelineTweet', tweet_results: null },
+  { __typename: 'TimelineTweet', tweet_results: [] },
+  { __typename: 'TimelineTweet' },
+  { __typename: 'TimelineTweet', tweet_results: { result: null } },
+])(
+  'nearby direct focal empty-looking shapes remain result-type stops: %j',
+  (itemContent) => {
+    const body = emptyFocalAnswer(DETAIL_FIXTURE.id);
+    Object.assign(
+      body.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries[1]!.content,
+      { itemContent },
+    );
+    expect(extract(body, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
       kind: 'shape-changed',
-      path: location === 'module' ? 'module-result-type' : 'result-type',
+      path: 'result-type',
     });
   },
 );
+
+test('empty focal classification cannot hide an unknown reply after it or change a module empty shape stop', () => {
+  const body = emptyFocalAnswer(DETAIL_FIXTURE.id);
+  const reply =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.at(
+      -1,
+    )!.content;
+  if (!('itemContent' in reply))
+    throw new Error('Generated reply entry absent.');
+  Object.assign(reply.itemContent.tweet_results, {
+    result: { __typename: 'GeneratedUnknownReply' },
+  });
+  expect(extract(body, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'shape-changed',
+    path: 'result-type',
+  });
+  expect(
+    extract(emptyFocalAnswer(DETAIL_FIXTURE.id, 'module'), DETAIL_FIXTURE.id, {
+      instruction: null,
+    }),
+  ).toEqual({ kind: 'shape-changed', path: 'module-result-type' });
+  expect(
+    extract(emptyFocalAnswer(DETAIL_FIXTURE.id, 'unknown'), DETAIL_FIXTURE.id, {
+      instruction: null,
+    }),
+  ).toEqual({ kind: 'shape-changed', path: 'result-type' });
+  expect(EMPTY_FOCAL_FIXTURE.parentId).not.toBe(DETAIL_FIXTURE.id);
+});
 
 test('an unknown module result type still stops after known empty items were skipped', () => {
   expect(

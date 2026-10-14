@@ -306,6 +306,8 @@ On 2026-10-14 a protected post's parent was itself a notice, so the comparison a
 
 On 2026-10-14 the post above a read reply was a notice in a direct entry, so a notice parent now ends the chain as partial and a stop names its check instead of `other`.
 
+On 2026-10-14 X answered a signed-in post request with an empty result for the post itself and showed no post or notice, so the tool records it as unavailable with the reason EmptyResult when both sides agree, and a shape stop is no longer reported as a platform check.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

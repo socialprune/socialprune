@@ -27,6 +27,7 @@ import type { FillOrder } from './order.ts';
 import {
   compareFocal,
   compareNotice,
+  compareEmptyFocal,
   normalizedLength,
   expectedFocalMediaCounts,
   noticeAlignmentFromAnswer,
@@ -124,7 +125,7 @@ async function pageAnswer(
   page: Page,
   id: string,
   deps: FillDependencies,
-): Promise<{ body: unknown; state: 'present' | 'gone' }> {
+): Promise<{ body: unknown; state: 'present' | 'gone' | null }> {
   const response = page
     .waitForResponse(
       (value) =>
@@ -190,9 +191,11 @@ async function pageAnswer(
   return {
     body,
     state:
-      classified.kind === 'tombstone' || classified.kind === 'unavailable'
-        ? 'gone'
-        : await xSelectors.state(page, id, deps.responseMs),
+      classified.kind === 'shape-changed'
+        ? null
+        : classified.kind === 'tombstone' || classified.kind === 'unavailable'
+          ? 'gone'
+          : await xSelectors.state(page, id, deps.responseMs),
   };
 }
 export async function runFillWithDependencies(
@@ -589,6 +592,37 @@ export async function runFillWithDependencies(
           throw new CliError('SHAPE_CHANGED');
         if (extracted.kind === 'no-entry' && answer.state !== 'gone')
           throw new CliError('SHAPE_CHANGED');
+        let emptyComparison: CanaryComparison | undefined;
+        if (
+          extracted.kind === 'unavailable' &&
+          'empty' in extracted &&
+          extracted.empty
+        ) {
+          try {
+            emptyComparison = await compareEmptyFocal(page, row.id);
+          } catch (caught) {
+            if (caught instanceof CliError && caught.code === 'PLATFORM_CHECK')
+              throw caught;
+            emptyComparison = {
+              stored: { textLength: 0, photos: 0, videos: 0 },
+              shown: { textLength: 0, photos: 0, videos: 0 },
+              matches: false,
+            };
+          }
+          check();
+          if (!emptyComparison.matches) {
+            if (options.order) {
+              canaryCounts.push(emptyComparison);
+              await options.store
+                .browserOutcomeWriter()
+                .recordCanaryMismatch(runId, canaryCounts);
+              options.notice(
+                `Canary counts: ${JSON.stringify(canaryCounts)}\n`,
+              );
+            }
+            throw new CliError('CANARY_MISMATCH');
+          }
+        }
         run.bodyShapes['read-post'] = lock.instruction
           ? [lock.instruction]
           : [];
@@ -687,7 +721,8 @@ export async function runFillWithDependencies(
           try {
             if (!stored) throw new Error('Missing stored original');
             comparison =
-              extracted.kind === 'read'
+              emptyComparison ??
+              (extracted.kind === 'read'
                 ? await compareFocal(
                     page,
                     stored,
@@ -703,7 +738,7 @@ export async function runFillWithDependencies(
                     extracted.kind === 'tombstone'
                       ? noticeAlignmentFromAnswer(answer.body, row.id)
                       : null,
-                  );
+                  ));
           } catch {
             comparison = {
               stored: {

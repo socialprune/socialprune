@@ -222,6 +222,12 @@ export function extract(
       noticeParents?: number;
     }
   | { kind: 'tombstone' | 'unavailable'; reason: string; emptyResults?: number }
+  | {
+      kind: 'unavailable';
+      reason: 'EmptyResult';
+      empty: true;
+      emptyResults?: number;
+    }
   | { kind: 'no-entry'; emptyResults?: number }
   | { kind: 'shape-changed'; path: string; emptyResults?: number } {
   let emptyResults = 0;
@@ -271,7 +277,12 @@ export function extract(
       ? object(added[0]).entries
       : [object(replaced[0]).entry];
     if (!Array.isArray(entries)) throw new Error('entries');
-    const timeline: { id: string; result: unknown; module: boolean }[] = [];
+    const timeline: {
+      id: string;
+      result: unknown;
+      module: boolean;
+      empty?: true;
+    }[] = [];
     const seen = new Set<string>();
     const add = (id: string, input: unknown, module = false) => {
       if (seen.has(id)) throw new Error('duplicate-entry');
@@ -340,10 +351,14 @@ export function extract(
       )
         throw new Error('entry-id');
       const itemContent = object(content.itemContent);
-      if (entry.entryId.slice(6) !== focalId && emptyTweetResult(itemContent)) {
+      if (emptyTweetResult(itemContent)) {
         const id = entry.entryId.slice(6);
         if (seen.has(id)) throw new Error('duplicate-entry');
         seen.add(id);
+        if (id === focalId) {
+          timeline.push({ id, result: undefined, module: false, empty: true });
+          continue;
+        }
         emptyResults++;
         continue;
       }
@@ -352,6 +367,13 @@ export function extract(
     const focal = timeline.findIndex((value) => value.id === focalId);
     if (focal < 0)
       return { kind: 'no-entry', ...(emptyResults ? { emptyResults } : {}) };
+    if (timeline[focal]?.empty)
+      return {
+        kind: 'unavailable',
+        reason: 'EmptyResult',
+        empty: true,
+        ...(emptyResults ? { emptyResults } : {}),
+      };
     const value = object(timeline[focal]?.result);
     if (value.__typename === 'TweetTombstone')
       return {

@@ -60,6 +60,9 @@ import {
   noticeParentAnswer,
   noticeParentMarkup,
   NOTICE_PARENT_FIXTURE,
+  emptyFocalAnswer,
+  emptyFocalMarkup,
+  EMPTY_FOCAL_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -144,13 +147,22 @@ for (const variant of [
   'order-parent-notice-unavailable-module',
   'order-parent-unknown-direct',
   'order-parent-unknown-module',
+  'order-empty-focal-unknown',
+  'order-empty-focal-match',
+  'order-empty-focal-continue',
+  'order-empty-focal-present',
+  'order-empty-focal-late',
+  'order-empty-focal-error',
+  'order-empty-focal-module',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
     const workspace =
       variant === 'canary-five'
         ? fixtureWorkspace()
-        : fixtureWorkspace(['1001']);
+        : variant === 'order-empty-focal-continue'
+          ? fixtureWorkspace(['1001', '1002'])
+          : fixtureWorkspace(['1001']);
     workspace.items[0]!.kind = 'reply';
     workspace.items[0]!.reference.replyToId = DETAIL_FIXTURE.id;
     if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
@@ -187,6 +199,40 @@ for (const variant of [
       }),
     ];
     workspace.counts.originals = 1;
+    if (variant.startsWith('order-empty-focal-')) {
+      workspace.originals[0]!.text = EMPTY_FOCAL_FIXTURE.oldText;
+      workspace.originals[0]!.anonymous = {
+        status: 'not-found',
+        at: FIXTURE.now,
+      };
+      workspace.originals[0]!.raw = {
+        text: 'Generated anonymous not-found context',
+      };
+      workspace.originals[0]!.media = [
+        {
+          n: 1,
+          kind: 'video',
+          source: 'anonymous',
+          url: null,
+          file: null,
+          poster: null,
+          status: 'not-stored',
+          bytes: null,
+          durationMs: null,
+          bitrateLabel: null,
+          altText: null,
+        },
+      ];
+      if (variant === 'order-empty-focal-continue') {
+        workspace.items[1]!.kind = 'reply';
+        workspace.items[1]!.reference.replyToId = EMPTY_FOCAL_FIXTURE.nextId;
+        workspace.originals.push({
+          ...workspace.originals[0]!,
+          id: EMPTY_FOCAL_FIXTURE.nextId,
+        });
+        workspace.counts.originals = 2;
+      }
+    }
     if (variant === 'order-visibility-stored') {
       workspace.originals[0]!.media = [
         {
@@ -278,6 +324,18 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    const emptyFocalKind =
+      variant === 'order-empty-focal-present'
+        ? 'present'
+        : variant === 'order-empty-focal-late'
+          ? 'late'
+          : variant === 'order-empty-focal-error'
+            ? 'error'
+            : variant === 'order-empty-focal-module'
+              ? 'module'
+              : variant === 'order-empty-focal-unknown'
+                ? 'unknown'
+                : 'empty';
     const noticeKind =
       variant === 'order-notice-identical-parent'
         ? 'identical-parent'
@@ -373,60 +431,66 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = variant.startsWith('order-parent-')
-          ? noticeParentAnswer(
-              id,
-              variant === 'order-parent-unknown-direct'
-                ? 'unknown-direct'
-                : variant === 'order-parent-unknown-module'
-                  ? 'unknown-module'
-                  : variant.endsWith('module')
-                    ? 'module'
-                    : 'direct',
-              variant.includes('-unavailable-'),
-            )
-          : variant.startsWith('order-notice-')
-            ? noticeAlignmentAnswer(id, noticeKind)
-            : variant.startsWith('order-textcontent-')
-              ? textContentAnswer(id, textContentKind)
-              : variant === 'order-module-item-ids'
-                ? moduleItemIdsAnswer(id)
-                : variant === 'order-empty-results'
-                  ? emptyResultsAnswer(id)
-                  : variant.startsWith('order-protected-')
-                    ? protectedNoticeAnswer(
-                        id,
-                        variant === 'order-protected-en' ? 'en' : 'de',
-                        variant === 'order-protected-long-tail' ||
-                          variant === 'order-protected-long-match',
-                      )
-                    : variant.startsWith('order-visibility-')
-                      ? gatedMediaAnswer(
-                          id,
-                          variant === 'order-visibility-family',
-                        )
-                      : variant.startsWith('order-note-')
-                        ? notePhotoAnswer(id)
-                        : variant === 'order-own-photos'
-                          ? ownPhotoAnswer(id)
-                          : variant.startsWith('order-card-')
-                            ? cardComparisonAnswer(id, cardKind)
-                            : variant.startsWith('order-display-')
-                              ? displayComparisonAnswer(
-                                  id,
-                                  variant === 'order-display-alt-mismatch'
-                                    ? 'alt'
-                                    : variant === 'order-display-tail-mismatch'
-                                      ? 'tail'
-                                      : 'none',
-                                )
-                              : variant === 'module-cursor' ||
-                                  variant === 'unknown-module'
-                                ? moduleCursorAnswer(
-                                    id,
-                                    variant === 'unknown-module',
-                                  )
-                                : detailAnswer(post);
+        const answer =
+          variant.startsWith('order-empty-focal-') && id === DETAIL_FIXTURE.id
+            ? emptyFocalAnswer(id, emptyFocalKind)
+            : variant === 'order-empty-focal-continue'
+              ? detailAnswer(post)
+              : variant.startsWith('order-parent-')
+                ? noticeParentAnswer(
+                    id,
+                    variant === 'order-parent-unknown-direct'
+                      ? 'unknown-direct'
+                      : variant === 'order-parent-unknown-module'
+                        ? 'unknown-module'
+                        : variant.endsWith('module')
+                          ? 'module'
+                          : 'direct',
+                    variant.includes('-unavailable-'),
+                  )
+                : variant.startsWith('order-notice-')
+                  ? noticeAlignmentAnswer(id, noticeKind)
+                  : variant.startsWith('order-textcontent-')
+                    ? textContentAnswer(id, textContentKind)
+                    : variant === 'order-module-item-ids'
+                      ? moduleItemIdsAnswer(id)
+                      : variant === 'order-empty-results'
+                        ? emptyResultsAnswer(id)
+                        : variant.startsWith('order-protected-')
+                          ? protectedNoticeAnswer(
+                              id,
+                              variant === 'order-protected-en' ? 'en' : 'de',
+                              variant === 'order-protected-long-tail' ||
+                                variant === 'order-protected-long-match',
+                            )
+                          : variant.startsWith('order-visibility-')
+                            ? gatedMediaAnswer(
+                                id,
+                                variant === 'order-visibility-family',
+                              )
+                            : variant.startsWith('order-note-')
+                              ? notePhotoAnswer(id)
+                              : variant === 'order-own-photos'
+                                ? ownPhotoAnswer(id)
+                                : variant.startsWith('order-card-')
+                                  ? cardComparisonAnswer(id, cardKind)
+                                  : variant.startsWith('order-display-')
+                                    ? displayComparisonAnswer(
+                                        id,
+                                        variant === 'order-display-alt-mismatch'
+                                          ? 'alt'
+                                          : variant ===
+                                              'order-display-tail-mismatch'
+                                            ? 'tail'
+                                            : 'none',
+                                      )
+                                    : variant === 'module-cursor' ||
+                                        variant === 'unknown-module'
+                                      ? moduleCursorAnswer(
+                                          id,
+                                          variant === 'unknown-module',
+                                        )
+                                      : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -453,46 +517,53 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup = variant.startsWith('order-parent-')
-        ? noticeParentMarkup(pathname!.split('/').at(-1)!)
-        : variant.startsWith('order-notice-')
-          ? noticeAlignmentMarkup(noticeKind)
-          : variant.startsWith('order-textcontent-')
-            ? textContentMarkup(pathname!.split('/').at(-1)!, textContentKind)
-            : variant.startsWith('order-protected-')
-              ? protectedNoticeMarkup(
-                  variant === 'order-protected-en' ? 'en' : 'de',
-                  variant === 'order-protected-different'
-                    ? 'different'
-                    : variant === 'order-protected-duplicate'
-                      ? 'duplicate'
-                      : variant === 'order-protected-missing'
-                        ? 'missing'
-                        : variant === 'order-protected-long-tail'
-                          ? 'long-tail'
-                          : variant === 'order-protected-long-match'
-                            ? 'long-match'
-                            : variant === 'order-protected-missing-link'
-                              ? 'missing-link'
-                              : 'match',
-                )
-              : variant === 'order-visibility-late-player'
-                ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-                : variant.startsWith('order-note-')
-                  ? notePhotoMarkup(
-                      pathname!.split('/').at(-1)!,
-                      variant === 'order-note-delayed-photo'
-                        ? 'delayed-photo'
-                        : variant === 'order-note-missing-photo'
-                          ? 'missing-photo'
-                          : 'delayed-text',
+      const visibilityMarkup =
+        variant.startsWith('order-empty-focal-') &&
+        pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
+          ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
+          : variant.startsWith('order-parent-')
+            ? noticeParentMarkup(pathname!.split('/').at(-1)!)
+            : variant.startsWith('order-notice-')
+              ? noticeAlignmentMarkup(noticeKind)
+              : variant.startsWith('order-textcontent-')
+                ? textContentMarkup(
+                    pathname!.split('/').at(-1)!,
+                    textContentKind,
+                  )
+                : variant.startsWith('order-protected-')
+                  ? protectedNoticeMarkup(
+                      variant === 'order-protected-en' ? 'en' : 'de',
+                      variant === 'order-protected-different'
+                        ? 'different'
+                        : variant === 'order-protected-duplicate'
+                          ? 'duplicate'
+                          : variant === 'order-protected-missing'
+                            ? 'missing'
+                            : variant === 'order-protected-long-tail'
+                              ? 'long-tail'
+                              : variant === 'order-protected-long-match'
+                                ? 'long-match'
+                                : variant === 'order-protected-missing-link'
+                                  ? 'missing-link'
+                                  : 'match',
                     )
-                  : variant.startsWith('order-visibility-')
-                    ? gatedMediaMarkup(
-                        pathname!.split('/').at(-1)!,
-                        variant === 'order-visibility-exposed',
-                      )
-                    : null;
+                  : variant === 'order-visibility-late-player'
+                    ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+                    : variant.startsWith('order-note-')
+                      ? notePhotoMarkup(
+                          pathname!.split('/').at(-1)!,
+                          variant === 'order-note-delayed-photo'
+                            ? 'delayed-photo'
+                            : variant === 'order-note-missing-photo'
+                              ? 'missing-photo'
+                              : 'delayed-text',
+                        )
+                      : variant.startsWith('order-visibility-')
+                        ? gatedMediaMarkup(
+                            pathname!.split('/').at(-1)!,
+                            variant === 'order-visibility-exposed',
+                          )
+                        : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -524,7 +595,7 @@ for (const variant of [
             account: FIXTURE.account.handle,
             givenAt: FIXTURE.now,
             words: 'Read these generated originals in my dedicated profile.',
-            maxPages: 1,
+            maxPages: variant === 'order-empty-focal-continue' ? 2 : 1,
           }),
         );
         order = await readOrder(
@@ -779,6 +850,8 @@ for (const variant of [
           variant === 'order-notice-normal-parent-reply' ||
           variant === 'order-notice-unavailable-parent' ||
           variant.startsWith('order-parent-notice-') ||
+          variant === 'order-empty-focal-match' ||
+          variant === 'order-empty-focal-continue' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -787,7 +860,7 @@ for (const variant of [
             outcome,
             notices.find((value) => value.startsWith('Canary counts:')),
           ).toMatchObject({
-            completed: 1,
+            completed: variant === 'order-empty-focal-continue' ? 2 : 1,
             endReason:
               variant === 'order-card-full-match' ||
               variant === 'order-visibility-full'
@@ -890,18 +963,104 @@ for (const variant of [
             );
         } else {
           expect(outcome).toMatchObject({
-            code: variant.startsWith('order-parent-unknown-')
-              ? 'SHAPE_CHANGED'
-              : 'CANARY_MISMATCH',
+            code:
+              variant.startsWith('order-parent-unknown-') ||
+              variant === 'order-empty-focal-unknown' ||
+              variant === 'order-empty-focal-module'
+                ? 'SHAPE_CHANGED'
+                : 'CANARY_MISMATCH',
           });
           expect(
             (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
           ).toBeNull();
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject(
-            variant.startsWith('order-parent-unknown-')
+            variant.startsWith('order-parent-unknown-') ||
+              variant === 'order-empty-focal-unknown' ||
+              variant === 'order-empty-focal-module'
               ? { endReason: 'shape-changed' }
               : { endReason: 'error', displayEndReason: 'canary-mismatch' },
           );
+        }
+        if (variant.startsWith('order-empty-focal-')) {
+          const accepted =
+            variant === 'order-empty-focal-match' ||
+            variant === 'order-empty-focal-continue';
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          expect(original).toEqual({
+            ...workspace.originals[0]!,
+            signedIn: accepted
+              ? expect.objectContaining({
+                  status: 'unavailable',
+                  reason: 'EmptyResult',
+                })
+              : workspace.originals[0]!.signedIn,
+          });
+          const journal = await store.browserJournal();
+          const run = journal.runs.at(-1)!;
+          const attempts = journal.attempts.slice(0, 2);
+          expect(attempts.map((attempt) => attempt.state)).toEqual([
+            'sending',
+            accepted ? 'unavailable' : 'failed',
+          ]);
+          const shape =
+            variant === 'order-empty-focal-module' ||
+            variant === 'order-empty-focal-unknown';
+          if (shape) {
+            expect(run.endReason).toBe('shape-changed');
+            expect(notices.join('')).not.toContain(
+              'X may require an account check',
+            );
+          } else
+            expect(run).toMatchObject({
+              canaryCounts: [
+                expect.objectContaining({
+                  stored: { textLength: 0, photos: 0, videos: 0 },
+                  shown: { textLength: 0, photos: 0, videos: 0 },
+                  matches: accepted,
+                  absence: expect.objectContaining({
+                    focalAbsent:
+                      variant !== 'order-empty-focal-present' &&
+                      variant !== 'order-empty-focal-late',
+                    focalObserved:
+                      variant === 'order-empty-focal-present' ||
+                      variant === 'order-empty-focal-late',
+                    errorObserved: variant === 'order-empty-focal-error',
+                  }),
+                }),
+                ...(variant === 'order-empty-focal-continue'
+                  ? [expect.objectContaining({ matches: true })]
+                  : []),
+              ],
+            });
+          expect(mediaRequests).toEqual([]);
+          if (variant === 'order-empty-focal-continue') {
+            expect(
+              (
+                await store.read((tx) =>
+                  tx.originals.get(EMPTY_FOCAL_FIXTURE.nextId),
+                )
+              )?.signedIn?.status,
+            ).toBe('read');
+            expect(journal.attempts.map((attempt) => attempt.state)).toEqual([
+              'sending',
+              'unavailable',
+              'sending',
+              'read',
+            ]);
+          }
+          if (accepted)
+            expect(
+              (await planFill(store, workspace.items[0]!.account.key)).rows,
+            ).toEqual([]);
+          for (const text of [
+            EMPTY_FOCAL_FIXTURE.oldText,
+            'Generated neighbour post',
+          ]) {
+            expect(JSON.stringify(journal)).not.toContain(text);
+            expect(notices.join('')).not.toContain(text);
+          }
         }
         if (variant.startsWith('order-parent-')) {
           const known = variant.startsWith('order-parent-notice-');

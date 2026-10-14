@@ -35,19 +35,21 @@ export function moduleCursorAnswer(
       };
   const entries: unknown[] = [
     {
-      entryId: 'conversationthread-generated',
+      entryId: 'conversationthread-901',
       content: {
         items: [
           {
-            entryId: 'tweet-901',
+            entryId: 'conversationthread-901-tweet-901',
             item: { itemContent: { tweet_results: { result: root } } },
           },
           {
-            entryId: 'cursor-show-more-generated',
+            entryId: unknownItem
+              ? 'conversationthread-901-tweet-905'
+              : 'cursor-show-more-generated',
             item: { itemContent: cursor },
           },
           {
-            entryId: 'tweet-902',
+            entryId: 'conversationthread-901-tweet-902',
             item: { itemContent: { tweet_results: { result: parent } } },
           },
         ],
@@ -369,11 +371,11 @@ export function gatedMediaAnswer(focalId: string, family = false) {
     });
     body.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.unshift(
       {
-        entryId: 'conversationthread-generated',
+        entryId: `conversationthread-${GATED_MEDIA_FIXTURE.parentId}`,
         content: {
           items: [
             {
-              entryId: `tweet-${GATED_MEDIA_FIXTURE.parentId}`,
+              entryId: `conversationthread-${GATED_MEDIA_FIXTURE.parentId}-tweet-${GATED_MEDIA_FIXTURE.parentId}`,
               item: {
                 itemContent: {
                   tweet_results: {
@@ -541,8 +543,8 @@ export function emptyResultsAnswer(
     tweetDisplayType: 'Tweet',
     tweet_results: result === undefined ? {} : { result },
   });
-  const item = (id: string, result?: unknown) => ({
-    entryId: `tweet-${id}`,
+  const item = (id: string, result?: unknown, threadId = rootId) => ({
+    entryId: `conversationthread-${threadId}-tweet-${id}`,
     item: { itemContent: content(result) },
   });
   const root = detailPost(rootId);
@@ -569,7 +571,7 @@ export function emptyResultsAnswer(
             type: 'TimelineAddEntries',
             entries: [
               {
-                entryId: 'conversationthread-generated-a',
+                entryId: `conversationthread-${rootId}`,
                 content: {
                   entryType: 'TimelineTimelineModule',
                   displayType: 'VerticalConversation',
@@ -581,11 +583,11 @@ export function emptyResultsAnswer(
                 },
               },
               {
-                entryId: 'conversationthread-generated-b',
+                entryId: `conversationthread-${replyId}`,
                 content: {
                   entryType: 'TimelineTimelineModule',
                   displayType: 'VerticalConversation',
-                  items: [item(replyId, detailPost(replyId))],
+                  items: [item(replyId, detailPost(replyId), replyId)],
                 },
               },
               ...(kind === 'entry'
@@ -606,6 +608,77 @@ export function emptyResultsAnswer(
                   itemContent: content(kind === 'focal' ? undefined : focal),
                 },
               },
+              {
+                entryId: 'cursor-bottom-generated',
+                content: {
+                  entryType: 'TimelineTimelineCursor',
+                  cursorType: 'Bottom',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+export const MODULE_ITEM_IDS_FIXTURE = {
+  normalItems: 35,
+  emptyItems: 1,
+  emptyId: '11000',
+  firstThreadId: 20001,
+  firstPostId: 10001,
+};
+
+/** Generated 35 reply modules and one contentless reply with numeric item IDs. */
+export function moduleItemIdsAnswer(focalId = DETAIL_FIXTURE.id) {
+  const fixture = MODULE_ITEM_IDS_FIXTURE;
+  const modules = Array.from({ length: fixture.normalItems }, (_, index) => {
+    const threadId = String(fixture.firstThreadId + index);
+    const postId = String(fixture.firstPostId + index);
+    const item = (id: string, result?: unknown) => ({
+      entryId: `conversationthread-${threadId}-tweet-${id}`,
+      item: {
+        itemContent: {
+          __typename: 'TimelineTweet',
+          itemType: 'TimelineTweet',
+          tweetDisplayType: 'Tweet',
+          tweet_results: result === undefined ? {} : { result },
+        },
+      },
+    });
+    return {
+      entryId: `conversationthread-${threadId}`,
+      content: {
+        entryType: 'TimelineTimelineModule',
+        displayType: 'VerticalConversation',
+        items: [
+          item(postId, detailPost(postId)),
+          ...(index === 17 ? [item(fixture.emptyId)] : []),
+        ],
+      },
+    };
+  });
+  const focal = detailPost(focalId);
+  Object.assign(focal, {
+    note_tweet: {
+      note_tweet_results: { result: { text: DETAIL_FIXTURE.longText } },
+    },
+  });
+  const body = detailAnswer(focal);
+  const focalEntry =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!;
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              ...modules,
+              focalEntry,
               {
                 entryId: 'cursor-bottom-generated',
                 content: {

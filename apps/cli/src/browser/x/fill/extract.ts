@@ -302,13 +302,16 @@ export function extract(
           )
             continue;
           const entryId = string(object(item).entryId);
+          const itemId =
+            entryId?.match(
+              /^(?:conversationthread-\d{1,40}-)?tweet-(\d{1,40})$/,
+            )?.[1] ?? null;
           if (
             emptyTweetResult(itemContent) &&
-            entryId !== null &&
-            /^tweet-\d{1,40}$/.test(entryId) &&
-            entryId.slice(6) !== focalId
+            itemId !== null &&
+            itemId !== focalId
           ) {
-            const id = entryId.slice(6);
+            const id = itemId;
             if (seen.has(id)) throw new Error('duplicate-entry');
             seen.add(id);
             emptyResults++;
@@ -322,11 +325,7 @@ export function extract(
             )
           )
             throw new Error('module-result-type');
-          const id =
-            string(tweet.rest_id) ??
-            (entryId && /^tweet-\d{1,40}$/.test(entryId)
-              ? entryId.slice(6)
-              : null);
+          const id = string(tweet.rest_id) ?? itemId;
           if (!id) continue; // Known incomplete module: retain the focal post and a partial chain.
           if (!OriginalIdSchema.safeParse(id).success)
             throw new Error('module-rest_id');

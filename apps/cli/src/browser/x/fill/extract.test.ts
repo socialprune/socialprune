@@ -11,6 +11,8 @@ import {
 import {
   emptyResultsAnswer,
   EMPTY_RESULTS_FIXTURE,
+  moduleItemIdsAnswer,
+  MODULE_ITEM_IDS_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
@@ -290,11 +292,11 @@ test.each([
     };
     const body = detailAnswer(focal);
     const moduleEntry = {
-      entryId: 'conversationthread-generated',
+      entryId: 'conversationthread-901',
       content: {
         items: [
           {
-            entryId: 'tweet-901',
+            entryId: 'conversationthread-901-tweet-901',
             item: { itemContent: { tweet_results: { result: root } } },
           },
           {
@@ -302,7 +304,7 @@ test.each([
             item: { itemContent: cursor },
           },
           {
-            entryId: 'tweet-902',
+            entryId: 'conversationthread-901-tweet-902',
             item: { itemContent: { tweet_results: { result: parent } } },
           },
         ],
@@ -335,11 +337,11 @@ test('an unknown non-cursor module item still fails closed instead of being disc
   const normal = detailAnswer();
   const entries: unknown[] = [
     {
-      entryId: 'conversationthread-generated',
+      entryId: 'conversationthread-901',
       content: {
         items: [
           {
-            entryId: 'generated-unknown',
+            entryId: 'conversationthread-901-tweet-905',
             item: {
               itemContent: {
                 __typename: 'GeneratedUnknownModule',
@@ -458,11 +460,11 @@ test.each(['direct', 'module'] as const)(
           .entries;
       const focal = entries[2]!;
       entries[2] = {
-        entryId: 'conversationthread-generated-focal',
+        entryId: `conversationthread-${DETAIL_FIXTURE.id}`,
         content: {
           items: [
             {
-              entryId: focal.entryId,
+              entryId: `conversationthread-${DETAIL_FIXTURE.id}-${focal.entryId}`,
               item: { itemContent: focal.content.itemContent },
             },
           ],
@@ -488,6 +490,149 @@ test('an unknown module result type still stops after known empty items were ski
   ).toMatchObject({ kind: 'shape-changed', path: 'module-result-type' });
 });
 
+test('35 normal conversation modules plus one empty item use numeric prefixed item IDs and read the focal', () => {
+  const answer = moduleItemIdsAnswer();
+  const entries =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries;
+  const modules = entries.flatMap((entry) =>
+    'items' in entry.content ? [entry.content] : [],
+  );
+  expect(modules).toHaveLength(MODULE_ITEM_IDS_FIXTURE.normalItems);
+  const items = modules.flatMap((module) => module.items);
+  expect(items).toHaveLength(
+    MODULE_ITEM_IDS_FIXTURE.normalItems + MODULE_ITEM_IDS_FIXTURE.emptyItems,
+  );
+  expect(
+    items.every((item) => item.entryId.startsWith('conversationthread-')),
+  ).toBe(true);
+  const result = extract(answer, DETAIL_FIXTURE.id, { instruction: null });
+  expect(result).toMatchObject({
+    kind: 'read',
+    post: { id: DETAIL_FIXTURE.id, text: DETAIL_FIXTURE.longText },
+    chainAbove: 'complete',
+    emptyResults: MODULE_ITEM_IDS_FIXTURE.emptyItems,
+  });
+  if (result.kind !== 'read')
+    throw new Error('Generated numeric module page was not read.');
+  expect(result.above).toEqual([]);
+  expect(result.quoted).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain(MODULE_ITEM_IDS_FIXTURE.emptyId);
+});
+
+test('numeric module item fallback selects a focal tombstone without rest_id', () => {
+  const focalId = DETAIL_FIXTURE.id;
+  const answer = {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              {
+                entryId: 'conversationthread-12000',
+                content: {
+                  items: [
+                    {
+                      entryId: `conversationthread-12000-tweet-${focalId}`,
+                      item: {
+                        itemContent: {
+                          tweet_results: {
+                            result: {
+                              __typename: 'TweetTombstone',
+                              tombstone: {
+                                text: { text: 'Generated focal notice' },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  expect(extract(answer, focalId, { instruction: null })).toEqual({
+    kind: 'tombstone',
+    reason: 'Generated focal notice',
+  });
+});
+
+test('numeric module item whose derived ID is the focal stays a module-result-type shape stop', () => {
+  const answer = moduleItemIdsAnswer();
+  const modules =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries;
+  const target = modules[17]!.content;
+  if (!('items' in target)) throw new Error('Generated module is absent.');
+  target.items[1]!.entryId = `conversationthread-20018-tweet-${DETAIL_FIXTURE.id}`;
+  expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'shape-changed',
+    path: 'module-result-type',
+  });
+});
+
+test('legacy tweet-only module item IDs are still accepted for a known empty reply', () => {
+  const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
+  const items =
+    answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content.items!;
+  items[1]!.entryId = `tweet-${EMPTY_RESULTS_FIXTURE.emptyId}`;
+  expect(
+    extract(answer, DETAIL_FIXTURE.id, { instruction: null }),
+  ).toMatchObject({ kind: 'read', emptyResults: 1 });
+});
+
+test.each([
+  ['conversationthread-12000-tweet-905', true],
+  [`conversationthread-${'2'.repeat(40)}-tweet-${'9'.repeat(40)}`, true],
+  ['conversationthread-generated-tweet-905', false],
+  ['conversationthread-12000-tweet-905-extra', false],
+  ['prefix-conversationthread-12000-tweet-905', false],
+  [`conversationthread-${'2'.repeat(41)}-tweet-905`, false],
+  [`conversationthread-12000-tweet-${'9'.repeat(41)}`, false],
+  ['conversationthread-12000-tweet-', false],
+] as const)(
+  'module empty-result identity is exact and bounded: %s',
+  (entryId, accepted) => {
+    const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
+    const items =
+      answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries[0]!.content.items!;
+    items[1]!.entryId = entryId;
+    expect(
+      extract(answer, DETAIL_FIXTURE.id, { instruction: null }),
+    ).toMatchObject(
+      accepted
+        ? { kind: 'read', emptyResults: 1 }
+        : { kind: 'shape-changed', path: 'module-result-type' },
+    );
+  },
+);
+
+test('module ID parsing does not widen entry-level IDs or change a malformed module ID with a valid result rest_id', () => {
+  const answer = detailAnswer();
+  answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries[0]!.entryId = `conversationthread-12000-tweet-${DETAIL_FIXTURE.id}`;
+  expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'shape-changed',
+    path: 'entry-id',
+  });
+  const modules = moduleItemIdsAnswer();
+  const first =
+    modules.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content;
+  if (!('items' in first)) throw new Error('Generated module is absent.');
+  first.items[0]!.entryId = 'generated-unknown';
+  expect(
+    extract(modules, DETAIL_FIXTURE.id, { instruction: null }),
+  ).toMatchObject({ kind: 'read', emptyResults: 1 });
+});
+
 test('skipped counts remain value-free on notices and failures, while skipped IDs still take part in duplicate checks', () => {
   const answer = emptyResultsAnswer(DETAIL_FIXTURE.id);
   const entries =
@@ -504,7 +649,7 @@ test('skipped counts remain value-free on notices and failures, while skipped ID
     emptyResults: 1,
   });
   const reply = entries[1]!.content.items![0]!;
-  reply.entryId = `tweet-${EMPTY_RESULTS_FIXTURE.emptyId}`;
+  reply.entryId = `conversationthread-${EMPTY_RESULTS_FIXTURE.replyId}-tweet-${EMPTY_RESULTS_FIXTURE.emptyId}`;
   reply.item.itemContent.tweet_results.result = detailPost(
     EMPTY_RESULTS_FIXTURE.emptyId,
   );
@@ -604,11 +749,11 @@ test.each([
         .entries;
     if (location === 'module') {
       entries[0] = {
-        entryId: 'conversationthread-generated',
+        entryId: 'conversationthread-910',
         content: {
           items: [
             {
-              entryId: 'tweet-910',
+              entryId: 'conversationthread-910-tweet-910',
               item: { itemContent: { tweet_results: { result: wrapped } } },
             },
           ],
@@ -623,11 +768,11 @@ test.each([
               content: { itemContent: { tweet_results: { result: wrapped } } },
             }
           : {
-              entryId: 'conversationthread-generated',
+              entryId: 'conversationthread-901',
               content: {
                 items: [
                   {
-                    entryId: 'tweet-901',
+                    entryId: 'conversationthread-901-tweet-901',
                     item: {
                       itemContent: { tweet_results: { result: wrapped } },
                     },

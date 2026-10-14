@@ -48,6 +48,8 @@ import {
   protectedNoticeText,
   emptyResultsAnswer,
   EMPTY_RESULTS_FIXTURE,
+  moduleItemIdsAnswer,
+  MODULE_ITEM_IDS_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -114,6 +116,7 @@ for (const variant of [
   'order-protected-long-match',
   'order-protected-missing-link',
   'order-empty-results',
+  'order-module-item-ids',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -322,36 +325,41 @@ for (const variant of [
                   ? 'missing-rendered-link'
                   : 'link';
         const answer =
-          variant === 'order-empty-results'
-            ? emptyResultsAnswer(id)
-            : variant.startsWith('order-protected-')
-              ? protectedNoticeAnswer(
-                  id,
-                  variant === 'order-protected-en' ? 'en' : 'de',
-                  variant === 'order-protected-long-tail' ||
-                    variant === 'order-protected-long-match',
-                )
-              : variant.startsWith('order-visibility-')
-                ? gatedMediaAnswer(id, variant === 'order-visibility-family')
-                : variant.startsWith('order-note-')
-                  ? notePhotoAnswer(id)
-                  : variant === 'order-own-photos'
-                    ? ownPhotoAnswer(id)
-                    : variant.startsWith('order-card-')
-                      ? cardComparisonAnswer(id, cardKind)
-                      : variant.startsWith('order-display-')
-                        ? displayComparisonAnswer(
-                            id,
-                            variant === 'order-display-alt-mismatch'
-                              ? 'alt'
-                              : variant === 'order-display-tail-mismatch'
-                                ? 'tail'
-                                : 'none',
-                          )
-                        : variant === 'module-cursor' ||
-                            variant === 'unknown-module'
-                          ? moduleCursorAnswer(id, variant === 'unknown-module')
-                          : detailAnswer(post);
+          variant === 'order-module-item-ids'
+            ? moduleItemIdsAnswer(id)
+            : variant === 'order-empty-results'
+              ? emptyResultsAnswer(id)
+              : variant.startsWith('order-protected-')
+                ? protectedNoticeAnswer(
+                    id,
+                    variant === 'order-protected-en' ? 'en' : 'de',
+                    variant === 'order-protected-long-tail' ||
+                      variant === 'order-protected-long-match',
+                  )
+                : variant.startsWith('order-visibility-')
+                  ? gatedMediaAnswer(id, variant === 'order-visibility-family')
+                  : variant.startsWith('order-note-')
+                    ? notePhotoAnswer(id)
+                    : variant === 'order-own-photos'
+                      ? ownPhotoAnswer(id)
+                      : variant.startsWith('order-card-')
+                        ? cardComparisonAnswer(id, cardKind)
+                        : variant.startsWith('order-display-')
+                          ? displayComparisonAnswer(
+                              id,
+                              variant === 'order-display-alt-mismatch'
+                                ? 'alt'
+                                : variant === 'order-display-tail-mismatch'
+                                  ? 'tail'
+                                  : 'none',
+                            )
+                          : variant === 'module-cursor' ||
+                              variant === 'unknown-module'
+                            ? moduleCursorAnswer(
+                                id,
+                                variant === 'unknown-module',
+                              )
+                            : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -689,6 +697,7 @@ for (const variant of [
           variant === 'order-protected-en' ||
           variant === 'order-protected-long-match' ||
           variant === 'order-empty-results' ||
+          variant === 'order-module-item-ids' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -807,6 +816,51 @@ for (const variant of [
             endReason: 'error',
             displayEndReason: 'canary-mismatch',
           });
+        }
+        if (variant === 'order-module-item-ids') {
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          expect(original).toMatchObject({
+            text: DETAIL_FIXTURE.longText,
+            chainAbove: 'complete',
+            signedIn: { status: 'read' },
+          });
+          expect(
+            await store.read((tx) =>
+              tx.originals.get(MODULE_ITEM_IDS_FIXTURE.emptyId),
+            ),
+          ).toBeUndefined();
+          expect(
+            await store.read(async (tx) => {
+              const ids: string[] = [];
+              for await (const original of tx.originals.iterate())
+                ids.push(original.id);
+              return ids;
+            }),
+          ).toEqual([DETAIL_FIXTURE.id]);
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          expect(run).toMatchObject({
+            endReason: 'canary',
+            canaryCounts: [{ matches: true }],
+          });
+          const report = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          expect(JSON.parse(report)).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                emptyResults: MODULE_ITEM_IDS_FIXTURE.emptyItems,
+              }),
+            ]),
+          );
+          for (const forbidden of [
+            MODULE_ITEM_IDS_FIXTURE.emptyId,
+            DETAIL_FIXTURE.id,
+            DETAIL_FIXTURE.longText,
+          ])
+            expect(report).not.toContain(forbidden);
         }
         if (variant === 'order-empty-results') {
           const original = await store.read((tx) =>

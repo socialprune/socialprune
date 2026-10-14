@@ -54,6 +54,9 @@ import {
   textContentMarkup,
   textContentStoredText,
   TEXT_CONTENT_FIXTURE,
+  noticeAlignmentAnswer,
+  noticeAlignmentMarkup,
+  NOTICE_ALIGNMENT_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -125,6 +128,13 @@ for (const variant of [
   'order-textcontent-missing-word',
   'order-textcontent-hidden-link',
   'order-textcontent-missing-link',
+  'order-notice-different-parent',
+  'order-notice-identical-parent',
+  'order-notice-normal-parent-reply',
+  'order-notice-wrong-focal',
+  'order-notice-wrong-parent',
+  'order-notice-missing-candidate',
+  'order-notice-unavailable-parent',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -259,6 +269,20 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    const noticeKind =
+      variant === 'order-notice-identical-parent'
+        ? 'identical-parent'
+        : variant === 'order-notice-normal-parent-reply'
+          ? 'normal-parent-reply'
+          : variant === 'order-notice-wrong-focal'
+            ? 'wrong-focal'
+            : variant === 'order-notice-wrong-parent'
+              ? 'wrong-parent'
+              : variant === 'order-notice-missing-candidate'
+                ? 'missing-candidate'
+                : variant === 'order-notice-unavailable-parent'
+                  ? 'unavailable-parent'
+                  : 'different-parent';
     const textContentKind =
       variant === 'order-textcontent-missing-word'
         ? 'missing-word'
@@ -340,43 +364,48 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = variant.startsWith('order-textcontent-')
-          ? textContentAnswer(id, textContentKind)
-          : variant === 'order-module-item-ids'
-            ? moduleItemIdsAnswer(id)
-            : variant === 'order-empty-results'
-              ? emptyResultsAnswer(id)
-              : variant.startsWith('order-protected-')
-                ? protectedNoticeAnswer(
-                    id,
-                    variant === 'order-protected-en' ? 'en' : 'de',
-                    variant === 'order-protected-long-tail' ||
-                      variant === 'order-protected-long-match',
-                  )
-                : variant.startsWith('order-visibility-')
-                  ? gatedMediaAnswer(id, variant === 'order-visibility-family')
-                  : variant.startsWith('order-note-')
-                    ? notePhotoAnswer(id)
-                    : variant === 'order-own-photos'
-                      ? ownPhotoAnswer(id)
-                      : variant.startsWith('order-card-')
-                        ? cardComparisonAnswer(id, cardKind)
-                        : variant.startsWith('order-display-')
-                          ? displayComparisonAnswer(
-                              id,
-                              variant === 'order-display-alt-mismatch'
-                                ? 'alt'
-                                : variant === 'order-display-tail-mismatch'
-                                  ? 'tail'
-                                  : 'none',
-                            )
-                          : variant === 'module-cursor' ||
-                              variant === 'unknown-module'
-                            ? moduleCursorAnswer(
+        const answer = variant.startsWith('order-notice-')
+          ? noticeAlignmentAnswer(id, noticeKind)
+          : variant.startsWith('order-textcontent-')
+            ? textContentAnswer(id, textContentKind)
+            : variant === 'order-module-item-ids'
+              ? moduleItemIdsAnswer(id)
+              : variant === 'order-empty-results'
+                ? emptyResultsAnswer(id)
+                : variant.startsWith('order-protected-')
+                  ? protectedNoticeAnswer(
+                      id,
+                      variant === 'order-protected-en' ? 'en' : 'de',
+                      variant === 'order-protected-long-tail' ||
+                        variant === 'order-protected-long-match',
+                    )
+                  : variant.startsWith('order-visibility-')
+                    ? gatedMediaAnswer(
+                        id,
+                        variant === 'order-visibility-family',
+                      )
+                    : variant.startsWith('order-note-')
+                      ? notePhotoAnswer(id)
+                      : variant === 'order-own-photos'
+                        ? ownPhotoAnswer(id)
+                        : variant.startsWith('order-card-')
+                          ? cardComparisonAnswer(id, cardKind)
+                          : variant.startsWith('order-display-')
+                            ? displayComparisonAnswer(
                                 id,
-                                variant === 'unknown-module',
+                                variant === 'order-display-alt-mismatch'
+                                  ? 'alt'
+                                  : variant === 'order-display-tail-mismatch'
+                                    ? 'tail'
+                                    : 'none',
                               )
-                            : detailAnswer(post);
+                            : variant === 'module-cursor' ||
+                                variant === 'unknown-module'
+                              ? moduleCursorAnswer(
+                                  id,
+                                  variant === 'unknown-module',
+                                )
+                              : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -403,42 +432,44 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup = variant.startsWith('order-textcontent-')
-        ? textContentMarkup(pathname!.split('/').at(-1)!, textContentKind)
-        : variant.startsWith('order-protected-')
-          ? protectedNoticeMarkup(
-              variant === 'order-protected-en' ? 'en' : 'de',
-              variant === 'order-protected-different'
-                ? 'different'
-                : variant === 'order-protected-duplicate'
-                  ? 'duplicate'
-                  : variant === 'order-protected-missing'
-                    ? 'missing'
-                    : variant === 'order-protected-long-tail'
-                      ? 'long-tail'
-                      : variant === 'order-protected-long-match'
-                        ? 'long-match'
-                        : variant === 'order-protected-missing-link'
-                          ? 'missing-link'
-                          : 'match',
-            )
-          : variant === 'order-visibility-late-player'
-            ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-            : variant.startsWith('order-note-')
-              ? notePhotoMarkup(
-                  pathname!.split('/').at(-1)!,
-                  variant === 'order-note-delayed-photo'
-                    ? 'delayed-photo'
-                    : variant === 'order-note-missing-photo'
-                      ? 'missing-photo'
-                      : 'delayed-text',
-                )
-              : variant.startsWith('order-visibility-')
-                ? gatedMediaMarkup(
+      const visibilityMarkup = variant.startsWith('order-notice-')
+        ? noticeAlignmentMarkup(noticeKind)
+        : variant.startsWith('order-textcontent-')
+          ? textContentMarkup(pathname!.split('/').at(-1)!, textContentKind)
+          : variant.startsWith('order-protected-')
+            ? protectedNoticeMarkup(
+                variant === 'order-protected-en' ? 'en' : 'de',
+                variant === 'order-protected-different'
+                  ? 'different'
+                  : variant === 'order-protected-duplicate'
+                    ? 'duplicate'
+                    : variant === 'order-protected-missing'
+                      ? 'missing'
+                      : variant === 'order-protected-long-tail'
+                        ? 'long-tail'
+                        : variant === 'order-protected-long-match'
+                          ? 'long-match'
+                          : variant === 'order-protected-missing-link'
+                            ? 'missing-link'
+                            : 'match',
+              )
+            : variant === 'order-visibility-late-player'
+              ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+              : variant.startsWith('order-note-')
+                ? notePhotoMarkup(
                     pathname!.split('/').at(-1)!,
-                    variant === 'order-visibility-exposed',
+                    variant === 'order-note-delayed-photo'
+                      ? 'delayed-photo'
+                      : variant === 'order-note-missing-photo'
+                        ? 'missing-photo'
+                        : 'delayed-text',
                   )
-                : null;
+                : variant.startsWith('order-visibility-')
+                  ? gatedMediaMarkup(
+                      pathname!.split('/').at(-1)!,
+                      variant === 'order-visibility-exposed',
+                    )
+                  : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -714,11 +745,16 @@ for (const variant of [
           variant === 'order-note-delayed-text' ||
           variant === 'order-protected-de' ||
           variant === 'order-protected-en' ||
+          variant === 'order-protected-duplicate' ||
           variant === 'order-protected-long-match' ||
           variant === 'order-empty-results' ||
           variant === 'order-module-item-ids' ||
           variant === 'order-textcontent-mention' ||
           variant === 'order-textcontent-hidden-link' ||
+          variant === 'order-notice-different-parent' ||
+          variant === 'order-notice-identical-parent' ||
+          variant === 'order-notice-normal-parent-reply' ||
+          variant === 'order-notice-unavailable-parent' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -837,6 +873,56 @@ for (const variant of [
             endReason: 'error',
             displayEndReason: 'canary-mismatch',
           });
+        }
+        if (variant.startsWith('order-notice-')) {
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          expect(original?.signedIn).toMatchObject({
+            status: 'tombstone',
+            reason: NOTICE_ALIGNMENT_FIXTURE.focalText,
+          });
+          const matched = ![
+            'wrong-focal',
+            'wrong-parent',
+            'missing-candidate',
+          ].includes(noticeKind);
+          const journal = await store.browserJournal();
+          expect(journal.runs.at(-1)).toMatchObject({
+            canaryCounts: [
+              {
+                stored: { textLength: 0, photos: 0, videos: 0 },
+                shown: { textLength: 0, photos: 0, videos: 0 },
+                matches: matched,
+                notices: {
+                  beforeFocal: noticeKind === 'normal-parent-reply' ? 0 : 1,
+                  candidatesSeen: noticeKind === 'missing-candidate' ? 1 : 2,
+                  matchedIndex: matched
+                    ? noticeKind === 'normal-parent-reply'
+                      ? 0
+                      : 1
+                    : null,
+                },
+              },
+            ],
+          });
+          const report = await readFile(
+            join(
+              directory,
+              'originals',
+              `canary-${journal.runs.at(-1)!.runId}.json`,
+            ),
+            'utf8',
+          );
+          for (const text of [
+            NOTICE_ALIGNMENT_FIXTURE.focalText,
+            NOTICE_ALIGNMENT_FIXTURE.parentText,
+            NOTICE_ALIGNMENT_FIXTURE.replyText,
+          ]) {
+            expect(JSON.stringify(journal)).not.toContain(text);
+            expect(notices.join('')).not.toContain(text);
+            expect(report).not.toContain(text);
+          }
         }
         if (variant.startsWith('order-textcontent-')) {
           const original = await store.read((tx) =>
@@ -1020,6 +1106,7 @@ for (const variant of [
                 matches:
                   variant === 'order-protected-de' ||
                   variant === 'order-protected-en' ||
+                  variant === 'order-protected-duplicate' ||
                   variant === 'order-protected-long-match',
               },
             ],

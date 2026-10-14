@@ -523,6 +523,93 @@ export function protectedNoticeMarkup(
   return `<main lang="${lang}">${parent}<div id="generated-notice">${kind === 'missing' || kind === 'delayed' ? '' : notice}${kind === 'duplicate' ? notice : ''}</div></main>${kind === 'delayed' ? `<script>setTimeout(()=>document.getElementById('generated-notice').innerHTML=${JSON.stringify(notice)},1500)</script>` : ''}`;
 }
 
+export const NOTICE_ALIGNMENT_FIXTURE = {
+  parentId: '901',
+  replyId: '911',
+  parentText:
+    'Generierter Elternhinweis. Dieser Beitrag wurde entfernt. Mehr erfahren',
+  focalText: protectedNoticeText('de'),
+  replyText: 'Generierter Antworthinweis. Dieser Beitrag ist nicht verfügbar.',
+};
+export type NoticeAlignmentKind =
+  | 'different-parent'
+  | 'identical-parent'
+  | 'normal-parent-reply'
+  | 'wrong-focal'
+  | 'wrong-parent'
+  | 'missing-candidate'
+  | 'unavailable-parent'
+  | 'delayed';
+
+export function noticeAlignmentAnswer(
+  focalId: string,
+  kind: NoticeAlignmentKind = 'different-parent',
+) {
+  const fixture = NOTICE_ALIGNMENT_FIXTURE;
+  const notice = (text: string) => ({
+    __typename: 'TweetTombstone',
+    tombstone: { __typename: 'TextTombstone', text: { text, entities: [] } },
+  });
+  const entry = (id: string, result: unknown) => ({
+    entryId: `tweet-${id}`,
+    content: { itemContent: { tweet_results: { result } } },
+  });
+  const parent =
+    kind === 'normal-parent-reply'
+      ? detailPost(fixture.parentId)
+      : kind === 'unavailable-parent'
+        ? { __typename: 'TweetUnavailable' }
+        : notice(
+            kind === 'identical-parent'
+              ? fixture.focalText
+              : fixture.parentText,
+          );
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              entry(fixture.parentId, parent),
+              entry(focalId, notice(fixture.focalText)),
+              ...(kind === 'normal-parent-reply'
+                ? [entry(fixture.replyId, { __typename: 'TweetUnavailable' })]
+                : []),
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+export function noticeAlignmentMarkup(
+  kind: NoticeAlignmentKind = 'different-parent',
+): string {
+  const fixture = NOTICE_ALIGNMENT_FIXTURE;
+  const notice = (text: string) =>
+    `<div data-testid="cellInnerDiv"><div role="article"><span>${text.replace(' Mehr erfahren', '')}</span>${text.endsWith(' Mehr erfahren') ? ' <a href="/generated-learn-more">Mehr erfahren</a>' : ''}</div></div>`;
+  const parent =
+    kind === 'normal-parent-reply'
+      ? `<div data-testid="cellInnerDiv"><article data-testid="tweet"><a href="/generated/status/${fixture.parentId}"><time>2026</time></a><p data-testid="tweetText">Generated normal parent</p></article></div>`
+      : notice(
+          kind === 'identical-parent'
+            ? fixture.focalText
+            : kind === 'wrong-parent'
+              ? 'Generierter falscher Elternhinweis.'
+              : kind === 'unavailable-parent'
+                ? 'Generierter nicht lesbarer Hinweis.'
+                : fixture.parentText,
+        );
+  const focal = notice(
+    kind === 'wrong-focal'
+      ? 'Generierter falscher Fokalhinweis.'
+      : fixture.focalText,
+  );
+  return `<main lang="de">${parent}<div id="generated-focal-notice">${kind === 'missing-candidate' || kind === 'delayed' ? '' : focal}</div>${kind === 'normal-parent-reply' ? notice(fixture.replyText) : ''}<div data-testid="cellInnerDiv">Generated non-notice cell</div></main>${kind === 'delayed' ? `<script>setTimeout(()=>document.getElementById('generated-focal-notice').innerHTML=${JSON.stringify(focal)},1500)</script>` : ''}`;
+}
+
 export const EMPTY_RESULTS_FIXTURE = {
   rootId: '901',
   parentId: '902',

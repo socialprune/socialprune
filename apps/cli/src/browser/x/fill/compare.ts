@@ -14,6 +14,11 @@ export interface CanaryComparison {
   matches: boolean;
   text?: DisplayTextComparison['text'] & { shownTextContentLength?: number };
   textBasis?: 'innerText' | 'textContent' | 'none';
+  notices?: {
+    beforeFocal: number;
+    candidatesSeen: number;
+    matchedIndex: number | null;
+  };
 }
 
 /** Same one-pass decoder as adapter-x's internal tweet parser; no HTML parsing. */
@@ -229,31 +234,63 @@ export function compareDisplayTextBases(
 export async function compareNotice(
   page: Page,
   status: 'not-found' | 'tombstone' | 'unavailable',
-  tombstoneText: string | null = null,
+  alignment: NoticeAlignment | string | null = null,
 ): Promise<CanaryComparison> {
   const zero = { textLength: 0, photos: 0, videos: 0 };
   if (status === 'tombstone') {
+    const expected =
+      typeof alignment === 'string'
+        ? {
+            notices: [{ kind: 'tombstone' as const, text: alignment }],
+            focalIndex: 0,
+          }
+        : alignment;
     const candidates = page.locator(
       '[role="article"]:not([data-testid="tweet"]):not(article[data-testid="tweet"] *):not([data-testid="error-detail"] *),[data-testid="error-detail"]',
     );
     const read = async () => {
       const count = await candidates.count();
-      const matches =
-        count === 1 &&
-        (await candidates.isVisible()) &&
-        tombstoneNoticeMatches(await candidates.innerText(), tombstoneText);
-      return { text: matches ? 1 : 0, photos: count, videos: 0 };
+      const shown: (string | null)[] = [];
+      for (
+        let index = 0;
+        index < Math.min(count, (expected?.focalIndex ?? -1) + 1);
+        index++
+      ) {
+        const candidate = candidates.nth(index);
+        shown.push(
+          !(await candidate.isVisible())
+            ? null
+            : expected?.notices[index]?.kind === 'unavailable'
+              ? ''
+              : await candidate.innerText(),
+        );
+      }
+      return matchNoticeAlignment(expected, shown, count);
     };
-    const render = await waitForFocalCounts(read, {
-      text: 1,
-      photos: 1,
-      videos: 0,
-    });
+    const render = await waitForFocalCounts(
+      async () => {
+        const current = await read();
+        return {
+          text: current.matches ? 1 : 0,
+          photos: Math.min(
+            current.candidatesSeen,
+            (expected?.focalIndex ?? -1) + 1,
+          ),
+          videos: 0,
+        };
+      },
+      { text: 1, photos: (expected?.focalIndex ?? -1) + 1, videos: 0 },
+    );
     const current = await read();
     return {
       stored: zero,
       shown: { ...zero },
-      matches: render.settled && current.text === 1 && current.photos === 1,
+      notices: {
+        beforeFocal: current.beforeFocal,
+        candidatesSeen: current.candidatesSeen,
+        matchedIndex: current.matchedIndex,
+      },
+      matches: render.settled && current.matches,
     };
   }
   const marker =
@@ -272,6 +309,51 @@ export async function compareNotice(
     matches: (await marker.count()) === 1 && (await marker.isVisible()),
   };
 }
+export interface NoticeAlignment {
+  notices: readonly {
+    kind: 'tombstone' | 'unavailable';
+    text: string | null;
+  }[];
+  focalIndex: number;
+}
+export function matchNoticeAlignment(
+  expected: NoticeAlignment | null,
+  shown: readonly (string | null)[],
+  candidatesSeen = shown.length,
+): {
+  beforeFocal: number;
+  candidatesSeen: number;
+  matchedIndex: number | null;
+  matches: boolean;
+} {
+  const index = expected?.focalIndex ?? -1;
+  const focal = expected?.notices[index];
+  const valid =
+    Number.isSafeInteger(index) &&
+    index >= 0 &&
+    focal?.kind === 'tombstone' &&
+    tombstoneNoticeMatches(focal.text ?? '', focal.text);
+  const matches =
+    valid &&
+    candidatesSeen > index &&
+    shown.length > index &&
+    expected!.notices
+      .slice(0, index + 1)
+      .every(
+        (entry, position) =>
+          shown[position] !== null &&
+          shown[position] !== undefined &&
+          (entry.kind === 'unavailable'
+            ? true
+            : tombstoneNoticeMatches(shown[position], entry.text)),
+      );
+  return {
+    beforeFocal: Math.max(0, index),
+    candidatesSeen,
+    matchedIndex: matches ? index : null,
+    matches,
+  };
+}
 export function tombstoneNoticeMatches(
   shown: string,
   answer: string | null,
@@ -284,10 +366,11 @@ export function tombstoneNoticeMatches(
 }
 
 /** Called only after extract accepted this page's focal tombstone; never persisted. */
-export function tombstoneTextFromAnswer(
+export function noticeAlignmentFromAnswer(
   body: unknown,
   focalId: string,
-): string | null {
+): NoticeAlignment | null {
+  const notices: NoticeAlignment['notices'][number][] = [];
   const instructions = object(
     object(object(body).data).threaded_conversation_with_injections_v2,
   ).instructions;
@@ -307,28 +390,47 @@ export function tombstoneTextFromAnswer(
         ? content.items.map((input) => ({
             id: object(input).entryId,
             content: object(object(input).item).itemContent,
+            module: true,
           }))
-        : [{ id: entry.entryId, content: content.itemContent }];
+        : [{ id: entry.entryId, content: content.itemContent, module: false }];
       for (const candidate of entries) {
         let result = object(
           object(object(candidate.content).tweet_results).result,
         );
         if (result.__typename === 'TweetWithVisibilityResults')
           result = object(result.tweet);
-        if (
-          (result.rest_id ??
-            (typeof candidate.id === 'string'
-              ? candidate.id.replace(/^tweet-/, '')
-              : null)) !== focalId ||
-          result.__typename !== 'TweetTombstone'
-        )
+        const id =
+          result.rest_id ??
+          (typeof candidate.id === 'string'
+            ? candidate.id.match(
+                candidate.module
+                  ? /^(?:conversationthread-\d{1,40}-)?tweet-(\d{1,40})$/
+                  : /^tweet-(\d{1,40})$/,
+              )?.[1]
+            : null);
+        if (id === focalId && result.__typename !== 'TweetTombstone')
+          return null;
+        if (result.__typename === 'TweetUnavailable') {
+          notices.push({ kind: 'unavailable', text: null });
           continue;
+        }
+        if (result.__typename !== 'TweetTombstone') continue;
+        if (typeof id !== 'string') return null;
         const text = object(object(result.tombstone).text).text;
-        return typeof text === 'string' ? text : null;
+        if (typeof text !== 'string' || !normalizedLength(text)) return null;
+        notices.push({ kind: 'tombstone', text });
+        if (id === focalId) return { notices, focalIndex: notices.length - 1 };
       }
     }
   }
   return null;
+}
+export function tombstoneTextFromAnswer(
+  body: unknown,
+  focalId: string,
+): string | null {
+  const alignment = noticeAlignmentFromAnswer(body, focalId);
+  return alignment?.notices[alignment.focalIndex]?.text ?? null;
 }
 export function normalizedLength(text: string): number {
   return text.replace(/\s+/gu, ' ').trim().length;

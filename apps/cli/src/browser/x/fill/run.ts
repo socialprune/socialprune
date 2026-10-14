@@ -29,7 +29,7 @@ import {
   compareNotice,
   normalizedLength,
   expectedFocalMediaCounts,
-  tombstoneTextFromAnswer,
+  noticeAlignmentFromAnswer,
 } from './compare.ts';
 import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
@@ -698,7 +698,7 @@ export async function runFillWithDependencies(
                       ? 'not-found'
                       : extracted.kind,
                     extracted.kind === 'tombstone'
-                      ? tombstoneTextFromAnswer(answer.body, row.id)
+                      ? noticeAlignmentFromAnswer(answer.body, row.id)
                       : null,
                   );
           } catch {

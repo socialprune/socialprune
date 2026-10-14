@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { xSelectors } from '../src/browser/x/selectors.ts';
-import { compareFocal, compareNotice } from '../src/browser/x/fill/compare.ts';
+import {
+  compareFocal,
+  compareNotice,
+  noticeAlignmentFromAnswer,
+} from '../src/browser/x/fill/compare.ts';
 import { migrateOriginal } from '@socialprune/core';
 import { startConfirmation } from '../src/browser/confirmation.ts';
 import { extract } from '../src/browser/x/fill/extract.ts';
@@ -24,6 +28,9 @@ import {
   textContentAnswer,
   textContentStoredText,
   TEXT_CONTENT_FIXTURE,
+  noticeAlignmentMarkup,
+  noticeAlignmentAnswer,
+  NOTICE_ALIGNMENT_FIXTURE,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -416,9 +423,13 @@ for (const kind of [
     expect(result).toMatchObject({
       stored: { textLength: 0, photos: 0, videos: 0 },
       shown: { textLength: 0, photos: 0, videos: 0 },
-      matches: ['match', 'delayed', 'error-detail', 'long-match'].includes(
-        kind,
-      ),
+      matches: [
+        'match',
+        'delayed',
+        'error-detail',
+        'long-match',
+        'duplicate',
+      ].includes(kind),
     });
     expect(JSON.stringify(result)).not.toContain(protectedNoticeText('de'));
   });
@@ -495,6 +506,66 @@ for (const kind of [
       expect(compared.shown.textLength).toBe(content.length);
     }
     expect(JSON.stringify(compared)).not.toContain(textContentStoredText(kind));
+  });
+
+test('parent notice above the focal notice accepts by positional answer alignment', async ({
+  page,
+}) => {
+  await page.setContent(noticeAlignmentMarkup());
+  expect(await page.locator('[role="article"]').count()).toBe(2);
+  expect(
+    await compareNotice(
+      page,
+      'tombstone',
+      noticeAlignmentFromAnswer(noticeAlignmentAnswer('910'), '910'),
+    ),
+  ).toMatchObject({
+    stored: { textLength: 0, photos: 0, videos: 0 },
+    shown: { textLength: 0, photos: 0, videos: 0 },
+    matches: true,
+    notices: { beforeFocal: 1, candidatesSeen: 2, matchedIndex: 1 },
+  });
+});
+
+for (const kind of [
+  'identical-parent',
+  'normal-parent-reply',
+  'wrong-focal',
+  'wrong-parent',
+  'missing-candidate',
+  'unavailable-parent',
+  'delayed',
+] as const)
+  test(`positional notice alignment ${kind} requires the answer prefix and ignores replies below`, async ({
+    page,
+  }) => {
+    await page.setContent(noticeAlignmentMarkup(kind));
+    const matched = ![
+      'wrong-focal',
+      'wrong-parent',
+      'missing-candidate',
+    ].includes(kind);
+    const compared = await compareNotice(
+      page,
+      'tombstone',
+      noticeAlignmentFromAnswer(noticeAlignmentAnswer('910', kind), '910'),
+    );
+    expect(compared).toMatchObject({
+      stored: { textLength: 0, photos: 0, videos: 0 },
+      shown: { textLength: 0, photos: 0, videos: 0 },
+      matches: matched,
+      notices: {
+        beforeFocal: kind === 'normal-parent-reply' ? 0 : 1,
+        candidatesSeen: kind === 'missing-candidate' ? 1 : 2,
+        matchedIndex: matched ? (kind === 'normal-parent-reply' ? 0 : 1) : null,
+      },
+    });
+    for (const text of [
+      NOTICE_ALIGNMENT_FIXTURE.parentText,
+      NOTICE_ALIGNMENT_FIXTURE.focalText,
+      NOTICE_ALIGNMENT_FIXTURE.replyText,
+    ])
+      expect(JSON.stringify(compared)).not.toContain(text);
   });
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({

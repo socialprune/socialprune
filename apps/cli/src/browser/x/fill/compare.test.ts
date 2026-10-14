@@ -6,6 +6,10 @@ import {
   detailPost,
   DETAIL_FIXTURE,
 } from '../../../originals/test/detail.ts';
+import {
+  noticeAlignmentAnswer,
+  NOTICE_ALIGNMENT_FIXTURE,
+} from '../../../../e2e/fake-x/fill-detail.ts';
 
 const DISPLAY_FIXTURE = {
   mention: '@generated_reply ',
@@ -647,11 +651,11 @@ test.each(['direct', 'replace', 'module', 'wrapped'])(
     }
     if (kind === 'module') {
       instruction.entries[1] = {
-        entryId: 'conversationthread-generated',
+        entryId: 'conversationthread-910',
         content: {
           items: [
             {
-              entryId: `tweet-${DETAIL_FIXTURE.id}`,
+              entryId: `conversationthread-910-tweet-${DETAIL_FIXTURE.id}`,
               item: { itemContent: { tweet_results: { result } } },
             },
           ],
@@ -670,3 +674,165 @@ test.each(['direct', 'replace', 'module', 'wrapped'])(
     expect(text.length).toBeGreaterThan(500);
   },
 );
+
+test.each([
+  'different-parent',
+  'identical-parent',
+  'normal-parent-reply',
+  'unavailable-parent',
+] as const)(
+  'ordered answer notice list includes only the prefix through focal: %s',
+  (kind) => {
+    const fixture = NOTICE_ALIGNMENT_FIXTURE;
+    const alignment = comparison.noticeAlignmentFromAnswer(
+      noticeAlignmentAnswer(DETAIL_FIXTURE.id, kind),
+      DETAIL_FIXTURE.id,
+    );
+    expect(alignment).toEqual({
+      notices: [
+        ...(kind === 'normal-parent-reply'
+          ? []
+          : [
+              {
+                kind:
+                  kind === 'unavailable-parent' ? 'unavailable' : 'tombstone',
+                text:
+                  kind === 'unavailable-parent'
+                    ? null
+                    : kind === 'identical-parent'
+                      ? fixture.focalText
+                      : fixture.parentText,
+              },
+            ]),
+        { kind: 'tombstone', text: fixture.focalText },
+      ],
+      focalIndex: kind === 'normal-parent-reply' ? 0 : 1,
+    });
+    const expected =
+      kind === 'normal-parent-reply'
+        ? [fixture.focalText, fixture.replyText]
+        : [
+            kind === 'unavailable-parent'
+              ? ''
+              : kind === 'identical-parent'
+                ? fixture.focalText
+                : fixture.parentText,
+            fixture.focalText,
+          ];
+    expect(comparison.matchNoticeAlignment(alignment, expected)).toEqual({
+      beforeFocal: kind === 'normal-parent-reply' ? 0 : 1,
+      candidatesSeen: 2,
+      matchedIndex: kind === 'normal-parent-reply' ? 0 : 1,
+      matches: true,
+    });
+  },
+);
+
+test.each(['module', 'wrapped', 'replace'] as const)(
+  'notice prefix keeps timeline order in %s answer entries',
+  (kind) => {
+    const answer = noticeAlignmentAnswer(DETAIL_FIXTURE.id);
+    const entries =
+      answer.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries;
+    if (kind === 'wrapped')
+      for (const entry of entries)
+        Object.assign(entry.content.itemContent.tweet_results, {
+          result: {
+            __typename: 'TweetWithVisibilityResults',
+            tweet: entry.content.itemContent.tweet_results.result,
+          },
+        });
+    if (kind === 'module') {
+      answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries =
+        [
+          {
+            entryId: 'conversationthread-910',
+            content: {
+              items: entries.map((entry) => ({
+                entryId: `conversationthread-910-${entry.entryId}`,
+                item: { itemContent: entry.content.itemContent },
+              })),
+            },
+          },
+        ] as never;
+    }
+    if (kind === 'replace') {
+      entries.pop();
+      answer.data.threaded_conversation_with_injections_v2.instructions.push({
+        type: 'TimelineReplaceEntry',
+        entry: noticeAlignmentAnswer(DETAIL_FIXTURE.id).data
+          .threaded_conversation_with_injections_v2.instructions[0]!.entries[1],
+      } as never);
+    }
+    const alignment = comparison.noticeAlignmentFromAnswer(
+      answer,
+      DETAIL_FIXTURE.id,
+    );
+    expect(alignment).toEqual({
+      notices: [
+        { kind: 'tombstone', text: NOTICE_ALIGNMENT_FIXTURE.parentText },
+        { kind: 'tombstone', text: NOTICE_ALIGNMENT_FIXTURE.focalText },
+      ],
+      focalIndex: 1,
+    });
+    expect(comparison.tombstoneTextFromAnswer(answer, DETAIL_FIXTURE.id)).toBe(
+      NOTICE_ALIGNMENT_FIXTURE.focalText,
+    );
+    expect(comparison.noticeAlignmentFromAnswer(answer, '999')).toBeNull();
+  },
+);
+
+test('notice prefix matching cannot substitute another index or ignore earlier text and missing candidates', () => {
+  const alignment = comparison.noticeAlignmentFromAnswer(
+    noticeAlignmentAnswer(DETAIL_FIXTURE.id),
+    DETAIL_FIXTURE.id,
+  )!;
+  const { parentText, focalText } = NOTICE_ALIGNMENT_FIXTURE;
+  for (const candidates of [
+    [parentText],
+    [parentText, parentText, focalText],
+    ['Generated wrong earlier notice', focalText],
+    [null, focalText],
+    [parentText, null],
+    [focalText, parentText],
+  ]) {
+    expect(comparison.matchNoticeAlignment(alignment, candidates).matches).toBe(
+      false,
+    );
+    expect(
+      comparison.matchNoticeAlignment(alignment, candidates).matchedIndex,
+    ).toBeNull();
+  }
+  expect(
+    comparison.matchNoticeAlignment(alignment, [
+      parentText,
+      focalText,
+      'Generated ignored reply',
+    ]).matches,
+  ).toBe(true);
+  for (const invalid of [
+    null,
+    { ...alignment, focalIndex: -1 },
+    { ...alignment, focalIndex: 2 },
+    {
+      ...alignment,
+      notices: [
+        { kind: 'tombstone' as const, text: '' },
+        { kind: 'tombstone' as const, text: focalText },
+      ],
+    },
+  ])
+    expect(
+      comparison.matchNoticeAlignment(invalid, [parentText, focalText]).matches,
+    ).toBe(false);
+  const broken = noticeAlignmentAnswer(DETAIL_FIXTURE.id);
+  Object.assign(
+    broken.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content.itemContent.tweet_results,
+    { result: { __typename: 'TweetTombstone', tombstone: { text: {} } } },
+  );
+  expect(
+    comparison.noticeAlignmentFromAnswer(broken, DETAIL_FIXTURE.id),
+  ).toBeNull();
+});

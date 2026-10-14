@@ -285,3 +285,114 @@ export function ownPhotoMarkup(focalId: string): string {
   ).join('');
   return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><p data-testid="tweetText">${OWN_PHOTO_FIXTURE.text}</p>${photos}</article>`;
 }
+
+export const GATED_MEDIA_FIXTURE = {
+  text: 'Generated gated text',
+  mediaLink: 'https://t.co/generatedGated',
+  posterUrl: 'https://pbs.twimg.com/generated-gated-poster.png',
+  videoUrl: 'https://video.twimg.com/generated-gated.mp4',
+  photoUrl: 'https://pbs.twimg.com/generated-gated-photo.png',
+  overlay: 'Anzeigen',
+  parentId: '901',
+  quotedId: '909',
+  mp4Base64: 'AAAADGZ0eXBpc29t',
+};
+
+/** Entirely generated answer with the observed visibility wrapper shape. */
+export function gatedMediaPost(id: string, kind: 'video' | 'photo' = 'video') {
+  const tweet = {
+    ...detailPost(id),
+    legacy: {
+      ...detailPost(id).legacy,
+      full_text: GATED_MEDIA_FIXTURE.text + ' ' + GATED_MEDIA_FIXTURE.mediaLink,
+      display_text_range: [0, Array.from(GATED_MEDIA_FIXTURE.text).length],
+      possibly_sensitive: true,
+      entities: { media: [{ url: GATED_MEDIA_FIXTURE.mediaLink }] },
+      extended_entities: {
+        media: [
+          {
+            type: kind,
+            media_url_https:
+              kind === 'photo'
+                ? GATED_MEDIA_FIXTURE.photoUrl
+                : GATED_MEDIA_FIXTURE.posterUrl,
+            ...(kind === 'video'
+              ? {
+                  video_info: {
+                    duration_millis: 1200,
+                    variants: [
+                      {
+                        content_type: 'video/mp4',
+                        bitrate: 832000,
+                        url: GATED_MEDIA_FIXTURE.videoUrl,
+                      },
+                    ],
+                  },
+                }
+              : {}),
+          },
+        ],
+      },
+    },
+  };
+  delete (tweet as Partial<typeof tweet>).__typename;
+  return {
+    __typename: 'TweetWithVisibilityResults',
+    tweet,
+    mediaVisibilityResults: {
+      blurred_image_interstitial: {
+        interstitial_action: 'AgeVerificationPrompt',
+        opacity: 0.5,
+        title: { text: 'Generated overlay title', entities: [], rtl: false },
+        text: {
+          text: 'Generated overlay explanation',
+          entities: [],
+          rtl: false,
+        },
+      },
+    },
+  };
+}
+
+export function gatedMediaAnswer(focalId: string, family = false) {
+  const focal = gatedMediaPost(focalId);
+  const body = detailAnswer(focal);
+  if (family) {
+    Object.assign(focal.tweet.legacy, {
+      in_reply_to_status_id_str: GATED_MEDIA_FIXTURE.parentId,
+      quoted_status_id_str: GATED_MEDIA_FIXTURE.quotedId,
+    });
+    Object.assign(focal.tweet, {
+      quoted_status_result: {
+        result: gatedMediaPost(GATED_MEDIA_FIXTURE.quotedId),
+      },
+    });
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.unshift(
+      {
+        entryId: 'conversationthread-generated',
+        content: {
+          items: [
+            {
+              entryId: `tweet-${GATED_MEDIA_FIXTURE.parentId}`,
+              item: {
+                itemContent: {
+                  tweet_results: {
+                    result: gatedMediaPost(
+                      GATED_MEDIA_FIXTURE.parentId,
+                      'photo',
+                    ),
+                  },
+                },
+              },
+            },
+          ],
+        },
+      } as never,
+    );
+  }
+  return body;
+}
+
+export function gatedMediaMarkup(focalId: string, exposed = false): string {
+  return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><p data-testid="tweetText">${GATED_MEDIA_FIXTURE.text}</p><div><div role="button" onclick="fetch('/generated-reveal',{method:'POST'})">${GATED_MEDIA_FIXTURE.overlay}</div></div>${exposed ? '<div data-testid="videoPlayer"><video preload="none"></video></div>' : ''}</article>`;
+}

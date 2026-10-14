@@ -203,11 +203,21 @@ export async function compareNotice(
 export function normalizedLength(text: string): number {
   return text.replace(/\s+/gu, ' ').trim().length;
 }
+export function expectedFocalMediaCounts(
+  media: readonly { kind: string }[],
+  gated: boolean,
+): Pick<CanaryCounts, 'photos' | 'videos'> {
+  return {
+    photos: gated ? 0 : media.filter((entry) => entry.kind === 'photo').length,
+    videos: gated ? 0 : media.filter((entry) => entry.kind !== 'photo').length,
+  };
+}
 export async function compareFocal(
   page: Page,
   original: Original,
   displayText = original.text ?? '',
   displayLinks: readonly string[] = [],
+  mediaGated = false,
 ): Promise<CanaryComparison> {
   const article = await xSelectors.focal(page, original.id);
   const own = (selector: string) =>
@@ -248,8 +258,7 @@ export async function compareFocal(
     players = own('[data-testid="videoPlayer"]');
   const stored = {
     textLength: textComparison.storedLength,
-    photos: original.media.filter((media) => media.kind === 'photo').length,
-    videos: original.media.filter((media) => media.kind !== 'photo').length,
+    ...expectedFocalMediaCounts(original.media, mediaGated),
   };
   const shown = {
     textLength: textComparison.shownLength,

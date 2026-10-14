@@ -22,6 +22,9 @@ import { startConfirmation } from '../src/browser/confirmation.ts';
 import { REVIEW_POLICY } from '../src/review/static.ts';
 import { readOrder } from '../src/browser/x/fill/order.ts';
 import { fileURLToPath } from 'node:url';
+import { fetchOriginals } from '../src/originals/fetch.ts';
+import { storeOriginalMedia } from '../src/originals/store-media.ts';
+import { extract } from '../src/browser/x/fill/extract.ts';
 import {
   moduleCursorAnswer,
   displayComparisonAnswer,
@@ -33,6 +36,9 @@ import {
   ownPhotoAnswer,
   ownPhotoMarkup,
   OWN_PHOTO_FIXTURE,
+  gatedMediaAnswer,
+  gatedMediaMarkup,
+  GATED_MEDIA_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -81,6 +87,11 @@ for (const variant of [
   'order-card-full-match',
   'order-card-full-mismatch',
   'order-own-photos',
+  'order-visibility-gated',
+  'order-visibility-exposed',
+  'order-visibility-stored',
+  'order-visibility-family',
+  'order-visibility-full',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -124,6 +135,30 @@ for (const variant of [
       }),
     ];
     workspace.counts.originals = 1;
+    if (variant === 'order-visibility-stored') {
+      workspace.originals[0]!.media = [
+        {
+          n: 1,
+          kind: 'video',
+          source: 'anonymous',
+          url: GATED_MEDIA_FIXTURE.videoUrl,
+          file: '1.mp4',
+          poster: null,
+          status: 'stored',
+          bytes: Buffer.from(GATED_MEDIA_FIXTURE.mp4Base64, 'base64').length,
+          durationMs: 1200,
+          bitrateLabel: 832000,
+          altText: null,
+        },
+      ];
+      await mkdir(join(directory, 'originals', DETAIL_FIXTURE.id), {
+        recursive: true,
+      });
+      await writeFile(
+        join(directory, 'originals', DETAIL_FIXTURE.id, '1.mp4'),
+        Buffer.from(GATED_MEDIA_FIXTURE.mp4Base64, 'base64'),
+      );
+    }
     if (variant === 'canary-five') {
       workspace.items.forEach((item, index) => {
         item.reference.replyToId = String(910 + index);
@@ -191,11 +226,26 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    const mediaRequests: string[] = [];
     let statusBroughtToFront = 0;
     let releaseHome: () => void = () => {};
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
+      if (pathname?.startsWith('/generated-gated-')) {
+        mediaRequests.push(pathname);
+        response.setHeader('Content-Type', 'image/png');
+        response.end(
+          Buffer.from(DISPLAY_COMPARISON_FIXTURE.pngBase64, 'base64'),
+        );
+        return;
+      }
+      if (pathname === '/generated-gated.mp4') {
+        mediaRequests.push(pathname);
+        response.setHeader('Content-Type', 'video/mp4');
+        response.end(Buffer.from(GATED_MEDIA_FIXTURE.mp4Base64, 'base64'));
+        return;
+      }
       if (
         pathname === '/generated-emoji.png' ||
         pathname === '/generated-photo.png'
@@ -249,8 +299,9 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer =
-          variant === 'order-own-photos'
+        const answer = variant.startsWith('order-visibility-')
+          ? gatedMediaAnswer(id, variant === 'order-visibility-family')
+          : variant === 'order-own-photos'
             ? ownPhotoAnswer(id)
             : variant.startsWith('order-card-')
               ? cardComparisonAnswer(id, cardKind)
@@ -292,8 +343,14 @@ for (const variant of [
         );
         return;
       }
+      const visibilityMarkup = variant.startsWith('order-visibility-')
+        ? gatedMediaMarkup(
+            pathname!.split('/').at(-1)!,
+            variant === 'order-visibility-exposed',
+          )
+        : null;
       response.end(
-        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
+        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
     });
     await new Promise<void>((resolve) =>
@@ -303,7 +360,8 @@ for (const variant of [
       const plan = await planFill(store, workspace.items[0]!.account.key);
       if (
         variant === 'order-card-full-match' ||
-        variant === 'order-card-full-mismatch'
+        variant === 'order-card-full-mismatch' ||
+        variant === 'order-visibility-full'
       )
         plan.canary = false;
       if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
@@ -350,9 +408,12 @@ for (const variant of [
       const fakePhoto = fakeMediaClient.photo.bind(fakeMediaClient);
       fakeMediaClient.photo = (url, signal) =>
         fakePhoto(
-          url === 'https://pbs.twimg.com/generated-photo.png'
-            ? 'http://127.0.0.1:4231/generated-photo.png'
-            : url,
+          url === GATED_MEDIA_FIXTURE.posterUrl ||
+            url === GATED_MEDIA_FIXTURE.photoUrl
+            ? 'http://127.0.0.1:4231/' + new URL(url).pathname.slice(1)
+            : url === 'https://pbs.twimg.com/generated-photo.png'
+              ? 'http://127.0.0.1:4231/generated-photo.png'
+              : url,
           signal,
         );
       const result = runFillWithDependencies(
@@ -387,6 +448,17 @@ for (const variant of [
             ...productionMedia,
             origin: 'http://127.0.0.1:4231',
             free: () => Promise.resolve(10 * 1024 ** 3),
+            fetch: (url, init) =>
+              fetch(
+                (url instanceof URL
+                  ? url.href
+                  : typeof url === 'string'
+                    ? url
+                    : url.url) === GATED_MEDIA_FIXTURE.videoUrl
+                  ? 'http://127.0.0.1:4231/generated-gated.mp4'
+                  : url,
+                init,
+              ),
           },
           syndication: fakeMediaClient,
           async launch() {
@@ -547,23 +619,33 @@ for (const variant of [
           variant === 'order-card-video' ||
           variant === 'order-card-rendered-link' ||
           variant === 'order-card-full-match' ||
-          variant === 'order-own-photos'
+          variant === 'order-own-photos' ||
+          (variant.startsWith('order-visibility-') &&
+            variant !== 'order-visibility-exposed')
         ) {
           expect(
             outcome,
             notices.find((value) => value.startsWith('Canary counts:')),
           ).toMatchObject({
             completed: 1,
-            endReason: variant === 'order-card-full-match' ? 'done' : 'canary',
+            endReason:
+              variant === 'order-card-full-match' ||
+              variant === 'order-visibility-full'
+                ? 'done'
+                : 'canary',
           });
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
             startedBy: 'agent-on-order',
-            ...(variant === 'order-card-full-match'
+            ...(variant === 'order-card-full-match' ||
+            variant === 'order-visibility-full'
               ? {}
               : { acceptedBy: 'automatic-check' }),
             orderSha256: order!.sha256,
           });
-          if (variant === 'order-card-full-match')
+          if (
+            variant === 'order-card-full-match' ||
+            variant === 'order-visibility-full'
+          )
             expect(
               (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
             ).toBeNull();
@@ -655,6 +737,100 @@ for (const variant of [
             endReason: 'error',
             displayEndReason: 'canary-mismatch',
           });
+        }
+        if (variant.startsWith('order-visibility-')) {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const ids = [
+            DETAIL_FIXTURE.id,
+            ...(variant === 'order-visibility-family'
+              ? [GATED_MEDIA_FIXTURE.parentId, GATED_MEDIA_FIXTURE.quotedId]
+              : []),
+          ];
+          for (const id of ids) {
+            const original = await store.read((tx) => tx.originals.get(id));
+            expect(original?.text).toBe(
+              GATED_MEDIA_FIXTURE.text + ' ' + GATED_MEDIA_FIXTURE.mediaLink,
+            );
+            expect(original?.signedIn?.status).toBe('read');
+            expect(original?.signedInRecord?.mediaDetails).toEqual([]);
+            if (variant === 'order-visibility-stored') {
+              expect(original?.media).toEqual(workspace.originals[0]!.media);
+              expect(
+                await readFile(join(directory, 'originals', id, '1.mp4')),
+              ).toEqual(Buffer.from(GATED_MEDIA_FIXTURE.mp4Base64, 'base64'));
+            } else {
+              expect(original?.media).toHaveLength(1);
+              expect(original?.media[0]).toMatchObject({
+                kind: id === GATED_MEDIA_FIXTURE.parentId ? 'photo' : 'video',
+                status: 'not-stored',
+                url: null,
+                file: null,
+                poster: null,
+              });
+            }
+          }
+          if (variant !== 'order-visibility-full')
+            expect(run).toMatchObject({
+              canaryCounts: [
+                {
+                  stored: {
+                    textLength: GATED_MEDIA_FIXTURE.text.length,
+                    photos: 0,
+                    videos: 0,
+                  },
+                  shown: {
+                    textLength: GATED_MEDIA_FIXTURE.text.length,
+                    photos: 0,
+                    videos: variant === 'order-visibility-exposed' ? 1 : 0,
+                  },
+                  matches: variant !== 'order-visibility-exposed',
+                },
+              ],
+            });
+          const reportText = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          const reports = JSON.parse(reportText) as {
+            gated?: { posts: number; mediaItems: number };
+          }[];
+          const counts = { posts: ids.length, mediaItems: ids.length };
+          expect(reports.at(-1)?.gated).toEqual(counts);
+          expect(notices.join('')).toContain(
+            `Gated media: ${JSON.stringify(counts)}`,
+          );
+          for (const forbidden of [
+            ...ids,
+            GATED_MEDIA_FIXTURE.text,
+            GATED_MEDIA_FIXTURE.videoUrl,
+            GATED_MEDIA_FIXTURE.posterUrl,
+            'AgeVerificationPrompt',
+          ])
+            expect(reportText).not.toContain(forbidden);
+          expect(mediaRequests).toEqual([]);
+          expect(requests).not.toContain('/generated-reveal');
+          const replay = await fetchOriginals(
+            {
+              workspace: directory,
+              signal: abort.signal,
+              now: () => new Date(now),
+            },
+            {
+              baseUrl: 'http://127.0.0.1:4231',
+              media: {
+                ...productionMedia,
+                origin: 'http://127.0.0.1:4231',
+                free: () => Promise.resolve(10 * 1024 ** 3),
+              },
+            },
+          );
+          expect(replay.data.attempted).toBe(0);
+          expect(mediaRequests).toEqual([]);
+          for (const id of ids)
+            expect(
+              (await store.read((tx) => tx.originals.get(id)))?.signedInRecord
+                ?.mediaDetails,
+            ).toEqual([]);
         }
         expect(context!.pages()).toHaveLength(0);
         expect(requests.filter((path) => path === '/home')).toHaveLength(1);
@@ -965,6 +1141,106 @@ for (const variant of [
       });
     }
   });
+
+test('the fake gated-media recorder observes a real ungated video and poster download control', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-gated-media-control-'),
+  );
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    const video = request.url === '/generated-gated.mp4';
+    response.setHeader('Content-Type', video ? 'video/mp4' : 'image/png');
+    response.end(
+      Buffer.from(
+        video
+          ? GATED_MEDIA_FIXTURE.mp4Base64
+          : DISPLAY_COMPARISON_FIXTURE.pngBase64,
+        'base64',
+      ),
+    );
+  });
+  await new Promise<void>((resolve) =>
+    server.listen(4231, '127.0.0.1', resolve),
+  );
+  try {
+    const result = extract(
+      gatedMediaAnswer(DETAIL_FIXTURE.id),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    );
+    if (result.kind !== 'read')
+      throw new Error('Generated gated control was not read.');
+    const origin = 'http://127.0.0.1:4231';
+    const original = {
+      ...result.post,
+      anonymous: null,
+      signedIn: null,
+      media: [
+        { ...result.post.media[0]!, url: origin + '/generated-gated.mp4' },
+      ],
+      signedInRecord: {
+        ...result.post.signedInRecord!,
+        mediaDetails: [
+          {
+            type: 'video' as const,
+            media_url_https: origin + '/generated-gated-poster.png',
+            ext_alt_text: null,
+            video_info: {
+              duration_millis: 1200,
+              variants: [
+                {
+                  content_type: 'video/mp4' as const,
+                  url: origin + '/generated-gated.mp4',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    await storeOriginalMedia(
+      directory,
+      original,
+      new SyndicationClient({ baseUrl: origin }),
+      {
+        videoBytes: 1024 ** 3,
+        runBytes: 20 * 1024 ** 3,
+        used: 0,
+        lastStart: 0,
+        failures: 0,
+      },
+      new AbortController().signal,
+      {
+        ...productionMedia,
+        origin,
+        free: () => Promise.resolve(10 * 1024 ** 3),
+        sleep: () => Promise.resolve(),
+      },
+    );
+    expect(requests).toEqual([
+      '/generated-gated.mp4',
+      '/generated-gated-poster.png',
+    ]);
+    expect(original.media[0]).toMatchObject({
+      status: 'stored',
+      file: '1.mp4',
+      poster: '1-poster.png',
+    });
+    expect(
+      await readFile(join(directory, 'originals', DETAIL_FIXTURE.id, '1.mp4')),
+    ).toEqual(Buffer.from(GATED_MEDIA_FIXTURE.mp4Base64, 'base64'));
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
+});
 
 test('confirmation page loads only its same-origin stylesheet and rejects a second-origin style and connection', async ({
   page,

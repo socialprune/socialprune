@@ -321,3 +321,19 @@ test('only unrendered card and permalink links are removed, and a rendered or un
     'Generated omitted rendered link',
   );
 });
+
+test('a gated focal expects zero shown photos and players even when older media files are stored', () => {
+  const media = [
+    { kind: 'photo', status: 'stored' },
+    { kind: 'video', status: 'stored' },
+    { kind: 'gif', status: 'not-stored' },
+  ];
+  expect(comparison.expectedFocalMediaCounts(media, true)).toEqual({
+    photos: 0,
+    videos: 0,
+  });
+  expect(comparison.expectedFocalMediaCounts(media, false)).toEqual({
+    photos: 1,
+    videos: 2,
+  });
+});

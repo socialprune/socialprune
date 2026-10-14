@@ -80,7 +80,9 @@ export async function fetchOriginals(
       }
       const requested = ids.filter(
         (id) =>
-          !records.has(id) || records.get(id)!.anonymous?.status === 'failed',
+          !records.has(id) ||
+          (records.get(id)!.signedIn === null &&
+            records.get(id)!.anonymous?.status === 'failed'),
       );
       return { references, own, records, ids, requested, queue };
     })
@@ -100,6 +102,7 @@ export async function fetchOriginals(
     videosNotStored: 0,
     videosPlanned: plan.ids
       .flatMap((id) => plan.records.get(id) ?? [])
+      .filter((record) => record.signedIn === null)
       .reduce(
         (sum, record) =>
           sum +
@@ -154,7 +157,10 @@ export async function fetchOriginals(
         continue;
       }
       let original = await store.read((tx) => tx.originals.get(node.id));
-      if (!original || original.anonymous?.status === 'failed') {
+      if (
+        !original ||
+        (original.signedIn === null && original.anonymous?.status === 'failed')
+      ) {
         if (input.limit && data.attempted >= input.limit) continue;
         const delay = last + 1000 - Date.now();
         if (delay > 0)
@@ -191,17 +197,31 @@ export async function fetchOriginals(
       }
       if (!original) continue;
       let mediaFailure: unknown;
-      try {
-        await storeOriginalMedia(
-          input.workspace,
-          original,
-          client,
-          budget,
-          input.signal,
-          deps,
-        );
-      } catch (caught) {
-        mediaFailure = caught;
+      // Anonymous retries cannot replace or edit any signed-in result.
+      if (original.signedIn === null) {
+        try {
+          await storeOriginalMedia(
+            input.workspace,
+            original,
+            client,
+            budget,
+            input.signal,
+            deps,
+          );
+        } catch (caught) {
+          mediaFailure = caught;
+        }
+        await store.write(async (tx) => {
+          await tx.originals.put(original);
+          const meta = await tx.meta.get(),
+            runtime = await tx.runtime.get();
+          await tx.meta.set({
+            ...meta,
+            schemaVersion: 4,
+            updatedAt: input.now().toISOString(),
+          });
+          await tx.runtime.set({ revision: runtime.revision + 1 });
+        });
       }
       data.photosStored += original.media.filter(
         (media) => media.kind === 'photo' && media.status === 'stored',
@@ -215,22 +235,14 @@ export async function fetchOriginals(
       data.videosNotStored += original.media.filter(
         (media) => media.kind !== 'photo' && media.status !== 'stored',
       ).length;
-      await store.write(async (tx) => {
-        await tx.originals.put(original);
-        const meta = await tx.meta.get(),
-          runtime = await tx.runtime.get();
-        await tx.meta.set({
-          ...meta,
-          schemaVersion: 4,
-          updatedAt: input.now().toISOString(),
-        });
-        await tx.runtime.set({ revision: runtime.revision + 1 });
-      });
       if (mediaFailure)
         throw mediaFailure instanceof Error
           ? mediaFailure
           : new CliError('MEDIA_FAILED');
-      failures = original.anonymous?.status === 'failed' ? failures + 1 : 0;
+      failures =
+        original.signedIn === null && original.anonymous?.status === 'failed'
+          ? failures + 1
+          : 0;
       if (failures >= 5) {
         data.stoppedAfterFailures = true;
         break;
@@ -245,7 +257,8 @@ export async function fetchOriginals(
         queue.push({ id: original.quotedId, depth: 0, quoted: true });
       if (
         budget.used >= budget.runBytes ||
-        original.media.some((media) => media.status === 'run-cap')
+        (original.signedIn === null &&
+          original.media.some((media) => media.status === 'run-cap'))
       )
         break;
     }

@@ -61,6 +61,7 @@ export async function storeOriginalMedia(
     }
   };
   for (const entry of original.media) {
+    if (entry.status === 'not-stored' && entry.url === null) continue;
     const data = Array.isArray(details) ? object(details[entry.n - 1]) : {},
       poster =
         typeof data.media_url_https === 'string' ? data.media_url_https : null;

@@ -41,10 +41,33 @@ const ProjectionSchema = z.strictObject({
 export type SignedInPost = Omit<Original, 'anonymous' | 'signedIn'>;
 const string = (value: unknown): string | null =>
   typeof value === 'string' ? value : null;
-function post(input: unknown, id: string): SignedInPost {
+/** Only this known wrapper may omit its inner Tweet's type name. */
+function tweetResult(input: unknown): Record<string, unknown> {
   let value = object(input);
-  if (value.__typename === 'TweetWithVisibilityResults')
+  if (value.__typename === 'TweetWithVisibilityResults') {
     value = object(value.tweet);
+    if (
+      !Object.hasOwn(value, '__typename') &&
+      OriginalIdSchema.safeParse(value.rest_id).success &&
+      value.legacy !== undefined &&
+      value.legacy === object(value.legacy)
+    )
+      return { ...value, __typename: 'Tweet' };
+  }
+  return value;
+}
+function post(
+  input: unknown,
+  id: string,
+  gated: Map<string, number>,
+): SignedInPost {
+  const wrapper = object(input);
+  const visibility = object(wrapper.mediaVisibilityResults);
+  const mediaGated =
+    wrapper.__typename === 'TweetWithVisibilityResults' &&
+    visibility.blurred_image_interstitial !== undefined &&
+    visibility.blurred_image_interstitial !== null;
+  const value = tweetResult(input);
   if (
     value.__typename !== 'Tweet' ||
     value.rest_id !== id ||
@@ -126,6 +149,7 @@ function post(input: unknown, id: string): SignedInPost {
   };
   const date = string(legacy.created_at);
   ProjectionSchema.parse(record);
+  if (mediaGated) gated.set(id, media.length);
   return {
     id,
     text,
@@ -143,7 +167,9 @@ function post(input: unknown, id: string): SignedInPost {
         legacy.truncated !== true)
         ? 'full'
         : 'truncated',
-    media: mediaFromAnswer(record, 'signed-in'),
+    media: mediaFromAnswer(record, 'signed-in').map((entry) =>
+      mediaGated ? { ...entry, status: 'not-stored', url: null } : entry,
+    ),
     quotedId: OriginalIdSchema.safeParse(legacy.quoted_status_id_str).success
       ? String(legacy.quoted_status_id_str)
       : null,
@@ -157,7 +183,10 @@ function post(input: unknown, id: string): SignedInPost {
       : null,
     chainAbove: null,
     raw: null,
-    signedInRecord: SignedInRecordSchema.parse(record),
+    // No gated photo, video variant or poster URL survives for later downloads.
+    signedInRecord: SignedInRecordSchema.parse(
+      mediaGated ? { ...record, mediaDetails: [] } : record,
+    ),
   };
 }
 export function extract(
@@ -173,6 +202,7 @@ export function extract(
       chainAbove: 'complete' | 'partial';
       displayText: string;
       displayLinks: string[];
+      gated: { id: string; mediaItems: number }[];
     }
   | { kind: 'tombstone' | 'unavailable'; reason: string }
   | { kind: 'no-entry' }
@@ -227,9 +257,7 @@ export function extract(
     const add = (id: string, input: unknown, module = false) => {
       if (timeline.some((value) => value.id === id))
         throw new Error('duplicate-entry');
-      let value = object(input);
-      if (value.__typename === 'TweetWithVisibilityResults')
-        value = object(value.tweet);
+      const value = tweetResult(input);
       if (
         !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
           String(value.__typename),
@@ -256,9 +284,7 @@ export function extract(
           )
             continue;
           const result = object(itemContent.tweet_results).result;
-          let tweet = object(result);
-          if (tweet.__typename === 'TweetWithVisibilityResults')
-            tweet = object(tweet.tweet);
+          const tweet = tweetResult(result);
           if (
             !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
               String(tweet.__typename),
@@ -304,10 +330,7 @@ export function extract(
         kind: 'unavailable',
         reason: (string(value.reason) ?? '').slice(0, 64),
       };
-    const unwrapped =
-      value.__typename === 'TweetWithVisibilityResults'
-        ? object(value.tweet)
-        : value;
+    const unwrapped = tweetResult(value);
     if (unwrapped.__typename === 'TweetTombstone')
       return {
         kind: 'tombstone',
@@ -320,7 +343,8 @@ export function extract(
         kind: 'unavailable',
         reason: (string(unwrapped.reason) ?? '').slice(0, 64),
       };
-    const current = post(value, focalId),
+    const gated = new Map<string, number>();
+    const current = post(value, focalId, gated),
       above: SignedInPost[] = [];
     const preceding = timeline.slice(0, focal),
       map = new Map(preceding.map((value) => [value.id, value]));
@@ -331,16 +355,14 @@ export function extract(
       chain.add(parent);
       const value = map.get(parent);
       if (!value) break;
-      let raw = object(value.result);
-      if (raw.__typename === 'TweetWithVisibilityResults')
-        raw = object(raw.tweet);
+      const raw = tweetResult(value.result);
       if (
         value.module &&
         (raw.__typename !== 'Tweet' ||
           Object.keys(object(object(raw.core).user_results)).length === 0)
       )
         break;
-      const read = post(value.result, value.id);
+      const read = post(value.result, value.id, gated);
       above.unshift(read);
       parent = read.parentId;
     }
@@ -352,14 +374,19 @@ export function extract(
         (value) => timeline.find((entry) => entry.id === value.id)?.result,
       ),
     ]) {
-      let entry = object(input);
-      if (entry.__typename === 'TweetWithVisibilityResults')
-        entry = object(entry.tweet);
-      let value = object(object(entry.quoted_status_result).result);
-      if (value.__typename === 'TweetWithVisibilityResults')
-        value = object(value.tweet);
+      const entry = tweetResult(input);
+      const quote = object(entry.quoted_status_result).result;
+      if (quote === undefined) continue;
+      const value = tweetResult(quote);
+      if (
+        !['Tweet', 'TweetTombstone', 'TweetUnavailable'].includes(
+          String(value.__typename),
+        )
+      )
+        throw new Error('result-type');
+      if (value.__typename !== 'Tweet') continue;
       if (value.rest_id !== undefined)
-        quoted.push(post(value, string(value.rest_id) ?? ''));
+        quoted.push(post(quote, string(value.rest_id) ?? '', gated));
     }
     return {
       kind: 'read',
@@ -369,6 +396,7 @@ export function extract(
       above,
       quoted,
       chainAbove: parent ? 'partial' : 'complete',
+      gated: [...gated].map(([id, mediaItems]) => ({ id, mediaItems })),
     };
   } catch (error) {
     return {

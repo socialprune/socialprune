@@ -24,7 +24,12 @@ import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
 import { restrictOrigins } from '../../network.ts';
 import { FillOrderSchema } from './order.ts';
 import type { FillOrder } from './order.ts';
-import { compareFocal, compareNotice, normalizedLength } from './compare.ts';
+import {
+  compareFocal,
+  compareNotice,
+  normalizedLength,
+  expectedFocalMediaCounts,
+} from './compare.ts';
 import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
 import { SQLiteStore } from '../../../workspace/sqlite-store.ts';
@@ -33,6 +38,7 @@ import { planFill, fillSummary } from './plan.ts';
 import type { FillPlan } from './plan.ts';
 import { isPostAnswer, unexpectedAction } from './read.ts';
 import { extract } from './extract.ts';
+import { mergeFillMedia } from './media.ts';
 import { structureReport } from './report.ts';
 import { SyndicationClient } from '../../../originals/syndication.ts';
 import { storeOriginalMedia } from '../../../originals/store-media.ts';
@@ -260,6 +266,7 @@ export async function runFillWithDependencies(
     requests: BrowserRequest[] = [];
   const pendingRequests = new Set<Promise<void>>();
   const canaryCounts: CanaryComparison[] = [];
+  const gatedPosts = new Map<string, number>();
   const abortedHosts: Record<string, number> = {};
   let context: BrowserContext | undefined,
     page: Page | undefined,
@@ -542,9 +549,16 @@ export async function runFillWithDependencies(
           answer.body === null
             ? { kind: 'no-entry' as const }
             : extract(answer.body, row.id, lock);
+        const gated = new Map(
+          extracted.kind === 'read'
+            ? extracted.gated.map(({ id, mediaItems }) => [id, mediaItems])
+            : [],
+        );
+        for (const [id, mediaItems] of gated)
+          gatedPosts.set(id, Math.max(gatedPosts.get(id) ?? 0, mediaItems));
         if (answer.body !== null)
-          reports.push(
-            structureReport(
+          reports.push({
+            ...structureReport(
               answer.body,
               extracted.kind === 'shape-changed'
                 ? extracted.path
@@ -552,7 +566,18 @@ export async function runFillWithDependencies(
                   ? 'no-entry'
                   : undefined,
             ),
-          );
+            ...(gated.size
+              ? {
+                  gated: {
+                    posts: gated.size,
+                    mediaItems: [...gated.values()].reduce(
+                      (sum, count) => sum + count,
+                      0,
+                    ),
+                  },
+                }
+              : {}),
+          });
         if (extracted.kind === 'shape-changed')
           throw new CliError('SHAPE_CHANGED');
         if (extracted.kind === 'no-entry' && answer.state !== 'gone')
@@ -578,29 +603,20 @@ export async function runFillWithDependencies(
             if (
               post.id !== row.id &&
               old?.signedIn?.status === 'read' &&
-              !options.include.has(post.id)
+              !options.include.has(post.id) &&
+              !gated.has(post.id)
             )
               continue;
             const record: Original = {
               ...post,
-              media: post.media.map((media) => {
-                const stored = old?.media.find(
-                  (value) =>
-                    value.n === media.n &&
-                    value.kind === media.kind &&
-                    value.url === media.url &&
-                    value.status === 'stored',
-                );
-                return stored
-                  ? {
-                      ...media,
-                      status: stored.status,
-                      file: stored.file,
-                      poster: stored.poster,
-                      bytes: stored.bytes,
-                    }
-                  : media;
-              }),
+              media: mergeFillMedia(
+                post.media,
+                old?.media ?? [],
+                gated.has(post.id),
+              ),
+              signedInRecord: gated.has(post.id)
+                ? { ...post.signedInRecord!, mediaDetails: [] }
+                : post.signedInRecord,
               anonymous: old?.anonymous ?? null,
               raw: old?.raw ?? null,
               signedIn: {
@@ -613,14 +629,15 @@ export async function runFillWithDependencies(
               chainAbove: post.id === row.id ? extracted.chainAbove : null,
             };
             try {
-              await storeOriginalMedia(
-                options.workspace,
-                record,
-                deps.syndication,
-                budget,
-                mediaSignal,
-                deps.media,
-              );
+              if (!gated.has(post.id))
+                await storeOriginalMedia(
+                  options.workspace,
+                  record,
+                  deps.syndication,
+                  budget,
+                  mediaSignal,
+                  deps.media,
+                );
             } catch (caught) {
               mediaFailure = caught;
             }
@@ -669,6 +686,7 @@ export async function runFillWithDependencies(
                     stored,
                     extracted.displayText,
                     extracted.displayLinks,
+                    gated.has(row.id),
                   )
                 : await compareNotice(
                     page,
@@ -684,12 +702,10 @@ export async function runFillWithDependencies(
                     ? extracted.displayText
                     : (stored?.text ?? ''),
                 ),
-                photos:
-                  stored?.media.filter((media) => media.kind === 'photo')
-                    .length ?? 0,
-                videos:
-                  stored?.media.filter((media) => media.kind !== 'photo')
-                    .length ?? 0,
+                ...expectedFocalMediaCounts(
+                  stored?.media ?? [],
+                  gated.has(row.id),
+                ),
               },
               shown: { textLength: 0, photos: 0, videos: 0 },
               matches: false,
@@ -762,7 +778,23 @@ export async function runFillWithDependencies(
               : 'error';
   } finally {
     let reportPath: string | null = null;
-    if (began && (options.plan.canary || run.endReason === 'shape-changed')) {
+    if (gatedPosts.size) {
+      const gated = {
+        posts: gatedPosts.size,
+        mediaItems: [...gatedPosts.values()].reduce(
+          (sum, count) => sum + count,
+          0,
+        ),
+      };
+      reports.push({ gated });
+      options.notice(`Gated media: ${JSON.stringify(gated)}\n`);
+    }
+    if (
+      began &&
+      (options.plan.canary ||
+        run.endReason === 'shape-changed' ||
+        gatedPosts.size)
+    ) {
       try {
         const directory = await originalDirectory(
           options.workspace,

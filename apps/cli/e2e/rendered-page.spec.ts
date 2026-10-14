@@ -11,6 +11,9 @@ import {
   ownPhotoAnswer,
   ownPhotoMarkup,
   OWN_PHOTO_FIXTURE,
+  gatedMediaAnswer,
+  gatedMediaMarkup,
+  GATED_MEDIA_FIXTURE,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -260,6 +263,73 @@ test('two focal own photos inside role-link anchors are counted while quoted pho
     shown: { photos: OWN_PHOTO_FIXTURE.photos },
   });
 });
+for (const [label, exposed] of [
+  ['overlay-only', ''],
+  [
+    'video-player',
+    '<div data-testid="videoPlayer"><video preload="none"></video></div>',
+  ],
+  ['bare-video', '<video preload="none"></video>'],
+  [
+    'own-photo',
+    '<a role="link" href="/generated/status/910/photo/1"><div data-testid="tweetPhoto"></div></a>',
+  ],
+] as const)
+  test(`gated focal ${label} comparison expects zero own media without reading an overlay label`, async ({
+    page,
+  }) => {
+    await page.route('**/*', (route) => route.abort());
+    const result = extract(gatedMediaAnswer('910'), '910', {
+      instruction: null,
+    });
+    if (result.kind !== 'read')
+      throw new Error('Generated gated focal was not read.');
+    const original = { ...result.post, anonymous: null, signedIn: null };
+    // Earlier stored media does not become evidence of media shown through the gate.
+    original.media[0] = {
+      ...original.media[0]!,
+      status: 'stored',
+      file: '1.mp4',
+      bytes: 12,
+    };
+    const markup = gatedMediaMarkup('910').replace(
+      GATED_MEDIA_FIXTURE.overlay,
+      'Generated unrelated-language label',
+    );
+    await page.setContent(markup.replace('</article>', exposed + '</article>'));
+    const compared = await compareFocal(
+      page,
+      original,
+      result.displayText,
+      result.displayLinks,
+      true,
+    );
+    expect(compared).toMatchObject({
+      stored: {
+        textLength: GATED_MEDIA_FIXTURE.text.length,
+        photos: 0,
+        videos: 0,
+      },
+      matches: label === 'overlay-only',
+    });
+    expect(compared.shown.photos).toBe(label === 'own-photo' ? 1 : 0);
+    expect(compared.shown.videos).toBe(
+      label === 'video-player' || label === 'bare-video' ? 1 : 0,
+    );
+    if (label === 'video-player' || label === 'bare-video')
+      expect(
+        (
+          await compareFocal(
+            page,
+            original,
+            result.displayText,
+            result.displayLinks,
+          )
+        ).matches,
+      ).toBe(true);
+    expect(await page.getByRole('button').count()).toBe(1);
+  });
+
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({
   page,
 }) => {

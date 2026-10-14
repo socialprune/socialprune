@@ -401,3 +401,227 @@ test('shape-failure report tokens reject decoy values and map projection errors 
     failure: 'no-entry',
   });
 });
+
+function visibilityPost(id = DETAIL_FIXTURE.id, gated = false) {
+  const tweet = detailPost(id);
+  delete (tweet as Partial<typeof tweet>).__typename;
+  tweet.legacy.extended_entities.media = [
+    ...DETAIL_FIXTURE.media,
+    {
+      type: 'photo',
+      media_url_https: 'https://pbs.twimg.com/generated-gated-photo.jpg',
+    },
+    { ...DETAIL_FIXTURE.media[0], type: 'animated_gif' },
+  ] as never[];
+  return {
+    __typename: 'TweetWithVisibilityResults',
+    tweet,
+    mediaVisibilityResults: gated
+      ? {
+          blurred_image_interstitial: {
+            interstitial_action: 'AgeVerificationPrompt',
+            opacity: 0.5,
+            title: { text: 'Generated title', entities: [], rtl: false },
+            text: { text: 'Generated overlay', entities: [], rtl: false },
+          },
+        }
+      : {},
+  };
+}
+
+test.each([
+  'direct',
+  'module',
+  'parent',
+  'module-parent',
+  'quote',
+  'parent-quote',
+])(
+  'visibility wrapper with an untyped inner Tweet extracts in %s and retains its media gate',
+  (location) => {
+    const focal = detailPost();
+    const wrapped = visibilityPost(
+      location === 'direct' || location === 'module'
+        ? DETAIL_FIXTURE.id
+        : '901',
+      true,
+    );
+    const body = detailAnswer(location === 'direct' ? wrapped : focal);
+    const entries =
+      body.data.threaded_conversation_with_injections_v2.instructions[0]!
+        .entries;
+    if (location === 'module') {
+      entries[0] = {
+        entryId: 'conversationthread-generated',
+        content: {
+          items: [
+            {
+              entryId: 'tweet-910',
+              item: { itemContent: { tweet_results: { result: wrapped } } },
+            },
+          ],
+        },
+      } as never;
+    } else if (location === 'parent' || location === 'module-parent') {
+      Object.assign(focal.legacy, { in_reply_to_status_id_str: '901' });
+      entries.unshift(
+        (location === 'parent'
+          ? {
+              entryId: 'tweet-901',
+              content: { itemContent: { tweet_results: { result: wrapped } } },
+            }
+          : {
+              entryId: 'conversationthread-generated',
+              content: {
+                items: [
+                  {
+                    entryId: 'tweet-901',
+                    item: {
+                      itemContent: { tweet_results: { result: wrapped } },
+                    },
+                  },
+                ],
+              },
+            }) as never,
+      );
+    } else if (location === 'quote') {
+      Object.assign(focal, { quoted_status_result: { result: wrapped } });
+      Object.assign(focal.legacy, { quoted_status_id_str: '901' });
+    } else if (location === 'parent-quote') {
+      const parent = detailPost('902');
+      Object.assign(parent, { quoted_status_result: { result: wrapped } });
+      Object.assign(parent.legacy, { quoted_status_id_str: '901' });
+      Object.assign(focal.legacy, { in_reply_to_status_id_str: '902' });
+      entries.unshift({
+        entryId: 'tweet-902',
+        content: { itemContent: { tweet_results: { result: parent } } },
+      });
+    }
+    const result = extract(body, DETAIL_FIXTURE.id, { instruction: null });
+    expect(result.kind).toBe('read');
+    if (result.kind !== 'read')
+      throw new Error('Generated visibility post was not read.');
+    const projected = [...result.above, ...result.quoted, result.post].find(
+      (post) => post.id === wrapped.tweet.rest_id,
+    )!;
+    expect(projected.text).toBe(DETAIL_FIXTURE.text);
+    expect(
+      projected.media.map(({ kind, status, url, file, poster }) => ({
+        kind,
+        status,
+        url,
+        file,
+        poster,
+      })),
+    ).toEqual(
+      ['video', 'photo', 'gif'].map((kind) => ({
+        kind,
+        status: 'not-stored',
+        url: null,
+        file: null,
+        poster: null,
+      })),
+    );
+    expect(projected.signedInRecord?.mediaDetails).toEqual([]);
+    expect(Reflect.get(result, 'gated')).toEqual([
+      { id: wrapped.tweet.rest_id, mediaItems: 3 },
+    ]);
+    expect(JSON.stringify(projected)).not.toContain('AgeVerificationPrompt');
+    expect(JSON.stringify(projected)).not.toContain('Generated overlay');
+    expect(JSON.stringify(projected)).not.toContain('https://video.twimg.com/');
+    expect(JSON.stringify(projected)).not.toContain('https://pbs.twimg.com/');
+  },
+);
+
+test('an ungated visibility wrapper with an untyped inner Tweet retains downloadable media', () => {
+  const result = extract(detailAnswer(visibilityPost()), DETAIL_FIXTURE.id, {
+    instruction: null,
+  });
+  expect(result.kind).toBe('read');
+  if (result.kind !== 'read')
+    throw new Error('Generated visibility post was not read.');
+  expect(result.post.media[0]?.url).toBe(
+    DETAIL_FIXTURE.media[0]!.video_info.variants[1]!.url,
+  );
+  expect(result.post.signedInRecord?.mediaDetails).toHaveLength(3);
+  expect(Reflect.get(result, 'gated')).toEqual([]);
+});
+
+test.each([
+  'bare-untyped',
+  'missing-rest-id',
+  'missing-legacy',
+  'unknown-inner',
+  'unknown-wrapper',
+])('untyped visibility admission still fails closed for %s', (defect) => {
+  const wrapped = visibilityPost();
+  if (defect === 'missing-rest-id')
+    delete (wrapped.tweet as Partial<typeof wrapped.tweet>).rest_id;
+  if (defect === 'missing-legacy')
+    delete (wrapped.tweet as Partial<typeof wrapped.tweet>).legacy;
+  if (defect === 'unknown-inner')
+    Object.assign(wrapped.tweet, { __typename: 'GeneratedUnknownTweet' });
+  if (defect === 'unknown-wrapper')
+    wrapped.__typename = 'GeneratedUnknownWrapper';
+  expect(
+    extract(
+      detailAnswer(defect === 'bare-untyped' ? wrapped.tweet : wrapped),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    ).kind,
+  ).toBe('shape-changed');
+});
+
+test.each(['GeneratedDifferentAction', null, {}, false])(
+  'every non-null interstitial gates media without matching an action or overlay label: %j',
+  (interstitial) => {
+    const wrapped = visibilityPost(DETAIL_FIXTURE.id, true);
+    Object.assign(wrapped.mediaVisibilityResults, {
+      blurred_image_interstitial: { interstitial_action: interstitial },
+    });
+    Object.assign(wrapped.tweet, { __typename: 'Tweet' });
+    const result = extract(detailAnswer(wrapped), DETAIL_FIXTURE.id, {
+      instruction: null,
+    });
+    expect(result.kind).toBe('read');
+    if (result.kind !== 'read')
+      throw new Error('Generated gated post was not read.');
+    expect(result.gated).toEqual([{ id: DETAIL_FIXTURE.id, mediaItems: 3 }]);
+    expect(
+      result.post.media.every(
+        (entry) => entry.status === 'not-stored' && entry.url === null,
+      ),
+    ).toBe(true);
+    expect(result.post.signedInRecord?.mediaDetails).toEqual([]);
+  },
+);
+
+test.each(['parent', 'quote', 'parent-quote'])(
+  'an unknown inner result type still stops in %s',
+  (location) => {
+    const focal = detailPost();
+    const wrapper = visibilityPost('901');
+    Object.assign(wrapper.tweet, { __typename: 'GeneratedUnknownTweet' });
+    const parent = detailPost('902');
+    if (location === 'parent') {
+      Object.assign(focal.legacy, { in_reply_to_status_id_str: '901' });
+    } else {
+      const owner = location === 'quote' ? focal : parent;
+      Object.assign(owner, { quoted_status_result: { result: wrapper } });
+      Object.assign(owner.legacy, { quoted_status_id_str: '901' });
+      if (location === 'parent-quote')
+        Object.assign(focal.legacy, { in_reply_to_status_id_str: '902' });
+    }
+    const answer = detailAnswer(
+      focal,
+      location === 'parent'
+        ? [{ ...wrapper, rest_id: '901' }]
+        : location === 'parent-quote'
+          ? [parent]
+          : [],
+    );
+    expect(extract(answer, DETAIL_FIXTURE.id, { instruction: null }).kind).toBe(
+      'shape-changed',
+    );
+  },
+);

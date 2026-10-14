@@ -156,6 +156,157 @@ test('image-alt reconciliation removes each observed sequence once in order and 
   ).toBe(false);
 });
 
+test('two focal text bases remain exact, prefer innerText and report lengths for the chosen basis', () => {
+  const compare = comparison.compareDisplayTextBases;
+  expect(
+    compare(
+      'Generated@mentiontail',
+      'Generated @mention tail',
+      'Generated@mentiontail',
+      [],
+      [],
+    ),
+  ).toMatchObject({
+    matches: true,
+    textBasis: 'textContent',
+    storedLength: 21,
+    shownLength: 21,
+    text: {
+      storedPlainLength: 21,
+      shownInnerTextLength: 23,
+      shownTextContentLength: 21,
+    },
+  });
+  expect(
+    compare(
+      'Generated same text',
+      'Generated same text',
+      'Generated same text',
+      [],
+      [],
+    ),
+  ).toMatchObject({ matches: true, textBasis: 'innerText' });
+  expect(
+    compare(
+      'Generated visible text',
+      'Generated visible text',
+      'Generated hidden prefix visible text',
+      [],
+      [],
+    ),
+  ).toMatchObject({
+    matches: true,
+    textBasis: 'innerText',
+    storedLength: 22,
+    shownLength: 22,
+  });
+  expect(
+    compare(
+      'Generated different A',
+      'Generated different B',
+      'Generated different C',
+      [],
+      [],
+    ),
+  ).toMatchObject({ matches: false, textBasis: 'none' });
+  expect(
+    compare(
+      'Generated missing tail',
+      'Generated tail',
+      'Generated tail',
+      [],
+      [],
+    ),
+  ).toMatchObject({
+    matches: false,
+    textBasis: 'none',
+    storedLength: 22,
+    shownLength: 14,
+  });
+  expect(
+    compare(
+      'Generatedmissingtail',
+      'Generated missing tail',
+      'Generated missing tail',
+      [],
+      [],
+    ),
+  ).toMatchObject({ matches: false, textBasis: 'none' });
+});
+
+test('t.co anchor substitutions use each basis own label including hidden prefix spans and never admit a missing stored link', () => {
+  const url = 'https://t.co/generatedLayout';
+  const links = [
+    { href: url, innerText: 'example.org', textContent: 'https://example.org' },
+  ];
+  const compare = comparison.compareDisplayTextBases;
+  expect(
+    compare(
+      'Generated' + url + 'tail',
+      'Generated example.org tail',
+      'Generatedhttps://example.orgtail',
+      links,
+      [],
+    ),
+  ).toMatchObject({
+    matches: true,
+    textBasis: 'textContent',
+    storedLength: 'Generatedhttps://example.orgtail'.length,
+    shownLength: 'Generatedhttps://example.orgtail'.length,
+    text: {
+      shownInnerTextLength: 'Generated example.org tail'.length,
+      shownTextContentLength: 'Generatedhttps://example.orgtail'.length,
+    },
+  });
+  expect(
+    compare(
+      'Generatedtail',
+      'Generated example.org tail',
+      'Generatedhttps://example.orgtail',
+      links,
+      [],
+    ),
+  ).toMatchObject({ matches: false, textBasis: 'none' });
+  expect(
+    compare(
+      'Generated' + url + 'tail',
+      'Generatedhttps://example.orgtail',
+      'Generated example.org tail',
+      links,
+      [],
+    ),
+  ).toMatchObject({ matches: false, textBasis: 'none' });
+});
+
+test('both text bases reconcile image alts in the same order without admitting wrong or repeated images', () => {
+  const compare = comparison.compareDisplayTextBases;
+  expect(
+    compare(
+      'Generated@mention😀tail',
+      'Generated @mention tail',
+      'Generated@mentiontail',
+      [],
+      ['😀'],
+    ),
+  ).toMatchObject({
+    matches: true,
+    textBasis: 'textContent',
+    storedLength: 23,
+    shownLength: 23,
+    text: { imageAltUnits: 2, matchedImageAlts: 1 },
+  });
+  for (const alts of [['🐈'], ['😀', '😀'], [null]])
+    expect(
+      compare(
+        'Generated@mention😀tail',
+        'Generated @mention tail',
+        'Generated@mentiontail',
+        [],
+        alts,
+      ).textBasis,
+    ).toBe('none');
+});
+
 test('generated 76-unit legacy answer compares its 52-unit display slice with 50-unit innerText plus one two-unit image emoji', () => {
   const innerText = 'Generated photo caption with a cheerful last word ';
   const full = innerText + '😀 https://t.co/generatedx';

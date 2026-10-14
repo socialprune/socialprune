@@ -12,7 +12,8 @@ export interface CanaryComparison {
   stored: CanaryCounts;
   shown: CanaryCounts;
   matches: boolean;
-  text?: DisplayTextComparison['text'];
+  text?: DisplayTextComparison['text'] & { shownTextContentLength?: number };
+  textBasis?: 'innerText' | 'textContent' | 'none';
 }
 
 /** Same one-pass decoder as adapter-x's internal tweet parser; no HTML parsing. */
@@ -175,6 +176,53 @@ export function compareDisplayText(
       imageAltUnits,
       matchedImageAlts,
       imageSpacingUnits: imageContribution - imageAltUnits,
+    },
+  };
+}
+
+/** Each exact basis uses only its own anchor labels, never a mixed projection. */
+export function compareDisplayTextBases(
+  displayText: string,
+  innerText: string,
+  textContent: string,
+  links: readonly { href: string; innerText: string; textContent: string }[],
+  alts: readonly (string | null)[],
+  displayLinks: readonly string[] = [],
+): DisplayTextComparison & {
+  textBasis: NonNullable<CanaryComparison['textBasis']>;
+  text: DisplayTextComparison['text'] & { shownTextContentLength: number };
+} {
+  const plain = removeUnrenderedDisplayLinks(
+    displayText,
+    displayLinks,
+    links.map((link) => link.href),
+  );
+  const storedFor = (basis: 'innerText' | 'textContent') => {
+    let stored = plain;
+    for (const link of links)
+      if (/^https:\/\/t\.co\/[A-Za-z0-9]+$/.test(link.href) && link[basis])
+        stored = stored.replaceAll(link.href, link[basis]);
+    return stored;
+  };
+  const inner = compareDisplayText(storedFor('innerText'), innerText, alts);
+  const content = compareDisplayText(
+    storedFor('textContent'),
+    textContent,
+    alts,
+  );
+  const textBasis = inner.matches
+    ? 'innerText'
+    : content.matches
+      ? 'textContent'
+      : 'none';
+  const chosen = textBasis === 'textContent' ? content : inner;
+  return {
+    ...chosen,
+    textBasis,
+    text: {
+      ...chosen.text,
+      shownInnerTextLength: inner.text.shownInnerTextLength,
+      shownTextContentLength: content.text.shownInnerTextLength,
     },
   };
 }
@@ -387,28 +435,38 @@ export async function compareFocal(
   );
   const textCount = await text.count();
   const shownText = textCount === 1 ? await text.innerText() : '';
-  const links: { href: string; visible: string }[] = [];
+  const shownContent =
+    textCount === 1 ? ((await text.textContent()) ?? '') : '';
+  const links: { href: string; innerText: string; textContent: string }[] = [];
   if (textCount === 1)
     for (const link of await text.locator('a[href]').all()) {
       const href = await link.getAttribute('href');
-      if (href) links.push({ href, visible: await link.innerText() });
+      if (href)
+        links.push({
+          href,
+          innerText: await link.innerText(),
+          textContent: (await link.textContent()) ?? '',
+        });
     }
-  let storedText = removeUnrenderedDisplayLinks(
+  const storedText = removeUnrenderedDisplayLinks(
     displayText,
     displayLinks,
     links.map((link) => link.href),
   );
   // Compare exactly after whitespace and known rendered link substitutions.
   // Never allow a general length tolerance: a missing long-text tail must fail.
-  for (const { href, visible } of links) {
-    if (href && /^https:\/\/t\.co\/[A-Za-z0-9]+$/.test(href) && visible)
-      storedText = storedText.replaceAll(href, visible);
-  }
   const alts: (string | null)[] = [];
   if (textCount === 1)
     for (const image of await text.locator('img').all())
       alts.push(await image.getAttribute('alt'));
-  const textComparison = compareDisplayText(storedText, shownText, alts);
+  const textComparison = compareDisplayTextBases(
+    displayText,
+    shownText,
+    shownContent,
+    links,
+    alts,
+    displayLinks,
+  );
   const stored = {
     textLength: textComparison.storedLength,
     ...expectedMedia,
@@ -422,6 +480,7 @@ export async function compareFocal(
     stored,
     shown,
     text: textComparison.text,
+    textBasis: textComparison.textBasis,
     matches:
       render.settled &&
       (textCount === 1 ||

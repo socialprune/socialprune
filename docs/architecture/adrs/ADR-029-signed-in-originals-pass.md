@@ -300,6 +300,8 @@ On 2026-10-14 X showed a protected account's post, signed in, as a text notice i
 
 On 2026-10-14 X listed a reply in a conversation module without its content, so the projector skips such an empty item outside the focal post and still stops on every other unknown shape.
 
+On 2026-10-14 X's layout made innerText add spaces around a mention inside a post, so the comparison also accepts an exact match of the focal text's textContent.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

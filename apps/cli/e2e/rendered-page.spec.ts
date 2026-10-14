@@ -20,6 +20,10 @@ import {
   gatedLatePlayerMarkup,
   protectedNoticeMarkup,
   protectedNoticeText,
+  textContentMarkup,
+  textContentAnswer,
+  textContentStoredText,
+  TEXT_CONTENT_FIXTURE,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -436,6 +440,61 @@ for (const [status, en, de] of [
       await page.setContent(`<div role="article">${text}</div>`);
       expect((await compareNotice(page, status)).matches).toBe(false);
     }
+  });
+
+for (const kind of [
+  'mention',
+  'missing-word',
+  'hidden-link',
+  'missing-link',
+] as const)
+  test(`exact focal textContent ${kind} handles mention layout without admitting absent words or links`, async ({
+    page,
+  }) => {
+    await page.route('**/*', (route) => route.abort());
+    await page.setContent(textContentMarkup('910', kind));
+    const text = page.getByTestId('tweetText');
+    const normalize = (value: string | null) =>
+      (value ?? '').replace(/\s+/gu, ' ').trim();
+    const inner = normalize(await text.innerText());
+    const content = normalize(await text.textContent());
+    const fixture = TEXT_CONTENT_FIXTURE;
+    const hasLink = kind === 'hidden-link' || kind === 'missing-link';
+    const plain =
+      fixture.prefix +
+      fixture.mention +
+      (hasLink ? fixture.linkHiddenPrefix + fixture.linkVisibleText : '') +
+      fixture.suffix;
+    expect(content).toBe(normalize(plain));
+    expect(inner).not.toBe(content);
+    if (!hasLink) expect(inner.length).toBe(content.length + 2);
+    if (hasLink) {
+      const link = text.locator(`a[href="${fixture.linkUrl}"]`);
+      expect(await link.innerText()).toBe(fixture.linkVisibleText);
+      expect(await link.textContent()).toBe(
+        fixture.linkHiddenPrefix + fixture.linkVisibleText,
+      );
+    }
+    const result = extract(textContentAnswer('910', kind), '910', {
+      instruction: null,
+    });
+    if (result.kind !== 'read')
+      throw new Error('Generated layout note was not read.');
+    const compared = await compareFocal(
+      page,
+      { ...result.post, anonymous: null, signedIn: null },
+      result.displayText,
+      result.displayLinks,
+    );
+    expect(compared.matches).toBe(kind === 'mention' || kind === 'hidden-link');
+    expect(Reflect.get(compared, 'textBasis')).toBe(
+      kind === 'mention' || kind === 'hidden-link' ? 'textContent' : 'none',
+    );
+    if (compared.matches) {
+      expect(compared.stored.textLength).toBe(content.length);
+      expect(compared.shown.textLength).toBe(content.length);
+    }
+    expect(JSON.stringify(compared)).not.toContain(textContentStoredText(kind));
   });
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({

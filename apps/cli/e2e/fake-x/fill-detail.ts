@@ -693,3 +693,60 @@ export function moduleItemIdsAnswer(focalId = DETAIL_FIXTURE.id) {
     },
   };
 }
+
+export const TEXT_CONTENT_FIXTURE = {
+  prefix:
+    'Generated note text before the mention. '.repeat(12) +
+    'Generated required word',
+  mention: '@generated_mention',
+  suffix: 'final note tail.',
+  linkUrl: 'https://t.co/generatedLayoutLink',
+  linkHiddenPrefix: 'https://',
+  linkVisibleText: 'example.org/generated',
+};
+
+export type TextContentKind =
+  'mention' | 'missing-word' | 'hidden-link' | 'missing-link';
+export function textContentStoredText(kind: TextContentKind): string {
+  const { prefix, mention, suffix, linkUrl } = TEXT_CONTENT_FIXTURE;
+  if (kind === 'hidden-link' || kind === 'missing-link')
+    return prefix + mention + (kind === 'hidden-link' ? linkUrl : '') + suffix;
+  return (
+    (kind === 'missing-word' ? prefix.replace('required ', '') : prefix) +
+    mention +
+    suffix
+  );
+}
+
+export function textContentAnswer(focalId: string, kind: TextContentKind) {
+  return detailAnswer({
+    ...detailPost(focalId),
+    note_tweet: {
+      note_tweet_results: { result: { text: textContentStoredText(kind) } },
+    },
+    legacy: {
+      ...detailPost(focalId).legacy,
+      extended_entities: {
+        media: [
+          {
+            type: 'photo',
+            media_url_https: 'https://pbs.twimg.com/generated-photo.png',
+          },
+        ],
+      },
+    },
+  });
+}
+
+export function textContentMarkup(
+  focalId: string,
+  kind: TextContentKind,
+): string {
+  const fixture = TEXT_CONTENT_FIXTURE;
+  const mention = `<div style="display:inline-flex"><span><a href="/generated_mention">${fixture.mention}</a></span></div>`;
+  const link =
+    kind === 'hidden-link' || kind === 'missing-link'
+      ? `<a href="${fixture.linkUrl}"><span style="display:none">${fixture.linkHiddenPrefix}</span>${fixture.linkVisibleText}</a>`
+      : '';
+  return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><div data-testid="tweetText">${fixture.prefix}${mention}${link}${fixture.suffix}</div><a role="link" href="/generated/status/${focalId}/photo/1"><div data-testid="tweetPhoto"><img src="/generated-photo.png" alt="Generated note photo"></div></a></article>`;
+}

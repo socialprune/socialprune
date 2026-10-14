@@ -13,6 +13,8 @@ import {
   EMPTY_RESULTS_FIXTURE,
   moduleItemIdsAnswer,
   MODULE_ITEM_IDS_FIXTURE,
+  noticeParentAnswer,
+  NOTICE_PARENT_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
@@ -375,11 +377,18 @@ test('shape-failure report tokens reject decoy values and map projection errors 
   const decoy = 'Generated secret @private_decoy 12345678901234567890';
   expect(failureToken('module-result-type')).toBe('module-result-type');
   expect(failureToken('no-entry')).toBe('no-entry');
+  expect(failureToken('rest_id')).toBe('rest_id');
+  expect(failureToken('module-rest_id')).toBe('module-rest_id');
+  expect(failureToken('MEDIA_ORIGIN')).toBe('media-origin');
   for (const value of [
     decoy,
     new Error(decoy),
     'REST_ID',
-    'rest_id',
+    'rest_id123',
+    'MEDIA_ORIGIN_extra',
+    'generatedUppercase',
+    '-leading-hyphen',
+    '_leading_underscore',
     'x'.repeat(41),
     '',
     null,
@@ -406,6 +415,124 @@ test('shape-failure report tokens reject decoy values and map projection errors 
   expect(structureReport(detailAnswer(), 'no-entry')).toMatchObject({
     failure: 'no-entry',
   });
+  expect(structureReport(detailAnswer(), 'rest_id')).toMatchObject({
+    failure: 'rest_id',
+  });
+  expect(structureReport(detailAnswer(), 'MEDIA_ORIGIN')).toMatchObject({
+    failure: 'media-origin',
+  });
+});
+
+test.each(['direct', 'module'] as const)(
+  'a %s tombstone parent ends the actual chain as partial, without projecting or storing the notice',
+  (kind) => {
+    const result = extract(
+      noticeParentAnswer(DETAIL_FIXTURE.id, kind),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    );
+    expect(result).toMatchObject({
+      kind: 'read',
+      post: {
+        id: DETAIL_FIXTURE.id,
+        text: NOTICE_PARENT_FIXTURE.focalText,
+        parentId: NOTICE_PARENT_FIXTURE.parentId,
+      },
+      chainAbove: 'partial',
+      noticeParents: 1,
+    });
+    if (result.kind !== 'read')
+      throw new Error('Generated notice-parent focal was not read.');
+    expect(result.above).toEqual([]);
+    expect(result.quoted).toEqual([]);
+    for (const text of [
+      NOTICE_PARENT_FIXTURE.text,
+      NOTICE_PARENT_FIXTURE.linkUrl,
+    ])
+      expect(JSON.stringify(result)).not.toContain(text);
+  },
+);
+
+test.each([
+  ['direct', false, true],
+  ['module', false, true],
+  ['direct', true, false],
+  ['module', true, false],
+  ['direct', true, true],
+  ['module', true, true],
+] as const)(
+  'notice-parent wrappers and unavailable results end the %s chain: unavailable=%s wrapped=%s',
+  (kind, unavailable, wrapped) => {
+    const result = extract(
+      noticeParentAnswer(DETAIL_FIXTURE.id, kind, unavailable, wrapped, true),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    );
+    expect(result).toMatchObject({
+      kind: 'read',
+      chainAbove: 'partial',
+      noticeParents: 1,
+    });
+    if (result.kind !== 'read')
+      throw new Error('Generated notice-parent focal was not read.');
+    expect(result.above.map((post) => post.id)).toEqual([
+      NOTICE_PARENT_FIXTURE.nearerId,
+    ]);
+    expect(result.above[0]?.parentId).toBe(NOTICE_PARENT_FIXTURE.parentId);
+  },
+);
+
+test.each(['unknown-direct', 'unknown-module'] as const)(
+  'an unknown parent still stops in %s',
+  (kind) => {
+    expect(
+      extract(noticeParentAnswer(DETAIL_FIXTURE.id, kind), DETAIL_FIXTURE.id, {
+        instruction: null,
+      }),
+    ).toEqual({
+      kind: 'shape-changed',
+      path: kind === 'unknown-direct' ? 'result-type' : 'module-result-type',
+    });
+  },
+);
+
+test('only a reached notice parent is counted; unlinked notices and complete or missing chains omit noticeParents', () => {
+  const body = noticeParentAnswer(DETAIL_FIXTURE.id);
+  const entries =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!.entries;
+  const focal = entries.at(-1)!;
+  if (!('itemContent' in focal.content))
+    throw new Error('Generated focal entry is absent.');
+  const tweet = focal.content.itemContent.tweet_results.result as ReturnType<
+    typeof detailPost
+  >;
+  for (const parent of [null, '999']) {
+    Object.assign(tweet.legacy, { in_reply_to_status_id_str: parent });
+    const result = extract(body, DETAIL_FIXTURE.id, { instruction: null });
+    expect(result).toMatchObject({
+      kind: 'read',
+      chainAbove: parent === null ? 'complete' : 'partial',
+    });
+    expect(Object.hasOwn(result, 'noticeParents')).toBe(false);
+  }
+});
+
+test('internal underscore and media-origin failures survive extraction without leaking decoy values', () => {
+  const missing = detailPost();
+  delete (missing as Partial<typeof missing>).rest_id;
+  expect(
+    extract(detailAnswer(missing), DETAIL_FIXTURE.id, { instruction: null }),
+  ).toEqual({ kind: 'shape-changed', path: 'rest_id' });
+  const media = detailPost();
+  media.legacy.extended_entities.media = [
+    {
+      ...DETAIL_FIXTURE.media[0],
+      media_url_https: 'https://example.org/generated-foreign.jpg',
+    },
+  ] as never[];
+  expect(
+    extract(detailAnswer(media), DETAIL_FIXTURE.id, { instruction: null }),
+  ).toEqual({ kind: 'shape-changed', path: 'media-origin' });
 });
 
 test.each(['module', 'entry'] as const)(

@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 export function failureToken(value: unknown): string {
   if (value instanceof z.ZodError) return 'projection';
-  return typeof value === 'string' && /^[a-z-]{1,40}$/.test(value)
+  if (value === 'MEDIA_ORIGIN') return 'media-origin';
+  return typeof value === 'string' && /^[a-z][a-z_-]{0,39}$/.test(value)
     ? value
     : 'other';
 }

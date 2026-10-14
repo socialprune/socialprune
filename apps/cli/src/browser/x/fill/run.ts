@@ -570,6 +570,9 @@ export async function runFillWithDependencies(
             ...('emptyResults' in extracted && extracted.emptyResults
               ? { emptyResults: extracted.emptyResults }
               : {}),
+            ...('noticeParents' in extracted && extracted.noticeParents
+              ? { noticeParents: extracted.noticeParents }
+              : {}),
             ...(gated.size
               ? {
                   gated: {

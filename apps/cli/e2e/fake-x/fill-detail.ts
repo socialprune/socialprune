@@ -837,3 +837,106 @@ export function textContentMarkup(
       : '';
   return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><div data-testid="tweetText">${fixture.prefix}${mention}${link}${fixture.suffix}</div><a role="link" href="/generated/status/${focalId}/photo/1"><div data-testid="tweetPhoto"><img src="/generated-photo.png" alt="Generated note photo"></div></a></article>`;
 }
+
+export const NOTICE_PARENT_FIXTURE = {
+  parentId: '901',
+  nearerId: '902',
+  text: 'Generierter Hinweis. Dieses Konto begrenzt, wer diesen Beitrag sehen kann. Mehr erfahren',
+  focalText: 'Generated reply below a parent notice.',
+  linkText: 'Mehr erfahren',
+  linkUrl: 'https://help.x.com/generated-notice',
+};
+export type NoticeParentKind =
+  'direct' | 'module' | 'unknown-direct' | 'unknown-module';
+
+export function noticeParentAnswer(
+  focalId: string,
+  kind: NoticeParentKind = 'direct',
+  unavailable = false,
+  wrapped = false,
+  nearer = false,
+) {
+  const fixture = NOTICE_PARENT_FIXTURE;
+  const result = kind.startsWith('unknown-')
+    ? { __typename: 'GeneratedUnknownParent' }
+    : unavailable
+      ? {
+          __typename: 'TweetUnavailable',
+          reason: 'Generated unavailable parent',
+        }
+      : {
+          __typename: 'TweetTombstone',
+          tombstone: {
+            __typename: 'TextTombstone',
+            text: {
+              text: fixture.text,
+              rtl: false,
+              entities: [
+                {
+                  fromIndex: fixture.text.indexOf(fixture.linkText),
+                  toIndex: fixture.text.length,
+                  ref: {
+                    type: 'TimelineUrl',
+                    url: fixture.linkUrl,
+                    urlType: 'ExternalUrl',
+                  },
+                },
+              ],
+            },
+          },
+        };
+  const parent = wrapped
+    ? { __typename: 'TweetWithVisibilityResults', tweet: result }
+    : result;
+  const focal = detailPost(focalId);
+  Object.assign(focal.legacy, {
+    in_reply_to_status_id_str: nearer ? fixture.nearerId : fixture.parentId,
+  });
+  Object.assign(focal, {
+    note_tweet: { note_tweet_results: { result: { text: fixture.focalText } } },
+  });
+  const entry = (id: string, value: unknown) => ({
+    entryId: `tweet-${id}`,
+    content: { itemContent: { tweet_results: { result: value } } },
+  });
+  const readableParent = detailPost(fixture.nearerId);
+  Object.assign(readableParent.legacy, {
+    in_reply_to_status_id_str: fixture.parentId,
+  });
+  const parents = [
+    entry(fixture.parentId, parent),
+    ...(nearer ? [entry(fixture.nearerId, readableParent)] : []),
+  ];
+  const entries = kind.endsWith('module')
+    ? [
+        {
+          entryId: `conversationthread-${fixture.parentId}`,
+          content: {
+            entryType: 'TimelineTimelineModule',
+            displayType: 'VerticalConversation',
+            items: parents.map((value) => ({
+              entryId: `conversationthread-${fixture.parentId}-${value.entryId}`,
+              item: { itemContent: value.content.itemContent },
+            })),
+          },
+        },
+      ]
+    : parents;
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [...entries, entry(focalId, focal)],
+          },
+        ],
+      },
+    },
+  };
+}
+
+export function noticeParentMarkup(focalId: string): string {
+  const fixture = NOTICE_PARENT_FIXTURE;
+  return `<div data-testid="cellInnerDiv"><div role="article"><span>${fixture.text.slice(0, -fixture.linkText.length)}</span><a href="/generated-learn-more">${fixture.linkText}</a></div></div><div data-testid="cellInnerDiv"><article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><p data-testid="tweetText">${fixture.focalText}</p></article></div>`;
+}

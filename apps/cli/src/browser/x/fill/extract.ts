@@ -219,6 +219,7 @@ export function extract(
       displayLinks: string[];
       gated: { id: string; mediaItems: number }[];
       emptyResults: number;
+      noticeParents?: number;
     }
   | { kind: 'tombstone' | 'unavailable'; reason: string; emptyResults?: number }
   | { kind: 'no-entry'; emptyResults?: number }
@@ -388,6 +389,7 @@ export function extract(
     const preceding = timeline.slice(0, focal),
       map = new Map(preceding.map((value) => [value.id, value]));
     let parent = current.parentId;
+    let noticeParents = 0;
     const chain = new Set([focalId]);
     while (parent && above.length < 20) {
       if (chain.has(parent)) throw new Error('parent-cycle');
@@ -395,6 +397,13 @@ export function extract(
       const value = map.get(parent);
       if (!value) break;
       const raw = tweetResult(value.result);
+      if (
+        raw.__typename === 'TweetTombstone' ||
+        raw.__typename === 'TweetUnavailable'
+      ) {
+        noticeParents++;
+        break;
+      }
       if (
         value.module &&
         (raw.__typename !== 'Tweet' ||
@@ -437,6 +446,7 @@ export function extract(
       chainAbove: parent ? 'partial' : 'complete',
       gated: [...gated].map(([id, mediaItems]) => ({ id, mediaItems })),
       emptyResults,
+      ...(noticeParents ? { noticeParents } : {}),
     };
   } catch (error) {
     return {

@@ -57,6 +57,9 @@ import {
   noticeAlignmentAnswer,
   noticeAlignmentMarkup,
   NOTICE_ALIGNMENT_FIXTURE,
+  noticeParentAnswer,
+  noticeParentMarkup,
+  NOTICE_PARENT_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -135,6 +138,12 @@ for (const variant of [
   'order-notice-wrong-parent',
   'order-notice-missing-candidate',
   'order-notice-unavailable-parent',
+  'order-parent-notice-direct',
+  'order-parent-notice-module',
+  'order-parent-notice-unavailable-direct',
+  'order-parent-notice-unavailable-module',
+  'order-parent-unknown-direct',
+  'order-parent-unknown-module',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -364,48 +373,60 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = variant.startsWith('order-notice-')
-          ? noticeAlignmentAnswer(id, noticeKind)
-          : variant.startsWith('order-textcontent-')
-            ? textContentAnswer(id, textContentKind)
-            : variant === 'order-module-item-ids'
-              ? moduleItemIdsAnswer(id)
-              : variant === 'order-empty-results'
-                ? emptyResultsAnswer(id)
-                : variant.startsWith('order-protected-')
-                  ? protectedNoticeAnswer(
-                      id,
-                      variant === 'order-protected-en' ? 'en' : 'de',
-                      variant === 'order-protected-long-tail' ||
-                        variant === 'order-protected-long-match',
-                    )
-                  : variant.startsWith('order-visibility-')
-                    ? gatedMediaAnswer(
+        const answer = variant.startsWith('order-parent-')
+          ? noticeParentAnswer(
+              id,
+              variant === 'order-parent-unknown-direct'
+                ? 'unknown-direct'
+                : variant === 'order-parent-unknown-module'
+                  ? 'unknown-module'
+                  : variant.endsWith('module')
+                    ? 'module'
+                    : 'direct',
+              variant.includes('-unavailable-'),
+            )
+          : variant.startsWith('order-notice-')
+            ? noticeAlignmentAnswer(id, noticeKind)
+            : variant.startsWith('order-textcontent-')
+              ? textContentAnswer(id, textContentKind)
+              : variant === 'order-module-item-ids'
+                ? moduleItemIdsAnswer(id)
+                : variant === 'order-empty-results'
+                  ? emptyResultsAnswer(id)
+                  : variant.startsWith('order-protected-')
+                    ? protectedNoticeAnswer(
                         id,
-                        variant === 'order-visibility-family',
+                        variant === 'order-protected-en' ? 'en' : 'de',
+                        variant === 'order-protected-long-tail' ||
+                          variant === 'order-protected-long-match',
                       )
-                    : variant.startsWith('order-note-')
-                      ? notePhotoAnswer(id)
-                      : variant === 'order-own-photos'
-                        ? ownPhotoAnswer(id)
-                        : variant.startsWith('order-card-')
-                          ? cardComparisonAnswer(id, cardKind)
-                          : variant.startsWith('order-display-')
-                            ? displayComparisonAnswer(
-                                id,
-                                variant === 'order-display-alt-mismatch'
-                                  ? 'alt'
-                                  : variant === 'order-display-tail-mismatch'
-                                    ? 'tail'
-                                    : 'none',
-                              )
-                            : variant === 'module-cursor' ||
-                                variant === 'unknown-module'
-                              ? moduleCursorAnswer(
+                    : variant.startsWith('order-visibility-')
+                      ? gatedMediaAnswer(
+                          id,
+                          variant === 'order-visibility-family',
+                        )
+                      : variant.startsWith('order-note-')
+                        ? notePhotoAnswer(id)
+                        : variant === 'order-own-photos'
+                          ? ownPhotoAnswer(id)
+                          : variant.startsWith('order-card-')
+                            ? cardComparisonAnswer(id, cardKind)
+                            : variant.startsWith('order-display-')
+                              ? displayComparisonAnswer(
                                   id,
-                                  variant === 'unknown-module',
+                                  variant === 'order-display-alt-mismatch'
+                                    ? 'alt'
+                                    : variant === 'order-display-tail-mismatch'
+                                      ? 'tail'
+                                      : 'none',
                                 )
-                              : detailAnswer(post);
+                              : variant === 'module-cursor' ||
+                                  variant === 'unknown-module'
+                                ? moduleCursorAnswer(
+                                    id,
+                                    variant === 'unknown-module',
+                                  )
+                                : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -432,44 +453,46 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup = variant.startsWith('order-notice-')
-        ? noticeAlignmentMarkup(noticeKind)
-        : variant.startsWith('order-textcontent-')
-          ? textContentMarkup(pathname!.split('/').at(-1)!, textContentKind)
-          : variant.startsWith('order-protected-')
-            ? protectedNoticeMarkup(
-                variant === 'order-protected-en' ? 'en' : 'de',
-                variant === 'order-protected-different'
-                  ? 'different'
-                  : variant === 'order-protected-duplicate'
-                    ? 'duplicate'
-                    : variant === 'order-protected-missing'
-                      ? 'missing'
-                      : variant === 'order-protected-long-tail'
-                        ? 'long-tail'
-                        : variant === 'order-protected-long-match'
-                          ? 'long-match'
-                          : variant === 'order-protected-missing-link'
-                            ? 'missing-link'
-                            : 'match',
-              )
-            : variant === 'order-visibility-late-player'
-              ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-              : variant.startsWith('order-note-')
-                ? notePhotoMarkup(
-                    pathname!.split('/').at(-1)!,
-                    variant === 'order-note-delayed-photo'
-                      ? 'delayed-photo'
-                      : variant === 'order-note-missing-photo'
-                        ? 'missing-photo'
-                        : 'delayed-text',
-                  )
-                : variant.startsWith('order-visibility-')
-                  ? gatedMediaMarkup(
+      const visibilityMarkup = variant.startsWith('order-parent-')
+        ? noticeParentMarkup(pathname!.split('/').at(-1)!)
+        : variant.startsWith('order-notice-')
+          ? noticeAlignmentMarkup(noticeKind)
+          : variant.startsWith('order-textcontent-')
+            ? textContentMarkup(pathname!.split('/').at(-1)!, textContentKind)
+            : variant.startsWith('order-protected-')
+              ? protectedNoticeMarkup(
+                  variant === 'order-protected-en' ? 'en' : 'de',
+                  variant === 'order-protected-different'
+                    ? 'different'
+                    : variant === 'order-protected-duplicate'
+                      ? 'duplicate'
+                      : variant === 'order-protected-missing'
+                        ? 'missing'
+                        : variant === 'order-protected-long-tail'
+                          ? 'long-tail'
+                          : variant === 'order-protected-long-match'
+                            ? 'long-match'
+                            : variant === 'order-protected-missing-link'
+                              ? 'missing-link'
+                              : 'match',
+                )
+              : variant === 'order-visibility-late-player'
+                ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+                : variant.startsWith('order-note-')
+                  ? notePhotoMarkup(
                       pathname!.split('/').at(-1)!,
-                      variant === 'order-visibility-exposed',
+                      variant === 'order-note-delayed-photo'
+                        ? 'delayed-photo'
+                        : variant === 'order-note-missing-photo'
+                          ? 'missing-photo'
+                          : 'delayed-text',
                     )
-                  : null;
+                  : variant.startsWith('order-visibility-')
+                    ? gatedMediaMarkup(
+                        pathname!.split('/').at(-1)!,
+                        variant === 'order-visibility-exposed',
+                      )
+                    : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -755,6 +778,7 @@ for (const variant of [
           variant === 'order-notice-identical-parent' ||
           variant === 'order-notice-normal-parent-reply' ||
           variant === 'order-notice-unavailable-parent' ||
+          variant.startsWith('order-parent-notice-') ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -865,14 +889,98 @@ for (const variant of [
               'Die Statusseite konnte den Endzustand nicht anzeigen',
             );
         } else {
-          expect(outcome).toMatchObject({ code: 'CANARY_MISMATCH' });
+          expect(outcome).toMatchObject({
+            code: variant.startsWith('order-parent-unknown-')
+              ? 'SHAPE_CHANGED'
+              : 'CANARY_MISMATCH',
+          });
           expect(
             (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
           ).toBeNull();
-          expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
-            endReason: 'error',
-            displayEndReason: 'canary-mismatch',
-          });
+          expect((await store.browserJournal()).runs.at(-1)).toMatchObject(
+            variant.startsWith('order-parent-unknown-')
+              ? { endReason: 'shape-changed' }
+              : { endReason: 'error', displayEndReason: 'canary-mismatch' },
+          );
+        }
+        if (variant.startsWith('order-parent-')) {
+          const known = variant.startsWith('order-parent-notice-');
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          if (known) {
+            expect(original).toMatchObject({
+              text: NOTICE_PARENT_FIXTURE.focalText,
+              parentId: NOTICE_PARENT_FIXTURE.parentId,
+              chainAbove: 'partial',
+              signedIn: { status: 'read' },
+            });
+            expect(
+              await store.read((tx) =>
+                tx.originals.get(NOTICE_PARENT_FIXTURE.parentId),
+              ),
+            ).toBeUndefined();
+          } else expect(original?.signedIn?.status).not.toBe('read');
+          const journal = await store.browserJournal();
+          const run = journal.runs.at(-1)!;
+          if (known)
+            expect(run).toMatchObject({
+              canaryCounts: [
+                {
+                  stored: {
+                    textLength: NOTICE_PARENT_FIXTURE.focalText.length,
+                    photos: 0,
+                    videos: 0,
+                  },
+                  shown: {
+                    textLength: NOTICE_PARENT_FIXTURE.focalText.length,
+                    photos: 0,
+                    videos: 0,
+                  },
+                  textBasis: 'innerText',
+                  matches: true,
+                },
+              ],
+            });
+          const report = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          const parsed = JSON.parse(report) as Record<string, unknown>[];
+          if (known)
+            expect(parsed).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({ noticeParents: 1 }),
+              ]),
+            );
+          else {
+            expect(parsed).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  failure: variant.endsWith('module')
+                    ? 'module-result-type'
+                    : 'result-type',
+                }),
+              ]),
+            );
+            expect(
+              parsed.every((entry) => !Object.hasOwn(entry, 'noticeParents')),
+            ).toBe(true);
+          }
+          for (const text of [
+            NOTICE_PARENT_FIXTURE.text,
+            NOTICE_PARENT_FIXTURE.focalText,
+            NOTICE_PARENT_FIXTURE.parentId,
+            DETAIL_FIXTURE.id,
+          ])
+            expect(report).not.toContain(text);
+          for (const text of [
+            NOTICE_PARENT_FIXTURE.text,
+            NOTICE_PARENT_FIXTURE.focalText,
+          ]) {
+            expect(JSON.stringify(journal)).not.toContain(text);
+            expect(notices.join('')).not.toContain(text);
+          }
         }
         if (variant.startsWith('order-notice-')) {
           const original = await store.read((tx) =>
@@ -1082,6 +1190,9 @@ for (const variant of [
           expect(report.length).toBeGreaterThan(0);
           expect(
             report.every((entry) => !Object.hasOwn(entry, 'emptyResults')),
+          ).toBe(true);
+          expect(
+            report.every((entry) => !Object.hasOwn(entry, 'noticeParents')),
           ).toBe(true);
         }
         if (variant.startsWith('order-protected-')) {
@@ -1407,7 +1518,7 @@ for (const variant of [
           ) as { failure?: string }[];
           expect(report[0]?.failure).toBe(
             variant === 'missing-id'
-              ? 'other'
+              ? 'rest_id'
               : variant === 'unknown-module'
                 ? 'module-result-type'
                 : 'no-entry',

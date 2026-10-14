@@ -337,3 +337,114 @@ test('a gated focal expects zero shown photos and players even when older media 
     videos: 2,
   });
 });
+
+test.each([
+  {
+    name: 'delayed photo',
+    expected: { text: 1, photos: 1, videos: 0 },
+    states: [
+      [0, 1, 0, 0],
+      [1500, 1, 1, 0],
+    ],
+    end: 2500,
+    settled: true,
+  },
+  {
+    name: 'delayed text',
+    expected: { text: 1, photos: 1, videos: 0 },
+    states: [
+      [0, 0, 1, 0],
+      [1500, 1, 1, 0],
+    ],
+    end: 2500,
+    settled: true,
+  },
+  {
+    name: 'missing photo',
+    expected: { text: 1, photos: 1, videos: 0 },
+    states: [[0, 1, 0, 0]],
+    end: 10000,
+    settled: false,
+  },
+  {
+    name: 'late gated player',
+    expected: { text: 1, photos: 0, videos: 0 },
+    states: [
+      [0, 1, 0, 0],
+      [1500, 1, 0, 1],
+    ],
+    end: 10000,
+    settled: false,
+  },
+  {
+    name: 'stable zero media',
+    expected: { text: 1, photos: 0, videos: 0 },
+    states: [[0, 1, 0, 0]],
+    end: 2000,
+    settled: true,
+  },
+  {
+    name: 'media change resets settle',
+    expected: { text: 1, photos: 1, videos: 0 },
+    states: [
+      [0, 1, 1, 0],
+      [1500, 1, 0, 0],
+      [2100, 1, 1, 0],
+    ],
+    end: 3100,
+    settled: true,
+  },
+  {
+    name: 'equal counts too near deadline',
+    expected: { text: 1, photos: 1, videos: 0 },
+    states: [
+      [0, 1, 0, 0],
+      [9500, 1, 1, 0],
+    ],
+    end: 10000,
+    settled: false,
+  },
+])(
+  'bounded focal count wait: $name',
+  async ({ expected, states, end, settled }) => {
+    let now = 0;
+    const read = async () => {
+      const state = states.findLast((state) => state[0]! <= now)!;
+      return Promise.resolve({
+        text: state[1]!,
+        photos: state[2]!,
+        videos: state[3]!,
+      });
+    };
+    const result = await comparison.waitForFocalCounts(read, expected, {
+      now: () => now,
+      sleep: async (ms: number) => {
+        now += ms;
+        await Promise.resolve();
+      },
+    });
+    expect(now).toBe(end);
+    expect(result.settled).toBe(settled);
+    expect(result.counts).toEqual(await read());
+  },
+);
+
+test('a locator count read returning after the fixed deadline cannot accept even unchanged expected counts', async () => {
+  let now = 0;
+  const counts = { text: 1, photos: 1, videos: 0 };
+  const result = await comparison.waitForFocalCounts(
+    async () => {
+      if (now >= 100) now = 10_001;
+      return Promise.resolve(counts);
+    },
+    counts,
+    {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+        await Promise.resolve();
+      },
+    },
+  );
+  expect(result).toEqual({ counts, settled: false });
+});

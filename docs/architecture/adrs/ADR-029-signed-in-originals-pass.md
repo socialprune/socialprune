@@ -294,6 +294,8 @@ Real pages on 2026-10-13 showed how X renders a post, and the comparison follows
 
 The additional audit is CLI-local: an additive `browser_order_audit` table linked to the run records `startedBy: 'agent-on-order'`, `orderSha256`, automatic acceptance and count-only comparisons. On a mismatch it records `displayEndReason: 'canary-mismatch'`, while the shared v4 run keeps its existing `error` end reason. Core schemas and portable backups are unchanged; the order audit does not travel in them. This boundary is explicit rather than adding fields that a backup would silently discard.
 
+On 2026-10-14 X rendered a note tweet's photo after its text, so the comparison reads focal locators for up to 10 seconds, observes at least two seconds even for zero expected media and requires the expected text and media counts to remain unchanged for one second before comparing them.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

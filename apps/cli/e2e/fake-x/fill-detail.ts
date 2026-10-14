@@ -396,3 +396,44 @@ export function gatedMediaAnswer(focalId: string, family = false) {
 export function gatedMediaMarkup(focalId: string, exposed = false): string {
   return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><p data-testid="tweetText">${GATED_MEDIA_FIXTURE.text}</p><div><div role="button" onclick="fetch('/generated-reveal',{method:'POST'})">${GATED_MEDIA_FIXTURE.overlay}</div></div>${exposed ? '<div data-testid="videoPlayer"><video preload="none"></video></div>' : ''}</article>`;
 }
+
+export const NOTE_RENDER_FIXTURE = {
+  text: 'Generated note text with a photo below this paragraph. '
+    .repeat(9)
+    .trim(),
+  delayMs: 1500,
+  photoUrl: 'https://pbs.twimg.com/generated-photo.png',
+};
+
+export function notePhotoAnswer(focalId: string) {
+  return detailAnswer({
+    ...detailPost(focalId),
+    note_tweet: {
+      note_tweet_results: { result: { text: NOTE_RENDER_FIXTURE.text } },
+    },
+    legacy: {
+      ...detailPost(focalId).legacy,
+      extended_entities: {
+        media: [
+          { type: 'photo', media_url_https: NOTE_RENDER_FIXTURE.photoUrl },
+        ],
+      },
+    },
+  });
+}
+
+export function notePhotoMarkup(
+  focalId: string,
+  kind: 'delayed-photo' | 'missing-photo' | 'delayed-text',
+): string {
+  const text = `<p data-testid="tweetText">${NOTE_RENDER_FIXTURE.text}</p>`;
+  const photo = `<a role="link" href="/generated/status/${focalId}/photo/1"><div data-testid="tweetPhoto"><img src="/generated-photo.png" alt="Generated note photo"></div></a>`;
+  return `<article data-testid="tweet"><a href="/generated/status/${focalId}"><time>2026</time></a><div id="generated-note-text">${kind === 'delayed-text' ? '' : text}</div><div id="generated-note-media">${kind === 'delayed-text' ? photo : ''}</div></article>${kind === 'missing-photo' ? '' : `<script>setTimeout(()=>document.getElementById('${kind === 'delayed-text' ? 'generated-note-text' : 'generated-note-media'}').innerHTML=${JSON.stringify(kind === 'delayed-text' ? text : photo)},${NOTE_RENDER_FIXTURE.delayMs})</script>`}`;
+}
+
+export function gatedLatePlayerMarkup(focalId: string): string {
+  return (
+    gatedMediaMarkup(focalId) +
+    `<script>setTimeout(()=>document.querySelector('article[data-testid="tweet"]').insertAdjacentHTML('beforeend','<div data-testid="videoPlayer"><video preload="none"></video></div>'),${NOTE_RENDER_FIXTURE.delayMs})</script>`
+  );
+}

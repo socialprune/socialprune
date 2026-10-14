@@ -39,6 +39,10 @@ import {
   gatedMediaAnswer,
   gatedMediaMarkup,
   GATED_MEDIA_FIXTURE,
+  notePhotoAnswer,
+  notePhotoMarkup,
+  NOTE_RENDER_FIXTURE,
+  gatedLatePlayerMarkup,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -92,6 +96,10 @@ for (const variant of [
   'order-visibility-stored',
   'order-visibility-family',
   'order-visibility-full',
+  'order-note-delayed-photo',
+  'order-note-missing-photo',
+  'order-note-delayed-text',
+  'order-visibility-late-player',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -301,22 +309,24 @@ for (const variant of [
                   : 'link';
         const answer = variant.startsWith('order-visibility-')
           ? gatedMediaAnswer(id, variant === 'order-visibility-family')
-          : variant === 'order-own-photos'
-            ? ownPhotoAnswer(id)
-            : variant.startsWith('order-card-')
-              ? cardComparisonAnswer(id, cardKind)
-              : variant.startsWith('order-display-')
-                ? displayComparisonAnswer(
-                    id,
-                    variant === 'order-display-alt-mismatch'
-                      ? 'alt'
-                      : variant === 'order-display-tail-mismatch'
-                        ? 'tail'
-                        : 'none',
-                  )
-                : variant === 'module-cursor' || variant === 'unknown-module'
-                  ? moduleCursorAnswer(id, variant === 'unknown-module')
-                  : detailAnswer(post);
+          : variant.startsWith('order-note-')
+            ? notePhotoAnswer(id)
+            : variant === 'order-own-photos'
+              ? ownPhotoAnswer(id)
+              : variant.startsWith('order-card-')
+                ? cardComparisonAnswer(id, cardKind)
+                : variant.startsWith('order-display-')
+                  ? displayComparisonAnswer(
+                      id,
+                      variant === 'order-display-alt-mismatch'
+                        ? 'alt'
+                        : variant === 'order-display-tail-mismatch'
+                          ? 'tail'
+                          : 'none',
+                    )
+                  : variant === 'module-cursor' || variant === 'unknown-module'
+                    ? moduleCursorAnswer(id, variant === 'unknown-module')
+                    : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -343,12 +353,24 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup = variant.startsWith('order-visibility-')
-        ? gatedMediaMarkup(
-            pathname!.split('/').at(-1)!,
-            variant === 'order-visibility-exposed',
-          )
-        : null;
+      const visibilityMarkup =
+        variant === 'order-visibility-late-player'
+          ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+          : variant.startsWith('order-note-')
+            ? notePhotoMarkup(
+                pathname!.split('/').at(-1)!,
+                variant === 'order-note-delayed-photo'
+                  ? 'delayed-photo'
+                  : variant === 'order-note-missing-photo'
+                    ? 'missing-photo'
+                    : 'delayed-text',
+              )
+            : variant.startsWith('order-visibility-')
+              ? gatedMediaMarkup(
+                  pathname!.split('/').at(-1)!,
+                  variant === 'order-visibility-exposed',
+                )
+              : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -620,8 +642,11 @@ for (const variant of [
           variant === 'order-card-rendered-link' ||
           variant === 'order-card-full-match' ||
           variant === 'order-own-photos' ||
+          variant === 'order-note-delayed-photo' ||
+          variant === 'order-note-delayed-text' ||
           (variant.startsWith('order-visibility-') &&
-            variant !== 'order-visibility-exposed')
+            variant !== 'order-visibility-exposed' &&
+            variant !== 'order-visibility-late-player')
         ) {
           expect(
             outcome,
@@ -738,6 +763,33 @@ for (const variant of [
             displayEndReason: 'canary-mismatch',
           });
         }
+        if (variant.startsWith('order-note-')) {
+          const original = await store.read((tx) =>
+            tx.originals.get(DETAIL_FIXTURE.id),
+          );
+          expect(original?.text).toBe(NOTE_RENDER_FIXTURE.text);
+          expect(original?.media[0]).toMatchObject({
+            kind: 'photo',
+            status: 'stored',
+          });
+          expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
+            canaryCounts: [
+              {
+                stored: {
+                  textLength: NOTE_RENDER_FIXTURE.text.length,
+                  photos: 1,
+                  videos: 0,
+                },
+                shown: {
+                  textLength: NOTE_RENDER_FIXTURE.text.length,
+                  photos: variant === 'order-note-missing-photo' ? 0 : 1,
+                  videos: 0,
+                },
+                matches: variant !== 'order-note-missing-photo',
+              },
+            ],
+          });
+        }
         if (variant.startsWith('order-visibility-')) {
           const run = (await store.browserJournal()).runs.at(-1)!;
           const ids = [
@@ -781,9 +833,15 @@ for (const variant of [
                   shown: {
                     textLength: GATED_MEDIA_FIXTURE.text.length,
                     photos: 0,
-                    videos: variant === 'order-visibility-exposed' ? 1 : 0,
+                    videos:
+                      variant === 'order-visibility-exposed' ||
+                      variant === 'order-visibility-late-player'
+                        ? 1
+                        : 0,
                   },
-                  matches: variant !== 'order-visibility-exposed',
+                  matches:
+                    variant !== 'order-visibility-exposed' &&
+                    variant !== 'order-visibility-late-player',
                 },
               ],
             });

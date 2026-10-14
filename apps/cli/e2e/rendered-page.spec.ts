@@ -14,6 +14,10 @@ import {
   gatedMediaAnswer,
   gatedMediaMarkup,
   GATED_MEDIA_FIXTURE,
+  notePhotoAnswer,
+  notePhotoMarkup,
+  NOTE_RENDER_FIXTURE,
+  gatedLatePlayerMarkup,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -329,6 +333,59 @@ for (const [label, exposed] of [
       ).toBe(true);
     expect(await page.getByRole('button').count()).toBe(1);
   });
+
+for (const kind of ['delayed-photo', 'missing-photo', 'delayed-text'] as const)
+  test(`focal render wait for generated note ${kind} never accepts missing media`, async ({
+    page,
+  }) => {
+    await page.route('**/*', (route) => route.abort());
+    const result = extract(notePhotoAnswer('910'), '910', {
+      instruction: null,
+    });
+    if (result.kind !== 'read') throw new Error('Generated note was not read.');
+    await page.setContent(notePhotoMarkup('910', kind));
+    const compared = await compareFocal(
+      page,
+      { ...result.post, anonymous: null, signedIn: null },
+      result.displayText,
+      result.displayLinks,
+    );
+    expect(compared).toMatchObject({
+      stored: {
+        textLength: NOTE_RENDER_FIXTURE.text.length,
+        photos: 1,
+        videos: 0,
+      },
+      shown: {
+        textLength: NOTE_RENDER_FIXTURE.text.length,
+        photos: kind === 'missing-photo' ? 0 : 1,
+        videos: 0,
+      },
+      matches: kind !== 'missing-photo',
+    });
+  });
+
+test('focal render wait catches a gated player added 1.5 seconds after the shown text', async ({
+  page,
+}) => {
+  const result = extract(gatedMediaAnswer('910'), '910', { instruction: null });
+  if (result.kind !== 'read')
+    throw new Error('Generated gated post was not read.');
+  await page.setContent(gatedLatePlayerMarkup('910'));
+  expect(
+    await compareFocal(
+      page,
+      { ...result.post, anonymous: null, signedIn: null },
+      result.displayText,
+      result.displayLinks,
+      true,
+    ),
+  ).toMatchObject({
+    stored: { photos: 0, videos: 0 },
+    shown: { photos: 0, videos: 1 },
+    matches: false,
+  });
+});
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({
   page,

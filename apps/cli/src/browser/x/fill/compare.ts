@@ -2,6 +2,7 @@ import type { Page } from 'playwright-core';
 import { object } from '@socialprune/core';
 import type { Original } from '@socialprune/core';
 import { xSelectors } from '../selectors.ts';
+import { setTimeout as sleep } from 'node:timers/promises';
 export interface CanaryCounts {
   textLength: number;
   photos: number;
@@ -212,6 +213,60 @@ export function expectedFocalMediaCounts(
     videos: gated ? 0 : media.filter((entry) => entry.kind !== 'photo').length,
   };
 }
+
+export const FOCAL_RENDER_WAIT = Object.freeze({
+  deadlineMs: 10_000,
+  settleMs: 1_000,
+  minimumMs: 2_000,
+  pollMs: 100,
+});
+interface FocalRenderCounts {
+  text: number;
+  photos: number;
+  videos: number;
+}
+interface RenderClock {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+/** Repeated locator reads only; fixed timing is injectable only for unit proof. */
+export async function waitForFocalCounts(
+  read: () => Promise<FocalRenderCounts>,
+  expected: { text?: number; photos: number; videos: number },
+  clock: RenderClock = {
+    now: () => performance.now(),
+    sleep: async (ms) => {
+      await sleep(ms);
+    },
+  },
+): Promise<{ counts: FocalRenderCounts; settled: boolean }> {
+  const started = clock.now();
+  const deadline = started + FOCAL_RENDER_WAIT.deadlineMs;
+  let previous: string | undefined;
+  let unchangedSince = started;
+  for (;;) {
+    const counts = await read();
+    const now = clock.now();
+    const signature = JSON.stringify(counts);
+    if (signature !== previous) {
+      previous = signature;
+      unchangedSince = now;
+    }
+    if (now > deadline) return { counts, settled: false };
+    const equal =
+      (expected.text === undefined || counts.text === expected.text) &&
+      counts.photos === expected.photos &&
+      counts.videos === expected.videos;
+    if (
+      equal &&
+      now - started >= FOCAL_RENDER_WAIT.minimumMs &&
+      now - unchangedSince >= FOCAL_RENDER_WAIT.settleMs
+    )
+      return { counts, settled: true };
+    if (now >= deadline) return { counts, settled: false };
+    await clock.sleep(Math.min(FOCAL_RENDER_WAIT.pollMs, deadline - now));
+  }
+}
 export async function compareFocal(
   page: Page,
   original: Original,
@@ -227,8 +282,29 @@ export async function compareFocal(
         `${selector}:not(article[data-testid="tweet"] div[role="link"] ${selector})`,
       ),
     );
-  const text = own('[data-testid="tweetText"]'),
-    textCount = await text.count();
+  const text = own('[data-testid="tweetText"]');
+  const photos = own('[data-testid="tweetPhoto"]').filter({
+    hasNot: page.locator('video,[data-testid="videoPlayer"]'),
+  });
+  const players = own('[data-testid="videoPlayer"]');
+  const videos = own('video');
+  const expectedMedia = expectedFocalMediaCounts(original.media, mediaGated);
+  const render = await waitForFocalCounts(
+    async () => ({
+      text: await text.count(),
+      photos: await photos.count(),
+      videos: (await players.count()) || (await videos.count()),
+    }),
+    {
+      ...expectedMedia,
+      ...(normalizedLength(
+        removeUnrenderedDisplayLinks(displayText, displayLinks, []),
+      ) > 0
+        ? { text: 1 }
+        : {}),
+    },
+  );
+  const textCount = await text.count();
   const shownText = textCount === 1 ? await text.innerText() : '';
   const links: { href: string; visible: string }[] = [];
   if (textCount === 1)
@@ -252,13 +328,9 @@ export async function compareFocal(
     for (const image of await text.locator('img').all())
       alts.push(await image.getAttribute('alt'));
   const textComparison = compareDisplayText(storedText, shownText, alts);
-  const photos = own('[data-testid="tweetPhoto"]').filter({
-      hasNot: page.locator('video,[data-testid="videoPlayer"]'),
-    }),
-    players = own('[data-testid="videoPlayer"]');
   const stored = {
     textLength: textComparison.storedLength,
-    ...expectedFocalMediaCounts(original.media, mediaGated),
+    ...expectedMedia,
   };
   const shown = {
     textLength: textComparison.shownLength,
@@ -270,6 +342,7 @@ export async function compareFocal(
     shown,
     text: textComparison.text,
     matches:
+      render.settled &&
       (textCount === 1 ||
         (textCount === 0 && normalizedLength(storedText) === 0)) &&
       original.textCompleteness === 'full' &&

@@ -56,6 +56,11 @@ test('CLI dry run preserves database bytes, emits counts only; invalid orders an
       data: { planHash: string; planned: number };
     };
     expect(result.data.planned).toBe(1);
+    expect(JSON.parse(dry.stdout)).toMatchObject({
+      data: {
+        pace: { secondsPerStep: 30, stepsPerDay: 200, batchPause: true },
+      },
+    });
     for (const value of [
       fixture.items[0]!.text,
       fixture.items[0]!.account.handle!,
@@ -69,6 +74,38 @@ test('CLI dry run preserves database bytes, emits counts only; invalid orders an
     ).toBe(before);
     expect(await readdir(directory)).toEqual(['socialprune.sqlite']);
     const order = join(directory, 'order.json');
+    await writeFile(
+      order,
+      JSON.stringify({
+        scope: 'context-instagram',
+        account: fixture.items[0]!.account.handle,
+        givenAt: '2026-10-15T12:00:00.000Z',
+        words: 'Preview this exact generated pace.',
+        secondsPerStep: 10,
+        stepsPerDay: 600,
+        batchPause: false,
+        maxSteps: 600,
+      }),
+    );
+    const preview = await invoke([
+      '--dry-run',
+      '--order',
+      order,
+      '--plan',
+      result.data.planHash,
+      '--limit',
+      '600',
+      '--json',
+    ]);
+    expect(preview.code).toBe(0);
+    expect(JSON.parse(preview.stdout)).toMatchObject({
+      data: {
+        canary: true,
+        pace: { secondsPerStep: 30, stepsPerDay: 600, batchPause: false },
+      },
+    });
+    expect(browser.validate).not.toHaveBeenCalled();
+    expect(browser.run).not.toHaveBeenCalled();
     for (const [value, error] of [
       [
         {
@@ -80,6 +117,26 @@ test('CLI dry run preserves database bytes, emits counts only; invalid orders an
         'CANARY_REQUIRED',
       ],
       [{ scope: 'delete-x' }, 'CONTEXT_ORDER_INVALID'],
+      [
+        {
+          scope: 'context-instagram',
+          account: fixture.items[0]!.account.handle,
+          givenAt: '2026-10-15T12:00:00.000Z',
+          words: 'Generated scope.',
+          secondsPerStep: 9,
+        },
+        'CONTEXT_ORDER_INVALID',
+      ],
+      [
+        {
+          scope: 'context-instagram',
+          account: fixture.items[0]!.account.handle,
+          givenAt: '2026-10-15T12:00:00.000Z',
+          words: 'Generated scope.',
+          stepsPerDay: 601,
+        },
+        'CONTEXT_ORDER_INVALID',
+      ],
     ] as const) {
       await writeFile(order, JSON.stringify(value));
       const failed = await invoke([
@@ -100,6 +157,7 @@ test('CLI dry run preserves database bytes, emits counts only; invalid orders an
       '--interval-ms=1',
       '--headless',
       '--response-timeout-ms=1',
+      '--limit=601',
     ])
       expect((await invoke(['--dry-run', '--json', flag])).stdout).toContain(
         'INVALID_ARGUMENTS',

@@ -23,6 +23,7 @@ import type { PostProjection, ConfirmationResult } from './selectors.ts';
 import { ContextStop } from './report.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
+import type { ReadyKind } from './signals.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -39,6 +40,7 @@ export interface ContextDependencies {
   launch(profile: string, executable: string): Promise<BrowserContext>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   capture?: typeof capturePost;
+  navigated?(kind: ReadyKind, elapsedMs: number): void;
   close(context: BrowserContext, automatic: boolean): Promise<void>;
 }
 export const productionContext: ContextDependencies = {
@@ -134,6 +136,7 @@ export async function loadList(
   oldest = false,
   now = new Date(),
 ) {
+  const navigationStart = performance.now();
   try {
     await page.goto(deps.origin + COMMENTS_PATH, {
       waitUntil: 'domcontentloaded',
@@ -150,6 +153,7 @@ export async function loadList(
     'list-timeout',
     guard,
   );
+  deps.navigated?.('list', performance.now() - navigationStart);
   const accountRows = await readRows(page);
   if (
     accountRows.some(
@@ -228,6 +232,7 @@ export async function openCandidate(
   deps: ContextDependencies,
   guard: () => void,
 ): Promise<boolean> {
+  const navigationStart = performance.now();
   await clickAllowed(page, { kind: 'row', index }, guard);
   await waitPage(
     page,
@@ -241,6 +246,7 @@ export async function openCandidate(
     'post-timeout',
     guard,
   );
+  deps.navigated?.('post', performance.now() - navigationStart);
   return (
     (await page
       .getByText("Sorry, this page isn't available.", { exact: true })

@@ -52,6 +52,8 @@ Against the pass criteria of 2026-10-11 (kept below), S5 failed criterion 1, bec
 - Use only the controls IG-2 B allows, and read at the pace IG-3 sets, counted apart from X. (2026-10-15)
 - Give the later deletion record what it needs to find each comment again, without designing deletion here. (2026-10-15)
 
+On 2026-10-15 the maintainer permitted successive written orders to set a faster Instagram reading pace, with every run recording limit signals and stopping at the platform's first warning.
+
 ## Options
 
 ### Options weighed on 2026-10-11
@@ -257,6 +259,12 @@ socialprune browser forget --profile <dir>
 
 **Written order.** IG-3 point 3 has the agent do the reading. `--order <file>` accepts a UTF-8 JSON file of at most 64 KiB with no extra properties: `{ scope: 'context-instagram', account: '<expected username>', givenAt: '<ISO-8601>', words: '<the person's own order>', maxSteps?: 1..200, acceptCanary?: boolean }`, where `acceptCanary` is `false` when absent. The scope is exact, the account matches the export's username or `--handle` case-insensitively, the date is valid, the words are not empty, and the unchanged `--plan` hash stays mandatory. A bad file refuses before any browser or profile access (`CONTEXT_ORDER_INVALID`).
 
+The later pace order adds optional integer `secondsPerStep` from 10 to 30, optional integer `stepsPerDay` from 1 to 600 and boolean `batchPause` defaulting to true, and widens `maxSteps` to 1 through 600.
+
+An order with `--limit` accepts up to 600 steps but cannot exceed that Instagram day's remainder, while a run without an order keeps the 200 step ceiling.
+
+A dry run may preview the exact order with its unchanged plan hash without a profile or browser, and both the dry run and confirmation state the pace in force.
+
 The order decides how the canary is accepted, as AUTO-1 does on X. Without `acceptCanary: true`, an order runs only on a workspace whose canary the person accepted with **Matches** (section 11), else it refuses with `CANARY_REQUIRED` before any browser or profile access. With it, an order on a workspace without an accepted canary runs the canary itself and accepts it only when every automatic check of section 11 passes; on a workspace with an accepted canary the field changes nothing. Pace, stop rules and the read-back are the same in both modes. A wrong automatic acceptance can make the local records worse, but it does not change what the run does on Instagram. The order card the person confirms names the mode in their words.
 
 With an order the run may print to a pipe or `--json`, prints the warning to stderr, opens the confirmation page as a status view with **Stop** and without a **Start** wait, and closes its browser at the end. The exact bytes of the file are hashed with SHA-256 and recorded in the CLI-local `browser_order_audit` table with `startedBy: 'agent-on-order'` and the scope in its data, as for `originals-fill-x`. The order never covers `--include`, setup, deletion, a different account or reading the profile's contents, and it covers a canary only with `acceptCanary: true`.
@@ -268,6 +276,10 @@ With an order the run may print to a pipe or `--json`, prints the warning to std
 **Adopting a profile.** The maintainer's Instagram profile was created for spike S5 by a plain browser launch, before this command existed, so it has no marker. `browser setup --platform instagram --profile <dir> --adopt` adopts such a profile. It accepts only an existing directory that holds a Chromium profile, recognized by its `Local State` file, has no marker, is not in use, is neither a symbolic link nor a junction, and does not lie inside the browser's default user-data location. It writes only the marker, naming `instagram` with the time of adoption, launches and opens nothing, reads the content of no other file, and prints what it wrote. Without `--adopt`, setup still refuses an existing directory. A written order never covers adoption, because adoption is setup. An agent runs it only after the person's own confirmation that names it.
 
 ### 7. Pace and stopping
+
+The later pace order supersedes the fixed values below only where it explicitly changes them, and a canary always keeps 30 seconds between step starts.
+
+With no pace fields a run keeps the original 30 seconds, 20 steps per batch, 15 minute pause and 200 steps per Instagram day, while `batchPause: false` removes only the fixed batch pause.
 
 | Setting | Default and maximum |
 |---|---|
@@ -288,6 +300,10 @@ Every step counts toward the batch and the day, whether it opened a post or ende
 The run stops at once, leaves the window open and writes its end reason on: Instagram's sign-in page, a challenge or checkpoint page, a lock, suspension or limit notice such as "Try again later", the error "Something went wrong", a 429 from an Instagram host, or neither the expected markup nor a known state within 30 seconds (`PLATFORM_CHECK`); a missing control or an unknown structure where the selectors expect one (`INSTAGRAM_SHAPE_CHANGED`); `UNEXPECTED_ACTION` (section 8); `ACCOUNT_MISMATCH`; `PAGE_LANGUAGE`; an extension ID absent from the before set; a closed browser; `DISK_LOW`; and **Stop** or Ctrl+C, which let the current step finish reading without another click. A canary under an order also stops at the first failed automatic check, with the codes of section 11. It ends without an error at the day's budget, at `--limit` or `maxSteps`, and at the end of the plan. S5 saw none of these notices, so their exact texts and addresses in the selectors module are expectations, and the fake page tests them as written there. Every end reason is printed in the terminal and stays on the confirmation page until the window closes.
 
 ### 8. What the run does in the profile
+
+Every run writes a structure report containing response counts per closed host and path class, counts of each 4xx code and of 5xx responses, median and maximum navigation readiness time per list or post step, and rate limit or Retry After header names without their values.
+
+Any HTTP 429 on an allowed Instagram response stops immediately as `http-429`, and any page JSON answer with `feedback_required`, `please_wait`, `checkpoint_required` or `spam` as the exact value of a `status` or `message` key stops as `rate-signal`, without waiting or retrying.
 
 **Hosts.** The browser lets a request through only over `https` to a host that equals `instagram.com` or ends in `.instagram.com`, `.cdninstagram.com` or `.fbcdn.net`, compared on the parsed host with the leading dot, never as a substring. Every other request and WebSocket is aborted and counted by host without stopping the run, as on X; S5 saw `www.facebook.com` and `media0.giphy.com` there. A test asserts the host rules exactly.
 

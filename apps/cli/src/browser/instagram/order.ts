@@ -8,11 +8,14 @@ export const ContextOrderSchema = z.strictObject({
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
   words: z.string().trim().min(1).max(10000),
-  maxSteps: z.number().int().min(1).max(200).optional(),
+  maxSteps: z.number().int().min(1).max(600).optional(),
+  secondsPerStep: z.number().int().min(10).max(30).optional(),
+  stepsPerDay: z.number().int().min(1).max(600).optional(),
+  batchPause: z.boolean().default(true),
   acceptCanary: z.boolean().default(false),
 });
 export interface ContextOrder {
-  value: z.infer<typeof ContextOrderSchema>;
+  value: z.input<typeof ContextOrderSchema> & { acceptCanary: boolean };
   sha256: string;
 }
 export async function readContextOrder(

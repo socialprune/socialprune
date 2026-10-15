@@ -62,6 +62,7 @@ async function harness(variant: Variant = 'success', count = 1) {
   let captureOverride: typeof capturePost | undefined;
   let limit = 200;
   let maxSteps: number | undefined;
+  let paceFields: Record<string, unknown> = {};
   const shown = new Promise<void>((resolve) => {
     started = resolve;
   });
@@ -80,6 +81,7 @@ async function harness(variant: Variant = 'success', count = 1) {
             words: 'Read these generated comments only.',
             acceptCanary: order !== 'no-canary',
             maxSteps,
+            ...paceFields,
           },
           sha256: 'a'.repeat(64),
         }
@@ -215,6 +217,9 @@ async function harness(variant: Variant = 'success', count = 1) {
     },
     advanceClock(ms: number) {
       now += ms;
+    },
+    setPace(value: Record<string, unknown>) {
+      paceFields = value;
     },
     get context() {
       return context;
@@ -519,6 +524,301 @@ test('F3b a second matching candidate in a multi-permalink block stays several',
     expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
       [],
     );
+  } finally {
+    await h.close();
+  }
+});
+async function fullRunReady(
+  h: Awaited<ReturnType<typeof harness>>,
+  priorSteps = 0,
+) {
+  const item = h.fixture.items.at(-1)!,
+    writer = new InstagramContextWriter(h.store),
+    runId = 'generated-prior-canary';
+  await writer.startRun({
+    runId,
+    accountKey: h.plan.accountKey,
+    planHash: h.plan.hash,
+    startedAt: '2026-10-14T12:00:00.000Z',
+  });
+  await writer.sending({
+    runId,
+    attemptId: 'generated-prior-confirmed',
+    itemId: item.id,
+    at: '2026-10-14T12:00:00.000Z',
+  });
+  await writer.confirm({
+    itemId: item.id,
+    accountKey: h.plan.accountKey,
+    post: {
+      kind: 'p',
+      code: 'Generated_prior',
+      owner: item.reference.ownerHandle!,
+      ownerCount: 1,
+      caption: null,
+      captionComplete: true,
+      createdAt: null,
+    },
+    comment: { id: '99112233', createdAt: item.createdAt, expandClicks: 0 },
+    image: { file: null, host: null, status: 'not-captured' },
+    screenshot: { file: null, bytes: null, status: 'failed' },
+    confirmedAt: '2026-10-14T12:00:00.000Z',
+    runId,
+    attemptId: 'generated-prior-confirmed',
+  });
+  const profileReport = {
+    accountBefore: h.plan.handle,
+    accountAfter: h.plan.handle,
+    extensionsBefore: 0,
+    extensionsAfter: 0,
+    changedFiles: [],
+    unexpectedRequests: [],
+  };
+  await writer.endRun({
+    runId,
+    endedAt: '2026-10-14T12:00:00.000Z',
+    endReason: 'canary',
+    bodyShapes: {},
+    profileReport,
+  });
+  await writer.acceptCanary(runId, '2026-10-14T12:00:00.000Z');
+  if (priorSteps) {
+    await writer.startRun({
+      runId: 'generated-prior-steps',
+      accountKey: h.plan.accountKey,
+      planHash: h.plan.hash,
+      startedAt: IG_FIXTURE.now,
+    });
+    for (let step = 0; step < priorSteps; step++)
+      await writer.step('generated-prior-steps', IG_FIXTURE.now);
+    await writer.endRun({
+      runId: 'generated-prior-steps',
+      endedAt: IG_FIXTURE.now,
+      endReason: 'done',
+      bodyShapes: {},
+      profileReport,
+    });
+  }
+  await h.refresh();
+}
+test('P1 secondsPerStep 10 controls two full-run step starts and records the effective pace', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h, 20);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+  h.setLimit(600);
+  h.setMaxSteps(600);
+  const starts: number[] = [];
+  h.fake.beforeList(async () => {
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    starts.push(Date.parse(run.lastPageOpenedAt!));
+  });
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 2,
+      steps: 2,
+      endReason: 'done',
+    });
+    expect(starts[1]! - starts[0]!).toBe(10000);
+    expect(h.waits).not.toContain(900000);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(report.pace).toMatchObject({
+      secondsPerStep: 10,
+      stepsPerDay: 600,
+      batchPause: false,
+    });
+    expect(report.limits).toBeDefined();
+  } finally {
+    await h.close();
+  }
+});
+test('P1 a 10-second order cannot accelerate a canary from its 30-second starts', async () => {
+  const h = await harness('success', 2);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+  const starts: number[] = [];
+  h.fake.beforeList(async () => {
+    starts.push(
+      Date.parse(
+        (await h.store.browserJournal()).runs.at(-1)!.lastPageOpenedAt!,
+      ),
+    );
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({
+      completed: 2,
+      endReason: 'canary',
+    });
+    expect(starts[1]! - starts[0]!).toBe(30000);
+  } finally {
+    await h.close();
+  }
+});
+test('P1 the confirmation shows the effective pace before a manual Start', async () => {
+  const h = await harness();
+  try {
+    const result = h.start();
+    const page = await h.local();
+    await expect
+      .poll(() => page.locator('#profile').innerText(), { timeout: 15000 })
+      .toContain('30 seconds between step starts');
+    expect(await page.locator('#profile').innerText()).toContain(
+      '200 steps per Instagram day',
+    );
+    await h.click('Stop');
+    await result;
+  } finally {
+    await h.close();
+  }
+});
+test('P1 stepsPerDay uses the Instagram remainder instead of the old 200-step cap', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h, 2);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 3, batchPause: false });
+  h.setLimit(600);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'daily-cap',
+    });
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === '/your_activity/interactions/comments',
+      ),
+    ).toHaveLength(1);
+  } finally {
+    await h.close();
+  }
+});
+test('P1 absent pace fields retain 30 seconds, batch pause and the 200 daily ceiling', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h, 199);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'daily-cap',
+    });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(report.pace).toMatchObject({
+      secondsPerStep: 30,
+      stepsPerDay: 200,
+      batchPause: true,
+    });
+  } finally {
+    await h.close();
+  }
+});
+test.each([
+  ['side-429', 'http-429'],
+  ['feedback-required', 'rate-signal'],
+  ['please-wait', 'rate-signal'],
+  ['checkpoint-required', 'rate-signal'],
+  ['spam', 'rate-signal'],
+] as const)(
+  'P2 %s on a side answer stops without a second step or retry',
+  async (variant, token) => {
+    const h = await harness(variant);
+    try {
+      expect(await h.start(true)).toMatchObject({ code: 'PLATFORM_CHECK' });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      expect(run.canaryAcceptedAt).toBeNull();
+      expect(run.endedAt).toBeTruthy();
+      expect(h.notices.join('')).toContain(`Stop detail: ${token}`);
+      expect(h.waits).not.toContain(30000);
+      expect(
+        h.fake.requests.filter(
+          (request) => request.path === '/api/v1/generated/read/',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  ['side-429', 'http-429'],
+  ['feedback-required', 'rate-signal'],
+] as const)(
+  'P2 %s also stops a full run before another step',
+  async (variant, token) => {
+    const h = await harness(variant, 3);
+    await fullRunReady(h);
+    h.setPace({ secondsPerStep: 10, stepsPerDay: 600 });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+      });
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      expect(run.pageOpens).toBe(1);
+      expect(run.endedAt).toBeTruthy();
+      expect(h.notices.join('')).toContain(`Stop detail: ${token}`);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('P2 every full run reports closed response classes, readiness times and header names without their values', async () => {
+  const h = await harness('signal-metrics', 2);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({ completed: 1 });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const reportText = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(reportText) as {
+      limits: {
+        responses: {
+          host: string;
+          path: string;
+          count: number;
+          status4xx: Record<string, number>;
+          status5xx: number;
+        }[];
+        ready: Record<
+          string,
+          { count: number; medianMs: number; maxMs: number }
+        >;
+        headerNames: string[];
+      };
+    };
+    expect(report.limits.responses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'graphql', status4xx: { '403': 1 } }),
+        expect.objectContaining({ path: 'api-v1-read', status5xx: 1 }),
+      ]),
+    );
+    expect(report.limits.headerNames).toEqual([
+      'retry-after',
+      'x-ratelimit-remaining',
+    ]);
+    for (const kind of ['list', 'post']) {
+      const timing = report.limits.ready[kind]!;
+      expect(timing.count).toBe(1);
+      expect(timing.medianMs).toBeGreaterThanOrEqual(0);
+      expect(timing.maxMs).toBeGreaterThanOrEqual(timing.medianMs);
+    }
+    for (const value of [
+      ...Object.values(IG_FIXTURE.other),
+      IG_FIXTURE.code,
+      h.plan.handle,
+      'generated_secret',
+      'private',
+    ])
+      expect(reportText).not.toContain(value);
   } finally {
     await h.close();
   }

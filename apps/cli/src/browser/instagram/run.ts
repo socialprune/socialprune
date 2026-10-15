@@ -33,7 +33,14 @@ import {
 import type { ContextDependencies } from './driver.ts';
 import { pageAnswers, capturePost, writeStructure } from './capture.ts';
 import { guardInstagramNetwork } from './network.ts';
-import { instagramDailyCount, CONTEXT_PACE } from './pace.ts';
+import {
+  instagramDailyCount,
+  CONTEXT_PACE,
+  contextPace,
+  paceSummary,
+  paceText,
+} from './pace.ts';
+import { LimitSignals } from './signals.ts';
 import { dateInZone } from '../pace.ts';
 import {
   automaticCanaryCheck,
@@ -64,6 +71,17 @@ export async function runContextWithDependencies(
   deps: ContextDependencies,
 ) {
   validateContextOrder(options.order, options.plan.handle, options.plan.canary);
+  const pace = contextPace(options.order, options.plan.canary, {
+    ...CONTEXT_PACE,
+    ...deps.pace,
+  });
+  const limitSignals = new LimitSignals();
+  deps = {
+    ...deps,
+    navigated: (kind, elapsed) => {
+      limitSignals.navigated(kind, elapsed);
+    },
+  };
   if (
     (await planContext(options.store, options.plan.accountKey, options.include))
       .hash !== options.plan.hash
@@ -73,7 +91,7 @@ export async function runContextWithDependencies(
   if (await profileInUse(options.profile))
     throw new CliError('PROFILE_INVALID');
   const before = await profileSnapshot(options.profile),
-    summary = contextSummary(options.plan, options.lang);
+    summary = contextSummary(options.plan, options.lang, pace);
   const confirmation = await startConfirmation(
     {
       platform: 'instagram',
@@ -86,7 +104,9 @@ export async function runContextWithDependencies(
         ' ' +
         CONTEXT_STEPS[options.lang] +
         ' ' +
-        EXTENSION_NOTICE[options.lang],
+        EXTENSION_NOTICE[options.lang] +
+        ' ' +
+        paceText(pace, options.lang),
       planned: summary.planned,
       marked: summary.marked,
       bulk: 0,
@@ -115,7 +135,9 @@ export async function runContextWithDependencies(
     readback?: unknown;
     abortedHosts?: Record<string, number>;
     finalization?: { stage: string; stop: ReturnType<typeof stopDetails> }[];
-  } = { steps: [] };
+    pace: ReturnType<typeof paceSummary>;
+    limits?: ReturnType<LimitSignals['summary']>;
+  } = { steps: [], pace: paceSummary(pace) };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
   const chosen = options.plan.canary
@@ -140,6 +162,11 @@ export async function runContextWithDependencies(
     cancel = () => resolve(false);
   });
   const waits = new AbortController();
+  let networkFailure: ContextStop | undefined;
+  let interrupt!: () => void;
+  const interrupted = new Promise<void>((resolve) => {
+    interrupt = resolve;
+  });
   const stop = () => {
     stopped = true;
     waits.abort();
@@ -150,11 +177,23 @@ export async function runContextWithDependencies(
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
   const guard = () => {
+    if (networkFailure) throw networkFailure;
     network?.check();
     if (closed) throw new ContextStop('PLATFORM_CHECK', 'browser-closed');
     if (stopped || options.signal.aborted)
       throw new ContextStop('CANCELLED', 'stopped');
   };
+  const sleep = deps.sleep.bind(deps);
+  const pause = async (ms: number) => {
+    try {
+      await Promise.race([sleep(ms, waits.signal), cancelled, interrupted]);
+    } catch (caught) {
+      guard();
+      throw caught;
+    }
+    guard();
+  };
+  deps = { ...deps, sleep: (ms) => pause(ms) };
   const checkpoint = async () => {
     guard();
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
@@ -215,6 +254,12 @@ export async function runContextWithDependencies(
       new URL(confirmation.url).origin,
       (value) => options.store.browserOutcomeWriter().request(runId, value),
       deps.policy,
+      limitSignals,
+      (caught) => {
+        networkFailure ??= caught;
+        waits.abort();
+        interrupt();
+      },
     );
     context.once('close', () => {
       closed = true;
@@ -280,15 +325,20 @@ export async function runContextWithDependencies(
       );
     let used = prior.used,
       last = prior.last,
-      batch = prior.used ? ((prior.used - 1) % deps.pace.batch) + 1 : 0;
-    const max = Math.min(options.limit, options.order?.value.maxSteps ?? 200);
+      batch = prior.used ? ((prior.used - 1) % pace.batch) + 1 : 0;
+    const max = Math.min(
+      options.limit,
+      options.order?.value.maxSteps ?? 600,
+      Math.max(0, pace.perDay - prior.used),
+    );
     outer: for (const row of chosen) {
       if (steps >= max) {
         rejectIncomplete();
+        if (used >= pace.perDay) endReason = 'daily-cap';
         break;
       }
       if (
-        used >= CONTEXT_PACE.perDay ||
+        used >= pace.perDay ||
         dateInZone(options.now(), options.plan.timeZone) !== day
       ) {
         rejectIncomplete();
@@ -309,7 +359,7 @@ export async function runContextWithDependencies(
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
         if (
-          used >= CONTEXT_PACE.perDay ||
+          used >= pace.perDay ||
           dateInZone(options.now(), options.plan.timeZone) !== day ||
           steps >= max
         ) {
@@ -322,22 +372,18 @@ export async function runContextWithDependencies(
           pendingAttempt = undefined;
           rejectIncomplete();
           endReason =
-            used >= CONTEXT_PACE.perDay ||
+            used >= pace.perDay ||
             dateInZone(options.now(), options.plan.timeZone) !== day
               ? 'daily-cap'
               : 'done';
           break outer;
         }
-        if (batch >= deps.pace.batch) {
-          await Promise.race([
-            deps.sleep(deps.pace.pauseMs, waits.signal),
-            cancelled,
-          ]);
+        if (batch >= pace.batch) {
+          if (pace.pauseMs) await pause(pace.pauseMs);
           batch = 0;
         }
-        const wait = last + deps.pace.intervalMs - options.now().getTime();
-        if (wait > 0)
-          await Promise.race([deps.sleep(wait, waits.signal), cancelled]);
+        const wait = last + pace.intervalMs - options.now().getTime();
+        if (wait > 0) await pause(wait);
         await checkpoint();
         if (dateInZone(options.now(), options.plan.timeZone) !== day) {
           await writer.settle({
@@ -368,6 +414,7 @@ export async function runContextWithDependencies(
         );
         accountBefore ??= list.account;
         accountAfter = list.account;
+        await network?.flush();
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
           filterByClicks: true,
@@ -595,6 +642,7 @@ export async function runContextWithDependencies(
     };
     const structure = async () => {
       if (error) report.stop = stopDetails(error);
+      report.limits = limitSignals.summary();
       reportPath = await writeStructure(
         options.workspace,
         runId,
@@ -708,10 +756,12 @@ export async function runContextWithDependencies(
           'Instagram sends non-GET requests while reading. This rule does not identify every write.',
       };
       report.abortedHosts = network?.abortedHosts ?? {};
+      await finalize('network', async () => {
+        await network?.flush();
+      });
       if (automatic && !error)
         await finalize('automatic-check', assertAutomaticCanary);
-      if (options.plan.canary || error)
-        await finalize('structure-report', structure);
+      await finalize('structure-report', structure);
       await finalize('extension-report', async () => {
         // A failed snapshot must not masquerade as an unchanged profile. The
         // read-back report explicitly marks the last-known fallback as unobserved.
@@ -727,6 +777,10 @@ export async function runContextWithDependencies(
       });
       let ended = false,
         accepted = false;
+      await finalize('network', async () => {
+        await network?.flush();
+      });
+      await finalize('structure-report', structure);
       if (automatic && endReason === 'canary' && !error) {
         accepted = await finalize('acceptance', async () => {
           await options.store

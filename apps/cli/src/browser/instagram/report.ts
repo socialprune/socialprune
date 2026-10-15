@@ -9,6 +9,7 @@ export const CONTEXT_STOP_TOKENS = [
   'rate-limit',
   'notice-error',
   'http-429',
+  'rate-signal',
   'list-timeout',
   'post-timeout',
   'navigation',

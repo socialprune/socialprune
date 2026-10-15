@@ -23,6 +23,40 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.end('{}');
         return;
       }
+      if (path === '/api/v1/generated/read/') {
+        response.setHeader('Content-Type', 'application/json');
+        response.setHeader('Retry-After', IG_FIXTURE.other.code);
+        response.setHeader('X-RateLimit-Remaining', IG_FIXTURE.other.username);
+        if (variant === 'side-429') response.writeHead(429);
+        const signal =
+          variant === 'feedback-required'
+            ? 'feedback_required'
+            : variant === 'please-wait'
+              ? 'please_wait'
+              : variant === 'checkpoint-required'
+                ? 'checkpoint_required'
+                : variant === 'spam'
+                  ? 'spam'
+                  : null;
+        response.end(
+          JSON.stringify(
+            signal
+              ? { data: { message: signal }, unrelated: IG_FIXTURE.other.text }
+              : { status: 'ok' },
+          ),
+        );
+        return;
+      }
+      if (variant === 'signal-metrics' && path === '/graphql/query') {
+        response.writeHead(403, { 'Content-Type': 'application/json' });
+        response.end('{}');
+        return;
+      }
+      if (variant === 'signal-metrics' && path === '/api/v1/generated/error/') {
+        response.writeHead(503, { 'Content-Type': 'application/json' });
+        response.end('{}');
+        return;
+      }
       if (path === '/your_activity/interactions/comments') {
         await beforeNavigation?.();
         response.writeHead(variant === '429' ? 429 : 200, {

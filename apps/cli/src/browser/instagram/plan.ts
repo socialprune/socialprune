@@ -4,7 +4,9 @@ import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import { CliError } from '../../cli/errors.ts';
 import { plainLines } from '../../cli/output.ts';
 import { CONTEXT_WARNING } from './copy.ts';
-import { dateInZone, estimate } from '../pace.ts';
+import { dateInZone } from '../pace.ts';
+import { contextPace, contextEstimate, paceSummary } from './pace.ts';
+import type { ContextPace } from './pace.ts';
 
 export function normalize(value: string): string {
   return value.normalize('NFC').replace(/\s+/gu, ' ').trim();
@@ -179,7 +181,11 @@ export async function planContext(
     };
   });
 }
-export function contextSummary(plan: ContextPlan, lang: 'en' | 'de' = 'en') {
+export function contextSummary(
+  plan: ContextPlan,
+  lang: 'en' | 'de' = 'en',
+  pace: ContextPace = contextPace(undefined, plan.canary),
+) {
   return {
     dryRun: true,
     planned: plan.rows.length,
@@ -190,8 +196,9 @@ export function contextSummary(plan: ContextPlan, lang: 'en' | 'de' = 'en') {
     canary: plan.canary,
     planHash: plan.hash,
     steps: plan.rows.length,
-    days: Math.ceil(plan.rows.length / 200),
-    estimateMs: estimate(plan.rows.length),
+    days: Math.ceil(plan.rows.length / pace.perDay),
+    estimateMs: contextEstimate(plan.rows.length, pace),
+    pace: paceSummary(pace),
     timeZone: plan.timeZone,
     warning: CONTEXT_WARNING[lang],
   };

@@ -1,6 +1,7 @@
 import type { BrowserContext, Request, Response } from 'playwright-core';
 import type { BrowserRequest } from '@socialprune/core';
 import { ContextStop } from './report.ts';
+import { LimitSignals, hostClass, pathClass, rateSignal } from './signals.ts';
 
 export const INSTAGRAM_ORIGIN = 'https://www.instagram.com';
 export const COMMENTS_PATH = '/your_activity/interactions/comments';
@@ -86,12 +87,27 @@ export async function guardInstagramNetwork(
   confirmationOrigin: string,
   record: (value: BrowserRequest) => Promise<void>,
   policy: NetworkPolicy = productionPolicy,
+  limitSignals = new LimitSignals(),
+  onStop: (error: ContextStop) => void = () => {},
 ) {
   const abortedHosts: Record<string, number> = {};
   const requests: BrowserRequest[] = [];
   const pending = new Set<Promise<void>>();
   const ids = new WeakMap<Request, BrowserRequest>();
   let failure: ContextStop | undefined;
+  let disposed = false;
+  let signalFailure!: () => void;
+  const failed = new Promise<void>((resolve) => {
+    signalFailure = resolve;
+  });
+  const fail = (error: ContextStop) => {
+    if (!failure) {
+      failure = error;
+      signalFailure();
+      onStop(error);
+    }
+  };
+  const inspections = new Set<Promise<void>>();
   const persist = (value: BrowserRequest) => {
     const task = record(value);
     pending.add(task);
@@ -99,7 +115,7 @@ export async function guardInstagramNetwork(
       () => pending.delete(task),
       () => {
         pending.delete(task);
-        failure ??= new ContextStop('CONTEXT_FAILED', 'request-journal');
+        fail(new ContextStop('CONTEXT_FAILED', 'request-journal'));
       },
     );
     return task;
@@ -116,6 +132,10 @@ export async function guardInstagramNetwork(
     }
     if (!policy.platform(url.href)) {
       abortHost(url);
+      await route.abort();
+      return;
+    }
+    if (failure) {
       await route.abort();
       return;
     }
@@ -140,7 +160,7 @@ export async function guardInstagramNetwork(
       }
     }
     if (mutation(request.method(), url.href, name)) {
-      failure ??= new ContextStop('UNEXPECTED_ACTION', 'unexpected-action');
+      fail(new ContextStop('UNEXPECTED_ACTION', 'unexpected-action'));
       await route.abort();
       return;
     }
@@ -151,8 +171,54 @@ export async function guardInstagramNetwork(
     await socket.close();
   });
   const onResponse = (response: Response) => {
-    if (response.status() === 429 && policy.platform(response.url()))
-      failure ??= new ContextStop('PLATFORM_CHECK', 'http-429');
+    if (disposed || !policy.platform(response.url())) return;
+    const headers = response.headers();
+    limitSignals.response(
+      hostClass(response.url()),
+      pathClass(
+        response.url(),
+        policy.image(response.url()) ||
+          response.request().resourceType() === 'image' ||
+          response.request().resourceType() === 'media',
+      ),
+      response.status(),
+      headers,
+    );
+    if (response.status() === 429)
+      fail(new ContextStop('PLATFORM_CHECK', 'http-429'));
+    if (
+      headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() ===
+        'application/json' &&
+      Number(headers['content-length'] ?? 0) <= 5 * 1024 ** 2
+    ) {
+      const inspection = (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const bytes = await Promise.race([
+            response.body(),
+            new Promise<null>((resolve) => {
+              timer = setTimeout(() => resolve(null), 30000);
+            }),
+            failed.then(() => null),
+          ]);
+          if (disposed || !bytes || bytes.length > 5 * 1024 ** 2) return;
+          if (
+            rateSignal(
+              JSON.parse(
+                new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+              ),
+            )
+          )
+            fail(new ContextStop('PLATFORM_CHECK', 'rate-signal'));
+        } catch {
+          /* Invalid or absent JSON is not an enumerated limit signal. */
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      })();
+      inspections.add(inspection);
+      void inspection.finally(() => inspections.delete(inspection));
+    }
     const prior = ids.get(response.request());
     if (prior) {
       prior.status = response.status();
@@ -160,17 +226,22 @@ export async function guardInstagramNetwork(
     }
   };
   context.on('response', onResponse);
+  const check = () => {
+    if (failure) throw failure;
+  };
   return {
     abortedHosts,
     requests,
-    check() {
-      if (failure) throw failure;
-    },
+    check,
     async flush() {
-      await Promise.all([...pending]);
-      if (failure) throw failure;
+      check();
+      await Promise.race([Promise.all([...inspections]), failed]);
+      check();
+      await Promise.race([Promise.all([...pending]), failed]);
+      check();
     },
     dispose() {
+      disposed = true;
       context.off('response', onResponse);
     },
   };

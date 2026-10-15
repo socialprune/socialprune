@@ -3,8 +3,66 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { expect, test } from 'vitest';
-import { readContextOrder, validateContextOrder } from './order.ts';
+import {
+  readContextOrder,
+  validateContextOrder,
+  ContextOrderSchema,
+} from './order.ts';
 
+test('P1 pace order accepts the upper scoped limits and retains defaults without the new fields', () => {
+  const base = {
+    scope: 'context-instagram',
+    account: 'generated_person',
+    givenAt: '2026-10-15T12:00:00.000Z',
+    words: 'Read the generated scope.',
+  };
+  expect(
+    ContextOrderSchema.parse({
+      ...base,
+      secondsPerStep: 10,
+      stepsPerDay: 600,
+      maxSteps: 600,
+      batchPause: false,
+    }),
+  ).toMatchObject({
+    secondsPerStep: 10,
+    stepsPerDay: 600,
+    maxSteps: 600,
+    batchPause: false,
+  });
+  expect(ContextOrderSchema.parse(base)).toMatchObject({
+    batchPause: true,
+    acceptCanary: false,
+  });
+  for (const fields of [
+    { secondsPerStep: 9 },
+    { secondsPerStep: 31 },
+    { secondsPerStep: 10.5 },
+    { stepsPerDay: 601 },
+    { stepsPerDay: 0 },
+    { stepsPerDay: 5.5 },
+    { maxSteps: 601 },
+    { batchPause: 'false' },
+  ])
+    expect(ContextOrderSchema.safeParse({ ...base, ...fields }).success).toBe(
+      false,
+    );
+});
+
+test.each([{ secondsPerStep: 9 }, { stepsPerDay: 601 }])(
+  'P1 refuses out-of-range order %j independently',
+  (fields) => {
+    expect(
+      ContextOrderSchema.safeParse({
+        scope: 'context-instagram',
+        account: 'generated_person',
+        givenAt: '2026-10-15T12:00:00.000Z',
+        words: 'Generated scope.',
+        ...fields,
+      }).success,
+    ).toBe(false);
+  },
+);
 test('strict UTF-8, exact scope, account, date, words, size and plan guards refuse before a browser capability', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sp-ig-order-')),
     path = join(directory, 'order.json'),
@@ -38,7 +96,7 @@ test('strict UTF-8, exact scope, account, date, words, size and plan guards refu
       { ...valid, account: 'other' },
       { ...valid, givenAt: 'yesterday' },
       { ...valid, words: ' ' },
-      { ...valid, maxSteps: 201 },
+      { ...valid, maxSteps: 601 },
       { ...valid, acceptCanary: 'true' },
       { ...valid, extra: true },
     ]) {

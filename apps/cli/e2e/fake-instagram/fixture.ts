@@ -132,4 +132,10 @@ export type Variant =
   | 'post-decoy'
   | 'post-decoy-foreign'
   | 'multi-permalink'
-  | 'account-mismatch';
+  | 'account-mismatch'
+  | 'side-429'
+  | 'feedback-required'
+  | 'please-wait'
+  | 'checkpoint-required'
+  | 'spam'
+  | 'signal-metrics';

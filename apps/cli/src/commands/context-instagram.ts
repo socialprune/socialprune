@@ -17,6 +17,7 @@ import {
   readContextOrder,
   validateContextOrder,
 } from '../browser/instagram/order.ts';
+import { contextPace, paceText } from '../browser/instagram/pace.ts';
 
 export const contextInstagramCommand = buildCommand({
   parameters: {
@@ -71,7 +72,8 @@ export const contextInstagramCommand = buildCommand({
         kind: 'parsed',
         parse: String,
         optional: true,
-        brief: 'Lower the step limit, 1 to 200',
+        brief:
+          'Step limit, 1 to 200 without an order or up to 600 with an order',
       },
       browser: {
         kind: 'enum',
@@ -114,10 +116,9 @@ export const contextInstagramCommand = buildCommand({
     if (
       !Number.isSafeInteger(limit) ||
       limit < 1 ||
-      limit > 200 ||
+      limit > (flags.order ? 600 : 200) ||
       (flags.json && flags.list) ||
-      (flags.order && flags.include) ||
-      (flags.dryRun && flags.order)
+      (flags.order && flags.include)
     )
       throw new CliError('INVALID_ARGUMENTS');
     if (!flags.dryRun && !flags.order && (flags.json || !this.stdoutIsTerminal))
@@ -144,7 +145,19 @@ export const contextInstagramCommand = buildCommand({
       )
         throw new CliError('ACCOUNT_MISMATCH');
       plan.handle ||= handle ?? '';
-      const data = contextSummary(plan, flags.lang),
+      if (flags.order && flags.plan !== plan.hash)
+        throw new CliError('STALE_PLAN');
+      const order = flags.order
+        ? await readContextOrder(
+            flags.order,
+            plan.handle,
+            flags.plan!,
+            plan.hash,
+          )
+        : undefined;
+      validateContextOrder(order, plan.handle, !flags.dryRun && plan.canary);
+      const pace = contextPace(order, plan.canary);
+      const data = contextSummary(plan, flags.lang, pace),
         text = contextList(plan);
       if (flags.dryRun) {
         if (flags.list) {
@@ -159,22 +172,13 @@ export const contextInstagramCommand = buildCommand({
         }
         this.reply({
           data,
-          human: `${data.planned} planned, ${data.marked} marked for deletion. Manual: ${JSON.stringify(data.manual)}. Already confirmed: ${data.confirmed}. Earlier results left out: ${JSON.stringify(data.excluded)}.\nPlan: ${data.planHash}\nAt least ${data.steps} steps across ${data.days} days.\n${data.warning}\n${flags.list ? '' : text}`,
+          human: `${data.planned} planned, ${data.marked} marked for deletion. Manual: ${JSON.stringify(data.manual)}. Already confirmed: ${data.confirmed}. Earlier results left out: ${JSON.stringify(data.excluded)}.\nPlan: ${data.planHash}\nAt least ${data.steps} steps across ${data.days} days.\n${paceText(pace, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
         });
         return;
       }
       if (!plan.handle) throw new CliError('INSTAGRAM_ACCOUNT_NAME_MISSING');
       if (!flags.profile || flags.plan !== plan.hash)
         throw new CliError('STALE_PLAN');
-      const order = flags.order
-        ? await readContextOrder(
-            flags.order,
-            plan.handle,
-            flags.plan,
-            plan.hash,
-          )
-        : undefined;
-      validateContextOrder(order, plan.handle, plan.canary);
       const { validateProfile, installedBrowser } =
         await import('../browser/profile.ts');
       await validateProfile(flags.profile, 'instagram');
@@ -211,7 +215,7 @@ export const contextInstagramCommand = buildCommand({
         executablePath,
         list,
         include,
-        limit,
+        limit: flags.limit === undefined ? pace.perDay : limit,
         order,
         signal: this.signal,
         lang: flags.lang,

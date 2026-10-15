@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import '../playwright.ports.config.ts';
 export default defineConfig({
   testDir: '.',
   testMatch: [

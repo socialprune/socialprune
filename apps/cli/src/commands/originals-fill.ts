@@ -4,6 +4,7 @@ import { buildCommand } from '@stricli/core';
 import { workspaceFlag, dryRunFlag, jsonFlag } from '../cli/context.ts';
 import type { CommandRunContext } from '../cli/context.ts';
 import { CliError } from '../cli/errors.ts';
+import { fillPaceNotice } from '../browser/copy.ts';
 import { workspacePath, assertOutput } from '../workspace/files.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { planFill, fillSummary, fillList } from '../browser/x/fill/plan.ts';
@@ -60,7 +61,7 @@ export const originalsFillCommand = buildCommand({
         kind: 'parsed',
         parse: String,
         optional: true,
-        brief: 'Lower the page count, up to 200',
+        brief: 'Lower the page count, up to 300',
       },
       'max-video-mb': {
         kind: 'parsed',
@@ -126,7 +127,7 @@ export const originalsFillCommand = buildCommand({
         throw new CliError('INVALID_ARGUMENTS');
       return result;
     };
-    const limit = integer(flags.limit, 200, 200),
+    const limit = integer(flags.limit, flags.order ? 300 : 200, 300),
       video = integer(flags['max-video-mb'], 1024, 16384),
       run = integer(flags['max-run-gb'], 20, 500),
       include = new Set<string>();
@@ -144,8 +145,18 @@ export const originalsFillCommand = buildCommand({
     try {
       const plan = await planFill(store, flags.account, include),
         accountName = resolveAccountName(plan.handle, flagHandle),
+        order = flags.order
+          ? await import('../browser/x/fill/order.ts').then((module) =>
+              module.readOrder(
+                flags.order!,
+                accountName.handle ?? '',
+                flags.dryRun ? plan.hash : (flags.plan ?? ''),
+                plan.hash,
+              ),
+            )
+          : undefined,
         data = {
-          ...fillSummary(plan, flags.lang),
+          ...fillSummary(plan, flags.lang, order),
           accountName: accountName.source,
         },
         text = fillList(plan);
@@ -162,23 +173,13 @@ export const originalsFillCommand = buildCommand({
         }
         this.reply({
           data,
-          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${accountNameText(accountName.source, flags.lang)}\n${finalNoticeText(plan.finalNotices, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
+          human: `${data.planned} originals planned. Hash: ${data.planHash}.\n${accountNameText(accountName.source, flags.lang)}\n${finalNoticeText(plan.finalNotices, flags.lang)}\n${fillPaceNotice(data.pace.secondsPerPage, data.pace.pagesPerDay, data.pace.pauseMinutes > 0, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
         });
         return;
       }
       if (!accountName.handle) throw new CliError('ACCOUNT_NAME_MISSING');
       if (!flags.profile || flags.plan !== plan.hash)
         throw new CliError('STALE_PLAN');
-      const order = flags.order
-        ? await import('../browser/x/fill/order.ts').then((module) =>
-            module.readOrder(
-              flags.order!,
-              accountName.handle,
-              flags.plan!,
-              plan.hash,
-            ),
-          )
-        : undefined;
       const { validateProfile, installedBrowser } =
         await import('../browser/profile.ts');
       await validateProfile(flags.profile);
@@ -215,7 +216,11 @@ export const originalsFillCommand = buildCommand({
         list,
         workspace: flags.workspace,
         signal: this.signal,
-        limit: Math.min(limit, order?.value.maxPages ?? 200),
+        limit: Math.min(
+          limit,
+          order?.value.maxPages ??
+            (order?.value.pagesPerDay === undefined ? 200 : 300),
+        ),
         order,
         maxVideoBytes: video * 1024 ** 2,
         maxRunBytes: run * 1024 ** 3,

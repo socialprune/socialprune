@@ -3,6 +3,8 @@ import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import type { Original } from '@socialprune/core';
 import { CliError } from '../../../cli/errors.ts';
 import { finalNotice } from './final-notice.ts';
+import { orderPace } from './order.ts';
+import type { FillOrder } from './order.ts';
 import type { FinalNoticeCounts } from './final-notice.ts';
 export const FILL_WARNING = {
   en: "X's rules do not allow this kind of automation. X can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. This run only reads: it opens posts in your signed-in X window and keeps what X shows. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.",
@@ -159,7 +161,12 @@ export async function planFill(
     };
   });
 }
-export function fillSummary(plan: FillPlan, lang: 'en' | 'de' = 'en') {
+export function fillSummary(
+  plan: FillPlan,
+  lang: 'en' | 'de' = 'en',
+  order?: FillOrder,
+) {
+  const pace = orderPace(order);
   const counts = { unseen: 0, 'long-text': 0, media: 0 };
   for (const row of plan.rows)
     for (const reason of row.reasons) counts[reason]++;
@@ -175,8 +182,17 @@ export function fillSummary(plan: FillPlan, lang: 'en' | 'de' = 'en') {
     canary: plan.canary,
     pageOpens: plan.rows.length,
     estimateMs:
-      Math.max(0, plan.rows.length - 1) * 30000 +
-      Math.floor(Math.max(0, plan.rows.length - 1) / 20) * 900000,
+      Math.max(0, plan.rows.length - 1) * pace.intervalMs +
+      Math.floor(Math.max(0, plan.rows.length - 1) / pace.batch) * pace.pauseMs,
+    pace: {
+      secondsPerPage: pace.intervalMs / 1000,
+      batch: pace.batch,
+      pauseMinutes: pace.pauseMs / 60000,
+      pagesPerDay: pace.perDay,
+    },
+    runPageLimit:
+      order?.value.maxPages ??
+      (order?.value.pagesPerDay === undefined ? 200 : 300),
     mediaUpperBoundBytes: plan.rows.reduce(
       (sum, row) =>
         sum +

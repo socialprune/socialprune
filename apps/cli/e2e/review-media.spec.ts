@@ -7,6 +7,7 @@ import { fixtureWorkspace } from './fake-x/fixture.ts';
 import { migrateOriginal } from '@socialprune/core';
 import { startReviewServer } from '../src/review/server.ts';
 import { reviewAssetDirectory } from '../src/review/static.ts';
+import { TEST_PORTS } from '../playwright.ports.config.ts';
 test('real socket range matrix and session traversal signature/link controls for stored video', async ({
   request,
 }) => {
@@ -72,7 +73,7 @@ test('real socket range matrix and session traversal signature/link controls for
     workspace: directory,
     assetDirectory: reviewAssetDirectory(),
     handleSignals: false,
-    port: 4234,
+    port: TEST_PORTS.reviewMedia,
   });
   try {
     const origin = server.url.slice(0, -1),

@@ -9,6 +9,7 @@ import {
 import { migrateOriginal } from '@socialprune/core';
 import { startConfirmation } from '../src/browser/confirmation.ts';
 import { extract } from '../src/browser/x/fill/extract.ts';
+import { TEST_PORTS } from '../playwright.ports.config.ts';
 import {
   cardComparisonAnswer,
   cardComparisonMarkup,
@@ -839,7 +840,7 @@ test('an older in-flight confirmation poll cannot overwrite the ended state', as
     completed: 0,
     result: 'Generated initial',
   };
-  const server = await startConfirmation(initial, 4232);
+  const server = await startConfirmation(initial, TEST_PORTS.confirmation);
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;

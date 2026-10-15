@@ -320,6 +320,16 @@ In a main run the first two text or media differences now keep their settled rec
 
 A main-run render timeout now allows one new attempt for that post after a cancellable 60-second wait, at most three reloads per run and with every opening counted toward the existing page cap and pace, while canaries, other check failures and a failed reload still stop immediately.
 
+On 2026-10-15 a visibility wrapper before a protected focal post corresponded to an extra notice on the page, so notice alignment now permits that wrapper to take zero or one candidate while every required notice still matches its own text.
+
+The fill runner now observes numeric X response windows per operation, waits below half remaining until reset plus five seconds when reset is within sixteen minutes, ends as daily-cap for a longer window and stops immediately on HTTP 429 from either X API host.
+
+A written fill order may now set secondsPerPage from 10 to 30, pagesPerDay from 1 to 300, batchPause with a default of true and maxPages from 1 to 300, with the selected pace shown before the run and the day's cap counted across fill and deletion pages in Europe/Berlin, while deletion keeps its own pace.
+
+The fill and deletion browser suites now read their ports and origins from test environment variables with their previous defaults, so concurrent test lanes use separate ports without changing deletion behavior or text.
+
+Status URL comparison now accepts an exact photo or video suffix with a one or two digit index, and an entity without an expanded-path anchor falls back to exact t.co anchor handling rather than becoming ambiguous.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

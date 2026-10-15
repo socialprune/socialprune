@@ -12,6 +12,7 @@ import { runWithDependencies } from '../src/browser/runner.ts';
 import { pageDriver } from '../src/browser/x/driver.ts';
 import { fixtureWorkspace, FIXTURE } from './fake-x/fixture.ts';
 import { fakeX } from './fake-x/server.ts';
+import { TEST_PORTS, TEST_ORIGINS } from '../playwright.ports.config.ts';
 import { DatabaseSync } from 'node:sqlite';
 import {
   createBackup,
@@ -129,7 +130,7 @@ async function harness(
       },
       {
         pace,
-        confirmationPort: 4232,
+        confirmationPort: TEST_PORTS.confirmation,
         async sleep(ms, signal) {
           waits.push(ms);
           if (signal.aborted) throw new Error('Aborted');
@@ -248,7 +249,7 @@ async function harness(
     await shown;
     return context!
       .pages()
-      .find((page) => page.url().startsWith('http://127.0.0.1:4232'))!;
+      .find((page) => page.url().startsWith(TEST_ORIGINS.confirmation))!;
   };
   const click = async (name: 'Start' | 'Continue' | 'Stop') => {
     const page = await local();
@@ -370,7 +371,7 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     ).toEqual(['/graphql/generated/DeleteTweet']);
     expect(
       h.network.every((url) =>
-        ['http://127.0.0.1:4231', 'http://127.0.0.1:4232'].includes(
+        [TEST_ORIGINS.x, TEST_ORIGINS.confirmation].includes(
           new URL(url).origin,
         ),
       ),
@@ -866,7 +867,7 @@ test('foreign-origin GET and POST are aborted and counted without stopping a pla
     response.end('generated');
   });
   await new Promise<void>((resolve) =>
-    decoy.listen(4239, '127.0.0.1', resolve),
+    decoy.listen(TEST_PORTS.foreign, '127.0.0.1', resolve),
   );
   const h = await harness(['1001']);
   fake.variants.set('1001', 'external');
@@ -887,7 +888,7 @@ test('foreign-origin GET and POST are aborted and counted without stopping a pla
         'utf8',
       ),
     ) as { abortedHosts: Record<string, number> };
-    expect(report.abortedHosts['127.0.0.1:4239']).toBe(2);
+    expect(report.abortedHosts[`127.0.0.1:${TEST_PORTS.foreign}`]).toBe(2);
   } finally {
     await h.close();
     await new Promise<void>((resolve) => decoy.close(() => resolve()));
@@ -1127,7 +1128,7 @@ test('production entry cannot select fake hosts, test pace or a hidden browser',
   const { executeCli } = await import('../src/cli/adapter.ts');
   const { createNodeContext } = await import('../src/cli/node-context.ts');
   for (const arg of [
-    '--origin=http://127.0.0.1:4231',
+    `--origin=${TEST_ORIGINS.x}`,
     '--interval-ms=1',
     '--response-timeout-ms=1',
     '--headless',

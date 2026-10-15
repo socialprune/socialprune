@@ -12,6 +12,7 @@ import {
   PLATFORM_CHECK_REASONS,
   platformCheckReason,
 } from '../cli/errors.ts';
+import { fillWindowWaitNotice, fillPaceNotice } from './copy.ts';
 
 const reasons: DisplayEndReason[] = [
   'done',
@@ -109,31 +110,35 @@ test('platform end text describes only the known timeout, marker or unrecognized
           ? lang === 'de'
             ? 'X zeigt eine Seite zum Anmelden, eine Kontoprüfung, eine Sperre oder ein Limit.'
             : 'X shows a sign-in, account check, lock or limit page.'
-          : reason === 'extensions-changed'
+          : reason === 'http-429'
             ? lang === 'de'
-              ? 'Die Erweiterungen des Browserprofils haben sich während des Laufs geändert.'
-              : "The browser profile's extensions changed during the run."
-            : reason === 'account-changed'
+              ? 'X hat eine Anfrage mit HTTP 429 begrenzt.'
+              : 'X limited a request with HTTP 429.'
+            : reason === 'extensions-changed'
               ? lang === 'de'
-                ? 'Das angemeldete Konto hat sich während des Laufs geändert.'
-                : 'The signed-in account changed during the run.'
-              : reason === 'account-handle'
+                ? 'Die Erweiterungen des Browserprofils haben sich während des Laufs geändert.'
+                : "The browser profile's extensions changed during the run."
+              : reason === 'account-changed'
                 ? lang === 'de'
-                  ? 'Das angemeldete Konto konnte nach dem Lauf nicht geprüft werden.'
-                  : 'The signed-in account could not be read back after the run.'
-                : reason === 'account-readback'
+                  ? 'Das angemeldete Konto hat sich während des Laufs geändert.'
+                  : 'The signed-in account changed during the run.'
+                : reason === 'account-handle'
                   ? lang === 'de'
-                    ? 'Die Kontrolle von Konto und Erweiterungen nach dem Lauf konnte nicht abgeschlossen werden.'
-                    : 'The post-run account and extension check could not finish.'
-                  : reason === undefined ||
-                      reason === 'unspecified' ||
-                      reason === 'generated account value'
+                    ? 'Das angemeldete Konto konnte nach dem Lauf nicht geprüft werden.'
+                    : 'The signed-in account could not be read back after the run.'
+                  : reason === 'account-readback'
                     ? lang === 'de'
-                      ? 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.'
-                      : 'The page was not recognized, or X requires an account check.'
-                    : lang === 'de'
-                      ? 'Die Seite wurde nicht erkannt.'
-                      : 'The page was not recognized.';
+                      ? 'Die Kontrolle von Konto und Erweiterungen nach dem Lauf konnte nicht abgeschlossen werden.'
+                      : 'The post-run account and extension check could not finish.'
+                    : reason === undefined ||
+                        reason === 'unspecified' ||
+                        reason === 'generated account value'
+                      ? lang === 'de'
+                        ? 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.'
+                        : 'The page was not recognized, or X requires an account check.'
+                      : lang === 'de'
+                        ? 'Die Seite wurde nicht erkannt.'
+                        : 'The page was not recognized.';
       expect(text).toContain(expected);
       expect(text).not.toContain('generated account value');
       expect(text).not.toMatch(/[\r\n]/);
@@ -227,5 +232,33 @@ test('R6 and R7 terminal lines keep the mismatch budget and reload wait explicit
   );
   expect(FILL_RELOAD_NOTICE.de).toBe(
     'X hat die Seite nicht rechtzeitig geladen. Dieser Beitrag wird nach 60 Sekunden einmal neu geöffnet.',
+  );
+});
+
+test('R9 and R10 fill-only window and pace copy stays bilingual without changing deletion end text', () => {
+  expect(fillWindowWaitNotice(3)).toBe(
+    'An X limit is more than half used. The run waits 3 minutes for it to reset.',
+  );
+  expect(fillWindowWaitNotice(3, 'de')).toBe(
+    'Ein X-Limit ist mehr als zur Hälfte verbraucht. Der Lauf wartet 3 Minuten bis zum Zurücksetzen.',
+  );
+  expect(
+    endText('daily-cap', 'en', undefined, {
+      fillStop: 'x-window-long',
+      readback: 'unchanged',
+    }),
+  ).toContain(
+    'A longer X limit is more than half used. The run continues another day.',
+  );
+  expect(
+    endText('daily-cap', 'de', undefined, { fillStop: 'x-window-long' }),
+  ).toContain(
+    'Ein längeres X-Limit ist mehr als zur Hälfte verbraucht. Der Lauf geht an einem anderen Tag weiter.',
+  );
+  expect(endText('daily-cap')).toContain(
+    'The daily page limit has been reached.',
+  );
+  expect(fillPaceNotice(10, 300, false)).toBe(
+    'Pace: at least 10 seconds between pages, at most 300 pages per Berlin day; no fixed batch pause.',
   );
 });

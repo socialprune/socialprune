@@ -60,6 +60,7 @@ export type ReadbackOutcome =
 export interface EndTextContext {
   readback?: ReadbackOutcome;
   canary?: boolean;
+  fillStop?: 'x-window-long';
 }
 export function fillMismatchNotice(
   count: number,
@@ -73,6 +74,24 @@ export const FILL_RELOAD_NOTICE = {
   en: 'X did not load the page in time. Waiting 60 seconds before opening this post once more.',
   de: 'X hat die Seite nicht rechtzeitig geladen. Dieser Beitrag wird nach 60 Sekunden einmal neu geöffnet.',
 };
+export function fillWindowWaitNotice(
+  minutes: number,
+  lang: BrowserLanguage = 'en',
+): string {
+  return lang === 'de'
+    ? `Ein X-Limit ist mehr als zur Hälfte verbraucht. Der Lauf wartet ${minutes} Minuten bis zum Zurücksetzen.`
+    : `An X limit is more than half used. The run waits ${minutes} minutes for it to reset.`;
+}
+export function fillPaceNotice(
+  seconds: number,
+  daily: number,
+  pause: boolean,
+  lang: BrowserLanguage = 'en',
+): string {
+  return lang === 'de'
+    ? `Tempo: mindestens ${seconds} Sekunden zwischen Seiten, höchstens ${daily} Seiten pro Berliner Tag; ${pause ? '15 Minuten Pause nach 20 Seiten' : 'keine feste Blockpause'}.`
+    : `Pace: at least ${seconds} seconds between pages, at most ${daily} pages per Berlin day; ${pause ? 'a 15-minute pause after 20 pages' : 'no fixed batch pause'}.`;
+}
 const END_REASON = {
   'canary-mismatch': {
     en: 'The stored text or media counts did not match the page; the sample was not accepted.',
@@ -150,39 +169,47 @@ export function endText(
             ? lang === 'de'
               ? 'Das angemeldete Konto konnte nach dem Lauf nicht geprüft werden. Der Lauf wurde gestoppt.'
               : 'The signed-in account could not be read back after the run. The run stopped.'
-            : reason === 'canary-mismatch' && context.canary === false
+            : context.fillStop === 'x-window-long'
               ? lang === 'de'
-                ? 'Der gespeicherte Text oder die Medienanzahl stimmten nicht mit der Seite überein. Der Lauf wurde gestoppt.'
-                : 'The stored text or media counts did not match the page. The run stopped.'
-              : reason !== 'platform-check'
-                ? END_REASON[reason][lang]
-                : token === 'render-timeout' ||
-                    token === 'answer-timeout' ||
-                    token === 'body-timeout'
+                ? 'Ein längeres X-Limit ist mehr als zur Hälfte verbraucht. Der Lauf geht an einem anderen Tag weiter.'
+                : 'A longer X limit is more than half used. The run continues another day.'
+              : reason === 'platform-check' && token === 'http-429'
+                ? lang === 'de'
+                  ? 'X hat eine Anfrage mit HTTP 429 begrenzt. Der Lauf wurde gestoppt.'
+                  : 'X limited a request with HTTP 429. The run stopped.'
+                : reason === 'canary-mismatch' && context.canary === false
                   ? lang === 'de'
-                    ? 'X hat die Seite nicht rechtzeitig geladen.' +
-                      (context.readback === 'unchanged'
-                        ? ' Es wurde nichts geändert.'
-                        : '')
-                    : 'X did not load the page in time.' +
-                      (context.readback === 'unchanged'
-                        ? ' Nothing was changed.'
-                        : '')
-                  : [
-                        'marker-login',
-                        'marker-challenge',
-                        'marker-locked',
-                        'marker-rate-limit',
-                        'notice-text',
-                      ].some((value) => value === token)
-                    ? lang === 'de'
-                      ? 'X zeigt eine Seite zum Anmelden, eine Kontoprüfung, eine Sperre oder ein Limit.'
-                      : 'X shows a sign-in, account check, lock or limit page.'
-                    : token === undefined || token === 'unspecified'
+                    ? 'Der gespeicherte Text oder die Medienanzahl stimmten nicht mit der Seite überein. Der Lauf wurde gestoppt.'
+                    : 'The stored text or media counts did not match the page. The run stopped.'
+                  : reason !== 'platform-check'
+                    ? END_REASON[reason][lang]
+                    : token === 'render-timeout' ||
+                        token === 'answer-timeout' ||
+                        token === 'body-timeout'
                       ? lang === 'de'
-                        ? 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.'
-                        : 'The page was not recognized, or X requires an account check.'
-                      : END_REASON['platform-check'][lang];
+                        ? 'X hat die Seite nicht rechtzeitig geladen.' +
+                          (context.readback === 'unchanged'
+                            ? ' Es wurde nichts geändert.'
+                            : '')
+                        : 'X did not load the page in time.' +
+                          (context.readback === 'unchanged'
+                            ? ' Nothing was changed.'
+                            : '')
+                      : [
+                            'marker-login',
+                            'marker-challenge',
+                            'marker-locked',
+                            'marker-rate-limit',
+                            'notice-text',
+                          ].some((value) => value === token)
+                        ? lang === 'de'
+                          ? 'X zeigt eine Seite zum Anmelden, eine Kontoprüfung, eine Sperre oder ein Limit.'
+                          : 'X shows a sign-in, account check, lock or limit page.'
+                        : token === undefined || token === 'unspecified'
+                          ? lang === 'de'
+                            ? 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.'
+                            : 'The page was not recognized, or X requires an account check.'
+                          : END_REASON['platform-check'][lang];
   return lang === 'de'
     ? `Beendet: ${text} Schließe das X-Fenster, um den Lauf zu beenden.`
     : `Ended: ${text} Close the X window to finish.`;

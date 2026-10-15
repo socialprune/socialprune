@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -18,6 +18,7 @@ import { planDeletion } from '../../plan.ts';
 import { networkRecorder } from '../../../cli/test/network-recorder.ts';
 import { FILL_PACE } from './run.ts';
 import { finalNotice, finalNoticeText } from './final-notice.ts';
+import { FillOrderSchema } from './order.ts';
 const at = FIXTURE.now;
 
 // Public X notice wording, not a real export. Observed on 2026-10-12:
@@ -300,7 +301,7 @@ test('fill-specific warning exactly matches ADR-029 in both languages before a p
   for (const warning of Object.values(FILL_WARNING))
     expect(text).toContain('> ' + warning);
 });
-test('production signed-in page pace is pinned and has no CLI or environment override', () => {
+test('default signed-in page pace is pinned and changes only through a written order', () => {
   expect(FILL_PACE).toEqual({
     intervalMs: 30000,
     batch: 20,
@@ -308,6 +309,78 @@ test('production signed-in page pace is pinned and has no CLI or environment ove
     perDay: 200,
   });
   expect(Object.isFrozen(FILL_PACE)).toBe(true);
+});
+
+test('R10 dry-run CLI accepts 300 and describes the written pace without profile or network access', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-order-pace-'));
+  const db = join(directory, 'socialprune.sqlite');
+  const store = await SQLiteStore.open(db, {
+    initial: fixtureWorkspace(['1001']),
+  });
+  const plan = await planFill(store, FIXTURE.account.key);
+  await store.close();
+  const file = join(directory, 'order.json');
+  const value = FillOrderSchema.parse({
+    scope: 'originals-fill-x',
+    account: FIXTURE.account.handle,
+    givenAt: FIXTURE.now,
+    words: 'Read generated originals.',
+    secondsPerPage: 10,
+    pagesPerDay: 300,
+    batchPause: false,
+    maxPages: 300,
+  });
+  await writeFile(file, JSON.stringify(value));
+  const record = networkRecorder();
+  try {
+    const output: string[] = [];
+    const args = [
+      'originals',
+      'fill',
+      'x',
+      '--workspace',
+      directory,
+      '--account',
+      FIXTURE.account.key,
+      '--order',
+      file,
+      '--limit',
+      '300',
+      '--dry-run',
+      '--json',
+    ];
+    expect(
+      await executeCli(
+        args,
+        createNodeContext(
+          { write: (text) => output.push(text) },
+          { write: () => {} },
+        ),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(output.join(''))).toMatchObject({
+      data: {
+        planHash: plan.hash,
+        pace: { secondsPerPage: 10, pagesPerDay: 300, pauseMinutes: 0 },
+        runPageLimit: 300,
+      },
+    });
+    expect(record.calls).toEqual([]);
+    output.length = 0;
+    expect(
+      await executeCli(
+        args.map((arg) => (arg === '300' ? '301' : arg)),
+        createNodeContext(
+          { write: (text) => output.push(text) },
+          { write: () => {} },
+        ),
+      ),
+    ).toBe(2);
+    expect(output.join('')).toContain('INVALID_ARGUMENTS');
+  } finally {
+    record.restore();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 test('fill plan uses two human-independent reasons and media gap, ID order and canonical hash; readonly CLI has no network or writes', async () => {
   const data = fixtureWorkspace(['1001', '1002', '1003']);

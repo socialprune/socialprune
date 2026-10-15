@@ -1,7 +1,21 @@
 import { expect, test } from 'vitest';
 import { extract } from './extract.ts';
 import { errorStop } from './report.ts';
+import * as reports from './report.ts';
 import { CliError, CLI_ERRORS } from '../../../cli/errors.ts';
+import {
+  TEST_PORTS,
+  TEST_ORIGINS,
+} from '../../../../playwright.ports.config.ts';
+
+test('R11 browser suite ports are validated Node-runner inputs shared by all consumers', () => {
+  for (const port of Object.values(TEST_PORTS))
+    expect(Number.isInteger(port) && port > 0 && port <= 65535).toBe(true);
+  expect(TEST_ORIGINS.x).toBe(`http://127.0.0.1:${TEST_PORTS.x}`);
+  expect(TEST_ORIGINS.confirmation).toBe(
+    `http://127.0.0.1:${TEST_PORTS.confirmation}`,
+  );
+});
 import {
   detailAnswer,
   detailPost,
@@ -234,4 +248,126 @@ test('R3 non-CLI stops use only exact internal identities, exact filesystem code
     new Error('Generated unknown error'),
   ])
     expect(errorStop(value)).toEqual({ code: 'other' });
+});
+
+test('R9 response windows keep value-free per-operation minima and gate short and long reset distances', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const windows = new reports.XResponseWindows();
+  const headers = (remaining: number, seconds: number) => ({
+    'x-rate-limit-limit': '50',
+    'x-rate-limit-remaining': String(remaining),
+    'x-rate-limit-reset': String(now / 1000 + seconds),
+  });
+  windows.observe(
+    'https://x.com/i/api/graphql/generated/TweetDetail',
+    headers(24, 900),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({
+    kind: 'wait',
+    ms: 905000,
+    minutes: 16,
+  });
+  windows.observe(
+    'https://api.x.com/i/api/graphql/generated/UserTweets',
+    headers(20, 2000),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({ kind: 'long' });
+  expect(windows.summary()).toEqual([
+    {
+      operation: 'TweetDetail',
+      limit: 50,
+      lowestRemaining: 24,
+      responses: 1,
+      longestResetSeconds: 900,
+    },
+    {
+      operation: 'UserTweets',
+      limit: 50,
+      lowestRemaining: 20,
+      responses: 1,
+      longestResetSeconds: 2000,
+    },
+  ]);
+  expect(windows.beforePage(now + 2001000)).toEqual({ kind: 'ready' });
+  const empty = new reports.XResponseWindows();
+  empty.observe(
+    'https://example.org/i/api/graphql/generated/TweetDetail',
+    headers(0, 900),
+    now,
+  );
+  empty.observe('https://x.com/i/api/graphql/generated/TweetDetail', {}, now);
+  expect(empty.summary()).toEqual([]);
+  expect(empty.beforePage(now)).toEqual({ kind: 'ready' });
+});
+
+test('R9 window observations use the latest remaining threshold, aggregate reset distances and reject value-like operation paths', () => {
+  const now = 0,
+    windows = new reports.XResponseWindows();
+  const h = (remaining: number, reset: number) => ({
+    'x-rate-limit-limit': '50',
+    'x-rate-limit-remaining': String(remaining),
+    'x-rate-limit-reset': String(reset),
+  });
+  windows.observe(
+    'https://x.com/i/api/graphql/generated/Read_Operation',
+    h(25, 960),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({ kind: 'ready' });
+  windows.observe(
+    'https://api.x.com/i/api/graphql/second/Read_Operation',
+    h(24, 960),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({
+    kind: 'wait',
+    ms: 965000,
+    minutes: 17,
+  });
+  windows.observe(
+    'https://x.com/i/api/graphql/generated/Read_Operation',
+    h(30, 2000),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({ kind: 'ready' });
+  windows.observe(
+    'https://x.com/i/api/graphql/generated/Read_Operation',
+    h(20, 961),
+    now,
+  );
+  expect(windows.beforePage(now)).toEqual({ kind: 'long' });
+  expect(windows.summary()[0]).toEqual({
+    operation: 'Read_Operation',
+    limit: 50,
+    lowestRemaining: 20,
+    responses: 4,
+    longestResetSeconds: 2000,
+  });
+  windows.observe(
+    'https://x.com/i/api/graphql/generated/Bad-Value-123',
+    h(24, 500),
+    now,
+  );
+  expect(windows.summary()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ operation: 'graphql-other' }),
+    ]),
+  );
+  for (const url of [
+    'http://x.com/i/api/graphql/g/Op',
+    'https://x.com.evil.example/i/api/graphql/g/Op',
+    'https://u@x.com/i/api/graphql/g/Op',
+  ])
+    windows.observe(url, h(0, 500), now);
+  for (const headers of [
+    { ...h(20, 500), 'x-rate-limit-limit': '0' },
+    { ...h(20, 500), 'x-rate-limit-remaining': '-1' },
+    { ...h(20, 500), 'x-rate-limit-reset': 'not a number' },
+  ])
+    windows.observe('https://x.com/i/api/graphql/g/Invalid', headers, now);
+  expect(windows.summary().map((window) => window.operation)).not.toContain(
+    'Invalid',
+  );
 });

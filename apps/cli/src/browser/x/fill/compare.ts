@@ -18,6 +18,8 @@ export interface CanaryComparison {
     beforeFocal: number;
     candidatesSeen: number;
     matchedIndex: number | null;
+    optionalSlots?: number;
+    optionalTaken?: number;
   };
   absence?: EmptyFocalCounts & {
     focalAbsent: boolean;
@@ -119,7 +121,9 @@ export interface StatusEntityLink {
   path: string;
 }
 function statusPath(value: string): string | null {
-  return /^\/[A-Za-z0-9_]{1,50}\/status\/\d{1,40}\/?$/i.test(value)
+  return /^\/[A-Za-z0-9_]{1,50}\/status\/\d{1,40}(?:\/(?:photo|video)\/\d{1,2})?\/?$/i.test(
+    value,
+  )
     ? value.replace(/\/$/, '').toLowerCase()
     : null;
 }
@@ -349,7 +353,7 @@ export function compareDisplayTextBases(
   }));
   const ambiguous = mapped.some(
     ({ entity, links: candidates }) =>
-      candidates.length !== 1 ||
+      candidates.length > 1 ||
       statusLinks.filter(
         (value) => value.path === entity.path || value.url === entity.url,
       ).length > 1,
@@ -425,11 +429,7 @@ export async function compareNotice(
       ) {
         const candidate = candidates.nth(index);
         shown.push(
-          !(await candidate.isVisible())
-            ? null
-            : expected?.notices[index]?.kind === 'unavailable'
-              ? ''
-              : await candidate.innerText(),
+          !(await candidate.isVisible()) ? null : await candidate.innerText(),
         );
       }
       return matchNoticeAlignment(expected, shown, count);
@@ -439,14 +439,11 @@ export async function compareNotice(
         const current = await read();
         return {
           text: current.matches ? 1 : 0,
-          photos: Math.min(
-            current.candidatesSeen,
-            (expected?.focalIndex ?? -1) + 1,
-          ),
-          videos: 0,
+          photos: current.matches ? 1 : 0,
+          videos: current.matches ? (current.matchedIndex ?? 0) : 0,
         };
       },
-      { text: 1, photos: (expected?.focalIndex ?? -1) + 1, videos: 0 },
+      { text: 1, photos: 1 },
     );
     const current = await read();
     return {
@@ -456,6 +453,12 @@ export async function compareNotice(
         beforeFocal: current.beforeFocal,
         candidatesSeen: current.candidatesSeen,
         matchedIndex: current.matchedIndex,
+        ...(current.optionalSlots
+          ? {
+              optionalSlots: current.optionalSlots,
+              optionalTaken: current.optionalTaken,
+            }
+          : {}),
       },
       matches: render.settled && current.matches,
     };
@@ -545,7 +548,7 @@ export async function compareEmptyFocal(
 }
 export interface NoticeAlignment {
   notices: readonly {
-    kind: 'tombstone' | 'unavailable';
+    kind: 'tombstone' | 'unavailable' | 'optional';
     text: string | null;
   }[];
   focalIndex: number;
@@ -558,6 +561,8 @@ export function matchNoticeAlignment(
   beforeFocal: number;
   candidatesSeen: number;
   matchedIndex: number | null;
+  optionalSlots?: number;
+  optionalTaken?: number;
   matches: boolean;
 } {
   const index = expected?.focalIndex ?? -1;
@@ -567,24 +572,38 @@ export function matchNoticeAlignment(
     index >= 0 &&
     focal?.kind === 'tombstone' &&
     tombstoneNoticeMatches(focal.text ?? '', focal.text);
-  const matches =
-    valid &&
-    candidatesSeen > index &&
-    shown.length > index &&
-    expected!.notices
-      .slice(0, index + 1)
-      .every(
-        (entry, position) =>
-          shown[position] !== null &&
-          shown[position] !== undefined &&
-          (entry.kind === 'unavailable'
-            ? true
-            : tombstoneNoticeMatches(shown[position], entry.text)),
-      );
+  const prefix = expected?.notices.slice(0, index + 1) ?? [];
+  const optionalSlots = prefix.filter(
+    (slot) => slot.kind === 'optional',
+  ).length;
+  let states = new Map<number, number>([[0, 0]]);
+  if (valid)
+    for (const entry of prefix) {
+      const next = new Map<number, number>();
+      for (const [position, taken] of states) {
+        if (entry.kind === 'optional') next.set(position, taken);
+        const text = shown[position];
+        if (
+          position < candidatesSeen &&
+          text !== null &&
+          text !== undefined &&
+          (entry.kind === 'optional' ||
+            entry.kind === 'unavailable' ||
+            tombstoneNoticeMatches(text, entry.text))
+        )
+          next.set(position + 1, taken + (entry.kind === 'optional' ? 1 : 0));
+      }
+      states = next;
+    }
+  const result = valid ? [...states].sort(([a], [b]) => a - b)[0] : undefined;
+  const matches = result !== undefined;
   return {
     beforeFocal: Math.max(0, index),
     candidatesSeen,
-    matchedIndex: matches ? index : null,
+    matchedIndex: result ? result[0] - 1 : null,
+    ...(optionalSlots
+      ? { optionalSlots, optionalTaken: result?.[1] ?? 0 }
+      : {}),
     matches,
   };
 }
@@ -631,8 +650,8 @@ export function noticeAlignmentFromAnswer(
         let result = object(
           object(object(candidate.content).tweet_results).result,
         );
-        if (result.__typename === 'TweetWithVisibilityResults')
-          result = object(result.tweet);
+        const wrapped = result.__typename === 'TweetWithVisibilityResults';
+        if (wrapped) result = object(result.tweet);
         const id =
           result.rest_id ??
           (typeof candidate.id === 'string'
@@ -644,6 +663,10 @@ export function noticeAlignmentFromAnswer(
             : null);
         if (id === focalId && result.__typename !== 'TweetTombstone')
           return null;
+        if (wrapped && id !== focalId) {
+          notices.push({ kind: 'optional', text: null });
+          continue;
+        }
         if (result.__typename === 'TweetUnavailable') {
           notices.push({ kind: 'unavailable', text: null });
           continue;
@@ -697,7 +720,7 @@ interface RenderClock {
 /** Repeated locator reads only; fixed timing is injectable only for unit proof. */
 export async function waitForFocalCounts(
   read: () => Promise<FocalRenderCounts>,
-  expected: { text?: number; photos: number; videos: number },
+  expected: { text?: number; photos: number; videos?: number },
   clock: RenderClock = {
     now: () => performance.now(),
     sleep: async (ms) => {
@@ -721,7 +744,7 @@ export async function waitForFocalCounts(
     const equal =
       (expected.text === undefined || counts.text === expected.text) &&
       counts.photos === expected.photos &&
-      counts.videos === expected.videos;
+      (expected.videos === undefined || counts.videos === expected.videos);
     if (
       equal &&
       now - started >= FOCAL_RENDER_WAIT.minimumMs &&

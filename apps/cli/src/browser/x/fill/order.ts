@@ -7,11 +7,37 @@ export const FillOrderSchema = z.strictObject({
   account: z.string().regex(/^[A-Za-z0-9_]{1,50}$/),
   givenAt: z.iso.datetime({ offset: true }),
   words: z.string().trim().min(1).max(10000),
-  maxPages: z.number().int().min(1).max(200).optional(),
+  maxPages: z.number().int().min(1).max(300).optional(),
+  secondsPerPage: z.number().int().min(10).max(30).optional(),
+  pagesPerDay: z.number().int().min(1).max(300).optional(),
+  batchPause: z.boolean().default(true),
 });
 export interface FillOrder {
   value: z.infer<typeof FillOrderSchema>;
   sha256: string;
+}
+export const DEFAULT_FILL_PACE = Object.freeze({
+  intervalMs: 30000,
+  batch: 20,
+  pauseMs: 900000,
+  perDay: 200,
+});
+export interface FillPace {
+  intervalMs: number;
+  batch: number;
+  pauseMs: number;
+  perDay: number;
+}
+export function orderPace(order?: FillOrder): FillPace {
+  return {
+    intervalMs:
+      order?.value.secondsPerPage === undefined
+        ? DEFAULT_FILL_PACE.intervalMs
+        : order.value.secondsPerPage * 1000,
+    perDay: order?.value.pagesPerDay ?? DEFAULT_FILL_PACE.perDay,
+    batch: DEFAULT_FILL_PACE.batch,
+    pauseMs: order?.value.batchPause === false ? 0 : DEFAULT_FILL_PACE.pauseMs,
+  };
 }
 export async function readOrder(
   path: string,

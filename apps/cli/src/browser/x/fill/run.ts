@@ -20,12 +20,14 @@ import {
   endReason,
   fillMismatchNotice,
   FILL_RELOAD_NOTICE,
+  fillWindowWaitNotice,
+  fillPaceNotice,
 } from '../../copy.ts';
 import type { ReadbackOutcome } from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
 import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
 import { restrictOrigins } from '../../network.ts';
-import { FillOrderSchema } from './order.ts';
+import { FillOrderSchema, orderPace, DEFAULT_FILL_PACE } from './order.ts';
 import type { FillOrder } from './order.ts';
 import {
   compareFocal,
@@ -45,7 +47,7 @@ import type { FillPlan } from './plan.ts';
 import { isPostAnswer, unexpectedAction } from './read.ts';
 import { extract } from './extract.ts';
 import { mergeFillMedia } from './media.ts';
-import { structureReport, errorStop } from './report.ts';
+import { structureReport, errorStop, XResponseWindows } from './report.ts';
 import type { StopDetails } from './report.ts';
 import { SyndicationClient } from '../../../originals/syndication.ts';
 import { storeOriginalMedia } from '../../../originals/store-media.ts';
@@ -85,12 +87,7 @@ export interface FillDependencies {
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   close(context: BrowserContext, automatic?: boolean): Promise<void>;
 }
-export const FILL_PACE = Object.freeze({
-  intervalMs: 30000,
-  batch: 20,
-  pauseMs: 900000,
-  perDay: 200,
-});
+export const FILL_PACE = DEFAULT_FILL_PACE;
 const production: FillDependencies = {
   origin: X_ORIGIN,
   port: 0,
@@ -281,7 +278,26 @@ export async function runFillWithDependencies(
     throw new CliError('STALE_PLAN');
   await validateProfile(options.profile);
   const before = await profileSnapshot(options.profile);
-  const summary = fillSummary(options.plan, options.lang),
+  const effectivePace = orderPace(options.order);
+  deps = {
+    ...deps,
+    intervalMs:
+      options.order?.value.secondsPerPage === undefined
+        ? deps.intervalMs
+        : effectivePace.intervalMs,
+    pauseMs: options.order?.value.batchPause === false ? 0 : deps.pauseMs,
+  };
+  const dayCap = effectivePace.perDay;
+  const pageLimit =
+    options.order?.value.maxPages ??
+    (options.order?.value.pagesPerDay === undefined ? 200 : 300);
+  const paceLine = fillPaceNotice(
+    effectivePace.intervalMs / 1000,
+    dayCap,
+    effectivePace.pauseMs > 0,
+    options.lang,
+  );
+  const summary = fillSummary(options.plan, options.lang, options.order),
     confirmation = await startConfirmation(
       {
         phase: options.order ? 'running' : 'start',
@@ -294,7 +310,9 @@ export async function runFillWithDependencies(
           FILL_STEPS[options.lang ?? 'en'] +
           ' ' +
           EXTENSION_NOTICE[options.lang ?? 'en'] +
-          (options.mediaNotice ?? ''),
+          (options.mediaNotice ?? '') +
+          ' ' +
+          paceLine,
         planned: summary.planned,
         bulk: 0,
         estimateMs: summary.estimateMs,
@@ -366,8 +384,18 @@ export async function runFillWithDependencies(
     action = false,
     error: unknown;
   let stopReason: PlatformCheckReason | undefined;
+  let longWindow = false;
+  let rateLimited = false;
+  const windows = new XResponseWindows(
+    deps.origin === X_ORIGIN ? undefined : deps.origin,
+  );
   let readback: ReadbackOutcome | undefined;
   let cancelWait: () => void = () => {};
+  let rejectRateLimit: (error: CliError) => void = () => {};
+  const rateLimitStop = new Promise<never>((_resolve, reject) => {
+    rejectRateLimit = reject;
+  });
+  void rateLimitStop.catch(() => undefined);
   const cancelMedia = new AbortController();
   const mediaSignal = AbortSignal.any([options.signal, cancelMedia.signal]);
   const cancellation = new Promise<false>((resolve) => {
@@ -385,9 +413,12 @@ export async function runFillWithDependencies(
   const check = () => {
     if (stop || options.signal.aborted) throw new CliError('CANCELLED');
     if (action) throw new CliError('UNEXPECTED_ACTION');
+    if (rateLimited)
+      throw new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
   };
   try {
     options.notice(summary.warning + '\n');
+    options.notice(paceLine + '\n');
     const started = options.order
       ? Promise.resolve(true)
       : confirmation.wait('start');
@@ -398,6 +429,22 @@ export async function runFillWithDependencies(
         : [deps.origin];
     allowed.push(new URL(confirmation.url).origin);
     await restrictOrigins(context, allowed, abortedHosts);
+    context.on('response', (response) => {
+      if (!windows.accepts(response.url())) return;
+      windows.observe(
+        response.url(),
+        response.headers(),
+        options.now().getTime(),
+      );
+      if (response.status() === 429) {
+        rateLimited = true;
+        rejectRateLimit(
+          new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429'),
+        );
+        cancelMedia.abort();
+        cancelWait();
+      }
+    });
     context.once('close', stopped);
     const local = context.pages()[0] ?? (await context.newPage());
     await local.goto(confirmation.launchUrl);
@@ -492,7 +539,7 @@ export async function runFillWithDependencies(
       throw new CliError('ACCOUNT_MISMATCH');
     check();
     await cleanupParts(options.workspace);
-    const day = dateInZone(options.now(), options.plan.timeZone);
+    const day = dateInZone(options.now(), 'Europe/Berlin');
     let used = 0,
       last = 0;
     const lastBatch: number[] = [];
@@ -507,7 +554,7 @@ export async function runFillWithDependencies(
           run.pageOpens !== undefined
         ) {
           precise.add(run.runId);
-          if (dateInZone(run.startedAt, options.plan.timeZone) === day)
+          if (dateInZone(run.startedAt, 'Europe/Berlin') === day)
             used += run.pageOpens;
           if (run.lastPageOpenedAt)
             last = Math.max(last, Date.parse(run.lastPageOpenedAt));
@@ -519,7 +566,7 @@ export async function runFillWithDependencies(
           (attempt.state === 'sending' ||
             attempt.action === 'verify' ||
             (attempt.state === 'not-found' && attempt.settles === null)) &&
-          dateInZone(attempt.at, options.plan.timeZone) === day
+          dateInZone(attempt.at, 'Europe/Berlin') === day
         ) {
           used++;
           last = Math.max(last, Date.parse(attempt.at));
@@ -528,7 +575,7 @@ export async function runFillWithDependencies(
         if (
           accounts.has(attempt.runId) &&
           attempt.state === 'sending' &&
-          dateInZone(attempt.at, options.plan.timeZone) === day
+          dateInZone(attempt.at, 'Europe/Berlin') === day
         )
           lastBatch.push(Date.parse(attempt.at));
     });
@@ -577,7 +624,7 @@ export async function runFillWithDependencies(
       0,
       Math.min(
         options.limit,
-        options.order?.value.maxPages ?? 200,
+        pageLimit,
         options.plan.canary ? 5 : options.limit,
       ),
     );
@@ -597,7 +644,7 @@ export async function runFillWithDependencies(
       const row = candidates[candidateIndex]!;
       const position = options.plan.rows.indexOf(row) + 1;
       check();
-      if (opened >= (options.order?.value.maxPages ?? 200)) break;
+      if (opened >= pageLimit) break;
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError(
           'PLATFORM_CHECK',
@@ -614,8 +661,8 @@ export async function runFillWithDependencies(
       )
         continue;
       if (
-        used >= FILL_PACE.perDay ||
-        dateInZone(options.now(), options.plan.timeZone) !== day
+        used >= dayCap ||
+        dateInZone(options.now(), 'Europe/Berlin') !== day
       ) {
         run.endReason = 'daily-cap';
         break;
@@ -624,14 +671,38 @@ export async function runFillWithDependencies(
         await Promise.race([
           deps.sleep(deps.pauseMs, mediaSignal),
           cancellation,
+          rateLimitStop,
         ]);
         batch = 0;
       }
       const delay = last + deps.intervalMs - options.now().getTime();
       if (delay > 0)
-        await Promise.race([deps.sleep(delay, mediaSignal), cancellation]);
+        await Promise.race([
+          deps.sleep(delay, mediaSignal),
+          cancellation,
+          rateLimitStop,
+        ]);
       check();
-      if (dateInZone(options.now(), options.plan.timeZone) !== day) {
+      for (;;) {
+        const window = windows.beforePage(options.now().getTime());
+        if (window.kind === 'long') {
+          longWindow = true;
+          run.endReason = 'daily-cap';
+          break;
+        }
+        if (window.kind === 'ready') break;
+        options.notice(
+          fillWindowWaitNotice(window.minutes, options.lang) + '\n',
+        );
+        await Promise.race([
+          deps.sleep(window.ms, mediaSignal),
+          cancellation,
+          rateLimitStop,
+        ]);
+        check();
+      }
+      if (longWindow) break;
+      if (dateInZone(options.now(), 'Europe/Berlin') !== day) {
         run.endReason = 'daily-cap';
         break;
       }
@@ -655,7 +726,10 @@ export async function runFillWithDependencies(
       opened++;
       let pageAnswerCompleted = false;
       try {
-        const answer = await pageAnswer(page, row.id, deps);
+        const answer = await Promise.race([
+          pageAnswer(page, row.id, deps),
+          rateLimitStop,
+        ]);
         pageAnswerCompleted = true;
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
           throw new CliError(
@@ -715,7 +789,10 @@ export async function runFillWithDependencies(
           extracted.empty
         ) {
           try {
-            emptyComparison = await compareEmptyFocal(page, row.id);
+            emptyComparison = await Promise.race([
+              compareEmptyFocal(page, row.id),
+              rateLimitStop,
+            ]);
           } catch (caught) {
             if (caught instanceof CliError && caught.code === 'PLATFORM_CHECK')
               throw caught;
@@ -845,24 +922,30 @@ export async function runFillWithDependencies(
             comparison =
               emptyComparison ??
               (extracted.kind === 'read'
-                ? await compareFocal(
-                    page,
-                    stored,
-                    extracted.displayText,
-                    extracted.displayLinks,
-                    gated.has(row.id),
-                    extracted.inlineQuote,
-                    extracted.statusLinks,
-                  )
-                : await compareNotice(
-                    page,
-                    extracted.kind === 'no-entry'
-                      ? 'not-found'
-                      : extracted.kind,
-                    extracted.kind === 'tombstone'
-                      ? noticeAlignmentFromAnswer(answer.body, row.id)
-                      : null,
-                  ));
+                ? await Promise.race([
+                    compareFocal(
+                      page,
+                      stored,
+                      extracted.displayText,
+                      extracted.displayLinks,
+                      gated.has(row.id),
+                      extracted.inlineQuote,
+                      extracted.statusLinks,
+                    ),
+                    rateLimitStop,
+                  ])
+                : await Promise.race([
+                    compareNotice(
+                      page,
+                      extracted.kind === 'no-entry'
+                        ? 'not-found'
+                        : extracted.kind,
+                      extracted.kind === 'tombstone'
+                        ? noticeAlignmentFromAnswer(answer.body, row.id)
+                        : null,
+                    ),
+                    rateLimitStop,
+                  ]));
           } catch (caught) {
             if (
               caught instanceof CliError &&
@@ -890,6 +973,7 @@ export async function runFillWithDependencies(
           await xSelectors.check(page);
           check();
           canaryCounts.push(comparison);
+          if (comparison.notices) reports.push({ notices: comparison.notices });
           if (!comparison.matches) {
             await mismatch(comparison, position, reloaded.has(row.id));
           }
@@ -905,7 +989,11 @@ export async function runFillWithDependencies(
                 : `Text length ${row.original.text?.length ?? 0} -> ${records[0]?.text?.length ?? 0}. Media: ${JSON.stringify(records[0]?.media.map((media) => ({ kind: media.kind, status: media.status })) ?? [])}. Posts above: ${extracted.kind === 'read' ? extracted.above.length : 0}. Structure: ${lock.instruction ?? 'no entry'}`,
           });
           if (
-            !(await Promise.race([confirmation.wait('continue'), cancellation]))
+            !(await Promise.race([
+              confirmation.wait('continue'),
+              cancellation,
+              rateLimitStop,
+            ]))
           )
             throw new CliError('CANCELLED');
         }
@@ -945,7 +1033,7 @@ export async function runFillWithDependencies(
           caught instanceof CliError &&
           caught.code === 'PLATFORM_CHECK' &&
           caught.reason === 'render-timeout' &&
-          opened < (options.order?.value.maxPages ?? 200)
+          opened < pageLimit
         ) {
           check();
           await xSelectors.check(page);
@@ -967,7 +1055,11 @@ export async function runFillWithDependencies(
             },
           });
           options.notice(FILL_RELOAD_NOTICE[options.lang ?? 'en'] + '\n');
-          await Promise.race([deps.sleep(60000, mediaSignal), cancellation]);
+          await Promise.race([
+            deps.sleep(60000, mediaSignal),
+            cancellation,
+            rateLimitStop,
+          ]);
           check();
           await xSelectors.check(page);
           candidates.splice(candidateIndex + 1, 0, row);
@@ -978,7 +1070,14 @@ export async function runFillWithDependencies(
     }
     run.endReason ??= options.plan.canary && completed > 0 ? 'canary' : 'done';
   } catch (caught) {
-    error = stop || options.signal.aborted ? new CliError('CANCELLED') : caught;
+    error =
+      stop || options.signal.aborted
+        ? new CliError('CANCELLED')
+        : action
+          ? new CliError('UNEXPECTED_ACTION')
+          : rateLimited
+            ? new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429')
+            : caught;
     if (error instanceof CliError && error.code === 'PLATFORM_CHECK')
       stopReason = platformCheckReason(error.reason) ?? 'unspecified';
     run.endReason =
@@ -1054,6 +1153,11 @@ export async function runFillWithDependencies(
       reports.push({ gated });
       options.notice(`Gated media: ${JSON.stringify(gated)}\n`);
     }
+    let windowSummary = windows.summary();
+    const windowReport = { xWindows: windowSummary };
+    if (windowSummary.length) reports.push(windowReport);
+    if (longWindow)
+      reports.push({ stop: { code: 'daily-cap', reason: 'x-window-long' } });
     recordStop();
     if (
       began &&
@@ -1064,7 +1168,9 @@ export async function runFillWithDependencies(
         run.endReason === 'error' ||
         gatedPosts.size ||
         mismatchCount > 0 ||
-        reloadCount > 0)
+        reloadCount > 0 ||
+        windowSummary.length > 0 ||
+        longWindow)
     )
       await writeReport();
     if (began) {
@@ -1082,6 +1188,7 @@ export async function runFillWithDependencies(
           matches = await Promise.race([
             confirmation.wait('matches'),
             cancellation,
+            rateLimitStop,
           ]);
         }
         readback = 'account-readback';
@@ -1144,6 +1251,15 @@ export async function runFillWithDependencies(
           stopReason ??= reason;
           run.endReason = 'platform-check';
         }
+        if (rateLimited) {
+          error ??= new CliError(
+            'PLATFORM_CHECK',
+            undefined,
+            undefined,
+            'http-429',
+          );
+          run.endReason = 'platform-check';
+        }
         await writer.endRun({
           runId,
           endedAt: options.now().toISOString(),
@@ -1176,6 +1292,31 @@ export async function runFillWithDependencies(
         options.notice(`Read-back: ${JSON.stringify(run.profileReport)}\n`);
       } catch (caught) {
         error ??= caught;
+        if (rateLimited) {
+          error =
+            stop || options.signal.aborted
+              ? new CliError('CANCELLED')
+              : new CliError(
+                  'PLATFORM_CHECK',
+                  undefined,
+                  undefined,
+                  'http-429',
+                );
+          run.endReason =
+            stop || options.signal.aborted
+              ? 'stopped-by-person'
+              : 'platform-check';
+          if (run.profileReport)
+            await writer
+              .endRun({
+                runId,
+                endedAt: options.now().toISOString(),
+                endReason: run.endReason,
+                bodyShapes: run.bodyShapes,
+                profileReport: run.profileReport,
+              })
+              .catch(() => undefined);
+        }
         if (!readback) readback = 'account-readback';
         if (
           run.endReason === 'done' ||
@@ -1185,6 +1326,10 @@ export async function runFillWithDependencies(
           run.endReason = 'error';
       }
     }
+    windowSummary = windows.summary();
+    windowReport.xWindows = windowSummary;
+    if (windowSummary.length && !reports.includes(windowReport))
+      reports.push(windowReport);
     recordStop();
     if (stopDetails || (readback && readback !== 'unchanged'))
       reports.push({ readback: { outcome: readback ?? 'not-completed' } });
@@ -1198,17 +1343,23 @@ export async function runFillWithDependencies(
         (readback && readback !== 'unchanged') ||
         gatedPosts.size ||
         mismatchCount > 0 ||
-        reloadCount > 0) &&
+        reloadCount > 0 ||
+        windowSummary.length > 0 ||
+        longWindow) &&
       (!reportAttempted ||
         (reportPath &&
-          (stopRecorded || (readback && readback !== 'unchanged'))))
+          (stopRecorded ||
+            (readback && readback !== 'unchanged') ||
+            windowSummary.length > 0)))
     )
       await writeReport();
     noticeStop();
+    if (longWindow) options.notice('Stop detail: x-window-long\n');
     const finalText = options.order
       ? endText(endReason(run.endReason, error), options.lang, stopReason, {
           readback,
           canary: options.plan.canary,
+          ...(longWindow ? { fillStop: 'x-window-long' } : {}),
         }).replace(
           options.lang === 'de'
             ? 'Schließe das X-Fenster, um den Lauf zu beenden.'
@@ -1220,6 +1371,7 @@ export async function runFillWithDependencies(
       : endText(endReason(run.endReason, error), options.lang, stopReason, {
           readback,
           canary: options.plan.canary,
+          ...(longWindow ? { fillStop: 'x-window-long' } : {}),
         });
     confirmation.update({
       phase: 'ended',

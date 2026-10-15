@@ -1093,7 +1093,13 @@ export const STATUS_ENTITY_FIXTURE = {
   label: 'x.com/generated_status/status/901…',
 };
 export type StatusEntityKind =
-  'match' | 'different-path' | 'outside-range' | 'non-status' | 'duplicate';
+  | 'match'
+  | 'different-path'
+  | 'outside-range'
+  | 'non-status'
+  | 'duplicate'
+  | 'video-path'
+  | 'tco-anchor';
 export function statusEntityAnswer(
   id: string,
   kind: StatusEntityKind = 'match',
@@ -1119,7 +1125,9 @@ export function statusEntityAnswer(
           expanded_url:
             kind === 'non-status'
               ? 'https://x.com/generated_status'
-              : fixture.expanded,
+              : kind === 'video-path'
+                ? fixture.expanded + '/video/1'
+                : fixture.expanded,
           indices:
             kind === 'outside-range'
               ? [0, Array.from(fixture.url).length]
@@ -1142,8 +1150,16 @@ export function statusEntityMarkup(
       ? '/generated_status/status/902'
       : kind === 'non-status'
         ? '/generated_status'
-        : fixture.path;
-  const link = `<a href="${href}"><div style="display:inline-flex"><span>https://</span></div><span>${fixture.label}</span></a>`;
+        : kind === 'video-path'
+          ? fixture.path + '/video/1'
+          : kind === 'tco-anchor'
+            ? fixture.url
+            : fixture.path;
+  const label =
+    kind === 'video-path'
+      ? fixture.label.replace('901…', '901/video/1…')
+      : fixture.label;
+  const link = `<a href="${href}"><div style="display:inline-flex"><span>https://</span></div><span>${label}</span></a>`;
   return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${fixture.prefix}${link}${kind === 'duplicate' ? `<span style="display:none">${link}</span>` : ''}</div></article>`;
 }
 
@@ -1166,4 +1182,66 @@ export function flowAnswer(id: string) {
 }
 export function flowMarkup(id: string, mismatch = false): string {
   return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${mismatch ? FLOW_FIXTURE.differentText : FLOW_FIXTURE.text}</div></article>`;
+}
+
+export const OPTIONAL_NOTICE_FIXTURE = {
+  first: 'Generated earlier notice.',
+  protected: 'Generierter geschützter Hinweis. Mehr erfahren',
+  extra: 'Generated wrapper notice with different text.',
+};
+export function optionalNoticeAnswer(focalId = '910', wrapped = true) {
+  const notice = (text: string) => ({
+    __typename: 'TweetTombstone',
+    tombstone: { __typename: 'TextTombstone', text: { text } },
+  });
+  const inner = detailPost('902');
+  delete (inner as Partial<typeof inner>).__typename;
+  const entry = (id: string, result: unknown) => ({
+    entryId: `tweet-${id}`,
+    content: { itemContent: { tweet_results: { result } } },
+  });
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              entry('901', notice(OPTIONAL_NOTICE_FIXTURE.first)),
+              ...(wrapped
+                ? [
+                    entry('902', {
+                      __typename: 'TweetWithVisibilityResults',
+                      tweet: inner,
+                    }),
+                  ]
+                : []),
+              entry('903', notice(OPTIONAL_NOTICE_FIXTURE.protected)),
+              entry('904', detailPost('904')),
+              entry(focalId, notice(OPTIONAL_NOTICE_FIXTURE.protected)),
+              {
+                entryId: 'cursor-generated',
+                content: { cursorType: 'Bottom' },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+export function optionalNoticeMarkup(extra = true, wrongFocal = false): string {
+  const notice = (text: string) =>
+    `<div data-testid="cellInnerDiv"><div role="article">${text}</div></div>`;
+  return (
+    notice(OPTIONAL_NOTICE_FIXTURE.first) +
+    (extra ? notice(OPTIONAL_NOTICE_FIXTURE.extra) : '') +
+    notice(OPTIONAL_NOTICE_FIXTURE.protected) +
+    '<article data-testid="tweet"><a href="/generated/status/904"><time>2026</time></a>Generated own post</article>' +
+    notice(
+      wrongFocal
+        ? 'Generated wrong focal notice'
+        : OPTIONAL_NOTICE_FIXTURE.protected,
+    )
+  );
 }

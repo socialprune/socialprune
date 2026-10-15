@@ -19,6 +19,58 @@ const generated = {
     'Read the originals of my replies and quotes in this dedicated profile.',
   maxPages: 5,
 };
+test('R10 written pace fields admit 10 seconds and 300 pages while preserving explicit defaults', () => {
+  expect(
+    orderModule.FillOrderSchema.parse({
+      ...generated,
+      secondsPerPage: 10,
+      pagesPerDay: 300,
+      batchPause: false,
+      maxPages: 300,
+    }),
+  ).toMatchObject({
+    secondsPerPage: 10,
+    pagesPerDay: 300,
+    batchPause: false,
+    maxPages: 300,
+  });
+  expect(orderModule.FillOrderSchema.parse(generated)).toMatchObject({
+    batchPause: true,
+  });
+  for (const fields of [
+    { secondsPerPage: 9 },
+    { secondsPerPage: 31 },
+    { pagesPerDay: 301 },
+    { pagesPerDay: 0 },
+    { maxPages: 301 },
+    { batchPause: 'false' },
+  ])
+    expect(
+      orderModule.FillOrderSchema.safeParse({ ...generated, ...fields })
+        .success,
+    ).toBe(false);
+});
+
+test('R10 omitted pace fields preserve the fixed pace while explicit order fields affect fill only', () => {
+  expect(orderModule.orderPace()).toEqual({
+    intervalMs: 30000,
+    batch: 20,
+    pauseMs: 900000,
+    perDay: 200,
+  });
+  const value = orderModule.FillOrderSchema.parse({
+    ...generated,
+    secondsPerPage: 10,
+    pagesPerDay: 300,
+    batchPause: false,
+  });
+  expect(orderModule.orderPace({ value, sha256: 'a'.repeat(64) })).toEqual({
+    intervalMs: 10000,
+    batch: 20,
+    pauseMs: 0,
+    perDay: 300,
+  });
+});
 test('written order validates exact scope effective account and unchanged plan before any browser launch', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-order-'));
   try {
@@ -30,15 +82,17 @@ test('written order validates exact scope effective account and unchanged plan b
       'a'.repeat(64),
       'a'.repeat(64),
     );
-    expect(read.value).toEqual(generated);
+    expect(read.value).toEqual({ ...generated, batchPause: true });
     expect(read.sha256).toMatch(/^[a-f0-9]{64}$/);
     for (const defect of [
       { ...generated, scope: 'delete-x' },
       { ...generated, account: 'foreign_account' },
       { ...generated, givenAt: 'invalid' },
-      { ...generated, maxPages: 201 },
+      { ...generated, maxPages: 301 },
       { ...generated, words: '' },
       { ...generated, extra: true },
+      { ...generated, secondsPerPage: 9 },
+      { ...generated, pagesPerDay: 301 },
     ]) {
       await writeFile(file, JSON.stringify(defect));
       await expect(

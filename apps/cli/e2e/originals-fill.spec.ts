@@ -19,6 +19,7 @@ import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { productionMedia } from '../src/originals/video.ts';
 import { SyndicationClient } from '../src/originals/syndication.ts';
 import { CliError } from '../src/cli/errors.ts';
+import { TEST_PORTS, TEST_ORIGINS } from '../playwright.ports.config.ts';
 import { startConfirmation } from '../src/browser/confirmation.ts';
 import { REVIEW_POLICY } from '../src/review/static.ts';
 import { readOrder } from '../src/browser/x/fill/order.ts';
@@ -74,6 +75,8 @@ import {
   flowAnswer,
   flowMarkup,
   FLOW_FIXTURE,
+  optionalNoticeAnswer,
+  optionalNoticeMarkup,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -214,21 +217,57 @@ for (const variant of [
   'order-flow-reload-then-marker',
   'order-flow-reload-then-mismatch',
   'order-flow-unexpected',
+  'order-status-entity-video',
+  'order-status-entity-tco',
+  'order-optional-notices',
+  'order-optional-none',
+  'order-optional-missing-wrapper',
+  'order-optional-wrong-focal',
+  'order-window-short',
+  'order-window-long',
+  'order-window-side-429',
+  'order-window-none',
+  'order-window-stop',
+  'order-pace-ten',
+  'order-pace-deletion-cap',
+  'order-window-half',
+  'order-window-canary-short',
+  'order-window-canary-long',
+  'window-manual-short',
+  'order-pace-batch-off',
+  'order-pace-batch-default',
+  'order-window-canary-side-429',
+  'window-manual-side-429',
+  'order-window-de',
+  'order-window-long-de',
+  'order-window-late-429',
+  'order-pace-berlin-cap',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
     const flow = variant.startsWith('order-flow-');
     const flowCanary = variant.startsWith('order-flow-canary-');
+    const windowVariant =
+      variant.startsWith('order-window-') ||
+      variant.startsWith('window-manual-');
+    const windowCanary =
+      variant.includes('window-canary-') ||
+      variant.startsWith('window-manual-');
+    const paceVariant = variant.startsWith('order-pace-');
     const statusKind =
-      variant === 'order-status-entity-different-path'
-        ? 'different-path'
-        : variant === 'order-status-entity-outside-range'
-          ? 'outside-range'
-          : variant === 'order-status-entity-non-status'
-            ? 'non-status'
-            : variant === 'order-status-entity-duplicate'
-              ? 'duplicate'
-              : 'match';
+      variant === 'order-status-entity-video'
+        ? 'video-path'
+        : variant === 'order-status-entity-tco'
+          ? 'tco-anchor'
+          : variant === 'order-status-entity-different-path'
+            ? 'different-path'
+            : variant === 'order-status-entity-outside-range'
+              ? 'outside-range'
+              : variant === 'order-status-entity-non-status'
+                ? 'non-status'
+                : variant === 'order-status-entity-duplicate'
+                  ? 'duplicate'
+                  : 'match';
     const workspace =
       variant === 'canary-five'
         ? fixtureWorkspace()
@@ -271,6 +310,27 @@ for (const variant of [
       }),
     ];
     workspace.counts.originals = 1;
+    if (windowVariant || paceVariant) {
+      const count = variant.startsWith('order-pace-batch-') ? 21 : 2;
+      const generated = fixtureWorkspace(['1001']);
+      workspace.items = Array.from({ length: count }, (_, index) => ({
+        ...generated.items[0]!,
+        id: `x:${1001 + index}`,
+        reference: { ...generated.items[0]!.reference },
+        createdAt: `2020-01-${String(index + 1).padStart(2, '0')}T12:00:00Z`,
+      }));
+      workspace.items.forEach((item, index) => {
+        item.kind = 'reply';
+        item.reference.replyToId = String(910 - index);
+      });
+      const template = workspace.originals[0]!;
+      workspace.originals = workspace.items.map((item) => ({
+        ...template,
+        id: item.reference.replyToId!,
+      }));
+      workspace.counts.items = count;
+      workspace.counts.originals = count;
+    }
     if (flow) {
       const ids =
         variant === 'order-flow-reload-three'
@@ -405,7 +465,12 @@ for (const variant of [
         join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
         { recursive: true },
       );
-    if (variant === 'shared-cap' || variant === 'order-flow-reload-cap') {
+    if (
+      variant === 'shared-cap' ||
+      variant === 'order-flow-reload-cap' ||
+      variant === 'order-pace-deletion-cap' ||
+      variant === 'order-pace-berlin-cap'
+    ) {
       const writer = store.browserOutcomeWriter(),
         run = {
           runId: 'generated-prior-delete',
@@ -413,13 +478,25 @@ for (const variant of [
           accountKey: FIXTURE.account.key,
           mode: 'delete' as const,
           planHash: 'a'.repeat(64),
-          startedAt: FIXTURE.now,
+          startedAt:
+            variant === 'order-pace-berlin-cap'
+              ? '2026-10-10T23:30:00.000Z'
+              : FIXTURE.now,
           endedAt: null,
           endReason: null,
           bodyShapes: {},
           profileReport: null,
-          pageOpens: variant === 'order-flow-reload-cap' ? 199 : 200,
-          lastPageOpenedAt: FIXTURE.now,
+          pageOpens:
+            variant === 'order-pace-deletion-cap' ||
+            variant === 'order-pace-berlin-cap'
+              ? 1
+              : variant === 'order-flow-reload-cap'
+                ? 199
+                : 200,
+          lastPageOpenedAt:
+            variant === 'order-pace-berlin-cap'
+              ? '2026-10-10T23:30:00.000Z'
+              : FIXTURE.now,
         };
       await writer.begin(run);
       await writer.finish({
@@ -492,7 +569,10 @@ for (const variant of [
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
-      if (flow && pathname?.includes('/status/')) {
+      if (
+        (flow || windowVariant || paceVariant) &&
+        pathname?.includes('/status/')
+      ) {
         const id = pathname.split('/').at(-1)!;
         opensById.set(id, (opensById.get(id) ?? 0) + 1);
         flowStarts.push({ id, at: now, count: opensById.get(id)! });
@@ -522,10 +602,15 @@ for (const variant of [
         return;
       }
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (pathname === '/i/api/graphql/generated/SideOperation') {
+        response.writeHead(429);
+        response.end('{}');
+        return;
+      }
       if (pathname?.startsWith('/i/api/graphql/')) {
         const id = (
           JSON.parse(
-            new URL(request.url!, 'http://127.0.0.1:4231').searchParams.get(
+            new URL(request.url!, TEST_ORIGINS.x).searchParams.get(
               'variables',
             ) ?? '{}',
           ) as { focalTweetId: string }
@@ -545,6 +630,28 @@ for (const variant of [
           },
         });
         response.setHeader('Content-Type', 'application/json');
+        if (
+          windowVariant &&
+          variant !== 'order-window-none' &&
+          !variant.endsWith('side-429') &&
+          variant !== 'order-window-late-429'
+        ) {
+          response.setHeader('x-rate-limit-limit', '50');
+          response.setHeader(
+            'x-rate-limit-remaining',
+            variant === 'order-window-half' ? '25' : '24',
+          );
+          response.setHeader(
+            'x-rate-limit-reset',
+            String(
+              Math.floor(now / 1000) +
+                (variant.includes('window-long') ||
+                variant === 'order-window-canary-long'
+                  ? 2000
+                  : 120),
+            ),
+          );
+        }
         if (variant === 'never' || variant === 'order-platform-answer-timeout')
           return;
         if (
@@ -584,77 +691,94 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = flow
-          ? flowAnswer(id)
-          : variant.startsWith('order-status-entity-')
-            ? statusEntityAnswer(id, statusKind)
-            : injectedError
-              ? notePhotoAnswer(id)
-              : variant.startsWith('order-inline-quote-')
-                ? inlineQuoteAnswer(id, inlineQuoteKind)
-                : variant.startsWith('order-empty-focal-') &&
-                    id === DETAIL_FIXTURE.id
-                  ? emptyFocalAnswer(id, emptyFocalKind)
-                  : variant === 'order-empty-focal-continue'
-                    ? detailAnswer(post)
-                    : variant.startsWith('order-parent-')
-                      ? noticeParentAnswer(
-                          id,
-                          variant === 'order-parent-unknown-direct'
-                            ? 'unknown-direct'
-                            : variant === 'order-parent-unknown-module'
-                              ? 'unknown-module'
-                              : variant.endsWith('module')
-                                ? 'module'
-                                : 'direct',
-                          variant.includes('-unavailable-'),
-                        )
-                      : variant.startsWith('order-notice-')
-                        ? noticeAlignmentAnswer(id, noticeKind)
-                        : variant.startsWith('order-textcontent-')
-                          ? textContentAnswer(id, textContentKind)
-                          : variant === 'order-module-item-ids'
-                            ? moduleItemIdsAnswer(id)
-                            : variant === 'order-empty-results'
-                              ? emptyResultsAnswer(id)
-                              : variant.startsWith('order-protected-')
-                                ? protectedNoticeAnswer(
-                                    id,
-                                    variant === 'order-protected-en'
-                                      ? 'en'
-                                      : 'de',
-                                    variant === 'order-protected-long-tail' ||
-                                      variant === 'order-protected-long-match',
-                                  )
-                                : variant.startsWith('order-visibility-')
-                                  ? gatedMediaAnswer(
-                                      id,
-                                      variant === 'order-visibility-family',
-                                    )
-                                  : variant.startsWith('order-note-')
-                                    ? notePhotoAnswer(id)
-                                    : variant === 'order-own-photos'
-                                      ? ownPhotoAnswer(id)
-                                      : variant.startsWith('order-card-')
-                                        ? cardComparisonAnswer(id, cardKind)
-                                        : variant.startsWith('order-display-')
-                                          ? displayComparisonAnswer(
-                                              id,
-                                              variant ===
-                                                'order-display-alt-mismatch'
-                                                ? 'alt'
-                                                : variant ===
-                                                    'order-display-tail-mismatch'
-                                                  ? 'tail'
-                                                  : 'none',
-                                            )
-                                          : variant === 'module-cursor' ||
-                                              variant === 'unknown-module'
-                                            ? moduleCursorAnswer(
-                                                id,
-                                                variant === 'unknown-module',
-                                              )
-                                            : detailAnswer(post);
+        const answer =
+          windowVariant || paceVariant
+            ? flowAnswer(id)
+            : variant.startsWith('order-optional-')
+              ? optionalNoticeAnswer(
+                  id,
+                  variant !== 'order-optional-missing-wrapper',
+                )
+              : flow
+                ? flowAnswer(id)
+                : variant.startsWith('order-status-entity-')
+                  ? statusEntityAnswer(id, statusKind)
+                  : injectedError
+                    ? notePhotoAnswer(id)
+                    : variant.startsWith('order-inline-quote-')
+                      ? inlineQuoteAnswer(id, inlineQuoteKind)
+                      : variant.startsWith('order-empty-focal-') &&
+                          id === DETAIL_FIXTURE.id
+                        ? emptyFocalAnswer(id, emptyFocalKind)
+                        : variant === 'order-empty-focal-continue'
+                          ? detailAnswer(post)
+                          : variant.startsWith('order-parent-')
+                            ? noticeParentAnswer(
+                                id,
+                                variant === 'order-parent-unknown-direct'
+                                  ? 'unknown-direct'
+                                  : variant === 'order-parent-unknown-module'
+                                    ? 'unknown-module'
+                                    : variant.endsWith('module')
+                                      ? 'module'
+                                      : 'direct',
+                                variant.includes('-unavailable-'),
+                              )
+                            : variant.startsWith('order-notice-')
+                              ? noticeAlignmentAnswer(id, noticeKind)
+                              : variant.startsWith('order-textcontent-')
+                                ? textContentAnswer(id, textContentKind)
+                                : variant === 'order-module-item-ids'
+                                  ? moduleItemIdsAnswer(id)
+                                  : variant === 'order-empty-results'
+                                    ? emptyResultsAnswer(id)
+                                    : variant.startsWith('order-protected-')
+                                      ? protectedNoticeAnswer(
+                                          id,
+                                          variant === 'order-protected-en'
+                                            ? 'en'
+                                            : 'de',
+                                          variant ===
+                                            'order-protected-long-tail' ||
+                                            variant ===
+                                              'order-protected-long-match',
+                                        )
+                                      : variant.startsWith('order-visibility-')
+                                        ? gatedMediaAnswer(
+                                            id,
+                                            variant ===
+                                              'order-visibility-family',
+                                          )
+                                        : variant.startsWith('order-note-')
+                                          ? notePhotoAnswer(id)
+                                          : variant === 'order-own-photos'
+                                            ? ownPhotoAnswer(id)
+                                            : variant.startsWith('order-card-')
+                                              ? cardComparisonAnswer(
+                                                  id,
+                                                  cardKind,
+                                                )
+                                              : variant.startsWith(
+                                                    'order-display-',
+                                                  )
+                                                ? displayComparisonAnswer(
+                                                    id,
+                                                    variant ===
+                                                      'order-display-alt-mismatch'
+                                                      ? 'alt'
+                                                      : variant ===
+                                                          'order-display-tail-mismatch'
+                                                        ? 'tail'
+                                                        : 'none',
+                                                  )
+                                                : variant === 'module-cursor' ||
+                                                    variant === 'unknown-module'
+                                                  ? moduleCursorAnswer(
+                                                      id,
+                                                      variant ===
+                                                        'unknown-module',
+                                                    )
+                                                  : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -694,7 +818,7 @@ for (const variant of [
         response.end(account);
         return;
       }
-      if (flow) {
+      if (flow || windowVariant || paceVariant) {
         const id = pathname!.split('/').at(-1)!;
         const count = opensById.get(id) ?? 1;
         const slow =
@@ -722,7 +846,7 @@ for (const variant of [
             ? '<button data-testid="loginButton">Generated login</button>'
             : '';
         response.end(
-          `${slow ? delayedStopSwitcherMarkup(nav) : account}${marker}${flowMarkup(id, mismatch)}<script>${variant === 'order-flow-unexpected' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'});" : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${id}'})))</script>`,
+          `${slow ? delayedStopSwitcherMarkup(nav) : account}${marker}${flowMarkup(id, mismatch)}<script>${variant.endsWith('side-429') ? "fetch('/i/api/graphql/generated/SideOperation');" : variant === 'order-window-late-429' ? "setTimeout(()=>fetch('/i/api/graphql/generated/SideOperation'),500);" : ''}${variant === 'order-flow-unexpected' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'});" : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${id}'})))</script>`,
         );
         return;
       }
@@ -732,64 +856,70 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup = variant.startsWith('order-status-entity-')
-        ? statusEntityMarkup(pathname!.split('/').at(-1)!, statusKind)
-        : injectedError
-          ? notePhotoMarkup(pathname!.split('/').at(-1)!, 'delayed-text')
-          : variant.startsWith('order-inline-quote-')
-            ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
-            : variant.startsWith('order-empty-focal-') &&
-                pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
-              ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
-              : variant.startsWith('order-parent-')
-                ? noticeParentMarkup(pathname!.split('/').at(-1)!)
-                : variant.startsWith('order-notice-')
-                  ? noticeAlignmentMarkup(noticeKind)
-                  : variant.startsWith('order-textcontent-')
-                    ? textContentMarkup(
-                        pathname!.split('/').at(-1)!,
-                        textContentKind,
-                      )
-                    : variant.startsWith('order-protected-')
-                      ? protectedNoticeMarkup(
-                          variant === 'order-protected-en' ? 'en' : 'de',
-                          variant === 'order-protected-different'
-                            ? 'different'
-                            : variant === 'order-protected-duplicate'
-                              ? 'duplicate'
-                              : variant === 'order-protected-missing'
-                                ? 'missing'
-                                : variant === 'order-protected-long-tail'
-                                  ? 'long-tail'
-                                  : variant === 'order-protected-long-match'
-                                    ? 'long-match'
-                                    : variant === 'order-protected-missing-link'
-                                      ? 'missing-link'
-                                      : 'match',
+      const visibilityMarkup = variant.startsWith('order-optional-')
+        ? optionalNoticeMarkup(
+            variant !== 'order-optional-none',
+            variant === 'order-optional-wrong-focal',
+          )
+        : variant.startsWith('order-status-entity-')
+          ? statusEntityMarkup(pathname!.split('/').at(-1)!, statusKind)
+          : injectedError
+            ? notePhotoMarkup(pathname!.split('/').at(-1)!, 'delayed-text')
+            : variant.startsWith('order-inline-quote-')
+              ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
+              : variant.startsWith('order-empty-focal-') &&
+                  pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
+                ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
+                : variant.startsWith('order-parent-')
+                  ? noticeParentMarkup(pathname!.split('/').at(-1)!)
+                  : variant.startsWith('order-notice-')
+                    ? noticeAlignmentMarkup(noticeKind)
+                    : variant.startsWith('order-textcontent-')
+                      ? textContentMarkup(
+                          pathname!.split('/').at(-1)!,
+                          textContentKind,
                         )
-                      : variant === 'order-visibility-late-player'
-                        ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-                        : variant.startsWith('order-note-')
-                          ? notePhotoMarkup(
-                              pathname!.split('/').at(-1)!,
-                              variant === 'order-note-delayed-photo'
-                                ? 'delayed-photo'
-                                : variant === 'order-note-missing-photo'
-                                  ? 'missing-photo'
-                                  : 'delayed-text',
-                            )
-                          : variant.startsWith('order-visibility-')
-                            ? gatedMediaMarkup(
+                      : variant.startsWith('order-protected-')
+                        ? protectedNoticeMarkup(
+                            variant === 'order-protected-en' ? 'en' : 'de',
+                            variant === 'order-protected-different'
+                              ? 'different'
+                              : variant === 'order-protected-duplicate'
+                                ? 'duplicate'
+                                : variant === 'order-protected-missing'
+                                  ? 'missing'
+                                  : variant === 'order-protected-long-tail'
+                                    ? 'long-tail'
+                                    : variant === 'order-protected-long-match'
+                                      ? 'long-match'
+                                      : variant ===
+                                          'order-protected-missing-link'
+                                        ? 'missing-link'
+                                        : 'match',
+                          )
+                        : variant === 'order-visibility-late-player'
+                          ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+                          : variant.startsWith('order-note-')
+                            ? notePhotoMarkup(
                                 pathname!.split('/').at(-1)!,
-                                variant === 'order-visibility-exposed',
+                                variant === 'order-note-delayed-photo'
+                                  ? 'delayed-photo'
+                                  : variant === 'order-note-missing-photo'
+                                    ? 'missing-photo'
+                                    : 'delayed-text',
                               )
-                            : null;
+                            : variant.startsWith('order-visibility-')
+                              ? gatedMediaMarkup(
+                                  pathname!.split('/').at(-1)!,
+                                  variant === 'order-visibility-exposed',
+                                )
+                              : null;
       response.end(
-        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
+        `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? `fetch('${TEST_ORIGINS.foreign}/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});` : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
     });
     await new Promise<void>((resolve) =>
-      server.listen(4231, '127.0.0.1', resolve),
+      server.listen(TEST_PORTS.x, '127.0.0.1', resolve),
     );
     try {
       const plan = await planFill(store, workspace.items[0]!.account.key);
@@ -802,9 +932,15 @@ for (const variant of [
         injectedError ||
         readbackVariant ||
         variant === 'order-finalize-error' ||
-        (flow && !flowCanary)
+        (flow && !flowCanary) ||
+        (windowVariant && !windowCanary) ||
+        paceVariant
       )
         plan.canary = false;
+      if (variant === 'order-pace-berlin-cap') {
+        Object.assign(plan, { timeZone: 'UTC' });
+        now = Date.parse('2026-10-11T00:30:00.000Z');
+      }
       if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
         expect(plan.handle).toBe('');
         plan.handle = FIXTURE.account.handle;
@@ -820,11 +956,25 @@ for (const variant of [
             account: FIXTURE.account.handle,
             givenAt: FIXTURE.now,
             words: 'Read these generated originals in my dedicated profile.',
-            maxPages: flow
-              ? 200
-              : variant === 'order-empty-focal-continue'
-                ? 2
-                : 1,
+            ...(paceVariant && variant !== 'order-pace-batch-default'
+              ? {
+                  secondsPerPage: 10,
+                  pagesPerDay:
+                    variant === 'order-pace-deletion-cap' ||
+                    variant === 'order-pace-berlin-cap'
+                      ? 2
+                      : 300,
+                  batchPause: false,
+                }
+              : {}),
+            maxPages:
+              windowVariant || paceVariant
+                ? 300
+                : flow
+                  ? 200
+                  : variant === 'order-empty-focal-continue'
+                    ? 2
+                    : 1,
           }),
         );
         order = await readOrder(
@@ -847,16 +997,16 @@ for (const variant of [
       }
       const waits: number[] = [];
       const fakeMediaClient = new SyndicationClient({
-        baseUrl: 'http://127.0.0.1:4231',
+        baseUrl: TEST_ORIGINS.x,
       });
       const fakePhoto = fakeMediaClient.photo.bind(fakeMediaClient);
       fakeMediaClient.photo = (url, signal) =>
         fakePhoto(
           url === GATED_MEDIA_FIXTURE.posterUrl ||
             url === GATED_MEDIA_FIXTURE.photoUrl
-            ? 'http://127.0.0.1:4231/' + new URL(url).pathname.slice(1)
+            ? TEST_ORIGINS.x + '/' + new URL(url).pathname.slice(1)
             : url === 'https://pbs.twimg.com/generated-photo.png'
-              ? 'http://127.0.0.1:4231/generated-photo.png'
+              ? TEST_ORIGINS.x + '/generated-photo.png'
               : url,
           signal,
         );
@@ -899,8 +1049,8 @@ for (const variant of [
           },
         },
         {
-          origin: 'http://127.0.0.1:4231',
-          port: 4232,
+          origin: TEST_ORIGINS.x,
+          port: TEST_PORTS.confirmation,
           responseMs: flow
             ? FLOW_FIXTURE.slowWaitMs
             : variant === 'never'
@@ -910,12 +1060,12 @@ for (const variant of [
                   variant === 'order-platform-body-timeout'
                 ? STOP_DETAIL_FIXTURE.renderWaitMs
                 : 5000,
-          intervalMs: flow ? FLOW_FIXTURE.paceMs : 5,
-          batch: 2,
-          pauseMs: 11,
+          intervalMs: flow || paceVariant ? FLOW_FIXTURE.paceMs : 5,
+          batch: paceVariant ? 20 : 2,
+          pauseMs: paceVariant ? 900000 : 11,
           media: {
             ...productionMedia,
-            origin: 'http://127.0.0.1:4231',
+            origin: TEST_ORIGINS.x,
             free: () => {
               if (!injectedError) return Promise.resolve(10 * 1024 ** 3);
               if (injectedError === 'disk-low') return Promise.resolve(0);
@@ -943,7 +1093,7 @@ for (const variant of [
                   : typeof url === 'string'
                     ? url
                     : url.url) === GATED_MEDIA_FIXTURE.videoUrl
-                  ? 'http://127.0.0.1:4231/generated-gated.mp4'
+                  ? TEST_ORIGINS.x + '/generated-gated.mp4'
                   : url,
                 init,
               ),
@@ -1004,7 +1154,7 @@ for (const variant of [
               stopDuringReload = true;
               const confirmationPage = context!
                 .pages()
-                .find((p) => p.url().startsWith('http://127.0.0.1:4232'))!;
+                .find((p) => p.url().startsWith(TEST_ORIGINS.confirmation))!;
               await confirmationPage.locator('#stop').click();
               await new Promise<void>((_resolve, reject) => {
                 if (signal?.aborted) reject(new CliError('CANCELLED'));
@@ -1016,6 +1166,13 @@ for (const variant of [
                   );
               });
             }
+            if (variant === 'order-window-stop' && ms > 100000) {
+              const confirmationPage = context!
+                .pages()
+                .find((p) => p.url().startsWith(TEST_ORIGINS.confirmation))!;
+              await confirmationPage.locator('#stop').click();
+              throw new CliError('CANCELLED');
+            }
             now += ms;
           },
           async close() {
@@ -1024,7 +1181,7 @@ for (const variant of [
                 .pages()
                 .find(
                   (value) =>
-                    new URL(value.url()).origin === 'http://127.0.0.1:4232',
+                    new URL(value.url()).origin === TEST_ORIGINS.confirmation,
                 )!;
               if (variant === 'order-status-page') {
                 expect(statusBroughtToFront).toBe(1);
@@ -1046,6 +1203,18 @@ for (const variant of [
                   ? 'Beendet:'
                   : 'Ended:',
               );
+              if (windowVariant && variant.includes('window-long'))
+                await expect(page.locator('#result')).toContainText(
+                  variant.endsWith('-de')
+                    ? 'Ein längeres X-Limit ist mehr als zur Hälfte verbraucht.'
+                    : 'A longer X limit is more than half used.',
+                );
+              if (paceVariant)
+                await expect(page.locator('#profile')).toContainText(
+                  variant === 'order-pace-batch-default'
+                    ? 'Pace: at least 30 seconds between pages, at most 200 pages per Berlin day; a 15-minute pause after 20 pages.'
+                    : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per Berlin day; no fixed batch pause.`,
+                );
               if (variant.startsWith('order-platform-'))
                 await expect(page.locator('#result')).toContainText(
                   variant === 'order-platform-login'
@@ -1054,10 +1223,11 @@ for (const variant of [
                       ? STOP_DETAIL_FIXTURE.timeoutDe
                       : variant.startsWith('order-platform-account-readback-')
                         ? 'The signed-in account could not be read back after the run.'
-                        : variant === 'order-platform-answer-status' ||
-                            variant === 'order-platform-answer-type'
-                          ? 'The page was not recognized.'
-                          : STOP_DETAIL_FIXTURE.timeoutEn,
+                        : variant === 'order-platform-answer-status'
+                          ? 'X limited a request with HTTP 429.'
+                          : variant === 'order-platform-answer-type'
+                            ? 'The page was not recognized.'
+                            : STOP_DETAIL_FIXTURE.timeoutEn,
                 );
               if (readbackVariant) {
                 const de = variant.endsWith('-de');
@@ -1130,13 +1300,13 @@ for (const variant of [
         .poll(() =>
           context
             ?.pages()
-            .some((page) => page.url().startsWith('http://127.0.0.1:4232')),
+            .some((page) => page.url().startsWith(TEST_ORIGINS.confirmation)),
         )
         .toBe(true);
       const page = context!
         .pages()
         .find(
-          (value) => new URL(value.url()).origin === 'http://127.0.0.1:4232',
+          (value) => new URL(value.url()).origin === TEST_ORIGINS.confirmation,
         )!;
       if (ordered) {
         const screens = join(tmpdir(), 'socialprune-screens');
@@ -1162,6 +1332,114 @@ for (const variant of [
           return;
         }
         const outcome = await result;
+        if (windowVariant || paceVariant) {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          if (
+            variant.includes('window-long') ||
+            variant === 'order-window-canary-long'
+          ) {
+            expect(outcome).toMatchObject({
+              completed: 1,
+              endReason: 'daily-cap',
+            });
+            expect(notices).toContain('Stop detail: x-window-long\n');
+          } else if (
+            variant.endsWith('side-429') ||
+            variant === 'order-window-late-429'
+          )
+            expect(outcome).toMatchObject({
+              code: 'PLATFORM_CHECK',
+              reason: 'http-429',
+            });
+          else if (variant === 'order-window-stop')
+            expect(outcome).toMatchObject({ code: 'CANCELLED' });
+          else
+            expect(outcome).toMatchObject({
+              completed:
+                variant === 'order-pace-deletion-cap' ||
+                variant === 'order-pace-berlin-cap'
+                  ? 1
+                  : variant.startsWith('order-pace-batch-')
+                    ? 21
+                    : 2,
+              endReason:
+                variant === 'order-pace-deletion-cap' ||
+                variant === 'order-pace-berlin-cap'
+                  ? 'daily-cap'
+                  : windowCanary
+                    ? 'canary'
+                    : 'done',
+            });
+          if (
+            variant === 'order-window-short' ||
+            variant === 'order-window-canary-short' ||
+            variant === 'order-window-de'
+          ) {
+            expect(
+              flowStarts[1]!.at - flowStarts[0]!.at,
+            ).toBeGreaterThanOrEqual(125000);
+            expect(
+              notices.some((text) =>
+                text.includes(
+                  variant.endsWith('-de') ? 'Hälfte verbraucht' : 'half used',
+                ),
+              ),
+            ).toBe(true);
+          }
+          if (
+            variant === 'order-window-none' ||
+            variant === 'order-window-half'
+          )
+            expect(waits.every((ms) => ms < 100000)).toBe(true);
+          if (variant === 'order-pace-ten')
+            expect(
+              flowStarts[1]!.at - flowStarts[0]!.at,
+            ).toBeGreaterThanOrEqual(10000);
+          if (
+            variant === 'order-pace-deletion-cap' ||
+            variant === 'order-pace-berlin-cap'
+          )
+            expect(run.pageOpens).toBe(1);
+          if (variant.startsWith('order-pace-batch-'))
+            expect(waits.includes(900000)).toBe(
+              variant === 'order-pace-batch-default',
+            );
+          if (paceVariant)
+            expect(notices).toContain(
+              variant === 'order-pace-batch-default'
+                ? 'Pace: at least 30 seconds between pages, at most 200 pages per Berlin day; a 15-minute pause after 20 pages.\n'
+                : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per Berlin day; no fixed batch pause.\n`,
+            );
+          if (
+            windowVariant &&
+            variant !== 'order-window-none' &&
+            !variant.endsWith('side-429') &&
+            variant !== 'order-window-late-429'
+          ) {
+            const report = await readFile(
+              join(directory, 'originals', `canary-${run.runId}.json`),
+              'utf8',
+            );
+            expect(JSON.parse(report)).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  xWindows: expect.arrayContaining([
+                    expect.objectContaining({
+                      operation: 'TweetDetail',
+                      limit: 50,
+                      lowestRemaining:
+                        variant === 'order-window-half' ? 25 : 24,
+                    }),
+                  ]),
+                }),
+              ]),
+            );
+            for (const value of [DETAIL_FIXTURE.id, FIXTURE.account.handle])
+              expect(report).not.toContain(value);
+          }
+          expect(context!.pages()).toHaveLength(0);
+          return;
+        }
         if (flow) {
           const journal = await store.browserJournal();
           const run = journal.runs.at(-1)!;
@@ -1259,7 +1537,7 @@ for (const variant of [
                 variant === 'order-flow-marker'
                   ? 'marker-login'
                   : variant === 'order-flow-answer-status'
-                    ? 'answer-status'
+                    ? 'http-429'
                     : 'render-timeout',
             });
             expect(flowStarts).toHaveLength(1);
@@ -1430,6 +1708,10 @@ for (const variant of [
           variant === 'order-empty-focal-match' ||
           variant === 'order-empty-focal-continue' ||
           variant === 'order-status-entity-match' ||
+          variant === 'order-status-entity-video' ||
+          variant === 'order-status-entity-tco' ||
+          variant === 'order-optional-notices' ||
+          variant === 'order-optional-none' ||
           variant === 'order-inline-quote-match' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
@@ -1578,6 +1860,43 @@ for (const variant of [
                   : { endReason: 'error', displayEndReason: 'canary-mismatch' },
           );
         }
+        if (variant.startsWith('order-optional-')) {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const matched =
+            variant === 'order-optional-notices' ||
+            variant === 'order-optional-none';
+          expect(run).toMatchObject({
+            canaryCounts: [
+              expect.objectContaining({
+                matches: matched,
+                notices: expect.objectContaining(
+                  variant === 'order-optional-missing-wrapper'
+                    ? { matchedIndex: null }
+                    : {
+                        optionalSlots: 1,
+                        optionalTaken:
+                          variant === 'order-optional-notices' ? 1 : 0,
+                      },
+                ),
+              }),
+            ],
+          });
+          const raw = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          if (matched)
+            expect(JSON.parse(raw)).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  notices: expect.objectContaining({
+                    optionalSlots: 1,
+                    optionalTaken: variant === 'order-optional-notices' ? 1 : 0,
+                  }),
+                }),
+              ]),
+            );
+        }
         if (readbackVariant || injectedError) {
           expect(extensionMutationInjected).toBe(
             variant.startsWith('order-readback-extensions-changed'),
@@ -1690,7 +2009,7 @@ for (const variant of [
               : variant.startsWith('order-platform-account-readback-')
                 ? 'account-handle'
                 : variant === 'order-platform-answer-status'
-                  ? 'answer-status'
+                  ? 'http-429'
                   : variant === 'order-platform-answer-type'
                     ? 'answer-type'
                     : variant === 'order-platform-answer-timeout'
@@ -2290,10 +2609,10 @@ for (const variant of [
               now: () => new Date(now),
             },
             {
-              baseUrl: 'http://127.0.0.1:4231',
+              baseUrl: TEST_ORIGINS.x,
               media: {
                 ...productionMedia,
-                origin: 'http://127.0.0.1:4231',
+                origin: TEST_ORIGINS.x,
                 free: () => Promise.resolve(10 * 1024 ** 3),
               },
             },
@@ -2388,6 +2707,40 @@ for (const variant of [
         return;
       }
       await page.getByRole('button', { name: 'Start', exact: true }).click();
+      if (variant === 'window-manual-side-429') {
+        expect(await result).toMatchObject({
+          code: 'PLATFORM_CHECK',
+          reason: 'http-429',
+        });
+        expect(
+          (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
+        ).toBeNull();
+        expect(flowStarts).toHaveLength(1);
+        return;
+      }
+      if (variant === 'window-manual-short') {
+        for (let index = 0; index < 2; index++) {
+          await expect(page.locator('#continue')).toBeVisible();
+          await page.locator('#continue').click();
+        }
+        await expect(page.locator('#matches')).toBeVisible();
+        await page.locator('#matches').click();
+        await expect
+          .poll(
+            async () =>
+              (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
+          )
+          .not.toBeNull();
+        expect(flowStarts[1]!.at - flowStarts[0]!.at).toBeGreaterThanOrEqual(
+          125000,
+        );
+        await context!.close();
+        expect(await result).toMatchObject({
+          completed: 2,
+          endReason: 'canary',
+        });
+        return;
+      }
       if (variant === 'flag-account-mismatch') {
         expect(await result).toMatchObject({ code: 'ACCOUNT_MISMATCH' });
         expect(requests.every((path) => path === '/home')).toBe(true);
@@ -2538,7 +2891,7 @@ for (const variant of [
             'utf8',
           ),
         ) as { abortedHosts: Record<string, number> };
-        expect(report.abortedHosts['127.0.0.1:4239']).toBe(1);
+        expect(report.abortedHosts[`127.0.0.1:${TEST_PORTS.foreign}`]).toBe(1);
       }
       if (variant === 'delayed-many')
         expect(requests.filter((path) => path === '/home')).toHaveLength(1);
@@ -2635,7 +2988,7 @@ test('the fake gated-media recorder observes a real ungated video and poster dow
     );
   });
   await new Promise<void>((resolve) =>
-    server.listen(4231, '127.0.0.1', resolve),
+    server.listen(TEST_PORTS.x, '127.0.0.1', resolve),
   );
   try {
     const result = extract(
@@ -2645,7 +2998,7 @@ test('the fake gated-media recorder observes a real ungated video and poster dow
     );
     if (result.kind !== 'read')
       throw new Error('Generated gated control was not read.');
-    const origin = 'http://127.0.0.1:4231';
+    const origin = TEST_ORIGINS.x;
     const original = {
       ...result.post,
       anonymous: null,
@@ -2726,7 +3079,7 @@ test('confirmation page loads only its same-origin stylesheet and rejects a seco
     response.end('body{color:red}');
   });
   await new Promise<void>((resolve) =>
-    decoy.listen(4238, '127.0.0.1', resolve),
+    decoy.listen(TEST_PORTS.style, '127.0.0.1', resolve),
   );
   const server = await startConfirmation(
     {
@@ -2743,7 +3096,7 @@ test('confirmation page loads only its same-origin stylesheet and rejects a seco
       completed: 0,
       result: 'Beobachte die Stichprobe.',
     },
-    4232,
+    TEST_PORTS.confirmation,
   );
   try {
     await page.addInitScript(() => {
@@ -2771,21 +3124,21 @@ test('confirmation page loads only its same-origin stylesheet and rejects a seco
         'content-type'
       ],
     ).toBe('text/css; charset=utf-8');
-    await page.evaluate(() => {
+    await page.evaluate((origin) => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = 'http://127.0.0.1:4238/decoy.css';
+      link.href = origin + '/decoy.css';
       document.head.appendChild(link);
-    });
+    }, TEST_ORIGINS.style);
     expect(
-      await page.evaluate(async () => {
+      await page.evaluate(async (origin) => {
         try {
-          await fetch('http://127.0.0.1:4238/decoy');
+          await fetch(origin + '/decoy');
           return false;
         } catch {
           return true;
         }
-      }),
+      }, TEST_ORIGINS.style),
     ).toBe(true);
     await expect
       .poll(() =>

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import '../playwright.ports.config.ts';
 export default defineConfig({
   root: fileURLToPath(new URL('../../../', import.meta.url)),
   test: {

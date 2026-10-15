@@ -11,6 +11,8 @@ import {
   NOTICE_ALIGNMENT_FIXTURE,
   statusEntityAnswer,
   STATUS_ENTITY_FIXTURE,
+  optionalNoticeAnswer,
+  OPTIONAL_NOTICE_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 
 const DISPLAY_FIXTURE = {
@@ -22,6 +24,181 @@ const DISPLAY_FIXTURE = {
   mediaUrl: 'https://t.co/generatedMedia',
   renderedLink: 'example.org/generated',
 };
+
+test('R8 a wrapped pre-focal item offers exactly one optional notice slot with zero-or-one assignments', () => {
+  const expected = comparison.noticeAlignmentFromAnswer(
+    optionalNoticeAnswer(),
+    '910',
+  );
+  const { first, protected: protectedText, extra } = OPTIONAL_NOTICE_FIXTURE;
+  expect(expected?.notices.map((slot) => slot.kind)).toEqual([
+    'tombstone',
+    'optional',
+    'tombstone',
+    'tombstone',
+  ]);
+  expect(
+    comparison.matchNoticeAlignment(expected, [
+      first,
+      extra,
+      protectedText,
+      protectedText,
+    ]),
+  ).toMatchObject({
+    matches: true,
+    optionalSlots: 1,
+    optionalTaken: 1,
+    matchedIndex: 3,
+  });
+  expect(
+    comparison.matchNoticeAlignment(expected, [
+      first,
+      protectedText,
+      protectedText,
+    ]),
+  ).toMatchObject({
+    matches: true,
+    optionalSlots: 1,
+    optionalTaken: 0,
+    matchedIndex: 2,
+  });
+  expect(
+    comparison.matchNoticeAlignment(expected, [
+      first,
+      extra,
+      protectedText,
+      'Generated wrong focal',
+    ]).matches,
+  ).toBe(false);
+  const absent = comparison.noticeAlignmentFromAnswer(
+    optionalNoticeAnswer('910', false),
+    '910',
+  );
+  expect(
+    comparison.matchNoticeAlignment(absent, [
+      first,
+      extra,
+      protectedText,
+      protectedText,
+    ]).matches,
+  ).toBe(false);
+  const consecutive = {
+    notices: [
+      { kind: 'optional' as const, text: null },
+      { kind: 'optional' as const, text: null },
+      { kind: 'tombstone' as const, text: protectedText },
+    ],
+    focalIndex: 2,
+  };
+  expect(
+    comparison.matchNoticeAlignment(consecutive, [extra, protectedText]),
+  ).toMatchObject({
+    matches: true,
+    optionalSlots: 2,
+    optionalTaken: 1,
+    matchedIndex: 1,
+  });
+  expect(
+    comparison.matchNoticeAlignment(consecutive, [extra, extra, protectedText]),
+  ).toMatchObject({ matches: true, optionalTaken: 2, matchedIndex: 2 });
+  expect(
+    comparison.matchNoticeAlignment(consecutive, [
+      extra,
+      extra,
+      extra,
+      protectedText,
+    ]).matches,
+  ).toBe(false);
+});
+
+test('R12 status media suffixes are exact and a zero-match entity falls back to ordinary t.co anchors', () => {
+  const fixture = STATUS_ENTITY_FIXTURE;
+  const body = statusEntityAnswer(DETAIL_FIXTURE.id);
+  const content =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content;
+  if (!('itemContent' in content)) throw new Error('Generated focal absent.');
+  const post = content.itemContent.tweet_results.result as ReturnType<
+    typeof detailPost
+  > & { legacy: { entities: { urls: { expanded_url: string }[] } } };
+  for (const suffix of ['/video/1', '/photo/12']) {
+    post.legacy.entities.urls[0]!.expanded_url = fixture.expanded + suffix;
+    expect(comparison.statusEntitiesFromAnswer(post)).toEqual([
+      { url: fixture.url, path: fixture.path + suffix },
+    ]);
+  }
+  for (const suffix of [
+    '/video/123',
+    '/photo/x',
+    '/video/',
+    '/video/1/extra',
+    '/photo/1/video/1',
+  ]) {
+    post.legacy.entities.urls[0]!.expanded_url = fixture.expanded + suffix;
+    expect(comparison.statusEntitiesFromAnswer(post)).toEqual([]);
+  }
+  const display = fixture.prefix + fixture.url;
+  const label = 'Generated link label';
+  expect(
+    comparison.compareDisplayTextBases(
+      display,
+      fixture.prefix + label,
+      fixture.prefix + label,
+      [{ href: fixture.url, innerText: label, textContent: label }],
+      [],
+      [],
+      [{ url: fixture.url, path: fixture.path }],
+    ),
+  ).toMatchObject({ matches: true });
+  const entity = { url: fixture.url, path: fixture.path + '/video/1' };
+  const link = {
+    href: fixture.path + '/video/2',
+    innerText: label,
+    textContent: label,
+  };
+  expect(
+    comparison.compareDisplayTextBases(
+      display,
+      fixture.prefix + label,
+      fixture.prefix + label,
+      [link],
+      [],
+      [],
+      [entity],
+    ).matches,
+  ).toBe(false);
+  expect(
+    comparison.compareDisplayTextBases(
+      display,
+      fixture.prefix + label,
+      fixture.prefix + label,
+      [
+        { ...link, href: entity.path },
+        { ...link, href: entity.path },
+      ],
+      [],
+      [],
+      [entity],
+    ).matches,
+  ).toBe(false);
+});
+
+test('R12 zero expanded-path anchors still match an ordinary t.co anchor exactly', () => {
+  const fixture = STATUS_ENTITY_FIXTURE;
+  const text = fixture.prefix + fixture.url;
+  const label = 'Generated ordinary t.co label';
+  expect(
+    comparison.compareDisplayTextBases(
+      text,
+      fixture.prefix + label,
+      fixture.prefix + label,
+      [{ href: fixture.url, innerText: label, textContent: label }],
+      [],
+      [],
+      [{ url: fixture.url, path: fixture.path }],
+    ),
+  ).toMatchObject({ matches: true });
+});
 const fullText =
   DISPLAY_FIXTURE.mention +
   DISPLAY_FIXTURE.encoded +
@@ -83,7 +260,7 @@ test('R5 legacy status entities require exact in-range URL text, allowed HTTPS s
     'http://x.com/generated_status/status/901',
     'https://x.com.evil.example/generated_status/status/901',
     'https://x.com/generated_status',
-    'https://x.com/generated_status/status/901/photo/1',
+    'https://x.com/generated_status/status/901/photo/123',
     'https://u@x.com/generated_status/status/901',
     'https://x.com/generated_status/status/901?x=1',
     'https://x.com/generated_status/status/901#x',
@@ -917,7 +1094,9 @@ test.each(['module', 'wrapped', 'replace'] as const)(
     );
     expect(alignment).toEqual({
       notices: [
-        { kind: 'tombstone', text: NOTICE_ALIGNMENT_FIXTURE.parentText },
+        kind === 'wrapped'
+          ? { kind: 'optional', text: null }
+          : { kind: 'tombstone', text: NOTICE_ALIGNMENT_FIXTURE.parentText },
         { kind: 'tombstone', text: NOTICE_ALIGNMENT_FIXTURE.focalText },
       ],
       focalIndex: 1,
@@ -1040,7 +1219,7 @@ test('R1 inline quote projection is bound to an absent full-text t.co URL and th
     'http://twitter.com/Generated_Quote/status/901',
     'https://twitter.com/Generated_Quote/status/901?generated=1',
     'https://twitter.com/Generated_Quote/status/901#generated',
-    'https://twitter.com/Generated_Quote/status/901/photo/1',
+    'https://twitter.com/Generated_Quote/status/901/photo/123',
     'not a url',
   ]) {
     permalink.expanded = expanded;

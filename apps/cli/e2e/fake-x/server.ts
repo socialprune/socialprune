@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import type { Socket } from 'node:net';
 import { FIXTURE } from './fixture.ts';
+import { TEST_PORTS, TEST_ORIGINS } from '../../playwright.ports.config.ts';
 
 export type Variant =
   | 'success'
@@ -17,7 +18,7 @@ export type Variant =
   | 'wrong-id'
   | 'external'
   | 'mutation';
-export async function fakeX(port = 4231) {
+export async function fakeX(port = TEST_PORTS.x) {
   const variants = new Map<string, Variant>();
   const scripts = new Map<string, string>();
   const gone = new Set<string>();
@@ -147,7 +148,7 @@ export async function fakeX(port = 4231) {
     document.getElementById('${repost ? 'repost' : 'more'}').onclick=()=>menu.hidden=false;
     document.getElementById('delete').onclick=${repost ? 'send' : '()=>{menu.hidden=true;dialog.hidden=false;}'};
     document.getElementById('confirm').onclick=send;
-    ${variant === 'external' ? "const decoy=document.createElement('img');decoy.src='http://127.0.0.1:4239/decoy';document.body.appendChild(decoy);fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}
+    ${variant === 'external' ? `const decoy=document.createElement('img');decoy.src='${TEST_ORIGINS.foreign}/decoy';document.body.appendChild(decoy);fetch('${TEST_ORIGINS.foreign}/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});` : ''}
     ${variant === 'mutation' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'}).catch(()=>{});" : ''}
     </script></body></html>`);
   });

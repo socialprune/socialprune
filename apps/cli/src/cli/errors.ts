@@ -331,6 +331,7 @@ export const PLATFORM_CHECK_REASONS = [
   'account-readback',
   'account-changed',
   'unspecified',
+  'http-429',
 ] as const;
 export type PlatformCheckReason = (typeof PLATFORM_CHECK_REASONS)[number];
 export function platformCheckReason(

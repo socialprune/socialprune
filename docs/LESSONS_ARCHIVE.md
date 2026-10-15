@@ -336,3 +336,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 0 times
+
+### [LL-2026-10-013] 2026-10-15 VERIFICATION: A failed route proves that route failed, not that the goal is out of reach
+
+**ID:** LL-2026-10-013
+**Severity:** HIGH
+**Category:** VERIFICATION
+**Expires:** Never (kernel). The platform behaviour below is dated evidence from 2026-10-14.
+
+**Feedback:** "Ich würde eher den Test extenden ... am Handy, wenn ich da auf mein Profil gehe ... deine Aktivitäten ... Kommentare ... Ich kann dort sortieren und extrem lang scrollen ... und dann sehe ich dort auch den gesamten Kontext ... Also gib dir ein bisschen Mühe und schau dir das an, das sollte alles möglich sein." The maintainer, after I recommended dropping the Instagram route.
+**Problem:** The read-only Instagram spike opened the comments view six times. One route, a mouse wheel over the page with no filter or sort, loaded no further rows, and the rows carried no link. I wrote that the view "loads only about 45 recent comments", that older comments were reachable only by clicking the filter, and recommended withdrawing the plan, although the person uses that same view on his phone daily to sort, scroll far back and open each post. The conclusion rested on one gesture whose failure had several untested explanations: the wrong scroll container, a blocked loader request, the default sort.
+**5 Whys Analysis:**
+1. Why did I recommend giving up? -> The spike's numbers failed the record's pass criteria, and I read them as the platform's limits.
+2. Why as the platform's limits? -> I treated the absence of new rows after mouse-wheel scrolling as proof that the view cannot load them.
+3. Why was one gesture enough? -> The card had allowed only scrolling, and I stopped at its edge instead of first exhausting the routes that edge still allowed, and then asking for the routes a person actually uses.
+4. Why did I not compare with how the person uses the view? -> I measured the page without asking what a person sees there, although the person had described the view in the plan's own words.
+5. Why? -> Root cause: no control distinguishes "this route failed" from "this goal is not reachable" before a recommendation to abandon. Verification law 42 states the distinction for verification claims, but I did not apply it to a feasibility recommendation.
+**Rule(s):**
+1. Before telling a person a goal is out of reach, name the routes tried, and try at least the route the person or the platform's own interface would use. A failed route is reported as that route's failure.
+2. When a probe stops at the edge of its authority, say which further route would answer the question and ask for that route, instead of turning the edge into a verdict.
+3. Read an unexpected negative from a live page as a hypothesis about the probe first: scroll container, blocked request, default sort or filter, viewport.
+**Detection Pattern:** a recommendation to withdraw or stop that rests on one gesture, one request type or one default setting; a "loads only" or "not possible" claim that the person's everyday use contradicts.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: `.kilo/rules/verification-before-completion.md` law 42 ("A failed verification route proves that the route failed, not that the claim cannot be tested. Try another route before recording something as unverifiable."), which loads in every session; rule 1 applies it to feasibility recommendations, so no new always-loaded line is needed.
+**Related Lessons:** LL-2026-10-012 (weigh a route's remaining gain before asking for steps; the opposite error), LL-2026-10-009 (answer the person's goal), LL-2026-10-011 (look up your own record first).
+**Regression / Verification Note:** applied on 2026-10-15 by widening spike S5 to the person's own routes: sort, date filter, the list's own scroll container and opening posts read-only.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-14, the S5 recommendation above)

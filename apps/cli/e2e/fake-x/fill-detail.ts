@@ -1084,3 +1084,86 @@ export function inlineQuoteMarkup(
   const own = INLINE_QUOTE_FIXTURE.text;
   return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${kind === 'not-trailing' ? own.slice(0, -1) + ' ' + anchor + '.' : own + ' ' + anchor}</div></article>`;
 }
+
+export const STATUS_ENTITY_FIXTURE = {
+  prefix: 'Generated linked status: ',
+  url: 'https://t.co/generatedStatus',
+  expanded: 'https://x.com/generated_status/status/901',
+  path: '/generated_status/status/901',
+  label: 'x.com/generated_status/status/901…',
+};
+export type StatusEntityKind =
+  'match' | 'different-path' | 'outside-range' | 'non-status' | 'duplicate';
+export function statusEntityAnswer(
+  id: string,
+  kind: StatusEntityKind = 'match',
+) {
+  const fixture = STATUS_ENTITY_FIXTURE;
+  const post = detailPost(id);
+  const prefix =
+    kind === 'outside-range'
+      ? fixture.url + ' ' + fixture.prefix
+      : fixture.prefix;
+  const fullText = prefix + fixture.url;
+  Object.assign(post.legacy, {
+    full_text: fullText,
+    is_quote_status: false,
+    display_text_range: [
+      kind === 'outside-range' ? Array.from(fixture.url + ' ').length : 0,
+      Array.from(fullText).length,
+    ],
+    entities: {
+      urls: [
+        {
+          url: fixture.url,
+          expanded_url:
+            kind === 'non-status'
+              ? 'https://x.com/generated_status'
+              : fixture.expanded,
+          indices:
+            kind === 'outside-range'
+              ? [0, Array.from(fixture.url).length]
+              : [Array.from(prefix).length, Array.from(fullText).length],
+        },
+      ],
+      media: [],
+    },
+    extended_entities: { media: [] },
+  });
+  return detailAnswer(post);
+}
+export function statusEntityMarkup(
+  id: string,
+  kind: StatusEntityKind = 'match',
+): string {
+  const fixture = STATUS_ENTITY_FIXTURE;
+  const href =
+    kind === 'different-path'
+      ? '/generated_status/status/902'
+      : kind === 'non-status'
+        ? '/generated_status'
+        : fixture.path;
+  const link = `<a href="${href}"><div style="display:inline-flex"><span>https://</span></div><span>${fixture.label}</span></a>`;
+  return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${fixture.prefix}${link}${kind === 'duplicate' ? `<span style="display:none">${link}</span>` : ''}</div></article>`;
+}
+
+export const FLOW_FIXTURE = {
+  ids: ['910', '909', '908', '907', '906'],
+  text: 'Generated flow text.',
+  differentText: 'Generated different flow text.',
+  reloadWaitMs: 60000,
+  paceMs: 30000,
+  slowWaitMs: 1000,
+};
+export function flowAnswer(id: string) {
+  const post = detailPost(id);
+  Object.assign(post.legacy, {
+    full_text: FLOW_FIXTURE.text,
+    display_text_range: [0, FLOW_FIXTURE.text.length],
+    extended_entities: { media: [] },
+  });
+  return detailAnswer(post);
+}
+export function flowMarkup(id: string, mismatch = false): string {
+  return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${mismatch ? FLOW_FIXTURE.differentText : FLOW_FIXTURE.text}</div></article>`;
+}

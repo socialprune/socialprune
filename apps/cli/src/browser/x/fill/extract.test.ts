@@ -19,6 +19,8 @@ import {
   EMPTY_FOCAL_FIXTURE,
   inlineQuoteAnswer,
   INLINE_QUOTE_FIXTURE,
+  statusEntityAnswer,
+  STATUS_ENTITY_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
@@ -560,6 +562,36 @@ test('R1 quote-link comparison data is transient and never changes stored text o
   if (included.kind !== 'read')
     throw new Error('Generated inline quote not read.');
   expect(included.inlineQuote).toBeNull();
+});
+
+test('R5 status entity projection is transient while stored t.co text stays unchanged', () => {
+  const result = extract(
+    statusEntityAnswer(DETAIL_FIXTURE.id),
+    DETAIL_FIXTURE.id,
+    { instruction: null },
+  );
+  if (result.kind !== 'read')
+    throw new Error('Generated status entity not read.');
+  expect(result.statusLinks).toEqual([
+    { url: STATUS_ENTITY_FIXTURE.url, path: STATUS_ENTITY_FIXTURE.path },
+  ]);
+  expect(result.post.text).toBe(
+    STATUS_ENTITY_FIXTURE.prefix + STATUS_ENTITY_FIXTURE.url,
+  );
+  expect(Object.hasOwn(result.post, 'statusLinks')).toBe(false);
+  expect(JSON.stringify(result.post.signedInRecord)).not.toContain(
+    STATUS_ENTITY_FIXTURE.path,
+  );
+  for (const kind of ['outside-range', 'non-status'] as const) {
+    const omitted = extract(
+      statusEntityAnswer(DETAIL_FIXTURE.id, kind),
+      DETAIL_FIXTURE.id,
+      { instruction: null },
+    );
+    if (omitted.kind !== 'read')
+      throw new Error('Generated status entity not read.');
+    expect(omitted.statusLinks).toEqual([]);
+  }
 });
 
 test.each(['module', 'entry'] as const)(

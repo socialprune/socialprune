@@ -61,6 +61,18 @@ export interface EndTextContext {
   readback?: ReadbackOutcome;
   canary?: boolean;
 }
+export function fillMismatchNotice(
+  count: number,
+  lang: BrowserLanguage = 'en',
+): string {
+  return lang === 'de'
+    ? `Text oder Medien weichen bei diesem Beitrag ab; der Lauf geht weiter (${count} von 3).`
+    : `Text or media differ on this post; the run goes on (${count} of 3).`;
+}
+export const FILL_RELOAD_NOTICE = {
+  en: 'X did not load the page in time. Waiting 60 seconds before opening this post once more.',
+  de: 'X hat die Seite nicht rechtzeitig geladen. Dieser Beitrag wird nach 60 Sekunden einmal neu geöffnet.',
+};
 const END_REASON = {
   'canary-mismatch': {
     en: 'The stored text or media counts did not match the page; the sample was not accepted.',

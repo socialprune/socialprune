@@ -18,6 +18,8 @@ import {
   START_STATUS,
   endText,
   endReason,
+  fillMismatchNotice,
+  FILL_RELOAD_NOTICE,
 } from '../../copy.ts';
 import type { ReadbackOutcome } from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
@@ -149,13 +151,41 @@ async function pageAnswer(
     waitUntil: 'domcontentloaded',
     timeout: deps.responseMs,
   });
-  await xSelectors.rendered(
-    page,
-    page
-      .getByTestId('SideNav_AccountSwitcher_Button')
-      .or(page.getByTestId('error-detail')),
-    Math.min(20_000, deps.responseMs),
-  );
+  try {
+    await xSelectors.rendered(
+      page,
+      page
+        .getByTestId('SideNav_AccountSwitcher_Button')
+        .or(page.getByTestId('error-detail')),
+      Math.min(20_000, deps.responseMs),
+    );
+  } catch (caught) {
+    if (
+      caught instanceof CliError &&
+      caught.code === 'PLATFORM_CHECK' &&
+      caught.reason === 'render-timeout'
+    ) {
+      const received = await response;
+      if (received && received.status() !== 200)
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'answer-status',
+        );
+      if (
+        received &&
+        !received.headers()['content-type']?.startsWith('application/json')
+      )
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'answer-type',
+        );
+    }
+    throw caught;
+  }
   const answer = await response;
   if (answer && answer.status() !== 200)
     throw new CliError('PLATFORM_CHECK', undefined, undefined, 'answer-status');
@@ -305,6 +335,27 @@ export async function runFillWithDependencies(
   const canaryCounts: CanaryComparison[] = [];
   const gatedPosts = new Map<string, number>();
   const abortedHosts: Record<string, number> = {};
+  let mismatchCount = 0;
+  let reloadCount = 0;
+  let opened = 0;
+  const reloaded = new Set<string>();
+  const mismatch = async (
+    comparison: CanaryComparison,
+    position: number,
+    afterReload = false,
+  ) => {
+    mismatchCount++;
+    reports.push({ mismatch: { position, ...comparison } });
+    options.notice(`Canary counts: ${JSON.stringify(canaryCounts)}\n`);
+    if (options.plan.canary || afterReload || mismatchCount >= 3) {
+      if (options.order)
+        await options.store
+          .browserOutcomeWriter()
+          .recordCanaryMismatch(runId, canaryCounts);
+      throw new CliError('CANARY_MISMATCH');
+    }
+    options.notice(fillMismatchNotice(mismatchCount, options.lang) + '\n');
+  };
   let context: BrowserContext | undefined,
     page: Page | undefined,
     accountBefore: string | null = null,
@@ -538,8 +589,15 @@ export async function runFillWithDependencies(
             ? 'Kontoprüfung abgeschlossen. Die Seiten werden auf deinen schriftlichen Auftrag gelesen.'
             : 'Account check complete. Reading pages on your written order.',
       });
-    for (const row of candidates) {
+    for (
+      let candidateIndex = 0;
+      candidateIndex < candidates.length;
+      candidateIndex++
+    ) {
+      const row = candidates[candidateIndex]!;
+      const position = options.plan.rows.indexOf(row) + 1;
       check();
+      if (opened >= (options.order?.value.maxPages ?? 200)) break;
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError(
           'PLATFORM_CHECK',
@@ -594,8 +652,11 @@ export async function runFillWithDependencies(
       last = options.now().getTime();
       used++;
       batch++;
+      opened++;
+      let pageAnswerCompleted = false;
       try {
         const answer = await pageAnswer(page, row.id, deps);
+        pageAnswerCompleted = true;
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
           throw new CliError(
             'PLATFORM_CHECK',
@@ -666,16 +727,18 @@ export async function runFillWithDependencies(
           }
           check();
           if (!emptyComparison.matches) {
-            if (options.order) {
-              canaryCounts.push(emptyComparison);
-              await options.store
-                .browserOutcomeWriter()
-                .recordCanaryMismatch(runId, canaryCounts);
-              options.notice(
-                `Canary counts: ${JSON.stringify(canaryCounts)}\n`,
-              );
-            }
-            throw new CliError('CANARY_MISMATCH');
+            canaryCounts.push(emptyComparison);
+            await mismatch(emptyComparison, position, reloaded.has(row.id));
+            await writer.settle(
+              {
+                attemptId,
+                state: 'failed',
+                at: options.now().toISOString(),
+                code: 'CANARY_MISMATCH',
+              },
+              [],
+            );
+            continue;
           }
         }
         run.bodyShapes['read-post'] = lock.instruction
@@ -768,6 +831,10 @@ export async function runFillWithDependencies(
           },
           records,
         );
+        if (mediaFailure)
+          throw mediaFailure instanceof Error
+            ? mediaFailure
+            : new CliError('MEDIA_FAILED');
         if (options.order) {
           const stored = await options.store.read((tx) =>
             tx.originals.get(row.id),
@@ -785,6 +852,7 @@ export async function runFillWithDependencies(
                     extracted.displayLinks,
                     gated.has(row.id),
                     extracted.inlineQuote,
+                    extracted.statusLinks,
                   )
                 : await compareNotice(
                     page,
@@ -795,7 +863,14 @@ export async function runFillWithDependencies(
                       ? noticeAlignmentFromAnswer(answer.body, row.id)
                       : null,
                   ));
-          } catch {
+          } catch (caught) {
+            if (
+              caught instanceof CliError &&
+              ['PLATFORM_CHECK', 'UNEXPECTED_ACTION', 'CANCELLED'].includes(
+                caught.code,
+              )
+            )
+              throw caught;
             comparison = {
               stored: {
                 textLength: normalizedLength(
@@ -812,19 +887,13 @@ export async function runFillWithDependencies(
               matches: false,
             };
           }
+          await xSelectors.check(page);
+          check();
           canaryCounts.push(comparison);
           if (!comparison.matches) {
-            await options.store
-              .browserOutcomeWriter()
-              .recordCanaryMismatch(runId, canaryCounts);
-            options.notice(`Canary counts: ${JSON.stringify(canaryCounts)}\n`);
-            throw new CliError('CANARY_MISMATCH');
+            await mismatch(comparison, position, reloaded.has(row.id));
           }
         }
-        if (mediaFailure)
-          throw mediaFailure instanceof Error
-            ? mediaFailure
-            : new CliError('MEDIA_FAILED');
         completed++;
         if (options.plan.canary && !options.order) {
           confirmation.update({
@@ -850,6 +919,7 @@ export async function runFillWithDependencies(
           break;
         }
       } catch (caught) {
+        let failedSettled = false;
         await writer
           .settle(
             {
@@ -860,7 +930,49 @@ export async function runFillWithDependencies(
             },
             [],
           )
-          .catch(() => undefined);
+          .then(
+            () => {
+              failedSettled = true;
+            },
+            () => undefined,
+          );
+        if (
+          failedSettled &&
+          !pageAnswerCompleted &&
+          !options.plan.canary &&
+          !reloaded.has(row.id) &&
+          reloadCount < 3 &&
+          caught instanceof CliError &&
+          caught.code === 'PLATFORM_CHECK' &&
+          caught.reason === 'render-timeout' &&
+          opened < (options.order?.value.maxPages ?? 200)
+        ) {
+          check();
+          await xSelectors.check(page);
+          if (extensionsChanged(before, await profileSnapshot(options.profile)))
+            throw new CliError(
+              'PLATFORM_CHECK',
+              undefined,
+              undefined,
+              'extensions-changed',
+            );
+          reloaded.add(row.id);
+          reloadCount++;
+          reports.push({
+            reload: {
+              position,
+              number: reloadCount,
+              waitMs: 60000,
+              reason: 'render-timeout',
+            },
+          });
+          options.notice(FILL_RELOAD_NOTICE[options.lang ?? 'en'] + '\n');
+          await Promise.race([deps.sleep(60000, mediaSignal), cancellation]);
+          check();
+          await xSelectors.check(page);
+          candidates.splice(candidateIndex + 1, 0, row);
+          continue;
+        }
         throw caught;
       }
     }
@@ -950,7 +1062,9 @@ export async function runFillWithDependencies(
         run.endReason === 'platform-check' ||
         error ||
         run.endReason === 'error' ||
-        gatedPosts.size)
+        gatedPosts.size ||
+        mismatchCount > 0 ||
+        reloadCount > 0)
     )
       await writeReport();
     if (began) {
@@ -1082,7 +1196,9 @@ export async function runFillWithDependencies(
         error ||
         run.endReason === 'error' ||
         (readback && readback !== 'unchanged') ||
-        gatedPosts.size) &&
+        gatedPosts.size ||
+        mismatchCount > 0 ||
+        reloadCount > 0) &&
       (!reportAttempted ||
         (reportPath &&
           (stopRecorded || (readback && readback !== 'unchanged'))))

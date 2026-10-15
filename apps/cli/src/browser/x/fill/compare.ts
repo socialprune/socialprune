@@ -114,10 +114,83 @@ export function displayLinksFromAnswer(input: unknown): string[] {
 export interface InlineQuotePermalink {
   path: string;
 }
+export interface StatusEntityLink {
+  url: string;
+  path: string;
+}
 function statusPath(value: string): string | null {
-  return /^\/[A-Za-z0-9_]{1,50}\/status\/\d{1,40}\/?$/.test(value)
+  return /^\/[A-Za-z0-9_]{1,50}\/status\/\d{1,40}\/?$/i.test(value)
     ? value.replace(/\/$/, '').toLowerCase()
     : null;
+}
+function expandedStatusPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== 'https:' ||
+      ![
+        'x.com',
+        'twitter.com',
+        'www.twitter.com',
+        'mobile.twitter.com',
+      ].includes(url.hostname.toLowerCase()) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash
+    )
+      return null;
+    return statusPath(url.pathname);
+  } catch {
+    return null;
+  }
+}
+/** Only exact legacy URL entities inside the declared display range qualify. */
+export function statusEntitiesFromAnswer(input: unknown): StatusEntityLink[] {
+  let tweet = object(input);
+  if (tweet.__typename === 'TweetWithVisibilityResults')
+    tweet = object(tweet.tweet);
+  const legacy = object(tweet.legacy),
+    range = legacy.display_text_range;
+  if (
+    typeof legacy.full_text !== 'string' ||
+    !Array.isArray(range) ||
+    range.length !== 2 ||
+    !Number.isSafeInteger(range[0]) ||
+    !Number.isSafeInteger(range[1]) ||
+    typeof range[0] !== 'number' ||
+    typeof range[1] !== 'number' ||
+    range[0] < 0 ||
+    range[1] < range[0]
+  )
+    return [];
+  const points = Array.from(legacy.full_text);
+  if (range[1] > points.length) return [];
+  const entries = object(legacy.entities).urls;
+  return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
+    const value = object(entry),
+      indices = value.indices,
+      path = expandedStatusPath(value.expanded_url);
+    if (
+      typeof value.url !== 'string' ||
+      !/^https:\/\/t\.co\/[A-Za-z0-9]+$/.test(value.url) ||
+      !path ||
+      !Array.isArray(indices) ||
+      indices.length !== 2 ||
+      !Number.isSafeInteger(indices[0]) ||
+      !Number.isSafeInteger(indices[1]) ||
+      typeof indices[0] !== 'number' ||
+      typeof indices[1] !== 'number' ||
+      indices[0] < range[0] ||
+      indices[1] > range[1] ||
+      indices[1] <= indices[0] ||
+      points.slice(indices[0], indices[1]).join('') !== value.url
+    )
+      return [];
+    return [{ url: value.url, path }];
+  });
 }
 /** This projection is comparison-only; archive text and media are unchanged. */
 export function inlineQuoteFromAnswer(
@@ -265,20 +338,39 @@ export function compareDisplayTextBases(
   links: readonly { href: string; innerText: string; textContent: string }[],
   alts: readonly (string | null)[],
   displayLinks: readonly string[] = [],
+  statusLinks: readonly StatusEntityLink[] = [],
 ): DisplayTextComparison & {
   textBasis: NonNullable<CanaryComparison['textBasis']>;
   text: DisplayTextComparison['text'] & { shownTextContentLength: number };
 } {
-  const plain = removeUnrenderedDisplayLinks(
-    displayText,
-    displayLinks,
-    links.map((link) => link.href),
+  const mapped = statusLinks.map((entity) => ({
+    entity,
+    links: links.filter((link) => statusPath(link.href) === entity.path),
+  }));
+  const ambiguous = mapped.some(
+    ({ entity, links: candidates }) =>
+      candidates.length !== 1 ||
+      statusLinks.filter(
+        (value) => value.path === entity.path || value.url === entity.url,
+      ).length > 1,
   );
+  const substitutions = mapped.filter(
+    ({ entity, links: candidates }) =>
+      candidates.length === 1 && displayText.includes(entity.url),
+  );
+  const plain = removeUnrenderedDisplayLinks(displayText, displayLinks, [
+    ...links.map((link) => link.href),
+    ...substitutions.map(({ entity }) => entity.url),
+  ]);
   const storedFor = (basis: 'innerText' | 'textContent') => {
     let stored = plain;
     for (const link of links)
       if (/^https:\/\/t\.co\/[A-Za-z0-9]+$/.test(link.href) && link[basis])
         stored = stored.replaceAll(link.href, link[basis]);
+    for (const { entity, links: candidates } of substitutions) {
+      if (candidates[0]![basis])
+        stored = stored.replace(entity.url, candidates[0]![basis]);
+    }
     return stored;
   };
   const inner = compareDisplayText(storedFor('innerText'), innerText, alts);
@@ -287,14 +379,17 @@ export function compareDisplayTextBases(
     textContent,
     alts,
   );
-  const textBasis = inner.matches
-    ? 'innerText'
-    : content.matches
-      ? 'textContent'
-      : 'none';
+  const textBasis = ambiguous
+    ? 'none'
+    : inner.matches
+      ? 'innerText'
+      : content.matches
+        ? 'textContent'
+        : 'none';
   const chosen = textBasis === 'textContent' ? content : inner;
   return {
     ...chosen,
+    matches: !ambiguous && chosen.matches,
     textBasis,
     text: {
       ...chosen.text,
@@ -644,6 +739,7 @@ export async function compareFocal(
   displayLinks: readonly string[] = [],
   mediaGated = false,
   inlineQuote: InlineQuotePermalink | null = null,
+  statusLinks: readonly StatusEntityLink[] = [],
 ): Promise<CanaryComparison> {
   const article = await xSelectors.focal(page, original.id);
   const own = (selector: string) =>
@@ -728,6 +824,7 @@ export async function compareFocal(
     links,
     alts,
     displayLinks,
+    statusLinks,
   );
   const stored = {
     textLength: textComparison.storedLength,

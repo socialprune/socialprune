@@ -36,6 +36,9 @@ import {
   inlineQuoteAnswer,
   inlineQuoteMarkup,
   INLINE_QUOTE_FIXTURE,
+  statusEntityAnswer,
+  statusEntityMarkup,
+  STATUS_ENTITY_FIXTURE,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -731,6 +734,7 @@ for (const kind of [
       extracted.displayLinks,
       false,
       extracted.inlineQuote,
+      extracted.statusLinks,
     );
     expect(result.matches).toBe(kind === 'match');
     if (kind === 'match')
@@ -785,6 +789,40 @@ test('R1 inline quote removal respects the DOM tail and case-insensitive relativ
     ).matches,
   ).toBe(false);
 });
+
+for (const kind of [
+  'match',
+  'different-path',
+  'outside-range',
+  'non-status',
+  'duplicate',
+] as const)
+  test(`R5 status entity ${kind} compares only one exact in-range status link`, async ({
+    page,
+  }) => {
+    await page.setContent(statusEntityMarkup('910', kind));
+    const text = page.getByTestId('tweetText');
+    expect(await text.locator('a').first().innerText()).not.toBe(
+      await text.locator('a').first().textContent(),
+    );
+    const extracted = extract(statusEntityAnswer('910', kind), '910', {
+      instruction: null,
+    });
+    if (extracted.kind !== 'read')
+      throw new Error('Generated status entity not read.');
+    expect(extracted.displayLinks).toEqual([]);
+    const compared = await compareFocal(
+      page,
+      { ...extracted.post, anonymous: null, signedIn: null },
+      extracted.displayText,
+      extracted.displayLinks,
+      false,
+      extracted.inlineQuote,
+      extracted.statusLinks,
+    );
+    expect(compared.matches).toBe(kind === 'match');
+    expect(extracted.post.text).toContain(STATUS_ENTITY_FIXTURE.url);
+  });
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({
   page,

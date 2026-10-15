@@ -9,6 +9,8 @@ import {
 import {
   noticeAlignmentAnswer,
   NOTICE_ALIGNMENT_FIXTURE,
+  statusEntityAnswer,
+  STATUS_ENTITY_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 
 const DISPLAY_FIXTURE = {
@@ -37,6 +39,150 @@ const answerPost = () => ({
     display_text_range: range,
     entities: { media: [{ url: DISPLAY_FIXTURE.mediaUrl }] },
   },
+});
+
+test('R5 legacy status entities require exact in-range URL text, allowed HTTPS status paths and bounded indices', () => {
+  const body = statusEntityAnswer(DETAIL_FIXTURE.id);
+  const content =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content;
+  if (!('itemContent' in content)) throw new Error('Generated focal absent.');
+  const post = content.itemContent.tweet_results.result as ReturnType<
+    typeof detailPost
+  >;
+  expect(comparison.statusEntitiesFromAnswer(post)).toEqual([
+    { url: STATUS_ENTITY_FIXTURE.url, path: STATUS_ENTITY_FIXTURE.path },
+  ]);
+  expect(
+    comparison.statusEntitiesFromAnswer({
+      __typename: 'TweetWithVisibilityResults',
+      tweet: post,
+    }),
+  ).toEqual([
+    { url: STATUS_ENTITY_FIXTURE.url, path: STATUS_ENTITY_FIXTURE.path },
+  ]);
+  const legacy = post.legacy as typeof post.legacy & {
+    display_text_range: number[];
+    entities: {
+      urls: { url: string; expanded_url: string; indices: number[] }[];
+    };
+  };
+  const entity = legacy.entities.urls[0]!;
+  for (const host of [
+    'x.com',
+    'twitter.com',
+    'www.twitter.com',
+    'mobile.twitter.com',
+  ]) {
+    entity.expanded_url = `https://${host}/GENERATED_STATUS/STATUS/901/`;
+    expect(comparison.statusEntitiesFromAnswer(post)).toEqual([
+      { url: STATUS_ENTITY_FIXTURE.url, path: STATUS_ENTITY_FIXTURE.path },
+    ]);
+  }
+  for (const expanded of [
+    'http://x.com/generated_status/status/901',
+    'https://x.com.evil.example/generated_status/status/901',
+    'https://x.com/generated_status',
+    'https://x.com/generated_status/status/901/photo/1',
+    'https://u@x.com/generated_status/status/901',
+    'https://x.com/generated_status/status/901?x=1',
+    'https://x.com/generated_status/status/901#x',
+  ]) {
+    entity.expanded_url = expanded;
+    expect(comparison.statusEntitiesFromAnswer(post)).toEqual([]);
+  }
+  entity.expanded_url = STATUS_ENTITY_FIXTURE.expanded;
+  const originalIndices = [...entity.indices];
+  for (const indices of [
+    [-1, 2],
+    [0, 0],
+    [0, 2],
+    [0, 999],
+    [1.5, 2],
+  ]) {
+    entity.indices = indices;
+    expect(comparison.statusEntitiesFromAnswer(post)).toEqual([]);
+  }
+  entity.indices = originalIndices;
+  legacy.display_text_range = [0, 3];
+  expect(comparison.statusEntitiesFromAnswer(post)).toEqual([]);
+  legacy.display_text_range = [0, 999];
+  expect(comparison.statusEntitiesFromAnswer(post)).toEqual([]);
+});
+
+test('R5 each rendered status entity substitutes its own label on each exact basis and ambiguous anchors cannot match', () => {
+  const fixture = STATUS_ENTITY_FIXTURE;
+  const text = fixture.prefix + fixture.url;
+  const links = [
+    {
+      href: '/GENERATED_STATUS/STATUS/901/',
+      innerText: 'https:// ' + fixture.label,
+      textContent: 'https://' + fixture.label,
+    },
+  ];
+  const entities = [{ url: fixture.url, path: fixture.path }];
+  const compare = (
+    shown: string,
+    content: string,
+    rendered = links,
+    mapped = entities,
+    displayLinks: string[] = [],
+  ) =>
+    comparison.compareDisplayTextBases(
+      text,
+      shown,
+      content,
+      rendered,
+      [],
+      displayLinks,
+      mapped,
+    );
+  expect(
+    compare(
+      fixture.prefix + links[0]!.innerText,
+      fixture.prefix + links[0]!.textContent,
+    ),
+  ).toMatchObject({ matches: true, textBasis: 'innerText' });
+  expect(
+    compare(
+      fixture.prefix + links[0]!.textContent,
+      fixture.prefix + links[0]!.textContent,
+    ),
+  ).toMatchObject({ matches: true, textBasis: 'textContent' });
+  expect(
+    compare(
+      fixture.prefix + links[0]!.innerText,
+      fixture.prefix + links[0]!.textContent,
+      links,
+      entities,
+      [fixture.url],
+    ).matches,
+  ).toBe(true);
+  for (const rendered of [
+    [...links, ...links],
+    [{ ...links[0]!, href: '/generated_status/status/902' }],
+  ])
+    expect(
+      compare(
+        fixture.prefix + links[0]!.innerText,
+        fixture.prefix + links[0]!.textContent,
+        rendered,
+      ),
+    ).toMatchObject({ matches: false, textBasis: 'none' });
+  expect(
+    compare(
+      fixture.prefix + links[0]!.innerText,
+      fixture.prefix + links[0]!.textContent,
+      links,
+      [...entities, ...entities],
+    ),
+  ).toMatchObject({ matches: false, textBasis: 'none' });
+  expect(
+    compare(
+      'Generated missing word ' + links[0]!.innerText,
+      'Generated missing word ' + links[0]!.textContent,
+    ).matches,
+  ).toBe(false);
 });
 
 test('focal display text uses code-point range, decoded entities and media URL removal without changing persisted full text', () => {

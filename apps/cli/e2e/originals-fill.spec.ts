@@ -69,6 +69,11 @@ import {
   inlineQuoteAnswer,
   inlineQuoteMarkup,
   INLINE_QUOTE_FIXTURE,
+  statusEntityAnswer,
+  statusEntityMarkup,
+  flowAnswer,
+  flowMarkup,
+  FLOW_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -189,9 +194,41 @@ for (const variant of [
   'order-error-type-error',
   'order-error-other',
   'order-finalize-error',
+  'order-status-entity-match',
+  'order-status-entity-different-path',
+  'order-status-entity-outside-range',
+  'order-status-entity-non-status',
+  'order-status-entity-duplicate',
+  'order-flow-mismatch-two',
+  'order-flow-mismatch-three',
+  'order-flow-mismatch-two-de',
+  'order-flow-canary-mismatch',
+  'order-flow-reload-success',
+  'order-flow-reload-twice',
+  'order-flow-reload-three',
+  'order-flow-reload-cap',
+  'order-flow-reload-stop',
+  'order-flow-marker',
+  'order-flow-answer-status',
+  'order-flow-canary-timeout',
+  'order-flow-reload-then-marker',
+  'order-flow-reload-then-mismatch',
+  'order-flow-unexpected',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
+    const flow = variant.startsWith('order-flow-');
+    const flowCanary = variant.startsWith('order-flow-canary-');
+    const statusKind =
+      variant === 'order-status-entity-different-path'
+        ? 'different-path'
+        : variant === 'order-status-entity-outside-range'
+          ? 'outside-range'
+          : variant === 'order-status-entity-non-status'
+            ? 'non-status'
+            : variant === 'order-status-entity-duplicate'
+              ? 'duplicate'
+              : 'match';
     const workspace =
       variant === 'canary-five'
         ? fixtureWorkspace()
@@ -234,6 +271,34 @@ for (const variant of [
       }),
     ];
     workspace.counts.originals = 1;
+    if (flow) {
+      const ids =
+        variant === 'order-flow-reload-three'
+          ? FLOW_FIXTURE.ids.slice(0, 4)
+          : variant === 'order-flow-mismatch-two' ||
+              variant === 'order-flow-mismatch-two-de' ||
+              variant === 'order-flow-mismatch-three'
+            ? FLOW_FIXTURE.ids.slice(0, 4)
+            : variant === 'order-flow-canary-mismatch' ||
+                variant === 'order-flow-reload-success'
+              ? FLOW_FIXTURE.ids.slice(0, 2)
+              : FLOW_FIXTURE.ids.slice(0, 1);
+      const generated = fixtureWorkspace(
+        ids.map((_, index) => String(1001 + index)),
+      );
+      workspace.items = generated.items;
+      workspace.items.forEach((item, index) => {
+        item.kind = 'reply';
+        item.reference.replyToId = ids[index]!;
+      });
+      const template = workspace.originals[0]!;
+      workspace.originals = ids.map((id) => ({
+        ...template,
+        id,
+      }));
+      workspace.counts.items = workspace.items.length;
+      workspace.counts.originals = ids.length;
+    }
     if (variant.startsWith('order-empty-focal-')) {
       workspace.originals[0]!.text = EMPTY_FOCAL_FIXTURE.oldText;
       workspace.originals[0]!.anonymous = {
@@ -340,7 +405,7 @@ for (const variant of [
         join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
         { recursive: true },
       );
-    if (variant === 'shared-cap') {
+    if (variant === 'shared-cap' || variant === 'order-flow-reload-cap') {
       const writer = store.browserOutcomeWriter(),
         run = {
           runId: 'generated-prior-delete',
@@ -353,7 +418,7 @@ for (const variant of [
           endReason: null,
           bodyShapes: {},
           profileReport: null,
-          pageOpens: 200,
+          pageOpens: variant === 'order-flow-reload-cap' ? 199 : 200,
           lastPageOpenedAt: FIXTURE.now,
         };
       await writer.begin(run);
@@ -368,6 +433,9 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    const flowStarts: { id: string; at: number; count: number }[] = [];
+    const opensById = new Map<string, number>();
+    let stopDuringReload = false;
     let extensionMutationInjected = false;
     const readbackVariant = variant.startsWith('order-readback-');
     const injectedError = variant.startsWith('order-error-')
@@ -420,9 +488,15 @@ for (const variant of [
     const mediaRequests: string[] = [];
     let statusBroughtToFront = 0;
     let releaseHome: () => void = () => {};
+    let now = Date.parse(FIXTURE.now);
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
+      if (flow && pathname?.includes('/status/')) {
+        const id = pathname.split('/').at(-1)!;
+        opensById.set(id, (opensById.get(id) ?? 0) + 1);
+        flowStarts.push({ id, at: now, count: opensById.get(id)! });
+      }
       if (pathname?.startsWith('/generated-gated-')) {
         mediaRequests.push(pathname);
         response.setHeader('Content-Type', 'image/png');
@@ -473,7 +547,11 @@ for (const variant of [
         response.setHeader('Content-Type', 'application/json');
         if (variant === 'never' || variant === 'order-platform-answer-timeout')
           return;
-        if (variant === '429' || variant === 'order-platform-answer-status') {
+        if (
+          variant === '429' ||
+          variant === 'order-platform-answer-status' ||
+          variant === 'order-flow-answer-status'
+        ) {
           response.writeHead(429);
           response.end('{}');
           return;
@@ -506,71 +584,77 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer = injectedError
-          ? notePhotoAnswer(id)
-          : variant.startsWith('order-inline-quote-')
-            ? inlineQuoteAnswer(id, inlineQuoteKind)
-            : variant.startsWith('order-empty-focal-') &&
-                id === DETAIL_FIXTURE.id
-              ? emptyFocalAnswer(id, emptyFocalKind)
-              : variant === 'order-empty-focal-continue'
-                ? detailAnswer(post)
-                : variant.startsWith('order-parent-')
-                  ? noticeParentAnswer(
-                      id,
-                      variant === 'order-parent-unknown-direct'
-                        ? 'unknown-direct'
-                        : variant === 'order-parent-unknown-module'
-                          ? 'unknown-module'
-                          : variant.endsWith('module')
-                            ? 'module'
-                            : 'direct',
-                      variant.includes('-unavailable-'),
-                    )
-                  : variant.startsWith('order-notice-')
-                    ? noticeAlignmentAnswer(id, noticeKind)
-                    : variant.startsWith('order-textcontent-')
-                      ? textContentAnswer(id, textContentKind)
-                      : variant === 'order-module-item-ids'
-                        ? moduleItemIdsAnswer(id)
-                        : variant === 'order-empty-results'
-                          ? emptyResultsAnswer(id)
-                          : variant.startsWith('order-protected-')
-                            ? protectedNoticeAnswer(
-                                id,
-                                variant === 'order-protected-en' ? 'en' : 'de',
-                                variant === 'order-protected-long-tail' ||
-                                  variant === 'order-protected-long-match',
-                              )
-                            : variant.startsWith('order-visibility-')
-                              ? gatedMediaAnswer(
-                                  id,
-                                  variant === 'order-visibility-family',
-                                )
-                              : variant.startsWith('order-note-')
-                                ? notePhotoAnswer(id)
-                                : variant === 'order-own-photos'
-                                  ? ownPhotoAnswer(id)
-                                  : variant.startsWith('order-card-')
-                                    ? cardComparisonAnswer(id, cardKind)
-                                    : variant.startsWith('order-display-')
-                                      ? displayComparisonAnswer(
-                                          id,
-                                          variant ===
-                                            'order-display-alt-mismatch'
-                                            ? 'alt'
-                                            : variant ===
-                                                'order-display-tail-mismatch'
-                                              ? 'tail'
-                                              : 'none',
-                                        )
-                                      : variant === 'module-cursor' ||
-                                          variant === 'unknown-module'
-                                        ? moduleCursorAnswer(
-                                            id,
-                                            variant === 'unknown-module',
-                                          )
-                                        : detailAnswer(post);
+        const answer = flow
+          ? flowAnswer(id)
+          : variant.startsWith('order-status-entity-')
+            ? statusEntityAnswer(id, statusKind)
+            : injectedError
+              ? notePhotoAnswer(id)
+              : variant.startsWith('order-inline-quote-')
+                ? inlineQuoteAnswer(id, inlineQuoteKind)
+                : variant.startsWith('order-empty-focal-') &&
+                    id === DETAIL_FIXTURE.id
+                  ? emptyFocalAnswer(id, emptyFocalKind)
+                  : variant === 'order-empty-focal-continue'
+                    ? detailAnswer(post)
+                    : variant.startsWith('order-parent-')
+                      ? noticeParentAnswer(
+                          id,
+                          variant === 'order-parent-unknown-direct'
+                            ? 'unknown-direct'
+                            : variant === 'order-parent-unknown-module'
+                              ? 'unknown-module'
+                              : variant.endsWith('module')
+                                ? 'module'
+                                : 'direct',
+                          variant.includes('-unavailable-'),
+                        )
+                      : variant.startsWith('order-notice-')
+                        ? noticeAlignmentAnswer(id, noticeKind)
+                        : variant.startsWith('order-textcontent-')
+                          ? textContentAnswer(id, textContentKind)
+                          : variant === 'order-module-item-ids'
+                            ? moduleItemIdsAnswer(id)
+                            : variant === 'order-empty-results'
+                              ? emptyResultsAnswer(id)
+                              : variant.startsWith('order-protected-')
+                                ? protectedNoticeAnswer(
+                                    id,
+                                    variant === 'order-protected-en'
+                                      ? 'en'
+                                      : 'de',
+                                    variant === 'order-protected-long-tail' ||
+                                      variant === 'order-protected-long-match',
+                                  )
+                                : variant.startsWith('order-visibility-')
+                                  ? gatedMediaAnswer(
+                                      id,
+                                      variant === 'order-visibility-family',
+                                    )
+                                  : variant.startsWith('order-note-')
+                                    ? notePhotoAnswer(id)
+                                    : variant === 'order-own-photos'
+                                      ? ownPhotoAnswer(id)
+                                      : variant.startsWith('order-card-')
+                                        ? cardComparisonAnswer(id, cardKind)
+                                        : variant.startsWith('order-display-')
+                                          ? displayComparisonAnswer(
+                                              id,
+                                              variant ===
+                                                'order-display-alt-mismatch'
+                                                ? 'alt'
+                                                : variant ===
+                                                    'order-display-tail-mismatch'
+                                                  ? 'tail'
+                                                  : 'none',
+                                            )
+                                          : variant === 'module-cursor' ||
+                                              variant === 'unknown-module'
+                                            ? moduleCursorAnswer(
+                                                id,
+                                                variant === 'unknown-module',
+                                              )
+                                            : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
@@ -610,62 +694,96 @@ for (const variant of [
         response.end(account);
         return;
       }
+      if (flow) {
+        const id = pathname!.split('/').at(-1)!;
+        const count = opensById.get(id) ?? 1;
+        const slow =
+          variant === 'order-flow-canary-timeout' ||
+          variant === 'order-flow-reload-twice' ||
+          variant === 'order-flow-reload-cap' ||
+          variant === 'order-flow-reload-stop' ||
+          ((variant === 'order-flow-reload-then-marker' ||
+            variant === 'order-flow-reload-then-mismatch' ||
+            variant === 'order-flow-unexpected') &&
+            count === 1) ||
+          (variant === 'order-flow-reload-success' &&
+            id === FLOW_FIXTURE.ids[0] &&
+            count === 1) ||
+          (variant === 'order-flow-reload-three' && count === 1);
+        const mismatch =
+          (variant.startsWith('order-flow-mismatch-') &&
+            FLOW_FIXTURE.ids.indexOf(id) <
+              (variant === 'order-flow-mismatch-three' ? 3 : 2)) ||
+          variant === 'order-flow-canary-mismatch' ||
+          (variant === 'order-flow-reload-then-mismatch' && count === 2);
+        const marker =
+          variant === 'order-flow-marker' ||
+          (variant === 'order-flow-reload-then-marker' && count === 2)
+            ? '<button data-testid="loginButton">Generated login</button>'
+            : '';
+        response.end(
+          `${slow ? delayedStopSwitcherMarkup(nav) : account}${marker}${flowMarkup(id, mismatch)}<script>${variant === 'order-flow-unexpected' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'});" : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${id}'})))</script>`,
+        );
+        return;
+      }
       if (['login', 'challenge', 'limit', 'german-ended'].includes(variant)) {
         response.end(
           `${account}<p data-testid="${variant === 'login' || variant === 'german-ended' ? 'loginButton' : variant === 'challenge' ? 'challenge' : 'rateLimit'}">${variant === 'login' || variant === 'german-ended' ? 'Log in to X' : variant === 'challenge' ? 'Confirm you are human' : 'Rate limit exceeded'}</p>`,
         );
         return;
       }
-      const visibilityMarkup = injectedError
-        ? notePhotoMarkup(pathname!.split('/').at(-1)!, 'delayed-text')
-        : variant.startsWith('order-inline-quote-')
-          ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
-          : variant.startsWith('order-empty-focal-') &&
-              pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
-            ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
-            : variant.startsWith('order-parent-')
-              ? noticeParentMarkup(pathname!.split('/').at(-1)!)
-              : variant.startsWith('order-notice-')
-                ? noticeAlignmentMarkup(noticeKind)
-                : variant.startsWith('order-textcontent-')
-                  ? textContentMarkup(
-                      pathname!.split('/').at(-1)!,
-                      textContentKind,
-                    )
-                  : variant.startsWith('order-protected-')
-                    ? protectedNoticeMarkup(
-                        variant === 'order-protected-en' ? 'en' : 'de',
-                        variant === 'order-protected-different'
-                          ? 'different'
-                          : variant === 'order-protected-duplicate'
-                            ? 'duplicate'
-                            : variant === 'order-protected-missing'
-                              ? 'missing'
-                              : variant === 'order-protected-long-tail'
-                                ? 'long-tail'
-                                : variant === 'order-protected-long-match'
-                                  ? 'long-match'
-                                  : variant === 'order-protected-missing-link'
-                                    ? 'missing-link'
-                                    : 'match',
+      const visibilityMarkup = variant.startsWith('order-status-entity-')
+        ? statusEntityMarkup(pathname!.split('/').at(-1)!, statusKind)
+        : injectedError
+          ? notePhotoMarkup(pathname!.split('/').at(-1)!, 'delayed-text')
+          : variant.startsWith('order-inline-quote-')
+            ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
+            : variant.startsWith('order-empty-focal-') &&
+                pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
+              ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
+              : variant.startsWith('order-parent-')
+                ? noticeParentMarkup(pathname!.split('/').at(-1)!)
+                : variant.startsWith('order-notice-')
+                  ? noticeAlignmentMarkup(noticeKind)
+                  : variant.startsWith('order-textcontent-')
+                    ? textContentMarkup(
+                        pathname!.split('/').at(-1)!,
+                        textContentKind,
                       )
-                    : variant === 'order-visibility-late-player'
-                      ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-                      : variant.startsWith('order-note-')
-                        ? notePhotoMarkup(
-                            pathname!.split('/').at(-1)!,
-                            variant === 'order-note-delayed-photo'
-                              ? 'delayed-photo'
-                              : variant === 'order-note-missing-photo'
-                                ? 'missing-photo'
-                                : 'delayed-text',
-                          )
-                        : variant.startsWith('order-visibility-')
-                          ? gatedMediaMarkup(
+                    : variant.startsWith('order-protected-')
+                      ? protectedNoticeMarkup(
+                          variant === 'order-protected-en' ? 'en' : 'de',
+                          variant === 'order-protected-different'
+                            ? 'different'
+                            : variant === 'order-protected-duplicate'
+                              ? 'duplicate'
+                              : variant === 'order-protected-missing'
+                                ? 'missing'
+                                : variant === 'order-protected-long-tail'
+                                  ? 'long-tail'
+                                  : variant === 'order-protected-long-match'
+                                    ? 'long-match'
+                                    : variant === 'order-protected-missing-link'
+                                      ? 'missing-link'
+                                      : 'match',
+                        )
+                      : variant === 'order-visibility-late-player'
+                        ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+                        : variant.startsWith('order-note-')
+                          ? notePhotoMarkup(
                               pathname!.split('/').at(-1)!,
-                              variant === 'order-visibility-exposed',
+                              variant === 'order-note-delayed-photo'
+                                ? 'delayed-photo'
+                                : variant === 'order-note-missing-photo'
+                                  ? 'missing-photo'
+                                  : 'delayed-text',
                             )
-                          : null;
+                          : variant.startsWith('order-visibility-')
+                            ? gatedMediaMarkup(
+                                pathname!.split('/').at(-1)!,
+                                variant === 'order-visibility-exposed',
+                              )
+                            : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -683,14 +801,14 @@ for (const variant of [
         variant === 'order-platform-account-readback-full' ||
         injectedError ||
         readbackVariant ||
-        variant === 'order-finalize-error'
+        variant === 'order-finalize-error' ||
+        (flow && !flowCanary)
       )
         plan.canary = false;
       if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
         expect(plan.handle).toBe('');
         plan.handle = FIXTURE.account.handle;
       }
-      let now = Date.parse(FIXTURE.now);
       const ordered = variant.startsWith('order-');
       let order: Awaited<ReturnType<typeof readOrder>> | undefined;
       if (ordered) {
@@ -702,7 +820,11 @@ for (const variant of [
             account: FIXTURE.account.handle,
             givenAt: FIXTURE.now,
             words: 'Read these generated originals in my dedicated profile.',
-            maxPages: variant === 'order-empty-focal-continue' ? 2 : 1,
+            maxPages: flow
+              ? 200
+              : variant === 'order-empty-focal-continue'
+                ? 2
+                : 1,
           }),
         );
         order = await readOrder(
@@ -779,15 +901,16 @@ for (const variant of [
         {
           origin: 'http://127.0.0.1:4231',
           port: 4232,
-          responseMs:
-            variant === 'never'
+          responseMs: flow
+            ? FLOW_FIXTURE.slowWaitMs
+            : variant === 'never'
               ? 200
               : slowSwitcher ||
                   variant === 'order-platform-answer-timeout' ||
                   variant === 'order-platform-body-timeout'
                 ? STOP_DETAIL_FIXTURE.renderWaitMs
                 : 5000,
-          intervalMs: 5,
+          intervalMs: flow ? FLOW_FIXTURE.paceMs : 5,
           batch: 2,
           pauseMs: 11,
           media: {
@@ -871,9 +994,28 @@ for (const variant of [
             }
             return context;
           },
-          async sleep(ms) {
+          async sleep(ms, signal) {
             await Promise.resolve();
             waits.push(ms);
+            if (
+              variant === 'order-flow-reload-stop' &&
+              ms === FLOW_FIXTURE.reloadWaitMs
+            ) {
+              stopDuringReload = true;
+              const confirmationPage = context!
+                .pages()
+                .find((p) => p.url().startsWith('http://127.0.0.1:4232'))!;
+              await confirmationPage.locator('#stop').click();
+              await new Promise<void>((_resolve, reject) => {
+                if (signal?.aborted) reject(new CliError('CANCELLED'));
+                else
+                  signal?.addEventListener(
+                    'abort',
+                    () => reject(new CliError('CANCELLED')),
+                    { once: true },
+                  );
+              });
+            }
             now += ms;
           },
           async close() {
@@ -935,12 +1077,12 @@ for (const variant of [
                   de ? 'Es wurde nichts geändert.' : 'Nothing was changed.',
                 );
               }
-              if (variant === 'order-card-full-mismatch') {
+              if (variant === 'order-card-full-mismatch' && !flow) {
                 await expect(page.locator('#result')).not.toContainText(
                   'sample',
                 );
                 await expect(page.locator('#result')).toContainText(
-                  'The stored text or media counts did not match the page.',
+                  'The planned work is complete.',
                 );
               }
               await mkdir(join(tmpdir(), 'socialprune-screens'), {
@@ -1020,6 +1162,224 @@ for (const variant of [
           return;
         }
         const outcome = await result;
+        if (flow) {
+          const journal = await store.browserJournal();
+          const run = journal.runs.at(-1)!;
+          const attempts = journal.attempts;
+          const sending = attempts.filter(
+            (attempt) => attempt.state === 'sending',
+          );
+          const states = attempts
+            .filter((attempt) => attempt.state !== 'sending')
+            .map((attempt) => attempt.state);
+          expect(run.pageOpens).toBe(flowStarts.length);
+          expect(sending).toHaveLength(flowStarts.length);
+          for (let i = 1; i < sending.length; i++)
+            expect(
+              Date.parse(sending[i]!.at) - Date.parse(sending[i - 1]!.at),
+            ).toBeGreaterThanOrEqual(FLOW_FIXTURE.paceMs);
+          const reloads = flowStarts.filter((entry) => entry.count === 2);
+          if (
+            variant === 'order-flow-mismatch-two' ||
+            variant === 'order-flow-mismatch-two-de'
+          ) {
+            expect(outcome).toMatchObject({ completed: 4, endReason: 'done' });
+            expect(states).toEqual(['read', 'read', 'read', 'read']);
+          } else if (variant === 'order-flow-mismatch-three') {
+            expect(outcome).toMatchObject({ code: 'CANARY_MISMATCH' });
+            expect(states).toEqual(['read', 'read', 'read']);
+          } else if (variant === 'order-flow-canary-mismatch') {
+            expect(outcome).toMatchObject({ code: 'CANARY_MISMATCH' });
+            expect(flowStarts).toHaveLength(1);
+            expect(run.canaryAcceptedAt).toBeNull();
+          } else if (variant === 'order-flow-reload-success') {
+            expect(outcome).toMatchObject({ completed: 2, endReason: 'done' });
+            expect(states).toEqual(['failed', 'read', 'read']);
+            expect(reloads).toHaveLength(1);
+            expect(waits).toContain(FLOW_FIXTURE.reloadWaitMs);
+          } else if (variant === 'order-flow-reload-three') {
+            expect(outcome).toMatchObject({
+              code: 'PLATFORM_CHECK',
+              reason: 'render-timeout',
+            });
+            expect(reloads).toHaveLength(3);
+            expect(flowStarts).toHaveLength(7);
+            expect(states).toEqual([
+              'failed',
+              'read',
+              'failed',
+              'read',
+              'failed',
+              'read',
+              'failed',
+            ]);
+          } else if (variant === 'order-flow-reload-twice') {
+            expect(outcome).toMatchObject({
+              code: 'PLATFORM_CHECK',
+              reason: 'render-timeout',
+            });
+            expect(flowStarts).toHaveLength(2);
+            expect(reloads).toHaveLength(1);
+            expect(states).toEqual(['failed', 'failed']);
+          } else if (variant === 'order-flow-reload-cap') {
+            expect(outcome).toMatchObject({
+              endReason: 'daily-cap',
+              completed: 0,
+            });
+            expect(flowStarts).toHaveLength(1);
+            expect(reloads).toHaveLength(0);
+          } else if (variant === 'order-flow-reload-stop') {
+            expect(outcome).toMatchObject({ code: 'CANCELLED' });
+            expect(stopDuringReload).toBe(true);
+            expect(flowStarts).toHaveLength(1);
+          } else if (
+            variant === 'order-flow-reload-then-marker' ||
+            variant === 'order-flow-reload-then-mismatch'
+          ) {
+            expect(outcome).toMatchObject(
+              variant === 'order-flow-reload-then-marker'
+                ? { code: 'PLATFORM_CHECK', reason: 'marker-login' }
+                : { code: 'CANARY_MISMATCH' },
+            );
+            expect(flowStarts).toHaveLength(2);
+            expect(reloads).toHaveLength(1);
+            expect(states).toEqual(
+              variant === 'order-flow-reload-then-marker'
+                ? ['failed', 'failed']
+                : ['failed', 'read'],
+            );
+          } else if (variant === 'order-flow-unexpected') {
+            expect(outcome).toMatchObject({ code: 'UNEXPECTED_ACTION' });
+            expect(flowStarts).toHaveLength(1);
+            expect(waits).not.toContain(FLOW_FIXTURE.reloadWaitMs);
+          } else {
+            expect(outcome).toMatchObject({
+              code: 'PLATFORM_CHECK',
+              reason:
+                variant === 'order-flow-marker'
+                  ? 'marker-login'
+                  : variant === 'order-flow-answer-status'
+                    ? 'answer-status'
+                    : 'render-timeout',
+            });
+            expect(flowStarts).toHaveLength(1);
+            expect(waits).not.toContain(FLOW_FIXTURE.reloadWaitMs);
+            expect(run.canaryAcceptedAt).toBeNull();
+          }
+          const reportNotices = notices.filter((text) =>
+            text.startsWith('Structure report:'),
+          );
+          if (
+            variant.startsWith('order-flow-mismatch-') ||
+            variant.startsWith('order-flow-reload-') ||
+            variant === 'order-flow-canary-mismatch'
+          )
+            expect(reportNotices.length).toBeGreaterThan(0);
+          if (reportNotices.length) {
+            const raw = await readFile(
+              join(directory, 'originals', `canary-${run.runId}.json`),
+              'utf8',
+            );
+            const report = JSON.parse(raw) as {
+              mismatch?: {
+                position: number;
+                matches: boolean;
+                stored: unknown;
+                shown: unknown;
+              };
+              reload?: {
+                position: number;
+                number: number;
+                waitMs: number;
+                reason: string;
+              };
+            }[];
+            const differences = report.flatMap((entry) => entry.mismatch ?? []);
+            const expectedDifferences =
+              variant === 'order-flow-mismatch-three'
+                ? 3
+                : variant.startsWith('order-flow-mismatch-two')
+                  ? 2
+                  : variant === 'order-flow-canary-mismatch' ||
+                      variant === 'order-flow-reload-then-mismatch'
+                    ? 1
+                    : 0;
+            expect(differences).toHaveLength(expectedDifferences);
+            expect(differences.map((entry) => entry.position)).toEqual(
+              Array.from(
+                { length: expectedDifferences },
+                (_, index) => index + 1,
+              ),
+            );
+            for (const entry of differences)
+              expect(entry).toMatchObject({
+                matches: false,
+                stored: {
+                  textLength: FLOW_FIXTURE.text.length,
+                  photos: 0,
+                  videos: 0,
+                },
+                shown: {
+                  textLength: FLOW_FIXTURE.differentText.length,
+                  photos: 0,
+                  videos: 0,
+                },
+              });
+            const continuing = notices.filter((text) =>
+              text.includes(
+                variant.endsWith('-de')
+                  ? 'der Lauf geht weiter'
+                  : 'the run goes on',
+              ),
+            );
+            expect(continuing).toHaveLength(
+              variant.startsWith('order-flow-mismatch-')
+                ? Math.min(expectedDifferences, 2)
+                : 0,
+            );
+            if (variant.startsWith('order-flow-mismatch-'))
+              for (
+                let index = 0;
+                index < Math.min(expectedDifferences, 2);
+                index++
+              )
+                expect(continuing[index]).toBe(
+                  variant.endsWith('-de')
+                    ? `Text oder Medien weichen bei diesem Beitrag ab; der Lauf geht weiter (${index + 1} von 3).\n`
+                    : `Text or media differ on this post; the run goes on (${index + 1} of 3).\n`,
+                );
+            const reloadEntries = report.flatMap((entry) => entry.reload ?? []);
+            expect(reloadEntries).toHaveLength(
+              waits.filter((ms) => ms === FLOW_FIXTURE.reloadWaitMs).length,
+            );
+            for (const entry of reloadEntries)
+              expect(entry).toMatchObject({
+                waitMs: FLOW_FIXTURE.reloadWaitMs,
+                reason: 'render-timeout',
+              });
+            for (const secret of [
+              ...FLOW_FIXTURE.ids,
+              FLOW_FIXTURE.text,
+              FLOW_FIXTURE.differentText,
+              FIXTURE.account.handle,
+            ])
+              expect(raw).not.toContain(secret);
+          }
+          for (let i = 0; i < flowStarts.length; i++)
+            if (flowStarts[i]!.count === 2)
+              expect(
+                flowStarts[i]!.at - flowStarts[i - 1]!.at,
+              ).toBeGreaterThanOrEqual(FLOW_FIXTURE.reloadWaitMs);
+          if (variant === 'order-flow-reload-cap')
+            expect(
+              (await store.browserJournal()).runs.reduce(
+                (count, value) => count + (value.pageOpens ?? 0),
+                0,
+              ),
+            ).toBe(200);
+          expect(context!.pages()).toHaveLength(0);
+          return;
+        }
         if (variant === 'order-finalize-error') {
           expect(outcome).toMatchObject({ code: 'ORIGINALS_FAILED' });
           const run = (await store.browserJournal()).runs.at(-1)!;
@@ -1050,6 +1410,7 @@ for (const variant of [
           variant === 'order-card-video' ||
           variant === 'order-card-rendered-link' ||
           variant === 'order-card-full-match' ||
+          variant === 'order-card-full-mismatch' ||
           variant === 'order-own-photos' ||
           variant === 'order-note-delayed-photo' ||
           variant === 'order-note-delayed-text' ||
@@ -1068,6 +1429,7 @@ for (const variant of [
           variant.startsWith('order-parent-notice-') ||
           variant === 'order-empty-focal-match' ||
           variant === 'order-empty-focal-continue' ||
+          variant === 'order-status-entity-match' ||
           variant === 'order-inline-quote-match' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
@@ -1080,6 +1442,7 @@ for (const variant of [
             completed: variant === 'order-empty-focal-continue' ? 2 : 1,
             endReason:
               variant === 'order-card-full-match' ||
+              variant === 'order-card-full-mismatch' ||
               variant === 'order-visibility-full'
                 ? 'done'
                 : 'canary',
@@ -1087,6 +1450,7 @@ for (const variant of [
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
             startedBy: 'agent-on-order',
             ...(variant === 'order-card-full-match' ||
+            variant === 'order-card-full-mismatch' ||
             variant === 'order-visibility-full'
               ? {}
               : { acceptedBy: 'automatic-check' }),
@@ -1094,6 +1458,7 @@ for (const variant of [
           });
           if (
             variant === 'order-card-full-match' ||
+            variant === 'order-card-full-mismatch' ||
             variant === 'order-visibility-full'
           )
             expect(
@@ -1300,16 +1665,23 @@ for (const variant of [
               'utf8',
             ),
           ) as unknown[];
+          expect(run).toMatchObject({ endReason: 'done' });
           expect(report).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                stop: expect.objectContaining({ code: 'CANARY_MISMATCH' }),
+                mismatch: expect.objectContaining({
+                  position: 1,
+                  matches: false,
+                }),
               }),
             ]),
           );
           expect(
-            notices.some((text) => text === 'Stop detail: CANARY_MISMATCH\n'),
-          ).toBe(true);
+            report.some((entry) => Object.hasOwn(entry as object, 'stop')),
+          ).toBe(false);
+          expect(notices).toContain(
+            'Text or media differ on this post; the run goes on (1 of 3).\n',
+          );
         }
         if (variant.startsWith('order-platform-')) {
           const reason =

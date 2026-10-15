@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest';
-import { endText, endReason } from './copy.ts';
+import {
+  endText,
+  endReason,
+  fillMismatchNotice,
+  FILL_RELOAD_NOTICE,
+} from './copy.ts';
 import type { DisplayEndReason } from './copy.ts';
 import {
   CliError,
@@ -205,5 +210,22 @@ test('R2 deletion callers without a detail retain the two-part platform sentence
   );
   expect(endText('platform-check', 'de', 'unspecified')).toContain(
     'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.',
+  );
+});
+
+test('R6 and R7 terminal lines keep the mismatch budget and reload wait explicit in both languages', () => {
+  for (const count of [1, 2]) {
+    expect(fillMismatchNotice(count)).toBe(
+      `Text or media differ on this post; the run goes on (${count} of 3).`,
+    );
+    expect(fillMismatchNotice(count, 'de')).toBe(
+      `Text oder Medien weichen bei diesem Beitrag ab; der Lauf geht weiter (${count} von 3).`,
+    );
+  }
+  expect(FILL_RELOAD_NOTICE.en).toBe(
+    'X did not load the page in time. Waiting 60 seconds before opening this post once more.',
+  );
+  expect(FILL_RELOAD_NOTICE.de).toBe(
+    'X hat die Seite nicht rechtzeitig geladen. Dieser Beitrag wird nach 60 Sekunden einmal neu geöffnet.',
   );
 });

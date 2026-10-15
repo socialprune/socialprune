@@ -15,8 +15,9 @@ import {
   displayTextFromAnswer,
   displayLinksFromAnswer,
   inlineQuoteFromAnswer,
+  statusEntitiesFromAnswer,
 } from './compare.ts';
-import type { InlineQuotePermalink } from './compare.ts';
+import type { InlineQuotePermalink, StatusEntityLink } from './compare.ts';
 const ProjectionSchema = z.strictObject({
   rest_id: OriginalIdSchema,
   text: z.string().max(1_000_000),
@@ -223,6 +224,7 @@ export function extract(
       displayText: string;
       displayLinks: string[];
       inlineQuote: InlineQuotePermalink | null;
+      statusLinks: StatusEntityLink[];
       gated: { id: string; mediaItems: number }[];
       emptyResults: number;
       noticeParents?: number;
@@ -469,6 +471,7 @@ export function extract(
       displayText: displayTextFromAnswer(value),
       displayLinks: displayLinksFromAnswer(value),
       inlineQuote: inlineQuoteFromAnswer(value),
+      statusLinks: statusEntitiesFromAnswer(value),
       post: current,
       above,
       quoted,

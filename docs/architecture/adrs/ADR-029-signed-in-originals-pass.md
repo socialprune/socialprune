@@ -314,6 +314,12 @@ A timeout alone does not prove that the account and extensions stayed unchanged,
 
 On 2026-10-15 an ordered main run stopped on a text mismatch without recording its cause in the structure report, so every error stop now records its closed value-free cause there and in the terminal, alongside the post-run check outcome when available.
 
+On 2026-10-15 X displayed a status URL entity as an expanded relative link, so the comparison replaces its t.co text with that anchor's own text on each exact basis only for one matching allowed HTTPS status URL inside the display range.
+
+In a main run the first two text or media differences now keep their settled records, write value-free counts and the post's position to the structure report, and continue at the normal pace, while the third difference and every canary difference still stop the run.
+
+A main-run render timeout now allows one new attempt for that post after a cancellable 60-second wait, at most three reloads per run and with every opening counted toward the existing page cap and pace, while canaries, other check failures and a failed reload still stop immediately.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

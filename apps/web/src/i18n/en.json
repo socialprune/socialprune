@@ -422,5 +422,11 @@
   "feed.onlySuggestions": "Undecided Medium or High suggestions. Decided cards stay dimmed.",
   "feed.card": "Suggestion {index, number} of {total, number}",
   "feed.riskLikes": "Risk, likes, date",
-  "feed.reposts": "Reposts"
+  "feed.reposts": "Reposts",
+  "instagramContext.found": "SocialPrune found this comment on the post in your signed-in Instagram on {date}. Its text, time and the post's account match your export.",
+  "instagramContext.captionCut": "Instagram showed only the beginning of this caption.",
+  "instagramContext.showScreenshot": "Show screenshot",
+  "instagramContext.open": "Open on Instagram",
+  "instagramContext.screenshot": "Screenshot of the post as Instagram showed it on {date}",
+  "instagramContext.imageNotKept": "SocialPrune did not keep the first image of this post."
 }

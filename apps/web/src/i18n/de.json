@@ -422,5 +422,11 @@
   "originals.media.no-variant": "X hat dieses Video ohne herunterladbare Datei genannt.",
   "originals.media.run-cap": "Diese Datei passte nicht mehr in die Mediengrenze des Laufs.",
   "originals.media.not-stored": "Diese Mediendatei wurde noch nicht gespeichert.",
-  "originals.media.stored": "Auf diesem Gerät gespeichert"
+  "originals.media.stored": "Auf diesem Gerät gespeichert",
+  "instagramContext.found": "SocialPrune hat diesen Kommentar am {date} in deinem angemeldeten Instagram unter dem Beitrag gefunden. Text, Zeit und das Konto des Beitrags stimmen mit deinem Export überein.",
+  "instagramContext.captionCut": "Instagram hat nur den Anfang dieser Bildunterschrift gezeigt.",
+  "instagramContext.showScreenshot": "Screenshot zeigen",
+  "instagramContext.open": "Auf Instagram öffnen",
+  "instagramContext.screenshot": "Screenshot des Beitrags, wie Instagram ihn am {date} gezeigt hat",
+  "instagramContext.imageNotKept": "SocialPrune hat das erste Bild dieses Beitrags nicht behalten."
 }

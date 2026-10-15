@@ -17,6 +17,7 @@ import { originalXLink } from './originalLink.ts';
 import { isDeletedOnPlatform } from '../archive/model.ts';
 import { StoredMedia, Conversation } from './Conversation.tsx';
 import { originalDisplayText } from './originalText.ts';
+import { InstagramPostContext } from './InstagramPost.tsx';
 
 export function Avatar({
   handle,
@@ -243,7 +244,14 @@ export function PostCard({
             </section>
           )}
           {item.platform === 'instagram' && item.kind === 'comment' && (
-            <p className={styles.hint}>{t('proto.instagramMissingPost')}</p>
+            <InstagramPostContext
+              item={item}
+              client={workspace}
+              zone={zone}
+              fallback={
+                <p className={styles.hint}>{t('proto.instagramMissingPost')}</p>
+              }
+            />
           )}
           {!!item.mediaCount && (
             <div className={styles.media}>

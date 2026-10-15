@@ -11,7 +11,7 @@ import type {
   ReviewRow,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
-import type { Original } from '@socialprune/core';
+import type { InstagramContext, Original } from '@socialprune/core';
 
 export type WorkspacePort = Pick<
   Worker,
@@ -327,6 +327,16 @@ export class WorkspaceClient {
     if (reply.type !== 'originals')
       throw new Error('Originals could not be read.');
     return reply.originals;
+  }
+  async getInstagramContext(itemIds: string[]): Promise<InstagramContext[]> {
+    const reply = await this.request({
+      type: 'getInstagramContext',
+      requestId: crypto.randomUUID(),
+      itemIds,
+    });
+    if (reply.type !== 'instagramContext')
+      throw new Error('Instagram context could not be read.');
+    return reply.records;
   }
   async getConversation(originalId: string) {
     const reply = await this.request({

@@ -1,0 +1,69 @@
+@layer components {
+  .post {
+    border: var(--border-width) solid var(--color-social-divider);
+    border-radius: var(--radius-panel);
+    padding: var(--space-3);
+    margin-block: var(--space-3);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .byline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--type-sm);
+  }
+  .byline time {
+    color: var(--color-text-secondary);
+  }
+  .avatar {
+    display: inline-flex;
+    width: var(--target-size);
+    height: var(--target-size);
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--color-selected-bg);
+    color: var(--color-action);
+    font-weight: var(--weight-heading);
+  }
+  .caption {
+    white-space: pre-wrap;
+    font-size: var(--type-md);
+    line-height: var(--line-md);
+    margin-block: var(--space-3);
+  }
+  .note {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    margin-block: var(--space-3);
+  }
+  .image {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: 320px;
+    object-fit: contain;
+    border-radius: var(--radius-control);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-block: var(--space-3);
+    font-size: var(--type-sm);
+  }
+  .actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--target-size);
+  }
+  .actions button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}

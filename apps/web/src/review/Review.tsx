@@ -35,6 +35,7 @@ import type { Template } from './filters.ts';
 import { Filters } from './Filters.tsx';
 import { initialReviewView, ReviewViewWriter } from './view.ts';
 import type { ReviewView } from '@socialprune/core';
+import { InstagramPostContext } from '../social/InstagramPost.tsx';
 
 const WINDOW = 200;
 const PAGE = 100;
@@ -1470,7 +1471,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
                 </p>
                 <p>{t('review.exportEngagement')}</p>
                 {detail.item.kind === 'comment' && (
-                  <p>{t('review.commentReference')}</p>
+                  <InstagramPostContext
+                    item={detail.item}
+                    client={client}
+                    zone={zone}
+                    fallback={<p>{t('review.commentReference')}</p>}
+                  />
                 )}
                 {detail.item.reference.replyToHandle && (
                   <p>

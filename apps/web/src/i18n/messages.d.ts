@@ -151,6 +151,12 @@ declare global {
     'import.result': Record<never, never>;
     'import.start': Record<never, never>;
     'import.unknown': Record<never, never>;
+    'instagramContext.captionCut': Record<never, never>;
+    'instagramContext.found': { date: string };
+    'instagramContext.imageNotKept': Record<never, never>;
+    'instagramContext.open': Record<never, never>;
+    'instagramContext.screenshot': { date: string };
+    'instagramContext.showScreenshot': Record<never, never>;
     'localReview.backup': Record<never, never>;
     'localReview.decisions': Record<never, never>;
     'localReview.demo': Record<never, never>;

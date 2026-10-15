@@ -8,6 +8,7 @@ import { ReviewDatabase } from './database.ts';
 import { CliError } from '../cli/errors.ts';
 import { workspacePath } from '../workspace/files.ts';
 import { originalMedia, byteRange } from './original-media.ts';
+import { contextMedia } from './context-media.ts';
 
 const bodyLimit = 1024 * 1024;
 const apiTypes = new Set<string>(
@@ -165,6 +166,43 @@ export async function startReviewServer(options: {
       return;
     }
     if (!api && !sessionPath) {
+      if (path.startsWith('/context/')) {
+        if (!session.authenticated(header(request, 'cookie')) || stopping) {
+          respond(response, 401);
+          return;
+        }
+        const site = header(request, 'sec-fetch-site');
+        if (
+          request.rawHeaders.some(
+            (name, index) =>
+              index % 2 === 0 && name.toLowerCase() === 'sec-fetch-site',
+          ) &&
+          site !== 'same-origin'
+        ) {
+          respond(response, 403);
+          return;
+        }
+        const photo = await contextMedia(options.workspace, path);
+        if (!photo) {
+          respond(response, 404);
+          return;
+        }
+        response.writeHead(200, {
+          ...REVIEW_HEADERS,
+          'Content-Type': photo.contentType,
+          'Content-Length': photo.size,
+        });
+        if (request.method === 'HEAD') {
+          await photo.handle.close();
+          response.end();
+        } else {
+          const stream = photo.handle.createReadStream({ autoClose: true });
+          stream.once('error', () => response.destroy());
+          response.once('close', () => stream.destroy());
+          stream.pipe(response);
+        }
+        return;
+      }
       if (path.startsWith('/originals/')) {
         if (!session.authenticated(header(request, 'cookie')) || stopping) {
           respond(response, 401);

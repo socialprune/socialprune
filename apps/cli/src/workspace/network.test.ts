@@ -13,6 +13,8 @@ import { createNodeContext } from '../cli/node-context.ts';
 import { capturedContext } from '../cli/test/context.ts';
 import { networkRecorder } from '../cli/test/network-recorder.ts';
 import { browserWorkspace } from './test/inputs.ts';
+import { instagramFixture } from '../../e2e/fake-instagram/fixture.ts';
+import { SQLiteStore } from './sqlite-store.ts';
 
 const archive = fileURLToPath(
   new URL(
@@ -28,6 +30,15 @@ test('every new command success/dry-run/help/error is observed with zero outboun
   const out = join(directory, 'out.json');
   const recorder = networkRecorder();
   try {
+    const instagram = join(directory, 'instagram');
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(instagram);
+    const igFixture = await instagramFixture();
+    const igStore = await SQLiteStore.open(
+      join(instagram, 'socialprune.sqlite'),
+      { initial: igFixture.workspace },
+    );
+    await igStore.close();
     const store = createMemoryStore(new MemoryStoreBacking(browserWorkspace()));
     const backup = createBackup(store);
     const chunks: Uint8Array[] = [];
@@ -36,6 +47,18 @@ test('every new command success/dry-run/help/error is observed with zero outboun
     await backup.complete();
     await store.close();
     const cases: [string[], number][] = [
+      [
+        [
+          'context',
+          'instagram',
+          '--workspace',
+          instagram,
+          '--account',
+          igFixture.items[0]!.account.key,
+          '--dry-run',
+        ],
+        0,
+      ],
       [['backup', 'restore', file, '--workspace', workspace], 0],
       [['summary', '--workspace', workspace], 0],
       [
@@ -112,6 +135,7 @@ test('every new command success/dry-run/help/error is observed with zero outboun
       ['review'],
       ['originals', 'fetch'],
       ['originals', 'fill', 'x'],
+      ['context', 'instagram'],
     ]) {
       cases.push([[...route, '--help'], 0], [[...route, '--bad'], 2]);
     }

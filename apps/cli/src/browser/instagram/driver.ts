@@ -1,0 +1,299 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import type { BrowserContext, Page } from 'playwright-core';
+import type { Item } from '@socialprune/core';
+import {
+  COMMENTS_PATH,
+  INSTAGRAM_ORIGIN,
+  productionPolicy,
+} from './network.ts';
+import type { NetworkPolicy } from './network.ts';
+import {
+  rows,
+  readRows,
+  checkPage,
+  clickAllowed,
+  utcWindow,
+  rowCandidate,
+  postAddress,
+  readPost,
+  confirmComment,
+  currentImageSource,
+} from './selectors.ts';
+import type { PostProjection, ConfirmationResult } from './selectors.ts';
+import { ContextStop } from './report.ts';
+import { CONTEXT_PACE } from './pace.ts';
+import type { capturePost } from './capture.ts';
+
+export interface ContextDependencies {
+  origin: string;
+  port: number;
+  responseMs: number;
+  pace: {
+    intervalMs: number;
+    batch: number;
+    pauseMs: number;
+    scrollMs: number;
+    expandMs: number;
+  };
+  policy: NetworkPolicy;
+  launch(profile: string, executable: string): Promise<BrowserContext>;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  capture?: typeof capturePost;
+  close(context: BrowserContext, automatic: boolean): Promise<void>;
+}
+export const productionContext: ContextDependencies = {
+  origin: INSTAGRAM_ORIGIN,
+  port: 0,
+  responseMs: 30000,
+  pace: CONTEXT_PACE,
+  policy: productionPolicy,
+  async launch(profile, executablePath) {
+    const { chromium } = await import('playwright-core');
+    return chromium.launchPersistentContext(profile, {
+      executablePath,
+      headless: false,
+      chromiumSandbox: true,
+      args: ['--enable-automation'],
+      serviceWorkers: 'block',
+      ignoreDefaultArgs: ['--disable-infobars'],
+    });
+  },
+  sleep: async (ms, signal) => {
+    await sleep(ms, undefined, { signal });
+  },
+  async close(context, automatic) {
+    if (automatic) await context.close();
+    else if (context.pages().length)
+      await new Promise<void>((resolve) =>
+        context.once('close', () => resolve()),
+      );
+  },
+};
+export async function waitPage(
+  page: Page,
+  ready: () => Promise<boolean>,
+  ms: number,
+  token: 'list-timeout' | 'post-timeout',
+  guard: () => void,
+): Promise<void> {
+  const deadline = performance.now() + ms;
+  for (;;) {
+    guard();
+    await checkPage(page);
+    if (await ready()) return;
+    if (performance.now() >= deadline)
+      throw new ContextStop('PLATFORM_CHECK', token);
+    await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
+  }
+}
+export async function filterList(
+  page: Page,
+  at: string,
+  guard: () => void,
+  oldestProbe?: () => Promise<void>,
+): Promise<void> {
+  if (oldestProbe) {
+    await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
+    await clickAllowed(
+      page,
+      { kind: 'named', name: 'Oldest to newest' },
+      guard,
+    );
+    await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+    await oldestProbe();
+  }
+  await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
+  await clickAllowed(page, { kind: 'named', name: 'Oldest to newest' }, guard);
+  const dates = utcWindow(at);
+  for (const [index, name] of (['Start date', 'End date'] as const).entries()) {
+    const date = dates[index]!,
+      value = new Date(date);
+    await clickAllowed(page, { kind: 'named', name }, guard);
+    await clickAllowed(page, { kind: 'named', name: 'Choose year' }, guard);
+    await clickAllowed(
+      page,
+      { kind: 'year', value: value.getUTCFullYear() },
+      guard,
+    );
+    await clickAllowed(page, { kind: 'named', name: 'Choose month' }, guard);
+    await clickAllowed(
+      page,
+      { kind: 'month', value: value.getUTCMonth() },
+      guard,
+    );
+    await clickAllowed(page, { kind: 'day', value: date }, guard);
+  }
+  await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+}
+export async function loadList(
+  page: Page,
+  item: Item,
+  expected: string,
+  deps: ContextDependencies,
+  guard: () => void,
+  oldest = false,
+  now = new Date(),
+) {
+  try {
+    await page.goto(deps.origin + COMMENTS_PATH, {
+      waitUntil: 'domcontentloaded',
+      timeout: deps.responseMs,
+    });
+  } catch {
+    guard();
+    throw new ContextStop('PLATFORM_CHECK', 'navigation');
+  }
+  await waitPage(
+    page,
+    async () => (await rows(page).count()) > 0,
+    deps.responseMs,
+    'list-timeout',
+    guard,
+  );
+  const accountRows = await readRows(page);
+  if (
+    accountRows.some(
+      (row) => row.username.toLowerCase() !== expected.toLowerCase(),
+    )
+  )
+    throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  let oldestWithinWeek: boolean | null = null;
+  await filterList(
+    page,
+    item.createdAt,
+    guard,
+    oldest
+      ? async () => {
+          const first = (await readRows(page))[0];
+          const age = first?.age.match(/^(\d+)\s*(w|d|h|m|s)/);
+          if (age) {
+            const units: Record<string, number> = {
+              w: 604800000,
+              d: 86400000,
+              h: 3600000,
+              m: 60000,
+              s: 1000,
+            };
+            oldestWithinWeek =
+              Math.abs(
+                now.getTime() -
+                  Number(age[1]) * units[age[2]!]! -
+                  Date.parse(item.createdAt),
+              ) <= 604800000;
+          }
+        }
+      : undefined,
+  );
+  let previous = JSON.stringify(await readRows(page)),
+    scrollLoads = 0,
+    full = false;
+  for (let index = 0; index < 10; index++) {
+    guard();
+    const box = await rows(page).first().locator('xpath=..').boundingBox();
+    if (box)
+      await page.mouse.move(
+        Math.max(0, box.x + box.width / 2),
+        Math.max(0, box.y + Math.min(box.height, 400) / 2),
+      );
+    await page.mouse.wheel(0, 700);
+    await deps.sleep(deps.pace.scrollMs);
+    guard();
+    await checkPage(page);
+    const current = JSON.stringify(await readRows(page));
+    if (current === previous) {
+      full = false;
+      break;
+    }
+    scrollLoads++;
+    full = index === 9;
+    previous = current;
+  }
+  const entries = await readRows(page);
+  if (
+    entries.some((row) => row.username.toLowerCase() !== expected.toLowerCase())
+  )
+    throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  return {
+    candidates: entries.filter((row) => rowCandidate(row.text, item.text)),
+    account: entries[0]?.username ?? accountRows[0]!.username,
+    rowCount: entries.length,
+    scrollLoads,
+    full,
+    oldestWithinWeek,
+  };
+}
+export async function openCandidate(
+  page: Page,
+  index: number,
+  deps: ContextDependencies,
+  guard: () => void,
+): Promise<boolean> {
+  await clickAllowed(page, { kind: 'row', index }, guard);
+  await waitPage(
+    page,
+    async () =>
+      (postAddress(page.url(), deps.origin) !== null &&
+        (await page.locator('article').count()) > 0) ||
+      (await page
+        .getByText("Sorry, this page isn't available.", { exact: true })
+        .count()) > 0,
+    deps.responseMs,
+    'post-timeout',
+    guard,
+  );
+  return (
+    (await page
+      .getByText("Sorry, this page isn't available.", { exact: true })
+      .count()) === 0
+  );
+}
+export async function confirmOnPost(
+  page: Page,
+  item: Item,
+  handle: string,
+  deps: ContextDependencies,
+  guard: () => void,
+): Promise<{
+  post: PostProjection;
+  result: ConfirmationResult;
+  expandClicks: number;
+  source: string | null;
+}> {
+  let post = await readPost(page, deps.origin),
+    result = confirmComment(post, item, handle),
+    expandClicks = 0;
+  while (
+    result.state !== 'confirmed' &&
+    !['owner', 'time', 'several'].includes(result.code) &&
+    expandClicks < 10
+  ) {
+    const load = page.getByRole('button', {
+      name: 'Load more comments',
+      exact: true,
+    });
+    const replies = page.getByRole('button', {
+      name: 'View replies',
+      exact: true,
+    });
+    const name = (await load.count())
+      ? 'Load more comments'
+      : (await replies.count())
+        ? 'View replies'
+        : null;
+    if (!name) break;
+    await deps.sleep(deps.pace.expandMs);
+    guard();
+    // Re-query each control, including when the page replaces its node after a click.
+    await clickAllowed(page, { kind: 'named', name }, guard);
+    expandClicks++;
+    post = await readPost(page, deps.origin);
+    result = confirmComment(post, item, handle);
+  }
+  return {
+    post,
+    result,
+    expandClicks,
+    source:
+      result.state === 'confirmed' ? await currentImageSource(page) : null,
+  };
+}

@@ -4,20 +4,25 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { CliError } from '../cli/errors.ts';
 import { profileInUse } from './profile.ts';
+import type { ProfilePlatform } from './profile.ts';
 
 export const SETUP_URL = 'https://x.com/i/flow/login';
-export function setupArguments(profile: string): string[] {
+export function setupArguments(
+  profile: string,
+  platform: ProfilePlatform = 'x',
+): string[] {
   return [
     `--user-data-dir=${resolve(profile)}`,
     '--no-first-run',
     '--no-default-browser-check',
     // A dedicated sign-in window must not keep running as a background app.
     '--disable-background-mode',
-    SETUP_URL,
+    platform === 'x' ? SETUP_URL : 'https://www.instagram.com/accounts/login/',
   ];
 }
 
 export interface SetupOptions {
+  platform?: ProfilePlatform;
   profile: string;
   executablePath: string;
   signal: AbortSignal;
@@ -49,14 +54,18 @@ export async function ordinarySetup(
   options.notice(
     'Sign in by hand in the window that opens, then close it. This is an ordinary browser window with no program attached. Your normal browser profile is not touched. Keep this dedicated profile outside the workspace and synced folders. After closing the window, you may press Enter if setup is still waiting.\n',
   );
-  const child = spawn(options.executablePath, setupArguments(options.profile), {
-    stdio: 'ignore',
-    shell: false,
-    windowsHide: false,
-    // A Windows launcher may hand its window to another process. Keep that
-    // process outside Node's kill-on-close job when the CLI eventually exits.
-    detached: process.platform === 'win32',
-  });
+  const child = spawn(
+    options.executablePath,
+    setupArguments(options.profile, options.platform),
+    {
+      stdio: 'ignore',
+      shell: false,
+      windowsHide: false,
+      // A Windows launcher may hand its window to another process. Keep that
+      // process outside Node's kill-on-close job when the CLI eventually exits.
+      detached: process.platform === 'win32',
+    },
+  );
   let exited = false,
     exitCode: number | null = null,
     launchError: Error | undefined;

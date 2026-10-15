@@ -7,7 +7,8 @@ import {
   writeFile,
   open,
 } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 import { CliError } from '../cli/errors.ts';
 export const PROFILE_MARKER = 'socialprune-profile.json';
 export async function profileInUse(directory: string): Promise<boolean> {
@@ -42,7 +43,11 @@ export async function profileInUse(directory: string): Promise<boolean> {
     throw new CliError('PROFILE_INVALID');
   }
 }
-export async function validateProfile(directory: string): Promise<void> {
+export type ProfilePlatform = 'x' | 'instagram';
+export async function validateProfile(
+  directory: string,
+  platform: ProfilePlatform = 'x',
+): Promise<void> {
   const stat = await lstat(directory).catch(() => null);
   if (
     !stat?.isDirectory() ||
@@ -67,31 +72,103 @@ export async function validateProfile(directory: string): Promise<void> {
     !marker ||
     typeof marker !== 'object' ||
     !('platform' in marker) ||
-    marker.platform !== 'x' ||
+    marker.platform !== platform ||
     !('version' in marker) ||
     marker.version !== '0.0.0'
   )
     throw new CliError('PROFILE_INVALID');
 }
-export async function createProfile(directory: string): Promise<void> {
+export async function createProfile(
+  directory: string,
+  platform: ProfilePlatform = 'x',
+): Promise<void> {
   const existing = await lstat(directory).catch(() => null);
   if (existing) {
     if (!existing.isDirectory() || existing.isSymbolicLink())
       throw new CliError('PROFILE_INVALID');
+    if (platform === 'instagram') throw new CliError('PROFILE_INVALID');
     if ((await readdir(directory)).length) {
-      await validateProfile(directory);
+      await validateProfile(directory, platform);
       return;
     }
   } else await mkdir(directory, { recursive: true });
   await writeFile(
     join(directory, PROFILE_MARKER),
     JSON.stringify({
-      platform: 'x',
+      platform,
       createdAt: new Date().toISOString(),
       version: '0.0.0',
     }),
     { flag: 'wx' },
   );
+}
+export function defaultProfileLocations(home = homedir()): string[] {
+  return [
+    join(home, 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data'),
+    join(home, 'AppData', 'Local', 'Google', 'Chrome', 'User Data'),
+    join(home, 'Library', 'Application Support', 'Microsoft Edge'),
+    join(home, 'Library', 'Application Support', 'Google', 'Chrome'),
+    join(home, '.config', 'microsoft-edge'),
+    join(home, '.config', 'google-chrome'),
+    join(home, '.config', 'chromium'),
+  ];
+}
+/** Path comparisons only; never inspect a normal browser profile. */
+export function inDefaultProfile(
+  directory: string,
+  roots = defaultProfileLocations(),
+): boolean {
+  return roots.some((root) => {
+    const inside = relative(resolve(root), resolve(directory));
+    return (
+      inside === '' ||
+      (!isAbsolute(inside) &&
+        inside !== '..' &&
+        !inside.startsWith('..' + (process.platform === 'win32' ? '\\' : '/')))
+    );
+  });
+}
+/** Explicit Instagram-only adoption. Reads metadata, never Local State contents. */
+export async function adoptInstagramProfile(
+  directory: string,
+  at: string,
+  defaultRoots = defaultProfileLocations(),
+): Promise<string> {
+  const stat = await lstat(directory).catch(() => null);
+  if (
+    !stat?.isDirectory() ||
+    stat.isSymbolicLink() ||
+    resolve(directory) !== (await realpath(directory)) ||
+    inDefaultProfile(directory, defaultRoots)
+  )
+    throw new CliError('PROFILE_INVALID');
+  if (await lstat(join(directory, PROFILE_MARKER)).catch(() => null))
+    throw new CliError('PROFILE_INVALID');
+  const state = await lstat(join(directory, 'Local State')).catch(() => null);
+  if (
+    !state?.isFile() ||
+    state.isSymbolicLink() ||
+    (await profileInUse(directory))
+  )
+    throw new CliError('PROFILE_INVALID');
+  const marker = join(directory, PROFILE_MARKER);
+  await writeFile(
+    marker,
+    JSON.stringify({ platform: 'instagram', adoptedAt: at, version: '0.0.0' }),
+    { flag: 'wx' },
+  );
+  return marker;
+}
+export async function profilePlatform(
+  directory: string,
+): Promise<ProfilePlatform> {
+  try {
+    await validateProfile(directory);
+    return 'x';
+  } catch {
+    await validateProfile(directory, 'instagram');
+    return 'instagram';
+  }
 }
 export interface ProfileSnapshot {
   files: Map<string, string>;
@@ -158,10 +235,11 @@ export async function writeExtensionReport(
   after: ProfileSnapshot,
   journalReport: unknown,
   abortedHosts: Record<string, number> = {},
+  platform: ProfilePlatform = 'x',
 ): Promise<string> {
   if (!/^[A-Za-z0-9-]{1,128}$/.test(runId))
     throw new CliError('PROFILE_INVALID');
-  await validateProfile(profile);
+  await validateProfile(profile, platform);
   const path = join(profile, `socialprune-readback-${runId}.json`);
   const report: ExtensionProfileReport = {
     runId,

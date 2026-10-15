@@ -6,6 +6,8 @@ import { endText } from './copy.ts';
 import type { BrowserLanguage } from './copy.ts';
 
 export interface ConfirmationView {
+  platform?: 'x' | 'instagram';
+  marked?: number;
   lang?: BrowserLanguage;
   phase: 'start' | 'running' | 'canary' | 'match' | 'ended';
   version: number;
@@ -62,10 +64,10 @@ async function post(path, body, token) {
 function render(v) {
  if(view && v.version < view.version) return;
  view = v;
-  document.getElementById('account').textContent=v.expectedHandle ? (de?'Erwartetes X-Konto: @':'Expected X account: @')+v.expectedHandle : '';
+   document.getElementById('account').textContent=v.expectedHandle ? (v.platform==='instagram' ? (de?'Erwartetes Instagram-Konto: @':'Expected Instagram account: @') : (de?'Erwartetes X-Konto: @':'Expected X account: @'))+v.expectedHandle : '';
  document.getElementById('warning').textContent=v.warning;
  document.getElementById('profile').textContent=v.profileWarning;
- document.getElementById('counts').textContent=de ? v.planned+' geplant; '+v.bulk+' aus Sammelaktionen; '+v.completed+' abgeschlossen. Geschätzte aktive Dauer: '+Math.ceil(v.estimateMs/60000)+' Minuten.' : v.planned+' planned; '+v.bulk+' from bulk actions; '+v.completed+' completed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.';
+  document.getElementById('counts').textContent=v.platform==='instagram' ? (de ? v.planned+' geplant; '+v.marked+' zum Löschen markiert; '+v.completed+' bestätigt. Geschätzte aktive Dauer: '+Math.ceil(v.estimateMs/60000)+' Minuten.' : v.planned+' planned; '+v.marked+' marked for deletion; '+v.completed+' confirmed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.') : (de ? v.planned+' geplant; '+v.bulk+' aus Sammelaktionen; '+v.completed+' abgeschlossen. Geschätzte aktive Dauer: '+Math.ceil(v.estimateMs/60000)+' Minuten.' : v.planned+' planned; '+v.bulk+' from bulk actions; '+v.completed+' completed. Estimated active time '+Math.ceil(v.estimateMs/60000)+' minutes.');
  document.getElementById('list').textContent=(de?'Vollständige Liste: ':'Full list: ')+v.list;
  const show = value => Array.isArray(value) ? value.map(show).join(', ') : typeof value==='string' ? values[value] || value : String(value);
  document.getElementById('rows').textContent=v.rows.map(row=>Object.entries(row).map(([key,value])=>(rowLabels[key] || key)+': '+show(value)).join('\\n')).join('\\n\\n');
@@ -255,7 +257,12 @@ export async function startConfirmation(
         ...view,
         phase: 'ended',
         version: view.version + 1,
-        result: endText('stopped-by-person', lang),
+        result:
+          initial.platform === 'instagram'
+            ? lang === 'de'
+              ? 'Du hast diesen Instagram-Lauf gestoppt.'
+              : 'You stopped this Instagram run.'
+            : endText('stopped-by-person', lang),
       };
     } else if (
       pending &&

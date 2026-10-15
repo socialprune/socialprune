@@ -29,6 +29,8 @@ Until a release exists, never run `npx socialprune`, `npm exec socialprune`, `np
 
 `originals fill x` opens a signed-in browser and reads posts as that account. Agents run only its dry run unless the person supplies an explicit written order for exactly `originals-fill-x`, in which case `--order <file>` may start that read-only scope; it never authorizes deletion, setup, clicking the manual confirmation controls, choosing `--include`, reading profile contents or adding `--without-originals`.
 
+`context instagram --dry-run --json` reports counts and the plan hash without a browser or network. Agents stay dry-run-only unless the person gives a written order for exactly `context-instagram`, the expected account and the unchanged plan. Only then may `context instagram --order <file>` read in that dedicated session. Without an accepted watched canary it refuses with `CANARY_REQUIRED`, unless the order explicitly says `acceptCanary: true`. That field permits the automatic canary checks, not unconditional acceptance. A missing second source, unequal field, missing image or screenshot, account or extension change, or unexpected action accepts nothing. The canary ends there; read its value-free report before a new dry run and any full run. The order never covers setup, profile adoption, reading profile contents, deletion, choosing `--include` or another account. Never click the manual Start, Continue or Matches controls for the person.
+
 1. Explain the boundary before reading anything. Import stays on the person's computer. Labelling through you gives entry text to your model provider, but import does not. Suggestions do not mark anything for deletion. Keep the agent host's command approval on.
 
 2. Show the export guide for the platform the person chose:

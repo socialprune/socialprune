@@ -4,9 +4,14 @@ import {
   BrowserAttemptSchema,
   WORKSPACE_SCHEMA_VERSION,
 } from '@socialprune/core';
-import type { DecisionEvent, Item } from '@socialprune/core';
+import type {
+  DecisionEvent,
+  Item,
+  BrowserProfileReport,
+} from '@socialprune/core';
 import type { WriteTransaction } from '@socialprune/core/workspace/store';
-import { CliError } from '../cli/errors.ts';
+import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
+import { CliError, CLI_ERRORS } from '../cli/errors.ts';
 
 export type BrowserAction = 'delete-post' | 'undo-repost' | 'verify';
 export type AttemptState =
@@ -484,6 +489,181 @@ export class BrowserOutcomeWriter {
           JSON.stringify({ startedBy: 'agent-on-order', orderSha256: sha256 }),
         );
       await Promise.resolve();
+    });
+  }
+  async recordContextOrder(runId: string, sha256: string): Promise<void> {
+    if (!/^[a-f0-9]{64}$/.test(sha256))
+      throw new CliError('CONTEXT_ORDER_INVALID');
+    await this.transact(async (tx) => {
+      const run = await tx.browserRuns.get(runId);
+      if (
+        run?.platform !== 'instagram' ||
+        run.mode !== 'context' ||
+        run.endedAt
+      )
+        throw new CliError('CONTEXT_ORDER_INVALID');
+      this.db
+        .prepare('INSERT INTO browser_order_audit VALUES(?,?,?,NULL,?)')
+        .run(
+          runId,
+          'agent-on-order',
+          sha256,
+          JSON.stringify({
+            scope: 'context-instagram',
+            startedBy: 'agent-on-order',
+            orderSha256: sha256,
+          }),
+        );
+    });
+  }
+  async recordContextAudit(
+    runId: string,
+    input: {
+      commentsConfirmed: number;
+      fields: Record<string, { compared: number; agreed: number }>;
+      imagesMatched: number;
+      screenshotsStored: number;
+      unexpectedActions: number;
+      extensionIdsAdded: number;
+      extensionIdsRemoved: number;
+    },
+    code?: string,
+    accepted = false,
+    acceptance?: {
+      at: string;
+      itemIds: readonly string[];
+      profileReport: BrowserProfileReport;
+    },
+  ): Promise<void> {
+    const names = ['owner', 'time', 'caption', 'image'];
+    if (
+      Object.keys(input.fields).sort().join(',') !==
+        [...names].sort().join(',') ||
+      (code !== undefined && !Object.hasOwn(CLI_ERRORS, code))
+    )
+      throw new CliError('CONTEXT_ORDER_INVALID');
+    const counts = {
+      commentsConfirmed: input.commentsConfirmed,
+      fields: Object.fromEntries(
+        names.map((name) => [
+          name,
+          {
+            compared: input.fields[name]!.compared,
+            agreed: input.fields[name]!.agreed,
+          },
+        ]),
+      ),
+      imagesMatched: input.imagesMatched,
+      screenshotsStored: input.screenshotsStored,
+      unexpectedActions: input.unexpectedActions,
+      extensionIdsAdded: input.extensionIdsAdded,
+      extensionIdsRemoved: input.extensionIdsRemoved,
+    };
+    for (const number of [
+      counts.commentsConfirmed,
+      counts.imagesMatched,
+      counts.screenshotsStored,
+      counts.unexpectedActions,
+      counts.extensionIdsAdded,
+      counts.extensionIdsRemoved,
+      ...Object.values(counts.fields).flatMap((value) => [
+        value.compared,
+        value.agreed,
+      ]),
+    ])
+      if (!Number.isSafeInteger(number) || number < 0)
+        throw new CliError('CONTEXT_ORDER_INVALID');
+    await this.transact(async (tx) => {
+      const run = await tx.browserRuns.get(runId),
+        row = this.db
+          .prepare('SELECT data FROM browser_order_audit WHERE run_id=?')
+          .get(runId);
+      if (run?.platform !== 'instagram' || run.mode !== 'context' || !row)
+        throw new CliError('CONTEXT_ORDER_INVALID');
+      if (
+        accepted &&
+        (!acceptance ||
+          run.endedAt ||
+          run.canaryAcceptedAt ||
+          code !== undefined ||
+          counts.commentsConfirmed < 1 ||
+          counts.commentsConfirmed > 5 ||
+          acceptance.itemIds.length !== counts.commentsConfirmed ||
+          new Set(acceptance.itemIds).size !== counts.commentsConfirmed ||
+          counts.imagesMatched !== counts.commentsConfirmed ||
+          counts.screenshotsStored !== counts.commentsConfirmed ||
+          counts.unexpectedActions ||
+          counts.extensionIdsAdded ||
+          counts.extensionIdsRemoved ||
+          Object.values(counts.fields).some(
+            (value) =>
+              value.compared !== counts.commentsConfirmed ||
+              value.agreed !== value.compared,
+          ))
+      )
+        throw new CliError('CANARY_CHECK_FAILED');
+      if (accepted && acceptance) {
+        const attempts = [];
+        for await (const attempt of tx.browserAttempts.iterate())
+          if (attempt.runId === runId) attempts.push(attempt);
+        const sends = attempts.filter((attempt) => attempt.state === 'sending');
+        if (sends.length !== acceptance.itemIds.length)
+          throw new CliError('CANARY_CHECK_FAILED');
+        const itemIds = new Set<string>();
+        for (const send of sends) {
+          const settles = attempts.filter(
+            (attempt) => attempt.settles === send.attemptId,
+          );
+          const record = send.itemId
+            ? await tx.instagramContext.get(send.itemId)
+            : undefined;
+          if (
+            send.action !== 'confirm-comment' ||
+            !send.itemId ||
+            !acceptance.itemIds.includes(send.itemId) ||
+            itemIds.has(send.itemId) ||
+            settles.length !== 1 ||
+            settles[0]!.state !== 'confirmed' ||
+            !record ||
+            record.runId !== runId ||
+            record.attemptId !== send.attemptId
+          )
+            throw new CliError('CANARY_CHECK_FAILED');
+          itemIds.add(send.itemId);
+        }
+        // Bind the unchanged narrow writer to this transaction, not a nested SQLite
+        // write. If the audit guard or INSERT/UPDATE fails, closure and acceptance
+        // roll back with it. No acceptance bit is written outside the core writer.
+        const writer = new InstagramContextWriter({
+          read: (read) => read(tx),
+          write: (write) => write(tx),
+          close: () => Promise.resolve(),
+        });
+        await writer.endRun({
+          runId,
+          endedAt: acceptance.at,
+          endReason: 'canary',
+          bodyShapes: {},
+          profileReport: acceptance.profileReport,
+        });
+        await writer.acceptCanary(runId, acceptance.at);
+      }
+      const updated = this.db
+        .prepare(
+          'UPDATE browser_order_audit SET accepted_by=?,data=? WHERE run_id=? AND accepted_by IS NULL',
+        )
+        .run(
+          accepted ? 'automatic-check' : null,
+          JSON.stringify({
+            ...(JSON.parse(String(row.data)) as Record<string, unknown>),
+            canaryCounts: counts,
+            ...(code ? { displayEndReason: code } : {}),
+            ...(accepted ? { acceptedBy: 'automatic-check' } : {}),
+          }),
+          runId,
+        );
+      if (Number(updated.changes) !== 1)
+        throw new CliError('CONTEXT_ORDER_INVALID');
     });
   }
   async recordAutomaticAcceptance(

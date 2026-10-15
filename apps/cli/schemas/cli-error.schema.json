@@ -4,6 +4,118 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "CONTEXT_ORDER_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "The written order must name context-instagram and the expected Instagram account, with a valid date and the person's words."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CANARY_REQUIRED" },
+        "message": {
+          "type": "string",
+          "const": "Accept a watched Instagram canary first, or give a new written order that explicitly accepts the automatic canary checks."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CANARY_NO_SECOND_SOURCE" },
+        "message": {
+          "type": "string",
+          "const": "A stored Instagram field has no second source in the page's own answers. The canary was not accepted."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CANARY_CHECK_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "An Instagram canary check failed. Nothing accepted this canary and no full run started."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "PAGE_LANGUAGE" },
+        "message": {
+          "type": "string",
+          "const": "Switch Instagram to English before this reading run."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INSTAGRAM_SHAPE_CHANGED" },
+        "message": {
+          "type": "string",
+          "const": "Instagram returned an unrecognized structure. The run stopped and the next run stays a canary."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "CONTEXT_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "The Instagram reading pass could not finish. Recorded results remain in the workspace; no automatic retry was made."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "INSTAGRAM_ACCOUNT_NAME_MISSING" },
+        "message": {
+          "type": "string",
+          "const": "The export holds no account name. Pass --handle with the Instagram name signed in to the dedicated profile."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "ORDER_INVALID" },
         "message": {
           "type": "string",

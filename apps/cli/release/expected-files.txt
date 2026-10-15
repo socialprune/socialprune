@@ -14,6 +14,7 @@ schemas/cli-result.schema.json
 schemas/click-list.schema.json
 schemas/decision-event.schema.json
 schemas/import-record.schema.json
+schemas/instagram-context.schema.json
 schemas/item.schema.json
 schemas/label-file.schema.json
 schemas/label-submission.schema.json

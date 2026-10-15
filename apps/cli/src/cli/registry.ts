@@ -13,6 +13,7 @@ import { batchNextCommand } from '../commands/batch-next.ts';
 import { labelsSubmitCommand } from '../commands/labels-submit.ts';
 import { originalsFetchCommand } from '../commands/originals-fetch.ts';
 import { originalsFillCommand } from '../commands/originals-fill.ts';
+import { contextInstagramCommand } from '../commands/context-instagram.ts';
 import { deleteXCommand } from '../commands/delete.ts';
 import {
   browserSetupCommand,
@@ -52,6 +53,16 @@ function unavailableCommand(): Command<CommandRunContext> {
 
 export function commandRegistry(): readonly RegistryEntry[] {
   return [
+    {
+      path: ['context', 'instagram'],
+      command: contextInstagramCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'CONTEXT_FAILED',
+    },
     {
       path: ['originals', 'fill', 'x'],
       command: originalsFillCommand,

@@ -16,7 +16,7 @@ export const browserSetupCommand = buildCommand({
       json: jsonFlag,
       platform: {
         kind: 'enum',
-        values: ['x'],
+        values: ['x', 'instagram'],
         brief: 'Platform for this profile',
       },
       browser: {
@@ -24,6 +24,12 @@ export const browserSetupCommand = buildCommand({
         values: ['chrome', 'edge'],
         optional: true,
         brief: 'Installed browser',
+      },
+      adopt: {
+        kind: 'boolean',
+        default: false,
+        brief:
+          'Adopt an unused existing Instagram profile; write only its marker and open nothing',
       },
     },
   },
@@ -34,20 +40,34 @@ export const browserSetupCommand = buildCommand({
     this: CommandRunContext,
     flags: {
       profile: string;
-      platform: 'x';
+      platform: 'x' | 'instagram';
+      adopt: boolean;
       browser?: 'chrome' | 'edge';
       json: boolean;
     },
   ) {
+    if (flags.adopt) {
+      if (flags.platform !== 'instagram' || flags.browser)
+        throw new CliError('INVALID_ARGUMENTS');
+      const { adoptInstagramProfile } = await import('../browser/profile.ts');
+      const adoptedAt = this.now().toISOString();
+      const marker = await adoptInstagramProfile(flags.profile, adoptedAt);
+      this.reply({
+        data: { platform: 'instagram', adopted: true, adoptedAt, marker },
+        human: `Wrote ${marker} with platform instagram and adoptedAt ${adoptedAt}. No browser was opened.`,
+      });
+      return;
+    }
     if (!this.stdoutIsTerminal || flags.json)
       throw new CliError('NOT_INTERACTIVE');
     const { createProfile, installedBrowser } =
       await import('../browser/profile.ts');
     const executablePath = await installedBrowser(flags.browser);
-    await createProfile(flags.profile);
+    await createProfile(flags.profile, flags.platform);
     const { ordinarySetup } = await import('../browser/setup.ts');
     await ordinarySetup({
       profile: flags.profile,
+      platform: flags.platform,
       executablePath,
       signal: this.signal,
       notice: (text) => this.io.stderr.write(text),
@@ -70,14 +90,16 @@ export const browserForgetCommand = buildCommand({
   ) {
     if (!this.stdoutIsTerminal || flags.json)
       throw new CliError('NOT_INTERACTIVE');
-    const { validateProfile, installedBrowser } =
+    const { validateProfile, installedBrowser, profilePlatform } =
       await import('../browser/profile.ts');
-    await validateProfile(flags.profile);
+    const platform = await profilePlatform(flags.profile);
     const { startConfirmation } = await import('../browser/confirmation.ts');
     const confirmation = await startConfirmation({
       phase: 'start',
       warning:
-        'Remove this dedicated browser profile, including its signed-in session and local browser data. Sign out on X first. This cannot be undone.',
+        platform === 'x'
+          ? 'Remove this dedicated browser profile, including its signed-in session and local browser data. Sign out on X first. This cannot be undone.'
+          : 'Remove this dedicated browser profile, including its signed-in session and local browser data. Sign out on Instagram first. This cannot be undone.',
       profileWarning: flags.profile,
       planned: 0,
       bulk: 0,
@@ -100,7 +122,7 @@ export const browserForgetCommand = buildCommand({
         context.once('disconnected', () => resolve(false)),
       );
       if (await Promise.race([started, closed])) {
-        await validateProfile(flags.profile);
+        await validateProfile(flags.profile, platform);
         await rm(flags.profile, { recursive: true });
         this.reply({
           data: { removed: true },

@@ -391,6 +391,7 @@ test('browser capability import graph excludes tests/fakes and all other command
   await visit(source);
   expect([...new Set(browserImports)].sort()).toEqual([
     'commands/browser.ts',
+    'commands/context-instagram.ts',
     'commands/delete.ts',
     'commands/originals-fill.ts',
   ]);

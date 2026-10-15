@@ -322,6 +322,48 @@ registerHooks({resolve(specifier,context,nextResolve){if(specifier==='playwright
         'originals fill x --dry-run --json (network and browser import denied)',
       exit: 0,
     });
+    const instagramFixture = manifest.exports.find(
+      (entry) => entry.platform === 'instagram',
+    );
+    assert.ok(instagramFixture);
+    const instagramWorkspace = join(temp, 'instagram-workspace');
+    checked([
+      'import',
+      resolve(root, 'fixtures/synthetic/demo', instagramFixture.directory),
+      '--workspace',
+      instagramWorkspace,
+      '--json',
+    ]);
+    const contextOutput = command(
+      process.execPath,
+      [
+        '--import',
+        pathToFileURL(noNetwork).href,
+        bin,
+        'context',
+        'instagram',
+        '--workspace',
+        instagramWorkspace,
+        '--account',
+        instagramFixture.account.key,
+        '--dry-run',
+        '--json',
+      ],
+      install,
+    );
+    envelopeSchema.parse(JSON.parse(contextOutput));
+    const contextPlan = JSON.parse(contextOutput) as Envelope & {
+      data: { dryRun: boolean; planned: number };
+    };
+    assert.equal(contextPlan.command, 'context.instagram');
+    assert.equal(contextPlan.status, 'ok');
+    assert.equal(contextPlan.data.dryRun, true);
+    assert.ok(contextPlan.data.planned > 0);
+    results.push({
+      command:
+        'context instagram --dry-run --json (network and browser import denied)',
+      exit: 0,
+    });
     const originalsOutput = command(
       process.execPath,
       [

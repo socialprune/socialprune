@@ -9,6 +9,53 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  CONTEXT_ORDER_INVALID: {
+    message:
+      "The written order must name context-instagram and the expected Instagram account, with a valid date and the person's words.",
+    exitCode: 2,
+    retryable: false,
+  },
+  CANARY_REQUIRED: {
+    message:
+      'Accept a watched Instagram canary first, or give a new written order that explicitly accepts the automatic canary checks.',
+    exitCode: 2,
+    retryable: false,
+  },
+  CANARY_NO_SECOND_SOURCE: {
+    message:
+      "A stored Instagram field has no second source in the page's own answers. The canary was not accepted.",
+    exitCode: 1,
+    retryable: false,
+  },
+  CANARY_CHECK_FAILED: {
+    message:
+      'An Instagram canary check failed. Nothing accepted this canary and no full run started.',
+    exitCode: 1,
+    retryable: false,
+  },
+  PAGE_LANGUAGE: {
+    message: 'Switch Instagram to English before this reading run.',
+    exitCode: 1,
+    retryable: false,
+  },
+  INSTAGRAM_SHAPE_CHANGED: {
+    message:
+      'Instagram returned an unrecognized structure. The run stopped and the next run stays a canary.',
+    exitCode: 1,
+    retryable: false,
+  },
+  CONTEXT_FAILED: {
+    message:
+      'The Instagram reading pass could not finish. Recorded results remain in the workspace; no automatic retry was made.',
+    exitCode: 1,
+    retryable: false,
+  },
+  INSTAGRAM_ACCOUNT_NAME_MISSING: {
+    message:
+      'The export holds no account name. Pass --handle with the Instagram name signed in to the dedicated profile.',
+    exitCode: 2,
+    retryable: false,
+  },
   ORDER_INVALID: {
     message:
       "The written order must name originals-fill-x and the expected account, with a valid date and the person's words.",

@@ -2,6 +2,7 @@ import {
   WorkspaceV2Schema,
   migrateOriginal,
   validateOriginal,
+  validateInstagramContexts,
 } from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
@@ -23,6 +24,7 @@ export function workspaceCounts(
     | 'originals'
     | 'browserRuns'
     | 'browserAttempts'
+    | 'instagramContext'
   >,
 ): WorkspaceCounts {
   return {
@@ -41,6 +43,9 @@ export function workspaceCounts(
     ...(workspace.browserAttempts !== undefined
       ? { browserAttempts: workspace.browserAttempts.length }
       : {}),
+    ...(workspace.instagramContext?.length
+      ? { instagramContext: workspace.instagramContext.length }
+      : {}),
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
@@ -48,7 +53,8 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     input &&
     typeof input === 'object' &&
     'schemaVersion' in input &&
-    input.schemaVersion !== 4 &&
+    typeof input.schemaVersion === 'number' &&
+    input.schemaVersion < 4 &&
     'originals' in input &&
     Array.isArray(input.originals)
       ? { ...input, originals: input.originals.map(migrateOriginal) }
@@ -59,6 +65,9 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   if (
     (workspace.schemaVersion >= 3 &&
       (!workspace.browserRuns || !workspace.browserAttempts)) ||
+    (workspace.schemaVersion < 5 &&
+      (workspace.instagramContext !== undefined ||
+        workspace.counts.instagramContext !== undefined)) ||
     (workspace.schemaVersion === 2 &&
       (workspace.browserRuns !== undefined ||
         workspace.browserAttempts !== undefined))
@@ -76,6 +85,11 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   unique(workspace.imports.map((record) => record.id));
   unique((workspace.originals ?? []).map((record) => record.id));
   if ((workspace.counts.originals ?? 0) !== (workspace.originals?.length ?? 0))
+    throw new WorkspaceError('COUNT_MISMATCH');
+  if (
+    (workspace.counts.instagramContext ?? 0) !==
+    (workspace.instagramContext?.length ?? 0)
+  )
     throw new WorkspaceError('COUNT_MISMATCH');
   unique(workspace.assessments.map((record) => record.assessmentId));
   unique(workspace.submissions.map((record) => record.submissionId));
@@ -104,6 +118,13 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
       workspace.browserAttempts ?? [],
       itemIds,
       new Set((workspace.originals ?? []).map((value) => value.id)),
+      new Map(workspace.items.map((item) => [item.id, item])),
+    );
+    validateInstagramContexts(
+      workspace.instagramContext ?? [],
+      new Map(workspace.items.map((item) => [item.id, item])),
+      workspace.browserRuns ?? [],
+      workspace.browserAttempts ?? [],
     );
     if (workspace.schemaVersion >= 3)
       validateBrowserOutcomes(

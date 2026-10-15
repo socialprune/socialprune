@@ -384,6 +384,9 @@ async function handle(input: WorkspaceRequest) {
     case 'getConversation':
       post({ type: 'conversation', requestId, chain: [], state: 'not-read' });
       break;
+    case 'getInstagramContext':
+      post({ type: 'instagramContext', requestId, records: [] });
+      break;
     case 'getOriginals':
       post({
         type: 'originals',

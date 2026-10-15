@@ -182,6 +182,7 @@ test('v2 committed JSON schemas match zod and encode required strict object shap
       originals: [],
       browserRuns: [],
       browserAttempts: [],
+      instagramContext: [],
     },
   };
   for (const [name, sample] of Object.entries(samples)) {

@@ -9,6 +9,11 @@ import {
 } from '@socialprune/core/workspace/backup';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { createWorkspace } from '@socialprune/core/workspace/store';
+import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
+import {
+  runStoreContract,
+  writeInstagramContextContract,
+} from '@socialprune/core/workspace/store-contract';
 
 /** Test entry only: a real IndexedDB restore/export, with no platform actions. */
 export async function roundTrip(
@@ -38,6 +43,42 @@ export async function roundTrip(
 }
 Object.assign(globalThis, { roundTripJournal: roundTrip });
 
+export async function contextFoundation(): Promise<{
+  checks: string[];
+  workspace: unknown;
+}> {
+  const checks: string[] = [];
+  await runStoreContract(
+    async (initial) => {
+      const id = `context-contract-${crypto.randomUUID()}`;
+      let store = await IndexedDBStore.open(id, initial);
+      return {
+        store,
+        async reopen() {
+          await store.close();
+          store = await IndexedDBStore.open(id);
+          return store;
+        },
+        async dispose() {
+          await store.close();
+          await deleteWorkspaceDatabase(id);
+        },
+      };
+    },
+    (name) => checks.push(name),
+  );
+  const id = `context-lifecycle-${crypto.randomUUID()}`,
+    store = await IndexedDBStore.open(id);
+  try {
+    await writeInstagramContextContract(store);
+    return { checks, workspace: await store.read(readWorkspace) };
+  } finally {
+    await store.close();
+    await deleteWorkspaceDatabase(id);
+  }
+}
+Object.assign(globalThis, { contextFoundation });
+
 export async function upgradeDecoy(): Promise<{
   version: number;
   originalPreserved: boolean;
@@ -51,7 +92,7 @@ export async function upgradeDecoy(): Promise<{
   // metadata and original record back before the additive production upgrade.
   await deleteWorkspaceDatabase(id);
   const opened = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(name, 2);
+    const request = indexedDB.open(name, WORKSPACE_SCHEMA_VERSION - 1);
     request.onupgradeneeded = () => {
       const db = request.result;
       db.createObjectStore('meta');
@@ -79,6 +120,12 @@ export async function upgradeDecoy(): Promise<{
         ['timestamp', 'kindOrder', 'index'],
       );
       db.createObjectStore('originals', { keyPath: 'id' });
+      db.createObjectStore('browserRuns', { keyPath: 'runId' });
+      const attempts = db.createObjectStore('browserAttempts', {
+        keyPath: 'attemptId',
+      });
+      attempts.createIndex('seq', 'seq', { unique: true });
+      attempts.createIndex('settles', 'settles', { unique: true });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () =>
@@ -102,21 +149,28 @@ export async function upgradeDecoy(): Promise<{
   void decisionEvents;
   void outcomeEvents;
   const tx = opened.transaction(['meta', 'runtime', 'originals'], 'readwrite');
-  tx.objectStore('meta').put(meta, 'workspace');
+  tx.objectStore('meta').put(
+    { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION - 1 },
+    'workspace',
+  );
   tx.objectStore('runtime').put({ revision: 0, lastEventSeq: 0 }, 'runtime');
   tx.objectStore('originals').put({
     id: '901',
-    status: 'fetched',
-    fetchedAt: '2026-10-12T00:00:00.000Z',
+    anonymous: { status: 'fetched', at: '2026-10-12T00:00:00.000Z' },
+    signedIn: null,
     text: 'Generated prior record',
     authorName: 'Generated',
     authorHandle: 'generated',
-    photos: [],
+    media: [],
+    createdAt: null,
+    textSource: 'anonymous',
+    conversationId: null,
+    chainAbove: null,
+    signedInRecord: null,
     quotedId: null,
     parentId: null,
     raw: { note_tweet: {} },
     textCompleteness: 'unknown',
-    video: null,
   });
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();

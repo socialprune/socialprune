@@ -12,6 +12,7 @@ import type {
   WorkspaceV2,
   BrowserRun,
   BrowserAttempt,
+  InstagramContext,
 } from '../model/index.ts';
 import { DEFAULT_CATEGORIES } from '../model/index.ts';
 import type { WorkspaceErrorCode } from './errors.ts';
@@ -103,6 +104,7 @@ export interface ReadTransaction {
   imports: RecordReader<ImportRecord>;
   items: RecordReader<StoredItem>;
   originals: RecordReader<Original>;
+  instagramContext: RecordReader<InstagramContext>;
   browserRuns: RecordReader<BrowserRun>;
   browserAttempts: RecordReader<BrowserAttempt>;
   submissions: RecordReader<Submission>;
@@ -122,6 +124,7 @@ export interface WriteTransaction extends ReadTransaction {
   imports: RecordWriter<ImportRecord>;
   items: RecordWriter<StoredItem>;
   originals: RecordWriter<Original>;
+  instagramContext: UniqueWriter<InstagramContext>;
   browserRuns: RecordWriter<BrowserRun> & UniqueWriter<BrowserRun>;
   browserAttempts: UniqueWriter<BrowserAttempt>;
   submissions: UniqueWriter<Submission>;
@@ -158,6 +161,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
   const originals = await records(tx.originals);
   const browserRuns = await records(tx.browserRuns);
   const browserAttempts = await records(tx.browserAttempts);
+  const instagramContext = await records(tx.instagramContext);
   const arrays = {
     imports,
     items: stored.map(({ item }) => item),
@@ -166,6 +170,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     decisionEvents: await records(tx.decisionEvents),
     outcomeEvents: await records(tx.outcomeEvents),
     ...(originals.length ? { originals } : {}),
+    ...(instagramContext.length ? { instagramContext } : {}),
     ...(meta.schemaVersion >= 3 || browserRuns.length || browserAttempts.length
       ? { browserRuns, browserAttempts }
       : {}),

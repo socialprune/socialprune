@@ -14,6 +14,7 @@
     "./workspace/migrate": "./src/workspace/migrate.ts",
     "./workspace/state": "./src/workspace/state.ts",
     "./workspace/store": "./src/workspace/store.ts",
+    "./workspace/instagram-context-writer": "./src/workspace/instagram-context-writer.ts",
     "./workspace/memory-store": "./src/workspace/memory-store.ts",
     "./workspace/store-contract": "./src/workspace/store-contract.ts",
     "./workspace/review": "./src/workspace/review.ts",

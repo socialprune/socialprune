@@ -11,6 +11,7 @@ import {
   SubmissionSchema,
   ImportRecordSchema,
   OriginalSchema,
+  InstagramContextSchema,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
 import {
@@ -31,6 +32,7 @@ export const SCHEMA_MODELS = {
   'import-record': ImportRecordSchema,
   workspace: WorkspaceSchema,
   original: OriginalSchema,
+  'instagram-context': InstagramContextSchema,
   'v1/item': v1.ItemSchema,
   'v1/assessment': v1.AssessmentSchema,
   'v1/decision': v1.DecisionSchema,

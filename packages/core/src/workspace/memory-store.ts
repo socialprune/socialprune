@@ -10,6 +10,7 @@ import {
   WorkspaceMetaSchema,
   BrowserRunSchema,
   BrowserAttemptSchema,
+  InstagramContextSchema,
 } from '../model/index.ts';
 import type {
   WorkspaceV2,
@@ -49,6 +50,7 @@ function database(workspace: WorkspaceV2) {
     originals,
     browserRuns,
     browserAttempts,
+    instagramContext,
     ...meta
   } = workspace;
   void _counts;
@@ -74,6 +76,9 @@ function database(workspace: WorkspaceV2) {
       }),
     ),
     originals: new Map((originals ?? []).map((record) => [record.id, record])),
+    instagramContext: new Map(
+      (instagramContext ?? []).map((record) => [record.itemId, record]),
+    ),
     browserRuns: new Map(
       (browserRuns ?? []).map((record) => [record.runId, record]),
     ),
@@ -107,6 +112,7 @@ function fork(source: Database): Database {
     imports: new Map(source.imports),
     items: new Map(source.items),
     originals: new Map(source.originals),
+    instagramContext: new Map(source.instagramContext),
     browserRuns: new Map(source.browserRuns),
     browserAttempts: new Map(source.browserAttempts),
     submissions: new Map(source.submissions),
@@ -298,6 +304,11 @@ export function createMemoryStore(
             validateOriginal(value);
             return value;
           },
+        ),
+        instagramContext: table(
+          db.instagramContext,
+          (record) => record.itemId,
+          (record) => InstagramContextSchema.parse(record),
         ),
         browserRuns: table(
           db.browserRuns,

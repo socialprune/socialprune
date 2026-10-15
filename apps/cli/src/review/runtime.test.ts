@@ -6,6 +6,39 @@ import {
 import type { HttpReviewRequest } from '@socialprune/core/workspace/protocol';
 import { browserWorkspace } from '../workspace/test/inputs.ts';
 import { ReviewRuntime } from './runtime.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createWorkspace } from '@socialprune/core/workspace/store';
+import { writeInstagramContextContract } from '@socialprune/core/workspace/store-contract';
+import { SQLiteStore } from '../workspace/sqlite-store.ts';
+
+test('SQLite review runtime answers context requests from their own records and keeps missing IDs absent', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-context-runtime-'),
+  );
+  const store = await SQLiteStore.open(join(directory, 'workspace.sqlite'), {
+    initial: createWorkspace(),
+  });
+  const runtime = new ReviewRuntime(store, {
+    now: () => new Date('2026-10-15T00:00:00Z'),
+  });
+  try {
+    const record = await writeInstagramContextContract(store);
+    expect(
+      await runtime.run(1, {
+        type: 'getInstagramContext',
+        requestId: 'context',
+        itemIds: [record.itemId, 'instagram:missing'],
+      }),
+    ).toEqual([
+      { type: 'instagramContext', requestId: 'context', records: [record] },
+    ]);
+  } finally {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('previews replace per page, bind page identity, evict fifth, release and expire at ten minutes', async () => {
   let now = Date.parse('2026-10-08T00:00:00Z');

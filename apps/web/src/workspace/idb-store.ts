@@ -12,6 +12,8 @@ import {
   WorkspaceMetaSchema,
   BrowserRunSchema,
   BrowserAttemptSchema,
+  InstagramContextSchema,
+  WORKSPACE_SCHEMA_VERSION,
 } from '@socialprune/core';
 import type { WorkspaceV2, WorkspaceMeta, Original } from '@socialprune/core';
 import {
@@ -45,6 +47,7 @@ const TABLES = [
   'originals',
   'browserRuns',
   'browserAttempts',
+  'instagramContext',
 ] as const;
 export type StorageLifecycle = 'blocked' | 'versionchange' | 'terminated';
 const request = <T>(value: IDBRequest<T>) =>
@@ -66,11 +69,13 @@ export class IndexedDBStore implements WorkspaceStore {
     initial: WorkspaceV2 = createWorkspace({ id: workspaceId }),
     onLifecycle: (state: StorageLifecycle) => void = () => {},
   ): Promise<IndexedDBStore> {
-    const db = await openDB(`sp-ws-${workspaceId}`, 4, {
+    const db = await openDB(`sp-ws-${workspaceId}`, WORKSPACE_SCHEMA_VERSION, {
       upgrade(db, oldVersion, _newVersion, tx) {
-        if (oldVersion >= 1 && oldVersion < 4) {
+        if (oldVersion < 5)
+          db.createObjectStore('instagramContext', { keyPath: 'itemId' });
+        if (oldVersion >= 1 && oldVersion < 5) {
           void (async () => {
-            if (oldVersion >= 2) {
+            if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
               while (cursor) {
                 await cursor.update(migrateOriginal(cursor.value));
@@ -81,7 +86,10 @@ export class IndexedDBStore implements WorkspaceStore {
             if (meta && typeof meta === 'object')
               await tx
                 .objectStore('meta')
-                .put({ ...meta, schemaVersion: 4 }, 'workspace');
+                .put(
+                  { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION },
+                  'workspace',
+                );
           })().catch(() => tx.abort());
         }
         if (oldVersion < 3) {
@@ -151,6 +159,7 @@ export class IndexedDBStore implements WorkspaceStore {
       originals,
       browserRuns,
       browserAttempts,
+      instagramContext,
       ...meta
     } = workspace;
     void _counts;
@@ -167,6 +176,8 @@ export class IndexedDBStore implements WorkspaceStore {
       for (const record of browserRuns ?? []) await tx.browserRuns.add(record);
       for (const record of browserAttempts ?? [])
         await tx.browserAttempts.add(record);
+      for (const record of instagramContext ?? [])
+        await tx.instagramContext.add(record);
       await tx.assessments.append(assessments);
       await tx.decisionEvents.append(decisionEvents);
       await tx.outcomeEvents.append(outcomeEvents);
@@ -389,6 +400,9 @@ export class IndexedDBStore implements WorkspaceStore {
       }),
       browserRuns: table('browserRuns', (value) =>
         BrowserRunSchema.parse(value),
+      ),
+      instagramContext: table('instagramContext', (value) =>
+        InstagramContextSchema.parse(value),
       ),
       browserAttempts: table('browserAttempts', (value) =>
         BrowserAttemptSchema.parse(value),

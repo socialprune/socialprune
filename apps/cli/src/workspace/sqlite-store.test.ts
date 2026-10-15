@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
@@ -6,6 +6,38 @@ import { runStoreContract } from '@socialprune/core/workspace/store-contract';
 import { SQLiteStore } from './sqlite-store.ts';
 import { requireWorkspaceNode } from './node-version.ts';
 import { browserWorkspace } from './test/inputs.ts';
+import { readWorkspace } from '@socialprune/core/workspace/store';
+
+test('literal layout 5 and schema 5 remain readable through SQLiteStore.open after the writer version advances', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-literal-layout5-'),
+  );
+  const file = join(directory, 'socialprune.sqlite');
+  try {
+    const initial = await SQLiteStore.open(file, {
+      initial: browserWorkspace(),
+    });
+    await initial.close();
+    const pinned = new DatabaseSync(file);
+    pinned.exec(
+      "PRAGMA user_version=5; UPDATE meta SET data=json_set(data,'$.schemaVersion',5);",
+    );
+    pinned.close();
+    const before = await readFile(file);
+    for (const readOnly of [true, false]) {
+      const opened = await SQLiteStore.open(file, { readOnly });
+      try {
+        expect((await opened.read(readWorkspace)).schemaVersion).toBe(5);
+      } finally {
+        await opened.close();
+      }
+    }
+    expect(await readFile(file)).toEqual(before);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('SQLite satisfies every framework-neutral core store contract check', async () => {
   const checks: string[] = [];
@@ -31,7 +63,7 @@ test('SQLite satisfies every framework-neutral core store contract check', async
     },
     (name) => checks.push(name),
   );
-  expect(checks).toHaveLength(12);
+  expect(checks).toHaveLength(13);
 }, 60_000);
 
 test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real', async () => {
@@ -88,7 +120,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
     expect(statement.get('bound-input')).toEqual({ value: 'bound-input' });
     expect(statement.all(7)).toEqual([{ value: 7 }]);
     expect(() => db.enableLoadExtension(true)).toThrow();
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(5);
     expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe(
       'delete',
     );
@@ -102,6 +134,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
       'outcome_events',
       'state',
       'originals',
+      'instagram_context',
       'browser_runs',
       'browser_attempts',
     ]) {

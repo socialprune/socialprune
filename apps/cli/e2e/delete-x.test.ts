@@ -21,8 +21,15 @@ import {
 import {
   createWorkspace,
   OriginalsFillWriter,
+  records,
 } from '@socialprune/core/workspace/store';
 import { migrateOriginal } from '@socialprune/core';
+import type { InstagramContext, Item, WorkspaceV2 } from '@socialprune/core';
+import {
+  writeInstagramContextContract,
+  STORE_CONTRACT_CHECKS,
+} from '@socialprune/core/workspace/store-contract';
+import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
 
 let fake: Awaited<ReturnType<typeof fakeX>>;
 beforeAll(async () => {
@@ -787,6 +794,46 @@ test.each([true, false])(
 test('daily cap counts earlier attempts in the workspace calendar day', async () => {
   const h = await harness(['1001', '1002']);
   try {
+    const expected = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../fixtures/synthetic/instagram/current-minimal/expected.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as { items: Item[] };
+    const context = await writeInstagramContextContract(
+      h.store,
+      expected.items[0],
+      FIXTURE.now,
+    );
+    const writer = new InstagramContextWriter(h.store);
+    await writer.startRun({
+      runId: 'instagram-many-steps',
+      accountKey: context.accountKey,
+      planHash: 'f'.repeat(64),
+      startedAt: FIXTURE.now,
+    });
+    for (let step = 0; step < 200; step++)
+      await writer.step('instagram-many-steps', FIXTURE.now);
+    await writer.endRun({
+      runId: 'instagram-many-steps',
+      endedAt: FIXTURE.now,
+      endReason: 'daily-cap',
+      bodyShapes: {},
+      profileReport: {
+        accountBefore: expected.items[0]!.account.handle,
+        accountAfter: expected.items[0]!.account.handle,
+        extensionsBefore: 0,
+        extensionsAfter: 0,
+        changedFiles: [],
+        unexpectedRequests: [],
+      },
+    });
+    const instagramBefore = (
+      await h.store.read((tx) => records(tx.browserRuns))
+    ).filter((run) => run.platform === 'instagram');
     const first = h.launch(false, {
       intervalMs: 100,
       batchSize: 20,
@@ -811,6 +858,13 @@ test('daily cap counts earlier attempts in the workspace calendar day', async ()
       endReason: 'daily-cap',
     });
     expect(fake.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+    const instagramAfter = (
+      await h.store.read((tx) => records(tx.browserRuns))
+    ).filter((run) => run.platform === 'instagram');
+    expect(instagramAfter).toEqual(instagramBefore);
+    expect(
+      instagramAfter.reduce((sum, run) => sum + (run.pageOpens ?? 0), 0),
+    ).toBe(201);
   } finally {
     await h.close();
   }
@@ -1367,13 +1421,26 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
       },
     });
     await fill.acceptCanary('generated-fill-portable', FIXTURE.now);
+    const instagramExpected = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../fixtures/synthetic/instagram/current-minimal/expected.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as { items: Item[] };
+    const contextRecord = await writeInstagramContextContract(
+      h.store,
+      instagramExpected.items[0],
+    );
     const before = await h.store.browserJournal();
     const backup = createBackup(h.store, { batchSize: 1 });
     let text = '';
     for await (const chunk of backup.chunks)
       text += new TextDecoder().decode(chunk);
     expect((JSON.parse(text) as { schemaVersion: number }).schemaVersion).toBe(
-      4,
+      5,
     );
     const { build } = await import('vite');
     const output = await build({
@@ -1429,20 +1496,39 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         }
       ).upgradeJournalDecoy(),
     );
-    expect(upgraded).toMatchObject({ version: 4, originalPreserved: true });
+    expect(upgraded).toMatchObject({ version: 5, originalPreserved: true });
     expect(upgraded.tables).toContain('browserRuns');
     expect(upgraded.tables).toContain('browserAttempts');
+    expect(upgraded.tables).toContain('instagramContext');
+    const foundation = await page.evaluate(async () =>
+      (
+        globalThis as unknown as {
+          contextFoundation(): Promise<{
+            checks: string[];
+            workspace: WorkspaceV2;
+          }>;
+        }
+      ).contextFoundation(),
+    );
+    expect(foundation.checks).toEqual(
+      STORE_CONTRACT_CHECKS.map(({ name }) => name),
+    );
+    expect(foundation.workspace.instagramContext).toEqual([contextRecord]);
     const browserResult = await page.evaluate(async (backupText) => {
       return (
         globalThis as unknown as {
           roundTripJournal(value: string): Promise<{
             text: string;
-            workspace: { browserAttempts: unknown[] };
+            workspace: {
+              browserAttempts: unknown[];
+              instagramContext: InstagramContext[];
+            };
           }>;
         }
       ).roundTripJournal(backupText);
     }, text);
     expect(browserResult.workspace.browserAttempts).toEqual(before.attempts);
+    expect(browserResult.workspace.instagramContext).toEqual([contextRecord]);
     restored = await SQLiteStore.open(restoredPath, {
       initial: createWorkspace(),
     });
@@ -1455,6 +1541,57 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
       { batchSize: 1 },
     );
     expect((await restored.browserJournal()).attempts).toEqual(before.attempts);
+    expect(
+      await restored.read((tx) =>
+        tx.instagramContext.get(contextRecord.itemId),
+      ),
+    ).toEqual(contextRecord);
+    const v4 = JSON.parse(text) as WorkspaceV2;
+    v4.schemaVersion = 4;
+    delete v4.instagramContext;
+    delete v4.counts.instagramContext;
+    v4.browserRuns = v4.browserRuns!.filter((run) => run.platform === 'x');
+    v4.browserAttempts = v4.browserAttempts!.filter(
+      (attempt) => attempt.action !== 'confirm-comment',
+    );
+    v4.counts.browserRuns = v4.browserRuns.length;
+    v4.counts.browserAttempts = v4.browserAttempts.length;
+    const oldBrowser = await page.evaluate(
+      async (value) =>
+        (
+          globalThis as unknown as {
+            roundTripJournal(
+              text: string,
+            ): Promise<{ text: string; workspace: WorkspaceV2 }>;
+          }
+        ).roundTripJournal(value),
+      JSON.stringify(v4),
+    );
+    expect(oldBrowser.workspace.schemaVersion).toBe(5);
+    expect(oldBrowser.workspace.instagramContext).toBeUndefined();
+    expect(oldBrowser.workspace.browserRuns).toEqual(v4.browserRuns);
+    expect(oldBrowser.workspace.browserAttempts).toEqual(v4.browserAttempts);
+    const oldCli = await SQLiteStore.open(
+      join(h.directory, 'restored-v4.sqlite'),
+      { initial: createWorkspace() },
+    );
+    try {
+      await restoreBackup(
+        oldCli,
+        (async function* () {
+          await Promise.resolve();
+          yield JSON.stringify(v4);
+        })(),
+      );
+      const value = await oldCli.read(async (tx) => ({
+        meta: await tx.meta.get(),
+        contexts: await records(tx.instagramContext),
+      }));
+      expect(value.meta.schemaVersion).toBe(5);
+      expect(value.contexts).toEqual([]);
+    } finally {
+      await oldCli.close();
+    }
     const preserved = await restored.read((tx) => tx.originals.get('910'));
     expect(preserved).toMatchObject({
       text: projection.text,
@@ -1464,7 +1601,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
     });
     expect(
       (await restored.browserJournal()).runs.map((run) => run.mode).sort(),
-    ).toEqual(['delete', 'fill']);
+    ).toEqual(['context', 'delete', 'fill']);
     expect(
       (await planDeletion(restored, FIXTURE.account.key, new Set(['x:1001'])))
         .rows,

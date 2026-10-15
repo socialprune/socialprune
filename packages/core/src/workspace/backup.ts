@@ -13,6 +13,8 @@ import {
   WorkspaceMetaSchema,
   BrowserRunSchema,
   BrowserAttemptSchema,
+  InstagramContextSchema,
+  WORKSPACE_SCHEMA_VERSION,
 } from '../model/index.ts';
 import type {
   WorkspaceCounts,
@@ -44,6 +46,7 @@ const ARRAY_KEYS = [
   'originals',
   'browserRuns',
   'browserAttempts',
+  'instagramContext',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 export interface BackupOptions {
@@ -151,12 +154,12 @@ export function createBackup(
       });
     }
     if (!counts.originals) delete counts.originals;
-    // Every newly written portable document is v3. Reading older logical
-    // workspaces adds only the empty journal arrays and zero counts.
+    if (!counts.instagramContext) delete counts.instagramContext;
+    // New portable documents retain the journal even when it is empty.
     const useV3 = true;
     const header = {
       ...sourceMeta,
-      schemaVersion: 4,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       lastBackupAt: createdAt,
       counts,
     };
@@ -178,6 +181,7 @@ export function createBackup(
     }
     for (const key of ARRAY_KEYS) {
       if (key === 'originals' && !counts.originals) continue;
+      if (key === 'instagramContext' && !counts.instagramContext) continue;
       if ((key === 'browserRuns' || key === 'browserAttempts') && !useV3)
         continue;
       yield `,${JSON.stringify(key)}:[`;
@@ -359,6 +363,7 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   originals: OriginalSchema,
   browserRuns: BrowserRunSchema,
   browserAttempts: BrowserAttemptSchema,
+  instagramContext: InstagramContextSchema,
 };
 const v1Records: Record<string, z.ZodType> = {
   imports: v1.ImportRecordSchema,
@@ -440,7 +445,8 @@ export async function* backupParts(
             value < 1
           )
             throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-          if (value > 4) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+          if (value > WORKSPACE_SCHEMA_VERSION)
+            throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
           version = value;
         }
         yield { type: 'header', name, value };
@@ -507,7 +513,8 @@ export async function readBackup(
         const value = await jsonValue(cursor, maxBytes);
         if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
           throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-        if (value > 4) throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
+        if (value > WORKSPACE_SCHEMA_VERSION)
+          throw new WorkspaceError('BACKUP_SCHEMA_UNSUPPORTED');
         version = value;
         document[name] = value;
       } else if (
@@ -521,6 +528,7 @@ export async function readBackup(
           'originals',
           'browserRuns',
           'browserAttempts',
+          'instagramContext',
           'decisions',
           'outcomes',
         ].includes(name)
@@ -544,7 +552,7 @@ export async function readBackup(
           for (;;) {
             const rawValue = await jsonValue(cursor, maxBytes);
             const value = schema.safeParse(
-              name === 'originals' && version !== 4
+              name === 'originals' && (version ?? 0) < 4
                 ? migrateOriginal(rawValue)
                 : rawValue,
             );
@@ -610,7 +618,11 @@ export async function readBackup(
       throwIfAborted(options.signal);
       return migrated;
     }
-    if (version !== 2 && version !== 3 && version !== 4)
+    if (
+      version === undefined ||
+      version < 2 ||
+      version > WORKSPACE_SCHEMA_VERSION
+    )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     const declared = WorkspaceCountsSchema.safeParse(document.counts);
     if (!declared.success) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
@@ -640,6 +652,8 @@ export async function applyBackup(
 ): Promise<WorkspaceV2> {
   throwIfAborted(options.signal);
   const workspace = validateWorkspace(input);
+  if (workspace.schemaVersion === 4)
+    workspace.schemaVersion = WORKSPACE_SCHEMA_VERSION;
   const state = deriveState(workspace);
   const batchSize = positive(options.batchSize ?? 1000, 1000);
   const {
@@ -653,6 +667,7 @@ export async function applyBackup(
     originals,
     browserRuns,
     browserAttempts,
+    instagramContext,
     ...meta
   } = workspace;
   void _counts;
@@ -694,6 +709,8 @@ export async function applyBackup(
     for (const run of browserRuns ?? []) await tx.browserRuns.add(run);
     for (const attempt of browserAttempts ?? [])
       await tx.browserAttempts.add(attempt);
+    for (const record of instagramContext ?? [])
+      await tx.instagramContext.add(record);
     for (let offset = 0; offset < assessments.length; offset += batchSize) {
       throwIfAborted(options.signal);
       await tx.assessments.append(

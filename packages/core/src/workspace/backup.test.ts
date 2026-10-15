@@ -136,7 +136,7 @@ test('writer streams bounded chunks in header order and marks the store only aft
     ]);
     expect(document).toEqual({
       ...input,
-      schemaVersion: 4,
+      schemaVersion: 5,
       browserRuns: [],
       browserAttempts: [],
       counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },

@@ -4,6 +4,10 @@ import { BrowserRunSchema, BrowserAttemptSchema } from './browser.ts';
 export * from './browser.ts';
 import { OriginalSchema } from './original.ts';
 export * from './original.ts';
+import { InstagramContextSchema } from './instagram-context.ts';
+export * from './instagram-context.ts';
+
+export const WORKSPACE_SCHEMA_VERSION = 5;
 
 export {
   PlatformIdSchema,
@@ -116,6 +120,7 @@ export const WorkspaceCountsSchema = z.strictObject({
   originals: count.optional(),
   browserRuns: count.optional(),
   browserAttempts: count.optional(),
+  instagramContext: count.optional(),
 });
 export type WorkspaceCounts = z.infer<typeof WorkspaceCountsSchema>;
 const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -168,7 +173,7 @@ export const ReviewViewSchema = z.strictObject({
 export type ReviewView = z.infer<typeof ReviewViewSchema>;
 export const WorkspaceMetaSchema = z.strictObject({
   format: z.literal('socialprune-workspace'),
-  schemaVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]),
+  schemaVersion: z.number().int().min(2).max(WORKSPACE_SCHEMA_VERSION),
   id,
   kind: z.enum(['personal', 'demo']),
   createdAt: v1.UtcTimestampSchema,
@@ -192,6 +197,7 @@ export const WorkspaceV2Schema = WorkspaceMetaSchema.extend({
   originals: z.array(OriginalSchema).optional(),
   browserRuns: z.array(BrowserRunSchema).optional(),
   browserAttempts: z.array(BrowserAttemptSchema).optional(),
+  instagramContext: z.array(InstagramContextSchema).optional(),
 });
 export type WorkspaceV2 = z.infer<typeof WorkspaceV2Schema>;
 export const WorkspaceV3Schema = WorkspaceV2Schema.extend({

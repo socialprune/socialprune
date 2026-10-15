@@ -5,6 +5,7 @@ import {
   rm,
   writeFile,
   mkdir,
+  symlink,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +25,120 @@ import { CliResultSchema } from '../cli/schemas.ts';
 import { browserWorkspace } from './test/inputs.ts';
 import { SQLiteStore } from './sqlite-store.ts';
 import { writeChunks } from './files.ts';
+import { instagramContextDirectory } from './context-files.ts';
+
+test('backup export reports context files and bytes separately from the portable JSON', async () => {
+  const directory = await mkdtemp(
+      join(tmpdir(), 'socialprune-context-backup-'),
+    ),
+    workspace = join(directory, 'workspace');
+  try {
+    expect(
+      (await invoke(['import', archive, '--workspace', workspace])).code,
+    ).toBe(0);
+    const folder = instagramContextDirectory(workspace, 'Aa_1');
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, 'image.jpg'), new Uint8Array([255, 216, 255]));
+    await writeFile(
+      join(folder, 'shot.jpg'),
+      new Uint8Array([255, 216, 255, 0]),
+    );
+    const result = await invoke(
+      [
+        'backup',
+        'export',
+        '--workspace',
+        workspace,
+        '--out',
+        join(directory, 'backup.json'),
+      ],
+      false,
+    );
+    expect(result.code).toBe(0);
+    expect(result.result).toMatchObject({
+      data: { contextFiles: { files: 2, bytes: 7 } },
+    });
+    expect(result.capture.stderr.join('')).toContain(
+      '2 context files (7 bytes) stay in',
+    );
+    expect(result.capture.stderr.join('')).toContain(
+      join(workspace, 'context', 'instagram'),
+    );
+    expect(
+      await readFile(join(directory, 'backup.json'), 'utf8'),
+    ).not.toContain('data:image');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('X-only backup export omits the context copy instruction when its folder is absent', async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), 'socialprune-no-context-backup-'),
+  );
+  const workspace = join(directory, 'workspace');
+  try {
+    expect(
+      (await invoke(['import', archive, '--workspace', workspace])).code,
+    ).toBe(0);
+    const out = join(directory, 'backup.json');
+    const result = await invoke(
+      ['backup', 'export', '--workspace', workspace, '--out', out],
+      false,
+    );
+    expect(result.code).toBe(0);
+    expect(result.result).toMatchObject({
+      data: { contextFiles: { files: 0, bytes: 0 } },
+    });
+    expect(result.capture.stderr.join('')).not.toContain('context files');
+    expect(result.capture.stderr.join('')).not.toContain('Copy that folder');
+    expect((await readFile(out, 'utf8')).length).toBeGreaterThan(0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each(['context', 'instagram'] as const)(
+  'backup export refuses linked %s folder before writing with a CLI error',
+  async (linked) => {
+    const directory = await mkdtemp(
+      join(tmpdir(), 'socialprune-linked-context-backup-'),
+    );
+    const workspace = join(directory, 'workspace'),
+      foreign = join(directory, 'generated-foreign');
+    try {
+      expect(
+        (await invoke(['import', archive, '--workspace', workspace])).code,
+      ).toBe(0);
+      await mkdir(foreign);
+      const path =
+        linked === 'context'
+          ? join(workspace, 'context')
+          : join(workspace, 'context', 'instagram');
+      if (linked === 'instagram') await mkdir(join(workspace, 'context'));
+      await symlink(foreign, path, 'junction');
+      const before = await load(workspace),
+        out = join(directory, 'backup.json');
+      const result = await invoke([
+        'backup',
+        'export',
+        '--workspace',
+        workspace,
+        '--out',
+        out,
+      ]);
+      expect(result.code).toBe(1);
+      expect(result.result).toMatchObject({
+        status: 'error',
+        error: { code: 'BACKUP_FAILED' },
+      });
+      await expect(readFile(out)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await load(workspace)).toEqual(before);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 const archive = fileURLToPath(
   new URL(

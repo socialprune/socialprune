@@ -1,4 +1,5 @@
 import { OriginalSchema, validateOriginal } from '../model/original.ts';
+import { WORKSPACE_SCHEMA_VERSION } from '../model/index.ts';
 import type { Original } from '../model/original.ts';
 import type {
   BrowserRun,
@@ -16,7 +17,11 @@ async function nextSequence(tx: WriteTransaction): Promise<number> {
 async function revision(tx: WriteTransaction, at: string) {
   const meta = await tx.meta.get(),
     runtime = await tx.runtime.get();
-  await tx.meta.set({ ...meta, schemaVersion: 4, updatedAt: at });
+  await tx.meta.set({
+    ...meta,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    updatedAt: at,
+  });
   await tx.runtime.set({ revision: runtime.revision + 1 });
 }
 /** Capability owned by the fill runner: no decision or outcome method. */

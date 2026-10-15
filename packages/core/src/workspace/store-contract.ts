@@ -1,4 +1,13 @@
-import type { DecisionEvent, Item, WorkspaceV2 } from '../model/index.ts';
+import {
+  WORKSPACE_SCHEMA_VERSION,
+  validateInstagramContexts,
+} from '../model/index.ts';
+import type {
+  DecisionEvent,
+  Item,
+  WorkspaceV2,
+  InstagramContext,
+} from '../model/index.ts';
 import { createWorkspace, readWorkspace } from './store.ts';
 import type { WorkspaceStore, WriteTransaction } from './store.ts';
 import { canonicalJson } from './canonical.ts';
@@ -6,6 +15,115 @@ import { JOURNAL_FIXTURE } from '../model/browser-fixture.ts';
 import { createBackup, restoreBackup } from './backup.ts';
 import { OriginalsFillWriter } from './originals-fill-writer.ts';
 import { migrateOriginal } from '../model/original.ts';
+import { InstagramContextWriter } from './instagram-context-writer.ts';
+
+/** Generated inputs mirroring fixtures/synthetic/instagram/current-minimal. */
+export function instagramContractItem(): Item {
+  return {
+    ...contractWorkspace().items[0]!,
+    id: 'instagram:9458b31a368a29d3fa3f30154ee2624755d336f186853d35a5ea3baf15b9fef4',
+    platform: 'instagram',
+    account: { key: 'instagram:synth_fern', handle: 'synth_fern' },
+    kind: 'comment',
+    text: 'Invented fern photo comment.',
+    createdAt: '2025-07-31T00:00:00.000Z',
+    reference: {
+      replyToId: null,
+      replyToHandle: null,
+      quotedId: null,
+      repostOfHandle: null,
+      ownerHandle: 'synth_moss',
+    },
+  };
+}
+export function instagramContractRecord(
+  item: Item = instagramContractItem(),
+): InstagramContext {
+  return {
+    itemId: item.id,
+    accountKey: item.account.key,
+    post: {
+      kind: 'p',
+      code: 'Generated_Aa-1',
+      owner: 'synth_moss',
+      ownerCount: 1,
+      createdAt: '2025-07-30T00:00:00.000Z',
+      caption: 'Generated fern caption.',
+      captionComplete: true,
+    },
+    comment: {
+      id: '910001',
+      createdAt: '2025-07-31T00:00:00.000Z',
+      expandClicks: 1,
+    },
+    image: {
+      file: 'image.jpg',
+      host: 'generated.cdninstagram.com',
+      status: 'stored',
+    },
+    screenshot: { file: 'shot.jpg', bytes: 3, status: 'stored' },
+    confirmedAt: '2026-10-15T00:00:00.000Z',
+    runId: 'generated-context',
+    attemptId: 'generated-confirm-send',
+  };
+}
+
+export async function writeInstagramContextContract(
+  store: WorkspaceStore,
+  item: Item = instagramContractItem(),
+  confirmedAt?: string,
+): Promise<InstagramContext> {
+  const record = {
+      ...instagramContractRecord(item),
+      ...(confirmedAt ? { confirmedAt } : {}),
+    },
+    writer = new InstagramContextWriter(store),
+    at = record.confirmedAt;
+  await store.write(async (tx) => {
+    if (!(await tx.items.get(item.id)))
+      await tx.items.put({ item, importId: '', metadataImportId: '' });
+  });
+  await writer.startRun({
+    runId: record.runId,
+    accountKey: item.account.key,
+    planHash: 'c'.repeat(64),
+    startedAt: at,
+    canary: true,
+  });
+  await writer.sending({
+    attemptId: record.attemptId,
+    runId: record.runId,
+    itemId: item.id,
+    at,
+  });
+  await writer.step(record.runId, at);
+  await writer.confirm(record);
+  await writer.endRun({
+    runId: record.runId,
+    endedAt: at,
+    endReason: 'canary',
+    bodyShapes: {},
+    profileReport: {
+      accountBefore: item.account.handle,
+      accountAfter: item.account.handle,
+      extensionsBefore: 0,
+      extensionsAfter: 0,
+      changedFiles: [],
+      unexpectedRequests: [
+        {
+          requestId: 'generated-query',
+          method: 'POST',
+          host: 'www.instagram.com',
+          path: '/async/wbloks/fetch/',
+          status: 200,
+          operation: 'GeneratedQuery',
+        },
+      ],
+    },
+  });
+  await writer.acceptCanary(record.runId, at);
+  return record;
+}
 
 export interface StoreContractHarness {
   store: WorkspaceStore;
@@ -92,6 +210,127 @@ async function withStore(
   }
 }
 export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
+  {
+    name: 'Instagram context writer confirms atomically, preserves decisions and retains records through reopen and backup',
+    run: (factory) =>
+      withStore(factory, async (harness) => {
+        const before = await harness.store.read(readWorkspace);
+        const record = await writeInstagramContextContract(harness.store);
+        const beforeFailure = await harness.store.read(readWorkspace);
+        const nextItem = {
+          ...instagramContractItem(),
+          id: `${record.itemId}2`,
+        };
+        await harness.store.write((tx) =>
+          tx.items.put({ item: nextItem, importId: '', metadataImportId: '' }),
+        );
+        const faultStore: WorkspaceStore = {
+          read: (operation) => harness.store.read(operation),
+          write: (operation) =>
+            harness.store.write((tx) =>
+              operation({
+                ...tx,
+                instagramContext: {
+                  ...tx.instagramContext,
+                  add: () =>
+                    Promise.reject(
+                      new Error('GENERATED_CONTEXT_INSERT_FAILURE'),
+                    ),
+                },
+              }),
+            ),
+          close: () => Promise.resolve(),
+        };
+        const faultWriter = new InstagramContextWriter(faultStore);
+        await faultWriter.startRun({
+          runId: 'generated-context-rollback',
+          accountKey: record.accountKey,
+          startedAt: record.confirmedAt,
+          planHash: 'd'.repeat(64),
+        });
+        await faultWriter.sending({
+          runId: 'generated-context-rollback',
+          attemptId: 'generated-context-rollback-send',
+          itemId: nextItem.id,
+          at: record.confirmedAt,
+        });
+        const beforeConfirm = await harness.store.read(readWorkspace);
+        await rejects(() =>
+          faultWriter.confirm({
+            ...record,
+            itemId: nextItem.id,
+            runId: 'generated-context-rollback',
+            attemptId: 'generated-context-rollback-send',
+            comment: { ...record.comment, id: '910002' },
+          }),
+        );
+        equal(
+          await harness.store.read(readWorkspace),
+          beforeConfirm,
+          'context failure did not roll back confirmed settlement',
+        );
+        await faultWriter.settle({
+          attemptId: 'generated-context-rollback-send',
+          state: 'failed',
+          at: record.confirmedAt,
+          code: 'GENERATED_CONTEXT_INSERT_FAILURE',
+        });
+        await faultWriter.endRun({
+          runId: 'generated-context-rollback',
+          endedAt: record.confirmedAt,
+          endReason: 'error',
+          bodyShapes: {},
+          profileReport: {
+            accountBefore: nextItem.account.handle,
+            accountAfter: nextItem.account.handle,
+            extensionsBefore: 0,
+            extensionsAfter: 0,
+            changedFiles: [],
+            unexpectedRequests: [],
+          },
+        });
+        equal(
+          (await harness.store.read(readWorkspace)).decisionEvents,
+          beforeFailure.decisionEvents,
+          'failed confirmation changed decisions',
+        );
+        const reopened = await harness.reopen();
+        const source = await reopened.read(readWorkspace);
+        equal(source.instagramContext, [record], 'context lost after reopen');
+        equal(
+          source.decisionEvents,
+          before.decisionEvents,
+          'context changed decisions',
+        );
+        equal(
+          source.outcomeEvents,
+          before.outcomeEvents,
+          'context changed outcomes',
+        );
+        validateInstagramContexts(
+          source.instagramContext!,
+          new Map(source.items.map((item) => [item.id, item])),
+          source.browserRuns!,
+          source.browserAttempts!,
+        );
+        await rejects(() =>
+          reopened.write((tx) => tx.instagramContext.add(record)),
+        );
+        const target = await factory(createWorkspace());
+        try {
+          await restoreBackup(target.store, createBackup(reopened).chunks, {
+            batchSize: 1,
+          });
+          equal(
+            (await target.store.read(readWorkspace)).instagramContext,
+            [record],
+            'backup lost context',
+          );
+        } finally {
+          await target.dispose();
+        }
+      }),
+  },
   {
     name: 'v4 signed-in fill and deletion journal coexist and survive portable backup with a failed media record',
     run: (factory) =>
@@ -203,7 +442,11 @@ export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
             { batchSize: 1 },
           );
           const value = await target.store.read(readWorkspace);
-          equal(value.schemaVersion, 4, 'v4 lost');
+          equal(
+            value.schemaVersion,
+            WORKSPACE_SCHEMA_VERSION,
+            'current version lost',
+          );
           equal(value.originals, source.originals, 'signed-in projection lost');
           equal(
             value.browserAttempts,

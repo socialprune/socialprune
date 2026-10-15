@@ -12,6 +12,9 @@ import {
   WorkspaceMetaSchema,
   BrowserRunSchema,
   BrowserAttemptSchema,
+  InstagramContextSchema,
+  validateInstagramContexts,
+  WORKSPACE_SCHEMA_VERSION,
 } from '../model/index.ts';
 import type {
   Action,
@@ -25,6 +28,8 @@ import type {
   WorkspaceMeta,
   BrowserRun,
   BrowserAttempt,
+  InstagramContext,
+  Item,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
 import {
@@ -67,6 +72,7 @@ const ARRAY_KEYS = [
   'originals',
   'browserRuns',
   'browserAttempts',
+  'instagramContext',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 const decisionValues = ['undecided', 'keep', 'delete', 'later'] as const;
@@ -125,6 +131,8 @@ export async function restoreBackup(
     browserAttempts: BrowserAttempt[] = [];
   const browserOutcomes: OutcomeEvent[] = [];
   const originalRecords: Original[] = [];
+  const instagramContext: InstagramContext[] = [];
+  const instagramItems = new Map<string, Item>();
   let fixtureAssessment = false;
   const rawCounts: WorkspaceCounts = {
     imports: 0,
@@ -317,14 +325,19 @@ export async function restoreBackup(
       if (head >= KNOWN_ITEM) throw new WorkspaceError('DUPLICATE_ID');
       itemHeads.set(value.id, head + KNOWN_ITEM);
       references.delete(value.id);
+      if (value.platform === 'instagram') instagramItems.set(value.id, value);
       rawCounts.items++;
       counts.items++;
       await buffered(name, index, value);
     } else if (name === 'originals') {
-      if (version !== 2 && version !== 3 && version !== 4)
+      if (
+        version === undefined ||
+        version < 2 ||
+        version > WORKSPACE_SCHEMA_VERSION
+      )
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
-        version === 4
+        (version ?? 0) >= 4
           ? OriginalSchema.parse(record.value)
           : migrateOriginal(record.value);
       validateOriginal(value);
@@ -333,8 +346,20 @@ export async function restoreBackup(
       rawCounts.originals = (rawCounts.originals ?? 0) + 1;
       counts.originals = (counts.originals ?? 0) + 1;
       await buffered(name, index, value);
+    } else if (name === 'instagramContext') {
+      if (version === undefined || version < 5)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      const value = InstagramContextSchema.parse(record.value);
+      acceptUnique(name, value.itemId);
+      instagramContext.push(value);
+      rawCounts.instagramContext = (rawCounts.instagramContext ?? 0) + 1;
+      counts.instagramContext = (counts.instagramContext ?? 0) + 1;
     } else if (name === 'browserRuns' || name === 'browserAttempts') {
-      if (version !== 3 && version !== 4)
+      if (
+        version === undefined ||
+        version < 3 ||
+        version > WORKSPACE_SCHEMA_VERSION
+      )
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
         name === 'browserRuns'
@@ -408,7 +433,11 @@ export async function restoreBackup(
       });
       pendingLegacyEvents++;
     } else {
-      if (version !== 2 && version !== 3 && version !== 4)
+      if (
+        version === undefined ||
+        version < 2 ||
+        version > WORKSPACE_SCHEMA_VERSION
+      )
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value =
         name === 'decisionEvents'
@@ -450,27 +479,31 @@ export async function restoreBackup(
       else if (version === undefined) {
         const value = part.value as Record<string, unknown>;
         const inferred =
-          part.name === 'browserRuns' || part.name === 'browserAttempts'
-            ? 3
-            : part.name === 'decisions' || part.name === 'outcomes'
-              ? 1
-              : part.name === 'items'
-                ? Object.hasOwn(value, 'mediaCount')
-                  ? 2
-                  : 1
-                : part.name === 'assessments'
-                  ? Object.hasOwn(value, 'assessmentId')
-                    ? 2
-                    : 1
-                  : part.name === 'imports'
-                    ? Object.hasOwn(value, 'status')
+          part.name === 'instagramContext'
+            ? 5
+            : part.name === 'originals' && Object.hasOwn(value, 'anonymous')
+              ? 4
+              : part.name === 'browserRuns' || part.name === 'browserAttempts'
+                ? 3
+                : part.name === 'decisions' || part.name === 'outcomes'
+                  ? 1
+                  : part.name === 'items'
+                    ? Object.hasOwn(value, 'mediaCount')
                       ? 2
                       : 1
-                    : 2;
+                    : part.name === 'assessments'
+                      ? Object.hasOwn(value, 'assessmentId')
+                        ? 2
+                        : 1
+                      : part.name === 'imports'
+                        ? Object.hasOwn(value, 'status')
+                          ? 2
+                          : 1
+                        : 2;
         if (
           provisionalVersion !== undefined &&
           provisionalVersion !== inferred &&
-          !([2, 3].includes(provisionalVersion) && [2, 3].includes(inferred))
+          !(provisionalVersion >= 2 && inferred >= 2)
         )
           throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
         provisionalVersion = Math.max(provisionalVersion ?? inferred, inferred);
@@ -481,7 +514,11 @@ export async function restoreBackup(
       } else
         await accept({ ...part, name: part.name as BufferedRecord['name'] });
     }
-    if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
+    if (
+      version === undefined ||
+      version < 1 ||
+      version > WORKSPACE_SCHEMA_VERSION
+    )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (
       provisionalVersion !== undefined &&
@@ -498,8 +535,9 @@ export async function restoreBackup(
       version === 1
         ? ['imports', 'items', 'assessments', 'decisions', 'outcomes']
         : ARRAY_KEYS.filter((key) =>
-            key === 'originals'
-              ? arraysSeen.has('originals')
+            key === 'originals' || key === 'instagramContext'
+              ? arraysSeen.has(key) &&
+                (key !== 'instagramContext' || (version ?? 0) >= 5)
               : ['browserRuns', 'browserAttempts'].includes(key)
                 ? (version ?? 0) >= 3
                 : true,
@@ -596,6 +634,8 @@ export async function restoreBackup(
       if (!parsed.success || !declared.success)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       meta = parsed.data;
+      if (version < 5 && declared.data.instagramContext !== undefined)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       for (const key of ARRAY_KEYS)
         if ((declared.data[key] ?? 0) !== (rawCounts[key] ?? 0))
           throw new WorkspaceError('COUNT_MISMATCH');
@@ -642,6 +682,13 @@ export async function restoreBackup(
               .map(([id]) => id),
           ),
           new Set(originalRecords.map((value) => value.id)),
+          instagramItems,
+        );
+        validateInstagramContexts(
+          instagramContext,
+          instagramItems,
+          browserRuns,
+          browserAttempts,
         );
         validateBrowserOutcomes(browserAttempts, browserOutcomes);
         const accountedReads = new Set<string>();
@@ -682,6 +729,8 @@ export async function restoreBackup(
         for (const run of browserRuns) await tx.browserRuns.add(run);
         for (const attempt of browserAttempts)
           await tx.browserAttempts.add(attempt);
+        for (const record of instagramContext)
+          await tx.instagramContext.add(record);
       });
     }
     // Association/state projection reads one bounded page from the staging
@@ -729,6 +778,8 @@ export async function restoreBackup(
         }
       });
     }
+    if (meta.schemaVersion >= 4)
+      meta = { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION };
     await store.write(async (tx) => {
       throwIfAborted(options.signal);
       await tx.meta.set(meta);

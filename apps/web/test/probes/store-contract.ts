@@ -10,6 +10,7 @@ import { createBackup } from '@socialprune/core/workspace/backup';
 import { activeWorkspace } from '../../src/workspace/registry.ts';
 import { ReviewService } from '@socialprune/core/workspace/review';
 import { QueryEngine } from '@socialprune/core/workspace/query';
+import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
 
 export async function runBrowserStoreContract(): Promise<string[]> {
   const passed: string[] = [];
@@ -146,7 +147,7 @@ export async function storageFailureControls() {
       (await tx.meta.get()).updatedAt !== '2026-02-01T00:00:00.000Z',
   );
   const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open(`sp-ws-${id}`, 5);
+    const open = indexedDB.open(`sp-ws-${id}`, WORKSPACE_SCHEMA_VERSION + 1);
     open.onsuccess = () => resolve(open.result);
     open.onerror = () =>
       reject(open.error ?? new Error('Versionchange probe failed.'));

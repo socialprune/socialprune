@@ -1,5 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { BrowserRunSchema, BrowserAttemptSchema } from '@socialprune/core';
+import {
+  BrowserRunSchema,
+  BrowserAttemptSchema,
+  WORKSPACE_SCHEMA_VERSION,
+} from '@socialprune/core';
 import type { DecisionEvent, Item } from '@socialprune/core';
 import type { WriteTransaction } from '@socialprune/core/workspace/store';
 import { CliError } from '../cli/errors.ts';
@@ -34,6 +38,7 @@ export interface BrowserRequest {
   host: string;
   path: string;
   status: number | null;
+  operation?: string | null;
 }
 export interface ProfileReport {
   accountBefore: string | null;
@@ -51,7 +56,7 @@ export interface BrowserRun {
   lastPageOpenedAt?: string | null;
   canaryAcceptedAt?: string | null;
   runId: string;
-  platform: 'x';
+  platform: 'x' | 'instagram';
   accountKey: string;
   mode: 'delete' | 'verify';
   planHash: string | null;
@@ -98,7 +103,7 @@ CREATE TABLE IF NOT EXISTS browser_order_audit (
   accepted_by TEXT CHECK(accepted_by='automatic-check'), data TEXT NOT NULL CHECK(json_valid(data))
 ) STRICT;
 CREATE TRIGGER IF NOT EXISTS browser_runs_finish_once BEFORE UPDATE ON browser_runs
-WHEN (OLD.ended_at IS NOT NULL AND NOT (json_extract(OLD.data,'$.mode')='fill' AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1)) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
+WHEN (OLD.ended_at IS NOT NULL AND NOT (json_extract(OLD.data,'$.mode') IN ('fill','context') AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1)) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
 OR json_extract(NEW.data,'$.startedAt') != json_extract(OLD.data,'$.startedAt')
 OR json_extract(NEW.data,'$.mode') != json_extract(OLD.data,'$.mode')
 OR json_extract(NEW.data,'$.planHash') IS NOT json_extract(OLD.data,'$.planHash')
@@ -180,7 +185,7 @@ export class BrowserOutcomeWriter {
     await this.transact(async (tx) => {
       this.db.exec(BROWSER_JOURNAL_LAYOUT);
       const meta = await tx.meta.get();
-      await tx.meta.set({ ...meta, schemaVersion: 4 });
+      await tx.meta.set({ ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION });
       const active = decode<BrowserRun>(
         this.db
           .prepare(

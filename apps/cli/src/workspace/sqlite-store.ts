@@ -15,6 +15,8 @@ import {
   WorkspaceV2Schema,
   BrowserRunSchema,
   BrowserAttemptSchema,
+  InstagramContextSchema,
+  WORKSPACE_SCHEMA_VERSION,
 } from '@socialprune/core';
 import type {
   WorkspaceV2,
@@ -22,6 +24,7 @@ import type {
   OutcomeEvent,
   BrowserRun,
   BrowserAttempt,
+  InstagramContext,
 } from '@socialprune/core';
 import {
   importForItem,
@@ -49,7 +52,16 @@ import {
 } from './browser-journal.ts';
 import { journalExists } from './browser-journal.ts';
 
-export const SQLITE_LAYOUT_VERSION = 4;
+// Physical layouts have their own history, independent of backup writers.
+export const SQLITE_LAYOUT_VERSION = 5;
+
+const contextLayout = `
+CREATE TABLE instagram_context (
+  item_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))
+) STRICT;
+CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+`;
 
 const originalsLayout = `
 CREATE TABLE originals (
@@ -132,7 +144,8 @@ ${BROWSER_JOURNAL_LAYOUT}
 PRAGMA user_version=3;
 ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));
 ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;
-PRAGMA user_version=4;
+${contextLayout}
+PRAGMA user_version=${SQLITE_LAYOUT_VERSION};
 `;
 
 export function storageError(error: unknown): Error {
@@ -226,11 +239,9 @@ export class SQLiteStore implements WorkspaceStore {
       );
       const version = db.prepare('PRAGMA user_version').get()?.user_version;
       if (
-        version !== 0 &&
-        version !== 1 &&
-        version !== 2 &&
-        version !== 3 &&
-        version !== SQLITE_LAYOUT_VERSION
+        !Number.isInteger(version) ||
+        Number(version) < 0 ||
+        Number(version) > SQLITE_LAYOUT_VERSION
       )
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
       const store = new SQLiteStore(db, path, Boolean(options.readOnly));
@@ -239,7 +250,11 @@ export class SQLiteStore implements WorkspaceStore {
           throw new CliError('WORKSPACE_INVALID');
         await store.initialize(options.initial);
       }
-      if ([1, 2, 3].includes(version) && !options.readOnly) {
+      if (
+        Number(version) > 0 &&
+        Number(version) < SQLITE_LAYOUT_VERSION &&
+        !options.readOnly
+      ) {
         // Refuse unknown logical schemas before a physical migration can write.
         await store.read(async (tx) => tx.meta.get());
         db.exec('BEGIN EXCLUSIVE;');
@@ -254,42 +269,60 @@ export class SQLiteStore implements WorkspaceStore {
               `${path}.${stamp}-${crypto.randomUUID()}.before-migration.sqlite`,
               constants.COPYFILE_EXCL,
             );
-            if (version === 1) db.exec(originalsLayout);
-            db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
-            db.exec(BROWSER_JOURNAL_LAYOUT);
-            db.exec('PRAGMA user_version=3;');
+            if (Number(version) < 4) {
+              if (version === 1) db.exec(originalsLayout);
+              db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
+              db.exec(BROWSER_JOURNAL_LAYOUT);
+              db.exec('PRAGMA user_version=3;');
+              if (
+                !db
+                  .prepare('PRAGMA table_info(originals)')
+                  .all()
+                  .some((column) => column.name === 'data')
+              )
+                db.exec(
+                  'ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));',
+                );
+              if (
+                !db
+                  .prepare('PRAGMA table_info(browser_attempts)')
+                  .all()
+                  .some((column) => column.name === 'originalId')
+              )
+                db.exec(
+                  'ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;',
+                );
+              for (const row of db.prepare('SELECT * FROM originals').all()) {
+                const original = originalRow(row)!;
+                db.prepare('UPDATE originals SET data=? WHERE id=?').run(
+                  JSON.stringify(original),
+                  original.id,
+                );
+              }
+            }
             if (
+              Number(version) < 5 &&
               !db
-                .prepare('PRAGMA table_info(originals)')
-                .all()
-                .some((column) => column.name === 'data')
+                .prepare(
+                  "SELECT name FROM sqlite_schema WHERE name='instagram_context'",
+                )
+                .get()
             )
-              db.exec(
-                'ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));',
-              );
-            if (
-              !db
-                .prepare('PRAGMA table_info(browser_attempts)')
-                .all()
-                .some((column) => column.name === 'originalId')
-            )
-              db.exec(
-                'ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;',
-              );
-            for (const row of db.prepare('SELECT * FROM originals').all()) {
-              const original = originalRow(row)!;
-              db.prepare('UPDATE originals SET data=? WHERE id=?').run(
-                JSON.stringify(original),
-                original.id,
-              );
+              db.exec(contextLayout);
+            if (Number(version) < 5) {
+              db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
+              db.exec(BROWSER_JOURNAL_LAYOUT);
             }
             const meta = JSON.parse(
               String(db.prepare('SELECT data FROM meta').get()!.data),
             ) as Record<string, unknown>;
             db.prepare('UPDATE meta SET data=?').run(
-              JSON.stringify({ ...meta, schemaVersion: 4 }),
+              JSON.stringify({
+                ...meta,
+                schemaVersion: WORKSPACE_SCHEMA_VERSION,
+              }),
             );
-            db.exec('PRAGMA user_version=4;');
+            db.exec(`PRAGMA user_version=${SQLITE_LAYOUT_VERSION};`);
           }
           db.exec('COMMIT;');
         } catch (error) {
@@ -333,6 +366,7 @@ export class SQLiteStore implements WorkspaceStore {
         originals,
         browserRuns,
         browserAttempts,
+        instagramContext,
         ...meta
       } = workspace;
       void _counts;
@@ -351,6 +385,8 @@ export class SQLiteStore implements WorkspaceStore {
         for (const value of browserRuns ?? []) await tx.browserRuns.add(value);
         for (const value of browserAttempts ?? [])
           await tx.browserAttempts.add(value);
+        for (const value of instagramContext ?? [])
+          await tx.instagramContext.add(value);
         await tx.assessments.append(assessments);
         await tx.decisionEvents.append(decisionEvents);
         await tx.outcomeEvents.append(outcomeEvents);
@@ -372,6 +408,13 @@ export class SQLiteStore implements WorkspaceStore {
     const db = this.db;
     const hasOriginals = this.hasOriginals;
     const hasJournal = journalExists(db);
+    const hasContext = Boolean(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE type='table' AND name='instagram_context'",
+        )
+        .get(),
+    );
     let active = true;
     const guard = (write = false) => {
       if (!active || (write && (!writable || this.readOnly)))
@@ -547,7 +590,7 @@ export class SQLiteStore implements WorkspaceStore {
             typeof value === 'object' &&
             'schemaVersion' in value &&
             typeof value.schemaVersion === 'number' &&
-            value.schemaVersion > 4
+            value.schemaVersion > WORKSPACE_SCHEMA_VERSION
           )
             throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
           const result = WorkspaceMetaSchema.safeParse(value);
@@ -680,6 +723,30 @@ export class SQLiteStore implements WorkspaceStore {
           );
           return Promise.resolve();
         },
+      },
+      instagramContext: {
+        get: (id) =>
+          Promise.resolve(
+            hasContext
+              ? get<InstagramContext>(
+                  'SELECT data FROM instagram_context WHERE item_id=?',
+                  id,
+                )
+              : undefined,
+          ),
+        iterate: hasContext
+          ? iterate<InstagramContext>('instagram_context')
+          : async function* () {
+              await Promise.resolve();
+              guard();
+            },
+        add: (value) =>
+          table<InstagramContext>(
+            'instagram_context',
+            'item_id',
+            (record) => record.itemId,
+            (record) => InstagramContextSchema.parse(record),
+          ).add(value),
       },
       browserRuns: {
         get: (id) =>

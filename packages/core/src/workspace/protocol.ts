@@ -17,6 +17,8 @@ import {
   QueryFilterSchema,
   QuerySortSchema,
   ReviewViewSchema,
+  InstagramContextSchema,
+  InstagramItemIdSchema,
 } from '../model/index.ts';
 export {
   QueryFilterSchema,
@@ -122,6 +124,27 @@ const itemIds = z.array(id).min(1).max(1000);
 const expectedDecisions = z.record(id, DecisionValueSchema);
 const expectedOutcomes = z.record(id, OutcomeValueSchema);
 const requestBase = { requestId: id };
+export const GetInstagramContextRequestSchema = z.strictObject({
+  ...requestBase,
+  type: z.literal('getInstagramContext'),
+  itemIds: z
+    .array(InstagramItemIdSchema)
+    .min(1)
+    .max(200)
+    .refine(
+      (ids) => new Set(ids).size === ids.length,
+      'Item IDs must be unique.',
+    ),
+});
+export type GetInstagramContextRequest = z.infer<
+  typeof GetInstagramContextRequestSchema
+>;
+export const InstagramContextReplySchema = z.strictObject({
+  ...requestBase,
+  type: z.literal('instagramContext'),
+  records: z.array(InstagramContextSchema).max(200),
+});
+export type InstagramContextReply = z.infer<typeof InstagramContextReplySchema>;
 export const DecideRequestSchema = z.strictObject({
   ...requestBase,
   type: z.literal('decide'),
@@ -190,6 +213,7 @@ const requests = [
     ids: z.array(OriginalIdSchema).min(1).max(50),
   }),
   DecideRequestSchema,
+  GetInstagramContextRequestSchema,
   PreviewBulkRequestSchema,
   z.strictObject({
     ...requestBase,
@@ -307,6 +331,7 @@ export const WorkspaceRequestSchema = z.union([
 export type WorkspaceRequest = z.infer<typeof WorkspaceRequestSchema>;
 const replyBase = { requestId: id };
 export const WorkspaceReplySchema = z.discriminatedUnion('type', [
+  InstagramContextReplySchema,
   z.strictObject({
     ...replyBase,
     type: z.literal('opened'),

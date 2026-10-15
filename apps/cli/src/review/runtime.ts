@@ -187,6 +187,18 @@ export class ReviewRuntime {
           post({ type: 'conversation', requestId, ...result });
           break;
         }
+        case 'getInstagramContext': {
+          const records = await this.store.read(async (tx) => {
+            const result = [];
+            for (const itemId of input.itemIds) {
+              const record = await tx.instagramContext.get(itemId);
+              if (record) result.push(record);
+            }
+            return result;
+          });
+          post({ type: 'instagramContext', requestId, records });
+          break;
+        }
         case 'getOriginals': {
           const originals = await this.store.read(async (tx) => {
             const result = [];

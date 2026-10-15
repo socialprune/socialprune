@@ -1,5 +1,9 @@
 import { setTimeout } from 'node:timers/promises';
-import { OriginalIdSchema, migrateOriginal } from '@socialprune/core';
+import {
+  OriginalIdSchema,
+  migrateOriginal,
+  WORKSPACE_SCHEMA_VERSION,
+} from '@socialprune/core';
 import type { Original } from '@socialprune/core';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { workspacePath } from '../workspace/files.ts';
@@ -217,7 +221,7 @@ export async function fetchOriginals(
             runtime = await tx.runtime.get();
           await tx.meta.set({
             ...meta,
-            schemaVersion: 4,
+            schemaVersion: WORKSPACE_SCHEMA_VERSION,
             updatedAt: input.now().toISOString(),
           });
           await tx.runtime.set({ revision: runtime.revision + 1 });

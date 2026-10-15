@@ -2,7 +2,7 @@
 
 Each record states one decision, the options it was weighed against, the evidence that decided it and what it costs. [ADR-001](ADR-001-decision-records.md) sets the format and the rule for changing a record: once accepted, a record changes only through a new record that supersedes it. Shared measurement tables are in [evidence-2026-10.md](../evidence-2026-10.md). The overview of how the pieces fit is in [docs/architecture/README.md](../README.md).
 
-The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance". Records 023 and 026 to 029 are `Proposed`: they follow his change of hard constraint 4 on 2026-10-11 and wait for his approval.
+The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance". Records 023 and 026 to 030 are `Proposed`: they follow his change of hard constraint 4 on 2026-10-11 and wait for his approval.
 
 | ADR | Title | Status | Date | Decided by the maintainer |
 |---|---|---|---|---|
@@ -33,8 +33,9 @@ The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Ac
 | 025 | reserved | | | a draft "the review session survives a reload", kept outside the repository until the maintainer decides on it; it would supersede ADR-016 |
 | [026](ADR-026-x-originals-fetch.md) | Fetching the originals of the person's replies and quotes on X | Proposed | 2026-10-11 | on 2026-10-11: fetch the originals |
 | [027](ADR-027-x-deletion-browser.md) | Deleting the person's own X entries through their signed-in browser session | Proposed | 2026-10-11 | on 2026-10-11: automated deletion on X, account risk accepted |
-| [028](ADR-028-instagram-signed-in-session.md) | Instagram: context and deletion through the person's signed-in session | Proposed | 2026-10-11 | on 2026-10-11: read context and delete through his signed-in session; gated by spike S5 |
+| [028](ADR-028-instagram-signed-in-session.md) | Instagram: reading the post of each comment through the person's signed-in session (revised 2026-10-15; until then "context and deletion") | Proposed | 2026-10-11 | on 2026-10-11: read context and delete through his signed-in session; gated by spike S5. On 2026-10-14 (IG-1, IG-2 B) and 2026-10-15 (IG-3, his veto open): find in the list, confirm on the post; keep the post's context; X's pace, counted apart; deletion later in its own record |
 | [029](ADR-029-signed-in-originals-pass.md) | The signed-in originals pass on X | Proposed | 2026-10-11 | on 2026-10-11: the originals as complete as possible, signing in is accepted; what works without a login stays anonymous |
+| [030](ADR-030-instagram-context-record.md) | Instagram post context as its own workspace record | Proposed | 2026-10-15 | on 2026-10-15 (IG-3 point 2): what is kept per confirmed comment |
 
 ## Earlier choices these records replace
 

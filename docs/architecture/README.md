@@ -2,11 +2,11 @@
 
 This is the map for contributors. It describes how SocialPrune is meant to be built from Phase 2 on: which package owns what, which process runs where, how export data moves, and where the trust boundaries are. The reasons behind each choice are in the [decision records](adrs/README.md), and the measurements behind them in [evidence-2026-10.md](evidence-2026-10.md). The visual and interaction design is in [docs/design/README.md](../design/README.md).
 
-Records 001 to 022, which this map relies on, are `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. On 2026-10-11 the maintainer changed hard constraint 4, so that SocialPrune may act in the person's own account on the person's order; records 023 and 026 to 028 describe how, and are `Proposed`. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
+Records 001 to 022, which this map relies on, are `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. On 2026-10-11 the maintainer changed hard constraint 4, so that SocialPrune may act in the person's own account on the person's order; records 023 and 026 to 030 describe how, and are `Proposed`. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
 
 ## What the system does
 
-A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. In the accepted design SocialPrune itself never contacts the platforms. The proposed records [ADR-023](adrs/ADR-023-acting-in-own-account.md), [ADR-026](adrs/ADR-026-x-originals-fetch.md), [ADR-027](adrs/ADR-027-x-deletion-browser.md), [ADR-028](adrs/ADR-028-instagram-signed-in-session.md) and [ADR-029](adrs/ADR-029-signed-in-originals-pass.md) add, from the CLI only, fetching the originals of the person's replies, reading through a browser session they signed in to what the anonymous fetch cannot get, and deleting their marked entries through that session.
+A person requests their data export from X or Instagram, opens it in SocialPrune, reviews old posts and comments with optional suggestions, marks what should go, and then deletes those items on the platform by hand, with a click list that SocialPrune prepares. In the accepted design SocialPrune itself never contacts the platforms. The proposed records [ADR-023](adrs/ADR-023-acting-in-own-account.md), [ADR-026](adrs/ADR-026-x-originals-fetch.md), [ADR-027](adrs/ADR-027-x-deletion-browser.md), [ADR-028](adrs/ADR-028-instagram-signed-in-session.md), [ADR-029](adrs/ADR-029-signed-in-originals-pass.md) and [ADR-030](adrs/ADR-030-instagram-context-record.md) add, from the CLI only, fetching the originals of the person's replies, reading through a browser session they signed in to what the anonymous fetch cannot get, finding each Instagram comment on its post and keeping that post's context, and deleting their marked entries through that session.
 
 There are two ways in:
 
@@ -160,11 +160,11 @@ Agents use the CLI with `--json`: one JSON document per call on stdout, progress
 4. Add the platform's guide facts to `src/guide.ts` in the adapter, exported as its `./guide` subpath, with sources, the day they were read and an empty human check date ([ADR-022](adrs/ADR-022-export-guide-content.md)); add that file to `COPY_SCOPE.adapterGuides` in `tools/copy-check/src/words.ts`, wire the guide into `apps/cli/src/cli/node-context.ts` and `apps/web/src/app/guide.ts`, and add the platform's strings to both catalogs.
 5. Run the full suite, including the browser network audit, which picks up new fixtures automatically.
 
-No change to `packages/core` should be needed. If one is, that is a gap in the adapter contract and needs its own decision record.
+No change to `packages/core` should be needed. If one is, that is a gap in the adapter contract and needs its own decision record. Importing needs none. The proposed actions in the person's account keep their records in core per platform, and [ADR-030](adrs/ADR-030-instagram-context-record.md) is the record for the one Instagram's reading pass adds.
 
 ## Decision records
 
-001 to 022 accepted, 023 and 026 to 029 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
+001 to 022 accepted, 023 and 026 to 030 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
 
 | ADR | Decision |
 |---|---|
@@ -193,5 +193,6 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 | [023](adrs/ADR-023-acting-in-own-account.md) | Proposed: two actions in the person's own account, on their order; rules PA-1 to PA-16; dedicated browser profile; nothing hidden |
 | [026](adrs/ADR-026-x-originals-fetch.md) | Proposed: originals of replies and quotes from X's public embed service, one request per second, stored in the workspace |
 | [027](adrs/ADR-027-x-deletion-browser.md) | Proposed: deletion on X by driving X's own pages in the dedicated profile; journal, one entry first, slow, schema version 3 |
-| [028](adrs/ADR-028-instagram-signed-in-session.md) | Proposed: Instagram context and deletion through the "Your Activity" view, gated by spike S5 |
+| [028](adrs/ADR-028-instagram-signed-in-session.md) | Proposed, revised 2026-10-15 after spike S5: each Instagram comment is found in the "Your activity" list by date and text and counts only when its post confirms text, time and owner; the post's context is kept; X's pace, counted apart; deletion in a later record |
 | [029](adrs/ADR-029-signed-in-originals-pass.md) | Proposed: a signed-in pass reads only what the anonymous fetch missed, from X's own page answers; videos stored and served with byte ranges; canary first; schema version 4 |
+| [030](adrs/ADR-030-instagram-context-record.md) | Proposed: Instagram post context as its own record per confirmed comment; the journal names its platform; schema version 5 |

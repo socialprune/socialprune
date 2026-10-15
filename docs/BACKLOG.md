@@ -48,3 +48,31 @@ Product phases, gates and spikes live in the maintainer's `PLAN.md`. This file h
 - **What:** CI run 38092157557 on `29ffb12`, attempt 1, had one import that stayed at `importing` with 0 entries for 15 seconds in Linux WebKit (`apps/web/e2e/import.spec.ts:47`, `x/malformed-tweets`). The earlier WebKit stalls were traced to Playwright evaluating code inside the import worker before its first import; this test does not do that. A Docker run of `import.spec.ts` in Linux WebKit, four times each and without retries, passed 220 of 220 on `29ffb12` and 220 of 220 on its parent `7232cb9`, and the rerun of the failed CI job passed.
 - **Why deferred:** the stall did not reproduce in 440 runs, so there is nothing to diagnose or test a fix against yet, and the commit that hit it does not touch the worker, the import path or that test. Whether Safari users can hit it is unproven either way.
 - **Trigger:** a second import stall in CI on a test that does not evaluate code in the worker, or a report from a person whose import stops in Safari. Then reproduce it in the Linux WebKit container with worker-side timing that does not use the inspector, and decide whether the product needs a stall detector that tells the person to retry.
+
+### BL-007: HTML entities and hidden parts in the shown text of X originals
+
+- **Added:** 2026-10-15
+- **What:** the local review shows the stored text of some X originals with HTML entities such as `&amp;`, with the leading reply mentions and with a trailing t.co link, all of which X's own page does not show. The signed-in pass already compares the display text with entities decoded and those parts left out ([ADR-029](architecture/adrs/ADR-029-signed-in-originals-pass.md)), so only the display differs.
+- **Why deferred:** the fix needs a choice between decoding at display and rewriting stored text, which would touch backups, and it changes no stored data. The originals pass uses the daily page budget now.
+- **Trigger:** before the maintainer starts deciding on his X entries in the review, or a report from a person who sees the entities.
+
+### BL-008: The fill and deletion browser suites run only in the local gate
+
+- **Added:** 2026-10-15
+- **What:** `pnpm --filter socialprune test:delete` and the fill suite (`apps/cli/e2e/fill.playwright.config.ts`) drive the generated fake X in Chromium. CI runs neither, so they run only in the parent's gate on Windows, and Linux is not covered for that code.
+- **Why deferred:** together they take about 20 minutes, and nothing is published yet.
+- **Trigger:** before `NPM_PUBLISH_ENABLED` is set, or the first change to `apps/cli/src/browser/**` from outside the maintainer's own runs.
+
+### BL-009: Timing failures that pass on rerun
+
+- **Added:** 2026-10-15
+- **What:** three known kinds, each green in isolation and in a full rerun. Node 24.21 crashes some test workers with exit code 3221226505 (0xC0000409), seen in vitest forks (`server.test.ts`, `injection.test.ts`) and in a Playwright worker. `apps/web/e2e/review.spec.ts:230` fails on Linux Chromium in CI under load. The ordered fill tests (`order-*`) ran out of their 15 second wait for the confirmation page or their 60 second limit on a busy machine on 2026-10-15, five different cases in two runs of four repeats, none twice.
+- **Why deferred:** no assertion failed and no case failed twice, so there is nothing to fix yet.
+- **Trigger:** the same test failing twice in a row, a failure on a quiet machine, or a Node release that names the crash.
+
+### BL-010: Small gaps seen while using the package
+
+- **Added:** 2026-10-15
+- **What:** `socialprune --version` answers `INVALID_ARGUMENTS`; `socialprune review` started without a terminal opened no browser; an error from `browser setup` was reported with the code `DELETE_FAILED`; a heading on the backup screen is indented.
+- **Why deferred:** none of them blocks a run or changes data.
+- **Trigger:** the next change in the same command or screen, and before the package is published.

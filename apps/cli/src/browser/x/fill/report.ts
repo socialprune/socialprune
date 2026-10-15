@@ -1,5 +1,57 @@
 import { object } from '@socialprune/core';
 import { z } from 'zod';
+import {
+  CliError,
+  CLI_ERRORS,
+  platformCheckReason,
+} from '../../../cli/errors.ts';
+import type { CliErrorCode, PlatformCheckReason } from '../../../cli/errors.ts';
+
+export type ErrorStopClass =
+  | 'media-origin'
+  | 'media-format'
+  | 'media-exists'
+  | 'original-path'
+  | 'fs-EEXIST'
+  | 'fs-ENOSPC'
+  | 'fs-EACCES'
+  | 'fs-EPERM'
+  | 'fs-ENOENT'
+  | 'fs-EBUSY'
+  | 'type-error'
+  | 'other';
+export interface StopDetails {
+  code: CliErrorCode | ErrorStopClass;
+  reason?: PlatformCheckReason;
+}
+export function errorStop(value: unknown): StopDetails {
+  if (value instanceof CliError && Object.hasOwn(CLI_ERRORS, value.code))
+    return {
+      code: value.code,
+      ...(value.code === 'PLATFORM_CHECK'
+        ? { reason: platformCheckReason(value.reason) ?? 'unspecified' }
+        : {}),
+    };
+  const code = object(value).code;
+  for (const candidate of [
+    'EEXIST',
+    'ENOSPC',
+    'EACCES',
+    'EPERM',
+    'ENOENT',
+    'EBUSY',
+  ] as const)
+    if (code === candidate) return { code: `fs-${candidate}` };
+  const message = value instanceof Error ? value.message : null;
+  for (const [name, token] of [
+    ['MEDIA_ORIGIN', 'media-origin'],
+    ['MEDIA_FORMAT', 'media-format'],
+    ['MEDIA_EXISTS', 'media-exists'],
+    ['ORIGINAL_PATH', 'original-path'],
+  ] as const)
+    if (message === name) return { code: token };
+  return { code: value instanceof TypeError ? 'type-error' : 'other' };
+}
 
 export function failureToken(value: unknown): string {
   if (value instanceof z.ZodError) return 'projection';

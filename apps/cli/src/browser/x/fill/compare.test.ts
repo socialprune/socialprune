@@ -856,3 +856,69 @@ test('empty focal agreement requires absence of the exact post and error-detail 
   ])
     expect(comparison.emptyFocalAgrees({ ...counts, ...delta })).toBe(false);
 });
+
+test('R1 inline quote projection is bound to an absent full-text t.co URL and the exact allowed expanded status path', () => {
+  const post = detailPost();
+  const permalink = {
+    url: 'https://t.co/generatedInline',
+    expanded: 'https://TWITTER.com/Generated_Quote/status/901/',
+  };
+  Object.assign(post.legacy, {
+    is_quote_status: true,
+    quoted_status_permalink: permalink,
+  });
+  expect(comparison.inlineQuoteFromAnswer(post)).toEqual({
+    path: '/generated_quote/status/901',
+  });
+  expect(
+    comparison.inlineQuoteFromAnswer({
+      __typename: 'TweetWithVisibilityResults',
+      tweet: post,
+    }),
+  ).toEqual({ path: '/generated_quote/status/901' });
+  for (const host of [
+    'x.com',
+    'twitter.com',
+    'www.twitter.com',
+    'mobile.twitter.com',
+  ]) {
+    permalink.expanded = `https://${host}/Generated_Quote/status/901/`;
+    expect(comparison.inlineQuoteFromAnswer(post)).toEqual({
+      path: '/generated_quote/status/901',
+    });
+  }
+  for (const expanded of [
+    'https://example.org/Generated_Quote/status/901',
+    'https://twitter.com.evil.example/Generated_Quote/status/901',
+    'https://user@twitter.com/Generated_Quote/status/901',
+    'http://twitter.com/Generated_Quote/status/901',
+    'https://twitter.com/Generated_Quote/status/901?generated=1',
+    'https://twitter.com/Generated_Quote/status/901#generated',
+    'https://twitter.com/Generated_Quote/status/901/photo/1',
+    'not a url',
+  ]) {
+    permalink.expanded = expanded;
+    expect(comparison.inlineQuoteFromAnswer(post)).toBeNull();
+  }
+  permalink.expanded = 'https://twitter.com/Generated_Quote/status/901';
+  post.legacy.full_text += ' ' + permalink.url;
+  expect(comparison.inlineQuoteFromAnswer(post)).toBeNull();
+  const quote = { path: '/generated_quote/status/901' };
+  expect(
+    comparison.inlineQuoteMatches('/Generated_Quote/status/901/', quote),
+  ).toBe(true);
+  for (const href of [
+    '/Generated_Quote/status/902',
+    '/Other/status/901',
+    'https://twitter.com/Generated_Quote/status/901',
+    '//twitter.com/Generated_Quote/status/901',
+    '/Generated_Quote/status/901?x=1',
+  ])
+    expect(comparison.inlineQuoteMatches(href, quote)).toBe(false);
+  expect(
+    comparison.removeInlineQuoteSuffix('Generated text link link', 'link'),
+  ).toBe('Generated text link ');
+  expect(
+    comparison.removeInlineQuoteSuffix('Generated text link tail', 'link'),
+  ).toBe('Generated text link tail');
+});

@@ -1,6 +1,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import type { BrowserContext } from '@playwright/test';
 import { createServer } from 'node:http';
+import { mkdirSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,6 +64,11 @@ import {
   emptyFocalAnswer,
   emptyFocalMarkup,
   EMPTY_FOCAL_FIXTURE,
+  STOP_DETAIL_FIXTURE,
+  delayedStopSwitcherMarkup,
+  inlineQuoteAnswer,
+  inlineQuoteMarkup,
+  INLINE_QUOTE_FIXTURE,
 } from './fake-x/fill-detail.ts';
 for (const variant of [
   'success',
@@ -154,6 +160,35 @@ for (const variant of [
   'order-empty-focal-late',
   'order-empty-focal-error',
   'order-empty-focal-module',
+  'order-platform-render-timeout',
+  'order-platform-render-timeout-de',
+  'order-platform-login',
+  'order-platform-render-timeout-full',
+  'order-platform-answer-status',
+  'order-platform-answer-type',
+  'order-platform-answer-timeout',
+  'order-platform-body-timeout',
+  'order-platform-account-readback-full',
+  'order-platform-account-readback-canary',
+  'order-inline-quote-match',
+  'order-inline-quote-different-path',
+  'order-inline-quote-in-full-text',
+  'order-inline-quote-not-trailing',
+  'order-readback-failed',
+  'order-readback-account-changed',
+  'order-readback-extensions-changed',
+  'order-readback-failed-de',
+  'order-readback-account-changed-de',
+  'order-readback-extensions-changed-de',
+  'order-error-disk-low',
+  'order-error-media-failed',
+  'order-error-rate-limit',
+  'order-error-media-origin',
+  'order-error-media-format',
+  'order-error-fs-EACCES',
+  'order-error-type-error',
+  'order-error-other',
+  'order-finalize-error',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
@@ -291,6 +326,15 @@ for (const variant of [
       ),
       'Generated contents that must never be read',
     );
+    if (
+      variant.startsWith('order-error-') ||
+      variant.startsWith('order-readback-') ||
+      variant.startsWith('order-platform-')
+    )
+      await rm(join(profile, 'Default', 'Extensions', preinstalledId), {
+        recursive: true,
+        force: true,
+      });
     if (variant === 'removed')
       await mkdir(
         join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
@@ -324,6 +368,21 @@ for (const variant of [
     const abort = new AbortController();
     const requests: string[] = [];
     const notices: string[] = [];
+    let extensionMutationInjected = false;
+    const readbackVariant = variant.startsWith('order-readback-');
+    const injectedError = variant.startsWith('order-error-')
+      ? variant.slice('order-error-'.length)
+      : null;
+    const slowSwitcher =
+      variant.startsWith('order-platform-render-timeout') || readbackVariant;
+    const inlineQuoteKind =
+      variant === 'order-inline-quote-different-path'
+        ? 'different-path'
+        : variant === 'order-inline-quote-in-full-text'
+          ? 'in-full-text'
+          : variant === 'order-inline-quote-not-trailing'
+            ? 'not-trailing'
+            : 'match';
     const emptyFocalKind =
       variant === 'order-empty-focal-present'
         ? 'present'
@@ -412,10 +471,26 @@ for (const variant of [
           },
         });
         response.setHeader('Content-Type', 'application/json');
-        if (variant === 'never') return;
-        if (variant === '429') {
+        if (variant === 'never' || variant === 'order-platform-answer-timeout')
+          return;
+        if (variant === '429' || variant === 'order-platform-answer-status') {
           response.writeHead(429);
           response.end('{}');
+          return;
+        }
+        if (variant === 'order-platform-answer-type') {
+          response.setHeader('Content-Type', 'text/html');
+          response.end('{}');
+          return;
+        }
+        if (variant === 'order-platform-body-timeout') {
+          response.writeHead(200);
+          response.write('{');
+          const delayedBody = setTimeout(
+            () => response.end('}'),
+            STOP_DETAIL_FIXTURE.switcherDelayMs,
+          );
+          response.once('close', () => clearTimeout(delayedBody));
           return;
         }
         if (variant === 'missing-id')
@@ -431,76 +506,100 @@ for (const variant of [
                     variant === 'order-card-full-mismatch'
                   ? 'missing-rendered-link'
                   : 'link';
-        const answer =
-          variant.startsWith('order-empty-focal-') && id === DETAIL_FIXTURE.id
-            ? emptyFocalAnswer(id, emptyFocalKind)
-            : variant === 'order-empty-focal-continue'
-              ? detailAnswer(post)
-              : variant.startsWith('order-parent-')
-                ? noticeParentAnswer(
-                    id,
-                    variant === 'order-parent-unknown-direct'
-                      ? 'unknown-direct'
-                      : variant === 'order-parent-unknown-module'
-                        ? 'unknown-module'
-                        : variant.endsWith('module')
-                          ? 'module'
-                          : 'direct',
-                    variant.includes('-unavailable-'),
-                  )
-                : variant.startsWith('order-notice-')
-                  ? noticeAlignmentAnswer(id, noticeKind)
-                  : variant.startsWith('order-textcontent-')
-                    ? textContentAnswer(id, textContentKind)
-                    : variant === 'order-module-item-ids'
-                      ? moduleItemIdsAnswer(id)
-                      : variant === 'order-empty-results'
-                        ? emptyResultsAnswer(id)
-                        : variant.startsWith('order-protected-')
-                          ? protectedNoticeAnswer(
-                              id,
-                              variant === 'order-protected-en' ? 'en' : 'de',
-                              variant === 'order-protected-long-tail' ||
-                                variant === 'order-protected-long-match',
-                            )
-                          : variant.startsWith('order-visibility-')
-                            ? gatedMediaAnswer(
+        const answer = injectedError
+          ? notePhotoAnswer(id)
+          : variant.startsWith('order-inline-quote-')
+            ? inlineQuoteAnswer(id, inlineQuoteKind)
+            : variant.startsWith('order-empty-focal-') &&
+                id === DETAIL_FIXTURE.id
+              ? emptyFocalAnswer(id, emptyFocalKind)
+              : variant === 'order-empty-focal-continue'
+                ? detailAnswer(post)
+                : variant.startsWith('order-parent-')
+                  ? noticeParentAnswer(
+                      id,
+                      variant === 'order-parent-unknown-direct'
+                        ? 'unknown-direct'
+                        : variant === 'order-parent-unknown-module'
+                          ? 'unknown-module'
+                          : variant.endsWith('module')
+                            ? 'module'
+                            : 'direct',
+                      variant.includes('-unavailable-'),
+                    )
+                  : variant.startsWith('order-notice-')
+                    ? noticeAlignmentAnswer(id, noticeKind)
+                    : variant.startsWith('order-textcontent-')
+                      ? textContentAnswer(id, textContentKind)
+                      : variant === 'order-module-item-ids'
+                        ? moduleItemIdsAnswer(id)
+                        : variant === 'order-empty-results'
+                          ? emptyResultsAnswer(id)
+                          : variant.startsWith('order-protected-')
+                            ? protectedNoticeAnswer(
                                 id,
-                                variant === 'order-visibility-family',
+                                variant === 'order-protected-en' ? 'en' : 'de',
+                                variant === 'order-protected-long-tail' ||
+                                  variant === 'order-protected-long-match',
                               )
-                            : variant.startsWith('order-note-')
-                              ? notePhotoAnswer(id)
-                              : variant === 'order-own-photos'
-                                ? ownPhotoAnswer(id)
-                                : variant.startsWith('order-card-')
-                                  ? cardComparisonAnswer(id, cardKind)
-                                  : variant.startsWith('order-display-')
-                                    ? displayComparisonAnswer(
-                                        id,
-                                        variant === 'order-display-alt-mismatch'
-                                          ? 'alt'
-                                          : variant ===
-                                              'order-display-tail-mismatch'
-                                            ? 'tail'
-                                            : 'none',
-                                      )
-                                    : variant === 'module-cursor' ||
-                                        variant === 'unknown-module'
-                                      ? moduleCursorAnswer(
+                            : variant.startsWith('order-visibility-')
+                              ? gatedMediaAnswer(
+                                  id,
+                                  variant === 'order-visibility-family',
+                                )
+                              : variant.startsWith('order-note-')
+                                ? notePhotoAnswer(id)
+                                : variant === 'order-own-photos'
+                                  ? ownPhotoAnswer(id)
+                                  : variant.startsWith('order-card-')
+                                    ? cardComparisonAnswer(id, cardKind)
+                                    : variant.startsWith('order-display-')
+                                      ? displayComparisonAnswer(
                                           id,
-                                          variant === 'unknown-module',
+                                          variant ===
+                                            'order-display-alt-mismatch'
+                                            ? 'alt'
+                                            : variant ===
+                                                'order-display-tail-mismatch'
+                                              ? 'tail'
+                                              : 'none',
                                         )
-                                      : detailAnswer(post);
+                                      : variant === 'module-cursor' ||
+                                          variant === 'unknown-module'
+                                        ? moduleCursorAnswer(
+                                            id,
+                                            variant === 'unknown-module',
+                                          )
+                                        : detailAnswer(post);
         if (variant === 'no-focal-entry')
           answer.data.threaded_conversation_with_injections_v2.instructions[0]!.entries.shift();
         response.end(JSON.stringify(answer));
         return;
       }
       const nav = `<button data-testid="SideNav_AccountSwitcher_Button">@${variant === 'flag-account-mismatch' ? DETAIL_FIXTURE.handle : FIXTURE.account.handle}</button>`;
-      const account =
-        variant === 'delayed-many'
-          ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},100)</script>`
+      const delayedReadbackNav = variant.startsWith('order-readback-failed')
+        ? '<button data-testid="SideNav_AccountSwitcher_Button">Generated unnamed account</button>'
+        : variant.startsWith('order-readback-account-changed')
+          ? '<button data-testid="SideNav_AccountSwitcher_Button">@generated_changed</button>'
           : nav;
+      const account =
+        variant.startsWith('order-platform-account-readback-') &&
+        pathname?.includes('/status/')
+          ? '<button data-testid="SideNav_AccountSwitcher_Button">Generated unnamed account</button>'
+          : slowSwitcher && pathname?.includes('/status/')
+            ? delayedStopSwitcherMarkup(delayedReadbackNav)
+            : variant === 'delayed-many'
+              ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},100)</script>`
+              : nav;
+      if (
+        variant === 'order-platform-login' &&
+        pathname?.includes('/status/')
+      ) {
+        response.end(
+          `${account}<button data-testid="loginButton">Generated sign-in</button>`,
+        );
+        return;
+      }
       if (pathname === '/home') {
         if (variant.startsWith('order-')) {
           // An ordered run closes its own window when it ends, so hold the
@@ -517,53 +616,56 @@ for (const variant of [
         );
         return;
       }
-      const visibilityMarkup =
-        variant.startsWith('order-empty-focal-') &&
-        pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
-          ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
-          : variant.startsWith('order-parent-')
-            ? noticeParentMarkup(pathname!.split('/').at(-1)!)
-            : variant.startsWith('order-notice-')
-              ? noticeAlignmentMarkup(noticeKind)
-              : variant.startsWith('order-textcontent-')
-                ? textContentMarkup(
-                    pathname!.split('/').at(-1)!,
-                    textContentKind,
-                  )
-                : variant.startsWith('order-protected-')
-                  ? protectedNoticeMarkup(
-                      variant === 'order-protected-en' ? 'en' : 'de',
-                      variant === 'order-protected-different'
-                        ? 'different'
-                        : variant === 'order-protected-duplicate'
-                          ? 'duplicate'
-                          : variant === 'order-protected-missing'
-                            ? 'missing'
-                            : variant === 'order-protected-long-tail'
-                              ? 'long-tail'
-                              : variant === 'order-protected-long-match'
-                                ? 'long-match'
-                                : variant === 'order-protected-missing-link'
-                                  ? 'missing-link'
-                                  : 'match',
+      const visibilityMarkup = injectedError
+        ? notePhotoMarkup(pathname!.split('/').at(-1)!, 'delayed-text')
+        : variant.startsWith('order-inline-quote-')
+          ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
+          : variant.startsWith('order-empty-focal-') &&
+              pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
+            ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
+            : variant.startsWith('order-parent-')
+              ? noticeParentMarkup(pathname!.split('/').at(-1)!)
+              : variant.startsWith('order-notice-')
+                ? noticeAlignmentMarkup(noticeKind)
+                : variant.startsWith('order-textcontent-')
+                  ? textContentMarkup(
+                      pathname!.split('/').at(-1)!,
+                      textContentKind,
                     )
-                  : variant === 'order-visibility-late-player'
-                    ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
-                    : variant.startsWith('order-note-')
-                      ? notePhotoMarkup(
-                          pathname!.split('/').at(-1)!,
-                          variant === 'order-note-delayed-photo'
-                            ? 'delayed-photo'
-                            : variant === 'order-note-missing-photo'
-                              ? 'missing-photo'
-                              : 'delayed-text',
-                        )
-                      : variant.startsWith('order-visibility-')
-                        ? gatedMediaMarkup(
+                  : variant.startsWith('order-protected-')
+                    ? protectedNoticeMarkup(
+                        variant === 'order-protected-en' ? 'en' : 'de',
+                        variant === 'order-protected-different'
+                          ? 'different'
+                          : variant === 'order-protected-duplicate'
+                            ? 'duplicate'
+                            : variant === 'order-protected-missing'
+                              ? 'missing'
+                              : variant === 'order-protected-long-tail'
+                                ? 'long-tail'
+                                : variant === 'order-protected-long-match'
+                                  ? 'long-match'
+                                  : variant === 'order-protected-missing-link'
+                                    ? 'missing-link'
+                                    : 'match',
+                      )
+                    : variant === 'order-visibility-late-player'
+                      ? gatedLatePlayerMarkup(pathname!.split('/').at(-1)!)
+                      : variant.startsWith('order-note-')
+                        ? notePhotoMarkup(
                             pathname!.split('/').at(-1)!,
-                            variant === 'order-visibility-exposed',
+                            variant === 'order-note-delayed-photo'
+                              ? 'delayed-photo'
+                              : variant === 'order-note-missing-photo'
+                                ? 'missing-photo'
+                                : 'delayed-text',
                           )
-                        : null;
+                        : variant.startsWith('order-visibility-')
+                          ? gatedMediaMarkup(
+                              pathname!.split('/').at(-1)!,
+                              variant === 'order-visibility-exposed',
+                            )
+                          : null;
       response.end(
         `${account}${variant === 'delayed-many' ? Array.from({ length: 13 }, (_, i) => `<article data-testid="tweet"><a href="/generated/status/${2000 + i}"><time>2026</time></a><p data-testid="tweetText">Generated other post</p></article>`).join('') : ''}${visibilityMarkup ?? (variant === 'order-own-photos' ? ownPhotoMarkup(pathname!.split('/').at(-1)!) : variant.startsWith('order-card-') ? cardComparisonMarkup(pathname!.split('/').at(-1)!, variant === 'order-card-quote' ? 'quote' : variant === 'order-card-video' ? 'video' : variant === 'order-card-rendered-link' ? 'rendered-link' : variant === 'order-card-missing-rendered-link' || variant === 'order-card-full-mismatch' ? 'missing-rendered-link' : 'link') : variant.startsWith('order-display-') ? displayComparisonMarkup(pathname!.split('/').at(-1)!) : variant === 'unavailable' || variant === 'tombstone' ? '<p>Generated unavailable message</p>' : `<article data-testid="tweet"><a href="/generated/status/${pathname!.split('/').at(-1)}"><time>2026</time></a><p data-testid="tweetText">${variant === 'order-text-mismatch' ? 'Generated wrong visible text' : DETAIL_FIXTURE.longText}</p>${variant === 'order-media-mismatch' ? '<a role="link" href="/generated/status/' + pathname!.split('/').at(-1) + '/photo/1"><div data-testid="tweetPhoto"><img alt="Generated" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div></a>' : ''}</article>`)}<script>${variant === 'external-aborted' ? "fetch('http://127.0.0.1:4239/generated/CreateCheckoutSession',{method:'POST',mode:'no-cors'}).catch(()=>{});" : ''}${variant === 'unexpected' || variant === 'background' ? `fetch('${variant === 'unexpected' ? '/i/api/graphql/generated/FavoriteTweet' : '/i/api/telemetry'}',{method:'POST'});` : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${pathname!.split('/').at(-1)}'})))</script>`,
       );
@@ -576,7 +678,12 @@ for (const variant of [
       if (
         variant === 'order-card-full-match' ||
         variant === 'order-card-full-mismatch' ||
-        variant === 'order-visibility-full'
+        variant === 'order-visibility-full' ||
+        variant === 'order-platform-render-timeout-full' ||
+        variant === 'order-platform-account-readback-full' ||
+        injectedError ||
+        readbackVariant ||
+        variant === 'order-finalize-error'
       )
         plan.canary = false;
       if (variant === 'flag-account' || variant === 'flag-account-mismatch') {
@@ -646,23 +753,66 @@ for (const variant of [
           include: new Set(),
           order,
           lang:
-            variant === 'german-ended' || variant === 'order-status-page'
+            variant === 'german-ended' ||
+            variant === 'order-status-page' ||
+            variant === 'order-platform-render-timeout-de' ||
+            variant.endsWith('-de')
               ? 'de'
               : 'en',
           now: () => new Date(now),
-          notice: (text) => notices.push(text),
+          notice: (text) => {
+            notices.push(text);
+            if (
+              variant.startsWith('order-readback-extensions-changed') &&
+              !extensionMutationInjected &&
+              text.startsWith('Structure report:')
+            ) {
+              // Injected callback runs after the error report and before read-back.
+              mkdirSync(
+                join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
+                { recursive: true },
+              );
+              extensionMutationInjected = true;
+            }
+          },
         },
         {
           origin: 'http://127.0.0.1:4231',
           port: 4232,
-          responseMs: variant === 'never' ? 200 : 5000,
+          responseMs:
+            variant === 'never'
+              ? 200
+              : slowSwitcher ||
+                  variant === 'order-platform-answer-timeout' ||
+                  variant === 'order-platform-body-timeout'
+                ? STOP_DETAIL_FIXTURE.renderWaitMs
+                : 5000,
           intervalMs: 5,
           batch: 2,
           pauseMs: 11,
           media: {
             ...productionMedia,
             origin: 'http://127.0.0.1:4231',
-            free: () => Promise.resolve(10 * 1024 ** 3),
+            free: () => {
+              if (!injectedError) return Promise.resolve(10 * 1024 ** 3);
+              if (injectedError === 'disk-low') return Promise.resolve(0);
+              if (injectedError === 'media-failed')
+                throw new CliError('MEDIA_FAILED');
+              if (injectedError === 'rate-limit')
+                throw new CliError('MEDIA_RATE_LIMIT');
+              if (injectedError === 'media-origin')
+                throw new Error('MEDIA_ORIGIN');
+              if (injectedError === 'media-format')
+                throw new Error('MEDIA_FORMAT');
+              if (injectedError === 'fs-EACCES')
+                throw Object.assign(
+                  new Error('Generated private filesystem details'),
+                  { code: 'EACCES', path: 'generated/private' },
+                );
+              if (injectedError === 'type-error')
+                throw new TypeError('Generated private type details');
+              throw new Error('Generated private unknown details');
+            },
             fetch: (url, init) =>
               fetch(
                 (url instanceof URL
@@ -748,8 +898,51 @@ for (const variant of [
                 );
               }
               await expect(page.locator('#result')).toContainText(
-                variant === 'order-status-page' ? 'Beendet:' : 'Ended:',
+                variant === 'order-status-page' ||
+                  variant === 'order-platform-render-timeout-de' ||
+                  variant.endsWith('-de')
+                  ? 'Beendet:'
+                  : 'Ended:',
               );
+              if (variant.startsWith('order-platform-'))
+                await expect(page.locator('#result')).toContainText(
+                  variant === 'order-platform-login'
+                    ? 'The post-run account and extension check could not finish.'
+                    : variant === 'order-platform-render-timeout-de'
+                      ? STOP_DETAIL_FIXTURE.timeoutDe
+                      : variant.startsWith('order-platform-account-readback-')
+                        ? 'The signed-in account could not be read back after the run.'
+                        : variant === 'order-platform-answer-status' ||
+                            variant === 'order-platform-answer-type'
+                          ? 'The page was not recognized.'
+                          : STOP_DETAIL_FIXTURE.timeoutEn,
+                );
+              if (readbackVariant) {
+                const de = variant.endsWith('-de');
+                const text = variant.startsWith('order-readback-failed')
+                  ? de
+                    ? 'Das angemeldete Konto konnte nach dem Lauf nicht geprüft werden.'
+                    : 'The signed-in account could not be read back after the run.'
+                  : variant.startsWith('order-readback-account-changed')
+                    ? de
+                      ? 'Das angemeldete Konto hat sich während des Laufs geändert.'
+                      : 'The signed-in account changed during the run.'
+                    : de
+                      ? 'Die Erweiterungen des Browserprofils haben sich während des Laufs geändert.'
+                      : "The browser profile's extensions changed during the run.";
+                await expect(page.locator('#result')).toContainText(text);
+                await expect(page.locator('#result')).not.toContainText(
+                  de ? 'Es wurde nichts geändert.' : 'Nothing was changed.',
+                );
+              }
+              if (variant === 'order-card-full-mismatch') {
+                await expect(page.locator('#result')).not.toContainText(
+                  'sample',
+                );
+                await expect(page.locator('#result')).toContainText(
+                  'The stored text or media counts did not match the page.',
+                );
+              }
               await mkdir(join(tmpdir(), 'socialprune-screens'), {
                 recursive: true,
               });
@@ -764,6 +957,8 @@ for (const variant of [
                   caret: 'initial',
                 });
               await context!.close();
+              if (variant === 'order-finalize-error')
+                throw new TypeError('Generated private close details');
             }
             if (variant === 'german-ended')
               await new Promise<void>((resolve) =>
@@ -825,6 +1020,27 @@ for (const variant of [
           return;
         }
         const outcome = await result;
+        if (variant === 'order-finalize-error') {
+          expect(outcome).toMatchObject({ code: 'ORIGINALS_FAILED' });
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const report = JSON.parse(
+            await readFile(
+              join(directory, 'originals', `canary-${run.runId}.json`),
+              'utf8',
+            ),
+          ) as Record<string, unknown>[];
+          expect(report).toEqual(
+            expect.arrayContaining([
+              { stop: { code: 'type-error' } },
+              { readback: { outcome: 'unchanged' } },
+            ]),
+          );
+          expect(
+            notices.filter((text) => text.startsWith('Stop detail:')),
+          ).toEqual(['Stop detail: type-error\n']);
+          expect(context!.pages()).toHaveLength(0);
+          return;
+        }
         if (
           variant === 'order-match' ||
           variant === 'order-status-page' ||
@@ -852,6 +1068,7 @@ for (const variant of [
           variant.startsWith('order-parent-notice-') ||
           variant === 'order-empty-focal-match' ||
           variant === 'order-empty-focal-continue' ||
+          variant === 'order-inline-quote-match' ||
           (variant.startsWith('order-visibility-') &&
             variant !== 'order-visibility-exposed' &&
             variant !== 'order-visibility-late-player')
@@ -963,22 +1180,216 @@ for (const variant of [
             );
         } else {
           expect(outcome).toMatchObject({
-            code:
-              variant.startsWith('order-parent-unknown-') ||
-              variant === 'order-empty-focal-unknown' ||
-              variant === 'order-empty-focal-module'
-                ? 'SHAPE_CHANGED'
-                : 'CANARY_MISMATCH',
+            code: readbackVariant
+              ? 'PLATFORM_CHECK'
+              : injectedError
+                ? injectedError === 'disk-low'
+                  ? 'DISK_LOW'
+                  : injectedError === 'media-failed'
+                    ? 'MEDIA_FAILED'
+                    : injectedError === 'rate-limit'
+                      ? 'MEDIA_RATE_LIMIT'
+                      : 'ORIGINALS_FAILED'
+                : variant.startsWith('order-platform-')
+                  ? 'PLATFORM_CHECK'
+                  : variant.startsWith('order-parent-unknown-') ||
+                      variant === 'order-empty-focal-unknown' ||
+                      variant === 'order-empty-focal-module'
+                    ? 'SHAPE_CHANGED'
+                    : 'CANARY_MISMATCH',
           });
           expect(
             (await store.browserJournal()).runs.at(-1)?.canaryAcceptedAt,
           ).toBeNull();
           expect((await store.browserJournal()).runs.at(-1)).toMatchObject(
-            variant.startsWith('order-parent-unknown-') ||
-              variant === 'order-empty-focal-unknown' ||
-              variant === 'order-empty-focal-module'
-              ? { endReason: 'shape-changed' }
-              : { endReason: 'error', displayEndReason: 'canary-mismatch' },
+            readbackVariant || variant.startsWith('order-platform-')
+              ? { endReason: 'platform-check' }
+              : injectedError
+                ? { endReason: 'error' }
+                : variant.startsWith('order-parent-unknown-') ||
+                    variant === 'order-empty-focal-unknown' ||
+                    variant === 'order-empty-focal-module'
+                  ? { endReason: 'shape-changed' }
+                  : { endReason: 'error', displayEndReason: 'canary-mismatch' },
+          );
+        }
+        if (readbackVariant || injectedError) {
+          expect(extensionMutationInjected).toBe(
+            variant.startsWith('order-readback-extensions-changed'),
+          );
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const reportText = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          const report = JSON.parse(reportText) as Record<string, unknown>[];
+          const code =
+            injectedError === 'disk-low'
+              ? 'DISK_LOW'
+              : injectedError === 'media-failed'
+                ? 'MEDIA_FAILED'
+                : injectedError === 'rate-limit'
+                  ? 'MEDIA_RATE_LIMIT'
+                  : injectedError;
+          expect(
+            report.filter((entry) => Object.hasOwn(entry, 'stop')),
+          ).toEqual([
+            {
+              stop: readbackVariant
+                ? { code: 'PLATFORM_CHECK', reason: 'render-timeout' }
+                : { code },
+            },
+          ]);
+          const expectedReadback = !readbackVariant
+            ? 'unchanged'
+            : variant.startsWith('order-readback-failed')
+              ? 'account-handle'
+              : variant.startsWith('order-readback-account-changed')
+                ? 'account-changed'
+                : 'extensions-changed';
+          expect(report).toEqual(
+            expect.arrayContaining([
+              { readback: { outcome: expectedReadback } },
+            ]),
+          );
+          expect(
+            notices.filter((text) => text.startsWith('Stop detail:')),
+          ).toEqual([
+            `Stop detail: ${readbackVariant ? 'render-timeout' : code}\n`,
+          ]);
+          for (const forbidden of [
+            DETAIL_FIXTURE.id,
+            FIXTURE.account.handle,
+            'Generated private',
+            'generated/private',
+            DETAIL_FIXTURE.longText,
+          ])
+            expect(reportText).not.toContain(forbidden);
+        }
+        if (variant.startsWith('order-inline-quote-')) {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          expect(run).toMatchObject({
+            canaryCounts: [
+              expect.objectContaining({ matches: inlineQuoteKind === 'match' }),
+            ],
+          });
+          if (inlineQuoteKind === 'match')
+            expect(run).toMatchObject({
+              canaryCounts: [
+                {
+                  stored: {
+                    textLength: INLINE_QUOTE_FIXTURE.text.length,
+                    photos: 0,
+                    videos: 0,
+                  },
+                  shown: {
+                    textLength: INLINE_QUOTE_FIXTURE.text.length,
+                    photos: 0,
+                    videos: 0,
+                  },
+                  matches: true,
+                },
+              ],
+            });
+        }
+        if (variant === 'order-card-full-mismatch') {
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          const report = JSON.parse(
+            await readFile(
+              join(directory, 'originals', `canary-${run.runId}.json`),
+              'utf8',
+            ),
+          ) as unknown[];
+          expect(report).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                stop: expect.objectContaining({ code: 'CANARY_MISMATCH' }),
+              }),
+            ]),
+          );
+          expect(
+            notices.some((text) => text === 'Stop detail: CANARY_MISMATCH\n'),
+          ).toBe(true);
+        }
+        if (variant.startsWith('order-platform-')) {
+          const reason =
+            variant === 'order-platform-login'
+              ? 'marker-login'
+              : variant.startsWith('order-platform-account-readback-')
+                ? 'account-handle'
+                : variant === 'order-platform-answer-status'
+                  ? 'answer-status'
+                  : variant === 'order-platform-answer-type'
+                    ? 'answer-type'
+                    : variant === 'order-platform-answer-timeout'
+                      ? 'answer-timeout'
+                      : variant === 'order-platform-body-timeout'
+                        ? 'body-timeout'
+                        : 'render-timeout';
+          expect(
+            notices.filter((text) => text.startsWith('Stop detail:')),
+          ).toEqual([`Stop detail: ${reason}\n`]);
+          const run = (await store.browserJournal()).runs.at(-1)!;
+          expect(outcome).toMatchObject({ reason });
+          if (variant === 'order-platform-account-readback-canary') {
+            expect(plan.canary).toBe(true);
+            expect(
+              notices.filter((text) => text.startsWith('Structure report:')),
+            ).toHaveLength(2);
+          }
+          if (
+            variant === 'order-platform-account-readback-full' ||
+            variant === 'order-platform-render-timeout-full'
+          )
+            expect(plan.canary).toBe(false);
+          const report = await readFile(
+            join(directory, 'originals', `canary-${run.runId}.json`),
+            'utf8',
+          );
+          expect(JSON.parse(report)).toEqual(
+            expect.arrayContaining([
+              { stop: { code: 'PLATFORM_CHECK', reason } },
+              {
+                readback: {
+                  outcome:
+                    variant === 'order-platform-login'
+                      ? 'account-readback'
+                      : variant.startsWith('order-platform-account-readback-')
+                        ? 'account-handle'
+                        : 'unchanged',
+                },
+              },
+            ]),
+          );
+          expect(
+            (JSON.parse(report) as Record<string, unknown>[]).filter((entry) =>
+              Object.hasOwn(entry, 'stop'),
+            ),
+          ).toEqual([{ stop: { code: 'PLATFORM_CHECK', reason } }]);
+          for (const forbidden of [
+            DETAIL_FIXTURE.id,
+            DETAIL_FIXTURE.longText,
+            FIXTURE.account.handle,
+            FIXTURE.account.key,
+          ])
+            expect(report).not.toContain(forbidden);
+          expect(
+            (await store.browserJournal()).attempts.map(
+              (attempt) => attempt.state,
+            ),
+          ).toEqual([
+            'sending',
+            variant.startsWith('order-platform-account-readback-')
+              ? 'read'
+              : 'failed',
+          ]);
+          expect(
+            (await store.read((tx) => tx.originals.get(DETAIL_FIXTURE.id)))
+              ?.signedIn,
+          ).toEqual(
+            variant.startsWith('order-platform-account-readback-')
+              ? expect.objectContaining({ status: 'read' })
+              : null,
           );
         }
         if (variant.startsWith('order-empty-focal-')) {
@@ -1484,7 +1895,9 @@ for (const variant of [
             gated?: { posts: number; mediaItems: number };
           }[];
           const counts = { posts: ids.length, mediaItems: ids.length };
-          expect(reports.at(-1)?.gated).toEqual(counts);
+          expect(reports.filter((entry) => entry.gated).at(-1)?.gated).toEqual(
+            counts,
+          );
           expect(notices.join('')).toContain(
             `Gated media: ${JSON.stringify(counts)}`,
           );

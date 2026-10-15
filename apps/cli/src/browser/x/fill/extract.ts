@@ -11,7 +11,12 @@ import type { ShapeLock } from './lock.ts';
 import { mediaURL } from '../../../originals/video.ts';
 import { z } from 'zod';
 import { failureToken } from './report.ts';
-import { displayTextFromAnswer, displayLinksFromAnswer } from './compare.ts';
+import {
+  displayTextFromAnswer,
+  displayLinksFromAnswer,
+  inlineQuoteFromAnswer,
+} from './compare.ts';
+import type { InlineQuotePermalink } from './compare.ts';
 const ProjectionSchema = z.strictObject({
   rest_id: OriginalIdSchema,
   text: z.string().max(1_000_000),
@@ -217,6 +222,7 @@ export function extract(
       chainAbove: 'complete' | 'partial';
       displayText: string;
       displayLinks: string[];
+      inlineQuote: InlineQuotePermalink | null;
       gated: { id: string; mediaItems: number }[];
       emptyResults: number;
       noticeParents?: number;
@@ -462,6 +468,7 @@ export function extract(
       kind: 'read',
       displayText: displayTextFromAnswer(value),
       displayLinks: displayLinksFromAnswer(value),
+      inlineQuote: inlineQuoteFromAnswer(value),
       post: current,
       above,
       quoted,

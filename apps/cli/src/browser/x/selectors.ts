@@ -1,9 +1,20 @@
 import type { Locator, Page } from 'playwright-core';
 import { CliError } from '../../cli/errors.ts';
+import type { PlatformCheckReason } from '../../cli/errors.ts';
 
-async function one(locator: Locator): Promise<Locator> {
-  if ((await locator.count()) !== 1 || !(await locator.isVisible()))
-    throw new CliError('PLATFORM_CHECK');
+async function one(
+  locator: Locator,
+  reason?: PlatformCheckReason,
+): Promise<Locator> {
+  if ((await locator.count()) !== 1)
+    throw new CliError(
+      'PLATFORM_CHECK',
+      undefined,
+      undefined,
+      reason ?? 'count',
+    );
+  if (!(await locator.isVisible()))
+    throw new CliError('PLATFORM_CHECK', undefined, undefined, 'hidden');
   return locator;
 }
 async function button(
@@ -38,19 +49,29 @@ export const xSelectors = {
         .first()
         .waitFor({ state: 'visible', timeout: timeoutMs });
     } catch {
-      throw new CliError('PLATFORM_CHECK');
+      throw new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'render-timeout',
+      );
     }
     await this.check(page);
   },
   async check(page: Page): Promise<void> {
-    const blocked = page.locator(
-      '[data-testid="loginButton"], [data-testid="challenge"], [data-testid="lockedAccount"], [data-testid="rateLimit"]',
-    );
+    for (const [testId, reason] of [
+      ['loginButton', 'marker-login'],
+      ['challenge', 'marker-challenge'],
+      ['lockedAccount', 'marker-locked'],
+      ['rateLimit', 'marker-rate-limit'],
+    ] as const)
+      if (await page.getByTestId(testId).count())
+        throw new CliError('PLATFORM_CHECK', undefined, undefined, reason);
     const notice = page.getByText(
       /^(Log in to X|Sign in to X|Bei X anmelden|Verify your identity|Confirm you are human|Bestätige deine Identität|Your account is locked|Dein Account wurde gesperrt|Rate limit exceeded|Du hast dein Limit erreicht)$/,
     );
-    if ((await blocked.count()) || (await notice.count()))
-      throw new CliError('PLATFORM_CHECK');
+    if (await notice.count())
+      throw new CliError('PLATFORM_CHECK', undefined, undefined, 'notice-text');
   },
   async account(page: Page, timeoutMs = 20_000): Promise<string> {
     await this.rendered(
@@ -64,7 +85,13 @@ export const xSelectors = {
     const handles = (await switcher.innerText()).match(
       /@[A-Za-z0-9_]{1,50}\b/g,
     );
-    if (!handles || handles.length !== 1) throw new CliError('PLATFORM_CHECK');
+    if (!handles || handles.length !== 1)
+      throw new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'account-handle',
+      );
     return handles[0].slice(1);
   },
   async state(
@@ -87,11 +114,12 @@ export const xSelectors = {
     const timestamp = post
       .locator(`a[href$="/status/${id}"]`)
       .filter({ has: page.locator('time') });
-    await one(timestamp);
+    await one(timestamp, 'focal-time');
     return 'present';
   },
   focalLocator(page: Page, id: string): Locator {
-    if (!/^\d{1,40}$/.test(id)) throw new CliError('PLATFORM_CHECK');
+    if (!/^\d{1,40}$/.test(id))
+      throw new CliError('PLATFORM_CHECK', undefined, undefined, 'bad-id');
     return page.locator('article[data-testid="tweet"]').filter({
       has: page
         .locator(`a[href$="/status/${id}"]`)
@@ -99,11 +127,12 @@ export const xSelectors = {
     });
   },
   async focal(page: Page, id: string): Promise<Locator> {
-    const post = await one(this.focalLocator(page, id));
+    const post = await one(this.focalLocator(page, id), 'focal-count');
     await one(
       post
         .locator(`a[href$="/status/${id}"]`)
         .filter({ has: page.locator('time') }),
+      'focal-time',
     );
     return post;
   },

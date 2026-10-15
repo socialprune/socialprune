@@ -309,6 +309,36 @@ export const CLI_ERRORS = {
 
 export type CliErrorCode = keyof typeof CLI_ERRORS;
 
+export const PLATFORM_CHECK_REASONS = [
+  'count',
+  'hidden',
+  'render-timeout',
+  'marker-login',
+  'marker-challenge',
+  'marker-locked',
+  'marker-rate-limit',
+  'notice-text',
+  'account-handle',
+  'focal-count',
+  'focal-time',
+  'bad-id',
+  'answer-status',
+  'answer-type',
+  'answer-timeout',
+  'body-timeout',
+  'gone-check',
+  'extensions-changed',
+  'account-readback',
+  'account-changed',
+  'unspecified',
+] as const;
+export type PlatformCheckReason = (typeof PLATFORM_CHECK_REASONS)[number];
+export function platformCheckReason(
+  value: unknown,
+): PlatformCheckReason | undefined {
+  return PLATFORM_CHECK_REASONS.find((reason) => reason === value);
+}
+
 export const LABEL_FAILURE_CODES = [
   'UNKNOWN_ITEM',
   'CONTENT_CHANGED',
@@ -354,11 +384,13 @@ export class CliError extends Error {
   readonly code: CliErrorCode;
   readonly nodeVersion?: string;
   readonly details?: LabelFailureDetails;
+  readonly reason?: PlatformCheckReason;
 
   constructor(
     code: CliErrorCode,
     nodeVersion?: string,
     details?: LabelFailureDetails,
+    reason?: unknown,
   ) {
     super(CLI_ERRORS[code].message);
     this.name = 'CliError';
@@ -366,6 +398,8 @@ export class CliError extends Error {
     this.nodeVersion = nodeVersion;
     this.details =
       code === 'INVALID_LABELS' ? labelDetails(details) : undefined;
+    this.reason =
+      code === 'PLATFORM_CHECK' ? platformCheckReason(reason) : undefined;
   }
 }
 

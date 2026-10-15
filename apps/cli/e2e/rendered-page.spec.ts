@@ -33,6 +33,9 @@ import {
   noticeAlignmentAnswer,
   NOTICE_ALIGNMENT_FIXTURE,
   emptyFocalMarkup,
+  inlineQuoteAnswer,
+  inlineQuoteMarkup,
+  INLINE_QUOTE_FIXTURE,
 } from './fake-x/fill-detail.ts';
 test('delayed side nav waits for script rendering before account read; an empty page stops at the bounded render deadline', async ({
   page,
@@ -44,6 +47,85 @@ test('delayed side nav waits for script rendering before account read; an empty 
   await page.setContent('<main></main>');
   await expect(xSelectors.account(page, 100)).rejects.toMatchObject({
     code: 'PLATFORM_CHECK',
+    reason: 'render-timeout',
+  });
+});
+
+for (const [testId, reason] of [
+  ['loginButton', 'marker-login'],
+  ['challenge', 'marker-challenge'],
+  ['lockedAccount', 'marker-locked'],
+  ['rateLimit', 'marker-rate-limit'],
+] as const)
+  test(`platform marker ${testId} names its check without changing rejection of a hidden marker`, async ({
+    page,
+  }) => {
+    await page.setContent(
+      `<div data-testid="${testId}" style="display:none">Generated marker</div>`,
+    );
+    await expect(xSelectors.check(page)).rejects.toMatchObject({
+      code: 'PLATFORM_CHECK',
+      reason,
+    });
+  });
+
+test('selector structural and text checks report only their closed reason tokens', async ({
+  page,
+}) => {
+  await page.setContent('<p>Bei X anmelden</p>');
+  await expect(xSelectors.check(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'notice-text',
+  });
+  await page.setContent(
+    '<button data-testid="SideNav_AccountSwitcher_Button">Generated without handle</button>',
+  );
+  await expect(xSelectors.account(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'account-handle',
+  });
+  await page.setContent(
+    '<button data-testid="SideNav_AccountSwitcher_Button">@generated_one @generated_two</button>',
+  );
+  await expect(xSelectors.account(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'account-handle',
+  });
+  await page.setContent(
+    '<button data-testid="SideNav_AccountSwitcher_Button">@generated_one</button><button data-testid="SideNav_AccountSwitcher_Button">@generated_two</button>',
+  );
+  await expect(xSelectors.account(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'count',
+  });
+  await page.setContent(
+    '<button data-testid="delete" style="display:none">Delete</button>',
+  );
+  await expect(xSelectors.deleteMenu(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'hidden',
+  });
+  await page.setContent('<main></main>');
+  await expect(xSelectors.focal(page, '910')).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'focal-count',
+  });
+  await page.setContent(
+    '<article data-testid="tweet" style="display:none"><a href="/generated/status/910"><time>2026</time></a></article>',
+  );
+  await expect(xSelectors.focal(page, '910')).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'hidden',
+  });
+  expect(() => xSelectors.focalLocator(page, 'generated-bad-id')).toThrow(
+    expect.objectContaining({ code: 'PLATFORM_CHECK', reason: 'bad-id' }),
+  );
+  await page.setContent(
+    '<article data-testid="tweet"><a href="/generated/status/910"><time>2026</time></a><a href="/generated/status/910"><time>2026</time></a></article>',
+  );
+  await expect(xSelectors.state(page, '910')).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
+    reason: 'focal-time',
   });
 });
 test('focal article identity excludes every other timestamped post from state and menu selection', async ({
@@ -614,6 +696,95 @@ for (const account of ['absent', 'hidden', 'duplicate'] as const)
     );
     expect((await compareEmptyFocal(page, '910')).matches).toBe(false);
   });
+
+for (const kind of [
+  'match',
+  'different-path',
+  'in-full-text',
+  'not-trailing',
+] as const)
+  test(`inline unavailable quote permalink ${kind} drops only the answer-bound trailing anchor`, async ({
+    page,
+  }) => {
+    await page.setContent(inlineQuoteMarkup('910', kind));
+    const text = page.getByTestId('tweetText');
+    expect(await text.locator('a').count()).toBe(1);
+    expect(await text.locator('a').innerText()).toContain('…');
+    expect(await text.locator('a').textContent()).toContain('…');
+    expect(await text.locator('a').innerText()).not.toBe(
+      await text.locator('a').textContent(),
+    );
+    expect(
+      await page
+        .locator('article[data-testid="tweet"] div[role="link"]')
+        .count(),
+    ).toBe(0);
+    const extracted = extract(inlineQuoteAnswer('910', kind), '910', {
+      instruction: null,
+    });
+    if (extracted.kind !== 'read')
+      throw new Error('Generated inline quote was not read.');
+    const result = await compareFocal(
+      page,
+      { ...extracted.post, anonymous: null, signedIn: null },
+      extracted.displayText,
+      extracted.displayLinks,
+      false,
+      extracted.inlineQuote,
+    );
+    expect(result.matches).toBe(kind === 'match');
+    if (kind === 'match')
+      expect(result).toMatchObject({
+        stored: { textLength: INLINE_QUOTE_FIXTURE.text.length },
+        shown: { textLength: INLINE_QUOTE_FIXTURE.text.length },
+      });
+  });
+
+test('R1 inline quote removal respects the DOM tail and case-insensitive relative path, not only equal suffix text', async ({
+  page,
+}) => {
+  const extracted = extract(inlineQuoteAnswer('910'), '910', {
+    instruction: null,
+  });
+  if (extracted.kind !== 'read')
+    throw new Error('Generated inline quote not read.');
+  const original = { ...extracted.post, anonymous: null, signedIn: null };
+  const markup = inlineQuoteMarkup('910').replace(
+    INLINE_QUOTE_FIXTURE.href,
+    '/GENERATED_QUOTE/status/901/',
+  );
+  await page.setContent(markup);
+  expect(
+    (
+      await compareFocal(
+        page,
+        original,
+        extracted.displayText,
+        extracted.displayLinks,
+        false,
+        extracted.inlineQuote,
+      )
+    ).matches,
+  ).toBe(true);
+  await page.setContent(
+    markup.replace(
+      '</a></div></article>',
+      '</a><span style="display:none">Generated hidden trailing text</span></div></article>',
+    ),
+  );
+  expect(
+    (
+      await compareFocal(
+        page,
+        original,
+        extracted.displayText,
+        extracted.displayLinks,
+        false,
+        extracted.inlineQuote,
+      )
+    ).matches,
+  ).toBe(false);
+});
 
 test('an older in-flight confirmation poll cannot overwrite the ended state', async ({
   page,

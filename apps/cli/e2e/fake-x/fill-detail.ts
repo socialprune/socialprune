@@ -1017,3 +1017,70 @@ export function emptyFocalMarkup(
       : '';
   return `${post(EMPTY_FOCAL_FIXTURE.parentId)}<div id="generated-focal">${kind === 'present' ? focal : ''}</div>${post(EMPTY_FOCAL_FIXTURE.replyId)}${kind === 'error' ? '<p data-testid="error-detail">Generated error notice</p>' : ''}${script}`;
 }
+
+export const STOP_DETAIL_FIXTURE = {
+  switcherDelayMs: 1500,
+  renderWaitMs: 1000,
+  timeoutEn: 'X did not load the page in time. Nothing was changed.',
+  timeoutDe:
+    'X hat die Seite nicht rechtzeitig geladen. Es wurde nichts geändert.',
+  markerEn: 'X shows a sign-in, account check, lock or limit page.',
+  markerDe:
+    'X zeigt eine Seite zum Anmelden, eine Kontoprüfung, eine Sperre oder ein Limit.',
+};
+export function delayedStopSwitcherMarkup(account: string): string {
+  return `<div id="generated-switcher"></div><script>setTimeout(()=>document.getElementById('generated-switcher').innerHTML=${JSON.stringify(account)},${STOP_DETAIL_FIXTURE.switcherDelayMs})</script>`;
+}
+
+export const INLINE_QUOTE_FIXTURE = {
+  text: 'Generated own text quoting a post that is unavailable.',
+  quotedId: '901',
+  url: 'https://t.co/generatedInlineQuote',
+  expanded: 'https://twitter.com/generated_quote/status/901',
+  href: '/generated_quote/status/901',
+  visible: 'twitter.com/generated_quote/status/901…',
+};
+export type InlineQuoteKind =
+  'match' | 'different-path' | 'in-full-text' | 'not-trailing';
+export function inlineQuoteAnswer(id: string, kind: InlineQuoteKind = 'match') {
+  const post = detailPost(id);
+  const fullText =
+    INLINE_QUOTE_FIXTURE.text +
+    (kind === 'in-full-text' ? ' ' + INLINE_QUOTE_FIXTURE.url : '');
+  Object.assign(post.legacy, {
+    full_text: fullText,
+    display_text_range: [0, Array.from(fullText).length],
+    is_quote_status: true,
+    quoted_status_id_str: INLINE_QUOTE_FIXTURE.quotedId,
+    quoted_status_permalink: {
+      url: INLINE_QUOTE_FIXTURE.url,
+      expanded: INLINE_QUOTE_FIXTURE.expanded,
+    },
+    entities: { urls: [], media: [] },
+    extended_entities: { media: [] },
+  });
+  Object.assign(post, {
+    quoted_status_result: {
+      result: {
+        __typename: 'TweetTombstone',
+        tombstone: {
+          __typename: 'TextTombstone',
+          text: { text: 'Generated unavailable quote notice' },
+        },
+      },
+    },
+  });
+  return detailAnswer(post);
+}
+export function inlineQuoteMarkup(
+  id: string,
+  kind: InlineQuoteKind = 'match',
+): string {
+  const href =
+    kind === 'different-path'
+      ? '/generated_quote/status/902'
+      : INLINE_QUOTE_FIXTURE.href;
+  const anchor = `<a href="${href}"><div style="display:inline-flex"><span>https://</span></div><span>${INLINE_QUOTE_FIXTURE.visible}</span></a>`;
+  const own = INLINE_QUOTE_FIXTURE.text;
+  return `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><div data-testid="tweetText">${kind === 'not-trailing' ? own.slice(0, -1) + ' ' + anchor + '.' : own + ' ' + anchor}</div></article>`;
+}

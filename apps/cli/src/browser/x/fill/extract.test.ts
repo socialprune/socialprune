@@ -17,6 +17,8 @@ import {
   NOTICE_PARENT_FIXTURE,
   emptyFocalAnswer,
   EMPTY_FOCAL_FIXTURE,
+  inlineQuoteAnswer,
+  INLINE_QUOTE_FIXTURE,
 } from '../../../../e2e/fake-x/fill-detail.ts';
 test('response guard reads only the exact GET focal-id JSON answer and rejects planted adjacent bodies', () => {
   const url = `https://x.com/i/api/graphql/generated/TweetDetail?variables=${encodeURIComponent(JSON.stringify({ focalTweetId: DETAIL_FIXTURE.id }))}`,
@@ -535,6 +537,29 @@ test('internal underscore and media-origin failures survive extraction without l
   expect(
     extract(detailAnswer(media), DETAIL_FIXTURE.id, { instruction: null }),
   ).toEqual({ kind: 'shape-changed', path: 'media-origin' });
+});
+
+test('R1 quote-link comparison data is transient and never changes stored text or the projected signed-in record', () => {
+  const result = extract(
+    inlineQuoteAnswer(DETAIL_FIXTURE.id),
+    DETAIL_FIXTURE.id,
+    { instruction: null },
+  );
+  expect(result.kind).toBe('read');
+  if (result.kind !== 'read')
+    throw new Error('Generated inline quote not read.');
+  expect(result.inlineQuote).toEqual({ path: INLINE_QUOTE_FIXTURE.href });
+  expect(result.post.text).toBe(INLINE_QUOTE_FIXTURE.text);
+  expect(Object.hasOwn(result.post, 'inlineQuote')).toBe(false);
+  expect(result.post.signedInRecord).not.toHaveProperty('inlineQuote');
+  const included = extract(
+    inlineQuoteAnswer(DETAIL_FIXTURE.id, 'in-full-text'),
+    DETAIL_FIXTURE.id,
+    { instruction: null },
+  );
+  if (included.kind !== 'read')
+    throw new Error('Generated inline quote not read.');
+  expect(included.inlineQuote).toBeNull();
 });
 
 test.each(['module', 'entry'] as const)(

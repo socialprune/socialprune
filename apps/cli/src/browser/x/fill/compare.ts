@@ -111,6 +111,73 @@ export function displayLinksFromAnswer(input: unknown): string[] {
   ];
 }
 
+export interface InlineQuotePermalink {
+  path: string;
+}
+function statusPath(value: string): string | null {
+  return /^\/[A-Za-z0-9_]{1,50}\/status\/\d{1,40}\/?$/.test(value)
+    ? value.replace(/\/$/, '').toLowerCase()
+    : null;
+}
+/** This projection is comparison-only; archive text and media are unchanged. */
+export function inlineQuoteFromAnswer(
+  input: unknown,
+): InlineQuotePermalink | null {
+  let tweet = object(input);
+  if (tweet.__typename === 'TweetWithVisibilityResults')
+    tweet = object(tweet.tweet);
+  const legacy = object(tweet.legacy),
+    permalink = object(legacy.quoted_status_permalink);
+  if (
+    legacy.is_quote_status !== true ||
+    typeof legacy.full_text !== 'string' ||
+    typeof permalink.url !== 'string' ||
+    !/^https:\/\/t\.co\/[A-Za-z0-9]+$/.test(permalink.url) ||
+    legacy.full_text.includes(permalink.url) ||
+    typeof permalink.expanded !== 'string'
+  )
+    return null;
+  try {
+    const url = new URL(permalink.expanded);
+    if (
+      url.protocol !== 'https:' ||
+      ![
+        'x.com',
+        'twitter.com',
+        'www.twitter.com',
+        'mobile.twitter.com',
+      ].includes(url.hostname.toLowerCase()) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash
+    )
+      return null;
+    const path = statusPath(url.pathname);
+    return path ? { path } : null;
+  } catch {
+    return null;
+  }
+}
+export function inlineQuoteMatches(
+  href: string,
+  quote: InlineQuotePermalink | null,
+): boolean {
+  return (
+    quote !== null &&
+    statusPath(href) !== null &&
+    statusPath(href) === quote.path
+  );
+}
+export function removeInlineQuoteSuffix(shown: string, label: string): string {
+  const suffix = label.trim();
+  const value = shown.trimEnd();
+  return suffix && value.endsWith(suffix)
+    ? value.slice(0, -suffix.length)
+    : shown;
+}
+
 export function removeUnrenderedDisplayLinks(
   text: string,
   candidates: readonly string[],
@@ -576,6 +643,7 @@ export async function compareFocal(
   displayText = original.text ?? '',
   displayLinks: readonly string[] = [],
   mediaGated = false,
+  inlineQuote: InlineQuotePermalink | null = null,
 ): Promise<CanaryComparison> {
   const article = await xSelectors.focal(page, original.id);
   const own = (selector: string) =>
@@ -608,11 +676,30 @@ export async function compareFocal(
     },
   );
   const textCount = await text.count();
-  const shownText = textCount === 1 ? await text.innerText() : '';
-  const shownContent =
-    textCount === 1 ? ((await text.textContent()) ?? '') : '';
+  let shownText = textCount === 1 ? await text.innerText() : '';
+  let shownContent = textCount === 1 ? ((await text.textContent()) ?? '') : '';
   const links: { href: string; innerText: string; textContent: string }[] = [];
-  if (textCount === 1)
+  if (textCount === 1) {
+    const trailing = text.locator(
+      'xpath=.//a[@href][not(ancestor-or-self::*[ancestor::*[@data-testid="tweetText"]][following-sibling::* or following-sibling::text()[normalize-space(.) != ""]])]',
+    );
+    if (
+      inlineQuote &&
+      (await trailing.count()) === 1 &&
+      inlineQuoteMatches(
+        (await trailing.getAttribute('href')) ?? '',
+        inlineQuote,
+      )
+    ) {
+      shownText = removeInlineQuoteSuffix(
+        shownText,
+        await trailing.innerText(),
+      );
+      shownContent = removeInlineQuoteSuffix(
+        shownContent,
+        (await trailing.textContent()) ?? '',
+      );
+    }
     for (const link of await text.locator('a[href]').all()) {
       const href = await link.getAttribute('href');
       if (href)
@@ -622,6 +709,7 @@ export async function compareFocal(
           textContent: (await link.textContent()) ?? '',
         });
     }
+  }
   const storedText = removeUnrenderedDisplayLinks(
     displayText,
     displayLinks,

@@ -1,7 +1,10 @@
+import { platformCheckReason } from '../cli/errors.ts';
+
 export const BROWSER_WARNING = {
   en: "X's and Instagram's rules do not allow this kind of automation. They can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. Deleted posts and comments cannot be recovered. Neither the platform nor SocialPrune can bring them back. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.",
   de: 'Die Regeln von X und Instagram erlauben diese Art von Automatisierung nicht. Sie können dein Konto dafür sperren oder einschränken, auch wenn SocialPrune langsam vorgeht und beim ersten Problem anhält. Gelöschte Beiträge und Kommentare lassen sich nicht wiederherstellen. Weder die Plattform noch SocialPrune kann sie zurückholen. SocialPrune verbirgt nicht, dass ein Programm in deinem Browser handelt. Nutze es nur für dein eigenes Konto und nur, wenn du das in Kauf nimmst.',
 } as const;
+
 export type BrowserLanguage = 'en' | 'de';
 export function profileWarning(
   handle: string,
@@ -48,6 +51,16 @@ export type DisplayEndReason =
   | 'stopped-by-person'
   | 'error'
   | 'size-cap';
+export type ReadbackOutcome =
+  | 'unchanged'
+  | 'account-readback'
+  | 'account-handle'
+  | 'account-changed'
+  | 'extensions-changed';
+export interface EndTextContext {
+  readback?: ReadbackOutcome;
+  canary?: boolean;
+}
 const END_REASON = {
   'canary-mismatch': {
     en: 'The stored text or media counts did not match the page; the sample was not accepted.',
@@ -58,8 +71,8 @@ const END_REASON = {
     de: 'Die geplanten Schritte sind abgeschlossen.',
   },
   'platform-check': {
-    en: 'The page was not recognized, or X requires an account check.',
-    de: 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.',
+    en: 'The page was not recognized.',
+    de: 'Die Seite wurde nicht erkannt.',
   },
   'account-mismatch': {
     en: 'The signed-in account does not match the expected account.',
@@ -93,10 +106,74 @@ const END_REASON = {
 export function endText(
   reason: DisplayEndReason,
   lang: BrowserLanguage = 'en',
+  detail?: unknown,
+  context: EndTextContext = {},
 ): string {
+  const token = platformCheckReason(detail);
+  const readback =
+    context.readback === 'unchanged' ? undefined : context.readback;
+  const outcome =
+    readback ??
+    (reason === 'platform-check' &&
+    (token === 'extensions-changed' ||
+      token === 'account-changed' ||
+      token === 'account-handle' ||
+      token === 'account-readback')
+      ? token
+      : undefined);
+  const text =
+    outcome === 'extensions-changed'
+      ? lang === 'de'
+        ? 'Die Erweiterungen des Browserprofils haben sich während des Laufs geändert. Der Lauf wurde gestoppt.'
+        : "The browser profile's extensions changed during the run. The run stopped."
+      : outcome === 'account-changed'
+        ? lang === 'de'
+          ? 'Das angemeldete Konto hat sich während des Laufs geändert. Der Lauf wurde gestoppt.'
+          : 'The signed-in account changed during the run. The run stopped.'
+        : outcome === 'account-readback'
+          ? lang === 'de'
+            ? 'Die Kontrolle von Konto und Erweiterungen nach dem Lauf konnte nicht abgeschlossen werden. Der Lauf wurde gestoppt.'
+            : 'The post-run account and extension check could not finish. The run stopped.'
+          : outcome === 'account-handle'
+            ? lang === 'de'
+              ? 'Das angemeldete Konto konnte nach dem Lauf nicht geprüft werden. Der Lauf wurde gestoppt.'
+              : 'The signed-in account could not be read back after the run. The run stopped.'
+            : reason === 'canary-mismatch' && context.canary === false
+              ? lang === 'de'
+                ? 'Der gespeicherte Text oder die Medienanzahl stimmten nicht mit der Seite überein. Der Lauf wurde gestoppt.'
+                : 'The stored text or media counts did not match the page. The run stopped.'
+              : reason !== 'platform-check'
+                ? END_REASON[reason][lang]
+                : token === 'render-timeout' ||
+                    token === 'answer-timeout' ||
+                    token === 'body-timeout'
+                  ? lang === 'de'
+                    ? 'X hat die Seite nicht rechtzeitig geladen.' +
+                      (context.readback === 'unchanged'
+                        ? ' Es wurde nichts geändert.'
+                        : '')
+                    : 'X did not load the page in time.' +
+                      (context.readback === 'unchanged'
+                        ? ' Nothing was changed.'
+                        : '')
+                  : [
+                        'marker-login',
+                        'marker-challenge',
+                        'marker-locked',
+                        'marker-rate-limit',
+                        'notice-text',
+                      ].some((value) => value === token)
+                    ? lang === 'de'
+                      ? 'X zeigt eine Seite zum Anmelden, eine Kontoprüfung, eine Sperre oder ein Limit.'
+                      : 'X shows a sign-in, account check, lock or limit page.'
+                    : token === undefined || token === 'unspecified'
+                      ? lang === 'de'
+                        ? 'Die Seite wurde nicht erkannt oder X verlangt eine Kontoprüfung.'
+                        : 'The page was not recognized, or X requires an account check.'
+                      : END_REASON['platform-check'][lang];
   return lang === 'de'
-    ? `Beendet: ${END_REASON[reason].de} Schließe das X-Fenster, um den Lauf zu beenden.`
-    : `Ended: ${END_REASON[reason].en} Close the X window to finish.`;
+    ? `Beendet: ${text} Schließe das X-Fenster, um den Lauf zu beenden.`
+    : `Ended: ${text} Close the X window to finish.`;
 }
 export function endReason(
   reason: string | null,

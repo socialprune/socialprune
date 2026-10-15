@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest';
 import { extract } from './extract.ts';
+import { errorStop } from './report.ts';
+import { CliError, CLI_ERRORS } from '../../../cli/errors.ts';
 import {
   detailAnswer,
   detailPost,
@@ -163,4 +165,73 @@ test('module fields from the observed path table without rest_id or expanded use
     chainAbove: 'partial',
   });
   expect(JSON.stringify(value)).not.toContain('Generated incomplete module');
+});
+
+test('R3 every CliError produces its exact closed code without exception values', () => {
+  for (const code of Object.keys(CLI_ERRORS) as (keyof typeof CLI_ERRORS)[]) {
+    const error = new CliError(
+      code,
+      'generated-version',
+      undefined,
+      'render-timeout',
+    );
+    expect(errorStop(error)).toEqual({
+      code,
+      ...(code === 'PLATFORM_CHECK' ? { reason: 'render-timeout' } : {}),
+    });
+  }
+  expect(
+    errorStop(
+      new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'generated private value',
+      ),
+    ),
+  ).toEqual({ code: 'PLATFORM_CHECK', reason: 'unspecified' });
+});
+
+test('R3 non-CLI stops use only exact internal identities, exact filesystem codes, or closed exception classes', () => {
+  for (const [message, code] of [
+    ['MEDIA_ORIGIN', 'media-origin'],
+    ['MEDIA_FORMAT', 'media-format'],
+    ['MEDIA_EXISTS', 'media-exists'],
+    ['ORIGINAL_PATH', 'original-path'],
+  ] as const)
+    expect(errorStop(new Error(message))).toEqual({ code });
+  for (const code of [
+    'EEXIST',
+    'ENOSPC',
+    'EACCES',
+    'EPERM',
+    'ENOENT',
+    'EBUSY',
+  ] as const)
+    expect(
+      errorStop(
+        Object.assign(new Error('Generated private message with a path'), {
+          code,
+          path: 'generated/private',
+          syscall: 'generated',
+        }),
+      ),
+    ).toEqual({ code: `fs-${code}` });
+  expect(errorStop(new TypeError('Generated private type details'))).toEqual({
+    code: 'type-error',
+  });
+  for (const value of [
+    new Error('MEDIA_ORIGIN suffix'),
+    new Error('prefix MEDIA_FORMAT'),
+    new Error('https://example.org/generated-private'),
+    'MEDIA_ORIGIN',
+    { code: 'CANARY_MISMATCH' },
+    { code: 'EACCES-extra' },
+    { message: 'MEDIA_EXISTS' },
+    null,
+    undefined,
+    123,
+    new Error('Generated unknown error'),
+  ])
+    expect(errorStop(value)).toEqual({ code: 'other' });
 });

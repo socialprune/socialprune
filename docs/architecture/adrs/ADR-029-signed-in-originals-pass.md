@@ -308,6 +308,12 @@ On 2026-10-14 the post above a read reply was a notice in a direct entry, so a n
 
 On 2026-10-14 X answered a signed-in post request with an empty result for the post itself and showed no post or notice, so the tool records it as unavailable with the reason EmptyResult when both sides agree, and a shape stop is no longer reported as a platform check.
 
+On 2026-10-15 X showed the quote of an unavailable post as a link at the end of the text instead of a quote card, so the comparison leaves out exactly that anchor's own text on each text basis only when its relative status path matches the answer's expanded quote permalink and the permalink URL is absent from full_text.
+
+A timeout alone does not prove that the account and extensions stayed unchanged, so the end text gives the post-run check priority and claims unchanged state only after that check succeeds, while deletion callers without a detail keep their earlier two-part platform message and a main-run mismatch no longer calls the entry a sample.
+
+On 2026-10-15 an ordered main run stopped on a text mismatch without recording its cause in the structure report, so every error stop now records its closed value-free cause there and in the terminal, alongside the post-run check outcome when available.
+
 2026-10-13: An export without the account file supports `--handle`, compared with the signed-in account before reading a post, because the account file also holds private fields.
 
 **The warning**, in the terminal, on the confirmation page above **Start** and in the documentation. It keeps ADR-023's sentences that apply to reading and adds one about what the run does:

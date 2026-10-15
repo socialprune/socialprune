@@ -19,6 +19,7 @@ import {
   endText,
   endReason,
 } from '../../copy.ts';
+import type { ReadbackOutcome } from '../../copy.ts';
 import { xSelectors } from '../selectors.ts';
 import { statusUrl, X_ORIGIN, X_ALLOWED_HOSTS } from '../driver.ts';
 import { restrictOrigins } from '../../network.ts';
@@ -35,13 +36,15 @@ import {
 import type { CanaryComparison } from './compare.ts';
 import { dateInZone } from '../../pace.ts';
 import { SQLiteStore } from '../../../workspace/sqlite-store.ts';
-import { CliError } from '../../../cli/errors.ts';
+import { CliError, platformCheckReason } from '../../../cli/errors.ts';
+import type { PlatformCheckReason } from '../../../cli/errors.ts';
 import { planFill, fillSummary } from './plan.ts';
 import type { FillPlan } from './plan.ts';
 import { isPostAnswer, unexpectedAction } from './read.ts';
 import { extract } from './extract.ts';
 import { mergeFillMedia } from './media.ts';
-import { structureReport } from './report.ts';
+import { structureReport, errorStop } from './report.ts';
+import type { StopDetails } from './report.ts';
 import { SyndicationClient } from '../../../originals/syndication.ts';
 import { storeOriginalMedia } from '../../../originals/store-media.ts';
 import { cleanupParts, originalDirectory } from '../../../originals/media.ts';
@@ -154,16 +157,38 @@ async function pageAnswer(
     Math.min(20_000, deps.responseMs),
   );
   const answer = await response;
+  if (answer && answer.status() !== 200)
+    throw new CliError('PLATFORM_CHECK', undefined, undefined, 'answer-status');
   if (
     answer &&
-    (answer.status() !== 200 ||
-      !answer.headers()['content-type']?.startsWith('application/json'))
+    !answer.headers()['content-type']?.startsWith('application/json')
   )
-    throw new CliError('PLATFORM_CHECK');
+    throw new CliError('PLATFORM_CHECK', undefined, undefined, 'answer-type');
   if (!answer) {
-    const state = await xSelectors.state(page, id);
+    let state: 'present' | 'gone';
+    try {
+      state = await xSelectors.state(page, id);
+    } catch (caught) {
+      if (
+        caught instanceof CliError &&
+        caught.code === 'PLATFORM_CHECK' &&
+        !caught.reason
+      )
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'gone-check',
+        );
+      throw caught;
+    }
     if (state === 'gone') return { body: null, state };
-    throw new CliError('PLATFORM_CHECK');
+    throw new CliError(
+      'PLATFORM_CHECK',
+      undefined,
+      undefined,
+      'answer-timeout',
+    );
   }
   const length = answer.headers()['content-length'];
   if (length && Number(length) > 8 * 1024 ** 2)
@@ -173,7 +198,15 @@ async function pageAnswer(
     answer.body(),
     new Promise<never>((_resolve, reject) => {
       timer = setTimeout(
-        () => reject(new CliError('PLATFORM_CHECK')),
+        () =>
+          reject(
+            new CliError(
+              'PLATFORM_CHECK',
+              undefined,
+              undefined,
+              'body-timeout',
+            ),
+          ),
         deps.responseMs,
       );
     }),
@@ -281,6 +314,8 @@ export async function runFillWithDependencies(
     stop = false,
     action = false,
     error: unknown;
+  let stopReason: PlatformCheckReason | undefined;
+  let readback: ReadbackOutcome | undefined;
   let cancelWait: () => void = () => {};
   const cancelMedia = new AbortController();
   const mediaSignal = AbortSignal.any([options.signal, cancelMedia.signal]);
@@ -356,7 +391,12 @@ export async function runFillWithDependencies(
         .browserOutcomeWriter()
         .recordOrder(runId, options.order.sha256);
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
-      throw new CliError('PLATFORM_CHECK');
+      throw new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'extensions-changed',
+      );
     const requestRecords = new WeakMap<object, BrowserRequest>();
     const persist = (value: BrowserRequest) => {
       const task = options.store.browserOutcomeWriter().request(runId, value);
@@ -501,7 +541,12 @@ export async function runFillWithDependencies(
     for (const row of candidates) {
       check();
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
-        throw new CliError('PLATFORM_CHECK');
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'extensions-changed',
+        );
       const existing = await options.store.read((tx) =>
         tx.originals.get(row.id),
       );
@@ -533,7 +578,12 @@ export async function runFillWithDependencies(
         break;
       }
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
-        throw new CliError('PLATFORM_CHECK');
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'extensions-changed',
+        );
       const attemptId = crypto.randomUUID();
       await writer.sending({
         attemptId,
@@ -547,7 +597,12 @@ export async function runFillWithDependencies(
       try {
         const answer = await pageAnswer(page, row.id, deps);
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
-          throw new CliError('PLATFORM_CHECK');
+          throw new CliError(
+            'PLATFORM_CHECK',
+            undefined,
+            undefined,
+            'extensions-changed',
+          );
         check();
         const extracted =
           answer.body === null
@@ -729,6 +784,7 @@ export async function runFillWithDependencies(
                     extracted.displayText,
                     extracted.displayLinks,
                     gated.has(row.id),
+                    extracted.inlineQuote,
                   )
                 : await compareNotice(
                     page,
@@ -811,6 +867,8 @@ export async function runFillWithDependencies(
     run.endReason ??= options.plan.canary && completed > 0 ? 'canary' : 'done';
   } catch (caught) {
     error = stop || options.signal.aborted ? new CliError('CANCELLED') : caught;
+    if (error instanceof CliError && error.code === 'PLATFORM_CHECK')
+      stopReason = platformCheckReason(error.reason) ?? 'unspecified';
     run.endReason =
       stop || options.signal.aborted
         ? 'stopped-by-person'
@@ -823,6 +881,56 @@ export async function runFillWithDependencies(
               : 'error';
   } finally {
     let reportPath: string | null = null;
+    let reportAttempted = false;
+    let stopRecorded = false;
+    let stopDetails: StopDetails | undefined;
+    let stopNoticed = false;
+    const recordStop = () => {
+      if (
+        stopRecorded ||
+        (!error &&
+          run.endReason !== 'error' &&
+          run.endReason !== 'platform-check')
+      )
+        return;
+      stopDetails = errorStop(
+        error ??
+          (run.endReason === 'platform-check'
+            ? new CliError('PLATFORM_CHECK')
+            : undefined),
+      );
+      if (stopDetails.code === 'PLATFORM_CHECK')
+        stopReason ??= stopDetails.reason ?? 'unspecified';
+      reports.push({ stop: stopDetails });
+      stopRecorded = true;
+    };
+    const writeReport = async () => {
+      reportAttempted = true;
+      try {
+        const directory = await originalDirectory(
+          options.workspace,
+          options.plan.rows[0]?.id ?? '0',
+          true,
+        );
+        const path = join(directory, '..', `canary-${runId}.json`);
+        await writeFile(path, JSON.stringify(reports), {
+          flag: reportPath ? 'w' : 'wx',
+        });
+        reportPath = path;
+        options.notice(`Structure report: ${reportPath}\n`);
+      } catch (caught) {
+        error ??= caught;
+        recordStop();
+      }
+    };
+    const noticeStop = () => {
+      if (stopDetails && !stopNoticed) {
+        options.notice(
+          `Stop detail: ${stopDetails.reason ?? stopDetails.code}\n`,
+        );
+        stopNoticed = true;
+      }
+    };
     if (gatedPosts.size) {
       const gated = {
         posts: gatedPosts.size,
@@ -834,25 +942,17 @@ export async function runFillWithDependencies(
       reports.push({ gated });
       options.notice(`Gated media: ${JSON.stringify(gated)}\n`);
     }
+    recordStop();
     if (
       began &&
       (options.plan.canary ||
         run.endReason === 'shape-changed' ||
+        run.endReason === 'platform-check' ||
+        error ||
+        run.endReason === 'error' ||
         gatedPosts.size)
-    ) {
-      try {
-        const directory = await originalDirectory(
-          options.workspace,
-          options.plan.rows[0]?.id ?? '0',
-          true,
-        );
-        reportPath = join(directory, '..', `canary-${runId}.json`);
-        await writeFile(reportPath, JSON.stringify(reports), { flag: 'wx' });
-        options.notice(`Structure report: ${reportPath}\n`);
-      } catch (caught) {
-        error ??= caught;
-      }
-    }
+    )
+      await writeReport();
     if (began) {
       try {
         await Promise.all([...pendingRequests]);
@@ -870,6 +970,8 @@ export async function runFillWithDependencies(
             cancellation,
           ]);
         }
+        readback = 'account-readback';
+        let accountRead = false;
         try {
           accountAfter =
             page && !page.isClosed()
@@ -878,12 +980,32 @@ export async function runFillWithDependencies(
                   Math.min(20_000, deps.responseMs),
                 )
               : null;
+          accountRead = accountAfter !== null;
+          if (!accountRead) readback = 'account-readback';
         } catch (caught) {
           accountAfter = null;
           error ??= caught;
+          stopReason ??=
+            caught instanceof CliError && caught.code === 'PLATFORM_CHECK'
+              ? (platformCheckReason(caught.reason) ?? 'account-readback')
+              : 'account-readback';
+          readback =
+            caught instanceof CliError && caught.reason === 'account-handle'
+              ? 'account-handle'
+              : 'account-readback';
           run.endReason = 'platform-check';
         }
         const after = await profileSnapshot(options.profile);
+        const extensionIdsEqual =
+          before.extensionIds.length === after.extensionIds.length &&
+          before.extensionIds.every((id) => after.extensionIds.includes(id));
+        readback = !extensionIdsEqual
+          ? 'extensions-changed'
+          : !accountRead
+            ? readback
+            : accountBefore !== accountAfter
+              ? 'account-changed'
+              : 'unchanged';
         run.profileReport = {
           accountBefore,
           accountAfter,
@@ -896,7 +1018,16 @@ export async function runFillWithDependencies(
           extensionsChanged(before, after) ||
           accountBefore !== accountAfter
         ) {
-          error ??= new CliError('PLATFORM_CHECK');
+          const reason = extensionsChanged(before, after)
+            ? 'extensions-changed'
+            : 'account-changed';
+          error ??= new CliError(
+            'PLATFORM_CHECK',
+            undefined,
+            undefined,
+            reason,
+          );
+          stopReason ??= reason;
           run.endReason = 'platform-check';
         }
         await writer.endRun({
@@ -931,10 +1062,38 @@ export async function runFillWithDependencies(
         options.notice(`Read-back: ${JSON.stringify(run.profileReport)}\n`);
       } catch (caught) {
         error ??= caught;
+        if (!readback) readback = 'account-readback';
+        if (
+          run.endReason === 'done' ||
+          run.endReason === 'canary' ||
+          run.endReason === null
+        )
+          run.endReason = 'error';
       }
     }
+    recordStop();
+    if (stopDetails || (readback && readback !== 'unchanged'))
+      reports.push({ readback: { outcome: readback ?? 'not-completed' } });
+    if (
+      began &&
+      (options.plan.canary ||
+        run.endReason === 'shape-changed' ||
+        run.endReason === 'platform-check' ||
+        error ||
+        run.endReason === 'error' ||
+        (readback && readback !== 'unchanged') ||
+        gatedPosts.size) &&
+      (!reportAttempted ||
+        (reportPath &&
+          (stopRecorded || (readback && readback !== 'unchanged'))))
+    )
+      await writeReport();
+    noticeStop();
     const finalText = options.order
-      ? endText(endReason(run.endReason, error), options.lang).replace(
+      ? endText(endReason(run.endReason, error), options.lang, stopReason, {
+          readback,
+          canary: options.plan.canary,
+        }).replace(
           options.lang === 'de'
             ? 'Schließe das X-Fenster, um den Lauf zu beenden.'
             : 'Close the X window to finish.',
@@ -942,7 +1101,10 @@ export async function runFillWithDependencies(
             ? 'Das Browserfenster wird automatisch geschlossen.'
             : 'The browser window closes automatically.',
         )
-      : endText(endReason(run.endReason, error), options.lang);
+      : endText(endReason(run.endReason, error), options.lang, stopReason, {
+          readback,
+          canary: options.plan.canary,
+        });
     confirmation.update({
       phase: 'ended',
       completed,
@@ -973,9 +1135,25 @@ export async function runFillWithDependencies(
     }
     try {
       if (context) await deps.close(context, Boolean(options.order));
+    } catch (caught) {
+      error ??= caught;
+      const wasRecorded = stopRecorded;
+      recordStop();
+      if (!wasRecorded && stopRecorded)
+        reports.push({ readback: { outcome: readback ?? 'not-completed' } });
+      if (began) await writeReport();
+      noticeStop();
     } finally {
       try {
         await confirmation.close();
+      } catch (caught) {
+        error ??= caught;
+        const wasRecorded = stopRecorded;
+        recordStop();
+        if (!wasRecorded && stopRecorded)
+          reports.push({ readback: { outcome: readback ?? 'not-completed' } });
+        if (began) await writeReport();
+        noticeStop();
       } finally {
         options.signal.removeEventListener('abort', stopped);
         process.removeListener('SIGINT', stopped);

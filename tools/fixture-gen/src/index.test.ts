@@ -72,7 +72,9 @@ test('CLI check without a platform detects drift in both registered platform tre
         cwd: fileURLToPath(new URL('../', import.meta.url)),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 20_000,
+        // A child run takes about 2 s alone; on 2026-10-16 one ran past
+        // 20 s while other suites loaded the machine.
+        timeout: 120_000,
       },
     );
   try {
@@ -97,7 +99,7 @@ test('CLI check without a platform detects drift in both registered platform tre
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 60_000);
+}, 420_000);
 
 test('seeded random sequences repeat and stay in range', () => {
   const first = createRandom(42);

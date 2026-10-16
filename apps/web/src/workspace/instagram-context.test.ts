@@ -116,4 +116,7 @@ test('real worker message handler answers context with no records even when the 
     vi.doUnmock('./registry.ts');
     vi.unstubAllGlobals();
   }
-});
+  // This file ran in 2.5 s alone, but this test, which imports the whole
+  // worker runtime, passed the 5 s default twice on 2026-10-16 while other
+  // suites loaded the machine.
+}, 60_000);

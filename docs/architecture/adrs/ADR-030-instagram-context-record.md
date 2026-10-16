@@ -1,6 +1,6 @@
 # ADR-030: Instagram post context as its own workspace record
 
-- **Status:** Proposed
+- **Status:** Accepted on 2026-10-16 by the maintainer (card IG-4, version 3)
 - **Date:** 2026-10-15
 - **Hard constraints touched:** 2 (the records and their files stay in the workspace; a backup carries the records, not the files), 4 (the journal records every signed-in Instagram read, [ADR-023](ADR-023-acting-in-own-account.md) PA-6), 6 (tests build their workspaces from generated data)
 - **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-015](ADR-015-cli-storage-node-baseline.md). The section "Changes to other records" gives the new wording. It builds on the journal of [ADR-027](ADR-027-x-deletion-browser.md) and on schema version 4 of [ADR-029](ADR-029-signed-in-originals-pass.md), both proposed. If either is built with other numbers, this record takes the next free number for the document, the IndexedDB database and the SQLite layout, and the build notes which.

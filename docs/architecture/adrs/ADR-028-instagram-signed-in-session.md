@@ -1,6 +1,6 @@
 # ADR-028: Instagram: reading the post of each comment through the person's signed-in session
 
-- **Status:** Proposed
+- **Status:** Accepted on 2026-10-16 by the maintainer (card IG-4, version 3: "Ja, du kannst continue accordingly nach deiner Empfehlung"), with the pace as a ramp from 30 seconds and 200 steps a day up to 10 seconds and 600, one step after each clean run of 100 steps and one step back after the first warning sign
 - **Date:** 2026-10-11, revised 2026-10-15
 - **Title until 2026-10-15:** "Instagram: context and deletion through the person's signed-in session"
 - **Hard constraints touched:** 4 (reading in the person's own account through a session they signed in to, [ADR-023](ADR-023-acting-in-own-account.md)), 2 (what the run keeps stays in the workspace; backups carry records, not files), 1 (no developer account, no key, the installed browser), 5 (the warning and the review's wording make no promise), 6 (tests use a generated fake Instagram, never Instagram). Hard constraint 3 returns with the deletion record.

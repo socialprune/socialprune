@@ -1626,6 +1626,7 @@ test('the unchanged X fill counter ignores 200 Instagram steps in the same works
             givenAt: X_FIXTURE.now,
             words: 'Read this generated X original.',
             maxPages: 1,
+            batchPause: true,
           },
           sha256: 'b'.repeat(64),
         },

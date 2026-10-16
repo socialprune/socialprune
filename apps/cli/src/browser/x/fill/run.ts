@@ -55,8 +55,16 @@ import { cleanupParts, originalDirectory } from '../../../originals/media.ts';
 import { productionMedia } from '../../../originals/video.ts';
 import type { MediaDependencies } from '../../../originals/video.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { launchRunBrowser, freshPlatformPage } from '../../launch.ts';
+import type { WindowPlacement } from '../../launch.ts';
+import { entryView } from '../../run-session.ts';
+import type { RunSession } from '../../run-session.ts';
+import { rateWindow } from '../../confirmation-state.ts';
+import type { XRateWindow } from '@socialprune/core/workspace/desktop-protocol';
 
 export interface FillOptions {
+  session?: RunSession;
+  windowPlacement?: WindowPlacement;
   order?: FillOrder;
   store: SQLiteStore;
   plan: FillPlan;
@@ -83,7 +91,11 @@ export interface FillDependencies {
   pauseMs: number;
   media: MediaDependencies;
   syndication: SyndicationClient;
-  launch(profile: string, executablePath: string): Promise<BrowserContext>;
+  launch(
+    profile: string,
+    executablePath: string,
+    placement?: WindowPlacement,
+  ): Promise<BrowserContext>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   close(context: BrowserContext, automatic?: boolean): Promise<void>;
 }
@@ -97,18 +109,7 @@ const production: FillDependencies = {
   pauseMs: FILL_PACE.pauseMs,
   media: productionMedia,
   syndication: new SyndicationClient(),
-  async launch(profile, executablePath) {
-    const { chromium } = await import('playwright-core');
-    return chromium.launchPersistentContext(profile, {
-      executablePath,
-      headless: false,
-      // Keep the browser sandbox on and every Playwright automation sign visible.
-      chromiumSandbox: true,
-      args: ['--enable-automation'],
-      serviceWorkers: 'block',
-      ignoreDefaultArgs: ['--disable-infobars'],
-    });
-  },
+  launch: launchRunBrowser,
   sleep: async (ms, signal) => {
     await sleep(ms, undefined, { signal });
   },
@@ -298,39 +299,39 @@ export async function runFillWithDependencies(
     options.lang,
   );
   const summary = fillSummary(options.plan, options.lang, options.order),
-    confirmation = await startConfirmation(
-      {
-        phase: options.order ? 'running' : 'start',
-        lang: options.lang ?? 'en',
-        expectedHandle: options.plan.handle,
-        warning: summary.warning,
-        profileWarning:
-          profileWarning(options.plan.handle, options.lang) +
-          ' ' +
-          FILL_STEPS[options.lang ?? 'en'] +
-          ' ' +
-          EXTENSION_NOTICE[options.lang ?? 'en'] +
-          (options.mediaNotice ?? '') +
-          ' ' +
-          paceLine,
-        planned: summary.planned,
-        bulk: 0,
-        estimateMs: summary.estimateMs,
-        list: options.list,
-        rows: options.plan.rows
-          .slice(0, 20)
-          .map(({ id, reasons, reference }) => ({ id, reasons, reference })),
-        completed: 0,
-        result: options.order
-          ? options.lang === 'de'
-            ? 'Auf deinen schriftlichen Auftrag gestartet. Die Stichprobe wird automatisch mit der Seite verglichen.'
-            : 'Started on your written order. The sample is compared with the page automatically.'
-          : START_STATUS[options.plan.canary ? 'fillCanary' : 'fill'][
-              options.lang ?? 'en'
-            ],
-      },
-      deps.port,
-    );
+    confirmation = await (
+      options.session?.confirmation ??
+      ((initial) => startConfirmation(initial, deps.port))
+    )({
+      phase: options.order ? 'running' : 'start',
+      lang: options.lang ?? 'en',
+      expectedHandle: options.plan.handle,
+      warning: summary.warning,
+      profileWarning:
+        profileWarning(options.plan.handle, options.lang) +
+        ' ' +
+        FILL_STEPS[options.lang ?? 'en'] +
+        ' ' +
+        EXTENSION_NOTICE[options.lang ?? 'en'] +
+        (options.mediaNotice ?? '') +
+        ' ' +
+        paceLine,
+      planned: summary.planned,
+      bulk: 0,
+      estimateMs: summary.estimateMs,
+      list: options.list,
+      rows: options.plan.rows
+        .slice(0, 20)
+        .map(({ id, reasons, reference }) => ({ id, reasons, reference })),
+      completed: 0,
+      result: options.order
+        ? options.lang === 'de'
+          ? 'Auf deinen schriftlichen Auftrag gestartet. Die Stichprobe wird automatisch mit der Seite verglichen.'
+          : 'Started on your written order. The sample is compared with the page automatically.'
+        : START_STATUS[options.plan.canary ? 'fillCanary' : 'fill'][
+            options.lang ?? 'en'
+          ],
+    });
   const writer = new OriginalsFillWriter(options.store),
     runId = crypto.randomUUID(),
     run: BrowserRun = {
@@ -356,6 +357,7 @@ export async function runFillWithDependencies(
   let mismatchCount = 0;
   let reloadCount = 0;
   let opened = 0;
+  let dailyUsed = 0;
   const reloaded = new Set<string>();
   const mismatch = async (
     comparison: CanaryComparison,
@@ -386,9 +388,11 @@ export async function runFillWithDependencies(
   let stopReason: PlatformCheckReason | undefined;
   let longWindow = false;
   let rateLimited = false;
+  let projectionFailure: Error | undefined;
   const windows = new XResponseWindows(
     deps.origin === X_ORIGIN ? undefined : deps.origin,
   );
+  const desktopWindows = new Map<string, XRateWindow>();
   let readback: ReadbackOutcome | undefined;
   let cancelWait: () => void = () => {};
   let rejectRateLimit: (error: CliError) => void = () => {};
@@ -415,27 +419,29 @@ export async function runFillWithDependencies(
     if (action) throw new CliError('UNEXPECTED_ACTION');
     if (rateLimited)
       throw new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
+    if (projectionFailure) throw projectionFailure;
   };
   try {
+    options.session?.before(before, null);
     options.notice(summary.warning + '\n');
     options.notice(paceLine + '\n');
     const started = options.order
       ? Promise.resolve(true)
       : confirmation.wait('start');
-    context = await deps.launch(options.profile, options.executablePath);
+    context = await deps.launch(
+      options.profile,
+      options.executablePath,
+      options.windowPlacement,
+    );
+    options.session?.browser(() => context!.close());
     const allowed =
       deps.origin === X_ORIGIN
         ? X_ALLOWED_HOSTS.map((host) => `https://${host}`)
         : [deps.origin];
-    allowed.push(new URL(confirmation.url).origin);
+    if (!options.session) allowed.push(new URL(confirmation.url).origin);
     await restrictOrigins(context, allowed, abortedHosts);
     context.on('response', (response) => {
       if (!windows.accepts(response.url())) return;
-      windows.observe(
-        response.url(),
-        response.headers(),
-        options.now().getTime(),
-      );
       if (response.status() === 429) {
         rateLimited = true;
         rejectRateLimit(
@@ -444,10 +450,48 @@ export async function runFillWithDependencies(
         cancelMedia.abort();
         cancelWait();
       }
+      windows.observe(
+        response.url(),
+        response.headers(),
+        options.now().getTime(),
+      );
+      try {
+        if (!options.session) return;
+        const headers = response.headers();
+        const limit = Number(headers['x-rate-limit-limit']),
+          remaining = Number(headers['x-rate-limit-remaining']),
+          reset = Number(headers['x-rate-limit-reset']);
+        if (
+          [limit, remaining, reset].every(Number.isSafeInteger) &&
+          limit > 0 &&
+          remaining >= 0 &&
+          reset * 1000 >= options.now().getTime() - 86400000 &&
+          reset * 1000 <= options.now().getTime() + 366 * 86400000
+        ) {
+          const operation =
+            new URL(response.url()).pathname.match(
+              /^\/i\/api\/graphql\/[^/]+\/([A-Za-z0-9_]{1,64})\/?$/,
+            )?.[1] ??
+            (new URL(response.url()).pathname.startsWith('/i/api/')
+              ? 'api-other'
+              : 'other');
+          const window = rateWindow(operation, limit, remaining, reset * 1000);
+          const key = `${window.operation}|${window.operationName ?? ''}`;
+          desktopWindows.set(key, window);
+          options.session?.update({ xWindows: [...desktopWindows.values()] });
+        }
+      } catch (projectionError) {
+        projectionFailure ??=
+          projectionError instanceof Error
+            ? projectionError
+            : new CliError('RUN_STOPPED');
+      }
     });
     context.once('close', stopped);
-    const local = context.pages()[0] ?? (await context.newPage());
-    await local.goto(confirmation.launchUrl);
+    if (!options.session) {
+      const local = context.pages()[0] ?? (await context.newPage());
+      await local.goto(confirmation.launchUrl);
+    }
     options.notice(`Confirmation: ${confirmation.url}\n`);
     if (!(await Promise.race([started, cancellation])))
       throw new CliError('CANCELLED');
@@ -528,7 +572,9 @@ export async function runFillWithDependencies(
       const record = requestRecords.get(response.request());
       if (record) persist({ ...record, status: response.status() });
     });
-    page = await context.newPage();
+    page = options.session
+      ? await freshPlatformPage(context)
+      : await context.newPage();
     // /home is used once for the account check. Read-back uses the current page.
     await page.goto(deps.origin + '/home', { waitUntil: 'domcontentloaded' });
     accountBefore = await xSelectors.account(
@@ -537,6 +583,47 @@ export async function runFillWithDependencies(
     );
     if (accountBefore.toLowerCase() !== options.plan.handle.toLowerCase())
       throw new CliError('ACCOUNT_MISMATCH');
+    options.session?.before(before, accountBefore);
+    const language = await page.locator('html').getAttribute('lang');
+    let reloadNavigationPending = false;
+    let deferredResumeCheck = false;
+    const accountAndLanguage = async () => {
+      if (
+        (
+          await xSelectors.account(page!, Math.min(20_000, deps.responseMs))
+        ).toLowerCase() !== options.plan.handle.toLowerCase()
+      )
+        throw new CliError('ACCOUNT_MISMATCH');
+      if ((await page!.locator('html').getAttribute('lang')) !== language)
+        throw new CliError('PAGE_LANGUAGE');
+    };
+    const resumeChecks = async () => {
+      check();
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'extensions-changed',
+        );
+      if (reloadNavigationPending) {
+        deferredResumeCheck = true;
+        return;
+      }
+      await accountAndLanguage();
+    };
+    const controls = options.session?.controls;
+    const boundaryWait = async (ms: number) => {
+      if (controls)
+        await controls.delay(
+          ms,
+          (duration, signal) => deps.sleep(duration, signal),
+          resumeChecks,
+          mediaSignal,
+          (remaining, next) => options.session?.waiting(remaining, next),
+        );
+      else await deps.sleep(ms, mediaSignal);
+    };
     check();
     await cleanupParts(options.workspace);
     const day = dateInZone(options.now(), 'Europe/Berlin');
@@ -580,6 +667,7 @@ export async function runFillWithDependencies(
           lastBatch.push(Date.parse(attempt.at));
     });
     lastBatch.sort((a, b) => a - b);
+    dailyUsed = used;
     const recent: number[] = [];
     for (const time of lastBatch) {
       if (recent.length && time - recent.at(-1)! >= deps.pauseMs)
@@ -644,6 +732,22 @@ export async function runFillWithDependencies(
       const row = candidates[candidateIndex]!;
       const position = options.plan.rows.indexOf(row) + 1;
       check();
+      const pausedBefore = controls?.pausedMs ?? 0;
+      await controls?.checkpoint(resumeChecks, mediaSignal);
+      last += (controls?.pausedMs ?? 0) - pausedBefore;
+      const referenced = await options.store.read(async (tx) => {
+        for await (const { item } of tx.items.iterate())
+          if (
+            item.account.key === options.plan.accountKey &&
+            (item.reference.replyToId === row.id ||
+              item.reference.quotedId === row.id)
+          )
+            return item;
+        return undefined;
+      });
+      options.session?.entry(
+        referenced ? entryView(referenced, 'read-post') : null,
+      );
       if (opened >= pageLimit) break;
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError(
@@ -668,20 +772,22 @@ export async function runFillWithDependencies(
         break;
       }
       if (batch >= deps.batch) {
+        options.session?.update({
+          phase: 'batch-pause',
+          remainingMs: deps.pauseMs,
+          until: new Date(options.now().getTime() + deps.pauseMs).toISOString(),
+        });
         await Promise.race([
-          deps.sleep(deps.pauseMs, mediaSignal),
+          boundaryWait(deps.pauseMs),
           cancellation,
           rateLimitStop,
         ]);
+        options.session?.update({ phase: 'running' });
         batch = 0;
       }
       const delay = last + deps.intervalMs - options.now().getTime();
       if (delay > 0)
-        await Promise.race([
-          deps.sleep(delay, mediaSignal),
-          cancellation,
-          rateLimitStop,
-        ]);
+        await Promise.race([boundaryWait(delay), cancellation, rateLimitStop]);
       check();
       for (;;) {
         const window = windows.beforePage(options.now().getTime());
@@ -694,11 +800,19 @@ export async function runFillWithDependencies(
         options.notice(
           fillWindowWaitNotice(window.minutes, options.lang) + '\n',
         );
+        options.session?.update({
+          phase: 'rate-wait',
+          remainingMs: window.ms,
+          resetAt: new Date(
+            options.now().getTime() + window.ms - 5000,
+          ).toISOString(),
+        });
         await Promise.race([
-          deps.sleep(window.ms, mediaSignal),
+          boundaryWait(window.ms),
           cancellation,
           rateLimitStop,
         ]);
+        options.session?.update({ phase: 'running' });
         check();
       }
       if (longWindow) break;
@@ -713,6 +827,7 @@ export async function runFillWithDependencies(
           undefined,
           'extensions-changed',
         );
+      await controls?.checkpoint(resumeChecks, mediaSignal);
       const attemptId = crypto.randomUUID();
       await writer.sending({
         attemptId,
@@ -722,8 +837,16 @@ export async function runFillWithDependencies(
       });
       last = options.now().getTime();
       used++;
+      dailyUsed = used;
       batch++;
       opened++;
+      options.session?.progress(
+        used,
+        completed,
+        (await options.store.browserJournal()).attempts.filter(
+          (value) => value.runId === runId,
+        ),
+      );
       let pageAnswerCompleted = false;
       try {
         const answer = await Promise.race([
@@ -731,6 +854,11 @@ export async function runFillWithDependencies(
           rateLimitStop,
         ]);
         pageAnswerCompleted = true;
+        reloadNavigationPending = false;
+        if (deferredResumeCheck) {
+          await accountAndLanguage();
+          deferredResumeCheck = false;
+        }
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
           throw new CliError(
             'PLATFORM_CHECK',
@@ -979,6 +1107,13 @@ export async function runFillWithDependencies(
           }
         }
         completed++;
+        options.session?.progress(
+          used,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (value) => value.runId === runId,
+          ),
+        );
         if (options.plan.canary && !options.order) {
           confirmation.update({
             phase: 'canary',
@@ -1055,11 +1190,19 @@ export async function runFillWithDependencies(
             },
           });
           options.notice(FILL_RELOAD_NOTICE[options.lang ?? 'en'] + '\n');
+          reloadNavigationPending = true;
+          options.session?.update({
+            phase: 'reload-wait',
+            remainingMs: 60000,
+            until: new Date(options.now().getTime() + 60000).toISOString(),
+            reload: reloadCount,
+          });
           await Promise.race([
-            deps.sleep(60000, mediaSignal),
+            boundaryWait(60000),
             cancellation,
             rateLimitStop,
           ]);
+          options.session?.update({ phase: 'running' });
           check();
           await xSelectors.check(page);
           candidates.splice(candidateIndex + 1, 0, row);
@@ -1373,47 +1516,58 @@ export async function runFillWithDependencies(
           canary: options.plan.canary,
           ...(longWindow ? { fillStop: 'x-window-long' } : {}),
         });
-    confirmation.update({
-      phase: 'ended',
-      completed,
-      result: finalText,
-    });
-    options.notice(finalText + '\n');
-    if (options.order && context) {
-      try {
-        const origin = new URL(confirmation.url).origin;
-        const statusPage = context
-          .pages()
-          .find(
-            (value) =>
-              !value.isClosed() && new URL(value.url()).origin === origin,
-          );
-        if (!statusPage) throw new Error('Confirmation page is not open.');
-        await statusPage.bringToFront();
-        await statusPage
-          .getByText(finalText, { exact: true })
-          .waitFor({ state: 'visible', timeout: 3000 });
-      } catch {
-        options.notice(
-          options.lang === 'de'
-            ? 'Die Statusseite konnte den Endzustand nicht anzeigen; das Browserfenster wird trotzdem geschlossen.\n'
-            : 'The status page could not display the end state; the browser window will still close.\n',
+    try {
+      confirmation.update({
+        phase: 'ended',
+        completed,
+        result: finalText,
+      });
+      if (options.session) {
+        const journal = await options.store.browserJournal();
+        options.session.progress(
+          dailyUsed,
+          completed,
+          journal.attempts.filter((value) => value.runId === runId),
+        );
+        options.session.finish(
+          run,
+          error,
+          began
+            ? await profileSnapshot(options.profile).catch(() => undefined)
+            : undefined,
+          longWindow ? 'x-window-long' : undefined,
         );
       }
-    }
-    try {
-      if (context) await deps.close(context, Boolean(options.order));
-    } catch (caught) {
-      error ??= caught;
-      const wasRecorded = stopRecorded;
-      recordStop();
-      if (!wasRecorded && stopRecorded)
-        reports.push({ readback: { outcome: readback ?? 'not-completed' } });
-      if (began) await writeReport();
-      noticeStop();
+      options.notice(finalText + '\n');
+    } catch (projectionError) {
+      error ??= projectionError;
+      run.endReason = 'error';
+      options.session?.failed(projectionError);
     } finally {
+      if (options.order && context) {
+        try {
+          const origin = new URL(confirmation.url).origin;
+          const statusPage = context
+            .pages()
+            .find(
+              (value) =>
+                !value.isClosed() && new URL(value.url()).origin === origin,
+            );
+          if (!statusPage) throw new Error('Confirmation page is not open.');
+          await statusPage.bringToFront();
+          await statusPage
+            .getByText(finalText, { exact: true })
+            .waitFor({ state: 'visible', timeout: 3000 });
+        } catch {
+          options.notice(
+            options.lang === 'de'
+              ? 'Die Statusseite konnte den Endzustand nicht anzeigen; das Browserfenster wird trotzdem geschlossen.\n'
+              : 'The status page could not display the end state; the browser window will still close.\n',
+          );
+        }
+      }
       try {
-        await confirmation.close();
+        if (context) await deps.close(context, Boolean(options.order));
       } catch (caught) {
         error ??= caught;
         const wasRecorded = stopRecorded;
@@ -1423,9 +1577,23 @@ export async function runFillWithDependencies(
         if (began) await writeReport();
         noticeStop();
       } finally {
-        options.signal.removeEventListener('abort', stopped);
-        process.removeListener('SIGINT', stopped);
-        process.removeListener('SIGTERM', stopped);
+        try {
+          await confirmation.close();
+        } catch (caught) {
+          error ??= caught;
+          const wasRecorded = stopRecorded;
+          recordStop();
+          if (!wasRecorded && stopRecorded)
+            reports.push({
+              readback: { outcome: readback ?? 'not-completed' },
+            });
+          if (began) await writeReport();
+          noticeStop();
+        } finally {
+          options.signal.removeEventListener('abort', stopped);
+          process.removeListener('SIGINT', stopped);
+          process.removeListener('SIGTERM', stopped);
+        }
       }
     }
   }

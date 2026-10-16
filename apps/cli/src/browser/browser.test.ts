@@ -394,6 +394,8 @@ test('browser capability import graph excludes tests/fakes and all other command
     'commands/context-instagram.ts',
     'commands/delete.ts',
     'commands/originals-fill.ts',
+    'engine/dependencies.ts',
+    'engine/facade.ts',
   ]);
   // Parses every CLI source file with the compiler; under the parallel full
   // suite that exceeds the 5 s default, like the other whole-tree checks.

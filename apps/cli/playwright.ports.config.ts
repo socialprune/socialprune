@@ -10,6 +10,7 @@ export const TEST_PORTS = Object.freeze({
   reviewMedia: port('SP_REVIEW_MEDIA_TEST_PORT', 4234),
   style: port('SP_STYLE_TEST_PORT', 4238),
   foreign: port('SP_FOREIGN_TEST_PORT', 4239),
+  engineInstagram: port('SP_ENGINE_INSTAGRAM_TEST_PORT', 4541),
 });
 export const TEST_ORIGINS: Readonly<
   Record<'x' | 'confirmation' | 'style' | 'foreign', string>

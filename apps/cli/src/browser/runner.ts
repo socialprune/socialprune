@@ -28,8 +28,13 @@ import type { BrowserDriver } from './x/driver.ts';
 import { productionDriver } from './x/driver.ts';
 import { dateInZone, productionPace } from './pace.ts';
 import type { Pace } from './pace.ts';
+import type { WindowPlacement } from './launch.ts';
+import { entryView } from './run-session.ts';
+import type { RunSession } from './run-session.ts';
 
 export interface RunOptions {
+  session?: RunSession;
+  windowPlacement?: WindowPlacement;
   store: SQLiteStore;
   plan: DeletePlan;
   profile: string;
@@ -50,7 +55,7 @@ export interface RunDependencies {
   sleep(ms: number, signal: AbortSignal): Promise<void>;
   driver: typeof productionDriver;
 }
-async function dailyCount(
+export async function dailyCount(
   store: SQLiteStore,
   account: string,
   mode: 'delete' | 'verify',
@@ -122,28 +127,28 @@ export async function runWithDependencies(
   };
   const writer = options.store.browserOutcomeWriter();
   const summary = planSummary(options.plan, options.lang);
-  const confirmation = await startConfirmation(
-    {
-      phase: 'start',
-      lang: options.lang,
-      expectedHandle: options.plan.handle,
-      warning: summary.warning,
-      profileWarning:
-        profileWarning(options.plan.handle, options.lang) +
-        ' ' +
-        EXTENSION_NOTICE[options.lang],
-      planned: summary.planned,
-      bulk: summary.bulk,
-      estimateMs: summary.estimateMs,
-      list: options.list,
-      rows: options.plan.rows
-        .slice(0, 20)
-        .map((row) => displayRow(row, options.plan.timeZone)),
-      completed: 0,
-      result: START_STATUS[options.verify ? 'verify' : 'delete'][options.lang],
-    },
-    dependencies.confirmationPort,
-  );
+  const confirmation = await (
+    options.session?.confirmation ??
+    ((initial) => startConfirmation(initial, dependencies.confirmationPort))
+  )({
+    phase: 'start',
+    lang: options.lang,
+    expectedHandle: options.plan.handle,
+    warning: summary.warning,
+    profileWarning:
+      profileWarning(options.plan.handle, options.lang) +
+      ' ' +
+      EXTENSION_NOTICE[options.lang],
+    planned: summary.planned,
+    bulk: summary.bulk,
+    estimateMs: summary.estimateMs,
+    list: options.list,
+    rows: options.plan.rows
+      .slice(0, 20)
+      .map((row) => displayRow(row, options.plan.timeZone)),
+    completed: 0,
+    result: START_STATUS[options.verify ? 'verify' : 'delete'][options.lang],
+  });
   let browser: BrowserDriver | undefined;
   let accountBefore: string | null = null,
     accountAfter: string | null = null;
@@ -166,6 +171,7 @@ export async function runWithDependencies(
       throw new CliError('CANCELLED');
   };
   try {
+    options.session?.before(before, null);
     checkStop();
     options.notice(
       summary.warning + '\n' + profileWarning(options.plan.handle) + '\n',
@@ -182,10 +188,16 @@ export async function runWithDependencies(
       executablePath: options.executablePath,
       signal: controller.signal,
       onClosed: () => controller.abort(),
-      confirmationOrigin: new URL(confirmation.url).origin,
+      confirmationOrigin: options.session
+        ? undefined
+        : new URL(confirmation.url).origin,
+      onLaunched: (close) => options.session?.browser(close),
       record: (request) => writer.request(run.runId, request),
+      windowPlacement: options.windowPlacement,
+      desktop: Boolean(options.session),
     });
-    await browser.showConfirmation(confirmation.launchUrl);
+    if (!options.session)
+      await browser.showConfirmation(confirmation.launchUrl);
     options.notice(
       `Confirmation at ${confirmation.url}. Click Start in that window.\n`,
     );
@@ -217,6 +229,32 @@ export async function runWithDependencies(
     checkStop();
     if (accountBefore.toLowerCase() !== options.plan.handle.toLowerCase())
       throw new CliError('ACCOUNT_MISMATCH');
+    options.session?.before(before, accountBefore);
+    const language = options.session ? await browser.language?.() : undefined;
+    const resumeChecks = async () => {
+      checkStop();
+      if (extensionsChanged(before, await profileSnapshot(options.profile)))
+        throw new CliError('PLATFORM_CHECK');
+      if (
+        (await browser!.account()).toLowerCase() !==
+        options.plan.handle.toLowerCase()
+      )
+        throw new CliError('ACCOUNT_MISMATCH');
+      if ((await browser!.language?.()) !== language)
+        throw new CliError('PAGE_LANGUAGE');
+    };
+    const controls = options.session?.controls;
+    const boundaryWait = async (ms: number) => {
+      if (controls)
+        await controls.delay(
+          ms,
+          (duration, signal) => dependencies.sleep(duration, signal),
+          resumeChecks,
+          controller.signal,
+          (remaining, next) => options.session?.waiting(remaining, next),
+        );
+      else await dependencies.sleep(ms, controller.signal);
+    };
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
       throw new CliError('PLATFORM_CHECK');
     const day = dateInZone(options.now(), options.plan.timeZone);
@@ -257,6 +295,10 @@ export async function runWithDependencies(
     const pace = dependencies.pace;
     const ready = async () => {
       checkStop();
+      const pausedBefore = controls?.pausedMs ?? 0;
+      await controls?.checkpoint(resumeChecks, controller.signal);
+      if (previousStart !== null)
+        previousStart += (controls?.pausedMs ?? 0) - pausedBefore;
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError('PLATFORM_CHECK');
       if (
@@ -267,7 +309,13 @@ export async function runWithDependencies(
         return false;
       }
       if (batch >= pace.batchSize) {
-        await dependencies.sleep(pace.pauseMs, controller.signal);
+        options.session?.update({
+          phase: 'batch-pause',
+          remainingMs: pace.pauseMs,
+          until: new Date(options.now().getTime() + pace.pauseMs).toISOString(),
+        });
+        await boundaryWait(pace.pauseMs);
+        options.session?.update({ phase: 'running' });
         batch = 0;
       }
       const delay =
@@ -277,7 +325,12 @@ export async function runWithDependencies(
               0,
               previousStart + pace.intervalMs - options.now().getTime(),
             );
-      if (delay) await dependencies.sleep(delay, controller.signal);
+      if (delay) {
+        options.session?.update({
+          nextStepAt: new Date(options.now().getTime() + delay).toISOString(),
+        });
+        await boundaryWait(delay);
+      }
       checkStop();
       if (dateInZone(options.now(), options.plan.timeZone) !== day) {
         run.endReason = 'daily-cap';
@@ -285,6 +338,7 @@ export async function runWithDependencies(
       }
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError('PLATFORM_CHECK');
+      await controls?.checkpoint(resumeChecks, controller.signal);
       previousStart = options.now().getTime();
       return true;
     };
@@ -314,7 +368,20 @@ export async function runWithDependencies(
       );
       for (const attempt of candidates) {
         if (!(await ready())) break;
+        const stored = await options.store.read((tx) =>
+          tx.items.get(attempt.itemId),
+        );
+        options.session?.entry(
+          stored ? entryView(stored.item, 'verify') : null,
+        );
         await writer.pageOpen(run.runId, options.now().toISOString());
+        options.session?.progress(
+          used + 1,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (a) => a.runId === run.runId,
+          ),
+        );
         const state = await browser.inspect(attempt.itemId.slice(2));
         const at = options.now().toISOString();
         if (['sending', 'ambiguous'].includes(attempt.state)) {
@@ -359,11 +426,19 @@ export async function runWithDependencies(
         used++;
         batch++;
         completed++;
+        options.session?.progress(
+          used,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (a) => a.runId === run.runId,
+          ),
+        );
       }
     } else {
       const canaries = new Set<string>();
       for (const row of inOrder(options.plan.rows)) {
         if (!(await ready())) break;
+        options.session?.entry(entryView(row.item, row.action));
         const withdrawn = await writer.check(
           row,
           run.runId,
@@ -372,6 +447,13 @@ export async function runWithDependencies(
         );
         if (withdrawn) continue;
         await writer.pageOpen(run.runId, options.now().toISOString());
+        options.session?.progress(
+          used + 1,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (a) => a.runId === run.runId,
+          ),
+        );
         const state = await browser.inspect(row.item.id.slice(2));
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
           throw new CliError('PLATFORM_CHECK');
@@ -404,6 +486,13 @@ export async function runWithDependencies(
           options.now(),
         );
         completed++;
+        options.session?.progress(
+          used,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (a) => a.runId === run.runId,
+          ),
+        );
         confirmation.update({
           completed,
           result:
@@ -441,9 +530,12 @@ export async function runWithDependencies(
       (caught instanceof CliError && caught.code === 'CANCELLED')
         ? 'stopped-by-person'
         : caught instanceof CliError &&
-            ['PLATFORM_CHECK', 'ACCOUNT_MISMATCH', 'PROFILE_INVALID'].includes(
-              caught.code,
-            )
+            [
+              'PLATFORM_CHECK',
+              'ACCOUNT_MISMATCH',
+              'PROFILE_INVALID',
+              'PAGE_LANGUAGE',
+            ].includes(caught.code)
           ? 'platform-check'
           : 'error';
   } finally {
@@ -515,29 +607,58 @@ export async function runWithDependencies(
         'Profile or journal read-back did not finish. The durable request journal remains available; no automatic retry will run.\n',
       );
     } finally {
-      confirmation.update({
-        phase: 'ended',
-        completed,
-        result: endText(
-          endReason(run.endReason ?? 'stopped-by-person', error),
-          options.lang,
-        ),
-      });
-      options.notice(
-        endText(
-          endReason(run.endReason ?? 'stopped-by-person', error),
-          options.lang,
-        ) + '\n',
-      );
       try {
-        if (browser) await browser.close();
+        confirmation.update({
+          phase: 'ended',
+          completed,
+          result: endText(
+            endReason(run.endReason ?? 'stopped-by-person', error),
+            options.lang,
+          ),
+        });
+        if (options.session) {
+          const journal = await options.store.browserJournal();
+          const used = await dailyCount(
+            options.store,
+            options.plan.accountKey,
+            mode,
+            dateInZone(options.now(), options.plan.timeZone),
+            options.plan.timeZone,
+          );
+          options.session.progress(
+            used,
+            completed,
+            journal.attempts.filter((a) => a.runId === run.runId),
+          );
+          options.session.finish(
+            run,
+            error,
+            began
+              ? await profileSnapshot(options.profile).catch(() => undefined)
+              : undefined,
+          );
+        }
+        options.notice(
+          endText(
+            endReason(run.endReason ?? 'stopped-by-person', error),
+            options.lang,
+          ) + '\n',
+        );
+      } catch (projectionError) {
+        error ??= projectionError;
+        run.endReason = 'error';
+        options.session?.failed(projectionError);
       } finally {
         try {
-          await confirmation.close();
+          if (browser) await browser.close();
         } finally {
-          options.signal.removeEventListener('abort', abort);
-          process.removeListener('SIGINT', signalHandler);
-          process.removeListener('SIGTERM', signalHandler);
+          try {
+            await confirmation.close();
+          } finally {
+            options.signal.removeEventListener('abort', abort);
+            process.removeListener('SIGINT', signalHandler);
+            process.removeListener('SIGTERM', signalHandler);
+          }
         }
       }
     }

@@ -51,8 +51,14 @@ import {
 import type { CanaryCheck } from './canary.ts';
 import { CLICK_NAMES } from './selectors.ts';
 import { contextPages } from './pages.ts';
+import { launchRunBrowser } from '../launch.ts';
+import type { WindowPlacement } from '../launch.ts';
+import { entryView } from '../run-session.ts';
+import type { RunSession } from '../run-session.ts';
 
 export interface ContextOptions {
+  session?: RunSession;
+  windowPlacement?: WindowPlacement;
   store: SQLiteStore;
   plan: ContextPlan;
   workspace: string;
@@ -93,41 +99,41 @@ export async function runContextWithDependencies(
     throw new CliError('PROFILE_INVALID');
   const before = await profileSnapshot(options.profile),
     summary = contextSummary(options.plan, options.lang, pace);
-  const confirmation = await startConfirmation(
-    {
-      platform: 'instagram',
-      lang: options.lang,
-      phase: options.order ? 'running' : 'start',
-      expectedHandle: options.plan.handle,
-      warning: summary.warning,
-      profileWarning:
-        profileWarning(options.plan.handle, options.lang) +
-        ' ' +
-        CONTEXT_STEPS[options.lang] +
-        ' ' +
-        EXTENSION_NOTICE[options.lang] +
-        ' ' +
-        paceText(pace, options.lang),
-      planned: summary.planned,
-      marked: summary.marked,
-      bulk: 0,
-      estimateMs: summary.estimateMs,
-      list: options.list,
-      rows: options.plan.rows.slice(0, 20).map(({ item, marked }) => ({
-        itemId: item.id,
-        date: item.createdAt,
-        firstLine: item.text.split(/[\r\n]/, 1)[0],
-        owner: item.reference.ownerHandle,
-        marked,
-      })),
-      completed: 0,
-      result:
-        options.lang === 'de'
-          ? 'Dieser Lauf liest nur. Die erste Stichprobe endet vor einem vollständigen Lauf.'
-          : 'This run only reads. The first canary ends before a full run.',
-    },
-    deps.port,
-  );
+  const confirmation = await (
+    options.session?.confirmation ??
+    ((initial) => startConfirmation(initial, deps.port))
+  )({
+    platform: 'instagram',
+    lang: options.lang,
+    phase: options.order ? 'running' : 'start',
+    expectedHandle: options.plan.handle,
+    warning: summary.warning,
+    profileWarning:
+      profileWarning(options.plan.handle, options.lang) +
+      ' ' +
+      CONTEXT_STEPS[options.lang] +
+      ' ' +
+      EXTENSION_NOTICE[options.lang] +
+      ' ' +
+      paceText(pace, options.lang),
+    planned: summary.planned,
+    marked: summary.marked,
+    bulk: 0,
+    estimateMs: summary.estimateMs,
+    list: options.list,
+    rows: options.plan.rows.slice(0, 20).map(({ item, marked }) => ({
+      itemId: item.id,
+      date: item.createdAt,
+      firstLine: item.text.split(/[\r\n]/, 1)[0],
+      owner: item.reference.ownerHandle,
+      marked,
+    })),
+    completed: 0,
+    result:
+      options.lang === 'de'
+        ? 'Dieser Lauf liest nur. Die erste Stichprobe endet vor einem vollständigen Lauf.'
+        : 'This run only reads. The first canary ends before a full run.',
+  });
   const writer = new InstagramContextWriter(options.store),
     runId = crypto.randomUUID();
   const report: {
@@ -216,6 +222,8 @@ export async function runContextWithDependencies(
     network?.stop(caught);
   };
   let answers: ReturnType<typeof pageAnswers> | undefined;
+  let observedAfter: ProfileSnapshot | undefined;
+  let observedReport: BrowserProfileReport | null = null;
   const rejectIncomplete = () => {
     if (automatic) throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
   };
@@ -255,6 +263,7 @@ export async function runContextWithDependencies(
     });
   };
   try {
+    options.session?.before(before, null);
     options.notice(summary.warning + '\n');
     const start = options.order
       ? Promise.resolve(true)
@@ -294,9 +303,10 @@ export async function runContextWithDependencies(
         .browserOutcomeWriter()
         .recordContextOrder(runId, options.order.sha256);
     context = await deps.launch(options.profile, options.executablePath);
+    options.session?.browser(() => context!.close());
     network = await guardInstagramNetwork(
       context,
-      new URL(confirmation.url).origin,
+      options.session ? '' : new URL(confirmation.url).origin,
       (value) => options.store.browserOutcomeWriter().request(runId, value),
       deps.policy,
       limitSignals,
@@ -313,7 +323,7 @@ export async function runContextWithDependencies(
     await network.flush();
     guard();
     await context.setOffline(false);
-    await local.goto(confirmation.launchUrl);
+    if (!options.session) await local.goto(confirmation.launchUrl);
     options.notice(`Confirmation: ${confirmation.url}\n`);
     if (
       !(await Promise.race([start, cancelled, interrupted.then(() => false)]))
@@ -333,7 +343,7 @@ export async function runContextWithDependencies(
     )
       throw new CliError('STALE_PLAN');
     await checkpoint();
-    const page = await pages.newPage();
+    const page = options.session ? local : await pages.newPage();
     answers = pageAnswers(page, deps.policy);
     const day = dateInZone(options.now(), options.plan.timeZone),
       prior = await instagramDailyCount(
@@ -345,6 +355,28 @@ export async function runContextWithDependencies(
     let used = prior.used,
       last = prior.last,
       batch = prior.used ? ((prior.used - 1) % pace.batch) + 1 : 0;
+    const controls = options.session?.controls;
+    const resumeChecks = async () => {
+      // The next counted, paced list step verifies account and language before
+      // opening a post. Resume itself must not navigate an uncounted page.
+      await checkpoint();
+    };
+    const boundaryWait = async (ms: number) => {
+      if (controls) {
+        await Promise.race([
+          controls.delay(
+            ms,
+            (duration, localSignal) =>
+              sleep(duration, AbortSignal.any([waits.signal, localSignal])),
+            resumeChecks,
+            waits.signal,
+            (remaining, next) => options.session?.waiting(remaining, next),
+          ),
+          interrupted,
+        ]);
+        guard();
+      } else await pause(ms);
+    };
     const max = Math.min(
       options.limit,
       options.order?.value.maxSteps ?? 600,
@@ -365,6 +397,7 @@ export async function runContextWithDependencies(
         break;
       }
       await checkpoint();
+      options.session?.entry(entryView(row.item, 'confirm-comment'));
       const attemptId = crypto.randomUUID();
       await writer.sending({
         runId,
@@ -377,6 +410,9 @@ export async function runContextWithDependencies(
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
+        const pausedBefore = controls?.pausedMs ?? 0;
+        await controls?.checkpoint(resumeChecks, waits.signal);
+        last += (controls?.pausedMs ?? 0) - pausedBefore;
         if (
           used >= pace.perDay ||
           dateInZone(options.now(), options.plan.timeZone) !== day ||
@@ -398,11 +434,26 @@ export async function runContextWithDependencies(
           break outer;
         }
         if (batch >= pace.batch) {
-          if (pace.pauseMs) await pause(pace.pauseMs);
+          if (pace.pauseMs) {
+            options.session?.update({
+              phase: 'batch-pause',
+              remainingMs: pace.pauseMs,
+              until: new Date(
+                options.now().getTime() + pace.pauseMs,
+              ).toISOString(),
+            });
+            await boundaryWait(pace.pauseMs);
+            options.session?.update({ phase: 'running' });
+          }
           batch = 0;
         }
         const wait = last + pace.intervalMs - options.now().getTime();
-        if (wait > 0) await pause(wait);
+        if (wait > 0) {
+          options.session?.update({
+            nextStepAt: new Date(options.now().getTime() + wait).toISOString(),
+          });
+          await boundaryWait(wait);
+        }
         await checkpoint();
         if (dateInZone(options.now(), options.plan.timeZone) !== day) {
           await writer.settle({
@@ -416,11 +467,19 @@ export async function runContextWithDependencies(
           endReason = 'daily-cap';
           break outer;
         }
+        await controls?.checkpoint(resumeChecks, waits.signal);
         await writer.step(runId, options.now().toISOString());
         steps++;
         used++;
         batch++;
         last = options.now().getTime();
+        options.session?.progress(
+          used,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (value) => value.runId === runId,
+          ),
+        );
         answers.reset(options.plan.canary);
         const rowCounts = { emptySkipped: 0 };
         const list = await (async () => {
@@ -441,6 +500,7 @@ export async function runContextWithDependencies(
         })();
         accountBefore ??= list.account;
         accountAfter = list.account;
+        options.session?.before(before, accountBefore);
         await network?.flush();
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
@@ -592,6 +652,14 @@ export async function runContextWithDependencies(
         break;
       }
       if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
+      options.session?.progress(
+        used,
+        completed,
+        (await options.store.browserJournal()).attempts.filter(
+          (value) => value.runId === runId,
+        ),
+      );
+      options.session?.instagram(limitSignals.summary());
       if (options.plan.canary && !options.order) {
         const continuing = confirmation.wait('continue');
         confirmation.update({
@@ -732,6 +800,7 @@ export async function runContextWithDependencies(
       let after: ProfileSnapshot | undefined;
       await finalize('snapshot', async () => {
         after = await profileSnapshot(options.profile);
+        observedAfter = after;
       });
       const added =
         after?.extensionIds.filter((id) => !before.extensionIds.includes(id))
@@ -767,6 +836,7 @@ export async function runContextWithDependencies(
         changedFiles: after ? changedProfileFiles(before, after) : [],
         unexpectedRequests: network?.requests ?? [],
       };
+      observedReport = profileReport;
       const bodyShapes: Record<string, string[]> = after
         ? {}
         : { profileReadback: ['unavailable'] };
@@ -892,23 +962,63 @@ export async function runContextWithDependencies(
     }
     if (reportPath) options.notice(`Structure report: ${reportPath}\n`);
     const text = contextEnd(endReason, options.lang, Boolean(options.order));
-    confirmation.update({ phase: 'ended', completed, result: text });
-    options.notice(text + '\n');
-    waits.abort();
-    await finalize('browser-close', async () => {
-      if (context) await deps.close(context, Boolean(options.order));
-    });
-    network?.dispose();
-    pages?.dispose();
-    await finalize('confirmation-close', () => confirmation.close());
-    options.signal.removeEventListener('abort', stop);
-    process.removeListener('SIGINT', stop);
-    process.removeListener('SIGTERM', stop);
+    try {
+      confirmation.update({ phase: 'ended', completed, result: text });
+      options.session?.instagram(limitSignals.summary());
+      options.session?.progress(
+        (
+          await instagramDailyCount(
+            options.store,
+            options.plan.accountKey,
+            options.now(),
+            options.plan.timeZone,
+          )
+        ).used,
+        completed,
+        (await options.store.browserJournal()).attempts.filter(
+          (value) => value.runId === runId,
+        ),
+      );
+      options.session?.finish(
+        { endReason, profileReport: observedReport },
+        error,
+        observedAfter,
+      );
+      options.notice(text + '\n');
+    } catch (projectionError) {
+      retain(projectionError);
+      options.session?.failed(projectionError);
+    } finally {
+      waits.abort();
+      await finalize('browser-close', async () => {
+        if (context) await deps.close(context, Boolean(options.order));
+      });
+      network?.dispose();
+      pages?.dispose();
+      await finalize('confirmation-close', () => confirmation.close());
+      options.signal.removeEventListener('abort', stop);
+      process.removeListener('SIGINT', stop);
+      process.removeListener('SIGTERM', stop);
+    }
   }
   if (error)
     throw error instanceof CliError ? error : new CliError('CONTEXT_FAILED');
   return { completed, steps, runId, endReason };
 }
 export function runContext(options: ContextOptions) {
-  return runContextWithDependencies(options, productionContext);
+  return runContextWithDependencies(
+    options,
+    options.windowPlacement
+      ? {
+          ...productionContext,
+          launch: (profile, executable) =>
+            launchRunBrowser(
+              profile,
+              executable,
+              options.windowPlacement,
+              true,
+            ),
+        }
+      : productionContext,
+  );
 }

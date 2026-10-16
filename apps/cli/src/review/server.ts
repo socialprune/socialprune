@@ -5,6 +5,7 @@ import { HttpReviewRequestSchema } from '@socialprune/core/workspace/protocol';
 import { ReviewSession, launchUrl } from './session.ts';
 import { REVIEW_HEADERS, staticAssets } from './static.ts';
 import { ReviewDatabase } from './database.ts';
+import { ReviewDispatch } from './dispatch.ts';
 import { CliError } from '../cli/errors.ts';
 import { workspacePath } from '../workspace/files.ts';
 import { originalMedia, byteRange } from './original-media.ts';
@@ -67,9 +68,10 @@ export async function startReviewServer(options: {
 }) {
   const assets = await staticAssets(options.assetDirectory);
   const target = await workspacePath(options.workspace, false);
-  const database = await (options.openDatabase ?? ReviewDatabase.open)(
+  const mediaDatabase = await (options.openDatabase ?? ReviewDatabase.open)(
     target.path,
   );
+  const database = new ReviewDispatch(mediaDatabase);
   const session = new ReviewSession(options.now);
   let authority = '';
   let stopping = false;
@@ -213,7 +215,11 @@ export async function startReviewServer(options: {
           respond(response, 403);
           return;
         }
-        const photo = await originalMedia(options.workspace, path, database);
+        const photo = await originalMedia(
+          options.workspace,
+          path,
+          mediaDatabase,
+        );
         if (!photo) {
           respond(response, 404);
           return;

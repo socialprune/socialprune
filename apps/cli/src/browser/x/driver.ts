@@ -4,6 +4,12 @@ import type { BrowserRequest } from '../../workspace/browser-journal.ts';
 import { xSelectors } from './selectors.ts';
 import { restrictOrigins } from '../network.ts';
 import { unexpectedAction } from './fill/read.ts';
+import {
+  launchRunBrowser,
+  freshPlatformPage,
+  waitForBrowserClose,
+} from '../launch.ts';
+import type { WindowPlacement } from '../launch.ts';
 
 export const X_ORIGIN = 'https://x.com';
 export const X_ALLOWED_HOSTS = Object.freeze([
@@ -45,19 +51,23 @@ export interface BrowserDriver {
   flush(): Promise<void>;
   close(): Promise<void>;
   abortedHosts?: Record<string, number>;
+  language?(): Promise<string>;
 }
 export async function pageDriver(options: {
   context: BrowserContext;
   origin: string;
   allowedOrigins: readonly string[];
-  confirmationOrigin: string;
+  confirmationOrigin?: string;
   responseTimeoutMs: number;
   signal?: AbortSignal;
   record(request: BrowserRequest): Promise<void>;
+  desktop?: boolean;
 }): Promise<BrowserDriver> {
   const context = options.context;
-  const local = context.pages()[0] ?? (await context.newPage());
-  let platform: Page | undefined;
+  const local = options.desktop
+    ? await freshPlatformPage(context)
+    : (context.pages()[0] ?? (await context.newPage()));
+  let platform: Page | undefined = options.desktop ? local : undefined;
   let prohibited = false;
   let mutation = false,
     expectedMutation: string | null = null;
@@ -66,7 +76,10 @@ export async function pageDriver(options: {
   const abortedHosts: Record<string, number> = {};
   await restrictOrigins(
     context,
-    [...options.allowedOrigins, options.confirmationOrigin],
+    [
+      ...options.allowedOrigins,
+      ...(options.confirmationOrigin ? [options.confirmationOrigin] : []),
+    ],
     abortedHosts,
   );
   const observe = (task: Promise<void>) => {
@@ -145,6 +158,12 @@ export async function pageDriver(options: {
   };
   return {
     abortedHosts,
+    async language() {
+      return (await page(false))
+        .locator('html')
+        .getAttribute('lang')
+        .then((value) => value ?? '');
+    },
     async showConfirmation(url) {
       await local.goto(url);
     },
@@ -283,19 +302,18 @@ export async function productionDriver(options: {
   executablePath: string;
   signal?: AbortSignal;
   onClosed?(): void;
-  confirmationOrigin: string;
+  confirmationOrigin?: string;
+  onLaunched?(close: () => Promise<void>): void;
   record(request: BrowserRequest): Promise<void>;
+  windowPlacement?: WindowPlacement;
+  desktop?: boolean;
 }): Promise<BrowserDriver> {
-  const { chromium } = await import('playwright-core');
-  const context = await chromium.launchPersistentContext(options.profile, {
-    executablePath: options.executablePath,
-    headless: false,
-    // Keep the browser sandbox on and every Playwright automation sign visible.
-    chromiumSandbox: true,
-    args: ['--enable-automation'],
-    serviceWorkers: 'block',
-    ignoreDefaultArgs: ['--disable-infobars'],
-  });
+  const context = await launchRunBrowser(
+    options.profile,
+    options.executablePath,
+    options.windowPlacement,
+  );
+  options.onLaunched?.(() => context.close());
   context.once('close', () => options.onClosed?.());
   const driver = await pageDriver({
     context,
@@ -305,16 +323,14 @@ export async function productionDriver(options: {
     responseTimeoutMs: 30_000,
     signal: options.signal,
     record: (request) => options.record(request),
+    desktop: options.desktop,
   });
   return {
     ...driver,
     async close() {
       // Keep the visible platform page for the person's inspection. No more
       // clicks, server or workspace access occur while waiting for that close.
-      if (context.pages().length)
-        await new Promise<void>((resolve) =>
-          context.once('close', () => resolve()),
-        );
+      await waitForBrowserClose(context);
     },
   };
 }

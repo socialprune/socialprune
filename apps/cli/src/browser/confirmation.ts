@@ -2,26 +2,11 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ReviewSession } from '../review/session.ts';
 import { REVIEW_HEADERS, REVIEW_POLICY } from '../review/static.ts';
-import { endText } from './copy.ts';
 import type { BrowserLanguage } from './copy.ts';
+import { ConfirmationState } from './confirmation-state.ts';
+import type { ConfirmationView } from './confirmation-state.ts';
+export type { ConfirmationView } from './confirmation-state.ts';
 
-export interface ConfirmationView {
-  platform?: 'x' | 'instagram';
-  marked?: number;
-  lang?: BrowserLanguage;
-  phase: 'start' | 'running' | 'canary' | 'match' | 'ended';
-  version: number;
-  warning: string;
-  profileWarning: string;
-  expectedHandle?: string;
-  planned: number;
-  bulk: number;
-  estimateMs: number;
-  list: string;
-  rows: unknown[];
-  completed: number;
-  result: string;
-}
 const LABELS = {
   en: {
     title: 'SocialPrune browser run',
@@ -96,18 +81,10 @@ export async function startConfirmation(
   initial: Omit<ConfirmationView, 'version'>,
   port = 0,
 ) {
-  let view: ConfirmationView = { ...initial, version: 1 };
+  const state = new ConfirmationState(initial);
   const lang = initial.lang ?? 'en';
   let authority = '';
-  let pending:
-    | {
-        action: 'start' | 'continue' | 'matches';
-        resolve(value: boolean): void;
-      }
-    | undefined;
-  let stopped = false;
   const session = new ReviewSession();
-  const stopListeners = new Set<() => void>();
   const reply = (response: ServerResponse, status: number, data?: unknown) => {
     response.writeHead(status, {
       ...REVIEW_HEADERS,
@@ -225,7 +202,7 @@ export async function startConfirmation(
       typeof body === 'object' &&
       Object.keys(body).length === 0
     ) {
-      reply(response, 200, view);
+      reply(response, 200, state.legacyView);
       return;
     }
     if (request.url !== '/api/action') {
@@ -239,46 +216,16 @@ export async function startConfirmation(
       Object.keys(body).sort().join(',') !== 'action,version' ||
       !('action' in body) ||
       !('version' in body) ||
-      body.version !== view.version
+      body.version !== state.legacyView.version
     ) {
       reply(response, 409);
       return;
     }
-    if (
-      (body.action === 'stop' ||
-        (body.action === 'does-not-match' && view.phase === 'match')) &&
-      view.phase !== 'ended'
-    ) {
-      stopped = true;
-      pending?.resolve(false);
-      pending = undefined;
-      for (const listener of stopListeners) listener();
-      view = {
-        ...view,
-        phase: 'ended',
-        version: view.version + 1,
-        result:
-          initial.platform === 'instagram'
-            ? lang === 'de'
-              ? 'Du hast diesen Instagram-Lauf gestoppt.'
-              : 'You stopped this Instagram run.'
-            : endText('stopped-by-person', lang),
-      };
-    } else if (
-      pending &&
-      pending.action === body.action &&
-      ((body.action === 'start' && view.phase === 'start') ||
-        (body.action === 'continue' && view.phase === 'canary') ||
-        (body.action === 'matches' && view.phase === 'match'))
-    ) {
-      pending.resolve(true);
-      pending = undefined;
-      view = { ...view, phase: 'running', version: view.version + 1 };
-    } else {
+    if (!state.legacyAction(body.action, body.version)) {
       reply(response, 409);
       return;
     }
-    reply(response, 200, view);
+    reply(response, 200, state.legacyView);
   }
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -292,24 +239,19 @@ export async function startConfirmation(
     url: `http://${authority}/`,
     launchUrl: `http://${authority}/#bootstrap=${session.bootstrap}`,
     get stopped() {
-      return stopped;
+      return state.stopped;
     },
     update(update: Partial<Omit<ConfirmationView, 'version'>>) {
-      view = { ...view, ...update, version: view.version + 1 };
+      state.update(update);
     },
     wait(action: 'start' | 'continue' | 'matches'): Promise<boolean> {
-      if (stopped) return Promise.resolve(false);
-      if (pending) throw new Error('Already waiting');
-      return new Promise((resolve) => {
-        pending = { action, resolve };
-      });
+      return state.wait(action);
     },
     onStop(listener: () => void) {
-      stopListeners.add(listener);
+      state.onStop(listener);
     },
     async close() {
-      pending?.resolve(false);
-      pending = undefined;
+      await state.close();
       session.invalidate();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

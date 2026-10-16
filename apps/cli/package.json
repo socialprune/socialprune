@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./engine": "./src/engine/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p e2e",
@@ -13,6 +14,7 @@
     "test:e2e": "pnpm --filter @socialprune/web build:review && playwright test",
     "test:delete": "vitest run --config e2e/delete.vitest.config.ts",
     "test:context": "vitest run --config e2e/context.vitest.config.ts --maxWorkers=2",
+    "test:engine": "vitest run --config e2e/engine-controls.vitest.config.ts",
     "build:release": "node release/release.ts",
     "pack:check": "node release/pack-check.ts --plant-defect",
     "smoke:package": "node release/smoke.ts"

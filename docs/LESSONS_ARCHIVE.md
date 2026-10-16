@@ -119,7 +119,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-07 by stopping further pushes until the Linux-only failures at `ad037d7` are fixed and proven on Linux.
 **Metrics:**
 - Prevented: 1 time (2026-10-08, `b644d80`: CI was read in its own step before the push, and the red result after it stopped further pushes)
-- Violated: 2 times (2026-10-08, `b644d80`: CLI path code went out on a Windows-only gate, because rule 3 names only `apps/web`; one test failed on Linux in CI. 2026-10-08, `e1fa812`: the local gate skipped the package build, pack check and packed smoke that CI's cli-package job runs, so a web change that renamed hashed assets failed the pack check only in CI)
+- Violated: 3 times (2026-10-08, `b644d80`: CLI path code went out on a Windows-only gate, because rule 3 names only `apps/web`; one test failed on Linux in CI. 2026-10-08, `e1fa812`: the local gate skipped the package build, pack check and packed smoke that CI's cli-package job runs, so a web change that renamed hashed assets failed the pack check only in CI. 2026-10-17, `cbe3ecd`: a new test read an earlier commit with `git show`; the local gate runs in a worktree with the full history, CI checks out one commit, so the test failed only in CI. The environment a gate stands for includes the checkout's history, not only the platform; a test that reads Git history is checked against a shallow checkout before it ships)
 
 ### [LL-2026-10-005] 2026-10-09 COMMUNICATION: Write the maintainer's decisions in his words, one line each
 

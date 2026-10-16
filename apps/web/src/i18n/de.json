@@ -491,6 +491,8 @@
   "desktop.phase.awaiting-continue": "Vergleiche diesen Eintrag, bevor du zum nächsten weitergehst.",
   "desktop.phase.ending": "Der Lauf wird beendet und das Profil danach geprüft.",
   "desktop.phase.ended": "Der Lauf ist beendet.",
+  "desktop.endedBrowserOpen": "Das Browserfenster bleibt offen, damit du die Plattform prüfen kannst. Den nächsten Lauf kannst du starten, sobald du es geschlossen hast.",
+  "desktop.previousBrowserOpen": "Ein Browserfenster vom letzten Lauf ist noch offen. Schließe es, bevor du den nächsten Lauf startest.",
   "desktop.progress": "{completed, number} von {planned, number} Einträgen abgeschlossen",
   "desktop.today": "Heute: {used, number} von {cap, number} {unit} verbraucht, in {zone}.",
   "desktop.unit.pages": "Seiten",

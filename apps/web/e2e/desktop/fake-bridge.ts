@@ -9,6 +9,7 @@ import {
 import type {
   DesktopRequest,
   DesktopReply,
+  DesktopErrorCode,
   DesktopProfileStatus,
   RunView,
 } from '@socialprune/core/workspace/desktop-protocol';
@@ -59,6 +60,7 @@ export async function fakeBridge(page: Page, locale = 'en') {
     await labels.appendAssessment(assessment);
   const runtime = new ReviewRuntime(store);
   const requests: DesktopRequest[] = [];
+  const failures = new Map<'planRun' | 'startRun' | 'stop', DesktopErrorCode>();
   let current: RunView = runView('idle', 0);
   let sequence = 0;
   let firstOpen = true;
@@ -90,6 +92,21 @@ export async function fakeBridge(page: Page, locale = 'en') {
       const input = DesktopRequestSchema.parse(raw);
       requests.push(input);
       const requestId = input.requestId;
+      const failureKey =
+        input.type === 'runAction' && input.action === 'stop'
+          ? 'stop'
+          : input.type === 'planRun' || input.type === 'startRun'
+            ? input.type
+            : null;
+      const failure = failureKey && failures.get(failureKey);
+      if (failureKey && failure) {
+        failures.delete(failureKey);
+        return parseDesktopReply(input, {
+          type: 'desktopFailed',
+          requestId,
+          code: failure,
+        });
+      }
       let reply: unknown;
       switch (input.type) {
         case 'open': {
@@ -287,6 +304,12 @@ export async function fakeBridge(page: Page, locale = 'en') {
   return {
     requests,
     push,
+    failNext: (
+      action: 'planRun' | 'startRun' | 'stop',
+      code: DesktopErrorCode,
+    ) => {
+      failures.set(action, code);
+    },
     snapshot: () => store.read(readWorkspace),
     close: () => runtime.close(),
   };

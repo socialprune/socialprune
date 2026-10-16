@@ -112,6 +112,7 @@ declare global {
     'desktop.data': Record<never, never>;
     'desktop.directNote': Record<never, never>;
     'desktop.doesNotMatch': Record<never, never>;
+    'desktop.endedBrowserOpen': Record<never, never>;
     'desktop.extensions': {
       added: string;
       after: string;
@@ -169,6 +170,7 @@ declare global {
     'desktop.plan': Record<never, never>;
     'desktop.planCount': { count: number; minutes: number };
     'desktop.postReady': Record<never, never>;
+    'desktop.previousBrowserOpen': Record<never, never>;
     'desktop.profile.inUse': Record<never, never>;
     'desktop.profile.incomplete': Record<never, never>;
     'desktop.profile.missing': Record<never, never>;

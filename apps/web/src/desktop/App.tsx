@@ -194,6 +194,11 @@ function Content({
   const activeAccount = summary?.accounts.find(
     (account) => account.key === accountKey,
   );
+  function runFailed(error: unknown) {
+    if (error instanceof BridgeError && error.code === 'WORKSPACE_BUSY')
+      setError('previous-browser-open');
+    else failed(error);
+  }
   async function preview() {
     if (!activeAccount) return;
     setBusy(true);
@@ -215,7 +220,7 @@ function Content({
       });
       if (reply.type === 'runPlanned') setPlan(reply.plan);
     } catch (error) {
-      failed(error);
+      runFailed(error);
     } finally {
       setBusy(false);
     }
@@ -223,6 +228,7 @@ function Content({
   async function prepareRun() {
     if (!plan) return;
     setBusy(true);
+    setError(null);
     try {
       const reply = await command(bridge, {
         type: 'startRun',
@@ -234,7 +240,7 @@ function Content({
         setScreen('monitor');
       }
     } catch (error) {
-      failed(error);
+      runFailed(error);
     } finally {
       setBusy(false);
     }
@@ -297,40 +303,44 @@ function Content({
             </button>
           ))}
         </nav>
-        {screen !== 'monitor' && view.phase !== 'idle' && (
-          <div className={styles.controls}>
-            <button
-              className={styles.stop}
-              onClick={() => {
-                void command(bridge, {
-                  type: 'runAction',
-                  runId: view.runId,
-                  version: view.version,
-                  action: 'stop',
-                })
-                  .then((reply) => {
-                    if (reply.type === 'runActionResult')
-                      acceptView(reply.view);
+        {screen !== 'monitor' &&
+          view.phase !== 'idle' &&
+          view.phase !== 'ended' && (
+            <div className={styles.controls}>
+              <button
+                className={styles.stop}
+                onClick={() => {
+                  void command(bridge, {
+                    type: 'runAction',
+                    runId: view.runId,
+                    version: view.version,
+                    action: 'stop',
                   })
-                  .catch(failed);
-              }}
-            >
-              {t('desktop.stop')}
-            </button>
-            <button onClick={() => setScreen('monitor')}>
-              {t('desktop.openMonitor')}
-            </button>
-          </div>
-        )}
+                    .then((reply) => {
+                      if (reply.type === 'runActionResult')
+                        acceptView(reply.view);
+                    })
+                    .catch(failed);
+                }}
+              >
+                {t('desktop.stop')}
+              </button>
+              <button onClick={() => setScreen('monitor')}>
+                {t('desktop.openMonitor')}
+              </button>
+            </div>
+          )}
         <main id="main">
           <h1 tabIndex={-1} ref={heading}>
             {t(titles[screen])}
           </h1>
           {error !== null && (
             <p role="alert" className={styles.error}>
-              {error instanceof BridgeError
-                ? t(tokenMessage(error.code))
-                : t('desktop.invalidReply')}
+              {error === 'previous-browser-open'
+                ? t('desktop.previousBrowserOpen')
+                : error instanceof BridgeError
+                  ? t(tokenMessage(error.code))
+                  : t('desktop.invalidReply')}
             </p>
           )}
           {screen === 'setup' && (

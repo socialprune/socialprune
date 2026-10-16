@@ -118,14 +118,16 @@ export function Monitor({
   return (
     <section data-testid="desktop-monitor" data-phase={view.phase}>
       <div className={styles.controls}>
-        <button
-          className={styles.stop}
-          onClick={() => {
-            void action('stop');
-          }}
-        >
-          {t('desktop.stop')}
-        </button>
+        {view.phase !== 'idle' && view.phase !== 'ended' && (
+          <button
+            className={styles.stop}
+            onClick={() => {
+              void action('stop');
+            }}
+          >
+            {t('desktop.stop')}
+          </button>
+        )}
         {active && view.phase === 'paused' ? (
           <button
             disabled={busy}
@@ -137,12 +139,12 @@ export function Monitor({
           </button>
         ) : (
           active &&
-          ![
-            'planning',
-            'awaiting-warning',
-            'awaiting-start',
-            'ending',
-            'ended',
+          [
+            'running',
+            'batch-pause',
+            'rate-wait',
+            'reload-wait',
+            'awaiting-continue',
           ].includes(view.phase) && (
             <button
               disabled={busy || active.pauseRequested}
@@ -303,6 +305,7 @@ export function Monitor({
               <p data-testid="run-end">
                 {t(tokenMessage(ending.detail ?? ending.reason))}
               </p>
+              {view.phase === 'ended' && <p>{t('desktop.endedBrowserOpen')}</p>}
             </section>
           )}
           <section className={styles.panel} aria-labelledby="journal-heading">

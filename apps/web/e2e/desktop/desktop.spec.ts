@@ -97,6 +97,206 @@ async function stopByKeyboard(page: Page) {
   await page.keyboard.press('Enter');
 }
 
+// Expected action sets come from the revision's engine phase contract, not the
+// monitor's render predicate. Enumerate phases independently from the schema.
+const phaseButtons = {
+  idle: [],
+  planning: [en['desktop.stop']],
+  'awaiting-warning': [en['desktop.stop'], en['desktop.start']],
+  'awaiting-start': [en['desktop.stop'], en['desktop.start']],
+  running: [en['desktop.stop'], en['desktop.pause']],
+  'batch-pause': [en['desktop.stop'], en['desktop.pause']],
+  'rate-wait': [en['desktop.stop'], en['desktop.pause']],
+  'reload-wait': [en['desktop.stop'], en['desktop.pause']],
+  paused: [en['desktop.stop'], en['desktop.resume']],
+  'canary-review': [
+    en['desktop.stop'],
+    en['desktop.matches'],
+    en['desktop.doesNotMatch'],
+  ],
+  'awaiting-continue': [
+    en['desktop.stop'],
+    en['desktop.pause'],
+    en['desktop.next'],
+  ],
+  ending: [en['desktop.stop']],
+  ended: [],
+} satisfies Record<(typeof allPhases)[number], readonly string[]>;
+
+function assertPhaseButtons(
+  phase: (typeof allPhases)[number],
+  actual: string[],
+) {
+  expect(actual.map((name) => name.trim()).sort(), phase).toEqual(
+    [...phaseButtons[phase]].sort(),
+  );
+}
+
+test('action buttons exactly match the engine contract in every schema phase', async ({
+  page,
+  bridge,
+}) => {
+  await page.goto('/desktop.html');
+  await monitor(page);
+  const phases = [
+    'canary-review' as const,
+    ...allPhases.filter((phase) => phase !== 'canary-review'),
+  ];
+  for (const [index, phase] of phases.entries()) {
+    await bridge.push(runView(phase, index + 10));
+    const monitor = page.getByTestId('desktop-monitor');
+    await expect(monitor).toHaveAttribute('data-phase', phase);
+    assertPhaseButtons(
+      phase,
+      await monitor.getByRole('button').allTextContents(),
+    );
+  }
+});
+
+test('the exact action-set check rejects a planted Pause at canary-review', async ({
+  page,
+  bridge,
+}) => {
+  await page.goto('/desktop.html');
+  await monitor(page);
+  await bridge.push(runView('canary-review', 10));
+  const region = page.getByTestId('desktop-monitor');
+  await expect(region).toHaveAttribute('data-phase', 'canary-review');
+  await region.evaluate((element, label) => {
+    const pause = document.createElement('button');
+    pause.textContent = label;
+    element.append(pause);
+  }, en['desktop.pause']);
+  const buttons = await region.getByRole('button').allTextContents();
+  expect(() => assertPhaseButtons('canary-review', buttons)).toThrow();
+});
+
+test('a failed Stop shows its error, keeps Stop enabled and never retries automatically', async ({
+  page,
+  bridge,
+}) => {
+  await page.goto('/desktop.html');
+  await monitor(page);
+  await bridge.push(runView('running', 10));
+  bridge.failNext('stop', 'ENGINE_UNAVAILABLE');
+  await stopByKeyboard(page);
+  await expect(page.getByRole('alert')).toHaveText(
+    en['desktop.token.ENGINE_UNAVAILABLE'],
+  );
+  const stop = page.getByRole('button', {
+    name: en['desktop.stop'],
+    exact: true,
+  });
+  await expect(stop).toBeEnabled();
+  await expect(page.getByTestId('desktop-monitor')).toHaveAttribute(
+    'data-phase',
+    'running',
+  );
+  expect(
+    bridge.requests.filter((request) => request.type === 'runAction'),
+  ).toEqual([
+    {
+      requestId: expect.any(String),
+      type: 'runAction',
+      runId: 'generated-desktop-run',
+      version: 10,
+      action: 'stop',
+    },
+  ]);
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: en['desktop.data'] })
+    .click();
+  bridge.failNext('stop', 'ENGINE_UNAVAILABLE');
+  await stop.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    en['desktop.token.ENGINE_UNAVAILABLE'],
+  );
+  await expect(stop).toBeEnabled();
+  expect(
+    bridge.requests.filter((request) => request.type === 'runAction'),
+  ).toHaveLength(2);
+  await stop.click();
+  await expect(stop).toHaveCount(0);
+  expect(
+    bridge.requests.filter((request) => request.type === 'runAction'),
+  ).toHaveLength(3);
+});
+
+for (const [locale, catalog] of [
+  ['en', en],
+  ['de', de],
+] as const) {
+  test(`${locale} ended run explains the open window and plan/start busy errors`, async ({
+    page,
+  }) => {
+    const bridge = await fakeBridge(page, locale);
+    try {
+      await page.goto('/desktop.html');
+      await page
+        .getByRole('navigation')
+        .getByRole('button', { name: catalog['review.title'], exact: true })
+        .click();
+      await expect(page.getByTestId('review-card')).toBeVisible();
+      await page
+        .getByRole('navigation')
+        .getByRole('button', { name: catalog['desktop.monitor'] })
+        .click();
+      await bridge.push(runView('ended', 10));
+      await expect(
+        page.getByText(catalog['desktop.endedBrowserOpen']),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('button', {
+          name: catalog['desktop.stop'],
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      const preview = page.getByRole('button', {
+        name: catalog['desktop.plan'],
+        exact: true,
+      });
+      bridge.failNext('planRun', 'WORKSPACE_BUSY');
+      await preview.click();
+      await expect(page.getByRole('alert')).toHaveText(
+        catalog['desktop.previousBrowserOpen'],
+      );
+      await expect(preview).toBeEnabled();
+      await preview.click();
+      const start = page.getByRole('button', {
+        name: catalog['desktop.openMonitor'],
+        exact: true,
+      });
+      await expect(start).toBeVisible();
+      bridge.failNext('startRun', 'WORKSPACE_BUSY');
+      await start.click();
+      await expect(page.getByRole('alert')).toHaveText(
+        catalog['desktop.previousBrowserOpen'],
+      );
+      await expect(start).toBeEnabled();
+      expect(
+        bridge.requests.filter((request) => request.type === 'planRun'),
+      ).toHaveLength(2);
+      expect(
+        bridge.requests.filter((request) => request.type === 'startRun'),
+      ).toHaveLength(1);
+      await page
+        .getByRole('navigation')
+        .getByRole('button', { name: catalog['desktop.data'] })
+        .click();
+      await expect(
+        page.getByRole('button', {
+          name: catalog['desktop.stop'],
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    } finally {
+      await bridge.close();
+    }
+  });
+}
+
 test('setup imports the generated demo and review decisions travel through the bridge', async ({
   page,
   context,
@@ -301,7 +501,7 @@ test('review and click-list post links share the same desktop interceptor', asyn
   ).toHaveLength(2);
 });
 
-test('every schema phase renders and Stop is reachable by keyboard in every phase', async ({
+test('every schema phase renders and Stop is keyboard reachable except in idle and ended', async ({
   page,
   bridge,
 }) => {
@@ -331,18 +531,23 @@ test('every schema phase renders and Stop is reachable by keyboard in every phas
     const before = bridge.requests.filter(
       (request) => request.type === 'runAction',
     ).length;
+    if (phase === 'idle' || phase === 'ended') {
+      await expect(
+        page.getByRole('button', { name: en['desktop.stop'], exact: true }),
+      ).toHaveCount(0);
+      continue;
+    }
     await stopByKeyboard(page);
     const actions = bridge.requests.filter(
       (request) => request.type === 'runAction',
     );
-    if (phase === 'idle') expect(actions).toHaveLength(before);
-    else
-      expect(actions.at(-1)).toMatchObject({
-        type: 'runAction',
-        runId: 'generated-desktop-run',
-        version: value.version,
-        action: 'stop',
-      });
+    expect(actions).toHaveLength(before + 1);
+    expect(actions.at(-1)).toMatchObject({
+      type: 'runAction',
+      runId: 'generated-desktop-run',
+      version: value.version,
+      action: 'stop',
+    });
   }
 });
 

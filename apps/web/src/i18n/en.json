@@ -491,6 +491,8 @@
   "desktop.phase.awaiting-continue": "Compare this entry before continuing to the next one.",
   "desktop.phase.ending": "Ending the run and reading the profile back.",
   "desktop.phase.ended": "The run has ended.",
+  "desktop.endedBrowserOpen": "The browser window stays open so you can check the platform. You can start the next run once you have closed it.",
+  "desktop.previousBrowserOpen": "A browser window from the last run is still open. Close it before starting the next run.",
   "desktop.progress": "{completed, number} of {planned, number} entries completed",
   "desktop.today": "Today: {used, number} of {cap, number} {unit} used, in {zone}.",
   "desktop.unit.pages": "pages",

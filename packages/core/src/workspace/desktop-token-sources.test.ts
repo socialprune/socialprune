@@ -170,6 +170,35 @@ function assertBatchPause(file: ts.SourceFile, schema: string): void {
   expect(compact(entry.initializer)).toBe('z.boolean().default(true)');
 }
 
+function assertReloadBoundaryWait(
+  file: ts.SourceFile,
+  reloadWait: number,
+): void {
+  const reload = nodes(file, ts.isPropertyAssignment).find(
+    (node) => node.name.getText(file) === 'waitMs',
+  );
+  if (!reload) throw new Error('Missing reload wait');
+  let branch: ts.Node = reload;
+  while (branch.parent && !ts.isBlock(branch)) branch = branch.parent;
+  if (!ts.isBlock(branch)) throw new Error('Changed reload branch shape');
+  const waits = nodes(branch, ts.isCallExpression).filter(
+    (node) => node.expression.getText(file) === 'boundaryWait',
+  );
+  expect(waits).toHaveLength(1);
+  const call = waits[0]!;
+  expect(call.arguments).toHaveLength(1);
+  if (!call.arguments[0] || !ts.isNumericLiteral(call.arguments[0]))
+    throw new Error('Changed reload boundary-wait argument');
+  expect(numberValue(call.arguments[0])).toBe(reloadWait);
+  expect(compact(declaration(file, 'boundaryWait'))).toBe(
+    'async(ms:number)=>{' +
+      'if(controls)awaitcontrols.delay(' +
+      'ms,(duration,signal)=>deps.sleep(duration,signal),' +
+      'resumeChecks,mediaSignal,(remaining,next)=>options.session?.waiting(remaining,next),);' +
+      'elseawaitdeps.sleep(ms,mediaSignal);}',
+  );
+}
+
 async function paceInputs() {
   const x = await source('apps/cli/src/browser/pace.ts');
   const production = functionSource(x, 'productionPace');
@@ -270,15 +299,7 @@ async function paceInputs() {
   if (!reloadCount) throw new Error('Missing reload count bound');
   expect(numberValue(reloadCount.right)).toBe(3);
   expect(compact(reloadCount.parent)).toContain('!options.plan.canary');
-  expect(
-    nodes(fillRun, ts.isCallExpression).some(
-      (node) =>
-        node.expression.getText(fillRun) === 'deps.sleep' &&
-        node.arguments[0] &&
-        ts.isNumericLiteral(node.arguments[0]) &&
-        numberValue(node.arguments[0]) === reloadWait,
-    ),
-  ).toBe(true);
+  assertReloadBoundaryWait(fillRun, reloadWait);
   return {
     delete: { pace: numericObject(x, 'DELETE_PACE'), seconds: null, cap: null },
     verify: { pace: numericObject(x, 'VERIFY_PACE'), seconds: null, cap: null },
@@ -296,6 +317,19 @@ async function paceInputs() {
     reloadWait,
   };
 }
+
+test.each([
+  ['reload literal', 'boundaryWait(60000)', 'boundaryWait(59999)'],
+  ['controls delay', 'controls.delay(', 'deps.sleep('],
+] as const)(
+  'reload producer tie rejects a changed %s',
+  async (_name, oldText, newText) => {
+    const fill = await source('apps/cli/src/browser/x/fill/run.ts');
+    const changed = fill.text.replace(oldText, newText);
+    expect(changed).not.toBe(fill.text);
+    expect(() => assertReloadBoundaryWait(parse(changed), 60000)).toThrow();
+  },
+);
 
 function projection(
   mode: DesktopRunMode,

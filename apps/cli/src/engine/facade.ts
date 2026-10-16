@@ -28,7 +28,7 @@ import {
   exportBackup,
   restoreWorkspace,
 } from '../workspace/services.ts';
-import { ReviewDispatch } from '../review/dispatch.ts';
+import { EngineReviewDispatch } from './review-dispatch.ts';
 import { CliError } from '../cli/errors.ts';
 import {
   planDeletion,
@@ -96,7 +96,8 @@ export async function createEngine(
   const root = resolve(options.dataFolder),
     workspace = join(root, 'workspace');
   await mkdir(root, { recursive: true });
-  let store: SQLiteStore | undefined, dispatch: ReviewDispatch | undefined;
+  let store: SQLiteStore | undefined,
+    dispatch: EngineReviewDispatch | undefined;
   let planned: Planned | undefined,
     state: ConfirmationState | undefined,
     controls: RunControls | undefined;
@@ -122,7 +123,7 @@ export async function createEngine(
           ? undefined
           : createWorkspace({ now: deps.now() }),
       });
-      dispatch = await ReviewDispatch.fromStore(store);
+      dispatch = await EngineReviewDispatch.fromStore(store);
     }
     return store;
   };

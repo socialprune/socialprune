@@ -8,7 +8,7 @@ import { DesktopReplySchema } from '@socialprune/core/workspace/desktop-protocol
 import { fileURLToPath } from 'node:url';
 import { createEngine } from './facade.ts';
 import { productionDependencies } from './dependencies.ts';
-import { ReviewDispatch } from '../review/dispatch.ts';
+import { EngineReviewDispatch } from './review-dispatch.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { fixtureWorkspace, FIXTURE } from '../../e2e/fake-x/fixture.ts';
 import { mkdir } from 'node:fs/promises';
@@ -280,7 +280,7 @@ test('Stop is dispatched while a slow review operation still owns the command qu
     if (prepared.type !== 'runStarted' || prepared.view.phase === 'idle')
       throw new Error(JSON.stringify(prepared));
     const spy = vi
-      .spyOn(ReviewDispatch.prototype, 'run')
+      .spyOn(EngineReviewDispatch.prototype, 'run')
       .mockImplementation(async () => {
         entered();
         await gate;

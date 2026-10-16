@@ -11,6 +11,7 @@
     "./guide/check": "./src/guide/check.ts",
     "./model/v1": "./src/model/v1.ts",
     "./workspace/protocol": "./src/workspace/protocol.ts",
+    "./workspace/desktop-protocol": "./src/workspace/desktop-protocol.ts",
     "./workspace/migrate": "./src/workspace/migrate.ts",
     "./workspace/state": "./src/workspace/state.ts",
     "./workspace/store": "./src/workspace/store.ts",

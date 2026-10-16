@@ -26,6 +26,7 @@ your_instagram_activity/
 node_modules/
 dist/
 dist-review/
+/apps/web/dist-desktop/
 build/
 coverage/
 .turbo/

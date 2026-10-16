@@ -4,26 +4,30 @@ import { developmentPolicy } from './tooling/development-policy.ts';
 import { shellManifest } from './tooling/manifest.ts';
 import { demoBytes } from './tooling/demo-bytes.ts';
 import { reviewBuild } from './tooling/review-build.ts';
+import { desktopBuild } from './tooling/desktop-build.ts';
 
 export default defineConfig(({ mode }) => {
   // Build targets use Vite --mode only. No environment-variable lookup is
   // needed; the matching runtime value is import.meta.env.MODE.
-  const target = ['pages', 'e2e-probe', 'review'].includes(mode)
+  const target = ['pages', 'e2e-probe', 'review', 'desktop'].includes(mode)
     ? mode
     : 'pages';
   const review = target === 'review';
+  const desktop = target === 'desktop';
   return {
-    base: review ? '/' : '/socialprune/',
+    base: review || desktop ? '/' : '/socialprune/',
     appType: 'mpa',
     plugins: [
       react(),
-      ...(review
-        ? [reviewBuild()]
-        : [
-            developmentPolicy(),
-            demoBytes(),
-            shellManifest(target === 'e2e-probe' ? 'e2e-probe' : mode),
-          ]),
+      ...(desktop
+        ? [desktopBuild()]
+        : review
+          ? [reviewBuild()]
+          : [
+              developmentPolicy(),
+              demoBytes(),
+              shellManifest(target === 'e2e-probe' ? 'e2e-probe' : mode),
+            ]),
     ],
     resolve: {
       alias: [
@@ -46,10 +50,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     css: { transformer: 'postcss' },
-    publicDir: review ? false : 'public',
+    publicDir: review || desktop ? false : 'public',
     build: {
       cssMinify: 'esbuild',
       ...(review ? { outDir: 'dist-review' } : {}),
+      ...(desktop ? { outDir: 'dist-desktop' } : {}),
     },
   };
 });

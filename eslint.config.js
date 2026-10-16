@@ -27,6 +27,7 @@ export default defineConfig([
       '**/node_modules/**',
       '**/dist/**',
       '**/dist-review/**',
+      'apps/web/dist-desktop/**',
       '**/build/**',
       '**/coverage/**',
       '**/playwright-report/**',

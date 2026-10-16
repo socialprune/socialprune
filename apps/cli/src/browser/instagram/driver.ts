@@ -26,6 +26,7 @@ import { ContextStop } from './report.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
+import { chooseFilterDate } from './filter.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -111,24 +112,8 @@ export async function filterList(
   await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
   await clickAllowed(page, { kind: 'named', name: 'Oldest to newest' }, guard);
   const dates = utcWindow(at);
-  for (const [index, name] of (['Start date', 'End date'] as const).entries()) {
-    const date = dates[index]!,
-      value = new Date(date);
-    await clickAllowed(page, { kind: 'named', name }, guard);
-    await clickAllowed(page, { kind: 'named', name: 'Choose year' }, guard);
-    await clickAllowed(
-      page,
-      { kind: 'year', value: value.getUTCFullYear() },
-      guard,
-    );
-    await clickAllowed(page, { kind: 'named', name: 'Choose month' }, guard);
-    await clickAllowed(
-      page,
-      { kind: 'month', value: value.getUTCMonth() },
-      guard,
-    );
-    await clickAllowed(page, { kind: 'day', value: date }, guard);
-  }
+  await chooseFilterDate(page, 'start', dates[0], guard);
+  await chooseFilterDate(page, 'end', dates[1], guard);
   await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
 }
 export async function loadList(

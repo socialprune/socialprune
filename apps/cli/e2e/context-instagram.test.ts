@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test, vi } from 'vitest';
 import { chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
+import type { Locator } from 'playwright-core';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
 import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { planContext } from '../src/browser/instagram/plan.ts';
@@ -41,6 +42,315 @@ import { DatabaseSync } from 'node:sqlite';
 import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
 import * as networkHelpers from '../src/browser/instagram/network.ts';
+import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
+import { filterList } from '../src/browser/instagram/driver.ts';
+import {
+  chooseFilterDate,
+  chooseFilterOption,
+} from '../src/browser/instagram/filter.ts';
+import { assertRecordedEvents } from './fake-instagram/recorder.ts';
+
+test('C5 foundation: six native choices cross the real driver and settle one confirmed canary', async () => {
+  const h = await harness();
+  try {
+    expect(await h.start(true)).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'canary',
+    });
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(1);
+    expect(
+      (await h.store.browserJournal()).runs[0]!.canaryAcceptedAt,
+    ).toBeTruthy();
+    assertRecordedEvents(h.fake.events);
+    const choices =
+      h.fake.events.findLast((event) => event.choices.length)?.choices ?? [];
+    expect(
+      choices
+        .filter((event) => event.type === 'change')
+        .map(({ side, unit, label }) => [side, unit, label]),
+    ).toEqual([
+      ['start', 'year', '2025'],
+      ['start', 'month', 'July'],
+      ['start', 'day', '30'],
+      ['end', 'year', '2025'],
+      ['end', 'month', 'August'],
+      ['end', 'day', '1'],
+    ]);
+    expect(h.fake.events.flatMap((event) => event.inputs)).toEqual([]);
+    expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+      'SELECT',
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+async function filterHarness(variant: Variant = 'success') {
+  const fixture = await instagramFixture(),
+    fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+  fake.setVariant(variant);
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  const page = await browser.newPage();
+  await page.route('**/*', (route) =>
+    new URL(route.request().url()).origin === fake.origin
+      ? route.continue()
+      : route.abort(),
+  );
+  return {
+    fake,
+    page,
+    fixture,
+    async open() {
+      await page.goto(fake.origin + '/your_activity/interactions/comments');
+    },
+    async close() {
+      await browser.close();
+      await fake.close();
+    },
+  };
+}
+test.each([
+  'filter-five',
+  'filter-seven',
+  'filter-no-start',
+  'filter-no-end',
+  'filter-readback',
+  'filter-duplicate-option',
+  'filter-unknown-month',
+  'filter-wrong-group',
+] as const)(
+  'C5 %s stops at filter-control before Apply or any post',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    const choose = vi.spyOn(
+      Object.getPrototypeOf(h.page.locator('select')) as Locator,
+      'selectOption',
+    );
+    try {
+      await h.open();
+      await expect(
+        filterList(h.page, h.fixture.items[0]!.createdAt, () => {}),
+      ).rejects.toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'filter-control',
+      });
+      if (variant !== 'filter-readback') expect(choose).not.toHaveBeenCalled();
+      await h.page
+        .getByRole('button', { name: 'Oldest to newest', exact: true })
+        .waitFor();
+      expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+        'Apply',
+      );
+      if (variant !== 'filter-readback')
+        expect(h.fake.events.flatMap((event) => event.choices)).toEqual([]);
+      expect(
+        h.fake.requests.some((request) => request.path.startsWith('/p/')),
+      ).toBe(false);
+    } finally {
+      choose.mockRestore();
+      await h.close();
+    }
+  },
+);
+test('C5 a year list starting after the comment year refuses before any choice', async () => {
+  const h = await filterHarness();
+  const choose = vi.spyOn(
+    Object.getPrototypeOf(h.page.locator('select')) as Locator,
+    'selectOption',
+  );
+  h.fake.setFirstYear(2026);
+  try {
+    await h.open();
+    await expect(
+      filterList(h.page, h.fixture.items[0]!.createdAt, () => {}),
+    ).rejects.toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'filter-control',
+    });
+    expect(h.fake.events.flatMap((event) => event.choices)).toEqual([]);
+    expect(choose).not.toHaveBeenCalled();
+  } finally {
+    choose.mockRestore();
+    await h.close();
+  }
+});
+test('C5 missing current-day option is refused before selectOption', async () => {
+  const h = await filterHarness();
+  const choose = vi.spyOn(
+    Object.getPrototypeOf(h.page.locator('select')) as Locator,
+    'selectOption',
+  );
+  h.fake.setToday('2026-10-16');
+  try {
+    await h.open();
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Sort & filter' },
+      () => {},
+    );
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Oldest to newest' },
+      () => {},
+    );
+    expect(await h.page.locator('[role="dialog"] select').count()).toBe(6);
+    await expect(
+      chooseFilterOption(
+        h.page,
+        { side: 'end', unit: 'month', value: 11 },
+        () => {},
+      ),
+    ).rejects.toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'filter-control',
+    });
+    expect(h.fake.events.flatMap((event) => event.choices)).toEqual([]);
+    expect(choose).not.toHaveBeenCalled();
+    expect(
+      await h.page
+        .locator('select')
+        .nth(3)
+        .locator('option:checked')
+        .allInnerTexts(),
+    ).toEqual(['October']);
+  } finally {
+    choose.mockRestore();
+    await h.close();
+  }
+});
+test('C5 dependent lists are re-read in year month day order, including leap day and reordered controls', async () => {
+  const h = await filterHarness('filter-reordered');
+  h.fake.setToday('2026-10-16');
+  try {
+    await h.open();
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Sort & filter' },
+      () => {},
+    );
+    expect(
+      await h.page
+        .getByRole('button', { name: 'Apply', exact: true })
+        .getAttribute('aria-disabled'),
+    ).toBe('true');
+    const selects = h.page.locator('[role="dialog"] select');
+    expect(await selects.nth(3).locator('option').count()).toBe(16);
+    expect(await selects.nth(5).locator('option').count()).toBe(10);
+    for (const attribute of ['aria-label', 'title', 'name', 'id'])
+      for (const select of await selects.all())
+        expect(await select.getAttribute(attribute)).toBeNull();
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Oldest to newest' },
+      () => {},
+    );
+    await chooseFilterDate(h.page, 'end', '2024-02-29', () => {});
+    expect(
+      await selects.nth(3).locator('option:checked').allInnerTexts(),
+    ).toEqual(['29']);
+    expect(await selects.nth(3).locator('option').count()).toBe(29);
+    expect(await selects.nth(5).locator('option').count()).toBe(12);
+    await chooseFilterDate(h.page, 'end', '2025-12-31', () => {});
+    expect(
+      await selects.nth(3).locator('option:checked').allInnerTexts(),
+    ).toEqual(['31']);
+    await expect
+      .poll(
+        () =>
+          h.fake.events
+            .at(-1)
+            ?.choices.filter((event) => event.type === 'change').length,
+      )
+      .toBe(6);
+    expect(
+      h.fake.events
+        .at(-1)!
+        .choices.filter((event) => event.type === 'change')
+        .map(({ unit, label }) => [unit, label]),
+    ).toEqual([
+      ['year', '2024'],
+      ['month', 'February'],
+      ['day', '29'],
+      ['year', '2025'],
+      ['month', 'December'],
+      ['day', '31'],
+    ]);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+});
+test.each([
+  'keydown',
+  'keyup',
+  'keypress',
+  'beforeinput',
+  'textInput',
+  'input',
+  'change',
+])(
+  'C5 recorder rejects a planted %s outside the six filter selects',
+  async (event) => {
+    const h = await filterHarness();
+    try {
+      await h.open();
+      await h.page.locator('body').dispatchEvent(event);
+      await expect
+        .poll(() => h.fake.events.at(-1)?.inputs.length ?? 0)
+        .toBeGreaterThan(0);
+      expect(() => assertRecordedEvents(h.fake.events)).toThrow();
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('C5 recorder rejects a planted select click and accepts only dropdown input and change', async () => {
+  const h = await filterHarness();
+  try {
+    await h.open();
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Sort & filter' },
+      () => {},
+    );
+    await h.page.locator('select').first().dispatchEvent('click');
+    await expect
+      .poll(() => h.fake.events.at(-1)?.clicks.includes('SELECT'))
+      .toBe(true);
+    expect(() => assertRecordedEvents(h.fake.events)).toThrow();
+  } finally {
+    await h.close();
+  }
+});
+test.each([
+  { kind: 'named', name: 'Start date' },
+  { kind: 'named', name: 'End date' },
+  { kind: 'named', name: 'Choose year' },
+  { kind: 'named', name: 'Choose month' },
+  { kind: 'year', value: 2025 },
+  { kind: 'month', value: 6 },
+  { kind: 'day', value: '2025-07-30' },
+])(
+  'C5 retired calendar click %j is refused before clicking',
+  async (choice) => {
+    const h = await filterHarness();
+    try {
+      await h.open();
+      await expect(
+        clickAllowed(h.page, choice as unknown as Click, () => {}),
+      ).rejects.toMatchObject({ code: 'UNEXPECTED_ACTION' });
+      expect(h.fake.events.flatMap((event) => event.clicks)).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 async function harness(variant: Variant = 'success', count = 1) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
@@ -52,7 +362,7 @@ async function harness(variant: Variant = 'success', count = 1) {
         Date.parse('2018-10-15T12:00:00.000Z') + index * 86400000,
       ).toISOString();
   }
-  const fake = await fakeInstagram(4401, fixture.items);
+  const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
   fake.setVariant(variant);
   await createProfile(profile, 'instagram');
   const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
@@ -111,7 +421,7 @@ async function harness(variant: Variant = 'success', count = 1) {
       },
       {
         origin: fake.origin,
-        port: 4402,
+        port: CONTEXT_PORTS.confirmation,
         responseMs: 1500,
         pace: {
           intervalMs: 30000,
@@ -168,13 +478,18 @@ async function harness(variant: Variant = 'success', count = 1) {
         () =>
           context!
             .pages()
-            .some((page) => page.url().startsWith('http://127.0.0.1:4402')),
+            .some(
+              (page) =>
+                new URL(page.url()).origin === CONTEXT_ORIGINS.confirmation,
+            ),
         { timeout: 30000 },
       )
       .toBe(true);
     const readyPage = context!
       .pages()
-      .find((page) => page.url().startsWith('http://127.0.0.1:4402'))!;
+      .find(
+        (page) => new URL(page.url()).origin === CONTEXT_ORIGINS.confirmation,
+      )!;
     try {
       await readyPage
         .locator('.actions')
@@ -248,6 +563,7 @@ async function harness(variant: Variant = 'success', count = 1) {
         maxRetries: 10,
         retryDelay: 100,
       });
+      assertRecordedEvents(fake.events);
     },
   };
 }
@@ -1228,12 +1544,7 @@ test('foundation: Start gates navigation, sending commits first, four checks ato
     expect(
       h.fake.requests.filter((request) => request.path.startsWith('/media/')),
     ).toHaveLength(1);
-    for (const event of h.fake.events) {
-      expect(event.inputs).toEqual([]);
-      expect(event.added).toEqual([]);
-      for (const click of event.clicks)
-        expect(IG_FIXTURE.allowedClicks as readonly string[]).toContain(click);
-    }
+    assertRecordedEvents(h.fake.events);
     const report = await readFile(
       join(
         h.directory,
@@ -1354,7 +1665,7 @@ test('an order missing acceptCanary refuses before profile, browser and confirma
   }
 });
 test.each([14, -12])(
-  'click-only UTC window covers the filtered day at UTC%j',
+  'C5 dropdown UTC window covers the filtered day at UTC%j',
   async (zone) => {
     const h = await harness();
     h.fake.setZone(zone);
@@ -1366,6 +1677,65 @@ test.each([14, -12])(
       expect(files.sort()).toEqual(['image.png', 'shot.jpg']);
     } finally {
       await h.close();
+    }
+  },
+);
+test.each([14, -12])(
+  'C5 UTC%j applies both offered dates and removes rows outside the three-day UTC window',
+  async (zone) => {
+    const fixture = await instagramFixture(3);
+    fixture.items[0]!.createdAt = '2025-07-31T00:00:00.000Z';
+    fixture.items[1]!.createdAt = '2025-07-28T00:00:00.000Z';
+    fixture.items[2]!.createdAt = '2025-08-04T00:00:00.000Z';
+    const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items),
+      browser = await chromium.launch({
+        headless: true,
+        chromiumSandbox: true,
+      });
+    fake.setZone(zone);
+    const page = await browser.newPage();
+    await page.route('**/*', (route) =>
+      new URL(route.request().url()).origin === fake.origin
+        ? route.continue()
+        : route.abort(),
+    );
+    try {
+      await page.goto(fake.origin + '/your_activity/interactions/comments');
+      expect(await page.locator('#list [role="button"]').count()).toBe(3);
+      await filterList(page, fixture.items[0]!.createdAt, () => {});
+      expect(await page.locator('#list [role="button"]').count()).toBe(1);
+      expect(await page.locator('#list').innerText()).toContain(
+        fixture.items[0]!.text,
+      );
+      for (const item of fixture.items.slice(1))
+        expect(await page.locator('#list').innerText()).not.toContain(
+          item.text,
+        );
+      await expect
+        .poll(
+          () =>
+            fake.events
+              .at(-1)
+              ?.choices.filter((event) => event.type === 'change').length,
+        )
+        .toBe(6);
+      expect(
+        fake.events
+          .at(-1)!
+          .choices.filter((event) => event.type === 'change')
+          .map(({ side, unit, label }) => [side, unit, label]),
+      ).toEqual([
+        ['start', 'year', '2025'],
+        ['start', 'month', 'July'],
+        ['start', 'day', '30'],
+        ['end', 'year', '2025'],
+        ['end', 'month', 'August'],
+        ['end', 'day', '1'],
+      ]);
+      assertRecordedEvents(fake.events);
+    } finally {
+      await browser.close();
+      await fake.close();
     }
   },
 );
@@ -1618,7 +1988,7 @@ test('foreign requests and WebSockets are aborted and counted, not treated as wr
   });
   await new Promise<void>((resolve, reject) => {
     decoy.once('error', reject);
-    decoy.listen(4419, '127.0.0.1', resolve);
+    decoy.listen(CONTEXT_PORTS.foreign, '127.0.0.1', resolve);
   });
   const h = await harness('external');
   try {
@@ -1630,7 +2000,7 @@ test('foreign requests and WebSockets are aborted and counted, not treated as wr
         'utf8',
       ),
     ) as { abortedHosts: Record<string, number> };
-    expect(report.abortedHosts['127.0.0.1:4419']).toBe(2);
+    expect(report.abortedHosts[`127.0.0.1:${CONTEXT_PORTS.foreign}`]).toBe(2);
     expect(hits).toBe(0);
     expect(
       run.profileReport!.unexpectedRequests.some(
@@ -1657,7 +2027,7 @@ test('account mismatch stops before filter clicks and post opens', async () => {
 });
 test('red observer controls reject input/key, forbidden click, DOM insertion and a duplicate image request on decoys', async () => {
   const fixture = await instagramFixture(),
-    fake = await fakeInstagram(4401, fixture.items),
+    fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items),
     browser = await chromium.launch({ headless: true, chromiumSandbox: true });
   const context = await browser.newContext(),
     page = await context.newPage();
@@ -1680,7 +2050,7 @@ test('red observer controls reject input/key, forbidden click, DOM insertion and
       completed: 0,
       result: '',
     },
-    4402,
+    CONTEXT_PORTS.confirmation,
   );
   try {
     await page.goto(`${fake.origin}/p/${IG_FIXTURE.code}/`);
@@ -1949,7 +2319,7 @@ test('the unchanged X fill counter ignores 200 Instagram steps in the same works
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(4403, '127.0.0.1', resolve);
+    server.listen(CONTEXT_PORTS.server, '127.0.0.1', resolve);
   });
   let context: BrowserContext | undefined;
   try {
@@ -1983,15 +2353,15 @@ test('the unchanged X fill counter ignores 200 Instagram steps in the same works
         notice() {},
       },
       {
-        origin: 'http://127.0.0.1:4403',
-        port: 4404,
+        origin: CONTEXT_ORIGINS.server,
+        port: CONTEXT_PORTS.review,
         responseMs: 5000,
         intervalMs: 0,
         batch: 20,
         pauseMs: 0,
         media: productionMedia,
         syndication: new SyndicationClient({
-          baseUrl: 'http://127.0.0.1:4403',
+          baseUrl: CONTEXT_ORIGINS.server,
         }),
         async launch() {
           context = await chromium.launchPersistentContext(profile, {

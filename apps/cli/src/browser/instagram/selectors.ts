@@ -14,34 +14,13 @@ export const CLICK_NAMES = [
   'Sort & filter',
   'Oldest to newest',
   'Newest to oldest',
-  'Start date',
-  'End date',
-  'Choose year',
-  'Choose month',
   'Apply',
   'Load more comments',
   'View replies',
 ] as const;
 export type Click =
   | { kind: 'named'; name: (typeof CLICK_NAMES)[number] }
-  | { kind: 'year'; value: number }
-  | { kind: 'month'; value: number }
-  | { kind: 'day'; value: string }
   | { kind: 'row'; index: number };
-const months = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 export function rows(page: Page): Locator {
   return page
     .locator('[role="button"][aria-label]')
@@ -71,27 +50,6 @@ export async function clickAllowed(
     click.index >= 0
   )
     locator = rows(page).nth(click.index);
-  else if (
-    click.kind === 'year' &&
-    Number.isSafeInteger(click.value) &&
-    click.value >= 1970 &&
-    click.value <= 2100
-  )
-    locator = page
-      .getByRole('dialog')
-      .getByRole('button', { name: String(click.value), exact: true });
-  else if (
-    click.kind === 'month' &&
-    Number.isInteger(click.value) &&
-    months[click.value]
-  )
-    locator = page
-      .getByRole('dialog')
-      .getByRole('button', { name: months[click.value], exact: true });
-  else if (click.kind === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(click.value))
-    locator = page
-      .getByRole('dialog')
-      .getByRole('button', { name: click.value, exact: true });
   else throw new ContextStop('UNEXPECTED_ACTION', 'unexpected-action');
   if ((await locator.count()) !== 1 || !(await locator.isVisible()))
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'filter-control');

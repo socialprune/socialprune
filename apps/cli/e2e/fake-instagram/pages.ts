@@ -1,6 +1,7 @@
 import type { Item } from '@socialprune/core';
 import { IG_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
+import { CONTEXT_ORIGINS } from './ports.ts';
 const escape = (input: string) =>
   input
     .replaceAll('&', '&amp;')
@@ -13,9 +14,9 @@ function doc(body: string, script: string, lang = 'en'): string {
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}article{width:500px;background:white}article>img{width:160px;height:100px}li{list-style:none}#list{height:420px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
 }
 const instrumentation = `
-window.events={inputs:[],clicks:[],added:[]};
-for(const event of ['input','beforeinput','textInput','keydown','keyup','keypress'])document.addEventListener(event,e=>{window.events.inputs.push(e.type)},true);
-document.addEventListener('click',e=>{const target=e.target.closest('button,[role=button]');window.events.clicks.push(target?.getAttribute('aria-label')||target?.textContent||e.target.tagName)},true);
+window.events={inputs:[],choices:[],clicks:[],added:[]};window.filterSelects=new Map();
+for(const event of ['input','change','beforeinput','textInput','keydown','keyup','keypress'])document.addEventListener(event,e=>{const control=window.filterSelects.get(e.target);if((e.type==='input'||e.type==='change')&&control&&e.target.isConnected&&document.querySelectorAll('[role=dialog] select').length===6)window.events.choices.push({type:e.type,...control,label:e.target.selectedOptions[0]?.textContent||''});else window.events.inputs.push(e.type);setTimeout(report,0)},true);
+document.addEventListener('click',e=>{const target=e.target.closest('select,button,[role=button]');window.events.clicks.push(target?.tagName==='SELECT'?'SELECT':target?.getAttribute('aria-label')||target?.textContent||e.target.tagName)},true);
 window.ownMutation=false;
 new MutationObserver(records=>{if(!window.ownMutation)for(const record of records)for(const node of record.addedNodes)window.events.added.push(node.nodeName);fetch('/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(window.events)}).catch(()=>{})}).observe(document,{subtree:true,childList:true});
 function mutate(fn){window.ownMutation=true;fn();queueMicrotask(()=>window.ownMutation=false)};
@@ -26,6 +27,7 @@ export function listPage(
   items: readonly Item[],
   variant: Variant,
   zoneHours: number,
+  filter = { today: IG_FIXTURE.now.slice(0, 10), firstYear: 1919 },
 ): string {
   const handle = items[0]!.account.handle!;
   const records = items.map((item, index) => ({
@@ -48,23 +50,38 @@ export function listPage(
     }
   }
   const body =
-    '<button>Sort &amp; filter</button><button>Select</button><div id="list"></div>';
+    '<div role="button" tabindex="0">Sort &amp; filter</div><button>Select</button><div id="list"></div>';
   const script =
     instrumentation +
     `
-const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours};let oldest=false,start=null,end=null,loads=0;
+const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)};let oldest=false,start=null,end=null,loads=0;
 const list=document.getElementById('list');
 function emptyImageButton(){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Generated image decoration');node.innerHTML='<img alt="" src="/thumb.png">';list.append(node)};
 function render(){mutate(()=>{list.replaceChildren();const empty=['empty-image-buttons','year-empty-rows'].includes(variant);if(empty)emptyImageButton();let chosen=rows.filter(row=>{const day=new Date(Date.parse(row.at)+zone*3600000).toISOString().slice(0,10);return(!start||day>=start)&&(!end||day<=end)});if(variant==='no-row')chosen=chosen.map(row=>({...row,text:'Different generated row'}));if(variant==='window-full')chosen=Array.from({length:120},(_,i)=>({...rows[0],text:'Window filler '+i})).slice(0,10*(loads+1));if(!oldest)chosen=chosen.slice().reverse();for(const [index,row]of chosen.entries()){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Comment row');node.innerHTML='<img alt="" src="/thumb.png">';const age=variant==='unknown-age'?'8q':oldest&&['year-rows','year-empty-rows','year-word-rows'].includes(variant)?(variant==='year-word-rows'?${json(IG_FIXTURE.expected.fullYearAge)}:${json(IG_FIXTURE.expected.yearAge)}):index%2===0?'1w':'2d';node.append(document.createTextNode(row.username+' '+row.text+'\\n'+age));node.onclick=()=>location.href='/${variant === 'reel' ? 'reel' : 'p'}/'+row.code+'/';list.append(node)}if(empty)for(let index=1;index<${IG_FIXTURE.expected.emptyImageButtons};index++)emptyImageButton()})};
 list.addEventListener('wheel',()=>{if(oldest){loads++;render()}});render();
-document.querySelector('body>button').onclick=()=>mutate(()=>{const dialog=document.createElement('dialog');dialog.innerHTML='<button>Oldest to newest</button><button>Newest to oldest</button><button>Start date</button><button>End date</button><button>Apply</button>';document.body.append(dialog);dialog.showModal();dialog.querySelectorAll('button')[0].onclick=()=>{oldest=true};dialog.querySelectorAll('button')[1].onclick=()=>{oldest=false};for(const [index,key]of [[2,'start'],[3,'end']])dialog.querySelectorAll('button')[index].onclick=()=>calendar(dialog,key);dialog.querySelectorAll('button')[4].onclick=()=>mutate(()=>{dialog.close();dialog.remove();loads=0;render()})});
-function calendar(filter,key){mutate(()=>{const calendar=document.createElement('dialog');let year=2026,month=9;calendar.innerHTML='<button>Choose year</button><button>Choose month</button><div id="choices"></div>';document.body.append(calendar);calendar.showModal();const choices=calendar.querySelector('#choices');function days(){mutate(()=>{choices.replaceChildren();for(let day=1;day<=new Date(Date.UTC(year,month+1,0)).getUTCDate();day++){const b=document.createElement('button');const value=year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');b.textContent=value;b.onclick=()=>mutate(()=>{if(key==='start')start=value;else end=value;calendar.close();calendar.remove()});choices.append(b)}})}calendar.querySelectorAll('button')[0].onclick=()=>mutate(()=>{choices.replaceChildren();for(let value=1970;value<=2100;value++){const b=document.createElement('button');b.textContent=String(value);b.onclick=()=>{year=value;days()};choices.append(b)}});calendar.querySelectorAll('button')[1].onclick=()=>mutate(()=>{choices.replaceChildren();['January','February','March','April','May','June','July','August','September','October','November','December'].forEach((name,index)=>{const b=document.createElement('button');b.textContent=name;b.onclick=()=>{month=index;days()};choices.append(b)})});days()})};
+document.querySelector('body>[role=button]').onclick=()=>mutate(()=>{
+  const outer=document.createElement('div'),dialog=document.createElement('div');outer.setAttribute('role','dialog');dialog.setAttribute('role','dialog');outer.append(dialog);
+  dialog.innerHTML='<div role="button" tabindex="0">Oldest to newest</div><div role="button" tabindex="0">Newest to oldest</div>';document.body.append(outer);
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'],now=new Date(filter.today+'T12:00:00Z');
+  const state={start:{year:now.getUTCFullYear(),month:1,day:1},end:{year:now.getUTCFullYear(),month:now.getUTCMonth()+1,day:now.getUTCDate()}},dirty={start:false,end:false},controls={start:{},end:{}};
+  function options(select,labels,values,wanted){select.replaceChildren(...labels.map((label,i)=>{const option=document.createElement('option');option.textContent=label;option.value=String(values[i]);option.selected=values[i]===wanted;return option}))}
+  function refresh(side){const value=state[side],group=controls[side],limit=side==='end'&&value.year===now.getUTCFullYear();const maxMonth=limit?now.getUTCMonth()+1:12;value.month=Math.min(value.month,maxMonth);const maxDay=limit&&value.month===now.getUTCMonth()+1?now.getUTCDate():new Date(Date.UTC(value.year,value.month,0)).getUTCDate();value.day=Math.min(value.day,maxDay);const years=Array.from({length:now.getUTCFullYear()-filter.firstYear+1},(_,i)=>filter.firstYear+i);options(group.year,years.map(String),years,value.year);options(group.month,months.slice(0,maxMonth),Array.from({length:maxMonth},(_,i)=>i+1),value.month);const days=Array.from({length:maxDay},(_,i)=>i+1);options(group.day,days.map(String),days,value.day)}
+  for(const side of ['start','end']){const heading=document.createElement('h3');heading.textContent=side==='start'?'Start Date':'End Date';dialog.append(heading);for(const unit of variant==='filter-reordered'?['day','year','month']:['month','day','year']){const select=document.createElement('select');controls[side][unit]=select;window.filterSelects.set(select,{side,unit});dialog.append(select);select.onchange=()=>mutate(()=>{const value=state[side],previous=value[unit];value[unit]=Number(select.value);dirty[side]=true;if(variant==='filter-readback')value[unit]=previous;refresh(side)})}refresh(side);if(variant==='filter-no-'+side)heading.remove()}
+  if(variant==='filter-five')controls.end.year.remove();if(variant==='filter-seven')dialog.append(document.createElement('select'));
+  if(variant==='filter-duplicate-option')controls.start.year.append(controls.start.year.options[0].cloneNode(true));
+  if(variant==='filter-unknown-month')controls.start.month.options[0].textContent='Generated unknown month';
+  if(variant==='filter-wrong-group')controls.start.day.replaceChildren(...[...controls.start.year.options].map(option=>option.cloneNode(true)));
+  const apply=document.createElement('div');apply.setAttribute('role','button');apply.setAttribute('tabindex','0');apply.setAttribute('aria-disabled','true');apply.textContent='Apply';dialog.append(apply);
+  dialog.querySelectorAll('[role=button]')[0].onclick=()=>{oldest=true;apply.setAttribute('aria-disabled','false')};dialog.querySelectorAll('[role=button]')[1].onclick=()=>{oldest=false;apply.setAttribute('aria-disabled','false')};
+  function day(value){return value.year+'-'+String(value.month).padStart(2,'0')+'-'+String(value.day).padStart(2,'0')}
+  apply.onclick=()=>{if(apply.getAttribute('aria-disabled')==='true')return;mutate(()=>{if(dirty.start)start=day(state.start);if(dirty.end)end=day(state.end);outer.remove();loads=0;render()})};
+});
 fetch('/async/wbloks/fetch/',{method:'POST',headers:{'x-fb-friendly-name':'CommentsQuery'}}).then(r=>r.json()).catch(()=>{});
 ${['side-429', 'feedback-required', 'please-wait', 'checkpoint-required', 'spam', 'signal-metrics'].includes(variant) ? "fetch('/api/v1/generated/read/').then(r=>r.json()).catch(()=>{});" : ''}
 ${variant === 'signal-metrics' ? "fetch('/graphql/query?generated_secret=private').then(r=>r.json()).catch(()=>{});fetch('/api/v1/generated/error/').then(r=>r.json()).catch(()=>{});" : ''}
 ${variant === 'mutation' ? "fetch('/graphql/query',{method:'POST',headers:{'x-fb-friendly-name':'BackgroundMutation'}}).catch(()=>{});" : ''}
 ${variant === 'write-segment' ? "fetch('/api/v1/media/like/',{method:'POST'}).catch(()=>{});" : ''}
-${variant === 'external' ? "fetch('http://127.0.0.1:4419/foreign',{method:'POST'}).catch(()=>{});new WebSocket('ws://127.0.0.1:4419/socket');" : ''}
+${variant === 'external' ? `fetch(${json(CONTEXT_ORIGINS.foreign + '/foreign')},{method:'POST'}).catch(()=>{});new WebSocket(${json(CONTEXT_ORIGINS.foreign.replace('http:', 'ws:') + '/socket')});` : ''}
 `;
   if (['login', 'challenge', 'checkpoint'].includes(variant))
     return doc(`<h1>${variant}</h1>`, `location.href='/accounts/${variant}/';`);

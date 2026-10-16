@@ -6,9 +6,16 @@ import { listPage, postPage, postAnswer } from './pages.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
-    zone = 0;
+    zone = 0,
+    today = IG_FIXTURE.now.slice(0, 10),
+    firstYear = 1919;
   const requests: { method: string; path: string }[] = [],
-    events: { inputs: string[]; clicks: string[]; added: string[] }[] = [];
+    events: {
+      inputs: string[];
+      choices: { type: string; side: string; unit: string; label: string }[];
+      clicks: string[];
+      added: string[];
+    }[] = [];
   let beforeNavigation: (() => Promise<void>) | undefined;
   const server = createServer((request, response) => {
     void (async () => {
@@ -84,7 +91,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.writeHead(variant === '429' ? 429 : 200, {
           'Content-Type': 'text/html',
         });
-        response.end(listPage(items, variant, zone));
+        response.end(listPage(items, variant, zone, { today, firstYear }));
         return;
       }
       if (path.startsWith('/accounts/')) {
@@ -162,6 +169,19 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     setZone(value: number) {
       zone = value;
+    },
+    setToday(value: string) {
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+        !Number.isFinite(Date.parse(value))
+      )
+        throw new Error('Invalid generated current day.');
+      today = value;
+    },
+    setFirstYear(value: number) {
+      if (!Number.isInteger(value) || value < 1000 || value > 9999)
+        throw new Error('Invalid generated first year.');
+      firstYear = value;
     },
     beforeList(value: () => Promise<void>) {
       beforeNavigation = value;

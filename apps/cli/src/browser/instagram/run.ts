@@ -444,19 +444,19 @@ export async function runContextWithDependencies(
         await network?.flush();
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
-          filterByClicks: true,
+          filterByLists: true,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
           candidates: list.candidates.length,
           scrollLoads: list.scrollLoads,
           expansionClicks: 0,
           confirmed: false,
-          roles: ['button', 'dialog'],
+          roles: ['button', 'dialog', 'combobox'],
           controls: [
             ...CLICK_NAMES,
-            'year-number',
-            'month-name',
-            'calendar-day',
+            'date-year-list',
+            'date-month-list',
+            'date-day-list',
           ],
           fields: {},
           listPairing: answers.bodies.some(pairedCode),

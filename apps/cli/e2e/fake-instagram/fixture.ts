@@ -28,19 +28,10 @@ export const IG_FIXTURE = {
     'Sort & filter',
     'Oldest to newest',
     'Newest to oldest',
-    'Start date',
-    'End date',
-    'Choose year',
-    'Choose month',
     'Apply',
     'Load more comments',
     'View replies',
     'Comment row',
-    'July',
-    'August',
-    '2025',
-    '2025-07-30',
-    '2025-08-01',
   ],
 } as const;
 export async function instagramFixture(
@@ -146,4 +137,13 @@ export type Variant =
   | 'year-word-rows'
   | 'empty-image-buttons'
   | 'year-empty-rows'
+  | 'filter-five'
+  | 'filter-seven'
+  | 'filter-no-start'
+  | 'filter-no-end'
+  | 'filter-readback'
+  | 'filter-reordered'
+  | 'filter-duplicate-option'
+  | 'filter-unknown-month'
+  | 'filter-wrong-group'
   | 'unknown-age';

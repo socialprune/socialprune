@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,18 +7,32 @@ import { expect, test } from 'vitest';
 import { startConfirmation } from './confirmation.ts';
 import type { ConfirmationView } from './confirmation-state.ts';
 
-test('all confirmation page and view bytes match the pre-split server for every rendered phase and language', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sp-confirmation-baseline-'));
-  // Read the frozen pre-split implementation, not expectations from the split.
-  const source = execFileSync(
-    'git',
-    [
-      '--no-pager',
-      'show',
-      '1d5bcfd124ed0075b428b8a0ab39e4bfcbffb9da:apps/cli/src/browser/confirmation.ts',
-    ],
-    { cwd: import.meta.dirname, encoding: 'utf8', windowsHide: true },
+// SHA-256 of the unmodified confirmation.ts blob at pre-split commit 1d5bcfd.
+const BASELINE_SHA256 =
+  '14aac1b61f976331a619f616bb61d737f9cf3e0f7117078fd24341875eb79b8d';
+function frozenSource(bytes: Buffer): string {
+  expect(
+    createHash('sha256').update(bytes).digest('hex'),
+    'Frozen pre-split confirmation fixture changed',
+  ).toBe(BASELINE_SHA256);
+  return bytes.toString('utf8');
+}
+const fixture = new URL('./confirmation-baseline.fixture.txt', import.meta.url);
+
+test('the frozen confirmation baseline rejects a one-character change', async () => {
+  const bytes = await readFile(fixture);
+  frozenSource(bytes);
+  const changed = Buffer.from(bytes);
+  changed[0] = 'I'.charCodeAt(0);
+  expect(() => frozenSource(changed)).toThrow(
+    'Frozen pre-split confirmation fixture changed',
   );
+});
+
+test('all confirmation page and view bytes match the pre-split server for every rendered phase and language', async () => {
+  // Read the frozen pre-split implementation, not expectations from the split.
+  const source = frozenSource(await readFile(fixture));
+  const directory = await mkdtemp(join(tmpdir(), 'sp-confirmation-baseline-'));
   const baseline = source.replace(
     /from '(\.[^']+)'/g,
     (_match: string, specifier: string) =>

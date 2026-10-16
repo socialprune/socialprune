@@ -23,6 +23,28 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.end('{}');
         return;
       }
+      if (path === '/restored') {
+        const operation =
+          url.searchParams.get('mutation') === '1'
+            ? 'RestoredMutation'
+            : 'RestoredCommentsQuery';
+        response.setHeader('Content-Type', 'text/html');
+        const signal = url.searchParams.get('limit');
+        response.end(
+          `<!doctype html><html lang="en"><body>Generated restored tab<script>fetch('/startup-read${signal === '429' || signal === 'signal' ? '?limit=' + signal : ''}',{method:'POST',headers:{'x-fb-friendly-name':'${operation}'}}).then(r=>r.json()).then(()=>document.body.dataset.ready='yes',()=>document.body.dataset.ready='blocked');</script></body></html>`,
+        );
+        return;
+      }
+      if (path === '/startup-read') {
+        response.setHeader('Content-Type', 'application/json');
+        if (url.searchParams.get('limit') === '429') response.statusCode = 429;
+        response.end(
+          url.searchParams.get('limit') === 'signal'
+            ? '{"status":"feedback_required"}'
+            : '{}',
+        );
+        return;
+      }
       if (path === '/api/v1/generated/read/') {
         response.setHeader('Content-Type', 'application/json');
         response.setHeader('Retry-After', IG_FIXTURE.other.code);

@@ -44,6 +44,18 @@ What spike S5 observed on the maintainer's account on 2026-10-14 and 2026-10-15,
 
 Against the pass criteria of 2026-10-11 (kept below), S5 failed criterion 1, because no row carries a post link or owner, and criterion 3 for the list, because a row shows only a relative age. It met criterion 4 when the post is the place of the check: 20 of 20 by text under the username, 18 of 20 with time and owner, and the 2 others were correctly rejected. Criterion 5 was not examined. That is why IG-3 moved the match from the list to the post.
 
+## First real canary, 2026-10-16
+
+The first real canary stopped as `request-journal` before its run row existed, because restored profile pages could send Instagram requests during launch.
+
+The runner now creates its journal row before launching the context and keeps every guarded startup request under that run identity, while each planned comment still commits its sending record before navigation.
+
+The context launches offline until the network guards are installed and every startup page except the confirmation page is closed, and its structure report records only the number of closed pages.
+
+A later page outside the confirmation and reading pages is closed without navigation or clicks and stops the run as `unexpected-page`.
+
+Existing extension folder IDs form the before set and do not count as additions, while any added ID still stops the run and extensions remain disabled at launch.
+
 ## Decision Drivers
 
 - Keep the context of each comment, the post it answered, before the comment is deleted. (2026-10-11)

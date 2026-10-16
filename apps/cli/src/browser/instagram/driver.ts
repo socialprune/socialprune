@@ -54,6 +54,8 @@ export const productionContext: ContextDependencies = {
     return chromium.launchPersistentContext(profile, {
       executablePath,
       headless: false,
+      // Restored tabs must not contact a host before the runner attaches routes.
+      offline: true,
       chromiumSandbox: true,
       args: ['--enable-automation'],
       serviceWorkers: 'block',

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, vi } from 'vitest';
 import { chromium } from '@playwright/test';
-import type { BrowserContext } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
 import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { planContext } from '../src/browser/instagram/plan.ts';
@@ -40,6 +40,7 @@ import { CliError } from '../src/cli/errors.ts';
 import { DatabaseSync } from 'node:sqlite';
 import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
+import * as networkHelpers from '../src/browser/instagram/network.ts';
 
 async function harness(variant: Variant = 'success', count = 1) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
@@ -124,6 +125,7 @@ async function harness(variant: Variant = 'success', count = 1) {
           context = await chromium.launchPersistentContext(path, {
             executablePath,
             headless: true,
+            offline: true,
             chromiumSandbox: true,
             args: ['--enable-automation'],
             ignoreDefaultArgs: ['--disable-infobars'],
@@ -243,6 +245,280 @@ async function harness(variant: Variant = 'success', count = 1) {
     },
   };
 }
+test('C3 restored launch tab POST is journaled before confirmation, then its page is closed and counted', async () => {
+  const h = await harness();
+  let restored: Page | undefined;
+  h.afterLaunch(async () => {
+    restored = await h.context!.newPage();
+  });
+  const originalGuard = networkHelpers.guardInstagramNetwork;
+  const guardSpy = vi.spyOn(networkHelpers, 'guardInstagramNetwork');
+  guardSpy.mockImplementation(async (...args) => {
+    const guard = await originalGuard(...args);
+    await h.context!.setOffline(false);
+    await restored!.goto(h.fake.origin + '/restored');
+    await restored!.locator('body[data-ready]').waitFor({ state: 'attached' });
+    return guard;
+  });
+  try {
+    const result = h.start();
+    await h.local();
+    const runs = await h.store.browserJournal();
+    expect(runs.runs).toHaveLength(1);
+    expect(
+      h.fake.requests.filter((request) => request.path === '/startup-read'),
+    ).toHaveLength(1);
+    const beforeStart = runs.runs[0]!;
+    expect(beforeStart.pageOpens).toBe(0);
+    const db = new DatabaseSync(join(h.directory, 'socialprune.sqlite'), {
+      readOnly: true,
+    });
+    try {
+      expect(
+        db
+          .prepare(
+            'SELECT data FROM browser_requests WHERE run_id=? ORDER BY rowid',
+          )
+          .all(beforeStart.runId)
+          .map(
+            (row) =>
+              (JSON.parse(String(row.data)) as { operation: string }).operation,
+          ),
+      ).toContain('RestoredCommentsQuery');
+    } finally {
+      db.close();
+    }
+    expect(restored!.isClosed()).toBe(true);
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await result).toMatchObject({ completed: 1, endReason: 'canary' });
+    const text = await readFile(
+      join(
+        h.directory,
+        'context',
+        'instagram',
+        `canary-${beforeStart.runId}.json`,
+      ),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      pages: { startupClosed: 2, unexpectedOpened: 0 },
+    });
+    expect(text).not.toContain('/restored');
+  } finally {
+    guardSpy.mockRestore();
+    await h.close();
+  }
+});
+test('C3 an extra page during the run is closed and stops before it reaches the fake platform', async () => {
+  const h = await harness();
+  let extra: Page | undefined;
+  h.afterWait(async () => {
+    if (!extra) {
+      extra = await h.context!.newPage().catch(() => undefined);
+      if (extra)
+        await extra.goto(h.fake.origin + '/restored').catch(() => undefined);
+    }
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'PLATFORM_CHECK' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).toBeTruthy();
+    expect(run.canaryAcceptedAt).toBeNull();
+    expect(h.notices.join('')).toContain('Stop detail: unexpected-page');
+    expect(extra?.isClosed()).toBe(true);
+    expect(
+      h.fake.requests.some(
+        (request) =>
+          request.path === '/restored' || request.path === '/startup-read',
+      ),
+    ).toBe(false);
+  } finally {
+    await h.close();
+  }
+});
+test('C3 a journal failure after the run row exists still stops with request-journal', async () => {
+  const h = await harness();
+  let runExisted = false;
+  const journal = vi
+    .spyOn(BrowserOutcomeWriter.prototype, 'request')
+    .mockImplementation(async (runId) => {
+      runExisted = Boolean(
+        await h.store.read((tx) => tx.browserRuns.get(runId)),
+      );
+      throw new Error('Generated journal failure');
+    });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    expect(runExisted).toBe(true);
+    expect(h.notices.join('')).toContain('Stop detail: request-journal');
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).toBeTruthy();
+    expect(run.canaryAcceptedAt).toBeNull();
+  } finally {
+    journal.mockRestore();
+    await h.close();
+  }
+});
+test('C3 a page opened while manual Start waits stops without any Start click', async () => {
+  const h = await harness();
+  try {
+    const running = h.start();
+    await h.local();
+    const extra = await h.context!.newPage().catch(() => undefined);
+    expect(await running).toMatchObject({ code: 'PLATFORM_CHECK' });
+    expect(h.notices.join('')).toContain('Stop detail: unexpected-page');
+    expect(extra?.isClosed()).toBe(true);
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.pageOpens).toBe(0);
+    expect(run.endedAt).toBeTruthy();
+  } finally {
+    await h.close();
+  }
+});
+test('C3 a launch failure closes its already-started journal and retains structure and profile read-back', async () => {
+  const h = await harness();
+  h.afterLaunch(() =>
+    Promise.reject(new TypeError('Generated private launch failure')),
+  );
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).toBeTruthy();
+    expect(run.endReason).toBe('error');
+    expect(run.pageOpens).toBe(0);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ),
+    ).toMatchObject({ stop: { token: 'type-error' } });
+    expect(
+      (await readdir(h.profile)).some(
+        (file) => file === `socialprune-readback-${run.runId}.json`,
+      ),
+    ).toBe(true);
+    expect(h.notices.join('')).not.toContain(
+      'Generated private launch failure',
+    );
+  } finally {
+    await h.close();
+  }
+});
+test.each(['429', 'signal'] as const)(
+  'C3 restored %s response retains the platform stop before Start',
+  async (kind) => {
+    const h = await harness();
+    let restored: Page | undefined;
+    h.afterLaunch(async () => {
+      restored = await h.context!.newPage();
+    });
+    const originalGuard = networkHelpers.guardInstagramNetwork,
+      guardSpy = vi.spyOn(networkHelpers, 'guardInstagramNetwork');
+    guardSpy.mockImplementation(async (...args) => {
+      const guard = await originalGuard(...args);
+      await h.context!.setOffline(false);
+      await restored!.goto(h.fake.origin + `/restored?limit=${kind}`);
+      await restored!
+        .locator('body[data-ready]')
+        .waitFor({ state: 'attached' });
+      return guard;
+    });
+    try {
+      expect(await h.start(true)).toMatchObject({ code: 'PLATFORM_CHECK' });
+      expect(h.notices.join('')).toContain(
+        `Stop detail: ${kind === '429' ? 'http-429' : 'rate-signal'}`,
+      );
+      const run = (await h.store.browserJournal()).runs[0]!;
+      expect(run.pageOpens).toBe(0);
+      expect(run.endedAt).toBeTruthy();
+      expect(
+        (await readdir(h.profile)).some(
+          (file) => file === `socialprune-readback-${run.runId}.json`,
+        ),
+      ).toBe(true);
+    } finally {
+      guardSpy.mockRestore();
+      await h.close();
+    }
+  },
+);
+test('C3 a Mutation POST from a restored page is aborted before Start with unexpected-action', async () => {
+  const h = await harness();
+  let restored: Page | undefined;
+  h.afterLaunch(async () => {
+    restored = await h.context!.newPage();
+  });
+  const originalGuard = networkHelpers.guardInstagramNetwork,
+    guardSpy = vi.spyOn(networkHelpers, 'guardInstagramNetwork');
+  guardSpy.mockImplementation(async (...args) => {
+    const guard = await originalGuard(...args);
+    await h.context!.setOffline(false);
+    await restored!.goto(h.fake.origin + '/restored?mutation=1');
+    await restored!.locator('body[data-ready]').waitFor({ state: 'attached' });
+    return guard;
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'UNEXPECTED_ACTION' });
+    expect(
+      h.fake.requests.some((request) => request.path === '/startup-read'),
+    ).toBe(false);
+    expect(h.notices.join('')).toContain('Stop detail: unexpected-action');
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).toBeTruthy();
+    expect(
+      run.profileReport!.unexpectedRequests.some(
+        (request) => request.operation === 'RestoredMutation',
+      ),
+    ).toBe(true);
+  } finally {
+    guardSpy.mockRestore();
+    await h.close();
+  }
+});
+test.each([false, true])(
+  'C3 nine existing extension folders are a baseline, added=%j',
+  async (added) => {
+    const h = await harness();
+    for (const letter of 'abcdefghi')
+      await mkdir(
+        join(h.profile, 'Default', 'Extensions', letter.repeat(32), '1'),
+        { recursive: true },
+      );
+    let planted = false;
+    if (added)
+      h.afterWait(async () => {
+        if (!planted) {
+          planted = true;
+          await mkdir(
+            join(h.profile, 'Default', 'Extensions', 'j'.repeat(32), '1'),
+            { recursive: true },
+          );
+        }
+      });
+    try {
+      const result = await h.start(true),
+        run = (await h.store.browserJournal()).runs[0]!;
+      if (added) {
+        expect(result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+        expect(h.notices.join('')).toContain('Stop detail: extensions-added');
+        expect(run.canaryAcceptedAt).toBeNull();
+      } else {
+        expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+        expect(run.canaryAcceptedAt).toBeTruthy();
+      }
+      expect(run.profileReport).toMatchObject({
+        extensionsBefore: 9,
+        extensionsAfter: added ? 10 : 9,
+      });
+    } finally {
+      await h.close();
+    }
+  },
+);
 test.each(['limit', 'maxSteps'] as const)(
   'F1 second-candidate with %s 2 refuses the partial automatic canary',
   async (bound) => {

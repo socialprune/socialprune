@@ -1,4 +1,4 @@
-import type { BrowserContext, Request, Response } from 'playwright-core';
+import type { BrowserContext, Request, Response, Page } from 'playwright-core';
 import type { BrowserRequest } from '@socialprune/core';
 import { ContextStop } from './report.ts';
 import { LimitSignals, hostClass, pathClass, rateSignal } from './signals.ts';
@@ -89,6 +89,7 @@ export async function guardInstagramNetwork(
   policy: NetworkPolicy = productionPolicy,
   limitSignals = new LimitSignals(),
   onStop: (error: ContextStop) => void = () => {},
+  pageAllowed: (page: Page) => Promise<boolean> = () => Promise.resolve(true),
 ) {
   const abortedHosts: Record<string, number> = {};
   const requests: BrowserRequest[] = [];
@@ -126,6 +127,18 @@ export async function guardInstagramNetwork(
   await context.route('**/*', async (route) => {
     const request = route.request(),
       url = new URL(request.url());
+    let page: Page;
+    try {
+      page = request.frame().page();
+    } catch {
+      fail(new ContextStop('PLATFORM_CHECK', 'unexpected-page'));
+      await route.abort();
+      return;
+    }
+    if (!(await pageAllowed(page))) {
+      await route.abort();
+      return;
+    }
     if (url.origin === confirmationOrigin) {
       await route.continue();
       return;
@@ -232,6 +245,7 @@ export async function guardInstagramNetwork(
   return {
     abortedHosts,
     requests,
+    stop: fail,
     check,
     async flush() {
       check();

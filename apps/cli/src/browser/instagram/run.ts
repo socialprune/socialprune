@@ -50,6 +50,7 @@ import {
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
 import { CLICK_NAMES } from './selectors.ts';
+import { contextPages } from './pages.ts';
 
 export interface ContextOptions {
   store: SQLiteStore;
@@ -137,6 +138,7 @@ export async function runContextWithDependencies(
     finalization?: { stage: string; stop: ReturnType<typeof stopDetails> }[];
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
+    pages?: { startupClosed: number; unexpectedOpened: number };
   } = { steps: [], pace: paceSummary(pace) };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
@@ -146,6 +148,7 @@ export async function runContextWithDependencies(
   const automatic = Boolean(options.order && options.plan.canary);
   let context: BrowserContext | undefined,
     network: Awaited<ReturnType<typeof guardInstagramNetwork>> | undefined;
+  let pages: ReturnType<typeof contextPages> | undefined;
   let began = false,
     stopped = false,
     closed = false,
@@ -179,6 +182,7 @@ export async function runContextWithDependencies(
   const guard = () => {
     if (networkFailure) throw networkFailure;
     network?.check();
+    pages?.check();
     if (closed) throw new ContextStop('PLATFORM_CHECK', 'browser-closed');
     if (stopped || options.signal.aborted)
       throw new ContextStop('CANCELLED', 'stopped');
@@ -203,6 +207,12 @@ export async function runContextWithDependencies(
           : 'PLATFORM_CHECK',
         'extensions-added',
       );
+  };
+  const platformStop = (caught: ContextStop) => {
+    networkFailure ??= caught;
+    waits.abort();
+    interrupt();
+    network?.stop(caught);
   };
   let answers: ReturnType<typeof pageAnswers> | undefined;
   const rejectIncomplete = () => {
@@ -248,39 +258,8 @@ export async function runContextWithDependencies(
     const start = options.order
       ? Promise.resolve(true)
       : confirmation.wait('start');
-    context = await deps.launch(options.profile, options.executablePath);
-    network = await guardInstagramNetwork(
-      context,
-      new URL(confirmation.url).origin,
-      (value) => options.store.browserOutcomeWriter().request(runId, value),
-      deps.policy,
-      limitSignals,
-      (caught) => {
-        networkFailure ??= caught;
-        waits.abort();
-        interrupt();
-      },
-    );
-    context.once('close', () => {
-      closed = true;
-      cancel();
-    });
-    const local = context.pages()[0] ?? (await context.newPage());
-    await local.goto(confirmation.launchUrl);
-    options.notice(`Confirmation: ${confirmation.url}\n`);
-    if (!(await Promise.race([start, cancelled])))
-      throw new ContextStop('CANCELLED', 'stopped');
-    guard();
-    if (
-      (
-        await planContext(
-          options.store,
-          options.plan.accountKey,
-          options.include,
-        )
-      ).hash !== options.plan.hash
-    )
-      throw new CliError('STALE_PLAN');
+    // Launch itself can resume signed-in pages. Give their guarded requests a
+    // durable run identity before opening the context, not after manual Start.
     await options.store.read(async (tx) => {
       for await (const run of tx.browserRuns.iterate())
         if (run.accountKey === options.plan.accountKey && !run.endedAt) {
@@ -313,8 +292,47 @@ export async function runContextWithDependencies(
       await options.store
         .browserOutcomeWriter()
         .recordContextOrder(runId, options.order.sha256);
+    context = await deps.launch(options.profile, options.executablePath);
+    network = await guardInstagramNetwork(
+      context,
+      new URL(confirmation.url).origin,
+      (value) => options.store.browserOutcomeWriter().request(runId, value),
+      deps.policy,
+      limitSignals,
+      platformStop,
+      (page) => (pages ? pages.allowed(page) : Promise.resolve(true)),
+    );
+    pages = contextPages(context, platformStop);
+    report.pages = pages.counts;
+    context.once('close', () => {
+      closed = true;
+      cancel();
+    });
+    const local = await pages.startupPage();
+    await network.flush();
+    guard();
+    await context.setOffline(false);
+    await local.goto(confirmation.launchUrl);
+    options.notice(`Confirmation: ${confirmation.url}\n`);
+    if (
+      !(await Promise.race([start, cancelled, interrupted.then(() => false)]))
+    ) {
+      guard();
+      throw new ContextStop('CANCELLED', 'stopped');
+    }
+    guard();
+    if (
+      (
+        await planContext(
+          options.store,
+          options.plan.accountKey,
+          options.include,
+        )
+      ).hash !== options.plan.hash
+    )
+      throw new CliError('STALE_PLAN');
     await checkpoint();
-    const page = await context.newPage();
+    const page = await pages.newPage();
     answers = pageAnswers(page, deps.policy);
     const day = dateInZone(options.now(), options.plan.timeZone),
       prior = await instagramDailyCount(
@@ -571,8 +589,16 @@ export async function runContextWithDependencies(
           completed,
           result: JSON.stringify(report.steps.at(-1)),
         });
-        if (!(await Promise.race([continuing, cancelled])))
+        if (
+          !(await Promise.race([
+            continuing,
+            cancelled,
+            interrupted.then(() => false),
+          ]))
+        ) {
+          guard();
           throw new ContextStop('CANCELLED', 'stopped');
+        }
       } else
         confirmation.update({
           completed,
@@ -666,6 +692,7 @@ export async function runContextWithDependencies(
         });
       await finalize('network', async () => {
         await network?.flush();
+        await pages?.flush();
       });
       if (endReason === 'canary' && !error && !options.order && completed > 0) {
         const written = await finalize('structure-report', structure);
@@ -680,7 +707,12 @@ export async function runContextWithDependencies(
                   ? 'Vergleiche die Beiträge mit der Prüfung. Passt akzeptiert die Stichprobe; Passt nicht lehnt sie ab.'
                   : 'Compare the posts with review. Matches accepts the canary; Does not match rejects it.',
             });
-            matches = await Promise.race([accepting, cancelled]);
+            matches = await Promise.race([
+              accepting,
+              cancelled,
+              interrupted.then(() => false),
+            ]);
+            if (networkFailure) throw networkFailure;
             if (!matches) endReason = 'stopped-by-person';
           });
       }
@@ -783,6 +815,7 @@ export async function runContextWithDependencies(
       await finalize('structure-report', structure);
       if (automatic && endReason === 'canary' && !error) {
         accepted = await finalize('acceptance', async () => {
+          guard();
           await options.store
             .browserOutcomeWriter()
             .recordContextAudit(
@@ -856,6 +889,7 @@ export async function runContextWithDependencies(
       if (context) await deps.close(context, Boolean(options.order));
     });
     network?.dispose();
+    pages?.dispose();
     await finalize('confirmation-close', () => confirmation.close());
     options.signal.removeEventListener('abort', stop);
     process.removeListener('SIGINT', stop);

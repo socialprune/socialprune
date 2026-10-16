@@ -36,6 +36,7 @@ The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Ac
 | [028](ADR-028-instagram-signed-in-session.md) | Instagram: reading the post of each comment through the person's signed-in session (revised 2026-10-15; until then "context and deletion") | Accepted | 2026-10-16 | on 2026-10-11: read context and delete through his signed-in session; gated by spike S5. On 2026-10-14 (IG-1, IG-2 B) and 2026-10-15 (IG-3): find in the list, confirm on the post; keep the post's context; deletion later in its own record. On 2026-10-16 (IG-4): accepted, profile adopted, the agent may accept the canary by its automatic checks, pace as a ramp from 30 s and 200 a day to 10 s and 600, comments without an owner by three checks |
 | [029](ADR-029-signed-in-originals-pass.md) | The signed-in originals pass on X | Proposed | 2026-10-11 | on 2026-10-11: the originals as complete as possible, signing in is accepted; what works without a login stays anonymous |
 | [030](ADR-030-instagram-context-record.md) | Instagram post context as its own workspace record | Accepted | 2026-10-16 | on 2026-10-15 (IG-3 point 2): what is kept per confirmed comment; accepted on 2026-10-16 (IG-4), workspace version 5 with a copy first |
+| [031](ADR-031-desktop-app.md) | A Windows desktop app around the review and the engine | Proposed | 2026-10-16 | pending |
 
 ## Earlier choices these records replace
 

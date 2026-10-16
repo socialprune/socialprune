@@ -16,6 +16,7 @@ import styles from './Social.module.css';
 import { originalXLink } from './originalLink.ts';
 import { isDeletedOnPlatform } from '../archive/model.ts';
 import { StoredMedia, Conversation } from './Conversation.tsx';
+import { originalDisplayText } from './originalText.ts';
 
 export function Avatar({
   handle,
@@ -185,7 +186,7 @@ export function PostCard({
                     <span>@{stored.authorHandle}</span>
                   </div>
                   <p className={styles.postText} dir="auto">
-                    {stored.text}
+                    {originalDisplayText(stored)}
                   </p>
                   <StoredMedia original={stored} />
                   <p className={styles.hint}>
@@ -232,7 +233,7 @@ export function PostCard({
                   {stored.text && (
                     <>
                       <p className={styles.postText} dir="auto">
-                        {stored.text}
+                        {originalDisplayText(stored)}
                       </p>
                       <StoredMedia original={stored} />
                     </>

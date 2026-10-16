@@ -3,6 +3,7 @@ import type { Original } from '@socialprune/core';
 import type { WorkspaceClient } from '../workspace/client.ts';
 import { useT } from '../i18n/index.ts';
 import styles from './Social.module.css';
+import { originalDisplayText } from './originalText.ts';
 const mediaMessages = {
   failed: 'originals.media.failed',
   refused: 'originals.media.refused',
@@ -139,8 +140,8 @@ export function Conversation({
               <strong>
                 {link.original.authorName} @{link.original.authorHandle}
               </strong>
-              <p className={styles.postText}>
-                {link.original.text ?? t('originals.notFound')}
+              <p className={styles.postText} dir="auto">
+                {originalDisplayText(link.original) ?? t('originals.notFound')}
               </p>
               <StoredMedia original={link.original} />
             </>
@@ -150,7 +151,9 @@ export function Conversation({
                 {t('originals.yourPost')} @
                 {link.ownItemId ? own[link.ownItemId]?.handle : ''}
               </strong>
-              <p>{link.ownItemId ? own[link.ownItemId]?.text : ''}</p>
+              <p dir="auto">
+                {link.ownItemId ? own[link.ownItemId]?.text : ''}
+              </p>
             </>
           )}
         </section>

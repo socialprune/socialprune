@@ -2,7 +2,14 @@ import { test, expect, chromium } from '@playwright/test';
 import type { BrowserContext } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdirSync } from 'node:fs';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  writeFile,
+  readFile,
+  lstat,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrateOriginal } from '@socialprune/core';
@@ -244,6 +251,11 @@ for (const variant of [
   'order-pace-berlin-cap',
 ] as const)
   test(`page-driven fill ${variant}: Start, exact GET response, stop and canary acceptance`, async ({}, testInfo) => {
+    if (variant.startsWith('order-pace-batch-')) {
+      // All 21 real pages retain the comparator's two-second observation floor.
+      // Measured at 52-60 seconds under parallel load, before browser cleanup.
+      test.setTimeout(120000);
+    }
     const directory = await mkdtemp(join(tmpdir(), 'socialprune-fill-fake-'));
     const flow = variant.startsWith('order-flow-');
     const flowCanary = variant.startsWith('order-flow-canary-');
@@ -436,19 +448,16 @@ for (const variant of [
     const profile = join(directory, 'profile');
     await mkdir(profile);
     await createProfile(profile);
+    // The active Default profile collects unregistered extension directories
+    // after startup. An inactive profile keeps this synthetic inventory stable;
+    // the real profile snapshot must still inspect its extension IDs.
+    const extensionDirectory = join(profile, 'Profile 1', 'Extensions');
     const preinstalledId = 'a'.repeat(32);
-    await mkdir(join(profile, 'Default', 'Extensions', preinstalledId, '1.0'), {
+    await mkdir(join(extensionDirectory, preinstalledId, '1.0'), {
       recursive: true,
     });
     await writeFile(
-      join(
-        profile,
-        'Default',
-        'Extensions',
-        preinstalledId,
-        '1.0',
-        'manifest.json',
-      ),
+      join(extensionDirectory, preinstalledId, '1.0', 'manifest.json'),
       'Generated contents that must never be read',
     );
     if (
@@ -456,15 +465,14 @@ for (const variant of [
       variant.startsWith('order-readback-') ||
       variant.startsWith('order-platform-')
     )
-      await rm(join(profile, 'Default', 'Extensions', preinstalledId), {
+      await rm(join(extensionDirectory, preinstalledId), {
         recursive: true,
         force: true,
       });
     if (variant === 'removed')
-      await mkdir(
-        join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
-        { recursive: true },
-      );
+      await mkdir(join(extensionDirectory, 'b'.repeat(32), '1.0'), {
+        recursive: true,
+      });
     if (
       variant === 'shared-cap' ||
       variant === 'order-flow-reload-cap' ||
@@ -1040,10 +1048,9 @@ for (const variant of [
               text.startsWith('Structure report:')
             ) {
               // Injected callback runs after the error report and before read-back.
-              mkdirSync(
-                join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
-                { recursive: true },
-              );
+              mkdirSync(join(extensionDirectory, 'b'.repeat(32), '1.0'), {
+                recursive: true,
+              });
               extensionMutationInjected = true;
             }
           },
@@ -1109,7 +1116,7 @@ for (const variant of [
             });
             expect(await profileInUse(profile)).toBe(true);
             if (variant === 'removed')
-              await rm(join(profile, 'Default', 'Extensions'), {
+              await rm(extensionDirectory, {
                 recursive: true,
                 force: true,
               });
@@ -1400,10 +1407,18 @@ for (const variant of [
             variant === 'order-pace-berlin-cap'
           )
             expect(run.pageOpens).toBe(1);
-          if (variant.startsWith('order-pace-batch-'))
+          if (variant.startsWith('order-pace-batch-')) {
+            expect(flowStarts).toHaveLength(21);
+            for (let index = 1; index < flowStarts.length; index++)
+              expect(
+                flowStarts[index]!.at - flowStarts[index - 1]!.at,
+              ).toBeGreaterThanOrEqual(
+                variant === 'order-pace-batch-off' ? 10000 : 30000,
+              );
             expect(waits.includes(900000)).toBe(
               variant === 'order-pace-batch-default',
             );
+          }
           if (paceVariant)
             expect(notices).toContain(
               variant === 'order-pace-batch-default'
@@ -2656,10 +2671,9 @@ for (const variant of [
           fullPage: true,
         });
       if (variant === 'extension') {
-        await mkdir(
-          join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
-          { recursive: true },
-        );
+        await mkdir(join(extensionDirectory, 'b'.repeat(32), '1.0'), {
+          recursive: true,
+        });
         await page.getByRole('button', { name: 'Start', exact: true }).click();
         await expect
           .poll(async () =>
@@ -2826,6 +2840,22 @@ for (const variant of [
         }
         return;
       }
+      if (variant === 'success') {
+        // Continue is published only after the page's read transaction settles.
+        // Its UI assertion must not also time the async read/storage pipeline.
+        await expect
+          .poll(
+            async () =>
+              (await store.read((tx) => tx.originals.get(DETAIL_FIXTURE.id)))
+                ?.signedIn?.status,
+            {
+              message:
+                'the generated page read settles before Continue is shown',
+              timeout: 30000,
+            },
+          )
+          .toBe('read');
+      }
       await expect(
         page.getByRole('button', { name: 'Continue', exact: true }),
       ).toBeVisible();
@@ -2842,11 +2872,14 @@ for (const variant of [
       await expect(
         page.getByRole('button', { name: 'Matches', exact: true }),
       ).toBeVisible();
-      if (variant === 'extension-at-matches')
-        await mkdir(
-          join(profile, 'Default', 'Extensions', 'b'.repeat(32), '1.0'),
-          { recursive: true },
-        );
+      if (variant === 'extension-at-matches') {
+        await mkdir(join(extensionDirectory, 'b'.repeat(32), '1.0'), {
+          recursive: true,
+        });
+        expect(
+          (await lstat(join(extensionDirectory, 'b'.repeat(32)))).isDirectory(),
+        ).toBe(true);
+      }
       await page
         .getByRole('button', {
           name: variant === 'does-not-match' ? 'Does not match' : 'Matches',
@@ -2854,7 +2887,13 @@ for (const variant of [
         })
         .click();
       if (variant === 'extension-at-matches') {
-        expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
+        expect(await result).toMatchObject({
+          code: 'PLATFORM_CHECK',
+          reason: 'extensions-changed',
+        });
+        expect(
+          (await lstat(join(extensionDirectory, 'b'.repeat(32)))).isDirectory(),
+        ).toBe(true);
         expect((await store.browserJournal()).runs.at(-1)).toMatchObject({
           endReason: 'platform-check',
           canaryAcceptedAt: null,

@@ -50,6 +50,211 @@ import {
 } from '../src/browser/instagram/filter.ts';
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
 
+test('C6 first canary reloads after the unfiltered oldest probe, records two list navigations and one step without extra pace or empty-row counts', async () => {
+  const h = await harness('year-empty-rows');
+  const starts: { at: string | null; sends: number }[] = [];
+  h.fake.beforeList(async () => {
+    const journal = await h.store.browserJournal();
+    starts.push({
+      at: journal.runs.at(-1)!.lastPageOpenedAt ?? null,
+      sends: journal.attempts.filter((attempt) => attempt.state === 'sending')
+        .length,
+    });
+    // The second document has a different age display. A diagnostic recomputed
+    // from the reloaded or filtered list would no longer agree with eight years.
+    if (starts.length === 2) h.fake.setVariant('empty-image-buttons');
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'canary',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === '/your_activity/interactions/comments',
+      ),
+    ).toHaveLength(2);
+    expect(starts).toHaveLength(2);
+    expect(starts[0]).toEqual(starts[1]);
+    expect(starts[0]!.sends).toBe(1);
+    expect(h.waits.every((wait) => wait === 2000)).toBe(true);
+    expect(report).toMatchObject({
+      rows: { emptySkipped: 3 },
+      steps: [{ oldestWithinWeek: true, emptySkipped: 3 }],
+      limits: { ready: { list: { count: 2 }, post: { count: 1 } } },
+    });
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(1);
+  } finally {
+    await h.close();
+  }
+});
+test('C6 fake refuses a second filter opening after Apply until a fresh list navigation', async () => {
+  const h = await filterHarness();
+  try {
+    await h.open();
+    await filterList(h.page, h.fixture.items[0]!.createdAt, () => {});
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Sort & filter' },
+      () => {},
+    );
+    expect(await h.page.locator('[role="dialog"]').count()).toBe(0);
+    await expect(
+      clickAllowed(
+        h.page,
+        { kind: 'named', name: 'Oldest to newest' },
+        () => {},
+      ),
+    ).rejects.toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'filter-control',
+    });
+    await h.open();
+    await filterList(h.page, h.fixture.items[0]!.createdAt, () => {});
+    expect(await h.page.locator('[role="dialog"]').count()).toBe(0);
+    expect(await h.page.locator('#list [role="button"]').count()).toBe(1);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+});
+test.each(
+  [1, 2].flatMap(
+    (ordinal) =>
+      [
+        { ordinal, variant: 'login', code: 'PLATFORM_CHECK', token: 'login' },
+        {
+          ordinal,
+          variant: 'account-mismatch',
+          code: 'ACCOUNT_MISMATCH',
+          token: 'account-changed',
+        },
+        {
+          ordinal,
+          variant: 'never',
+          code: 'PLATFORM_CHECK',
+          token: 'list-timeout',
+        },
+        {
+          ordinal,
+          variant: 'navigation',
+          code: 'PLATFORM_CHECK',
+          token: 'navigation',
+        },
+      ] as const,
+  ),
+)(
+  'C6 load $ordinal $variant retains the first-load $token stop',
+  async ({ ordinal, variant, code, token }) => {
+    const h = await harness();
+    let loads = 0;
+    let restoreNavigation: (() => void) | undefined;
+    if (variant === 'navigation')
+      h.afterLaunch(() => {
+        const prototype = Object.getPrototypeOf(h.context!.pages()[0]!) as Page;
+        // eslint-disable-next-line @typescript-eslint/unbound-method -- The spy calls the original with its actual page as this.
+        const original = prototype.goto;
+        const navigation = vi
+          .spyOn(prototype, 'goto')
+          .mockImplementation(function (
+            this: Page,
+            ...args: Parameters<Page['goto']>
+          ) {
+            if (
+              new URL(args[0]).pathname ===
+                '/your_activity/interactions/comments' &&
+              ++loads === ordinal
+            )
+              return Promise.reject(new Error('Generated navigation failure'));
+            return original.call(this, ...args);
+          });
+        restoreNavigation = () => {
+          navigation.mockRestore();
+        };
+        return Promise.resolve();
+      });
+    else
+      h.fake.beforeList(() => {
+        if (++loads === ordinal) h.fake.setVariant(variant);
+        return Promise.resolve();
+      });
+    try {
+      expect(await h.start(true)).toMatchObject({ code, token });
+      expect(loads).toBe(ordinal);
+      expect(
+        h.fake.requests.some((request) => request.path.startsWith('/p/')),
+      ).toBe(false);
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as Record<string, unknown>;
+      expect(report).toMatchObject({ stop: { code, token } });
+      expect(report).toMatchObject({
+        limits: {
+          ready: {
+            list: {
+              count: ordinal - 1 + (variant === 'account-mismatch' ? 1 : 0),
+            },
+          },
+        },
+      });
+    } finally {
+      restoreNavigation?.();
+      await h.close();
+    }
+  },
+);
+test('C6 non-canary steps keep exactly one list navigation per step and no oldest probe', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 2,
+      steps: 2,
+      endReason: 'done',
+    });
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === '/your_activity/interactions/comments',
+      ),
+    ).toHaveLength(2);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      limits: { ready: { list: { count: 2 } } },
+      steps: [{ oldestWithinWeek: null }, { oldestWithinWeek: null }],
+    });
+    expect(
+      h.fake.events
+        .filter((event) => event.clicks.at(-1) === 'Apply')
+        .every((event) => event.choices.length > 0),
+    ).toBe(true);
+  } finally {
+    await h.close();
+  }
+});
+
 test('C5 foundation: six native choices cross the real driver and settle one confirmed canary', async () => {
   const h = await harness();
   try {
@@ -1317,7 +1522,9 @@ test('P1 a 10-second order cannot accelerate a canary from its 30-second starts'
       completed: 2,
       endReason: 'canary',
     });
-    expect(starts[1]! - starts[0]!).toBe(30000);
+    expect(starts).toHaveLength(3);
+    expect(starts[1]).toBe(starts[0]);
+    expect(starts[2]! - starts[1]!).toBe(30000);
   } finally {
     await h.close();
   }
@@ -1645,7 +1852,11 @@ test.each([
         h.fake.requests.filter(
           (request) => request.path === '/your_activity/interactions/comments',
         ).length,
-      ).toBeLessThanOrEqual(1);
+      ).toBeLessThanOrEqual(2);
+      const attempts = await h.store.read((tx) => records(tx.browserAttempts));
+      expect(
+        attempts.filter((attempt) => attempt.state === 'sending'),
+      ).toHaveLength(1);
     } finally {
       await h.close();
     }
@@ -1956,7 +2167,7 @@ test('second candidate gets a fresh list, a second paced step and exactly one co
       h.fake.requests.filter(
         (request) => request.path === '/your_activity/interactions/comments',
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   } finally {
     await h.close();
   }
@@ -2000,7 +2211,13 @@ test('foreign requests and WebSockets are aborted and counted, not treated as wr
         'utf8',
       ),
     ) as { abortedHosts: Record<string, number> };
-    expect(report.abortedHosts[`127.0.0.1:${CONTEXT_PORTS.foreign}`]).toBe(2);
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === '/your_activity/interactions/comments',
+      ),
+    ).toHaveLength(2);
+    // Each document plants one fetch and one WebSocket, including the probe reload.
+    expect(report.abortedHosts[`127.0.0.1:${CONTEXT_PORTS.foreign}`]).toBe(4);
     expect(hits).toBe(0);
     expect(
       run.profileReport!.unexpectedRequests.some(

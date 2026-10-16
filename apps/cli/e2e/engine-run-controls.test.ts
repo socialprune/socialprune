@@ -360,9 +360,10 @@ test('Instagram engine pauses only after a complete step and rejects automatic c
     await expect
       .poll(() => h.current().phase, { timeout: 30000 })
       .toBe('awaiting-continue');
-    expect(h.listStarts).toHaveLength(2);
+    expect(h.listStarts).toHaveLength(3);
     expect(h.stepStarts).toHaveLength(2);
-    expect(h.listStarts[1]! - h.listStarts[0]! - 60000).toBeGreaterThanOrEqual(
+    expect(h.listStarts[1]).toBe(h.listStarts[0]);
+    expect(h.listStarts[2]! - h.listStarts[1]! - 60000).toBeGreaterThanOrEqual(
       30000,
     );
     expect(h.stepStarts[1]! - h.stepStarts[0]! - 60000).toBeGreaterThanOrEqual(

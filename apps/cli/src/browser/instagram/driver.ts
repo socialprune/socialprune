@@ -97,18 +97,7 @@ export async function filterList(
   page: Page,
   at: string,
   guard: () => void,
-  oldestProbe?: () => Promise<void>,
 ): Promise<void> {
-  if (oldestProbe) {
-    await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
-    await clickAllowed(
-      page,
-      { kind: 'named', name: 'Oldest to newest' },
-      guard,
-    );
-    await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
-    await oldestProbe();
-  }
   await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
   await clickAllowed(page, { kind: 'named', name: 'Oldest to newest' }, guard);
   const dates = utcWindow(at);
@@ -116,16 +105,14 @@ export async function filterList(
   await chooseFilterDate(page, 'end', dates[1], guard);
   await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
 }
-export async function loadList(
+async function navigateList(
   page: Page,
-  item: Item,
   expected: string,
   deps: ContextDependencies,
   guard: () => void,
-  oldest = false,
-  now = new Date(),
-  rowCounts: RowReadCounts = { emptySkipped: 0 },
+  rowCounts: RowReadCounts,
 ) {
+  guard();
   const navigationStart = performance.now();
   try {
     await page.goto(deps.origin + COMMENTS_PATH, {
@@ -151,23 +138,38 @@ export async function loadList(
     )
   )
     throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  return accountRows;
+}
+export async function loadList(
+  page: Page,
+  item: Item,
+  expected: string,
+  deps: ContextDependencies,
+  guard: () => void,
+  oldest = false,
+  now = new Date(),
+  rowCounts: RowReadCounts = { emptySkipped: 0 },
+) {
+  let accountRows = await navigateList(page, expected, deps, guard, rowCounts);
   let oldestWithinWeek: boolean | null = null;
-  await filterList(
-    page,
-    item.createdAt,
-    guard,
-    oldest
-      ? async () => {
-          const first = (await readRows(page, rowCounts))[0];
-          const age = first ? relativeAgeMs(first.age) : null;
-          if (age !== null) {
-            oldestWithinWeek =
-              Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <=
-              604800000;
-          }
-        }
-      : undefined,
-  );
+  if (oldest) {
+    await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
+    await clickAllowed(
+      page,
+      { kind: 'named', name: 'Oldest to newest' },
+      guard,
+    );
+    await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+    const first = (await readRows(page, rowCounts))[0],
+      age = first ? relativeAgeMs(first.age) : null;
+    if (age !== null)
+      oldestWithinWeek =
+        Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <= 604800000;
+    // Applying the probe sort prevents another filter dialog until navigation.
+    // This reload stays inside the same step; empty rows keep their maximum.
+    accountRows = await navigateList(page, expected, deps, guard, rowCounts);
+  }
+  await filterList(page, item.createdAt, guard);
   let previous = JSON.stringify(await readRows(page, rowCounts)),
     scrollLoads = 0,
     full = false;

@@ -108,3 +108,63 @@ test('production desktop driver creates its own page before closing inherited la
   );
   await context.close();
 });
+
+test('production desktop guards and request recording are installed before any fresh page or inherited-tab closure', async () => {
+  const { context, inherited } = generatedContext();
+  const observations: {
+    routes: number;
+    sockets: number;
+    responseListeners: number;
+  }[] = [];
+  context.newPage.mockImplementation(() => {
+    observations.push({
+      routes: context.route.mock.calls.length,
+      sockets: context.routeWebSocket.mock.calls.length,
+      responseListeners: context.listenerCount('response'),
+    });
+    return Promise.resolve({ isClosed: () => false } as unknown as Page);
+  });
+  try {
+    await productionDriver({
+      profile: 'generated-profile',
+      executablePath: 'generated-browser',
+      desktop: true,
+      record: () => Promise.resolve(),
+    });
+    expect(observations).toEqual([
+      { routes: 2, sockets: 1, responseListeners: 1 },
+    ]);
+    for (const guardCall of [
+      ...context.route.mock.invocationCallOrder,
+      ...context.routeWebSocket.mock.invocationCallOrder,
+    ]) {
+      expect(guardCall).toBeLessThan(
+        context.newPage.mock.invocationCallOrder[0]!,
+      );
+      expect(guardCall).toBeLessThan(
+        inherited.close.mock.invocationCallOrder[0]!,
+      );
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('production CLI driver keeps the inherited confirmation page and does not create a platform page during setup', async () => {
+  const { context, inherited } = generatedContext();
+  try {
+    await productionDriver({
+      profile: 'generated-profile',
+      executablePath: 'generated-browser',
+      confirmationOrigin: 'http://127.0.0.1:4522',
+      record: () => Promise.resolve(),
+    });
+    expect(context.newPage).not.toHaveBeenCalled();
+    expect(inherited.close).not.toHaveBeenCalled();
+    expect(context.route).toHaveBeenCalledTimes(2);
+    expect(context.routeWebSocket).toHaveBeenCalledTimes(1);
+    expect(context.listenerCount('response')).toBe(1);
+  } finally {
+    await context.close();
+  }
+});

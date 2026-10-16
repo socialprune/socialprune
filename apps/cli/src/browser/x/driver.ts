@@ -64,10 +64,12 @@ export async function pageDriver(options: {
   desktop?: boolean;
 }): Promise<BrowserDriver> {
   const context = options.context;
-  const local = options.desktop
-    ? await freshPlatformPage(context)
+  // Keep the CLI confirmation page selection unchanged. Desktop launch tabs
+  // remain untouched until all guards and request recording are installed.
+  let local = options.desktop
+    ? undefined
     : (context.pages()[0] ?? (await context.newPage()));
-  let platform: Page | undefined = options.desktop ? local : undefined;
+  let platform: Page | undefined;
   let prohibited = false;
   let mutation = false,
     expectedMutation: string | null = null;
@@ -145,6 +147,7 @@ export async function pageDriver(options: {
     if (record)
       observe(options.record({ ...record, status: response.status() }));
   });
+  if (options.desktop) platform = local = await freshPlatformPage(context);
   const guard = (checkStop = true) => {
     if (checkStop && options.signal?.aborted) throw new CliError('CANCELLED');
     if (mutation) throw new CliError('UNEXPECTED_ACTION');
@@ -165,7 +168,7 @@ export async function pageDriver(options: {
         .then((value) => value ?? '');
     },
     async showConfirmation(url) {
-      await local.goto(url);
+      await local!.goto(url);
     },
     async account() {
       const current = await page(false);

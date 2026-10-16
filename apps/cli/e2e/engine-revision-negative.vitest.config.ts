@@ -9,8 +9,10 @@ const rateControl = process.argv.some((value) =>
 const browserControl =
   rateControl ||
   process.argv.some((value) => value.includes('Instagram engine pauses'));
-const fallbackControl = process.argv.some((value) =>
-  value.includes('unprojectable runner failure'),
+const fallbackControl = process.argv.some(
+  (value) =>
+    value.includes('unprojectable runner failure') ||
+    value.includes('finalization throw after observing an extension'),
 );
 if (
   browserControl &&
@@ -93,8 +95,8 @@ export default defineConfig({
         if (path === 'browser/x/driver.ts') {
           source = replace(
             source,
-            '? await freshPlatformPage(context)',
-            '? (context.pages()[0] ?? await context.newPage())',
+            /if \(options\.desktop\)\s*platform = local = await freshPlatformPage\(context\);/,
+            'if (options.desktop) platform = local = context.pages()[0] ?? await context.newPage();',
           );
           source = replace(
             source,
@@ -158,7 +160,7 @@ export default defineConfig({
         if (path === 'engine/facade.ts')
           source = replace(
             source,
-            /\} catch \{\s*failRun\(error\);\s*\}/,
+            /\} catch \{\s*recoverFailedProjection\(error\);\s*\}/,
             '} catch (caught) { throw caught; }',
           );
         return source;

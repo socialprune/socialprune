@@ -400,7 +400,7 @@ export async function createEngine(
               accountBefore: current.profile.before?.account ?? null,
               accountAfter: null,
               extensionIdsBefore: current.profile.before?.extensionIds ?? [],
-              extensionIdsAfter: [],
+              extensionIdsAfter: current.profile.before?.extensionIds ?? [],
               extensionIdsAdded: [],
               extensionIdsRemoved: [],
               changedFiles: [],
@@ -414,6 +414,22 @@ export async function createEngine(
           cliCode: parsed.success ? parsed.data : 'RUN_STOPPED',
         },
       });
+    };
+    const recoverFailedProjection = (error: unknown) => {
+      try {
+        failRun(error);
+      } catch {
+        // No read-back was observed. If even the error view is invalid, retire
+        // that projection rather than keeping a completed session active.
+        view = { phase: 'idle', version: view.version + 1 };
+        for (const listener of listeners) {
+          try {
+            listener(structuredClone(view));
+          } catch {
+            /* A subscriber must not reject the runner's finalization. */
+          }
+        }
+      }
     };
     let interruptedWait: Record<string, unknown> | undefined;
     let pausedAt = 0;
@@ -456,9 +472,10 @@ export async function createEngine(
       controls,
       browser(close) {
         closeBrowser = close;
-        if (closing) void close().catch(failRun);
+        if (closing)
+          void Promise.resolve().then(close).catch(recoverFailedProjection);
       },
-      failed: failRun,
+      failed: recoverFailedProjection,
       confirmation(initial) {
         owner.update({
           warning: initial.warning,
@@ -655,7 +672,7 @@ export async function createEngine(
               error,
             );
           } catch {
-            failRun(error);
+            recoverFailedProjection(error);
           }
         }
       })

@@ -13,6 +13,7 @@ import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { fixtureWorkspace, FIXTURE } from '../../e2e/fake-x/fixture.ts';
 import { mkdir } from 'node:fs/promises';
 import { createProfile } from '../browser/profile.ts';
+import { ConfirmationState } from '../browser/confirmation-state.ts';
 import type { RunView } from '@socialprune/core/workspace/desktop-protocol';
 
 test('engine opens a generated workspace, uses the review handlers and closes its store', async () => {
@@ -306,7 +307,7 @@ test('Stop is dispatched while a slow review operation still owns the command qu
   }
 }, 10000);
 
-test('an unprojectable runner failure has a closed validating fallback end and releases the engine', async () => {
+test('a finalization throw after observing an extension has a valid incomplete fallback and releases the engine without unhandled rejection', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sp-engine-fallback-'));
   await mkdir(join(root, 'workspace'));
   const store = await SQLiteStore.open(
@@ -326,6 +327,14 @@ test('an unprojectable runner failure has a closed validating fallback end and r
       browser: () => Promise.resolve('generated-browser'),
       delete: (options) => {
         entered();
+        options.session!.before(
+          {
+            files: new Map(),
+            extensions: 1,
+            extensionIds: ['generatedextensionid'],
+          },
+          FIXTURE.account.handle,
+        );
         options.session!.finish = () => {
           throw new Error('Generated projection fault');
         };
@@ -343,6 +352,12 @@ test('an unprojectable runner failure has a closed validating fallback end and r
     view = value;
   });
   const current = (): RunView => view;
+  const unhandled: unknown[] = [];
+  let asserting = true;
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
   try {
     const plan = await engine.request({
       type: 'planRun',
@@ -370,11 +385,25 @@ test('an unprojectable runner failure has a closed validating fallback end and r
       });
     }
     await attempted;
-    await expect.poll(() => view.phase, { timeout: 10000 }).toBe('ended');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(unhandled).toEqual([]);
+    await expect.poll(() => view.phase, { timeout: 2000 }).toBe('ended');
     expect(view).toMatchObject({
       phase: 'ended',
       end: { reason: 'error', detail: 'other', cliCode: 'RUN_STOPPED' },
+      profile: {
+        readback: {
+          outcome: 'not-completed',
+          profileObserved: false,
+          extensionIdsBefore: ['generatedextensionid'],
+          extensionIdsAfter: ['generatedextensionid'],
+          extensionIdsAdded: [],
+          extensionIdsRemoved: [],
+        },
+      },
     });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(unhandled).toEqual([]);
     await expect
       .poll(
         async () =>
@@ -389,8 +418,163 @@ test('an unprojectable runner failure has a closed validating fallback end and r
           ).type,
       )
       .toBe('runPlanned');
+    asserting = false;
   } finally {
-    await engine.close();
-    await rm(root, { recursive: true, force: true });
+    let cleanupError: unknown;
+    try {
+      await engine.close();
+    } catch (error) {
+      cleanupError = error;
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+      await rm(root, { recursive: true, force: true }).catch((error) => {
+        cleanupError ??= error;
+      });
+    }
+    if (!asserting && cleanupError)
+      throw cleanupError instanceof Error
+        ? cleanupError
+        : new Error('Generated cleanup failed');
   }
-});
+}, 20000);
+
+test.each(['task', 'late-close'] as const)(
+  'an invalid fallback on the %s path cannot reject or strand a finished session',
+  async (path) => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-engine-invalid-fallback-'));
+    await mkdir(join(root, 'workspace'));
+    const store = await SQLiteStore.open(
+      join(root, 'workspace', 'socialprune.sqlite'),
+      { initial: fixtureWorkspace(['1001']) },
+    );
+    await store.close();
+    await createProfile(join(root, 'profiles', 'x'));
+    let entered!: () => void, release!: () => void, registered!: () => void;
+    const attempted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const allowCloseRegistration = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const closeRegistered = new Promise<void>((resolve) => {
+      registered = resolve;
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    const original = Reflect.get<ConfirmationState, 'updateRun'>(
+      ConfirmationState.prototype,
+      'updateRun',
+    );
+    const update = vi
+      .spyOn(ConfirmationState.prototype, 'updateRun')
+      .mockImplementation(function (this: ConfirmationState, value) {
+        if (value.phase === 'ended')
+          throw new Error('Generated fallback validation fault');
+        return original.call(this, value);
+      });
+    const close = vi.fn(() =>
+      Promise.reject(new Error('Generated browser close failure')),
+    );
+    const engine = await createEngine(
+      { dataFolder: root },
+      {
+        ...productionDependencies,
+        browser: () => Promise.resolve('generated-browser'),
+        delete: async (options) => {
+          options.session!.before(
+            {
+              files: new Map(),
+              extensions: 1,
+              extensionIds: ['generatedextensionid'],
+            },
+            FIXTURE.account.handle,
+          );
+          options.session!.finish = () => {
+            throw new Error('Generated projection fault');
+          };
+          entered();
+          if (path === 'late-close') {
+            await allowCloseRegistration;
+            options.session!.browser(close);
+            registered();
+            return { runId: null, completed: 0, endReason: 'done' };
+          }
+          throw new Error('Generated runner fault');
+        },
+      },
+    );
+    let view: RunView = { phase: 'idle', version: 0 };
+    engine.onRunView((value) => {
+      view = value;
+    });
+    const current = (): RunView => view;
+    try {
+      const plan = await engine.request({
+        type: 'planRun',
+        requestId: 'plan',
+        platform: 'x',
+        mode: 'delete',
+        accountKey: FIXTURE.account.key,
+      });
+      if (plan.type !== 'runPlanned') throw new Error(JSON.stringify(plan));
+      await engine.request({
+        type: 'startRun',
+        requestId: 'prepare',
+        browser: 'edge',
+        planHash: plan.plan.planHash,
+      });
+      for (const action of ['acknowledge-warning', 'start'] as const) {
+        const live = current();
+        if (live.phase === 'idle') throw new Error('No run');
+        await engine.request({
+          type: 'runAction',
+          requestId: action,
+          runId: live.runId,
+          version: live.version,
+          action,
+        });
+      }
+      await attempted;
+      if (path === 'late-close') {
+        const closing = engine.close();
+        release();
+        await closeRegistered;
+        await closing;
+        expect(close).toHaveBeenCalledTimes(1);
+      }
+      await expect.poll(() => view.phase, { timeout: 2000 }).toBe('idle');
+      expect(Object.keys(view).sort()).toEqual(['phase', 'version']);
+      expect(view.version).toBeGreaterThan(0);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      if (path === 'task')
+        await expect
+          .poll(
+            async () =>
+              (
+                await engine.request({
+                  type: 'planRun',
+                  requestId: 'retry',
+                  platform: 'x',
+                  mode: 'delete',
+                  accountKey: FIXTURE.account.key,
+                })
+              ).type,
+          )
+          .toBe('runPlanned');
+    } finally {
+      release();
+      try {
+        await engine.close();
+      } finally {
+        update.mockRestore();
+        process.removeListener('unhandledRejection', onUnhandled);
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  },
+  20000,
+);

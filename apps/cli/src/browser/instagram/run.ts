@@ -139,7 +139,8 @@ export async function runContextWithDependencies(
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: { startupClosed: number; unexpectedOpened: number };
-  } = { steps: [], pace: paceSummary(pace) };
+    rows: { emptySkipped: number };
+  } = { steps: [], pace: paceSummary(pace), rows: { emptySkipped: 0 } };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
   const chosen = options.plan.canary
@@ -421,15 +422,23 @@ export async function runContextWithDependencies(
         batch++;
         last = options.now().getTime();
         answers.reset(options.plan.canary);
-        const list = await loadList(
-          page,
-          row.item,
-          options.plan.handle,
-          deps,
-          guard,
-          options.plan.canary && steps === 1,
-          options.now(),
-        );
+        const rowCounts = { emptySkipped: 0 };
+        const list = await (async () => {
+          try {
+            return await loadList(
+              page,
+              row.item,
+              options.plan.handle,
+              deps,
+              guard,
+              options.plan.canary && steps === 1,
+              options.now(),
+              rowCounts,
+            );
+          } finally {
+            report.rows.emptySkipped += rowCounts.emptySkipped;
+          }
+        })();
         accountBefore ??= list.account;
         accountAfter = list.account;
         await network?.flush();
@@ -437,6 +446,7 @@ export async function runContextWithDependencies(
         const stepReport: Record<string, unknown> = {
           filterByClicks: true,
           rows: list.rowCount,
+          emptySkipped: list.emptySkipped,
           candidates: list.candidates.length,
           scrollLoads: list.scrollLoads,
           expansionClicks: 0,

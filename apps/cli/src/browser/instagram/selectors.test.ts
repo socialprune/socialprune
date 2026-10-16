@@ -1,15 +1,76 @@
 import { expect, test } from 'vitest';
 import type { PostProjection } from './selectors.ts';
+import type { Page } from 'playwright-core';
 import {
   confirmComment,
   rowCandidate,
   utcWindow,
   postAddress,
+  readRows,
+  relativeAgeMs,
 } from './selectors.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+
+test('C4 row scans skip normalized-empty buttons, preserve original indices and reject nonempty unknown ages', async () => {
+  let texts = [
+    '',
+    ' \n ',
+    'generated_person A generated first comment\n8y',
+    'generated_person Another generated comment\n8 years',
+    'generated_person Generated week\n1w',
+    'generated_person Generated day\n2d',
+  ];
+  const locator = {
+    filter: () => locator,
+    allInnerTexts: () => Promise.resolve(texts),
+  };
+  const page = { locator: () => locator } as unknown as Page,
+    counts = { emptySkipped: 0 };
+  expect(
+    (await readRows(page, counts)).map((row) => [
+      row.username,
+      row.age,
+      row.index,
+    ]),
+  ).toEqual([
+    ['generated_person', '8y', 2],
+    ['generated_person', '8 years', 3],
+    ['generated_person', '1w', 4],
+    ['generated_person', '2d', 5],
+  ]);
+  expect(counts.emptySkipped).toBe(2);
+  await readRows(page, counts);
+  expect(counts.emptySkipped).toBe(2);
+  texts = ['', 'generated_person A generated malformed comment\n8q'];
+  await expect(readRows(page, counts)).rejects.toMatchObject({
+    code: 'INSTAGRAM_SHAPE_CHANGED',
+    token: 'row-structure',
+  });
+});
+test('C4 relative age years use one coarse diagnostic conversion and never alter exact comment checks', () => {
+  for (const age of ['1y', '1 year', '1 years'])
+    expect(relativeAgeMs(age)).toBe(31557600000);
+  expect(relativeAgeMs('8y')).toBe(8 * 31557600000);
+  expect(relativeAgeMs('8 years')).toBe(8 * 31557600000);
+  for (const [age, expected] of [
+    ['2w', 1209600000],
+    ['2 weeks', 1209600000],
+    ['2d', 172800000],
+    ['2 days', 172800000],
+    ['2h', 7200000],
+    ['2 hours', 7200000],
+    ['2m', 120000],
+    ['2 minutes', 120000],
+    ['2s', 2000],
+    ['2 seconds', 2000],
+  ] as const)
+    expect(relativeAgeMs(age)).toBe(expected);
+  for (const age of ['8q', '8months', '8y trailing'])
+    expect(relativeAgeMs(age)).toBeNull();
+});
 
 test.each(['owner', 'author', 'text', 'time', 'several'] as const)(
   'red-check %s independently rejects a planted wrong match',

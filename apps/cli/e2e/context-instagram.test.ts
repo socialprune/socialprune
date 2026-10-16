@@ -46,6 +46,12 @@ async function harness(variant: Variant = 'success', count = 1) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
     profile = join(directory, 'profile');
   const fixture = await instagramFixture(count);
+  if (['year-rows', 'year-word-rows', 'year-empty-rows'].includes(variant)) {
+    for (const [index, item] of fixture.items.entries())
+      item.createdAt = new Date(
+        Date.parse('2018-10-15T12:00:00.000Z') + index * 86400000,
+      ).toISOString();
+  }
   const fake = await fakeInstagram(4401, fixture.items);
   fake.setVariant(variant);
   await createProfile(profile, 'instagram');
@@ -245,6 +251,72 @@ async function harness(variant: Variant = 'success', count = 1) {
     },
   };
 }
+test.each([
+  'year-rows',
+  'year-word-rows',
+  'empty-image-buttons',
+  'year-empty-rows',
+] as const)(
+  'C4 %s keeps the real row index and reads the account from a nonempty row',
+  async (variant) => {
+    const h = await harness(variant);
+    try {
+      const result = await h.start(true),
+        run = (await h.store.browserJournal()).runs[0]!;
+      expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+      expect(run.profileReport).toMatchObject({
+        accountBefore: h.fixture.items[0]!.account.handle,
+        accountAfter: h.fixture.items[0]!.account.handle,
+      });
+      expect(run.canaryAcceptedAt).toBeTruthy();
+      const reportText = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const empty =
+        variant === 'empty-image-buttons' || variant === 'year-empty-rows';
+      expect(JSON.parse(reportText)).toMatchObject({
+        rows: {
+          emptySkipped: empty ? IG_FIXTURE.expected.emptyImageButtons : 0,
+        },
+        readback: { accountSame: true },
+      });
+      if (variant !== 'empty-image-buttons')
+        expect(JSON.parse(reportText)).toMatchObject({
+          steps: [expect.objectContaining({ oldestWithinWeek: true })],
+        });
+      expect(
+        h.fake.requests.filter(
+          (request) => request.path === `/p/${IG_FIXTURE.code}/`,
+        ),
+      ).toHaveLength(1);
+      expect(h.fake.events.flatMap((value) => value.clicks)).not.toContain(
+        'Generated image decoration',
+      );
+      for (const value of Object.values(IG_FIXTURE.other))
+        expect(reportText).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('C4 a nonempty row with unknown age suffix still stops at row-structure', async () => {
+  const h = await harness('unknown-age');
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+    });
+    expect(h.notices.join('')).toContain('Stop detail: row-structure');
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).toBeTruthy();
+    expect(run.canaryAcceptedAt).toBeNull();
+    expect(
+      h.fake.requests.some((request) => request.path.startsWith('/p/')),
+    ).toBe(false);
+  } finally {
+    await h.close();
+  }
+});
 test('C3 restored launch tab POST is journaled before confirmation, then its page is closed and counted', async () => {
   const h = await harness();
   let restored: Page | undefined;

@@ -56,6 +56,8 @@ A later page outside the confirmation and reading pages is closed without naviga
 
 Existing extension folder IDs form the before set and do not count as additions, while any added ID still stops the run and extensions remain disabled at launch.
 
+The second real canary on 2026-10-16 showed empty image buttons among the comments and ages in years after sorting oldest first, so empty buttons are now skipped and counted without values and both abbreviated and written year ages are parsed while nonempty unknown row shapes still stop the run.
+
 ## Decision Drivers
 
 - Keep the context of each comment, the post it answered, before the comment is deleted. (2026-10-11)

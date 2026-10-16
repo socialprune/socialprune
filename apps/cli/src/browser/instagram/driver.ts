@@ -10,6 +10,7 @@ import type { NetworkPolicy } from './network.ts';
 import {
   rows,
   readRows,
+  relativeAgeMs,
   checkPage,
   clickAllowed,
   utcWindow,
@@ -20,6 +21,7 @@ import {
   currentImageSource,
 } from './selectors.ts';
 import type { PostProjection, ConfirmationResult } from './selectors.ts';
+import type { RowReadCounts } from './selectors.ts';
 import { ContextStop } from './report.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
@@ -137,6 +139,7 @@ export async function loadList(
   guard: () => void,
   oldest = false,
   now = new Date(),
+  rowCounts: RowReadCounts = { emptySkipped: 0 },
 ) {
   const navigationStart = performance.now();
   try {
@@ -150,13 +153,13 @@ export async function loadList(
   }
   await waitPage(
     page,
-    async () => (await rows(page).count()) > 0,
+    async () => (await readRows(page, rowCounts)).length > 0,
     deps.responseMs,
     'list-timeout',
     guard,
   );
   deps.navigated?.('list', performance.now() - navigationStart);
-  const accountRows = await readRows(page);
+  const accountRows = await readRows(page, rowCounts);
   if (
     accountRows.some(
       (row) => row.username.toLowerCase() !== expected.toLowerCase(),
@@ -170,32 +173,25 @@ export async function loadList(
     guard,
     oldest
       ? async () => {
-          const first = (await readRows(page))[0];
-          const age = first?.age.match(/^(\d+)\s*(w|d|h|m|s)/);
-          if (age) {
-            const units: Record<string, number> = {
-              w: 604800000,
-              d: 86400000,
-              h: 3600000,
-              m: 60000,
-              s: 1000,
-            };
+          const first = (await readRows(page, rowCounts))[0];
+          const age = first ? relativeAgeMs(first.age) : null;
+          if (age !== null) {
             oldestWithinWeek =
-              Math.abs(
-                now.getTime() -
-                  Number(age[1]) * units[age[2]!]! -
-                  Date.parse(item.createdAt),
-              ) <= 604800000;
+              Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <=
+              604800000;
           }
         }
       : undefined,
   );
-  let previous = JSON.stringify(await readRows(page)),
+  let previous = JSON.stringify(await readRows(page, rowCounts)),
     scrollLoads = 0,
     full = false;
   for (let index = 0; index < 10; index++) {
     guard();
-    const box = await rows(page).first().locator('xpath=..').boundingBox();
+    const first = (await readRows(page, rowCounts))[0];
+    const box = first
+      ? await rows(page).nth(first.index).locator('xpath=..').boundingBox()
+      : null;
     if (box)
       await page.mouse.move(
         Math.max(0, box.x + box.width / 2),
@@ -205,7 +201,7 @@ export async function loadList(
     await deps.sleep(deps.pace.scrollMs);
     guard();
     await checkPage(page);
-    const current = JSON.stringify(await readRows(page));
+    const current = JSON.stringify(await readRows(page, rowCounts));
     if (current === previous) {
       full = false;
       break;
@@ -214,7 +210,7 @@ export async function loadList(
     full = index === 9;
     previous = current;
   }
-  const entries = await readRows(page);
+  const entries = await readRows(page, rowCounts);
   if (
     entries.some((row) => row.username.toLowerCase() !== expected.toLowerCase())
   )
@@ -223,6 +219,7 @@ export async function loadList(
     candidates: entries.filter((row) => rowCandidate(row.text, item.text)),
     account: entries[0]?.username ?? accountRows[0]!.username,
     rowCount: entries.length,
+    emptySkipped: rowCounts.emptySkipped,
     scrollLoads,
     full,
     oldestWithinWeek,

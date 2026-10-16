@@ -20,6 +20,9 @@ export const IG_FIXTURE = {
     success: ['sending', 'confirmed'],
     failure: ['sending', 'unconfirmed'],
     lowerBoundSteps: 1,
+    emptyImageButtons: 3,
+    yearAge: '8y',
+    fullYearAge: '8 years',
   },
   allowedClicks: [
     'Sort & filter',
@@ -138,4 +141,9 @@ export type Variant =
   | 'please-wait'
   | 'checkpoint-required'
   | 'spam'
-  | 'signal-metrics';
+  | 'signal-metrics'
+  | 'year-rows'
+  | 'year-word-rows'
+  | 'empty-image-buttons'
+  | 'year-empty-rows'
+  | 'unknown-age';

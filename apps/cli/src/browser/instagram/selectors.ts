@@ -120,18 +120,49 @@ export async function checkPage(page: Page): Promise<void> {
     if (await page.getByText(text, { exact: true }).count())
       throw new ContextStop('PLATFORM_CHECK', token);
 }
+const AGE_UNITS =
+  '(?:y|w|d|h|m|s|years?|weeks?|days?|hours?|minutes?|seconds?)';
+const ROW_PATTERN = new RegExp(
+  `^([A-Za-z0-9_.]{1,30})\\s+(.+?)\\s+(\\d+\\s*${AGE_UNITS})$`,
+);
+const AGE_PATTERN = new RegExp(`^(\\d+)\\s*(${AGE_UNITS})$`);
+/** Coarse oldest-list diagnostic only; comment confirmation uses permalink time. */
+export function relativeAgeMs(value: string): number | null {
+  const match = AGE_PATTERN.exec(value);
+  if (!match) return null;
+  // A displayed year is rounded by Instagram. Use an average calendar year for
+  // this diagnostic, never as evidence of a comment's exact creation time.
+  const units: Record<string, number> = {
+    y: 31557600000,
+    w: 604800000,
+    d: 86400000,
+    h: 3600000,
+    m: 60000,
+    s: 1000,
+  };
+  const age = Number(match[1]) * units[match[2]![0]!]!;
+  return Number.isFinite(age) ? age : null;
+}
+export interface RowReadCounts {
+  /** Maximum simultaneous empty matches seen within one list load. */
+  emptySkipped: number;
+}
 export async function readRows(
   page: Page,
+  counts?: RowReadCounts,
 ): Promise<{ username: string; text: string; age: string; index: number }[]> {
   const result = [];
   const entries = rows(page);
   const texts = await entries.allInnerTexts();
+  if (counts)
+    counts.emptySkipped = Math.max(
+      counts.emptySkipped,
+      texts.filter((text) => !normalize(text)).length,
+    );
   for (let index = 0; index < texts.length; index++) {
     const raw = normalize(texts[index]!);
-    const match =
-      /^([A-Za-z0-9_.]{1,30})\s+(.+?)\s+(\d+\s*(?:w|d|h|m|s|weeks?|days?|hours?|minutes?|seconds?))$/.exec(
-        raw,
-      );
+    if (!raw) continue;
+    const match = ROW_PATTERN.exec(raw);
     if (!match)
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
     result.push({

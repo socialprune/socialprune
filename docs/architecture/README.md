@@ -164,7 +164,7 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 
 ## Decision records
 
-001 to 022, 028 and 030 accepted; 023, 026, 027, 029 and 031 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
+001 to 022, 028, 030 and 031 accepted; 023, 026, 027 and 029 proposed; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
 
 | ADR | Decision |
 |---|---|
@@ -196,4 +196,4 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 | [028](adrs/ADR-028-instagram-signed-in-session.md) | Accepted on 2026-10-16, revised 2026-10-15 after spike S5: each Instagram comment is found in the "Your activity" list by date and text and counts only when its post confirms text, time and owner; the post's context is kept; X's pace, counted apart; deletion in a later record |
 | [029](adrs/ADR-029-signed-in-originals-pass.md) | Proposed: a signed-in pass reads only what the anonymous fetch missed, from X's own page answers; videos stored and served with byte ranges; canary first; schema version 4 |
 | [030](adrs/ADR-030-instagram-context-record.md) | Accepted on 2026-10-16: Instagram post context as its own record per confirmed comment; the journal names its platform; schema version 5 |
-| [031](adrs/ADR-031-desktop-app.md) | Proposed: a Windows desktop app on Electron 44.8.0 that hosts the review build and runs the CLI's engine in a utility process, a narrow IPC bridge instead of the loopback server, the platform in the person's visible Edge or Chrome beside a run monitor, Store MSIX first and SignPath later |
+| [031](adrs/ADR-031-desktop-app.md) | Accepted on 2026-10-16: a Windows desktop app on Electron 44.8.0 that hosts the review build and runs the CLI's engine in a utility process, a narrow IPC bridge instead of the loopback server, the platform in the person's visible Edge or Chrome beside a run monitor, Store MSIX first and SignPath later |

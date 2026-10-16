@@ -1,6 +1,6 @@
 # ADR-031: A Windows desktop app around the review and the engine
 
-- **Status:** Proposed
+- **Status:** Accepted on 2026-10-16 by the maintainer (card DESK-1, version 1: "Ja continue accordingly nach deiner Empfehlung"), with a Microsoft Partner Center account as an individual in his name, the GitHub download unsigned until SignPath Foundation accepts the project, his SignPath application after the first release, and Chromium's license notices recorded with ADR-002
 - **Date:** 2026-10-16
 - **Hard constraints touched:** 1 (no certificate, no store fee, no paid signing service), 2 (the window reaches no network, and the workspace stays in a local folder that no sync service moves), 3 (decisions are still written only by the person in the review), 4 (signed-in runs stay in the person's installed Edge or Chrome, visible, with no change to how the browser presents itself; the person's click is the order), 5 (the SmartScreen and run warnings promise nothing), 6 (every test uses generated data and the fake platforms)
 - **Supersedes in part, on acceptance:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-004](ADR-004-content-security-policy.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-018](ADR-018-cli-distribution.md). It also changes the proposed record [ADR-023](ADR-023-acting-in-own-account.md). Section 10 gives the new wording.

@@ -67,7 +67,7 @@ Product phases, gates and spikes live in the maintainer's `PLAN.md`. This file h
 ### BL-009: Timing failures that pass on rerun
 
 - **Added:** 2026-10-15
-- **What:** three known kinds, each green in isolation and in a full rerun. Node 24.21 crashes some test workers with exit code 3221226505 (0xC0000409), seen in vitest forks (`server.test.ts`, `injection.test.ts`) and in a Playwright worker. `apps/web/e2e/review.spec.ts:230` fails on Linux Chromium in CI under load. The ordered fill tests (`order-*`) ran out of their 15 second wait for the confirmation page or their 60 second limit on a busy machine on 2026-10-15, five different cases in two runs of four repeats, none twice.
+- **What:** known kinds, each green in isolation and in a full rerun. Node 24.21 crashes some test workers with exit code 3221226505 (0xC0000409), seen in vitest forks (`server.test.ts`, `injection.test.ts`) and in a Playwright worker. `apps/web/e2e/review.spec.ts:230` fails on Linux Chromium in CI under load. The ordered fill tests (`order-*`) ran out of their 15 second wait for the confirmation page or their 60 second limit on a busy machine on 2026-10-15, five different cases in two runs of four repeats, none twice. On 2026-10-16 three web cases each timed out once on a visibility wait and passed on rerun: `workspace-protocol.spec.ts:37` in Chromium and `update.spec.ts:38` in WebKit on a busy Windows machine, and `demo.spec.ts:467` in WebKit on Linux in CI, where the failed job passed on its second attempt.
 - **Why deferred:** no assertion failed and no case failed twice, so there is nothing to fix yet.
 - **Trigger:** the same test failing twice in a row, a failure on a quiet machine, or a Node release that names the crash.
 

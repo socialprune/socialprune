@@ -123,7 +123,7 @@ We chose **Option A: Electron 44.8.0, pinned, with the engine in a utility proce
 
 | Process | Runs | May reach | May never reach |
 |---|---|---|---|
-| Main | window, `app://` scheme, IPC routing, single-instance lock, file dialogs, window placement | the engine through one `MessagePort`; `shell.openExternal` for the guide's own links, after the person's click | export content beyond passing messages; any network |
+| Main | window, `app://` scheme, IPC routing, single-instance lock, file dialogs, window placement | the engine through one `MessagePort`; `shell.openExternal` for the guide's own links, after the person's click; since 2026-10-16 (maintainer, card DESK-2) also for the platform post addresses that the review, the click list and the archive link to, X status and Instagram `/p/` and `/reel/` addresses, after the person's click and only when `platformPostUrl` in `packages/core` accepts the address | export content beyond passing messages; any network |
 | Renderer | the `dist-desktop` build of `apps/web` | the preload bridge | Node, `require`, the file system, any network: `contextIsolation`, `sandbox` and `webSecurity` on, `nodeIntegration` and `webviewTag` off, navigation and new windows denied, every permission request denied |
 | Preload | `contextBridge` exposes `window.socialprune` with `request(method, body)` and `onRunView(listener)` | `ipcRenderer` inside the preload only | anything else; `ipcRenderer` itself is never exposed |
 | Engine | a bundled `engine.js` in a utility process | the workspace folder, the dedicated profiles, Chrome or Edge through `playwright-core`, and during a run the platform hosts ADR-027 to ADR-030 allow | the renderer directly |

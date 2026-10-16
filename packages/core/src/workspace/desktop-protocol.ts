@@ -2,6 +2,7 @@ import { z } from 'zod';
 import '../browser-init.ts';
 import { ItemKindSchema, UtcTimestampSchema } from '../model/v1.ts';
 import { HttpReviewRequestSchema, WorkspaceReplySchema } from './protocol.ts';
+import { platformPostUrl } from './desktop-links.ts';
 import {
   DesktopCliErrorCodeSchema,
   DesktopErrorCodeSchema,
@@ -36,6 +37,29 @@ const unique = <T>(values: readonly T[]) =>
   new Set(values).size === values.length;
 
 export const DesktopPlatformSchema = z.enum(['x', 'instagram']);
+/** Main resolves guide identifiers or checks a closed post route after a click. */
+export const DesktopLinkSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('guide-source'),
+    platform: DesktopPlatformSchema,
+    factId: z
+      .string()
+      .min(3)
+      .max(128)
+      .regex(/^(?:x|instagram)\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
+    locale: z.enum(['en', 'de']),
+  }),
+  z.strictObject({ kind: z.literal('guide-report') }),
+  z.strictObject({
+    kind: z.literal('platform-post'),
+    url: z
+      .string()
+      .min(1)
+      .max(4096)
+      .refine((value) => platformPostUrl(value) !== null),
+  }),
+]);
+export type DesktopLink = z.infer<typeof DesktopLinkSchema>;
 export const DesktopBrowserSchema = z.enum(['edge', 'chrome']);
 export const DesktopRunModeSchema = z.enum([
   'delete',
@@ -306,9 +330,19 @@ const active = {
   progress: RunProgressSchema,
   today: RunTodaySchema,
   pace: z.strictObject({
-    secondsPerStep: z.number().int().min(10).max(30),
-    batchSize: z.literal(20),
-    batchPauseMs: z.union([z.literal(0), z.literal(900_000)]),
+    // productionPace accepts safe-integer milliseconds without a semantic upper
+    // bound. Retain that numeric maximum, including subsecond slower overrides.
+    secondsPerStep: z
+      .number()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER / 1000)
+      .refine(
+        (seconds) =>
+          Number.isSafeInteger(Math.round(seconds * 1000)) &&
+          seconds === Math.round(seconds * 1000) / 1000,
+      ),
+    batchSize: count.min(1).max(100),
+    batchPauseMs: count,
   }),
   nextStepAt: timestamp.nullable(),
   currentEntry: RunEntrySchema.nullable(),
@@ -358,7 +392,7 @@ export const RunViewSchema = z
     z.strictObject({
       ...active,
       phase: z.literal('batch-pause'),
-      remainingMs: duration.max(900_000),
+      remainingMs: count,
       until: timestamp,
     }),
     z.strictObject({
@@ -398,6 +432,37 @@ export const RunViewSchema = z
   ])
   .superRefine((view, ctx) => {
     if (view.phase === 'idle') return;
+    const { mode, pace, today } = view;
+    const boundedOrder = mode === 'fill' || mode === 'context';
+    const minSeconds = mode === 'delete' ? 30 : 10;
+    const maxBatch = mode === 'verify' ? 100 : 20;
+    const maxCap =
+      mode === 'verify'
+        ? 100
+        : mode === 'delete'
+          ? 200
+          : mode === 'fill'
+            ? 300
+            : 600;
+    if (
+      pace.secondsPerStep < minSeconds ||
+      (boundedOrder &&
+        (!Number.isInteger(pace.secondsPerStep) || pace.secondsPerStep > 30)) ||
+      (mode === 'context' && view.canary && pace.secondsPerStep !== 30) ||
+      pace.batchSize > maxBatch ||
+      (boundedOrder && pace.batchSize !== maxBatch) ||
+      (boundedOrder
+        ? ![0, 900_000].includes(pace.batchPauseMs)
+        : pace.batchPauseMs < (mode === 'delete' ? 900_000 : 0)) ||
+      today.cap > maxCap ||
+      (view.phase === 'batch-pause' && view.remainingMs > pace.batchPauseMs) ||
+      (view.phase === 'reload-wait' && view.canary) ||
+      (mode !== 'fill' && ['rate-wait', 'reload-wait'].includes(view.phase))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Pace, cap or wait exceeds this run mode.',
+      });
     if (
       (view.platform === 'instagram') !== (view.mode === 'context') ||
       !view.accountKey.startsWith(`${view.platform}:`)
@@ -429,15 +494,6 @@ export const RunViewSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'Instagram responses do not belong to X.',
-      });
-    if (
-      view.platform === 'x' &&
-      view.today.cap >
-        (view.mode === 'verify' ? 100 : view.mode === 'delete' ? 200 : 300)
-    )
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Daily cap exceeds this run mode.',
       });
     const actions =
       view.mode === 'context'
@@ -547,6 +603,11 @@ export const DesktopCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ ...request, type: z.literal('backupRestore') }),
   z.strictObject({ ...request, type: z.literal('dataFolderInfo') }),
   z.strictObject({ ...request, type: z.literal('dataFolderOpen') }),
+  z.strictObject({
+    ...request,
+    type: z.literal('openLink'),
+    link: DesktopLinkSchema,
+  }),
 ]);
 export type DesktopCommand = z.infer<typeof DesktopCommandSchema>;
 // Preserve HttpReviewRequestSchema's refinements, especially exact decision
@@ -738,6 +799,7 @@ export const DesktopReplySchema = z.discriminatedUnion('type', [
     type: z.literal('dataFolderOpened'),
     opened: z.literal(true),
   }),
+  z.strictObject({ ...request, type: z.literal('linkOpened') }),
   z.strictObject({
     ...request,
     type: z.literal('desktopFailed'),
@@ -761,6 +823,7 @@ const commandReplies = {
   backupRestore: 'backupRestored',
   dataFolderInfo: 'dataFolderInfo',
   dataFolderOpen: 'dataFolderOpened',
+  openLink: 'linkOpened',
 } as const satisfies Record<DesktopCommand['type'], DesktopReply['type']>;
 export type DesktopReplyFor<Request extends DesktopRequest> = Extract<
   DesktopReply,

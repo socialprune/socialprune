@@ -55,7 +55,7 @@ export function guideFacts(guide: PlatformGuide): readonly GuideFact[] {
   ];
 }
 
-function helpSource(value: string): boolean {
+export function helpSource(value: string): boolean {
   try {
     const url = new URL(value);
     return (

@@ -3,6 +3,7 @@ import * as ts from 'typescript';
 import { expect, test } from 'vitest';
 import {
   DesktopCliErrorCodeSchema,
+  DesktopErrorCodeSchema,
   InstagramHostClassSchema,
   InstagramPathClassSchema,
   InstagramRateSignalSchema,
@@ -12,15 +13,20 @@ import {
   RunJournalCodeSchema,
   RunReadbackOutcomeSchema,
   RunStopDetailSchema,
+  RunViewSchema,
   XPlatformCheckTokenSchema,
   XRateOperationSchema,
   xRateOperationToken,
 } from './desktop-protocol.ts';
+import type { DesktopRunMode } from './desktop-protocol.ts';
 import {
   BrowserActionSchema,
   BrowserAttemptStateSchema,
   BrowserRunSchema,
 } from '../model/browser.ts';
+import { WORKSPACE_ERROR_CODES } from './errors.ts';
+
+const desktopOnlyCodes = ['ENGINE_UNAVAILABLE', 'LINK_UNKNOWN'] as const;
 
 // Parse producer source as data. Importing the producer's runtime here would
 // drag browser runners into core's TypeScript and renderer dependency graphs.
@@ -89,11 +95,457 @@ function assertCovered(
   ).toEqual([]);
 }
 
+function numberValue(node: ts.Node): number {
+  if (ts.isNumericLiteral(node)) return Number(node.text.replaceAll('_', ''));
+  if (ts.isBinaryExpression(node)) {
+    const left = numberValue(node.left),
+      right = numberValue(node.right);
+    if (node.operatorToken.kind === ts.SyntaxKind.AsteriskToken)
+      return left * right;
+    if (node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+      return left + right;
+  }
+  throw new Error(`Changed numeric producer expression: ${node.getText()}`);
+}
+function numericObject(
+  file: ts.SourceFile,
+  name: string,
+): Record<string, number> {
+  const object = nodes(
+    declaration(file, name),
+    ts.isObjectLiteralExpression,
+  )[0];
+  if (!object) throw new Error(`Missing pace object: ${name}`);
+  return Object.fromEntries(
+    object.properties.map((entry) => {
+      if (!ts.isPropertyAssignment(entry) || !ts.isIdentifier(entry.name))
+        throw new Error(`Changed pace object: ${name}`);
+      return [entry.name.text, numberValue(entry.initializer)];
+    }),
+  );
+}
+function orderBounds(file: ts.SourceFile, name: string, field: string) {
+  const entry = nodes(declaration(file, name), ts.isPropertyAssignment).find(
+    (node) => ts.isIdentifier(node.name) && node.name.text === field,
+  );
+  if (!entry) throw new Error(`Missing order field: ${field}`);
+  const calls = nodes(entry.initializer, ts.isCallExpression);
+  const bound = (name: string) => {
+    const call = calls.find(
+      (node) =>
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === name,
+    );
+    if (!call?.arguments[0]) throw new Error(`Missing ${field}.${name}`);
+    return numberValue(call.arguments[0]);
+  };
+  expect(
+    calls.some(
+      (node) =>
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'int',
+    ),
+  ).toBe(true);
+  return { min: bound('min'), max: bound('max') };
+}
+function functionSource(
+  file: ts.SourceFile,
+  name: string,
+): ts.FunctionDeclaration {
+  const found = nodes(file, ts.isFunctionDeclaration).find(
+    (node) => node.name?.text === name,
+  );
+  if (!found) throw new Error(`Missing producer function: ${name}`);
+  return found;
+}
+
+function compact(node: ts.Node): string {
+  return node.getText().replace(/\s+/g, '');
+}
+function assertBatchPause(file: ts.SourceFile, schema: string): void {
+  const entry = nodes(declaration(file, schema), ts.isPropertyAssignment).find(
+    (node) => ts.isIdentifier(node.name) && node.name.text === 'batchPause',
+  );
+  if (!entry) throw new Error('Missing batch-pause order field');
+  expect(compact(entry.initializer)).toBe('z.boolean().default(true)');
+}
+
+async function paceInputs() {
+  const x = await source('apps/cli/src/browser/pace.ts');
+  const production = functionSource(x, 'productionPace');
+  const comparisons = nodes(production, ts.isBinaryExpression)
+    .filter((node) =>
+      [ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken].includes(
+        node.operatorToken.kind,
+      ),
+    )
+    .map((node) => node.getText(x).replace(/\s+/g, ''))
+    .sort();
+  expect(comparisons).toEqual(
+    [
+      'pace.batchSize<1',
+      'pace.batchSize>floor.batchSize',
+      'pace.intervalMs<floor.intervalMs',
+      'pace.pauseMs<floor.pauseMs',
+      'pace.perDay<1',
+      'pace.perDay>floor.perDay',
+      'v<0',
+    ].sort(),
+  );
+  expect(
+    nodes(production, ts.isCallExpression).map((node) =>
+      node.getText(x).replace(/\s+/g, ''),
+    ),
+  ).toContain('Number.isSafeInteger(v)');
+  const fill = await source('apps/cli/src/browser/x/fill/order.ts');
+  const context = await source('apps/cli/src/browser/instagram/pace.ts');
+  const order = await source('apps/cli/src/browser/instagram/order.ts');
+  assertBatchPause(fill, 'FillOrderSchema');
+  assertBatchPause(order, 'ContextOrderSchema');
+  const fillPace = compact(functionSource(fill, 'orderPace'));
+  for (const expression of [
+    'order.value.secondsPerPage*1000',
+    'perDay:order?.value.pagesPerDay??DEFAULT_FILL_PACE.perDay',
+    'batch:DEFAULT_FILL_PACE.batch',
+    'pauseMs:order?.value.batchPause===false?0:DEFAULT_FILL_PACE.pauseMs',
+  ])
+    expect(fillPace).toContain(expression);
+  const contextPace = compact(functionSource(context, 'contextPace'));
+  for (const expression of [
+    'intervalMs:canary?CONTEXT_PACE.intervalMs:',
+    'order.value.secondsPerStep*1000',
+    'perDay:order?.value.stepsPerDay??CONTEXT_PACE.perDay',
+    'pauseMs:order?.value.batchPause===false?0:base.pauseMs',
+  ])
+    expect(contextPace).toContain(expression);
+  expect(compact(functionSource(context, 'instagramDailyCount'))).toContain(
+    "run.platform==='instagram'&&run.accountKey===account",
+  );
+  const runner = await source('apps/cli/src/browser/runner.ts');
+  const dailyCount = compact(functionSource(runner, 'dailyCount'));
+  expect(dailyCount).toContain(
+    'run.accountKey===account&&run.pageOpens!==undefined',
+  );
+  expect(dailyCount).not.toContain('run.mode');
+  const report = await source('apps/cli/src/browser/x/fill/report.ts');
+  const beforePage = nodes(report, ts.isMethodDeclaration).find(
+    (node) => node.name.getText(report) === 'beforePage',
+  );
+  if (!beforePage) throw new Error('Missing rate-window producer');
+  const ceiling = nodes(beforePage, ts.isBinaryExpression).find(
+    (node) =>
+      node.operatorToken.kind === ts.SyntaxKind.GreaterThanToken &&
+      node.left.getText(report).replace(/\s+/g, '') ===
+        'window.latestReset-now',
+  );
+  const buffer = declaration(report, 'ms');
+  if (
+    !ceiling ||
+    !ts.isBinaryExpression(buffer) ||
+    buffer.operatorToken.kind !== ts.SyntaxKind.PlusToken
+  )
+    throw new Error('Changed rate-window wait shape');
+  const rateWait = numberValue(ceiling.right) + numberValue(buffer.right);
+  const fillRun = await source('apps/cli/src/browser/x/fill/run.ts');
+  expect(declaration(fillRun, 'FILL_PACE').getText(fillRun)).toBe(
+    'DEFAULT_FILL_PACE',
+  );
+  expect(compact(declaration(fillRun, 'dayCap'))).toBe('effectivePace.perDay');
+  expect(compact(declaration(fillRun, 'effectivePace'))).toBe(
+    'orderPace(options.order)',
+  );
+  expect(compact(fillRun)).toContain(
+    'run.accountKey===options.plan.accountKey&&run.pageOpens!==undefined',
+  );
+  const reload = nodes(fillRun, ts.isPropertyAssignment).find(
+    (node) => node.name.getText(fillRun) === 'waitMs',
+  );
+  if (!reload) throw new Error('Missing reload wait');
+  const reloadWait = numberValue(reload.initializer);
+  const reloadCount = nodes(fillRun, ts.isBinaryExpression).find(
+    (node) =>
+      node.left.getText(fillRun) === 'reloadCount' &&
+      node.operatorToken.kind === ts.SyntaxKind.LessThanToken,
+  );
+  if (!reloadCount) throw new Error('Missing reload count bound');
+  expect(numberValue(reloadCount.right)).toBe(3);
+  expect(compact(reloadCount.parent)).toContain('!options.plan.canary');
+  expect(
+    nodes(fillRun, ts.isCallExpression).some(
+      (node) =>
+        node.expression.getText(fillRun) === 'deps.sleep' &&
+        node.arguments[0] &&
+        ts.isNumericLiteral(node.arguments[0]) &&
+        numberValue(node.arguments[0]) === reloadWait,
+    ),
+  ).toBe(true);
+  return {
+    delete: { pace: numericObject(x, 'DELETE_PACE'), seconds: null, cap: null },
+    verify: { pace: numericObject(x, 'VERIFY_PACE'), seconds: null, cap: null },
+    fill: {
+      pace: numericObject(fill, 'DEFAULT_FILL_PACE'),
+      seconds: orderBounds(fill, 'FillOrderSchema', 'secondsPerPage'),
+      cap: orderBounds(fill, 'FillOrderSchema', 'pagesPerDay'),
+    },
+    context: {
+      pace: numericObject(context, 'CONTEXT_PACE'),
+      seconds: orderBounds(order, 'ContextOrderSchema', 'secondsPerStep'),
+      cap: orderBounds(order, 'ContextOrderSchema', 'stepsPerDay'),
+    },
+    rateWait,
+    reloadWait,
+  };
+}
+
+function projection(
+  mode: DesktopRunMode,
+  input: { pace: Record<string, number> },
+) {
+  const { pace } = input;
+  const instagram = mode === 'context';
+  return {
+    phase: 'running',
+    version: 1,
+    runId: 'generated-pace-run',
+    platform: instagram ? 'instagram' : 'x',
+    mode,
+    accountKey: `${instagram ? 'instagram' : 'x'}:generated`,
+    expectedHandle: 'generated',
+    planHash: 'a'.repeat(64),
+    canary: false,
+    pauseRequested: false,
+    progress: {
+      planned: 0,
+      completed: 0,
+      marked: 0,
+      bulk: 0,
+      settled: {
+        withdrawn: 0,
+        deleted: 0,
+        'not-found': 0,
+        failed: 0,
+        ambiguous: 0,
+        'not-deleted': 0,
+        'still-gone': 0,
+        reappeared: 0,
+        read: 0,
+        tombstone: 0,
+        unavailable: 0,
+        confirmed: 0,
+        unconfirmed: 0,
+        'not-listed': 0,
+      },
+    },
+    today: {
+      date: '2026-10-16',
+      timeZone: 'Europe/Berlin',
+      used: 0,
+      cap: pace.perDay!,
+      unit: instagram ? 'steps' : 'pages',
+      sharedWithXDeleteAndFill: !instagram,
+    },
+    pace: {
+      secondsPerStep: pace.intervalMs! / 1000,
+      batchSize: pace.batchSize ?? pace.batch!,
+      batchPauseMs: pace.pauseMs!,
+    },
+    nextStepAt: null,
+    currentEntry: null,
+    journal: [],
+    xWindows: [],
+    instagram: null,
+    warning: { form: 'full', acknowledged: true, text: 'Generated warning' },
+    profile: {
+      canChange: ['Generated profile change'],
+      before: null,
+      readback: null,
+    },
+    browserWindow: null,
+  };
+}
+
+test.each(['delete', 'verify', 'fill', 'context'] as const)(
+  'pace default projection: %s',
+  async (mode) => {
+    const input = await paceInputs();
+    const view = projection(mode, input[mode]);
+    expect(RunViewSchema.parse(view)).toEqual(view);
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        phase: 'batch-pause',
+        remainingMs: view.pace.batchPauseMs,
+        until: '2026-10-16T12:00:00.000Z',
+      }),
+    ).toMatchObject({ success: true });
+    if (mode === 'fill') {
+      expect(
+        RunViewSchema.safeParse({
+          ...view,
+          phase: 'rate-wait',
+          remainingMs: input.rateWait,
+          resetAt: '2026-10-16T12:00:00.000Z',
+        }),
+      ).toMatchObject({ success: true });
+      expect(
+        RunViewSchema.safeParse({
+          ...view,
+          phase: 'reload-wait',
+          remainingMs: input.reloadWait,
+          until: '2026-10-16T12:00:00.000Z',
+          reload: 3,
+        }),
+      ).toMatchObject({ success: true });
+    }
+  },
+);
+
+test.each(['delete', 'verify', 'fill', 'context'] as const)(
+  'pace producer bounds: %s admits endpoints and rejects outside values',
+  async (mode) => {
+    const inputs = await paceInputs();
+    const input = inputs[mode];
+    const view = projection(mode, input);
+    const fixed = input.seconds !== null;
+    const min = input.seconds?.min ?? input.pace.intervalMs! / 1000;
+    const max = input.seconds?.max ?? Number.MAX_SAFE_INTEGER / 1000;
+    const batch = view.pace.batchSize;
+    const cap = input.cap?.max ?? input.pace.perDay!;
+    const validPaces = [
+      { ...view.pace, secondsPerStep: min },
+      { ...view.pace, secondsPerStep: max },
+      { ...view.pace, batchSize: fixed ? batch : 1 },
+      { ...view.pace, batchPauseMs: fixed ? 0 : Number.MAX_SAFE_INTEGER },
+    ];
+    if (!fixed)
+      validPaces.push({
+        ...view.pace,
+        secondsPerStep: (input.pace.intervalMs! + 1) / 1000,
+      });
+    for (const pace of validPaces)
+      expect(
+        RunViewSchema.safeParse({ ...view, pace }).success,
+        `${mode}/${JSON.stringify(pace)}`,
+      ).toBe(true);
+    if (mode === 'context') {
+      expect(RunViewSchema.safeParse({ ...view, canary: true }).success).toBe(
+        true,
+      );
+      expect(
+        RunViewSchema.safeParse({
+          ...view,
+          canary: true,
+          pace: { ...view.pace, secondsPerStep: min },
+        }).success,
+      ).toBe(false);
+    }
+    for (const pace of [
+      { ...view.pace, secondsPerStep: min - 1 },
+      { ...view.pace, secondsPerStep: min - 0.001 },
+      { ...view.pace, secondsPerStep: max + 1 },
+      { ...view.pace, batchSize: batch + 1 },
+      { ...view.pace, batchSize: fixed ? batch - 1 : 0 },
+      { ...view.pace, batchPauseMs: fixed ? 1 : input.pace.pauseMs! - 1 },
+      { ...view.pace, batchPauseMs: -1 },
+      { ...view.pace, batchPauseMs: Number.MAX_SAFE_INTEGER + 1 },
+      ...(fixed
+        ? [{ ...view.pace, batchPauseMs: input.pace.pauseMs! + 1 }]
+        : [{ ...view.pace, secondsPerStep: min + 0.0001 }]),
+      ...(fixed ? [{ ...view.pace, secondsPerStep: min + 0.5 }] : []),
+    ])
+      expect(
+        RunViewSchema.safeParse({ ...view, pace }).success,
+        `${mode}/${JSON.stringify(pace)}`,
+      ).toBe(false);
+    const minCap = input.cap?.min ?? 1;
+    for (const value of [minCap, cap])
+      expect(
+        RunViewSchema.safeParse({
+          ...view,
+          today: { ...view.today, cap: value },
+        }).success,
+        `${mode}/cap ${value}`,
+      ).toBe(true);
+    for (const today of [
+      { ...view.today, cap: cap + 1 },
+      { ...view.today, cap: minCap - 1 },
+      { ...view.today, unit: view.today.unit === 'pages' ? 'steps' : 'pages' },
+      {
+        ...view.today,
+        sharedWithXDeleteAndFill: !view.today.sharedWithXDeleteAndFill,
+      },
+    ])
+      expect(RunViewSchema.safeParse({ ...view, today }).success, mode).toBe(
+        false,
+      );
+    const until = '2026-10-16T12:00:00.000Z';
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        phase: 'batch-pause',
+        remainingMs: view.pace.batchPauseMs + 1,
+        until,
+      }).success,
+      mode,
+    ).toBe(false);
+    const longestPause = fixed ? input.pace.pauseMs! : Number.MAX_SAFE_INTEGER;
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        pace: { ...view.pace, batchPauseMs: longestPause },
+        phase: 'batch-pause',
+        remainingMs: longestPause,
+        until,
+      }).success,
+      mode,
+    ).toBe(true);
+    for (const [phase, maximum] of [
+      ['rate-wait', inputs.rateWait],
+      ['reload-wait', inputs.reloadWait],
+    ] as const) {
+      for (const remainingMs of [0, maximum, maximum + 1])
+        expect(
+          RunViewSchema.safeParse({
+            ...view,
+            phase,
+            remainingMs,
+            ...(phase === 'rate-wait'
+              ? { resetAt: until }
+              : { until, reload: 3 }),
+          }).success,
+          `${mode}/${phase}/${remainingMs}`,
+        ).toBe(mode === 'fill' && remainingMs <= maximum);
+    }
+    if (mode === 'fill')
+      expect(
+        RunViewSchema.safeParse({
+          ...view,
+          canary: true,
+          phase: 'reload-wait',
+          remainingMs: inputs.reloadWait,
+          until,
+          reload: 1,
+        }).success,
+      ).toBe(false);
+  },
+);
+
 test('source lists cannot gain a CLI error or stop token without a desktop schema update', async () => {
   const errors = await source('apps/cli/src/cli/errors.ts');
   expect(registryKeys(errors, 'CLI_ERRORS').sort()).toEqual(
     [...DesktopCliErrorCodeSchema.options].sort(),
   );
+  expect([...new Set(DesktopErrorCodeSchema.options)].sort()).toEqual(
+    [
+      ...new Set([
+        ...registryKeys(errors, 'CLI_ERRORS'),
+        ...WORKSPACE_ERROR_CODES,
+        ...desktopOnlyCodes,
+      ]),
+    ].sort(),
+  );
+  for (const code of desktopOnlyCodes)
+    expect(DesktopCliErrorCodeSchema.safeParse(code).success).toBe(false);
   expect(strings(declaration(errors, 'PLATFORM_CHECK_REASONS'))).toEqual(
     XPlatformCheckTokenSchema.options,
   );
@@ -158,6 +610,23 @@ test('synthetic producer additions trip the same source-coverage assertion', asy
     assertCovered(
       strings(declaration(changedList, 'CONTEXT_STOP_TOKENS')),
       InstagramStopTokenSchema.options,
+    ),
+  ).toThrow('Producer tokens missing');
+});
+
+test('guide link red control: a producer error missing from the desktop error list trips coverage', async () => {
+  const errors = await source('apps/cli/src/cli/errors.ts');
+  const changed = parse(
+    errors.text.replace(
+      'export const CLI_ERRORS = {',
+      'export const CLI_ERRORS = { GENERATED_ADDED_CODE: {},',
+    ),
+  );
+  expect(registryKeys(changed, 'CLI_ERRORS')).toContain('GENERATED_ADDED_CODE');
+  expect(() =>
+    assertCovered(
+      registryKeys(changed, 'CLI_ERRORS'),
+      DesktopErrorCodeSchema.options,
     ),
   ).toThrow('Producer tokens missing');
 });

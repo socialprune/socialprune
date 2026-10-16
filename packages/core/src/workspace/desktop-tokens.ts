@@ -248,6 +248,7 @@ export const DesktopErrorCodeSchema = z.enum([
   ...DesktopCliErrorCodeSchema.options,
   ...WORKSPACE_ERROR_CODES,
   'ENGINE_UNAVAILABLE',
+  'LINK_UNKNOWN',
 ]);
 export type XPlatformCheckToken = z.infer<typeof XPlatformCheckTokenSchema>;
 export type InstagramStopToken = z.infer<typeof InstagramStopTokenSchema>;

@@ -1,13 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from 'vitest';
+import { expect, expectTypeOf, test } from 'vitest';
 import {
+  DesktopLinkSchema,
   DesktopRequestSchema,
   DesktopReplySchema,
   RunViewSchema,
   parseDesktopReply,
 } from './desktop-protocol.ts';
+import type { DesktopReplyFor } from './desktop-protocol.ts';
 
 const time = '2026-10-16T12:00:00.000Z';
 const hash = 'a'.repeat(64);
@@ -139,6 +141,148 @@ test('red control: request outside the union is rejected', () => {
   ).toBe(false);
 });
 
+test('guide link red control: openLink rejects renderer-selected URLs', () => {
+  for (const link of [
+    { kind: 'guide-report', url: 'https://example.invalid/generated' },
+    {
+      kind: 'guide-source',
+      platform: 'x',
+      factId: 'x.start',
+      locale: 'en',
+      url: 'https://example.invalid/generated',
+    },
+  ])
+    expect(
+      DesktopRequestSchema.safeParse({ type: 'openLink', requestId, link })
+        .success,
+    ).toBe(false);
+  expect(
+    DesktopRequestSchema.safeParse({
+      type: 'openLink',
+      requestId,
+      link: { kind: 'guide-report' },
+      url: 'https://example.invalid/generated',
+    }).success,
+  ).toBe(false);
+});
+
+test('guide link red control: openLink rejects unknown link kinds', () => {
+  for (const kind of ['generated-unknown', 'archive-entry'])
+    expect(
+      DesktopRequestSchema.safeParse({
+        type: 'openLink',
+        requestId,
+        link: { kind },
+      }).success,
+    ).toBe(false);
+});
+
+test('guide link identities are strict, bounded and limited to the guide grammar and locales', () => {
+  const source = {
+    kind: 'guide-source',
+    platform: 'x',
+    factId: 'x.download-window',
+    locale: 'en',
+  };
+  expect(DesktopLinkSchema.parse(source)).toEqual(source);
+  expect(
+    DesktopLinkSchema.safeParse({
+      ...source,
+      factId: `x.${'a'.repeat(126)}`,
+    }).success,
+  ).toBe(true);
+  for (const factId of [
+    '',
+    'start',
+    'x.',
+    '.start',
+    'X.start',
+    'generated.start',
+    'x.Start',
+    'x.download_window',
+    'x.download--window',
+    'x.-start',
+    'x.start-',
+    'x.start.more',
+    'x.start/next',
+    'x.start?next=other',
+    'x.start#other',
+    'x.start\n',
+    ' x.start',
+    `x.${'a'.repeat(127)}`,
+  ])
+    expect(
+      DesktopLinkSchema.safeParse({ ...source, factId }).success,
+      factId,
+    ).toBe(false);
+  for (const link of [
+    { ...source, platform: 'generated' },
+    { ...source, locale: 'fr' },
+    { ...source, locale: 'en-US' },
+    { ...source, locale: undefined },
+    { ...source, factId: undefined },
+    { ...source, platform: undefined },
+    { kind: 'guide-report', platform: 'x' },
+    { kind: 'guide-report', factId: 'x.start' },
+    { kind: 'guide-report', locale: 'en' },
+    { kind: 'guide-source' },
+    { kind: 'platform-post' },
+    'https://help.x.com/en/generated',
+    null,
+  ])
+    expect(DesktopLinkSchema.safeParse(link).success).toBe(false);
+});
+
+test('openLink replies retain the matching method and request identity, including typed failures', () => {
+  const request = {
+    type: 'openLink',
+    requestId,
+    link: { kind: 'guide-report' },
+  } as const;
+  const success = { type: 'linkOpened', requestId } as const;
+  const failure = {
+    type: 'desktopFailed',
+    requestId,
+    code: 'LINK_UNKNOWN',
+  } as const;
+  type Reply = DesktopReplyFor<typeof request>;
+  expectTypeOf<Extract<Reply, { type: 'linkOpened' }>>().toEqualTypeOf<{
+    requestId: string;
+    type: 'linkOpened';
+  }>();
+  expectTypeOf<Extract<Reply, { type: 'runView' }>>().toEqualTypeOf<never>();
+  expectTypeOf<Extract<Reply, { type: 'desktopFailed' }>['code']>()
+    .extract<'LINK_UNKNOWN'>()
+    .toEqualTypeOf<'LINK_UNKNOWN'>();
+  expect(parseDesktopReply(request, success)).toEqual(success);
+  expect(parseDesktopReply(request, failure)).toEqual(failure);
+  expect(
+    parseDesktopReply(
+      {
+        type: 'openLink',
+        requestId,
+        link: {
+          kind: 'platform-post',
+          url: 'https://x.com/generated/status/123',
+        },
+      },
+      success,
+    ),
+  ).toEqual(success);
+  for (const raw of [
+    { type: 'dataFolderOpened', requestId, opened: true },
+    { ...success, requestId: 'different' },
+    { ...failure, requestId: 'different' },
+    { ...success, url: 'https://example.invalid/generated' },
+    { ...failure, code: 'GENERATED_LINK_ERROR' },
+    { ...failure, message: 'Generated exception contents' },
+  ])
+    expect(() => parseDesktopReply(request, raw)).toThrow();
+  expect(() =>
+    parseDesktopReply({ type: 'runView', requestId }, success),
+  ).toThrow('Desktop reply method');
+});
+
 test('every desktop method has a bounded strict request and no renderer-selected path or order', () => {
   const methods = [
     {
@@ -191,6 +335,16 @@ test('every desktop method has a bounded strict request and no renderer-selected
     { type: 'backupRestore' },
     { type: 'dataFolderInfo' },
     { type: 'dataFolderOpen' },
+    { type: 'openLink', link: { kind: 'guide-report' } },
+    {
+      type: 'openLink',
+      link: {
+        kind: 'guide-source',
+        platform: 'instagram',
+        factId: 'instagram.start',
+        locale: 'de',
+      },
+    },
   ];
   for (const method of methods) {
     const request = { ...method, requestId };
@@ -347,6 +501,10 @@ test('all monitor phases parse with their required phase-specific evidence', () 
       ...base,
       mode,
       today: { ...base.today, cap },
+      pace:
+        mode === 'verify'
+          ? { secondsPerStep: 10, batchSize: 100, batchPauseMs: 0 }
+          : base.pace,
       currentEntry: { ...base.currentEntry, action },
       journal: [],
     };
@@ -580,7 +738,9 @@ test('every new reply is strict and review reply batches retain their identity a
       },
     },
     { type: 'dataFolderOpened', opened: true },
+    { type: 'linkOpened' },
     { type: 'desktopFailed', code: 'ENGINE_UNAVAILABLE' },
+    { type: 'desktopFailed', code: 'LINK_UNKNOWN' },
     { type: 'desktopFailed', code: 'WORKSPACE_BUSY' },
     { type: 'desktopFailed', code: 'INVALID_REQUEST' },
     {
@@ -698,5 +858,6 @@ test('the public desktop protocol subpath resolves without Node, CLI or writer c
     }
   };
   await visit(fileURLToPath(new URL('./desktop-protocol.ts', import.meta.url)));
+  await visit(fileURLToPath(new URL('../guide/link.ts', import.meta.url)));
   expect(visited.size).toBeGreaterThan(3);
 });

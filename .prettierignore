@@ -12,5 +12,8 @@ PLAN.md
 **/playwright-report/
 **/test-results/
 **/blob-report/
+!apps/desktop/build/
+!apps/desktop/build/**
+apps/desktop/dist/
 # Existing governance configuration belongs to its own owner.
 kilo.jsonc

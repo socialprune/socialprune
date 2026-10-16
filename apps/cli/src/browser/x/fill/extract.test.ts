@@ -17,6 +17,8 @@ import {
   NOTICE_PARENT_FIXTURE,
   emptyFocalAnswer,
   EMPTY_FOCAL_FIXTURE,
+  selfThreadEmptyAnswer,
+  SELF_THREAD_EMPTY_FIXTURE,
   inlineQuoteAnswer,
   INLINE_QUOTE_FIXTURE,
   statusEntityAnswer,
@@ -671,6 +673,65 @@ test.each(['direct', 'module'] as const)(
     );
   },
 );
+
+test('R13 direct SelfThread focal and empty SelfThread module use the existing EmptyResult classification', () => {
+  expect(
+    extract(selfThreadEmptyAnswer(DETAIL_FIXTURE.id), DETAIL_FIXTURE.id, {
+      instruction: null,
+    }),
+  ).toEqual({
+    kind: 'unavailable',
+    reason: 'EmptyResult',
+    empty: true,
+    emptyResults: SELF_THREAD_EMPTY_FIXTURE.emptyIds.length,
+  });
+});
+
+test.each(['direct', 'module'] as const)(
+  'R13 empty SelfThread %s cannot hide an unknown display or a present unknown result',
+  (location) => {
+    for (const defect of ['display', 'result'] as const) {
+      const body = selfThreadEmptyAnswer(DETAIL_FIXTURE.id);
+      const entries =
+        body.data.threaded_conversation_with_injections_v2.instructions[0]!
+          .entries;
+      const focal = entries[0]!.content.itemContent!;
+      focal.tweetDisplayType = 'Tweet';
+      const content =
+        location === 'direct'
+          ? focal
+          : entries[1]!.content.items![0]!.item.itemContent;
+      content.tweetDisplayType =
+        defect === 'display' ? 'GeneratedUnknownDisplay' : 'SelfThread';
+      if (defect === 'result')
+        Object.assign(content.tweet_results, {
+          result: { __typename: 'GeneratedUnknownResult' },
+        });
+      expect(
+        extract(body, DETAIL_FIXTURE.id, { instruction: null }),
+      ).toMatchObject({
+        kind: 'shape-changed',
+        path: location === 'direct' ? 'result-type' : 'module-result-type',
+      });
+    }
+  },
+);
+
+test('R13 a readable focal still skips absent SelfThread module results', () => {
+  const body = selfThreadEmptyAnswer(DETAIL_FIXTURE.id);
+  Object.assign(
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!
+      .entries[0]!.content.itemContent!.tweet_results,
+    { result: detailPost() },
+  );
+  expect(extract(body, DETAIL_FIXTURE.id, { instruction: null })).toMatchObject(
+    {
+      kind: 'read',
+      post: { id: DETAIL_FIXTURE.id, text: DETAIL_FIXTURE.text },
+      emptyResults: SELF_THREAD_EMPTY_FIXTURE.emptyIds.length,
+    },
+  );
+});
 
 test('the exact direct focal empty shape returns a fixed unavailable reason without projecting neighbours', () => {
   const answer = emptyFocalAnswer(DETAIL_FIXTURE.id);

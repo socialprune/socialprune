@@ -55,7 +55,8 @@ function emptyTweetResult(itemContent: Record<string, unknown>): boolean {
     (itemContent.itemType === undefined ||
       itemContent.itemType === 'TimelineTweet') &&
     (itemContent.tweetDisplayType === undefined ||
-      itemContent.tweetDisplayType === 'Tweet') &&
+      itemContent.tweetDisplayType === 'Tweet' ||
+      itemContent.tweetDisplayType === 'SelfThread') &&
     results !== null &&
     typeof results === 'object' &&
     !Array.isArray(results) &&

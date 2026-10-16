@@ -1018,6 +1018,77 @@ export function emptyFocalMarkup(
   return `${post(EMPTY_FOCAL_FIXTURE.parentId)}<div id="generated-focal">${kind === 'present' ? focal : ''}</div>${post(EMPTY_FOCAL_FIXTURE.replyId)}${kind === 'error' ? '<p data-testid="error-detail">Generated error notice</p>' : ''}${script}`;
 }
 
+export const SELF_THREAD_EMPTY_FIXTURE = {
+  emptyIds: ['920', '921', '922', '923', '924'],
+  renderedIds: Array.from({ length: 12 }, (_, index) => String(930 + index)),
+  emptyCells: 6,
+};
+export function selfThreadEmptyAnswer(focalId: string) {
+  const itemContent = (display: string, result?: unknown) => ({
+    __typename: 'TimelineTweet',
+    itemType: 'TimelineTweet',
+    tweetDisplayType: display,
+    tweet_results: result === undefined ? {} : { result },
+  });
+  const item = (id: string, content: ReturnType<typeof itemContent>) => ({
+    entryId: `conversationthread-920-tweet-${id}`,
+    item: { itemContent: content },
+  });
+  return {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: 'TimelineAddEntries',
+            entries: [
+              {
+                entryId: `tweet-${focalId}`,
+                content: {
+                  entryType: 'TimelineTimelineItem',
+                  itemContent: itemContent('SelfThread'),
+                },
+              },
+              {
+                entryId: 'conversationthread-920',
+                content: {
+                  entryType: 'TimelineTimelineModule',
+                  displayType: 'VerticalConversation',
+                  items: [
+                    ...SELF_THREAD_EMPTY_FIXTURE.emptyIds.map((id, index) =>
+                      item(
+                        id,
+                        itemContent(index === 0 ? 'SelfThread' : 'Tweet'),
+                      ),
+                    ),
+                    ...SELF_THREAD_EMPTY_FIXTURE.renderedIds.map((id) =>
+                      item(id, itemContent('Tweet', detailPost(id))),
+                    ),
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+export function selfThreadEmptyMarkup(
+  focalId: string,
+  present = false,
+): string {
+  const post = (id: string) =>
+    `<article data-testid="tweet"><a href="/generated/status/${id}"><time>2026</time></a><p data-testid="tweetText">Generated neighbour post</p></article>`;
+  return (
+    Array.from(
+      { length: SELF_THREAD_EMPTY_FIXTURE.emptyCells },
+      () => '<div data-testid="cellInnerDiv"></div>',
+    ).join('') +
+    SELF_THREAD_EMPTY_FIXTURE.renderedIds.map(post).join('') +
+    (present ? post(focalId) : '')
+  );
+}
+
 export const STOP_DETAIL_FIXTURE = {
   switcherDelayMs: 1500,
   renderWaitMs: 1000,

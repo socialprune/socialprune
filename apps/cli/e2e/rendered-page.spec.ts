@@ -34,6 +34,8 @@ import {
   noticeAlignmentAnswer,
   NOTICE_ALIGNMENT_FIXTURE,
   emptyFocalMarkup,
+  selfThreadEmptyMarkup,
+  SELF_THREAD_EMPTY_FIXTURE,
   inlineQuoteAnswer,
   inlineQuoteMarkup,
   INLINE_QUOTE_FIXTURE,
@@ -683,6 +685,36 @@ for (const kind of ['empty', 'present', 'late', 'transient', 'error'] as const)
       kind === 'present' || kind === 'late' ? 3 : 2,
     );
     expect(JSON.stringify(compared)).not.toContain('Generated neighbour post');
+  });
+
+for (const present of [false, true])
+  test(`R13 SelfThread empty answer requires focal absence, rendered=${present}`, async ({
+    page,
+  }) => {
+    await page.setContent(
+      '<html lang="de"><button data-testid="SideNav_AccountSwitcher_Button">Generated account</button>' +
+        selfThreadEmptyMarkup('910', present) +
+        '</html>',
+    );
+    expect(await page.getByTestId('tweet').count()).toBe(
+      SELF_THREAD_EMPTY_FIXTURE.renderedIds.length + Number(present),
+    );
+    expect(await page.getByTestId('cellInnerDiv').count()).toBe(
+      SELF_THREAD_EMPTY_FIXTURE.emptyCells,
+    );
+    expect(await page.getByTestId('error-detail').count()).toBe(0);
+    expect(await compareEmptyFocal(page, '910')).toMatchObject({
+      matches: !present,
+      absence: {
+        focalArticles: Number(present),
+        errorDetails: 0,
+        accountSwitchers: 1,
+        accountVisible: true,
+        focalObserved: present,
+        errorObserved: false,
+        focalAbsent: !present,
+      },
+    });
   });
 
 for (const account of ['absent', 'hidden', 'duplicate'] as const)

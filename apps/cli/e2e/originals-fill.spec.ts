@@ -72,6 +72,8 @@ import {
   emptyFocalAnswer,
   emptyFocalMarkup,
   EMPTY_FOCAL_FIXTURE,
+  selfThreadEmptyAnswer,
+  selfThreadEmptyMarkup,
   STOP_DETAIL_FIXTURE,
   delayedStopSwitcherMarkup,
   inlineQuoteAnswer,
@@ -175,6 +177,8 @@ for (const variant of [
   'order-empty-focal-late',
   'order-empty-focal-error',
   'order-empty-focal-module',
+  'order-empty-focal-selfthread-de',
+  'order-empty-focal-selfthread-present-de',
   'order-platform-render-timeout',
   'order-platform-render-timeout-de',
   'order-platform-login',
@@ -717,7 +721,9 @@ for (const variant of [
                       ? inlineQuoteAnswer(id, inlineQuoteKind)
                       : variant.startsWith('order-empty-focal-') &&
                           id === DETAIL_FIXTURE.id
-                        ? emptyFocalAnswer(id, emptyFocalKind)
+                        ? variant.includes('selfthread')
+                          ? selfThreadEmptyAnswer(id)
+                          : emptyFocalAnswer(id, emptyFocalKind)
                         : variant === 'order-empty-focal-continue'
                           ? detailAnswer(post)
                           : variant.startsWith('order-parent-')
@@ -877,7 +883,15 @@ for (const variant of [
               ? inlineQuoteMarkup(pathname!.split('/').at(-1)!, inlineQuoteKind)
               : variant.startsWith('order-empty-focal-') &&
                   pathname!.split('/').at(-1) === DETAIL_FIXTURE.id
-                ? emptyFocalMarkup(pathname!.split('/').at(-1)!, emptyFocalKind)
+                ? variant.includes('selfthread')
+                  ? selfThreadEmptyMarkup(
+                      pathname!.split('/').at(-1)!,
+                      variant === 'order-empty-focal-selfthread-present-de',
+                    )
+                  : emptyFocalMarkup(
+                      pathname!.split('/').at(-1)!,
+                      emptyFocalKind,
+                    )
                 : variant.startsWith('order-parent-')
                   ? noticeParentMarkup(pathname!.split('/').at(-1)!)
                   : variant.startsWith('order-notice-')
@@ -1721,6 +1735,7 @@ for (const variant of [
           variant === 'order-notice-unavailable-parent' ||
           variant.startsWith('order-parent-notice-') ||
           variant === 'order-empty-focal-match' ||
+          variant === 'order-empty-focal-selfthread-de' ||
           variant === 'order-empty-focal-continue' ||
           variant === 'order-status-entity-match' ||
           variant === 'order-status-entity-video' ||
@@ -2101,6 +2116,7 @@ for (const variant of [
         if (variant.startsWith('order-empty-focal-')) {
           const accepted =
             variant === 'order-empty-focal-match' ||
+            variant === 'order-empty-focal-selfthread-de' ||
             variant === 'order-empty-focal-continue';
           const original = await store.read((tx) =>
             tx.originals.get(DETAIL_FIXTURE.id),
@@ -2139,9 +2155,11 @@ for (const variant of [
                   absence: expect.objectContaining({
                     focalAbsent:
                       variant !== 'order-empty-focal-present' &&
+                      variant !== 'order-empty-focal-selfthread-present-de' &&
                       variant !== 'order-empty-focal-late',
                     focalObserved:
                       variant === 'order-empty-focal-present' ||
+                      variant === 'order-empty-focal-selfthread-present-de' ||
                       variant === 'order-empty-focal-late',
                     errorObserved: variant === 'order-empty-focal-error',
                   }),

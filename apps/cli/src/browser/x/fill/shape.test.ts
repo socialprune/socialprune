@@ -21,6 +21,53 @@ import {
   detailPost,
   DETAIL_FIXTURE,
 } from '../../../originals/test/detail.ts';
+import {
+  selfThreadEmptyAnswer,
+  SELF_THREAD_EMPTY_FIXTURE,
+} from '../../../../e2e/fake-x/fill-detail.ts';
+
+test('R13 generated SelfThread shape has six absent results and twelve ordinary Tweets', () => {
+  const body = selfThreadEmptyAnswer(DETAIL_FIXTURE.id);
+  const entries =
+    body.data.threaded_conversation_with_injections_v2.instructions[0]!.entries;
+  const focal = entries[0]!;
+  expect(focal).toMatchObject({
+    entryId: `tweet-${DETAIL_FIXTURE.id}`,
+    content: {
+      itemContent: {
+        __typename: 'TimelineTweet',
+        itemType: 'TimelineTweet',
+        tweetDisplayType: 'SelfThread',
+        tweet_results: {},
+      },
+    },
+  });
+  const contents = [
+    focal.content.itemContent!,
+    ...entries[1]!.content.items!.map((item) => item.item.itemContent),
+  ];
+  expect(
+    contents.filter(
+      (content) => !Object.hasOwn(content.tweet_results, 'result'),
+    ),
+  ).toHaveLength(SELF_THREAD_EMPTY_FIXTURE.emptyCells);
+  expect(
+    contents.filter((content) => content.tweetDisplayType === 'SelfThread'),
+  ).toHaveLength(2);
+  expect(
+    contents.flatMap((content) => {
+      const result = Reflect.get(content.tweet_results, 'result') as
+        { __typename: string; rest_id: string } | undefined;
+      return result?.__typename === 'Tweet' ? [result.rest_id] : [];
+    }),
+  ).toEqual(SELF_THREAD_EMPTY_FIXTURE.renderedIds);
+  expect(extract(body, DETAIL_FIXTURE.id, { instruction: null })).toEqual({
+    kind: 'unavailable',
+    reason: 'EmptyResult',
+    empty: true,
+    emptyResults: SELF_THREAD_EMPTY_FIXTURE.emptyIds.length,
+  });
+});
 
 // Generated values in the parent-scoped path layout: direct itemContent plus
 // content.items[].item.itemContent, note_tweet flags and core author fields.

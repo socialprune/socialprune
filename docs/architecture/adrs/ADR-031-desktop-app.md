@@ -268,7 +268,7 @@ Packaging uses `@electron/asar` 3.4.1 to build `app.asar`, `resedit` 2.0.3 to se
 - On acceptance the architecture map gains `apps/desktop` in its package table and the desktop processes in its runtime topology.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-16
 
 ## Consequences
 

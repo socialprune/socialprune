@@ -403,7 +403,7 @@ An automatic acceptance covers points 3, 5 and 7 and the agreement of point 9 fo
 | ADR-030, proposed | The record, the journal changes and schema version 5. |
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-16
 
 ## Consequences
 

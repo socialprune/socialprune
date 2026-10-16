@@ -192,7 +192,7 @@ Importing Instagram still needs no core change. The acting features are not plat
 | ADR-027, proposed | A run carries `platform: 'x' \| 'instagram'`; mode `context`, action `confirm-comment` and the states `confirmed`, `unconfirmed` and `not-listed` belong to Instagram. A recorded request may name its `operation`. |
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-16
 
 ## Consequences
 

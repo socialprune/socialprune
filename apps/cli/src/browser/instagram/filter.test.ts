@@ -145,4 +145,6 @@ test('C5 generated browser ports retain their defaults, accept overrides and rej
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('Invalid generated browser test port.');
   }
-});
+  // Six child Node runs took 0.5 to 2.6 s alone on 2026-10-17 and passed the
+  // 5 s default twice in full runs on a loaded machine (BL-009).
+}, 60_000);

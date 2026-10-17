@@ -19,6 +19,7 @@ import {
   readPost,
   confirmComment,
   currentImageSource,
+  scrollPostComments,
 } from './selectors.ts';
 import type { PostProjection, ConfirmationResult } from './selectors.ts';
 import type { RowReadCounts } from './selectors.ts';
@@ -248,11 +249,20 @@ export async function confirmOnPost(
   post: PostProjection;
   result: ConfirmationResult;
   expandClicks: number;
+  expansionScrolls: number;
   source: string | null;
 }> {
   let post = await readPost(page, deps.origin),
     result = confirmComment(post, item, handle),
-    expandClicks = 0;
+    expandClicks = 0,
+    expansionScrolls = 0,
+    emptyScrolls = 0;
+  const blockCount = () =>
+    post.element
+      .locator(
+        `xpath=.//a[time[@datetime] and (starts-with(@href,"/p/${post.code}/c/") or starts-with(@href,"/reel/${post.code}/c/"))]/ancestor::*[3]`,
+      )
+      .count();
   while (
     result.state !== 'confirmed' &&
     !['owner', 'time', 'several'].includes(result.code) &&
@@ -271,19 +281,33 @@ export async function confirmOnPost(
       : (await replies.count())
         ? 'View replies'
         : null;
-    if (!name) break;
+    const previous = await blockCount();
     await deps.sleep(deps.pace.expandMs);
     guard();
     // Re-query each control, including when the page replaces its node after a click.
-    await clickAllowed(page, { kind: 'named', name }, guard);
+    if (name) {
+      await clickAllowed(page, { kind: 'named', name }, guard);
+      emptyScrolls = 0;
+    } else {
+      if (!(await scrollPostComments(page, deps.origin, guard))) break;
+      expansionScrolls++;
+      await deps.sleep(deps.pace.expandMs);
+      guard();
+      await checkPage(page);
+    }
     expandClicks++;
     post = await readPost(page, deps.origin);
     result = confirmComment(post, item, handle);
+    if (!name) {
+      emptyScrolls = (await blockCount()) > previous ? 0 : emptyScrolls + 1;
+      if (emptyScrolls >= 2) break;
+    }
   }
   return {
     post,
     result,
     expandClicks,
+    expansionScrolls,
     source:
       result.state === 'confirmed' ? await currentImageSource(page) : null,
   };

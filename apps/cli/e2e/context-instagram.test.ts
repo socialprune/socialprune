@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, vi } from 'vitest';
+import { expect, test, vi, onTestFinished } from 'vitest';
 import { chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { Locator } from 'playwright-core';
@@ -47,17 +47,131 @@ import { DatabaseSync } from 'node:sqlite';
 import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
 import * as networkHelpers from '../src/browser/instagram/network.ts';
+import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
 import {
   filterList,
   openCandidate,
   productionContext,
+  confirmOnPost,
 } from '../src/browser/instagram/driver.ts';
 import {
   chooseFilterDate,
   chooseFilterOption,
 } from '../src/browser/instagram/filter.ts';
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
+
+test.each([
+  {
+    variant: 'scroll-first',
+    actions: IG_FIXTURE.scroll.first,
+    confirmed: true,
+  },
+  {
+    variant: 'scroll-late',
+    actions: IG_FIXTURE.scroll.maximum,
+    confirmed: false,
+  },
+  {
+    variant: 'scroll-ten',
+    actions: IG_FIXTURE.scroll.maximum,
+    confirmed: false,
+  },
+  {
+    variant: 'scroll-never',
+    actions: IG_FIXTURE.scroll.empty,
+    confirmed: false,
+  },
+  { variant: 'scroll-no-column', actions: 0, confirmed: false },
+] as const)(
+  'C8 $variant expands only the comment column with bounded actions and three-second spacing',
+  async ({ variant, actions, confirmed }) => {
+    const h = await filterHarness(variant);
+    let now = 0;
+    const times: number[] = [];
+    const move = vi.spyOn(h.page.mouse, 'move');
+    const originalWheel = h.page.mouse.wheel.bind(h.page.mouse);
+    const wheel = vi
+      .spyOn(h.page.mouse, 'wheel')
+      .mockImplementation(async (...args) => {
+        times.push(now);
+        return originalWheel(...args);
+      });
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      const read = await confirmOnPost(
+        h.page,
+        h.fixture.items[0]!,
+        h.fixture.items[0]!.account.handle!,
+        {
+          ...productionContext,
+          origin: h.fake.origin,
+          sleep: async (ms) => {
+            expect(ms).toBeGreaterThanOrEqual(3000);
+            now += ms;
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          },
+        },
+        () => {},
+      );
+      expect(read.result).toMatchObject(
+        confirmed
+          ? { state: 'confirmed' }
+          : { state: 'unconfirmed', code: 'not-shown' },
+      );
+      expect(read.expandClicks).toBe(actions);
+      expect(wheel).toHaveBeenCalledTimes(actions);
+      expect(move).toHaveBeenCalledTimes(actions);
+      expect(times).toHaveLength(actions);
+      for (let index = 0; index < times.length; index++)
+        expect(times[index]! - (times[index - 1] ?? 0)).toBeGreaterThanOrEqual(
+          3000,
+        );
+      await expect
+        .poll(() => h.fake.events.at(-1)?.wheels.length ?? 0)
+        .toBe(actions);
+      assertRecordedEvents(h.fake.events);
+      expect(h.fake.events.flatMap((event) => event.clicks)).toEqual([]);
+      if (actions)
+        expect(h.fake.events.at(-1)!.wheels).toEqual(
+          Array.from({ length: actions }, () => ({
+            area: 'post-comments',
+            x: 0,
+            y: 700,
+          })),
+        );
+    } finally {
+      wheel.mockRestore();
+      move.mockRestore();
+      await h.close();
+    }
+  },
+);
+test.each(['outside-wheel', 'column-click'] as const)(
+  'C8 recorder rejects %s on a post without loading comments',
+  async (mode) => {
+    const h = await filterHarness('scroll-first');
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      if (mode === 'outside-wheel') {
+        await h.page.mouse.move(700, 30);
+        await h.page.mouse.wheel(0, 700);
+        await expect
+          .poll(() => h.fake.events.at(-1)?.wheels.length ?? 0)
+          .toBe(1);
+      } else {
+        await h.page.locator('#comments').click();
+        await expect
+          .poll(() => h.fake.events.at(-1)?.clicks.length ?? 0)
+          .toBe(1);
+      }
+      expect(() => assertRecordedEvents(h.fake.events)).toThrow();
+      expect((await readPost(h.page, h.fake.origin)).comments).toHaveLength(10);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test('C7r measured comment rows keep the author outside one text candidate and read caption breaks and hashtag without translation', async () => {
   const h = await filterHarness();
@@ -467,6 +581,7 @@ test('C7 main media supplies the first image and actual screenshot, while fixtur
 
 test('C6 first canary reloads after the unfiltered oldest probe, records two list navigations and one step without extra pace or empty-row counts', async () => {
   const h = await harness('year-empty-rows');
+  h.setLimit(1);
   const starts: { at: string | null; sends: number }[] = [];
   h.fake.beforeList(async () => {
     const journal = await h.store.browserJournal();
@@ -480,11 +595,7 @@ test('C6 first canary reloads after the unfiltered oldest probe, records two lis
     if (starts.length === 2) h.fake.setVariant('empty-image-buttons');
   });
   try {
-    expect(await h.start(true)).toMatchObject({
-      completed: 1,
-      steps: 1,
-      endReason: 'canary',
-    });
+    expect(await h.start(true)).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
     const run = (await h.store.browserJournal()).runs[0]!;
     const report = JSON.parse(
       await readFile(
@@ -673,7 +784,11 @@ test('C6 non-canary steps keep exactly one list navigation per step and no oldes
 test('C5 foundation: six native choices cross the real driver and settle one confirmed canary', async () => {
   const h = await harness();
   try {
-    expect(await h.start(true)).toMatchObject({
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({
       completed: 1,
       steps: 1,
       endReason: 'canary',
@@ -722,6 +837,19 @@ async function filterHarness(variant: Variant = 'success') {
       ? route.continue()
       : route.abort(),
   );
+  let closing: Promise<void> | undefined;
+  let closeSettled = false;
+  const close = () =>
+    (closing ??= (async () => {
+      try {
+        await browser.close();
+      } finally {
+        await fake.close();
+      }
+    })().finally(() => {
+      closeSettled = true;
+    }));
+  onTestFinished(() => (closeSettled ? undefined : close()));
   return {
     fake,
     page,
@@ -729,10 +857,7 @@ async function filterHarness(variant: Variant = 'success') {
     async open() {
       await page.goto(fake.origin + '/your_activity/interactions/comments');
     },
-    async close() {
-      await browser.close();
-      await fake.close();
-    },
+    close,
   };
 }
 test.each([
@@ -1124,13 +1249,43 @@ async function harness(variant: Variant = 'success', count = 1) {
   const click = async (name: string) => {
     const page = await local();
     try {
-      await page
-        .getByRole('button', { name, exact: true })
-        .click({ timeout: variant === 'window-full' ? 45000 : 30000 });
+      await page.getByRole('button', { name, exact: true }).click({
+        timeout: count > 5 ? 60000 : variant === 'window-full' ? 45000 : 30000,
+      });
     } catch (error) {
       throw new Error(`${String(error)}\nRun notices: ${notices.join('')}`);
     }
   };
+  let closing: Promise<void> | undefined;
+  let closeSettled = false;
+  const close = () =>
+    (closing ??= (async () => {
+      controller.abort();
+      try {
+        try {
+          await context?.close();
+        } finally {
+          await running;
+        }
+      } finally {
+        try {
+          await store.close();
+        } finally {
+          await fake.close();
+        }
+      }
+      expect(await profileInUse(profile)).toBe(false);
+      await rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
+      assertRecordedEvents(fake.events);
+    })().finally(() => {
+      closeSettled = true;
+    }));
+  onTestFinished(() => (closeSettled ? undefined : close()));
   return {
     directory,
     profile,
@@ -1170,23 +1325,529 @@ async function harness(variant: Variant = 'success', count = 1) {
     refresh: async () => {
       Object.assign(plan, await planContext(store, plan.accountKey));
     },
-    async close() {
-      controller.abort();
-      await context?.close();
-      await running;
-      await store.close();
-      await fake.close();
-      expect(await profileInUse(profile)).toBe(false);
-      await rm(directory, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      });
-      assertRecordedEvents(fake.events);
-    },
+    close,
   };
 }
+let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test('C8 IG-6 candidate owner mismatch then confirmation counts one comment and continues to five', async () => {
+  const h = await harness('success', 17);
+  h.fake.setCandidates(0, ['owner', 'success']);
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      steps: 5,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs[0]!,
+      contexts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(run).toMatchObject({ pageOpens: 6, acceptedBy: 'automatic-check' });
+    expect(run.canaryAcceptedAt).toBeTruthy();
+    expect(journal.attempts.map((attempt) => attempt.state)).toEqual(
+      Array.from({ length: 5 }, () => ['sending', 'confirmed']).flat(),
+    );
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.state === 'sending')
+        .map((attempt) => attempt.itemId),
+    ).toEqual(h.fixture.items.slice(0, 5).map((item) => item.id));
+    expect(contexts).toHaveLength(5);
+    expect(
+      contexts.find((record) => record.itemId === h.fixture.items[0]!.id),
+    ).toMatchObject({
+      post: {
+        code: IG_FIXTURE.candidateCodes[1],
+        owner: h.fixture.items[0]!.reference.ownerHandle,
+      },
+    });
+    const report = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(
+      (JSON.parse(report) as { steps: { result: string }[] }).steps.map(
+        (step) => step.result,
+      ),
+    ).toEqual(['owner', ...Array<string>(5).fill('confirmed')]);
+    for (const value of [
+      IG_FIXTURE.candidateCodes[0],
+      ...Object.values(IG_FIXTURE.other),
+      ...Object.values(IG_FIXTURE.postDecoys),
+    ]) {
+      expect(JSON.stringify(contexts)).not.toContain(value);
+      expect(report).not.toContain(value);
+      expect(JSON.stringify(run)).not.toContain(value);
+    }
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test('C8 IG-6 candidate three final not-shown results skip one comment then confirm five', async () => {
+  const h = await harness('success', 17);
+  h.fake.setCandidates(0, ['not-shown', 'not-shown', 'not-shown']);
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      steps: 6,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs[0]!,
+      contexts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(run).toMatchObject({ pageOpens: 8, acceptedBy: 'automatic-check' });
+    expect(run.canaryAcceptedAt).toBeTruthy();
+    expect(journal.attempts).toHaveLength(12);
+    expect(journal.attempts[1]).toMatchObject({
+      itemId: h.fixture.items[0]!.id,
+      state: 'unconfirmed',
+      code: 'not-shown',
+    });
+    expect(contexts.map((record) => record.itemId)).toEqual(
+      h.fixture.items.slice(1, 6).map((item) => item.id),
+    );
+    expect(
+      h.fake.requests.filter((request) => request.path.startsWith('/p/')),
+    ).toHaveLength(8);
+    const report = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(
+      (JSON.parse(report) as { steps: { result: string }[] }).steps.map(
+        (step) => step.result,
+      ),
+    ).toEqual([
+      ...Array<string>(3).fill('not-shown'),
+      ...Array<string>(5).fill('confirmed'),
+    ]);
+    for (const value of [
+      ...IG_FIXTURE.candidateCodes,
+      ...Object.values(IG_FIXTURE.other),
+      ...Object.values(IG_FIXTURE.postDecoys),
+    ]) {
+      expect(JSON.stringify(contexts)).not.toContain(value);
+      expect(report).not.toContain(value);
+      expect(JSON.stringify(run)).not.toContain(value);
+    }
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test('C8 IG-6 candidate final text result after three candidates stops before the next comment', async () => {
+  const h = await harness('success', 17);
+  h.fake.setCandidates(0, ['owner', 'not-shown', 'edited']);
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs[0]!;
+    expect(run).toMatchObject({
+      pageOpens: 3,
+      canaryAcceptedAt: null,
+      endReason: 'error',
+      displayEndReason: 'CANARY_CHECK_FAILED',
+    });
+    expect(journal.attempts).toHaveLength(2);
+    expect(journal.attempts[1]).toMatchObject({
+      itemId: h.fixture.items[0]!.id,
+      state: 'unconfirmed',
+      code: 'text',
+    });
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      [],
+    );
+    expect(
+      h.fake.requests
+        .filter((request) => request.path.startsWith('/p/'))
+        .map((request) => request.path),
+    ).toEqual(IG_FIXTURE.candidateCodes.map((code) => `/p/${code}`));
+    const report = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(
+      (JSON.parse(report) as { steps: { result: string }[] }).steps.map(
+        (step) => step.result,
+      ),
+    ).toEqual(['owner', 'not-shown', 'text']);
+    for (const value of [
+      ...IG_FIXTURE.candidateCodes,
+      ...Object.values(IG_FIXTURE.other),
+      ...Object.values(IG_FIXTURE.postDecoys),
+    ]) {
+      expect(report).not.toContain(value);
+      expect(JSON.stringify(run)).not.toContain(value);
+    }
+    expect(h.notices.join('')).toContain('Stop detail: canary-check');
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test.each([5, 10])(
+  'C8 IG-6 automatic skips %i not-shown and unavailable posts before five confirmations',
+  async (skipped) => {
+    const h = await harness('success', 17);
+    const failures: string[] = [];
+    const originalOpen = driverHelpers.openCandidate;
+    const originalLoad = driverHelpers.loadList;
+    const open = vi
+      .spyOn(driverHelpers, 'openCandidate')
+      .mockImplementation(async (...args) => {
+        try {
+          return await originalOpen(...args);
+        } catch (error) {
+          failures.push(
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error),
+          );
+          throw error;
+        }
+      });
+    const load = vi
+      .spyOn(driverHelpers, 'loadList')
+      .mockImplementation(async (...args) => {
+        try {
+          return await originalLoad(...args);
+        } catch (error) {
+          failures.push(
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error),
+          );
+          throw error;
+        }
+      });
+    for (let index = 0; index < skipped; index++)
+      h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'not-shown');
+    try {
+      const result = await h.start(true);
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      const diagnostic = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(
+        result,
+        failures.join('\n') + h.notices.join('') + '\n' + diagnostic,
+      ).toMatchObject({
+        completed: 5,
+        steps: skipped + 5,
+        endReason: 'canary',
+      });
+      expect(run).toMatchObject({
+        acceptedBy: 'automatic-check',
+        pageOpens: skipped + 5,
+      });
+      expect(run.canaryAcceptedAt).toBeTruthy();
+      const sends = journal.attempts.filter(
+        (attempt) => attempt.state === 'sending',
+      );
+      expect(sends.map((attempt) => attempt.itemId)).toEqual(
+        h.fixture.items.slice(0, skipped + 5).map((item) => item.id),
+      );
+      expect(
+        (await h.store.read((tx) => records(tx.browserAttempts))).filter(
+          (attempt) => attempt.state === 'confirmed',
+        ),
+      ).toHaveLength(5);
+      expect(
+        (await h.store.read((tx) => records(tx.browserAttempts))).filter(
+          (attempt) => attempt.state === 'unconfirmed',
+        ),
+      ).toHaveLength(Math.ceil(skipped / 2));
+      expect(
+        (await h.store.read((tx) => records(tx.browserAttempts))).filter(
+          (attempt) => attempt.state === 'unavailable',
+        ),
+      ).toHaveLength(Math.floor(skipped / 2));
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(5);
+      const after = await planContext(h.store, h.plan.accountKey);
+      expect(after.excluded).toEqual({
+        unconfirmed: Math.ceil(skipped / 2),
+        unavailable: Math.floor(skipped / 2),
+        'not-listed': 0,
+      });
+      expect(after.canary).toBe(false);
+      const report = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const audit = JSON.stringify(run);
+      const stored = JSON.stringify(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      );
+      for (const value of [
+        ...Object.values(IG_FIXTURE.other),
+        ...Object.values(IG_FIXTURE.postDecoys),
+      ]) {
+        expect(report).not.toContain(value);
+        expect(audit).not.toContain(value);
+        expect(stored).not.toContain(value);
+      }
+      for (const item of h.fixture.items)
+        expect(report).not.toContain(item.text);
+      const steps = (
+        JSON.parse(report) as { steps: { oldestWithinWeek?: boolean }[] }
+      ).steps;
+      expect(steps).toHaveLength(skipped + 5);
+      expect(steps[0]).toHaveProperty('oldestWithinWeek');
+      expect(
+        steps.slice(1).every((step) => step.oldestWithinWeek === null),
+      ).toBe(true);
+    } finally {
+      open.mockRestore();
+      load.mockRestore();
+      await h.close();
+    }
+  },
+  180000,
+);
+test('C8 IG-6 fifteen tried with four confirmed refuses and never opens a sixteenth', async () => {
+  const h = await harness('success', 17);
+  h.fake.setCandidates(0, ['not-shown', 'not-shown', 'not-shown']);
+  for (let index = 0; index < 11; index++)
+    h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'not-shown');
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+    const journal = await h.store.browserJournal();
+    expect(journal.runs[0]).toMatchObject({
+      pageOpens: 17,
+      canaryAcceptedAt: null,
+      endReason: 'error',
+      displayEndReason: 'CANARY_CHECK_FAILED',
+    });
+    expect(journal.runs[0]!.acceptedBy).toBeUndefined();
+    expect(
+      journal.attempts.filter((attempt) => attempt.state === 'sending'),
+    ).toHaveLength(15);
+    expect(
+      (await h.store.read((tx) => records(tx.browserAttempts))).filter(
+        (attempt) => attempt.state === 'confirmed',
+      ),
+    ).toHaveLength(4);
+    expect(h.notices.join('')).toContain('Stop detail: canary-check');
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test.each(['owner', 'time', 'edited', 'several'] as const)(
+  'C8 IG-6 %s after a skip stops automatic and manual canaries at once',
+  async (variant) => {
+    for (const automatic of [true, false]) {
+      const h = await harness('success', 16);
+      h.fake.setPostVariant(0, 'unavailable');
+      h.fake.setPostVariant(1, variant);
+      try {
+        const running = h.start(automatic);
+        if (!automatic) {
+          await h.click('Start');
+          await h.click('Continue');
+        }
+        expect(await running).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+        const journal = await h.store.browserJournal();
+        expect(journal.runs[0]).toMatchObject({
+          pageOpens: 2,
+          canaryAcceptedAt: null,
+        });
+        expect(journal.attempts).toHaveLength(4);
+        expect(journal.attempts.at(-1)).toMatchObject({
+          state: 'unconfirmed',
+          code: variant === 'edited' ? 'text' : variant,
+        });
+        expect(
+          await h.store.read((tx) => records(tx.instagramContext)),
+        ).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+  },
+  180000,
+);
+test('C8 IG-6 manual selection keeps Continue and Matches after skips and stops at five confirmations', async () => {
+  const h = await harness('success', 17);
+  h.fake.setPostVariant(0, 'not-shown');
+  h.fake.setPostVariant(1, 'unavailable');
+  try {
+    const running = h.start();
+    await h.click('Start');
+    for (let count = 0; count < 7; count++) {
+      const page = await h.local();
+      await expect
+        .poll(
+          async () =>
+            (await h.store.browserJournal()).attempts.filter(
+              (attempt) => attempt.state !== 'sending',
+            ).length,
+          { timeout: 30000 },
+        )
+        .toBe(count + 1);
+      expect(
+        await page
+          .getByRole('button', { name: 'Matches', exact: true })
+          .isVisible(),
+      ).toBe(false);
+      await h.click('Continue');
+    }
+    await h.click('Matches');
+    expect(await running).toMatchObject({
+      completed: 5,
+      steps: 7,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    expect(journal.runs[0]!.canaryAcceptedAt).toBeTruthy();
+    expect(journal.runs[0]!.acceptedBy).toBeUndefined();
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.state === 'sending')
+        .map((attempt) => attempt.itemId),
+    ).toEqual(h.fixture.items.slice(0, 7).map((item) => item.id));
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test('C8 IG-6 manual limit below fifteen keeps its existing Continue and Matches boundary', async () => {
+  const h = await harness('success', 17);
+  h.setLimit(1);
+  try {
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    expect(journal.attempts).toHaveLength(2);
+    expect(journal.runs[0]!.canaryAcceptedAt).toBeTruthy();
+  } finally {
+    await h.close();
+  }
+});
+test('C8 cleanup 1 registers cleanup even when the test never enters a finally', async () => {
+  cleanupLease = await harness();
+  void cleanupLease.start();
+  await cleanupLease.local();
+});
+test('C8 cleanup 2 verifies the preceding test released its browser and fixed fake port', async () => {
+  const h = cleanupLease;
+  expect(h).toBeDefined();
+  try {
+    expect(h!.fake.listening).toBe(false);
+    expect(h!.context?.pages()).toEqual([]);
+    const next = await fakeInstagram(CONTEXT_PORTS.instagram, h!.fixture.items);
+    try {
+      expect(next.listening).toBe(true);
+    } finally {
+      await next.close();
+    }
+  } finally {
+    await h?.close();
+    cleanupLease = undefined;
+  }
+});
+test('C8 wheel is not a named click and refuses before any column click', async () => {
+  const h = await filterHarness('scroll-first');
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    await expect(
+      clickAllowed(
+        h.page,
+        { kind: 'named', name: 'post-comments-wheel' } as unknown as Click,
+        () => {},
+      ),
+    ).rejects.toMatchObject({
+      code: 'UNEXPECTED_ACTION',
+      token: 'unexpected-action',
+    });
+    expect(h.fake.events.flatMap((event) => event.clicks)).toEqual([]);
+  } finally {
+    await h.close();
+  }
+});
+test('C8 scroll foundation confirms after one wheel and records action counts without fixture leaks', async () => {
+  const h = await harness('scroll-first');
+  try {
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({
+      completed: 1,
+      steps: 1,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    const run = journal.runs[0]!;
+    expect(run.canaryAcceptedAt).toBeTruthy();
+    expect(journal.attempts.map((attempt) => attempt.state)).toEqual([
+      'sending',
+      'confirmed',
+    ]);
+    const contexts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]!.comment.expandClicks).toBe(1);
+    const report = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const parsed = JSON.parse(report) as {
+      steps: {
+        expansionClicks: number;
+        expansionScrolls: number;
+        controls: string[];
+      }[];
+    };
+    expect(parsed.steps[0]).toMatchObject({
+      expansionClicks: 1,
+      expansionScrolls: 1,
+    });
+    expect(parsed.steps[0]!.controls).toContain('post-comments-wheel');
+    const stored = JSON.stringify({ journal, contexts });
+    for (const value of [
+      ...Object.values(IG_FIXTURE.other),
+      ...Object.values(IG_FIXTURE.postDecoys),
+    ]) {
+      expect(stored).not.toContain(value);
+      expect(report).not.toContain(value);
+    }
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+});
+test('C8 harness closes its fake even when browser cleanup rejects and a repeated close cannot reopen it', async () => {
+  const h = await harness();
+  const running = h.start();
+  await h.local();
+  const actual = h.context!.close.bind(h.context!);
+  const close = vi
+    .spyOn(h.context!, 'close')
+    .mockImplementationOnce(async () => {
+      await actual();
+      throw new Error('Generated close rejection');
+    });
+  try {
+    await expect(h.close()).rejects.toThrow('Generated close rejection');
+    await expect(h.close()).rejects.toThrow('Generated close rejection');
+    expect(h.fake.listening).toBe(false);
+    const next = await fakeInstagram(CONTEXT_PORTS.instagram, h.fixture.items);
+    try {
+      expect(next.listening).toBe(true);
+    } finally {
+      await next.close();
+    }
+    await running;
+  } finally {
+    close.mockRestore();
+  }
+});
 test.each([
   'year-rows',
   'year-word-rows',
@@ -1195,11 +1856,11 @@ test.each([
 ] as const)(
   'C4 %s keeps the real row index and reads the account from a nonempty row',
   async (variant) => {
-    const h = await harness(variant);
+    const h = await harness(variant, 5);
     try {
       const result = await h.start(true),
         run = (await h.store.browserJournal()).runs[0]!;
-      expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+      expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
       expect(run.profileReport).toMatchObject({
         accountBefore: h.fixture.items[0]!.account.handle,
         accountAfter: h.fixture.items[0]!.account.handle,
@@ -1213,14 +1874,16 @@ test.each([
         variant === 'empty-image-buttons' || variant === 'year-empty-rows';
       expect(JSON.parse(reportText)).toMatchObject({
         rows: {
-          emptySkipped: empty ? IG_FIXTURE.expected.emptyImageButtons : 0,
+          emptySkipped: empty ? IG_FIXTURE.expected.emptyImageButtons * 5 : 0,
         },
         readback: { accountSame: true },
       });
-      if (variant !== 'empty-image-buttons')
-        expect(JSON.parse(reportText)).toMatchObject({
-          steps: [expect.objectContaining({ oldestWithinWeek: true })],
-        });
+      if (variant !== 'empty-image-buttons') {
+        const report = JSON.parse(reportText) as {
+          steps: { oldestWithinWeek: boolean }[];
+        };
+        expect(report.steps[0]).toMatchObject({ oldestWithinWeek: true });
+      }
       expect(
         h.fake.requests.filter(
           (request) => request.path === `/p/${IG_FIXTURE.code}`,
@@ -1488,9 +2151,9 @@ test('C3 a Mutation POST from a restored page is aborted before Start with unexp
   }
 });
 test.each([false, true])(
-  'C3 nine existing extension folders are a baseline, added=%j',
+  'C3 nine existing extension folders form the baseline and any actual removal refuses acceptance, added=%j',
   async (added) => {
-    const h = await harness();
+    const h = await harness('success', 5);
     for (const letter of 'abcdefghi')
       await mkdir(
         join(h.profile, 'Default', 'Extensions', letter.repeat(32), '1'),
@@ -1510,17 +2173,42 @@ test.each([false, true])(
     try {
       const result = await h.start(true),
         run = (await h.store.browserJournal()).runs[0]!;
+      // Chromium can prune these generated empty extension folders while reading.
+      // Read the fixture back independently rather than assuming it stayed put.
+      const remaining = (
+        await readdir(join(h.profile, 'Default', 'Extensions')).catch(() => [])
+      ).filter((name) => /^[a-i]{32}$/.test(name)).length;
       if (added) {
         expect(result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
         expect(h.notices.join('')).toContain('Stop detail: extensions-added');
         expect(run.canaryAcceptedAt).toBeNull();
       } else {
-        expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
-        expect(run.canaryAcceptedAt).toBeTruthy();
+        const structure = await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        );
+        const report = JSON.parse(structure) as {
+          readback: { extensionsRemoved: number };
+        };
+        expect(report.readback.extensionsRemoved).toBe(9 - remaining);
+        expect(
+          await h.store.read((tx) => records(tx.instagramContext)),
+        ).toHaveLength(5);
+        if (remaining === 9) {
+          expect(result, h.notices.join('') + '\n' + structure).toMatchObject({
+            completed: 5,
+            endReason: 'canary',
+          });
+          expect(run.canaryAcceptedAt).toBeTruthy();
+        } else {
+          expect(result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+          expect(run.canaryAcceptedAt).toBeNull();
+          expect(run.acceptedBy).toBeUndefined();
+        }
       }
       expect(run.profileReport).toMatchObject({
         extensionsBefore: 9,
-        extensionsAfter: added ? 10 : 9,
+        extensionsAfter: remaining + (added ? 1 : 0),
       });
     } finally {
       await h.close();
@@ -1618,7 +2306,7 @@ test.each(['day-cap', 'day-change'] as const)(
   },
 );
 test('F1 audit refusal occurs before canary acceptance and preserves its first stop cause', async () => {
-  const h = await harness();
+  const h = await harness('success', 5);
   let refused = false;
   const audit = vi.spyOn(BrowserOutcomeWriter.prototype, 'recordContextAudit');
   const original = audit.getMockImplementation()!;
@@ -1645,7 +2333,7 @@ test('F1 audit refusal occurs before canary acceptance and preserves its first s
   }
 });
 test('F1 audit transaction failure cannot leave canary acceptance behind', async () => {
-  const h = await harness();
+  const h = await harness('success', 5);
   const db = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
   db.exec(
     "CREATE TRIGGER generated_audit_refusal BEFORE UPDATE ON browser_order_audit WHEN NEW.accepted_by='automatic-check' BEGIN SELECT RAISE(ABORT,'generated refusal'); END",
@@ -1664,12 +2352,12 @@ test('F1 audit transaction failure cannot leave canary acceptance behind', async
 test.each(['post-decoy', 'post-decoy-foreign'] as const)(
   'F2 %s never supplies the last-list read-back account',
   async (variant) => {
-    const h = await harness(variant);
+    const h = await harness(variant, 5);
     try {
       const result = await h.start(true),
         run = (await h.store.browserJournal()).runs[0]!;
       expect(run.endedAt).toBeTruthy();
-      expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+      expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
       expect(run.profileReport).toMatchObject({
         accountBefore: h.plan.handle,
         accountAfter: h.plan.handle,
@@ -1686,7 +2374,7 @@ test.each(['post-decoy', 'post-decoy-foreign'] as const)(
   },
 );
 test('F2 structure-report failure still snapshots the profile, writes extension report, closes the journal and audits', async () => {
-  const h = await harness();
+  const h = await harness('success', 5);
   const write = vi
     .spyOn(captureHelpers, 'writeStructure')
     .mockRejectedValue(new TypeError('Generated private write failure'));
@@ -1714,7 +2402,7 @@ test('F2 structure-report failure still snapshots the profile, writes extension 
   }
 });
 test('F2 extension-report failure still ends the run and records the failed audit', async () => {
-  const h = await harness(),
+  const h = await harness('success', 5),
     write = vi
       .spyOn(profileHelpers, 'writeExtensionReport')
       .mockRejectedValue(new TypeError('Generated private extension failure'));
@@ -1733,7 +2421,7 @@ test('F2 extension-report failure still ends the run and records the failed audi
   }
 });
 test('F2 snapshot failure remains unobserved, attempts the extension report and still ends and audits the run', async () => {
-  const h = await harness();
+  const h = await harness('success', 5);
   const original = profileHelpers.profileSnapshot;
   const snapshot = vi
     .spyOn(profileHelpers, 'profileSnapshot')
@@ -1922,7 +2610,7 @@ test('P1 secondsPerStep 10 controls two full-run step starts and records the eff
   }
 });
 test('P1 a 10-second order cannot accelerate a canary from its 30-second starts', async () => {
-  const h = await harness('success', 2);
+  const h = await harness('success', 5);
   h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
   const starts: number[] = [];
   h.fake.beforeList(async () => {
@@ -1934,10 +2622,10 @@ test('P1 a 10-second order cannot accelerate a canary from its 30-second starts'
   });
   try {
     expect(await h.start(true)).toMatchObject({
-      completed: 2,
+      completed: 5,
       endReason: 'canary',
     });
-    expect(starts).toHaveLength(3);
+    expect(starts).toHaveLength(6);
     expect(starts[1]).toBe(starts[0]);
     expect(starts[2]! - starts[1]!).toBe(30000);
   } finally {
@@ -2207,15 +2895,15 @@ test.each([
 ] as const)(
   'automatic canary %s compares every field with the page JSON, accepts once and never starts a full run',
   async (variant) => {
-    const h = await harness(variant);
+    const h = await harness(variant, 5);
     try {
       const result = await h.start(true);
-      expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+      expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
       const runs = await h.store.browserJournal();
       expect(runs.runs[0]).toMatchObject({ acceptedBy: 'automatic-check' });
       expect(runs.runs[0]?.canaryAcceptedAt).toBeTruthy();
       if (variant === 'hidden')
-        expect(h.waits.filter((value) => value === 3000)).toHaveLength(3);
+        expect(h.waits.filter((value) => value === 3000)).toHaveLength(15);
     } finally {
       await h.close();
     }
@@ -2299,7 +2987,11 @@ test.each([14, -12])(
     const h = await harness();
     h.fake.setZone(zone);
     try {
-      expect(await h.start(true)).toMatchObject({ completed: 1 });
+      const running = h.start();
+      await h.click('Start');
+      await h.click('Continue');
+      await h.click('Matches');
+      expect(await running).toMatchObject({ completed: 1 });
       const files = await readdir(
         instagramContextDirectory(h.directory, IG_FIXTURE.code),
       );
@@ -2389,8 +3081,22 @@ test.each([
     try {
       const result = h.start();
       await h.click('Start');
-      await h.click('Continue');
-      expect(await result).toMatchObject({ completed: 0, endReason: 'canary' });
+      if (
+        [
+          'other-author',
+          'not-shown',
+          'block-two-texts',
+          'block-wrong-depth',
+          'unavailable',
+        ].includes(variant)
+      ) {
+        await h.click('Continue');
+        expect(await result).toMatchObject({
+          completed: 0,
+          endReason: 'canary',
+        });
+      } else
+        expect(await result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
       const attempts = await h.store.read((tx) => records(tx.browserAttempts));
       expect(attempts).toHaveLength(2);
       expect(attempts[1]!.code).toBe(code);
@@ -2408,6 +3114,7 @@ test.each([
       await h.close();
     }
   },
+  120000,
 );
 test('Instagram daily counts ignore X runs, use workspace-zone days and leave X byte-for-byte unchanged', async () => {
   const h = await harness();
@@ -2438,7 +3145,11 @@ test('Instagram daily counts ignore X runs, use workspace-zone days and leave X 
         h.plan.timeZone,
       ),
     ).toEqual({ used: 0, last: 0 });
-    expect(await h.start(true)).toMatchObject({ completed: 1, steps: 1 });
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({ completed: 1, steps: 1 });
     expect(
       (
         await instagramDailyCount(
@@ -2485,7 +3196,11 @@ test('interrupted sending is recovered as failed INTERRUPTED before a fresh conf
       itemId: h.fixture.items[0]!.id,
       at: '2026-10-14T12:00:00.000Z',
     });
-    expect(await h.start(true)).toMatchObject({ completed: 1 });
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({ completed: 1 });
     const attempts = await h.store.read((tx) => records(tx.browserAttempts));
     expect(attempts.map((attempt) => attempt.state)).toEqual([
       'sending',
@@ -2543,12 +3258,12 @@ test('extension removal is recorded but refuses automatic canary acceptance', as
 test.each(['Does not match', 'Stop'])(
   'manual %s never accepts the canary or starts more comments',
   async (action) => {
-    const h = await harness();
+    const h = await harness('success', action === 'Does not match' ? 5 : 1);
     try {
       const result = h.start();
       await h.click('Start');
       if (action === 'Does not match') {
-        await h.click('Continue');
+        for (let index = 0; index < 5; index++) await h.click('Continue');
         await h.click(action);
       } else await h.click(action);
       expect(await result).not.toMatchObject({ completed: 2 });
@@ -2577,15 +3292,22 @@ test('German end state names Instagram and remains served until the owned window
     await h.close();
   }
 });
-test('second candidate gets a fresh list, a second paced step and exactly one confirmation attempt', async () => {
+test('a manual canary confirms its second candidate after a time mismatch and counts one comment', async () => {
   const h = await harness('second-candidate');
   try {
-    expect(await h.start(true)).toMatchObject({ completed: 1, steps: 2 });
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({ completed: 1, steps: 1 });
     const attempts = await h.store.read((tx) => records(tx.browserAttempts));
     expect(attempts.map((attempt) => attempt.state)).toEqual([
       'sending',
       'confirmed',
     ]);
+    expect((await h.store.browserJournal()).runs[0]).toMatchObject({
+      pageOpens: 2,
+    });
     expect(
       h.fake.requests.filter(
         (request) => request.path === '/your_activity/interactions/comments',
@@ -2595,13 +3317,12 @@ test('second candidate gets a fresh list, a second paced step and exactly one co
     await h.close();
   }
 });
-test('four candidate rows settle several after at most three fresh steps', async () => {
+test('four candidate rows settle several after the canary tries at most three candidates', async () => {
   const h = await harness('four-candidates');
   try {
     const result = h.start();
     await h.click('Start');
-    await h.click('Continue');
-    expect(await result).toMatchObject({ completed: 0, steps: 3 });
+    expect(await result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
     const attempts = await h.store.read((tx) => records(tx.browserAttempts));
     expect(attempts[1]).toMatchObject({
       state: 'unconfirmed',
@@ -2626,7 +3347,11 @@ test('foreign requests and WebSockets are aborted and counted, not treated as wr
   });
   const h = await harness('external');
   try {
-    expect(await h.start(true)).toMatchObject({ completed: 1 });
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({ completed: 1 });
     const run = (await h.store.read((tx) => records(tx.browserRuns)))[0]!;
     const report = JSON.parse(
       await readFile(

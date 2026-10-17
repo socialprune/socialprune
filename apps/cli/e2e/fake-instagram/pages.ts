@@ -14,9 +14,10 @@ function doc(body: string, script: string, lang = 'en'): string {
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}main{width:500px;background:white}main img{width:160px;height:100px}a>img{width:24px;height:24px}#list{height:420px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
 }
 const instrumentation = `
-window.events={inputs:[],choices:[],clicks:[],added:[]};window.filterSelects=new Map();
+window.events={inputs:[],choices:[],clicks:[],added:[],wheels:[]};window.filterSelects=new Map();
 for(const event of ['input','change','beforeinput','textInput','keydown','keyup','keypress'])document.addEventListener(event,e=>{const control=window.filterSelects.get(e.target);if((e.type==='input'||e.type==='change')&&control&&e.target.isConnected&&document.querySelectorAll('[role=dialog] select').length===6)window.events.choices.push({type:e.type,...control,label:e.target.selectedOptions[0]?.textContent||''});else window.events.inputs.push(e.type);setTimeout(report,0)},true);
 document.addEventListener('click',e=>{const target=e.target.closest('select,button,[role=button]');window.events.clicks.push(target?.tagName==='SELECT'?'SELECT':target?.getAttribute('aria-label')||target?.textContent||e.target.tagName)},true);
+document.addEventListener('wheel',e=>{window.events.wheels.push({area:location.pathname==='/your_activity/interactions/comments'?'list':e.target.closest('#comments')?'post-comments':'other',x:e.deltaX,y:e.deltaY});setTimeout(report,0)},true);
 window.ownMutation=false;
 new MutationObserver(records=>{if(!window.ownMutation)for(const record of records)for(const node of record.addedNodes)window.events.added.push(node.nodeName);fetch('/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(window.events)}).catch(()=>{})}).observe(document,{subtree:true,childList:true});
 function mutate(fn){window.ownMutation=true;fn();queueMicrotask(()=>window.ownMutation=false)};
@@ -28,15 +29,20 @@ export function listPage(
   variant: Variant,
   zoneHours: number,
   filter = { today: IG_FIXTURE.now.slice(0, 10), firstYear: 1919 },
+  candidates: ReadonlyMap<number, readonly { code: string }[]> = new Map(),
 ): string {
   const handle = items[0]!.account.handle!;
-  const records = items.map((item, index) => ({
-    text: item.text,
-    at: item.createdAt,
-    code: `${IG_FIXTURE.code}${index || ''}`,
-    username:
-      variant === 'account-mismatch' ? IG_FIXTURE.other.username : handle,
-  }));
+  const records = items.flatMap((item, index) =>
+    (
+      candidates.get(index) ?? [{ code: `${IG_FIXTURE.code}${index || ''}` }]
+    ).map(({ code }) => ({
+      text: item.text,
+      at: item.createdAt,
+      code,
+      username:
+        variant === 'account-mismatch' ? IG_FIXTURE.other.username : handle,
+    })),
+  );
   if (variant === 'second-candidate' || variant === 'four-candidates') {
     records.unshift({
       ...records[items.length > 1 ? 1 : 0]!,
@@ -94,11 +100,15 @@ ${variant === 'external' ? `fetch(${json(CONTEXT_ORIGINS.foreign + '/foreign')},
   if (variant === 'never') return doc('<p>Loading</p>', '');
   return doc(body, script, variant === 'de' ? 'de' : 'en');
 }
-export function postPage(item: Item, index: number, variant: Variant): string {
+export function postPage(
+  item: Item,
+  index: number,
+  variant: Variant,
+  code = `${IG_FIXTURE.code}${index || ''}`,
+): string {
   if (variant === 'unavailable')
     return doc("<p>Sorry, this page isn't available.</p>", '');
-  const code = `${IG_FIXTURE.code}${index || ''}`,
-    kind = variant === 'reel' ? 'reel' : 'p';
+  const kind = variant === 'reel' ? 'reel' : 'p';
   const username =
     variant === 'other-author'
       ? IG_FIXTURE.other.username
@@ -270,21 +280,34 @@ export function postPage(item: Item, index: number, variant: Variant): string {
     permalink(commentId, time),
     permalink(commentId, time) + permalink('282828282828282828', time),
   );
-  const commentRows =
-    commentRow(other, IG_FIXTURE.other.username) +
-    (['hidden', 'not-shown'].includes(variant)
-      ? ''
-      : commentRow(
-          variant === 'multi-permalink' ? duplicate : comment,
-          username,
-        )) +
-    (variant === 'several'
-      ? commentRow(comment.replace(commentId, '282828282828282828'), username)
-      : '');
-  const body = `<main><section><div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>${mediaDecoy}${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:auto;max-height:600px">${commentRows}</div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
+  const scrolling = variant.startsWith('scroll-');
+  const filler = (ordinal: number) =>
+    commentRow(
+      commentBlock(
+        IG_FIXTURE.other.username,
+        escape(IG_FIXTURE.other.text) + ' ' + ordinal,
+        String(987650000 + ordinal),
+        IG_FIXTURE.other.time,
+      ),
+      IG_FIXTURE.other.username,
+    );
+  const commentRows = scrolling
+    ? Array.from({ length: 10 }, (_, ordinal) => filler(ordinal)).join('')
+    : commentRow(other, IG_FIXTURE.other.username) +
+      (['hidden', 'not-shown'].includes(variant)
+        ? ''
+        : commentRow(
+            variant === 'multi-permalink' ? duplicate : comment,
+            username,
+          )) +
+      (variant === 'several'
+        ? commentRow(comment.replace(commentId, '282828282828282828'), username)
+        : '');
+  const body = `<main><section><div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>${mediaDecoy}${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:${variant === 'scroll-no-column' ? 'visible' : 'auto'};max-height:240px"><div><div><div><div><div id="comment-rows">${commentRows}</div></div></div></div></div></div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
   const script =
     instrumentation +
-    `let expansions=0;const comment=${json(commentRow(comment, username))};function expand(event){mutate(()=>{expansions++;event.currentTarget.remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('main>section:last-child').prepend(button)}else document.getElementById('comments').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
+    `let expansions=0;const comment=${json(commentRow(comment, username))};function expand(event){mutate(()=>{expansions++;event.currentTarget.remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('main>section:last-child').prepend(button)}else document.getElementById('comment-rows').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
+${scrolling ? `let scrollLoads=0;const scrollFillers=${json(Array.from({ length: 12 }, (_, ordinal) => filler(100 + ordinal)))};document.getElementById('comments').addEventListener('wheel',e=>{if(e.deltaX!==0||e.deltaY!==700)return;scrollLoads++;mutate(()=>{const rows=document.getElementById('comment-rows');if(${json(variant)}==='scroll-first'&&scrollLoads===${IG_FIXTURE.scroll.first}||${json(variant)}==='scroll-late'&&scrollLoads===${IG_FIXTURE.scroll.beyondLimit})rows.insertAdjacentHTML('beforeend',comment);else if(['scroll-late','scroll-ten'].includes(${json(variant)}))rows.insertAdjacentHTML('beforeend',scrollFillers[scrollLoads-1]||'')})},{passive:true});` : ''}
 ${variant === 'no-json' ? '' : `fetch('/data/${code}.json').then(r=>r.json()).catch(()=>{});`}
 ${variant === 'two-answers' ? `fetch('/data/${code}.json?different=1').then(r=>r.json()).catch(()=>{});` : ''}
 `;
@@ -302,8 +325,8 @@ export function postAnswer(
   variant: Variant,
   origin: string,
   different: boolean,
+  code = `${IG_FIXTURE.code}${index || ''}`,
 ): unknown {
-  const code = `${IG_FIXTURE.code}${index || ''}`;
   const value: Record<string, unknown> = {
     code,
     user: {

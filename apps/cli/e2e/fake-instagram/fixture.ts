@@ -10,6 +10,12 @@ export const IG_FIXTURE = {
   captionLine: 'Invented post caption with ferns and moss.',
   captionTag: '#generated_fern',
   commentTag: '#generated_moss',
+  candidateCodes: [
+    'Generated_candidate_1',
+    'Generated_candidate_2',
+    'Generated_candidate_3',
+  ],
+  scroll: { first: 1, beyondLimit: 11, maximum: 10, empty: 2, delta: 700 },
   postAt: '2025-07-30T18:00:00.000Z',
   other: {
     username: 'planted_other_person',
@@ -91,6 +97,11 @@ export async function instagramFixture(
 export type Variant =
   | 'success'
   | 'hidden'
+  | 'scroll-first'
+  | 'scroll-late'
+  | 'scroll-never'
+  | 'scroll-ten'
+  | 'scroll-no-column'
   | 'time'
   | 'owner'
   | 'several'

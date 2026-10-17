@@ -220,6 +220,6 @@ export function canaryRows(plan: ContextPlan): ContextRow[] {
       a.item.id.localeCompare(b.item.id),
   )[0];
   return oldest
-    ? [oldest, ...plan.rows.filter((row) => row !== oldest)].slice(0, 5)
+    ? [oldest, ...plan.rows.filter((row) => row !== oldest)].slice(0, 15)
     : [];
 }

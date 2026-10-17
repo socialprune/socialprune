@@ -586,8 +586,7 @@ export class BrowserOutcomeWriter {
           run.endedAt ||
           run.canaryAcceptedAt ||
           code !== undefined ||
-          counts.commentsConfirmed < 1 ||
-          counts.commentsConfirmed > 5 ||
+          counts.commentsConfirmed !== 5 ||
           acceptance.itemIds.length !== counts.commentsConfirmed ||
           new Set(acceptance.itemIds).size !== counts.commentsConfirmed ||
           counts.imagesMatched !== counts.commentsConfirmed ||
@@ -607,29 +606,53 @@ export class BrowserOutcomeWriter {
         for await (const attempt of tx.browserAttempts.iterate())
           if (attempt.runId === runId) attempts.push(attempt);
         const sends = attempts.filter((attempt) => attempt.state === 'sending');
-        if (sends.length !== acceptance.itemIds.length)
+        const settlements = attempts.filter(
+          (attempt) => attempt.settles !== null,
+        );
+        if (
+          sends.length > 15 ||
+          sends.length !== settlements.length ||
+          attempts.length !== sends.length + settlements.length ||
+          settlements.filter((attempt) => attempt.state === 'confirmed')
+            .length !== 5
+        )
           throw new CliError('CANARY_CHECK_FAILED');
         const itemIds = new Set<string>();
         for (const send of sends) {
           const settles = attempts.filter(
             (attempt) => attempt.settles === send.attemptId,
           );
-          const record = send.itemId
-            ? await tx.instagramContext.get(send.itemId)
-            : undefined;
           if (
             send.action !== 'confirm-comment' ||
+            send.settles !== null ||
             !send.itemId ||
-            !acceptance.itemIds.includes(send.itemId) ||
             itemIds.has(send.itemId) ||
             settles.length !== 1 ||
-            settles[0]!.state !== 'confirmed' ||
-            !record ||
-            record.runId !== runId ||
-            record.attemptId !== send.attemptId
+            settles[0]!.action !== 'confirm-comment' ||
+            settles[0]!.itemId !== send.itemId ||
+            (settles[0]!.state !== 'confirmed' &&
+              settles[0]!.state !== 'unavailable' &&
+              !(
+                settles[0]!.state === 'unconfirmed' &&
+                settles[0]!.code === 'not-shown'
+              ))
           )
             throw new CliError('CANARY_CHECK_FAILED');
           itemIds.add(send.itemId);
+          if (settles[0]!.state === 'confirmed') {
+            const record = await tx.instagramContext.get(send.itemId);
+            if (
+              !acceptance.itemIds.includes(send.itemId) ||
+              !record ||
+              record.runId !== runId ||
+              record.attemptId !== send.attemptId ||
+              !record.post.owner ||
+              !record.post.createdAt ||
+              record.image.status !== 'stored' ||
+              record.screenshot.status !== 'stored'
+            )
+              throw new CliError('CANARY_CHECK_FAILED');
+          }
         }
         // Bind the unchanged narrow writer to this transaction, not a nested SQLite
         // write. If the audit guard or INSERT/UPDATE fails, closure and acceptance
@@ -646,7 +669,7 @@ export class BrowserOutcomeWriter {
           bodyShapes: {},
           profileReport: acceptance.profileReport,
         });
-        await writer.acceptCanary(runId, acceptance.at);
+        await writer.acceptCanary(runId, acceptance.at, acceptance.itemIds);
       }
       const updated = this.db
         .prepare(

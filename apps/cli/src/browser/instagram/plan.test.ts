@@ -141,3 +141,27 @@ test('earlier results require explicit include; include cannot restore confirmed
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('C8 canary takes at most fifteen in plan order with the oldest first and no duplicate', async () => {
+  const fixture = await instagramFixture(17),
+    directory = await mkdtemp(join(tmpdir(), 'sp-ig-canary-plan-'));
+  const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
+    initial: fixture.workspace,
+  });
+  try {
+    const plan = await planContext(store, fixture.items[0]!.account.key);
+    // A marked-first plan need not begin with its oldest exported comment.
+    plan.rows = [...plan.rows.slice(7), ...plan.rows.slice(0, 7)];
+    const ids = canaryRows(plan).map(({ item }) => item.id);
+    expect(ids).toEqual([
+      fixture.items[0]!.id,
+      ...fixture.items.slice(7).map((item) => item.id),
+      ...fixture.items.slice(1, 5).map((item) => item.id),
+    ]);
+    expect(new Set(ids).size).toBe(15);
+    expect(canaryRows({ ...plan, rows: [] })).toEqual([]);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

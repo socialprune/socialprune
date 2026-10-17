@@ -259,7 +259,12 @@ export class InstagramContextWriter {
     });
   }
 
-  async acceptCanary(runId: string, at: string): Promise<void> {
+  /** Checked IDs select automatic acceptance; hand-reviewed small plans omit them. */
+  async acceptCanary(
+    runId: string,
+    at: string,
+    checkedItemIds?: readonly string[],
+  ): Promise<void> {
     await this.store.write(async (tx) => {
       const run = await tx.browserRuns.get(runId);
       if (
@@ -273,26 +278,61 @@ export class InstagramContextWriter {
       const attempts: BrowserAttempt[] = [];
       for await (const attempt of tx.browserAttempts.iterate())
         if (attempt.runId === runId) attempts.push(attempt);
-      const sends = attempts.filter((attempt) => attempt.state === 'sending');
+      const sends = attempts.filter((attempt) => attempt.state === 'sending'),
+        settlements = attempts.filter((attempt) => attempt.settles !== null),
+        confirmed = settlements.filter(
+          (attempt) => attempt.state === 'confirmed',
+        );
       if (
         sends.length < 1 ||
-        sends.length > 5 ||
-        !attempts.some((attempt) => attempt.state === 'confirmed') ||
-        sends.some(
-          (send) =>
-            !attempts.some(
-              (attempt) =>
-                attempt.settles === send.attemptId &&
-                [
-                  'confirmed',
-                  'unconfirmed',
-                  'not-listed',
-                  'unavailable',
-                ].includes(attempt.state),
-            ),
-        )
+        sends.length > 15 ||
+        sends.length !== settlements.length ||
+        attempts.length !== sends.length + settlements.length ||
+        confirmed.length < 1 ||
+        confirmed.length > 5 ||
+        (sends.length === 15 && confirmed.length !== 5) ||
+        (checkedItemIds !== undefined &&
+          (confirmed.length !== 5 ||
+            checkedItemIds.length !== 5 ||
+            new Set(checkedItemIds).size !== 5))
       )
         throw new Error('INVALID_CANARY');
+      const itemIds = new Set<string>();
+      for (const send of sends) {
+        const settled = settlements.filter(
+          (attempt) => attempt.settles === send.attemptId,
+        );
+        const result = settled[0];
+        if (
+          send.action !== 'confirm-comment' ||
+          send.settles !== null ||
+          !send.itemId ||
+          itemIds.has(send.itemId) ||
+          settled.length !== 1 ||
+          result?.action !== 'confirm-comment' ||
+          result.itemId !== send.itemId ||
+          (result.state !== 'confirmed' &&
+            result.state !== 'unavailable' &&
+            !(result.state === 'unconfirmed' && result.code === 'not-shown'))
+        )
+          throw new Error('INVALID_CANARY');
+        itemIds.add(send.itemId);
+        if (result.state === 'confirmed') {
+          const record = await tx.instagramContext.get(send.itemId);
+          if (
+            !record ||
+            record.runId !== runId ||
+            record.attemptId !== send.attemptId ||
+            (checkedItemIds !== undefined &&
+              (!checkedItemIds.includes(send.itemId) ||
+                !record.post.owner ||
+                !record.post.createdAt ||
+                record.image.status !== 'stored' ||
+                record.screenshot.status !== 'stored'))
+          )
+            throw new Error('INVALID_CANARY');
+        }
+      }
       await tx.browserRuns.put(
         BrowserRunSchema.parse({ ...run, canaryAcceptedAt: at }),
       );

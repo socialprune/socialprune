@@ -49,7 +49,7 @@ import {
   canaryAudit,
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
-import { CLICK_NAMES } from './selectors.ts';
+import { CLICK_NAMES, POST_SCROLL_ACTION } from './selectors.ts';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
@@ -149,6 +149,7 @@ export async function runContextWithDependencies(
   } = { steps: [], pace: paceSummary(pace), rows: { emptySkipped: 0 } };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
+  const checkedItemIds: string[] = [];
   const chosen = options.plan.canary
     ? canaryRows(options.plan)
     : options.plan.rows;
@@ -161,6 +162,7 @@ export async function runContextWithDependencies(
     closed = false,
     completed = 0,
     steps = 0,
+    commentsTried = 0,
     error: unknown;
   let endReason: NonNullable<BrowserRun['endReason']> = 'done',
     accountBefore: string | null = null,
@@ -228,19 +230,20 @@ export async function runContextWithDependencies(
     if (automatic) throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
   };
   const assertAutomaticCanary = async () => {
-    if (
-      !automatic ||
-      chosen.length < 1 ||
-      completed !== chosen.length ||
-      checkedAttempts.size !== chosen.length
-    )
+    if (!automatic || completed !== 5 || checkedAttempts.size !== 5)
       throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
     await options.store.read(async (tx) => {
       const attempts = [];
       for await (const attempt of tx.browserAttempts.iterate())
         if (attempt.runId === runId) attempts.push(attempt);
       const sends = attempts.filter((attempt) => attempt.state === 'sending');
-      if (sends.length !== chosen.length)
+      const settled = attempts.filter((attempt) => attempt.settles !== null);
+      if (
+        sends.length > 15 ||
+        sends.length !== settled.length ||
+        attempts.length !== sends.length + settled.length ||
+        settled.filter((attempt) => attempt.state === 'confirmed').length !== 5
+      )
         throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
       const ids = new Set<string>();
       for (const send of sends) {
@@ -250,14 +253,33 @@ export async function runContextWithDependencies(
           check = checkedAttempts.get(send.attemptId);
         if (
           !send.itemId ||
+          send.action !== 'confirm-comment' ||
+          send.settles !== null ||
           ids.has(send.itemId) ||
           !chosen.some(({ item }) => item.id === send.itemId) ||
           settlements.length !== 1 ||
-          settlements[0]!.state !== 'confirmed' ||
-          !check
+          settlements[0]!.action !== 'confirm-comment' ||
+          settlements[0]!.itemId !== send.itemId ||
+          (settlements[0]!.state !== 'confirmed' &&
+            settlements[0]!.state !== 'unavailable' &&
+            !(
+              settlements[0]!.state === 'unconfirmed' &&
+              settlements[0]!.code === 'not-shown'
+            ))
         )
           throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
-        automaticCanaryCheck(check);
+        if (settlements[0]!.state === 'confirmed') {
+          const record = await tx.instagramContext.get(send.itemId);
+          if (
+            !check ||
+            !record ||
+            record.runId !== runId ||
+            record.attemptId !== send.attemptId
+          )
+            throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+          automaticCanaryCheck(check);
+        } else if (check)
+          throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
         ids.add(send.itemId);
       }
     });
@@ -383,6 +405,7 @@ export async function runContextWithDependencies(
       Math.max(0, pace.perDay - prior.used),
     );
     outer: for (const row of chosen) {
+      if (options.plan.canary && completed === 5) break;
       if (steps >= max) {
         rejectIncomplete();
         if (used >= pace.perDay) endReason = 'daily-cap';
@@ -469,6 +492,7 @@ export async function runContextWithDependencies(
         }
         await controls?.checkpoint(resumeChecks, waits.signal);
         await writer.step(runId, options.now().toISOString());
+        if (candidate === 0) commentsTried++;
         steps++;
         used++;
         batch++;
@@ -510,10 +534,12 @@ export async function runContextWithDependencies(
           candidates: list.candidates.length,
           scrollLoads: list.scrollLoads,
           expansionClicks: 0,
+          expansionScrolls: 0,
           confirmed: false,
           roles: ['button', 'dialog', 'combobox'],
           controls: [
             ...CLICK_NAMES,
+            POST_SCROLL_ACTION,
             'date-year-list',
             'date-month-list',
             'date-day-list',
@@ -534,7 +560,7 @@ export async function runContextWithDependencies(
           pendingAttempt = undefined;
           settled = true;
           stepReport.result = list.full ? 'window-full' : 'no-row';
-          if (options.order && options.plan.canary)
+          if (options.plan.canary)
             throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
           break;
         }
@@ -556,8 +582,6 @@ export async function runContextWithDependencies(
           pendingAttempt = undefined;
           settled = true;
           stepReport.result = 'unavailable';
-          if (options.order && options.plan.canary)
-            throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
           break;
         }
         const read = await confirmOnPost(
@@ -568,6 +592,7 @@ export async function runContextWithDependencies(
           guard,
         );
         stepReport.expansionClicks = read.expandClicks;
+        stepReport.expansionScrolls = read.expansionScrolls;
         stepReport.ownerCount = read.post.ownerCount;
         await checkpoint();
         if (read.result.state !== 'confirmed') {
@@ -584,7 +609,7 @@ export async function runContextWithDependencies(
           });
           pendingAttempt = undefined;
           settled = true;
-          if (options.order && options.plan.canary)
+          if (options.plan.canary && code !== 'not-shown')
             throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
           break;
         }
@@ -645,7 +670,10 @@ export async function runContextWithDependencies(
         });
         if (options.order && options.plan.canary) automaticCanaryCheck(check);
         await writer.confirm(record);
-        if (automatic) checkedAttempts.set(attemptId, check);
+        if (automatic) {
+          checkedAttempts.set(attemptId, check);
+          checkedItemIds.push(row.item.id);
+        }
         pendingAttempt = undefined;
         settled = true;
         completed++;
@@ -686,6 +714,8 @@ export async function runContextWithDependencies(
               : `${steps} steps read, ${completed} comments confirmed.`,
         });
     }
+    if (options.plan.canary && commentsTried === 15 && completed < 5)
+      throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
     if (automatic && chosen.length) await assertAutomaticCanary();
     if (options.plan.canary && report.steps.length > 0 && endReason === 'done')
       endReason = 'canary';
@@ -905,7 +935,7 @@ export async function runContextWithDependencies(
               true,
               {
                 at: options.now().toISOString(),
-                itemIds: chosen.map(({ item }) => item.id),
+                itemIds: checkedItemIds,
                 profileReport,
               },
             );
@@ -1003,7 +1033,12 @@ export async function runContextWithDependencies(
   }
   if (error)
     throw error instanceof CliError ? error : new CliError('CONTEXT_FAILED');
-  return { completed, steps, runId, endReason };
+  return {
+    completed,
+    steps: options.plan.canary ? commentsTried : steps,
+    runId,
+    endReason,
+  };
 }
 export function runContext(options: ContextOptions) {
   return runContextWithDependencies(

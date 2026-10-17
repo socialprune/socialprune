@@ -583,3 +583,212 @@ test('memory rollback removes a settling record when context insertion fails', a
     await original.close();
   }
 });
+
+async function canaryFixture(confirmed = 5, skipped = 10, extra = 0) {
+  const store = createMemoryStore(),
+    writer = new InstagramContextWriter(store),
+    base = instagramContractItem(),
+    record = instagramContractRecord(),
+    at = record.confirmedAt;
+  await writer.startRun({
+    runId: record.runId,
+    accountKey: base.account.key,
+    startedAt: at,
+    planHash: 'c'.repeat(64),
+    canary: true,
+  });
+  const checked: string[] = [];
+  for (let index = 0; index < confirmed + skipped + extra; index++) {
+    const item = { ...base, id: `${base.id}-${index}` },
+      attemptId = `generated-canary-${index}`;
+    await store.write((tx) =>
+      tx.items.put({ item, importId: '', metadataImportId: '' }),
+    );
+    await writer.sending({
+      runId: record.runId,
+      itemId: item.id,
+      attemptId,
+      at,
+    });
+    if (index < skipped)
+      await writer.settle({
+        attemptId,
+        state: index % 2 ? 'unavailable' : 'unconfirmed',
+        code: index % 2 ? null : 'not-shown',
+        at,
+      });
+    else if (index < skipped + confirmed) {
+      await writer.confirm({
+        ...record,
+        itemId: item.id,
+        attemptId,
+        comment: { ...record.comment, id: String(910001 + index) },
+      });
+      checked.push(item.id);
+    }
+  }
+  // An injected unfinished run tests acceptCanary itself, not endRun's guard.
+  await store.write(async (tx) => {
+    const run = (await tx.browserRuns.get(record.runId))!;
+    await tx.browserRuns.put({ ...run, endedAt: at, endReason: 'canary' });
+  });
+  return { store, writer, record, at, checked };
+}
+
+test('C8 writer accepts exactly five checked confirmations after ten IG-6 skips', async () => {
+  const h = await canaryFixture();
+  try {
+    await h.writer.acceptCanary(h.record.runId, h.at, h.checked);
+    expect(
+      await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+    ).toMatchObject({ canaryAcceptedAt: h.at });
+  } finally {
+    await h.store.close();
+  }
+});
+
+test.each([
+  ['four confirmations', 4, 11, 0],
+  ['sixteen sends', 5, 11, 0],
+  ['unsettled sending', 5, 9, 1],
+  ['short automatic sample', 4, 0, 0],
+] as const)(
+  'C8 writer refuses %s without acceptance',
+  async (_name, confirmed, skipped, extra) => {
+    const h = await canaryFixture(confirmed, skipped, extra);
+    try {
+      await expect(
+        h.writer.acceptCanary(h.record.runId, h.at, h.checked),
+      ).rejects.toThrow('INVALID_CANARY');
+      expect(
+        await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+      ).toMatchObject({ canaryAcceptedAt: null });
+    } finally {
+      await h.store.close();
+    }
+  },
+);
+
+test.each([
+  'owner',
+  'time',
+  'text',
+  'several',
+  'failed',
+  'ambiguous',
+  'missing-record',
+  'missing-check',
+  'duplicate-check',
+] as const)(
+  'C8 writer refuses a planted %s at the acceptance boundary',
+  async (mode) => {
+    const h = await canaryFixture(5, 0);
+    const source = h.store;
+    const writer = new InstagramContextWriter({
+      ...source,
+      write: (operation) =>
+        source.write((tx) =>
+          operation({
+            ...tx,
+            instagramContext: {
+              ...tx.instagramContext,
+              get: (id) =>
+                mode === 'missing-record' && id === h.checked[0]
+                  ? Promise.resolve(undefined)
+                  : tx.instagramContext.get(id),
+            },
+            browserAttempts: {
+              ...tx.browserAttempts,
+              async *iterate() {
+                for await (const attempt of tx.browserAttempts.iterate())
+                  yield attempt.state === 'confirmed' &&
+                  attempt.itemId === h.checked[0] &&
+                  !mode.endsWith('record') &&
+                  !mode.endsWith('check')
+                    ? {
+                        ...attempt,
+                        state:
+                          mode === 'failed' || mode === 'ambiguous'
+                            ? mode
+                            : 'unconfirmed',
+                        code: mode,
+                      }
+                    : attempt;
+              },
+            },
+          }),
+        ),
+    });
+    try {
+      const checked =
+        mode === 'missing-check'
+          ? h.checked.slice(1)
+          : mode === 'duplicate-check'
+            ? h.checked.map(() => h.checked[0]!)
+            : h.checked;
+      await expect(
+        writer.acceptCanary(h.record.runId, h.at, checked),
+      ).rejects.toThrow('INVALID_CANARY');
+      expect(
+        await source.read((tx) => tx.browserRuns.get(h.record.runId)),
+      ).toMatchObject({ canaryAcceptedAt: null });
+    } finally {
+      await source.close();
+    }
+  },
+);
+
+test.each(['owner', 'time', 'text', 'several', 'failed', 'ambiguous'] as const)(
+  'C8 writer refuses skipped code %s with five other checked confirmations',
+  async (mode) => {
+    const h = await canaryFixture();
+    const writer = new InstagramContextWriter({
+      ...h.store,
+      write: (operation) =>
+        h.store.write((tx) =>
+          operation({
+            ...tx,
+            browserAttempts: {
+              ...tx.browserAttempts,
+              async *iterate() {
+                for await (const attempt of tx.browserAttempts.iterate())
+                  yield attempt.settles === 'generated-canary-0'
+                    ? {
+                        ...attempt,
+                        state:
+                          mode === 'failed' || mode === 'ambiguous'
+                            ? mode
+                            : 'unconfirmed',
+                        code: mode,
+                      }
+                    : attempt;
+              },
+            },
+          }),
+        ),
+    });
+    try {
+      await expect(
+        writer.acceptCanary(h.record.runId, h.at, h.checked),
+      ).rejects.toThrow('INVALID_CANARY');
+      expect(
+        await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+      ).toMatchObject({ canaryAcceptedAt: null });
+    } finally {
+      await h.store.close();
+    }
+  },
+);
+test('C8 writer refuses manual acceptance at fifteen attempts without five confirmations', async () => {
+  const h = await canaryFixture(4, 11);
+  try {
+    await expect(h.writer.acceptCanary(h.record.runId, h.at)).rejects.toThrow(
+      'INVALID_CANARY',
+    );
+    expect(
+      await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+    ).toMatchObject({ canaryAcceptedAt: null });
+  } finally {
+    await h.store.close();
+  }
+});

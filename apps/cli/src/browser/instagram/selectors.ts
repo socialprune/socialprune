@@ -18,6 +18,7 @@ export const CLICK_NAMES = [
   'Load more comments',
   'View replies',
 ] as const;
+export const POST_SCROLL_ACTION = 'post-comments-wheel' as const;
 export type Click =
   | { kind: 'named'; name: (typeof CLICK_NAMES)[number] }
   | { kind: 'row'; index: number };
@@ -393,6 +394,84 @@ export async function postElement(
   if (!address || (await element.count()) !== 1) return null;
   const links = await postLinks(element, address);
   return links.some((link) => link.createdAt !== null) ? element : null;
+}
+export async function scrollPostComments(
+  page: Page,
+  origin: string,
+  before: () => void,
+): Promise<boolean> {
+  before();
+  await checkPage(page);
+  const element = await postElement(page, origin);
+  const address = postAddress(page.url(), origin);
+  if (!element || !address) return false;
+  let permalink: Locator | undefined;
+  let href: string | null = null;
+  for (const link of await element.locator('a[href*="/c/"]').all()) {
+    const value = await link.getAttribute('href');
+    if (
+      new RegExp(`^/(?:p|reel)/${address.code}/c/[0-9]{1,40}/$`).test(
+        value ?? '',
+      ) &&
+      (await link.locator('time[datetime]').count()) === 1
+    ) {
+      permalink = link;
+      href = value;
+      break;
+    }
+  }
+  if (!permalink || !href) return false;
+  const client = await page.context().newCDPSession(page);
+  try {
+    await client.send('DOM.enable');
+    await client.send('CSS.enable');
+    const root = await client.send('DOM.getDocument', { depth: -1 });
+    const main = await client.send('DOM.querySelector', {
+      nodeId: root.root.nodeId,
+      selector: 'main',
+    });
+    const target = await client.send('DOM.querySelector', {
+      nodeId: main.nodeId,
+      selector: `a[href="${href}"]`,
+    });
+    type Node = typeof root.root;
+    const pathTo = (node: Node): Node[] | null => {
+      if (node.nodeId === target.nodeId) return [node];
+      for (const child of node.children ?? []) {
+        const path = pathTo(child);
+        if (path) return [node, ...path];
+      }
+      return null;
+    };
+    const path = pathTo(root.root)?.filter((node) => node.nodeType === 1);
+    if (!path) return false;
+    const ancestors = permalink.locator('xpath=ancestor::*');
+    // Both paths are in document order. Stop at main rather than choosing a
+    // page scroller outside the checked post's comment column.
+    for (let index = path.length - 2; index >= 0; index--) {
+      if (path[index]!.nodeId === main.nodeId) break;
+      const style = await client.send('CSS.getComputedStyleForNode', {
+        nodeId: path[index]!.nodeId,
+      });
+      if (
+        !style.computedStyle.some(
+          ({ name, value }) =>
+            name === 'overflow-y' && (value === 'auto' || value === 'scroll'),
+        )
+      )
+        continue;
+      const box = await ancestors.nth(index).boundingBox();
+      if (!box || box.width <= 0 || box.height <= 0) return false;
+      before();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      before();
+      await page.mouse.wheel(0, 700);
+      return true;
+    }
+    return false;
+  } finally {
+    await client.detach();
+  }
 }
 export type ConfirmationResult =
   | { state: 'confirmed'; comment: PostProjection['comments'][number] }

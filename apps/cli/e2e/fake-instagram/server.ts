@@ -15,8 +15,21 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       choices: { type: string; side: string; unit: string; label: string }[];
       clicks: string[];
       added: string[];
+      wheels: { area: string; x: number; y: number }[];
     }[] = [];
   let beforeNavigation: (() => Promise<void>) | undefined;
+  const postVariants = new Map<number, Variant>();
+  const candidates = new Map<
+    number,
+    readonly { code: string; variant: Variant }[]
+  >();
+  const candidatePost = (code: string) => {
+    for (const [index, posts] of candidates) {
+      const post = posts.find((post) => post.code === code);
+      if (post) return { index, ...post };
+    }
+    return undefined;
+  };
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url!, `http://127.0.0.1:${port}`),
@@ -91,7 +104,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.writeHead(variant === '429' ? 429 : 200, {
           'Content-Type': 'text/html',
         });
-        response.end(listPage(items, variant, zone, { today, firstYear }));
+        response.end(
+          listPage(items, variant, zone, { today, firstYear }, candidates),
+        );
         return;
       }
       if (path.startsWith('/accounts/')) {
@@ -100,6 +115,19 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       }
       const post = /^\/(?:p|reel)\/([A-Za-z0-9_-]+)\/?$/.exec(path);
       if (post) {
+        const candidate = candidatePost(post[1]!);
+        if (candidate) {
+          response.writeHead(200, { 'Content-Type': 'text/html' });
+          response.end(
+            postPage(
+              items[candidate.index]!,
+              candidate.index,
+              candidate.variant,
+              candidate.code,
+            ),
+          );
+          return;
+        }
         if (post[1]!.startsWith('Generated_wrong_candidate')) {
           response.writeHead(200, { 'Content-Type': 'text/html' });
           response.end(
@@ -115,11 +143,34 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         );
         response.writeHead(200, { 'Content-Type': 'text/html' });
         response.end(
-          postPage(items[Math.max(0, index)]!, Math.max(0, index), variant),
+          postPage(
+            items[Math.max(0, index)]!,
+            Math.max(0, index),
+            postVariants.get(index) ?? variant,
+          ),
         );
         return;
       }
       if (path.startsWith('/data/')) {
+        const candidate = candidatePost(
+          path.slice('/data/'.length, -'.json'.length),
+        );
+        if (candidate) {
+          response.writeHead(200, { 'Content-Type': 'application/json' });
+          response.end(
+            JSON.stringify(
+              postAnswer(
+                items[candidate.index]!,
+                candidate.index,
+                candidate.variant,
+                `http://127.0.0.1:${port}`,
+                url.searchParams.has('different'),
+                candidate.code,
+              ),
+            ),
+          );
+          return;
+        }
         const index = items.findIndex(
           (_, index) => path === `/data/${IG_FIXTURE.code}${index || ''}.json`,
         );
@@ -129,7 +180,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             postAnswer(
               items[Math.max(0, index)]!,
               Math.max(0, index),
-              variant,
+              postVariants.get(index) ?? variant,
               `http://127.0.0.1:${port}`,
               url.searchParams.has('different'),
             ),
@@ -164,12 +215,37 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolve);
   });
+  let closing: Promise<void> | undefined;
   return {
     origin: `http://127.0.0.1:${port}`,
     requests,
     events,
+    get listening() {
+      return server.listening;
+    },
     setVariant(value: Variant) {
       variant = value;
+    },
+    setPostVariant(index: number, value: Variant) {
+      if (!Number.isInteger(index) || !items[index])
+        throw new Error('Invalid generated post index.');
+      postVariants.set(index, value);
+    },
+    setCandidates(index: number, variants: readonly Variant[]) {
+      if (
+        !Number.isInteger(index) ||
+        !items[index] ||
+        variants.length < 1 ||
+        variants.length > IG_FIXTURE.candidateCodes.length
+      )
+        throw new Error('Invalid generated candidate rows.');
+      candidates.set(
+        index,
+        variants.map((variant, candidate) => ({
+          code: `${IG_FIXTURE.candidateCodes[candidate]}${index || ''}`,
+          variant,
+        })),
+      );
     },
     setZone(value: number) {
       zone = value;
@@ -190,9 +266,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     beforeList(value: () => Promise<void>) {
       beforeNavigation = value;
     },
-    async close() {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+    close() {
+      return (closing ??= (async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      })());
     },
   };
 }

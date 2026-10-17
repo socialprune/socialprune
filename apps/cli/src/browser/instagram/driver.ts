@@ -15,7 +15,7 @@ import {
   clickAllowed,
   utcWindow,
   rowCandidate,
-  postAddress,
+  postElement,
   readPost,
   confirmComment,
   currentImageSource,
@@ -223,8 +223,7 @@ export async function openCandidate(
   await waitPage(
     page,
     async () =>
-      (postAddress(page.url(), deps.origin) !== null &&
-        (await page.locator('article').count()) > 0) ||
+      (await postElement(page, deps.origin)) !== null ||
       (await page
         .getByText("Sorry, this page isn't available.", { exact: true })
         .count()) > 0,

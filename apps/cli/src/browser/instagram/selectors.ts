@@ -41,7 +41,7 @@ export async function clickAllowed(
     locator = page.getByRole('button', { name: click.name, exact: true });
     if (click.name === 'View replies')
       locator = page
-        .locator('article')
+        .locator('main')
         .getByRole('button', { name: click.name, exact: true })
         .first();
   } else if (
@@ -152,8 +152,8 @@ export function postAddress(
 ): { kind: 'p' | 'reel'; code: string } | null {
   try {
     const url = new URL(input),
-      match = /^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/.exec(url.pathname);
-    return url.origin === origin && match
+      match = /^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/?$/.exec(url.pathname);
+    return url.origin === origin && input === origin + url.pathname && match
       ? { kind: match[1] as 'p' | 'reel', code: match[2]! }
       : null;
   } catch {
@@ -165,6 +165,7 @@ export interface PostProjection {
   code: string;
   owner: string;
   ownerCount: number;
+  ownerMatchesProfile: boolean;
   caption: string | null;
   captionComplete: boolean;
   createdAt: string | null;
@@ -183,83 +184,215 @@ export async function readPost(
   const address = postAddress(page.url(), origin);
   if (!address)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const element = page.locator('article');
-  if ((await element.count()) !== 1)
+  const element = await postElement(page, origin);
+  if (!element)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const owners = element.locator('header a[href]');
-  const names: string[] = [];
-  for (const anchor of await owners.all()) {
-    const name = normalize(await anchor.innerText());
-    if (
-      /^[A-Za-z0-9_.]{1,30}$/.test(name) &&
-      (await anchor.getAttribute('href'))?.replace(/\/$/, '') === '/' + name
-    )
-      names.push(name);
-  }
-  if (!names.length)
-    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const ownTime = element.locator(
-    `a[href="/${address.kind}/${address.code}/"] time[datetime]`,
-  );
-  const createdAt =
-    (await ownTime.count()) === 1
-      ? timestamp(await ownTime.getAttribute('datetime'))
-      : null;
+  const ownLinks = await postLinks(element, address);
+  const names = new Set(ownLinks.map((link) => ownerName(link.owner)));
+  const owner = ownLinks[0]!.owner;
+  const profiles = await profileLinks(element);
+  const firstProfile = profiles[0];
+  const firstTextProfile = profiles.find((profile) => profile.text !== '');
+  const ownerMatchesProfile =
+    firstProfile !== undefined &&
+    ownerName(firstProfile.username) === ownerName(owner) &&
+    firstTextProfile !== undefined &&
+    ownerName(firstTextProfile.username) === ownerName(owner) &&
+    firstTextProfile.text === firstTextProfile.username;
+  const times = new Set(ownLinks.map((link) => link.createdAt));
+  const createdAt = times.size === 1 ? ownLinks[0]!.createdAt : null;
   const comments = [];
-  for (const block of await element.locator('ul li').all()) {
-    const profile = block
-      .locator('a[href]')
-      .filter({ hasNot: page.locator('time') })
-      .first();
-    const username = (await profile.count())
-      ? normalize(await profile.innerText())
-      : '';
+  for (const permalink of await element.locator('a[href*="/c/"]').all()) {
+    const match = new RegExp(
+      `^/(?:p|reel)/${address.code}/c/([0-9]{1,40})/$`,
+    ).exec((await permalink.getAttribute('href')) ?? '');
+    const time = permalink.locator('time[datetime]');
+    if (!match || (await time.count()) !== 1) continue;
+    const at = timestamp(await time.getAttribute('datetime'));
+    if (!at) continue;
+    const block = permalink.locator('xpath=ancestor::*[3]');
+    if ((await block.locator('xpath=ancestor::main').count()) !== 1) continue;
+    const content = await textBlock(block);
+    if (!content?.text) continue;
+    // Each timestamped permalink remains a candidate, including two in one
+    // block. Ambiguous matching comments must still settle as several.
+    comments.push({
+      username: content.username,
+      text: content.text,
+      id: match[1]!,
+      createdAt: at,
+    });
+  }
+  const captions = [];
+  let captionBlockSeen = false;
+  for (const profile of profiles) {
+    if (ownerName(profile.username) !== ownerName(owner) || !profile.text)
+      continue;
+    const row = profile.element.locator('xpath=ancestor::*[4]');
     if (
-      !/^[A-Za-z0-9_.]{1,30}$/.test(username) ||
-      (await profile.getAttribute('href')) !== `/${username}/`
+      (await row.locator('xpath=ancestor::main').count()) !== 1 ||
+      (await row.locator('a[href*="/c/"]').count()) !== 0
     )
       continue;
-    const content = block.locator('span').first();
-    if ((await content.count()) !== 1) continue;
-    const text = normalize(await content.innerText());
-    // A second timestamped candidate remains ambiguous even when both links
-    // occur in the same comment block. Never discard the whole block.
-    for (const permalink of await block.locator('a[href*="/c/"]').all()) {
-      const href = await permalink.getAttribute('href');
-      const match = new RegExp(
-        `^/${address.kind}/${address.code}/c/([0-9]{1,40})/$`,
-      ).exec(href ?? '');
-      const time = permalink.locator('time[datetime]');
-      if (!match || (await time.count()) !== 1) continue;
-      const at = timestamp(await time.getAttribute('datetime'));
-      if (at) comments.push({ username, text, id: match[1]!, createdAt: at });
-    }
+    captionBlockSeen = true;
+    const block = row.locator('xpath=ancestor::*[3]');
+    const content = await captionText(block, owner);
+    if (content !== null)
+      captions.push({
+        text: content,
+        complete:
+          (await block
+            .getByRole('button', { name: 'more', exact: true })
+            .count()) === 0,
+      });
   }
-  const captionBlock = element
-    .locator('div')
-    .filter({ has: page.locator(`a[href="/${names[0]}/"]`) })
-    .filter({ hasNot: page.locator('header,ul') });
-  // The caption is the owner's own non-comment block, not text from other comments.
-  const captionText = captionBlock.locator(':scope > span');
-  const complete =
-    (await captionBlock
-      .getByRole('button', { name: 'more', exact: true })
-      .count()) === 0;
-  const shownCaption =
-    (await captionText.count()) === 1
-      ? normalize(await captionText.innerText())
-      : '';
-  const caption = shownCaption ? shownCaption.slice(0, 10000) : null;
+  const caption = captions.length === 1 ? captions[0]! : null;
   return {
     ...address,
-    owner: names[0]!,
-    ownerCount: names.length,
-    caption,
-    captionComplete: complete && shownCaption.length <= 10000,
+    owner,
+    ownerCount: names.size,
+    ownerMatchesProfile,
+    caption: caption?.text.slice(0, 10000) ?? null,
+    captionComplete: caption
+      ? caption.complete && caption.text.length <= 10000
+      : !captionBlockSeen,
     createdAt,
     comments,
     element,
   };
+}
+async function profileLinks(element: Locator) {
+  const profiles = [];
+  for (const anchor of await element.locator('a[href]').all()) {
+    const match = /^\/([A-Za-z0-9_.]{1,30})\/$/.exec(
+      (await anchor.getAttribute('href')) ?? '',
+    );
+    if (match)
+      profiles.push({
+        username: match[1]!,
+        text: normalize(await anchor.innerText()),
+        element: anchor,
+      });
+  }
+  return profiles;
+}
+async function textBlock(block: Locator) {
+  if (
+    (await block.locator('xpath=self::div').count()) !== 1 ||
+    (await block.locator(':scope > *').count()) !== 2 ||
+    (await block.locator(':scope > div').count()) !== 2
+  )
+    return null;
+  const row = block.locator(':scope > div').first();
+  if (
+    (await row.locator(':scope > *').count()) !== 2 ||
+    (await row.locator(':scope > span[dir="auto"]').count()) !== 2
+  )
+    return null;
+  const profiles = await profileLinks(row);
+  if (profiles.length !== 1) return null;
+  const profile = profiles[0]!;
+  if (
+    profile.text !== profile.username ||
+    (await profile.element.locator('img').count()) !== 0
+  )
+    return null;
+  // Name and time occupy the first row. Only the separate text row can supply
+  // content; its hashtags and mentions remain text, never author evidence.
+  const textRow = block.locator(':scope > div').nth(1);
+  const text = textRow.locator(':scope > span[dir="auto"]');
+  if (
+    (await textRow.locator(':scope > *').count()) !== 1 ||
+    (await text.count()) !== 1 ||
+    (await text
+      .locator('xpath=ancestor::a | ancestor::span[@dir="auto"]')
+      .count()) !== 0 ||
+    (await text
+      .locator('time,button,img,[role="button"],a[href*="/c/"]')
+      .count()) !== 0
+  )
+    return null;
+  return {
+    username: profile.username,
+    text: normalize(await text.innerText()),
+  };
+}
+async function captionText(
+  block: Locator,
+  owner: string,
+): Promise<string | null> {
+  if (
+    (await block.locator('xpath=self::div').count()) !== 1 ||
+    (await block.locator('xpath=ancestor::main').count()) !== 1 ||
+    (await block.locator('a[href*="/c/"]').count()) !== 0 ||
+    (await block.locator(':scope > *').count()) !== 2 ||
+    (await block.locator(':scope > span[dir="auto"]').count()) !== 1 ||
+    (await block.locator(':scope > div').count()) !== 1
+  )
+    return null;
+  const wrapper = block.locator(':scope > span[dir="auto"]');
+  const content = wrapper.locator(':scope > div');
+  if (
+    (await wrapper.locator(':scope > *').count()) !== 1 ||
+    (await content.count()) !== 1 ||
+    (await content.locator(':scope > *').count()) !== 2 ||
+    (await content.locator(':scope > div').count()) !== 1 ||
+    (await content.locator(':scope > span:not([dir])').count()) !== 1
+  )
+    return null;
+  const row = content.locator(':scope > div');
+  const profiles = await profileLinks(row);
+  const time = row.locator('time[datetime]');
+  if (
+    profiles.length !== 1 ||
+    profiles[0]!.text !== profiles[0]!.username ||
+    ownerName(profiles[0]!.username) !== ownerName(owner) ||
+    (await profiles[0]!.element.locator('img').count()) !== 0 ||
+    (await time.count()) !== 1 ||
+    (await time.locator('xpath=ancestor::a').count()) !== 0 ||
+    timestamp(await time.getAttribute('datetime')) === null
+  )
+    return null;
+  const text = content.locator(':scope > span:not([dir])');
+  if (
+    (await text
+      .locator('time,img,button,[role="button"],a[href*="/c/"]')
+      .count()) !== 0
+  )
+    return null;
+  return normalize(await text.innerText());
+}
+async function postLinks(
+  element: Locator,
+  address: { kind: 'p' | 'reel'; code: string },
+) {
+  const links = [];
+  const pattern = new RegExp(
+    `^/([A-Za-z0-9_.]{1,30})/(?:p|reel)/${address.code}/$`,
+  );
+  for (const anchor of await element.locator('a[href]').all()) {
+    const match = pattern.exec((await anchor.getAttribute('href')) ?? '');
+    if (!match) continue;
+    const time = anchor.locator('time[datetime]');
+    links.push({
+      owner: match[1]!,
+      createdAt:
+        (await time.count()) === 1
+          ? timestamp(await time.getAttribute('datetime'))
+          : null,
+    });
+  }
+  return links;
+}
+export async function postElement(
+  page: Page,
+  origin: string,
+): Promise<Locator | null> {
+  const address = postAddress(page.url(), origin);
+  const element = page.locator('main');
+  if (!address || (await element.count()) !== 1) return null;
+  const links = await postLinks(element, address);
+  return links.some((link) => link.createdAt !== null) ? element : null;
 }
 export type ConfirmationResult =
   | { state: 'confirmed'; comment: PostProjection['comments'][number] }
@@ -272,7 +405,11 @@ export function confirmComment(
   item: Item,
   handle: string,
 ): ConfirmationResult {
-  if (ownerName(post.owner) !== ownerName(item.reference.ownerHandle ?? ''))
+  if (
+    post.ownerCount !== 1 ||
+    !post.ownerMatchesProfile ||
+    ownerName(post.owner) !== ownerName(item.reference.ownerHandle ?? '')
+  )
     return { state: 'unconfirmed', code: 'owner' };
   const own = post.comments.filter(
     (comment) => ownerName(comment.username) === ownerName(handle),
@@ -303,16 +440,40 @@ export function confirmComment(
 }
 /** Chromium DOM snapshots expose currentSrc without evaluating page JavaScript. */
 export async function currentImageSource(page: Page): Promise<string | null> {
+  const element = await postElement(page, new URL(page.url()).origin);
+  if (!element) return null;
+  let mediaIndex = -1;
+  const images = await element.locator('img').all();
+  for (const [index, image] of images.entries()) {
+    if (
+      (await image.locator('xpath=ancestor::a').count()) === 0 &&
+      (await image
+        .locator(
+          'xpath=ancestor::*[*/a[contains(@href,"/c/")] or div/span/a[contains(@href,"/c/")]]',
+        )
+        .count()) === 0
+    ) {
+      mediaIndex = index;
+      break;
+    }
+  }
+  if (mediaIndex === -1) return null;
   const client = await page.context().newCDPSession(page);
   try {
     const root = await client.send('DOM.getDocument');
-    const image = await client.send('DOM.querySelector', {
+    const main = await client.send('DOM.querySelector', {
       nodeId: root.root.nodeId,
-      selector: 'article img:not(header img):not(ul img)',
+      selector: 'main',
     });
-    if (!image.nodeId) return null;
+    if (!main.nodeId) return null;
+    const image = await client.send('DOM.querySelectorAll', {
+      nodeId: main.nodeId,
+      selector: 'img',
+    });
+    const nodeId = image.nodeIds[mediaIndex];
+    if (!nodeId) return null;
     const node = await client.send('DOM.describeNode', {
-      nodeId: image.nodeId,
+      nodeId,
     });
     const snapshot = await client.send('DOMSnapshot.captureSnapshot', {
       computedStyles: [],

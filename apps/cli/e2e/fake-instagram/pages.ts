@@ -11,7 +11,7 @@ const escape = (input: string) =>
 const json = (value: unknown) =>
   JSON.stringify(value).replaceAll('<', '\\u003c');
 function doc(body: string, script: string, lang = 'en'): string {
-  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}article{width:500px;background:white}article>img{width:160px;height:100px}li{list-style:none}#list{height:420px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}main{width:500px;background:white}main img{width:160px;height:100px}a>img{width:24px;height:24px}#list{height:420px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
 }
 const instrumentation = `
 window.events={inputs:[],choices:[],clicks:[],added:[]};window.filterSelects=new Map();
@@ -57,7 +57,7 @@ export function listPage(
 const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)};let oldest=false,start=null,end=null,loads=0,applied=false;
 const list=document.getElementById('list');
 function emptyImageButton(){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Generated image decoration');node.innerHTML='<img alt="" src="/thumb.png">';list.append(node)};
-function render(){mutate(()=>{list.replaceChildren();const empty=['empty-image-buttons','year-empty-rows'].includes(variant);if(empty)emptyImageButton();let chosen=rows.filter(row=>{const day=new Date(Date.parse(row.at)+zone*3600000).toISOString().slice(0,10);return(!start||day>=start)&&(!end||day<=end)});if(variant==='no-row')chosen=chosen.map(row=>({...row,text:'Different generated row'}));if(variant==='window-full')chosen=Array.from({length:120},(_,i)=>({...rows[0],text:'Window filler '+i})).slice(0,10*(loads+1));if(!oldest)chosen=chosen.slice().reverse();for(const [index,row]of chosen.entries()){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Comment row');node.innerHTML='<img alt="" src="/thumb.png">';const age=variant==='unknown-age'?'8q':oldest&&['year-rows','year-empty-rows','year-word-rows'].includes(variant)?(variant==='year-word-rows'?${json(IG_FIXTURE.expected.fullYearAge)}:${json(IG_FIXTURE.expected.yearAge)}):index%2===0?'1w':'2d';node.append(document.createTextNode(row.username+' '+row.text+'\\n'+age));node.onclick=()=>location.href='/${variant === 'reel' ? 'reel' : 'p'}/'+row.code+'/';list.append(node)}if(empty)for(let index=1;index<${IG_FIXTURE.expected.emptyImageButtons};index++)emptyImageButton()})};
+function render(){mutate(()=>{list.replaceChildren();const empty=['empty-image-buttons','year-empty-rows'].includes(variant);if(empty)emptyImageButton();let chosen=rows.filter(row=>{const day=new Date(Date.parse(row.at)+zone*3600000).toISOString().slice(0,10);return(!start||day>=start)&&(!end||day<=end)});if(variant==='no-row')chosen=chosen.map(row=>({...row,text:'Different generated row'}));if(variant==='window-full')chosen=Array.from({length:120},(_,i)=>({...rows[0],text:'Window filler '+i})).slice(0,10*(loads+1));if(!oldest)chosen=chosen.slice().reverse();for(const [index,row]of chosen.entries()){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Comment row');node.innerHTML='<img alt="" src="/thumb.png">';const age=variant==='unknown-age'?'8q':oldest&&['year-rows','year-empty-rows','year-word-rows'].includes(variant)?(variant==='year-word-rows'?${json(IG_FIXTURE.expected.fullYearAge)}:${json(IG_FIXTURE.expected.yearAge)}):index%2===0?'1w':'2d';node.append(document.createTextNode(row.username+' '+row.text+'\\n'+age));node.onclick=()=>location.href='/${variant === 'reel' ? 'reel' : 'p'}/'+row.code;list.append(node)}if(empty)for(let index=1;index<${IG_FIXTURE.expected.emptyImageButtons};index++)emptyImageButton()})};
 list.addEventListener('wheel',()=>{if(oldest){loads++;render()}});render();
 document.querySelector('body>[role=button]').onclick=()=>mutate(()=>{
   if(applied)return;
@@ -111,36 +111,190 @@ export function postPage(item: Item, index: number, variant: Variant): string {
     variant === 'owner'
       ? IG_FIXTURE.other.username
       : item.reference.ownerHandle!;
-  const comment = `<li><a href="/${escape(username)}/">${escape(username)}</a><span>${escape(text)}</span><a href="/${kind}/${code}/c/${BigInt(IG_FIXTURE.commentId) + BigInt(index)}/"><time datetime="${time}">1w</time></a></li>`;
-  const other = `<li><a href="/${IG_FIXTURE.other.username}/">${IG_FIXTURE.other.username}</a><span>${IG_FIXTURE.other.text}</span><a href="/${kind}/${code}/c/987654321/"><time datetime="${IG_FIXTURE.other.time}">1w</time></a></li>`;
+  const profile = (name: string) =>
+    `<a href="/${escape(name)}/"><div><div><span dir="auto">${escape(name)}</span></div></div></a>`;
+  const author = (name: string) =>
+    `<span><span><div>${profile(name)}</div></span></span>`;
+  const permalink = (id: string, at: string) =>
+    `<a href="/${variant === 'reel-links' ? 'reel' : kind}/${code}/c/${id}/"><time datetime="${at}">1w</time></a>`;
+  const textSpan = (content: string) => `<span dir="auto">${content}</span>`;
+  const commentBlock = (
+    name: string,
+    content: string,
+    id: string,
+    at: string,
+  ) =>
+    `<div><div><span dir="auto">${author(name)}</span><span dir="auto">${permalink(id, at)}</span></div><div>${textSpan(content)}</div></div>`;
+  const commentRow = (block: string, name: string) =>
+    `<div><a href="/${escape(name)}/"><img src="/profiles/comment.png" alt=""></a><div><div><div>${block}</div><div><div><div role="button">Reply</div></div></div></div></div></div>`;
+  const commentId = String(BigInt(IG_FIXTURE.commentId) + BigInt(index));
+  let shownText = escape(text);
+  if (variant === 'comment-hashtag')
+    shownText += ` <a href="/explore/tags/generated_moss/">${IG_FIXTURE.commentTag}</a>`;
+  if (variant === 'comment-mention')
+    shownText += ` <a href="/${IG_FIXTURE.other.username}/">@${IG_FIXTURE.other.username}</a>`;
+  let comment = commentBlock(username, shownText, commentId, time);
+  if (variant === 'block-two-texts')
+    comment = comment.replace(
+      textSpan(shownText),
+      textSpan(IG_FIXTURE.postDecoys.secondText) + textSpan(shownText),
+    );
+  if (variant === 'block-no-text')
+    comment = comment.replace(textSpan(shownText), '');
+  if (variant === 'block-text-in-link')
+    comment = comment.replace(
+      textSpan(shownText),
+      `<a href="/explore/tags/generated/">${textSpan(shownText)}</a>`,
+    );
+  if (variant === 'block-two-profiles')
+    comment = comment.replace(
+      profile(username),
+      profile(username) + profile(IG_FIXTURE.other.username),
+    );
+  if (variant === 'block-profile-label')
+    comment = comment.replace(
+      `>${escape(username)}</span>`,
+      `>${IG_FIXTURE.other.username}</span>`,
+    );
+  if (variant === 'block-profile-image')
+    comment = comment.replace(
+      profile(username),
+      profile(username).replace(
+        '</a>',
+        '<img src="/profiles/comment.png"></a>',
+      ),
+    );
+  if (variant === 'block-time-count')
+    comment = comment.replace(
+      '</time>',
+      `</time><time datetime="${time}">1w</time>`,
+    );
+  if (variant === 'block-wrong-depth')
+    comment = comment.replace(
+      permalink(commentId, time),
+      `<div>${permalink(commentId, time)}</div>`,
+    );
+  if (variant === 'block-wrong-code')
+    comment = comment.replace(
+      `/${kind}/${code}/c/`,
+      `/${kind}/${IG_FIXTURE.other.code}/c/`,
+    );
+  if (variant === 'block-query-permalink')
+    comment = comment.replace(`/c/${commentId}/"`, `/c/${commentId}/?q=1"`);
+  if (variant === 'block-text-time')
+    comment = comment.replace(
+      textSpan(shownText),
+      textSpan(shownText + `<time datetime="${time}">1w</time>`),
+    );
+  if (variant === 'block-text-image')
+    comment = comment.replace(
+      textSpan(shownText),
+      textSpan(shownText + '<img src="/profiles/comment.png">'),
+    );
+  if (variant === 'block-text-button')
+    comment = comment.replace(
+      textSpan(shownText),
+      textSpan(shownText + '<div role="button">Reply</div>'),
+    );
+  if (variant === 'block-text-permalink')
+    comment = comment.replace(
+      textSpan(shownText),
+      textSpan(shownText + permalink(commentId, time)),
+    );
+  if (variant === 'block-old-two-level')
+    comment = `<div><span dir="auto"><span dir="auto"><span>${shownText}</span></span></span><div>${profile(username)}${permalink(commentId, time)}</div></div>`;
+  const other = commentBlock(
+    IG_FIXTURE.other.username,
+    escape(IG_FIXTURE.other.text),
+    '987654321',
+    IG_FIXTURE.other.time,
+  );
   const caption =
     variant === 'empty-caption'
       ? ''
       : variant === 'cut-caption'
         ? IG_FIXTURE.caption.slice(0, 24) + '...'
         : IG_FIXTURE.caption;
-  const body = `<article><header><a href="/${owner}/">${owner}</a>${variant === 'collaboration' ? '<a href="/collaborator_decoy/">collaborator_decoy</a>' : ''}</header>${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}<div><a href="/${owner}/">${owner}</a><span>${caption}</span>${variant === 'cut-caption' ? '<button>more</button>' : ''}</div><a href="/${kind}/${code}/"><time datetime="${IG_FIXTURE.postAt}">1w</time></a><ul>${other}${variant === 'hidden' ? '' : comment}${variant === 'several' ? comment.replace(IG_FIXTURE.commentId, '282828282828282828') : ''}</ul>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Reply</button><button>Follow</button><button>Delete</button><input></article>`;
+  const firstProfile =
+    variant === 'owner-first-profile' ? IG_FIXTURE.other.username : owner;
+  const ownLink = (name: string) =>
+    `<a href="/${escape(name)}/${variant === 'reel-links' ? 'reel' : kind}/${variant === 'post-other-code' ? IG_FIXTURE.other.code : code}/">${variant === 'post-no-own-time' ? '1w' : `<time datetime="${IG_FIXTURE.postAt}">1w</time>`}</a>`;
+  const extraOwnLink =
+    variant === 'collaboration'
+      ? ownLink(IG_FIXTURE.postDecoys.collaborator)
+      : variant === 'same-owner-links'
+        ? ownLink(owner.toUpperCase())
+        : '';
+  let captionText =
+    variant === 'cut-caption'
+      ? escape(caption)
+      : `${escape(IG_FIXTURE.captionLine)}<br><a href="/explore/tags/generated_fern/">${IG_FIXTURE.captionTag}</a>`;
+  if (variant === 'caption-text-button')
+    captionText += '<div role="button">See translation</div>';
+  let captionBlock = caption
+    ? `<div><span dir="auto"><div><div>${author(owner)}<span><time datetime="${IG_FIXTURE.postAt}">1w</time></span></div><span>${captionText}</span></div></span><div><div role="button"><span dir="auto"><span>See translation</span></span></div>${variant === 'cut-caption' ? '<button>more</button>' : ''}</div></div>`
+    : '';
+  if (variant === 'caption-no-text')
+    captionBlock = captionBlock.replace(`<span>${captionText}</span>`, '');
+  if (variant === 'caption-extra-text')
+    captionBlock = captionBlock.replace(
+      `<span>${captionText}</span>`,
+      `<span>${captionText}</span><span>${IG_FIXTURE.postDecoys.secondText}</span>`,
+    );
+  if (variant === 'caption-no-wrapper')
+    captionBlock = captionBlock.replace('<span dir="auto">', '<span>');
+  if (variant === 'caption-no-time')
+    captionBlock = captionBlock.replace(
+      `<time datetime="${IG_FIXTURE.postAt}">1w</time>`,
+      '',
+    );
+  if (variant === 'caption-linked-time')
+    captionBlock = captionBlock.replace(
+      `<time datetime="${IG_FIXTURE.postAt}">1w</time>`,
+      ownLink(owner),
+    );
+  const mediaDecoy =
+    variant === 'media-decoys'
+      ? commentRow(
+          other.replace(
+            textSpan(escape(IG_FIXTURE.other.text)),
+            textSpan(
+              escape(IG_FIXTURE.other.text) +
+                '<img src="/profiles/comment.png">',
+            ),
+          ),
+          IG_FIXTURE.other.username,
+        )
+      : '';
+  const duplicate = comment.replace(
+    permalink(commentId, time),
+    permalink(commentId, time) + permalink('282828282828282828', time),
+  );
+  const commentRows =
+    commentRow(other, IG_FIXTURE.other.username) +
+    (['hidden', 'not-shown'].includes(variant)
+      ? ''
+      : commentRow(
+          variant === 'multi-permalink' ? duplicate : comment,
+          username,
+        )) +
+    (variant === 'several'
+      ? commentRow(comment.replace(commentId, '282828282828282828'), username)
+      : '');
+  const body = `<main><section><div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>${mediaDecoy}${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:auto;max-height:600px">${commentRows}</div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
   const script =
     instrumentation +
-    `let expansions=0;const comment=${json(comment)};function expand(){mutate(()=>{expansions++;document.querySelector('article>button').remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('article').prepend(button)}else document.querySelector('ul').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
+    `let expansions=0;const comment=${json(commentRow(comment, username))};function expand(event){mutate(()=>{expansions++;event.currentTarget.remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('main>section:last-child').prepend(button)}else document.getElementById('comments').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
 ${variant === 'no-json' ? '' : `fetch('/data/${code}.json').then(r=>r.json()).catch(()=>{});`}
 ${variant === 'two-answers' ? `fetch('/data/${code}.json?different=1').then(r=>r.json()).catch(()=>{});` : ''}
 `;
-  const duplicate = comment.replace(
-    `</li>`,
-    `<a href="/${kind}/${code}/c/282828282828282828/"><time datetime="${time}">1w</time></a></li>`,
-  );
-  const decorated =
-    variant === 'multi-permalink'
-      ? body.replace('</ul>', duplicate + '</ul>')
-      : body;
   const decoy =
     variant === 'post-decoy'
       ? '<button role="button" aria-label="Generated post decoration"><img src="/thumb.png" alt="">Not a list row</button>'
       : variant === 'post-decoy-foreign'
         ? `<button role="button" aria-label="Generated post decoration"><img src="/thumb.png" alt="">${IG_FIXTURE.other.username} ${IG_FIXTURE.other.text} 1w</button>`
         : '';
-  return doc(decorated + decoy, script);
+  return doc(body + decoy, script);
 }
 export function postAnswer(
   item: Item,

@@ -6,13 +6,21 @@ export const IG_FIXTURE = {
   now: '2026-10-15T12:00:00.000Z',
   code: 'Generated_Aa-19',
   commentId: '191919191919191919',
-  caption: 'Invented post caption with ferns and moss.',
+  caption: 'Invented post caption with ferns and moss. #generated_fern',
+  captionLine: 'Invented post caption with ferns and moss.',
+  captionTag: '#generated_fern',
+  commentTag: '#generated_moss',
   postAt: '2025-07-30T18:00:00.000Z',
   other: {
     username: 'planted_other_person',
     text: 'Other person private generated comment words 92',
     code: 'OtherSecret99',
     time: '2025-07-29T13:47:19.000Z',
+  },
+  postDecoys: {
+    collaborator: 'generated_collaborator',
+    profileOnly: 'generated_profile_picture',
+    secondText: 'Generated ambiguous outer text 73',
   },
   // A tiny generated PNG, not read from a real page or export.
   png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7ZkAAAAASUVORK5CYII=',
@@ -125,6 +133,38 @@ export type Variant =
   | 'four-candidates'
   | 'post-decoy'
   | 'post-decoy-foreign'
+  | 'owner-first-profile'
+  | 'same-owner-links'
+  | 'reel-links'
+  | 'not-shown'
+  | 'media-decoys'
+  | 'block-two-texts'
+  | 'block-no-text'
+  | 'block-text-in-link'
+  | 'block-two-profiles'
+  | 'block-profile-label'
+  | 'block-profile-image'
+  | 'block-time-count'
+  | 'block-wrong-depth'
+  | 'block-wrong-code'
+  | 'block-query-permalink'
+  | 'comment-hashtag'
+  | 'comment-mention'
+  | 'block-text-time'
+  | 'block-text-image'
+  | 'block-text-button'
+  | 'block-text-permalink'
+  | 'block-old-two-level'
+  | 'caption-no-text'
+  | 'caption-extra-text'
+  | 'caption-no-wrapper'
+  | 'caption-no-time'
+  | 'caption-linked-time'
+  | 'caption-text-button'
+  | 'post-no-own-time'
+  | 'post-other-code'
+  | 'post-two-main'
+  | 'owner-picture-profile'
   | 'multi-permalink'
   | 'account-mismatch'
   | 'side-429'

@@ -98,7 +98,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.end('<html lang="en"><h1>Login</h1></html>');
         return;
       }
-      const post = /^\/(?:p|reel)\/([A-Za-z0-9_-]+)\/$/.exec(path);
+      const post = /^\/(?:p|reel)\/([A-Za-z0-9_-]+)\/?$/.exec(path);
       if (post) {
         if (post[1]!.startsWith('Generated_wrong_candidate')) {
           response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -137,13 +137,17 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         );
         return;
       }
-      if (path.startsWith('/media/') || path === '/thumb.png') {
+      if (
+        path.startsWith('/media/') ||
+        path.startsWith('/profiles/') ||
+        path === '/thumb.png'
+      ) {
         const image = Buffer.from(IG_FIXTURE.png, 'base64');
         response.writeHead(200, {
           'Content-Type': variant === 'image-type' ? 'text/plain' : 'image/png',
         });
         response.end(
-          variant === 'image-large' && path !== '/thumb.png'
+          variant === 'image-large' && path.startsWith('/media/')
             ? Buffer.concat([image, Buffer.alloc(5 * 1024 ** 2)])
             : image,
         );

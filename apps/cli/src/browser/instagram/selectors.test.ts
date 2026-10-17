@@ -14,6 +14,39 @@ import {
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
 
+test.each(
+  (['p', 'reel'] as const).flatMap((kind) =>
+    ['', '/'].map((slash) => ({ kind, slash })),
+  ),
+)(
+  'C7 post address accepts $kind with closing slash "$slash"',
+  ({ kind, slash }) => {
+    expect(
+      postAddress(
+        `https://www.instagram.com/${kind}/${IG_FIXTURE.code}${slash}`,
+        'https://www.instagram.com',
+      ),
+    ).toEqual({ kind, code: IG_FIXTURE.code });
+  },
+);
+test.each([
+  `https://www.instagram.com/p/${IG_FIXTURE.code}/?q=1`,
+  `https://www.instagram.com/p/${IG_FIXTURE.code}?q=1`,
+  `https://www.instagram.com/p/${IG_FIXTURE.code}/?`,
+  `https://www.instagram.com/p/${IG_FIXTURE.code}/#comment`,
+  `https://www.instagram.com/p/${IG_FIXTURE.code}/extra/`,
+  `https://www.instagram.com/p/${IG_FIXTURE.code}/c/123/`,
+  `https://other.invalid/p/${IG_FIXTURE.code}/`,
+  `https://www.instagram.com.other.invalid/p/${IG_FIXTURE.code}/`,
+  `https://www.instagram.com:444/p/${IG_FIXTURE.code}/`,
+  `https://user@www.instagram.com/p/${IG_FIXTURE.code}/`,
+  'https://www.instagram.com/p/a%2Fb/',
+  'https://www.instagram.com/p/' + 'a'.repeat(65),
+  'https://www.instagram.com/p//',
+])('C7 post address refuses noncanonical input %s', (input) => {
+  expect(postAddress(input, 'https://www.instagram.com')).toBeNull();
+});
+
 test('C4 row scans skip normalized-empty buttons, preserve original indices and reject nonempty unknown ages', async () => {
   let texts = [
     '',
@@ -88,6 +121,7 @@ test.each(['owner', 'author', 'text', 'time', 'several'] as const)(
       code: IG_FIXTURE.code,
       owner: item.reference.ownerHandle!,
       ownerCount: 1,
+      ownerMatchesProfile: true,
       caption: IG_FIXTURE.caption,
       captionComplete: true,
       createdAt: IG_FIXTURE.postAt,
@@ -115,6 +149,7 @@ test('author, full normalized text, 60 second time and first owner are independe
     code: IG_FIXTURE.code,
     owner: item.reference.ownerHandle!,
     ownerCount: 1,
+    ownerMatchesProfile: true,
     caption: IG_FIXTURE.caption,
     captionComplete: true,
     createdAt: IG_FIXTURE.postAt,

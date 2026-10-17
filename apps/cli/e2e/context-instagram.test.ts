@@ -19,7 +19,12 @@ import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-co
 import { records } from '@socialprune/core/workspace/store';
 import { capturePost } from '../src/browser/instagram/capture.ts';
 import { startConfirmation } from '../src/browser/confirmation.ts';
-import { clickAllowed } from '../src/browser/instagram/selectors.ts';
+import {
+  clickAllowed,
+  readPost,
+  confirmComment,
+  currentImageSource,
+} from '../src/browser/instagram/selectors.ts';
 import type { Click } from '../src/browser/instagram/selectors.ts';
 import { createServer } from 'node:http';
 import {
@@ -43,12 +48,422 @@ import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
 import * as networkHelpers from '../src/browser/instagram/network.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
-import { filterList } from '../src/browser/instagram/driver.ts';
+import {
+  filterList,
+  openCandidate,
+  productionContext,
+} from '../src/browser/instagram/driver.ts';
 import {
   chooseFilterDate,
   chooseFilterOption,
 } from '../src/browser/instagram/filter.ts';
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
+
+test('C7r measured comment rows keep the author outside one text candidate and read caption breaks and hashtag without translation', async () => {
+  const h = await filterHarness();
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    const link = h.page.locator(
+      `a[href="/p/${IG_FIXTURE.code}/c/${IG_FIXTURE.commentId}/"]`,
+    );
+    const block = link.locator('xpath=ancestor::*[3]');
+    expect(await block.locator(':scope > div').count()).toBe(2);
+    expect(await block.locator('span[dir="auto"]').count()).toBe(4);
+    expect(
+      await block
+        .locator(
+          'xpath=.//span[@dir="auto" and not(ancestor::a) and not(ancestor::span[@dir="auto"])]',
+        )
+        .count(),
+    ).toBe(3);
+    const textRow = block.locator(':scope > div').nth(1);
+    expect(await textRow.locator('a[href*="/c/"]').count()).toBe(0);
+    expect(await textRow.innerText()).toBe(h.fixture.items[0]!.text);
+    expect(
+      await block
+        .locator(':scope > div')
+        .first()
+        .locator(`a[href="/${h.fixture.items[0]!.account.handle}/"]`)
+        .count(),
+    ).toBe(1);
+    const captionSpan = h.page
+      .locator('main > section')
+      .nth(1)
+      .locator(
+        'xpath=./div[span[@dir="auto"]/div/div//time[not(ancestor::a)]]/span[@dir="auto"]/div/span',
+      );
+    expect(await captionSpan.innerText()).toBe(
+      `${IG_FIXTURE.captionLine}\n${IG_FIXTURE.captionTag}`,
+    );
+    const post = await readPost(h.page, h.fake.origin);
+    expect(post.comments).toHaveLength(2);
+    expect(post.comments).toContainEqual({
+      username: h.fixture.items[0]!.account.handle,
+      text: h.fixture.items[0]!.text,
+      id: IG_FIXTURE.commentId,
+      createdAt: h.fixture.items[0]!.createdAt,
+    });
+    expect(post).toMatchObject({
+      caption: IG_FIXTURE.caption,
+      captionComplete: true,
+    });
+    expect(post.caption).not.toContain('See translation');
+    expect(h.fake.events.flatMap((event) => event.clicks)).toEqual([]);
+  } finally {
+    await h.close();
+  }
+});
+test.each(['comment-hashtag', 'comment-mention'] as const)(
+  'C7r %s keeps permitted text links while reading the single author outside the candidate',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      const post = await readPost(h.page, h.fake.origin);
+      const suffix =
+        variant === 'comment-hashtag'
+          ? IG_FIXTURE.commentTag
+          : '@' + IG_FIXTURE.other.username;
+      const text = h.fixture.items[0]!.text + ' ' + suffix;
+      expect(post.comments).toContainEqual({
+        username: h.fixture.items[0]!.account.handle,
+        text,
+        id: IG_FIXTURE.commentId,
+        createdAt: h.fixture.items[0]!.createdAt,
+      });
+      expect(
+        confirmComment(
+          post,
+          { ...h.fixture.items[0]!, text },
+          h.fixture.items[0]!.account.handle!,
+        ),
+      ).toMatchObject({ state: 'confirmed' });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  'block-text-time',
+  'block-text-image',
+  'block-text-button',
+  'block-text-permalink',
+  'block-old-two-level',
+] as const)(
+  'C7r %s is skipped without falling back to the name or age row',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      const post = await readPost(h.page, h.fake.origin);
+      expect(post.comments).toEqual([
+        {
+          username: IG_FIXTURE.other.username,
+          text: IG_FIXTURE.other.text,
+          id: '987654321',
+          createdAt: IG_FIXTURE.other.time,
+        },
+      ]);
+      expect(
+        confirmComment(
+          post,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+        ),
+      ).toEqual({ state: 'unconfirmed', code: 'not-shown' });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  'caption-no-text',
+  'caption-extra-text',
+  'caption-no-wrapper',
+  'caption-no-time',
+  'caption-linked-time',
+  'caption-text-button',
+] as const)(
+  'C7r %s leaves the present but unknown caption incomplete',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      const post = await readPost(h.page, h.fake.origin);
+      expect(post).toMatchObject({ caption: null, captionComplete: false });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('C7r a truly absent caption block remains null and complete', async () => {
+  const h = await filterHarness('empty-caption');
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    expect(await readPost(h.page, h.fake.origin)).toMatchObject({
+      caption: null,
+      captionComplete: true,
+    });
+  } finally {
+    await h.close();
+  }
+});
+
+test.each(['success', 'reel', 'reel-links', 'same-owner-links'] as const)(
+  'C7 %s reads the main post own-link owner and date, nested comment text and caption',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      const kind = variant === 'reel' ? 'reel' : 'p';
+      await h.page.goto(`${h.fake.origin}/${kind}/${IG_FIXTURE.code}/`);
+      expect(await h.page.locator('main').count()).toBe(1);
+      expect(await h.page.locator('main section').count()).toBe(2);
+      expect(
+        await h.page.locator('article,header,ul,li,[role="dialog"]').count(),
+      ).toBe(0);
+      const post = await readPost(h.page, h.fake.origin);
+      expect(post).toMatchObject({
+        kind,
+        code: IG_FIXTURE.code,
+        owner: h.fixture.items[0]!.reference.ownerHandle,
+        ownerCount: 1,
+        createdAt: IG_FIXTURE.postAt,
+        caption: IG_FIXTURE.caption,
+        captionComplete: true,
+      });
+      expect(post.comments).toContainEqual({
+        username: h.fixture.items[0]!.account.handle,
+        text: h.fixture.items[0]!.text,
+        id: IG_FIXTURE.commentId,
+        createdAt: h.fixture.items[0]!.createdAt,
+      });
+      expect(await post.element.locator('xpath=self::main').count()).toBe(1);
+      expect(
+        confirmComment(
+          post,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+        ),
+      ).toMatchObject({ state: 'confirmed' });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  'owner',
+  'owner-first-profile',
+  'owner-picture-profile',
+  'collaboration',
+] as const)(
+  'C7 %s rejects inconsistent own-link ownership as owner',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}/`);
+      const post = await readPost(h.page, h.fake.origin);
+      expect(post.ownerCount).toBe(variant === 'collaboration' ? 2 : 1);
+      expect(
+        confirmComment(
+          post,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+        ),
+      ).toEqual({ state: 'unconfirmed', code: 'owner' });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  'block-two-texts',
+  'block-no-text',
+  'block-text-in-link',
+  'block-two-profiles',
+  'block-profile-label',
+  'block-profile-image',
+  'block-time-count',
+  'block-wrong-depth',
+  'block-wrong-code',
+  'block-query-permalink',
+] as const)(
+  'C7 %s skips an unrecognized comment block instead of guessing',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}/`);
+      const post = await readPost(h.page, h.fake.origin);
+      expect(post.comments).toEqual([
+        {
+          username: IG_FIXTURE.other.username,
+          text: IG_FIXTURE.other.text,
+          id: '987654321',
+          createdAt: IG_FIXTURE.other.time,
+        },
+      ]);
+      expect(
+        confirmComment(
+          post,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+        ),
+      ).toEqual({ state: 'unconfirmed', code: 'not-shown' });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each(['success', 'reel'] as const)(
+  'C7 %s row opening waits for a slashless address and main own-link time',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.open();
+      expect(
+        await openCandidate(
+          h.page,
+          0,
+          {
+            ...productionContext,
+            origin: h.fake.origin,
+            responseMs: 1000,
+          },
+          () => {},
+        ),
+      ).toBe(true);
+      expect(h.page.url()).toBe(
+        `${h.fake.origin}/${variant === 'reel' ? 'reel' : 'p'}/${IG_FIXTURE.code}`,
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each(['post-no-own-time', 'post-other-code', 'post-two-main'] as const)(
+  'C7 %s cannot satisfy post readiness or readPost',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.open();
+      await expect(
+        openCandidate(
+          h.page,
+          0,
+          {
+            ...productionContext,
+            origin: h.fake.origin,
+            responseMs: 300,
+          },
+          () => {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'post-timeout',
+      });
+      await expect(readPost(h.page, h.fake.origin)).rejects.toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'post-structure',
+      });
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('C7 media image ignores earlier profile images and unlinked images in comment blocks', async () => {
+  const h = await filterHarness('media-decoys');
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    expect(await currentImageSource(h.page)).toBe(
+      `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`,
+    );
+  } finally {
+    await h.close();
+  }
+});
+test('C7 main media supplies the first image and actual screenshot, while fixture decoys stay out of structured workspace data', async () => {
+  const h = await harness('media-decoys');
+  let capturedMain = false;
+  let captureFailure: Error | undefined;
+  h.setCapture(async (...args) => {
+    try {
+      const element = args[2];
+      expect(await element.locator('xpath=self::main').count()).toBe(1);
+      expect(await element.locator('a[href] img').count()).toBeGreaterThan(0);
+      const postPage = h
+        .context!.pages()
+        .find((page) => page.url().startsWith(h.fake.origin + '/p/'))!;
+      expect(args[3]).toBe(
+        `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`,
+      );
+      expect(await currentImageSource(postPage)).toBe(args[3]);
+      const screenshot = vi.spyOn(
+        Object.getPrototypeOf(element) as Locator,
+        'screenshot',
+      );
+      try {
+        const result = await capturePost(...args);
+        expect(screenshot).toHaveBeenCalledExactlyOnceWith({
+          type: 'jpeg',
+          quality: 60,
+          scale: 'css',
+          caret: 'initial',
+          animations: 'allow',
+          timeout: 30000,
+        });
+        expect(result).toMatchObject({
+          image: { status: 'stored' },
+          screenshot: { status: 'stored' },
+        });
+        capturedMain = true;
+        return result;
+      } finally {
+        screenshot.mockRestore();
+      }
+    } catch (error) {
+      captureFailure =
+        error instanceof Error ? error : new Error(String(error));
+      throw error;
+    }
+  });
+  try {
+    const running = h.start();
+    await h.click('Start');
+    await expect
+      .poll(() => capturedMain || captureFailure !== undefined, {
+        timeout: 30000,
+      })
+      .toBe(true);
+    if (captureFailure) throw captureFailure;
+    await h.click('Continue');
+    await h.click('Matches');
+    expect(await running).toMatchObject({
+      completed: 1,
+      endReason: 'canary',
+    });
+    expect(capturedMain).toBe(true);
+    const values = JSON.stringify({
+      journal: await h.store.browserJournal(),
+      records: await h.store.read((tx) => records(tx.instagramContext)),
+    });
+    for (const forbidden of [
+      ...Object.values(IG_FIXTURE.other),
+      ...Object.values(IG_FIXTURE.postDecoys),
+    ])
+      expect(values).not.toContain(forbidden);
+    expect(
+      h.fake.requests.filter((request) => request.path.startsWith('/media/')),
+    ).toEqual([{ method: 'GET', path: `/media/${IG_FIXTURE.code}.png` }]);
+    expect(
+      h.fake.requests.some((request) => request.path.startsWith('/profiles/')),
+    ).toBe(true);
+    const shot = await readFile(
+      join(instagramContextDirectory(h.directory, IG_FIXTURE.code), 'shot.jpg'),
+    );
+    expect(shot.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+  } finally {
+    await h.close();
+  }
+});
 
 test('C6 first canary reloads after the unfiltered oldest probe, records two list navigations and one step without extra pace or empty-row counts', async () => {
   const h = await harness('year-empty-rows');
@@ -808,7 +1223,7 @@ test.each([
         });
       expect(
         h.fake.requests.filter(
-          (request) => request.path === `/p/${IG_FIXTURE.code}/`,
+          (request) => request.path === `/p/${IG_FIXTURE.code}`,
         ),
       ).toHaveLength(1);
       expect(h.fake.events.flatMap((value) => value.clicks)).not.toContain(
@@ -1787,7 +2202,7 @@ test.each([
   'hidden',
   'reel',
   'cut-caption',
-  'collaboration',
+  'same-owner-links',
   'empty-caption',
 ] as const)(
   'automatic canary %s compares every field with the page JSON, accepts once and never starts a full run',
@@ -1809,6 +2224,9 @@ test.each([
 test.each([
   ['time', 'CANARY_CHECK_FAILED'],
   ['owner', 'CANARY_CHECK_FAILED'],
+  ['collaboration', 'CANARY_CHECK_FAILED'],
+  ['owner-first-profile', 'CANARY_CHECK_FAILED'],
+  ['not-shown', 'CANARY_CHECK_FAILED'],
   ['several', 'CANARY_CHECK_FAILED'],
   ['edited', 'CANARY_CHECK_FAILED'],
   ['other-author', 'CANARY_CHECK_FAILED'],
@@ -1953,9 +2371,14 @@ test.each([14, -12])(
 test.each([
   ['time', 'time'],
   ['owner', 'owner'],
+  ['collaboration', 'owner'],
+  ['owner-first-profile', 'owner'],
   ['several', 'several'],
   ['edited', 'text'],
   ['other-author', 'not-shown'],
+  ['not-shown', 'not-shown'],
+  ['block-two-texts', 'not-shown'],
+  ['block-wrong-depth', 'not-shown'],
   ['no-row', 'no-row'],
   ['window-full', 'window-full'],
   ['unavailable', null],

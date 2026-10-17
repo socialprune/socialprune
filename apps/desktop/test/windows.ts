@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 
 const run = promisify(execFile);
@@ -26,7 +27,10 @@ export async function appProcesses(executable: string): Promise<ProcessRow[]> {
   return JSON.parse(stdout || '[]') as ProcessRow[];
 }
 
-export async function remainingProcesses(pids: number[]): Promise<number[]> {
+export async function remainingProcesses(
+  pids: number[],
+  signal?: AbortSignal,
+): Promise<number[]> {
   if (pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0))
     throw new Error('INVALID_PID');
   if (!pids.length) return [];
@@ -38,9 +42,9 @@ export async function remainingProcesses(pids: number[]): Promise<number[]> {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `@(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) | ConvertTo-Json -Compress`,
+      `ConvertTo-Json -InputObject @(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) -Compress`,
     ],
-    { windowsHide: true, timeout: 20_000 },
+    { windowsHide: true, timeout: 20_000, signal },
   );
   return JSON.parse(stdout || '[]') as number[];
 }
@@ -48,11 +52,23 @@ export async function remainingProcesses(pids: number[]): Promise<number[]> {
 export async function assertNoRemainingProcesses(
   pids: number[],
 ): Promise<void> {
-  assert.deepEqual(
-    await remainingProcesses(pids),
-    [],
-    'BROWSER_PROCESS_REMAINS',
-  );
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15_000);
+  let remaining = pids;
+  try {
+    do {
+      try {
+        remaining = await remainingProcesses(pids, controller.signal);
+        if (!remaining.length) return;
+        await wait(100, undefined, { signal: controller.signal });
+      } catch (error) {
+        if (!controller.signal.aborted) throw error;
+      }
+    } while (!controller.signal.aborted);
+  } finally {
+    clearTimeout(deadline);
+  }
+  assert.deepEqual(remaining, [], 'BROWSER_PROCESS_REMAINS');
 }
 
 export async function assertNoListeners(pids: number[]): Promise<void> {

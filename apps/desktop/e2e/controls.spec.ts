@@ -21,7 +21,8 @@ export async function exerciseControl(
   kind: 'node' | 'inline' | 'network',
   red = false,
 ) {
-  const app = await launch('probe');
+  // Renderer capability and CSP controls do not need imported archive rows.
+  const app = await launch('probe', false);
   let contacted = 0;
   const probe =
     kind === 'network'
@@ -36,16 +37,20 @@ export async function exerciseControl(
         probe.once('error', reject);
         probe.listen(4643, '127.0.0.1', resolve);
       });
-    const events = await observePolicy(app.page);
-    await app.page.reload();
-    await expect(
-      app.page.getByRole('navigation', { name: 'SocialPrune' }),
-    ).toBeVisible();
+    const events = await test.step('install policy observer', () =>
+      observePolicy(app.page));
+    await test.step('reload controlled app page', () => app.page.reload());
+    await test.step('wait for reloaded interactive navigation', () =>
+      expect(
+        app.page.getByRole('navigation', { name: 'SocialPrune' }),
+      ).toBeVisible());
     if (kind === 'node') {
-      await app.page.evaluate(() =>
-        Object.assign(window, { process: { generated: true } }),
-      );
-      const planted = await rendererState(app.page);
+      await test.step('plant Node decoy', () =>
+        app.page.evaluate(() =>
+          Object.assign(window, { process: { generated: true } }),
+        ));
+      const planted = await test.step('read renderer capabilities', () =>
+        rendererState(app.page));
       if (red) assertRenderer(planted);
       else expect(() => assertRenderer(planted)).toThrow();
     } else {

@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
+import { spawn } from 'node:child_process';
 import {
   assertNoListeners,
   assertNoRemainingProcesses,
@@ -22,6 +23,35 @@ export async function plantedListener(): Promise<void> {
 export async function plantedProcess(): Promise<void> {
   // A decoy known live PID proves the detector; it never kills a process.
   await assertNoRemainingProcesses([process.pid]);
+}
+
+export async function processExitControl(exits: boolean): Promise<void> {
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      `process.stdout.write('ready\\n'); ${exits ? 'setTimeout(() => process.exit(0), 3000)' : 'setInterval(() => {}, 1000)'}`,
+    ],
+    {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    },
+  );
+  const ended = new Promise<void>((resolve, reject) => {
+    child.once('exit', () => resolve());
+    child.once('error', reject);
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.stdout.once('data', () => resolve());
+      child.once('error', reject);
+    });
+    if (!child.pid) throw new Error('DECOY_PID_MISSING');
+    await assertNoRemainingProcesses([child.pid]);
+  } finally {
+    if (child.exitCode === null) child.kill();
+    await ended;
+  }
 }
 
 export async function plantedConnection(port: number): Promise<void> {

@@ -1,3 +1,4 @@
+import { openEngine } from 'socialprune/engine';
 import { startEngine } from './host.ts';
 
-startEngine(process.argv[2] ?? '');
+startEngine(openEngine);

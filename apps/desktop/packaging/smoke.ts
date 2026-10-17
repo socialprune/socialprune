@@ -36,7 +36,7 @@ try {
       '-NoProfile',
       '-NonInteractive',
       '-File',
-      join(directory, 'build/smoke-window.ps1'),
+      join(directory, 'packaging/smoke-window.ps1'),
       '-AppProcessId',
       String(child.pid),
       '-Executable',
@@ -50,6 +50,7 @@ try {
     interactiveAt: number;
     workingSetBytes: number;
     tcpListeners: number;
+    tcpConnections: number;
     udpEndpoints: number;
     processCount: number;
     items: number;
@@ -57,6 +58,7 @@ try {
   assert.equal(await exited, 0, 'SMOKE_EXIT');
   assert.equal(sample.items, count);
   assert.equal(sample.tcpListeners, 0);
+  assert.equal(sample.tcpConnections, 0);
   assert.equal(sample.udpEndpoints, 0);
   assert.deepEqual(await appProcesses(executable('release')), []);
   assert.doesNotMatch(
@@ -75,6 +77,7 @@ try {
     asarBytes: (await stat(join(dist, 'release/resources/app.asar'))).size,
     items: count,
     tcpListeners: 0,
+    tcpConnections: 0,
     udpEndpoints: 0,
     remainingOwnedProcesses: 0,
   };

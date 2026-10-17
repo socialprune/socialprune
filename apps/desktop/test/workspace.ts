@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { root } from '../build/paths.ts';
+import { root } from '../packaging/paths.ts';
 
 export async function generatedWorkspace(data: string): Promise<number> {
   const workspace = join(data, 'workspace');

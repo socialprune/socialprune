@@ -5,19 +5,17 @@ test('foundation: packaged app -> preload -> main -> utility SQLite -> reply -> 
   const app = await launch();
   try {
     expect(await app.page.title()).toBe('SocialPrune');
-    expect(app.page.url()).toBe('app://socialprune/index.html');
-    expect(await app.page.locator('#status').textContent()).toBe(
-      String(app.items),
-    );
+    expect(app.page.url()).toMatch(/^app:\/\/socialprune\/desktop.html/);
     const reply = await app.page.evaluate(() =>
       window.socialprune.request({
-        type: 'foundationRead',
+        type: 'open',
+        workspaceId: 'local',
         requestId: crypto.randomUUID(),
       }),
     );
     expect(reply).toMatchObject({
-      type: 'foundationSummary',
-      items: app.items,
+      type: 'reviewReply',
+      replies: [{ type: 'opened', summary: { counts: { items: app.items } } }],
     });
     expect(app.errors).toEqual([]);
     console.log(

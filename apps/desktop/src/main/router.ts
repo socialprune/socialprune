@@ -1,6 +1,6 @@
-import { DesktopRequestSchema } from '../protocol.ts';
+import { DesktopRequestSchema, parseDesktopReply } from '../protocol.ts';
 import type { DesktopReply, DesktopRequest } from '../protocol.ts';
-import { APP_URL } from './policy.ts';
+import { isAppDocument } from './policy.ts';
 
 export type RejectionCode = 'SENDER_REJECTED' | 'MESSAGE_REJECTED';
 export interface FrameIdentity {
@@ -34,8 +34,8 @@ export function authorizedSender(
     frame.parent === null &&
     event.processId === main.processId &&
     event.frameId === main.routingId &&
-    frame.url === APP_URL &&
-    owner.getURL() === APP_URL
+    isAppDocument(frame.url) &&
+    isAppDocument(owner.getURL())
   );
 }
 
@@ -54,6 +54,8 @@ export function createRouter(
       record('MESSAGE_REJECTED');
       return Promise.reject(new Error('BRIDGE_REJECTED'));
     }
-    return dispatch(parsed.data);
+    return dispatch(parsed.data).then((reply) =>
+      parseDesktopReply(parsed.data, reply),
+    );
   };
 }

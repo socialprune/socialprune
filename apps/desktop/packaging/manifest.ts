@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { root } from './paths.ts';
 
 const output = process.argv[2];
@@ -19,7 +19,18 @@ assert.equal(
   '',
   'UNSTAGED_TASK_CHANGES',
 );
-const paths = git(['diff', '--cached', '--name-only', '-z'])
+assert.equal(
+  git(['ls-files', '--others', '--exclude-standard']).toString(),
+  '',
+  'UNTRACKED_TASK_CHANGES',
+);
+const paths = git([
+  'diff',
+  '--cached',
+  '--name-only',
+  '--diff-filter=ACMR',
+  '-z',
+])
   .toString()
   .split('\0')
   .filter(Boolean)
@@ -40,16 +51,26 @@ for (const path of paths) {
     path.startsWith('apps/desktop/') || integration.has(path),
     'WRITE_SET_MISMATCH',
   );
-  const bytes = await readFile(resolve(root, path));
   const staged = git(['show', ':' + path]);
-  assert.equal(hash(bytes), hash(staged), `STAGED_BYTES_DIFFER: ${path}`);
-  rows.push(`${hash(bytes)}  ${path}`);
+  // .gitattributes checks PowerShell scripts out with CRLF but stores LF.
+  // Compare Git-filtered identities and hash the actual staged bytes.
+  assert.equal(
+    git(['hash-object', '--path=' + path, path])
+      .toString()
+      .trim(),
+    git(['rev-parse', ':' + path])
+      .toString()
+      .trim(),
+    `STAGED_BYTES_DIFFER: ${path}`,
+  );
+  rows.push(`${hash(staged)} ${path}`);
 }
 await writeFile(output, rows.join('\n') + '\n');
 console.log(
   JSON.stringify({
     path: output,
     files: paths.length,
+    stagedTree: git(['write-tree']).toString().trim(),
     sha256: hash(await readFile(output)),
     base: git(['rev-parse', 'HEAD']).toString().trim(),
   }),

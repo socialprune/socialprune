@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { directory } from '../build/paths.ts';
+import { directory } from '../packaging/paths.ts';
 
 const run = promisify(execFile);
 export interface ProcessRow {
@@ -61,7 +61,10 @@ export async function assertNoListeners(pids: number[]): Promise<void> {
     pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
   )
     throw new Error('INVALID_PID');
-  const script = join(directory, 'build/listeners.ps1').replaceAll("'", "''");
+  const script = join(directory, 'packaging/listeners.ps1').replaceAll(
+    "'",
+    "''",
+  );
   const { stdout } = await run(
     'powershell.exe',
     [
@@ -74,4 +77,27 @@ export async function assertNoListeners(pids: number[]): Promise<void> {
   );
   const counts = JSON.parse(stdout) as { tcp: number; udp: number };
   assert.deepEqual(counts, { tcp: 0, udp: 0 }, 'APP_LISTENER');
+}
+
+export async function assertNoConnections(pids: number[]): Promise<void> {
+  if (
+    !pids.length ||
+    pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
+  )
+    throw new Error('INVALID_PID');
+  const script = join(directory, 'packaging/connections.ps1').replaceAll(
+    "'",
+    "''",
+  );
+  const { stdout } = await run(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `& '${script}' -ProcessIds @(${pids.join(',')})`,
+    ],
+    { windowsHide: true, timeout: 20_000 },
+  );
+  assert.deepEqual(JSON.parse(stdout) as unknown, [], 'APP_CONNECTION');
 }

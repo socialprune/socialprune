@@ -20,10 +20,19 @@ import { flipFuses } from '@electron/fuses';
 import extract from '@electron-internal/extract-zip';
 import { NtExecutable, NtExecutableResource, Resource } from 'resedit';
 import { build } from 'rolldown';
+import { build as buildWeb } from 'vite';
+import { bundledLicenses } from '../../cli/release/notices.ts';
 import { DESKTOP_POLICY } from '../src/main/policy.ts';
 import { fetchElectron } from './fetch-electron.ts';
 import { assertFuses, fuseConfiguration } from './fuses.ts';
-import { directory, dist, ELECTRON_VERSION, executable } from './paths.ts';
+import {
+  directory,
+  dist,
+  root,
+  ELECTRON_VERSION,
+  executable,
+} from './paths.ts';
+import { assertProductionModules } from './boundary.ts';
 
 const hash = (bytes: Uint8Array | string) =>
   createHash('sha256').update(bytes).digest('hex');
@@ -39,14 +48,25 @@ async function bundle(
     input: resolve(directory, entry),
     platform: 'node',
     external: (id) =>
-      id.startsWith('node:') || id === 'electron' || id === 'playwright-core',
+      id.startsWith('node:') ||
+      id === 'electron' ||
+      id === 'playwright-core' ||
+      id.startsWith('playwright-core/'),
+    plugins: [
+      {
+        name: 'test-engine-chromium-only',
+        resolveId(id) {
+          if (!production && id === '@playwright/test')
+            return { id: 'playwright-core', external: true };
+        },
+      },
+    ],
     output: { file: target, format, codeSplitting: false, sourcemap: false },
   });
   const modules = result.output.flatMap((file) =>
     file.type === 'chunk' ? Object.keys(file.modules) : [],
   );
-  if (production && modules.some((id) => /[/\\](test|e2e)[/\\]/.test(id)))
-    throw new Error('PRODUCTION_TEST_IMPORT');
+  if (production) assertProductionModules(modules);
   return modules;
 }
 
@@ -88,6 +108,23 @@ async function resourceExecutable(path: string, asar: string): Promise<void> {
 }
 
 export async function packageDesktop(): Promise<void> {
+  const rendererModules = new Set<string>();
+  await buildWeb({
+    root: resolve(root, 'apps/web'),
+    configFile: resolve(root, 'apps/web/vite.config.ts'),
+    mode: 'desktop',
+    plugins: [
+      {
+        name: 'desktop-bundled-notices',
+        generateBundle(_options, output) {
+          for (const file of Object.values(output))
+            if (file.type === 'chunk')
+              for (const id of Object.keys(file.modules))
+                rendererModules.add(id);
+        },
+      },
+    ],
+  });
   const archive = await fetchElectron();
   const content = resolve(dist, 'content');
   await rm(content, { recursive: true, force: true });
@@ -117,25 +154,14 @@ export async function packageDesktop(): Promise<void> {
       true,
     )),
   );
-  await build({
-    input: resolve(directory, 'src/renderer/index.ts'),
-    platform: 'browser',
-    output: {
-      file: join(content, 'renderer/renderer.js'),
-      format: 'iife',
-      codeSplitting: false,
-    },
-  });
-  await writeFile(
-    join(content, 'renderer/index.html'),
-    (
-      await readFile(resolve(directory, 'src/renderer/index.html'), 'utf8')
-    ).replace('__DESKTOP_POLICY__', DESKTOP_POLICY),
-  );
-  await cp(
-    resolve(directory, 'src/renderer/style.css'),
-    join(content, 'renderer/style.css'),
-  );
+  const renderer = resolve(directory, '../web/dist-desktop');
+  const html = await readFile(join(renderer, 'desktop.html'), 'utf8');
+  if (
+    !html.includes(DESKTOP_POLICY.replaceAll("'", '&#39;')) &&
+    !html.includes(DESKTOP_POLICY)
+  )
+    throw new Error('DESKTOP_POLICY_DRIFT');
+  await cp(renderer, join(content, 'renderer'), { recursive: true });
   const playwright = dirname(
     await realpath(require.resolve('playwright-core/package.json')),
   );
@@ -143,15 +169,22 @@ export async function packageDesktop(): Promise<void> {
     recursive: true,
   });
   await cp(resolve(directory, '../../LICENSE'), join(content, 'LICENSE'));
-  const zod = dirname(await realpath(require.resolve('zod/package.json')));
+  const notices = await bundledLicenses(
+    [...modules, ...rendererModules, require.resolve('playwright-core')],
+    root,
+  );
   await writeFile(
     join(content, 'THIRD_PARTY_NOTICES'),
-    'zod 4.6.5\n' +
-      (await readFile(join(zod, 'LICENSE'), 'utf8')) +
-      '\nplaywright-core 1.63.0\n' +
-      (await readFile(join(playwright, 'LICENSE'), 'utf8')) +
-      '\n' +
-      (await readFile(join(playwright, 'NOTICE'), 'utf8')),
+    'Third-party software bundled in SocialPrune desktop.\n\n' +
+      notices
+        .map(
+          (entry) =>
+            `${entry.name}@${entry.version} (${entry.license})\n` +
+            entry.files
+              .map((file) => `Source: ${file.name}\n\n${file.text.trim()}\n`)
+              .join('\n'),
+        )
+        .join('\n'),
   );
   await writeFile(
     join(content, 'package.json'),
@@ -202,6 +235,8 @@ export async function packageDesktop(): Promise<void> {
   const release = await readFile(join(dist, 'release/resources/app.asar'));
   const test = await readFile(join(dist, 'test/resources/app.asar'));
   if (!release.equals(test)) throw new Error('TEST_BUILD_CONTENT_DRIFT');
+  // The probe differs by entrypoints only; it can select generated hosts and
+  // test clocks. Neither the release nor inspect-only test variant can do so.
   const releaseExecutable = await readFile(executable('release'));
   const testExecutable = await readFile(executable('test'));
   const fuseSentinel = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX');

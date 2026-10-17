@@ -8,7 +8,7 @@
     "src/**/*.ts",
     "test/**/*.ts",
     "e2e/**/*.ts",
-    "build/**/*.ts",
+    "packaging/**/*.ts",
     "*.ts"
   ]
 }

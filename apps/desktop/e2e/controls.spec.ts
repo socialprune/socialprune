@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
 import { expect, test } from '@playwright/test';
-import { executable } from '../build/paths.ts';
-import { assertFuses } from '../build/fuses.ts';
+import { executable } from '../packaging/paths.ts';
+import { assertFuses } from '../packaging/fuses.ts';
 import {
   assertPolicyEvents,
   assertRenderer,
@@ -34,11 +34,13 @@ export async function exerciseControl(
     if (probe)
       await new Promise<void>((resolve, reject) => {
         probe.once('error', reject);
-        probe.listen(4602, '127.0.0.1', resolve);
+        probe.listen(4643, '127.0.0.1', resolve);
       });
     const events = await observePolicy(app.page);
     await app.page.reload();
-    await expect(app.page.locator('[data-ready="true"]')).toBeVisible();
+    await expect(
+      app.page.getByRole('navigation', { name: 'SocialPrune' }),
+    ).toBeVisible();
     if (kind === 'node') {
       await app.page.evaluate(() =>
         Object.assign(window, { process: { generated: true } }),
@@ -49,7 +51,7 @@ export async function exerciseControl(
     } else {
       await app.page.evaluate(async (control) => {
         if (control === 'network') {
-          await fetch('http://127.0.0.1:4602/planted').catch(() => undefined);
+          await fetch('http://127.0.0.1:4643/planted').catch(() => undefined);
         } else {
           const factory = Reflect.get(window, 'trustedTypes') as {
             createPolicy(

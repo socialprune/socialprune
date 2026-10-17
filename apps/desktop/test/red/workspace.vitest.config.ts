@@ -7,11 +7,11 @@ export default defineConfig({
       name: 'desktop-test-only-erased-open-error',
       enforce: 'pre',
       transform(source, id) {
-        if (!id.replaceAll('\\', '/').endsWith('/src/engine-host/workspace.ts'))
+        if (!id.replaceAll('\\', '/').endsWith('/cli/src/engine/facade.ts'))
           return;
         const changed = source.replace(
-          /type:\s*["']rejected["'],\s*code:\s*["']WORKSPACE_OPEN_FAILED["'],/g,
-          "type: 'foundationSummary', items: 0, sqliteVersion: '0.0.0',",
+          "if (closing) throw new CliError('NOT_AVAILABLE');",
+          "if (closing) throw new CliError('ENGINE_UNAVAILABLE');",
         );
         if (changed === source) throw new Error('RED_MUTATION_NOT_APPLIED');
         return changed;

@@ -113,7 +113,7 @@ jobs:
       - run: pnpm --filter socialprune pack:check
       - run: pnpm --filter socialprune smoke:package
 
-  # ADR-031 D0: the real packaged Electron runtime on Windows, before screens.
+  # ADR-031: packaged Electron flows on Windows.
   desktop:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -127,12 +127,6 @@ jobs:
           node-version: '24.21.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm licenses:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm format:check
-      - run: pnpm copy:check
-      - run: pnpm guard
       - run: pnpm --filter @socialprune/desktop exec playwright install chromium
       - run: pnpm build:desktop
       - run: pnpm --filter @socialprune/desktop fuses:check

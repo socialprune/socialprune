@@ -1,6 +1,8 @@
 import { chromium } from 'playwright-core';
 import { z } from 'zod';
 import { startEngine } from '../../src/engine-host/host.ts';
+import { openTestEngine } from '../../../cli/e2e/engine-test-entry.ts';
+import type { BrowserContext } from 'playwright-core';
 
 const ProbeSchema = z.strictObject({
   type: z.literal('browserProbe'),
@@ -11,8 +13,103 @@ const ProbeSchema = z.strictObject({
     return url.protocol === 'http:' && url.hostname === '127.0.0.1';
   }),
 });
-startEngine(process.argv[2] ?? '');
+const contexts: BrowserContext[] = [];
+const commandLines: string[][] = [];
+const browserPids = new Set<number>();
+const browserEvents: {
+  event: string;
+  url: string;
+  at: number;
+  detail?: string;
+}[] = [];
+let now = Date.parse('2026-10-15T12:00:00.000Z');
+startEngine((options) =>
+  openTestEngine(options, {
+    xOrigin: 'http://127.0.0.1:4631',
+    instagramOrigin: 'http://127.0.0.1:4636',
+    now: () => new Date(now),
+    sleep: (ms) => {
+      now += ms;
+      return Promise.resolve();
+    },
+    async launched(context) {
+      contexts.push(context);
+      context.on('request', (request) =>
+        browserEvents.push({
+          event: 'request',
+          url: request.url(),
+          at: Date.now(),
+        }),
+      );
+      context.on('requestfinished', (request) =>
+        browserEvents.push({
+          event: 'finished',
+          url: request.url(),
+          at: Date.now(),
+        }),
+      );
+      context.on('requestfailed', (request) =>
+        browserEvents.push({
+          event: 'failed',
+          url: request.url(),
+          at: Date.now(),
+          detail: request.failure()?.errorText,
+        }),
+      );
+      for (const page of context.pages())
+        page.on('pageerror', (error) =>
+          browserEvents.push({
+            event: 'pageerror',
+            url: page.url(),
+            at: Date.now(),
+            detail: error.message,
+          }),
+        );
+      const cdp = await context.newCDPSession(context.pages()[0]!);
+      commandLines.push(
+        (await cdp.send('Browser.getBrowserCommandLine')).arguments,
+      );
+      await cdp.detach();
+      const browser = context.browser();
+      if (!browser) throw new Error('BROWSER_PROCESS_ID_MISSING');
+      const system = await browser.newBrowserCDPSession();
+      for (const info of (await system.send('SystemInfo.getProcessInfo'))
+        .processInfo)
+        browserPids.add(Number(info.id));
+      await system.detach();
+    },
+  }),
+);
 process.parentPort.on('message', (event: Electron.MessageEvent) => {
+  if (event.data === 'runProbe') {
+    void Promise.all(
+      contexts
+        .flatMap((context) => context.pages())
+        .map(async (page) => ({
+          url: page.url(),
+          html: await page.content().catch(() => 'PAGE_CLOSED'),
+        })),
+    ).then((pages) =>
+      process.parentPort.postMessage({
+        type: 'runProbe',
+        commandLines,
+        browserEvents,
+        pids: [...browserPids],
+        pages,
+        openPages: contexts.reduce(
+          (sum, context) => sum + context.pages().length,
+          0,
+        ),
+      }),
+    );
+    return;
+  }
+  if (event.data === 'closeBrowsers') {
+    void Promise.all(contexts.map((context) => context.close())).then(() =>
+      process.parentPort.postMessage({ type: 'browsersClosed' }),
+    );
+    return;
+  }
   const probe = ProbeSchema.safeParse(event.data);
   if (!probe.success) return;
   void (async () => {

@@ -4,11 +4,11 @@ import type { SenderEvent, SenderIdentity } from '../src/main/router.ts';
 
 const request = {
   requestId: '00000000-0000-4000-8000-000000000001',
-  type: 'foundationRead' as const,
+  type: 'runView' as const,
 };
 export function identities() {
   const frame = {
-    url: 'app://socialprune/index.html',
+    url: 'app://socialprune/desktop.html',
     processId: 7,
     routingId: 2,
     parent: null,
@@ -31,13 +31,14 @@ test('own live main frame and only the strict read shape reach dispatch', async 
   const { owner, event } = identities();
   const dispatch = vi.fn().mockResolvedValue({
     ...request,
-    type: 'foundationSummary',
-    items: 300,
-    sqliteVersion: '3.53.4',
+    type: 'runView',
+    view: { phase: 'idle', version: 0 },
   });
   const log = vi.fn();
   const route = createRouter(owner, dispatch, log);
-  await expect(route(event, request)).resolves.toMatchObject({ items: 300 });
+  await expect(route(event, request)).resolves.toMatchObject({
+    view: { phase: 'idle' },
+  });
   expect(dispatch).toHaveBeenCalledExactlyOnceWith(request);
   for (const message of [
     null,
@@ -51,6 +52,45 @@ test('own live main frame and only the strict read shape reach dispatch', async 
   expect(log.mock.calls).toEqual(
     Array.from({ length: 5 }, () => ['MESSAGE_REJECTED']),
   );
+});
+
+test('hash routes retain the main-frame identity, but queries and other documents do not', async () => {
+  const { owner, event, frame } = identities();
+  const dispatch = vi.fn().mockResolvedValue({
+    type: 'runView',
+    requestId: request.requestId,
+    view: { phase: 'idle', version: 0 },
+  });
+  const route = createRouter(owner, dispatch, vi.fn());
+  frame.url += '#/review/list';
+  await expect(route(event, request)).resolves.toMatchObject({
+    type: 'runView',
+  });
+  frame.url = 'app://socialprune/desktop.html?foreign=1';
+  await expect(route(event, request)).rejects.toThrow('BRIDGE_REJECTED');
+  frame.url = 'app://socialprune/other.html';
+  await expect(route(event, request)).rejects.toThrow('BRIDGE_REJECTED');
+});
+
+test('main checks reply identity, method, and run-view shape before returning it', async () => {
+  const { owner, event } = identities();
+  for (const reply of [
+    {
+      type: 'runView',
+      requestId: 'other',
+      view: { phase: 'idle', version: 0 },
+    },
+    { type: 'linkOpened', requestId: request.requestId },
+    { type: 'runView', requestId: request.requestId, view: { phase: 'idle' } },
+  ]) {
+    await expect(
+      createRouter(
+        owner,
+        () => Promise.resolve(reply as never),
+        vi.fn(),
+      )(event, request),
+    ).rejects.toThrow();
+  }
 });
 
 test.each([
@@ -79,9 +119,8 @@ test.each([
     if (variant === 'destroyed') owner.isDestroyed = () => true;
     const dispatch = vi.fn().mockResolvedValue({
       requestId: request.requestId,
-      type: 'foundationSummary',
-      items: 300,
-      sqliteVersion: '3.53.4',
+      type: 'runView',
+      view: { phase: 'idle', version: 0 },
     });
     const log = vi.fn();
     await expect(

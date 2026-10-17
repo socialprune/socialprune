@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { expect, test } from 'vitest';
-import { directory } from '../build/paths.ts';
+import { directory } from '../packaging/paths.ts';
+import { assertProductionModules } from '../packaging/boundary.ts';
 
 async function graph(
   entry: string,
@@ -21,11 +22,10 @@ async function graph(
 
 export function assertProductionGraph(modules: Iterable<string>): void {
   for (const id of modules)
-    if (/[/\\](test|e2e|cli)[/\\]/.test(id))
-      throw new Error('PRODUCTION_BOUNDARY');
+    if (/[/\\](test|e2e)[/\\]/.test(id)) throw new Error('PRODUCTION_BOUNDARY');
 }
 
-test('every production entry excludes test/CLI code and runtime test selectors', async () => {
+test('every production entry excludes test code and runtime test selectors', async () => {
   for (const entry of [
     'src/main/index.ts',
     'src/engine-host/index.ts',
@@ -48,4 +48,9 @@ test('every production entry excludes test/CLI code and runtime test selectors',
   expect(() =>
     assertProductionGraph([resolve(directory, 'test/entries/engine.ts')]),
   ).toThrow('PRODUCTION_BOUNDARY');
+  expect(() =>
+    assertProductionModules([
+      resolve(directory, '../cli/e2e/engine-test-entry.ts'),
+    ]),
+  ).toThrow('PRODUCTION_TEST_IMPORT');
 });

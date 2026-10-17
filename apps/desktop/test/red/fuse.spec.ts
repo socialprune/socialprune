@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
 import { test } from '@playwright/test';
-import { executable } from '../../build/paths.ts';
-import { assertFuses } from '../../build/fuses.ts';
+import { executable } from '../../packaging/paths.ts';
+import { assertFuses } from '../../packaging/fuses.ts';
 
 test('RED planted fuse must fail exact readback', async () => {
   const temp = await mkdtemp(join(tmpdir(), 'socialprune-red-fuse-'));

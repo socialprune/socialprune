@@ -1,4 +1,4 @@
-export const APP_URL = 'app://socialprune/index.html';
+export const APP_URL = 'app://socialprune/desktop.html';
 export const DESKTOP_POLICY =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src app:; media-src app:; connect-src 'none'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
 
@@ -12,6 +12,16 @@ export function isAppUrl(value: string): boolean {
       url.username === '' &&
       url.password === ''
     );
+  } catch {
+    return false;
+  }
+}
+
+export function isAppDocument(value: string): boolean {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    return url.href === APP_URL;
   } catch {
     return false;
   }

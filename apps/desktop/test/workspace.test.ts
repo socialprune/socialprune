@@ -2,38 +2,31 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { openFoundationWorkspace } from '../src/engine-host/workspace.ts';
+import { openEngine } from 'socialprune/engine';
 import { generatedWorkspace } from './workspace.ts';
 
-test('read-only generated workspace and failed open produce bounded results', async () => {
+test('real engine reads the generated workspace and closes before reopening', async () => {
   const data = await mkdtemp(join(tmpdir(), 'socialprune-desktop-store-'));
   const request = {
-    type: 'foundationRead' as const,
+    type: 'open' as const,
+    workspaceId: 'local',
     requestId: '00000000-0000-4000-8000-000000000001',
   };
   try {
     const count = await generatedWorkspace(data);
-    const store = openFoundationWorkspace(
-      join(data, 'workspace/socialprune.sqlite'),
-    );
-    expect(store.read(request)).toMatchObject({
-      type: 'foundationSummary',
-      items: count,
+    const engine = await openEngine({ dataFolder: data });
+    expect(await engine.request(request)).toMatchObject({
+      type: 'reviewReply',
+      replies: [{ type: 'opened', summary: { counts: { items: count } } }],
     });
-    store.close();
-    const failed = openFoundationWorkspace(
-      join(data, 'missing-directory/private.sqlite'),
-    );
-    expect(failed.read(request)).toEqual({
-      ...request,
-      type: 'rejected',
-      code: 'WORKSPACE_OPEN_FAILED',
+    expect(
+      await engine.request({ type: 'runView', requestId: 'view' }),
+    ).toMatchObject({ type: 'runView', view: { phase: 'idle', version: 0 } });
+    await engine.close();
+    expect(await engine.request(request)).toMatchObject({
+      type: 'desktopFailed',
+      code: 'NOT_AVAILABLE',
     });
-    expect(failed.read(request)).toMatchObject({
-      type: 'rejected',
-      code: 'WORKSPACE_OPEN_FAILED',
-    });
-    failed.close();
   } finally {
     await rm(data, { recursive: true, force: true });
   }

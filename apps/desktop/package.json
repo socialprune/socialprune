@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "build": "node build/package.ts",
+    "build": "node packaging/package.ts",
     "test:unit": "vitest run --project desktop --maxWorkers=2",
     "test:e2e": "playwright test --workers=1",
-    "test:red": "node build/red-controls.ts",
-    "smoke": "node build/smoke.ts",
-    "fuses:check": "node build/check-fuses.ts"
+    "test:red": "node packaging/red-controls.ts",
+    "smoke": "node packaging/smoke.ts",
+    "fuses:check": "node packaging/check-fuses.ts"
   },
   "dependencies": {
+    "@socialprune/core": "workspace:*",
+    "socialprune": "workspace:*",
     "playwright-core": "1.63.0",
     "zod": "4.6.5"
   },

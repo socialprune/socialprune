@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
-  DesktopReplySchema,
+  parseDesktopReply,
   DesktopRequestSchema,
   REQUEST_CHANNEL,
   RUN_VIEW_CHANNEL,
@@ -11,7 +11,8 @@ import type { DesktopBridge, DesktopRequest, RunView } from '../protocol.ts';
 const bridge: DesktopBridge = Object.freeze({
   async request(message: DesktopRequest) {
     const request = DesktopRequestSchema.parse(message);
-    return DesktopReplySchema.parse(
+    return parseDesktopReply(
+      request,
       await ipcRenderer.invoke(REQUEST_CHANNEL, request),
     );
   },

@@ -4,7 +4,7 @@ import {
   isAppUrl,
   WINDOW_PREFERENCES,
 } from '../src/main/policy.ts';
-import { verifyArchive } from '../build/fetch-electron.ts';
+import { verifyArchive } from '../packaging/fetch-electron.ts';
 import { createHash } from 'node:crypto';
 
 test('ADR-031 renderer preferences and policy are exact, including Trusted Types', () => {

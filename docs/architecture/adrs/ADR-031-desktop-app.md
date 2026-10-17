@@ -246,7 +246,7 @@ The German text names "Der Computer wurde durch Windows geschützt", "Weitere In
 
 | Path | Contents |
 |---|---|
-| `apps/desktop` (new, private package `@socialprune/desktop`) | `src/main/`, `src/preload/`, `src/engine-host/` (the utility process entry and the review handler), `build/` (Rolldown config, Electron fetch, packaging, fuses, MSIX manifest template, Squirrel), `e2e/`, `test/` |
+| `apps/desktop` (new, private package `@socialprune/desktop`) | `src/main/`, `src/preload/`, `src/engine-host/` (the utility process entry and the review handler), `packaging/` (named `build/` until 2026-10-17; Rolldown config, Electron fetch, packaging, fuses, MSIX manifest template, Squirrel), `e2e/`, `test/` |
 | `apps/web` | `src/desktop/` with the bridge port, the desktop entry, setup, monitor and settings screens; `desktop.html`; a `desktop` build mode with output `dist-desktop/` and its check script |
 | `apps/cli` | `src/engine/` facade; the review dispatch split out of `server.ts`; the confirmation state split out of `confirmation.ts`; the runner's pause and window options; the `./engine` export |
 | `packages/core` | the run view schema next to the existing protocol schemas, shared by engine, bridge and renderer; no data model change |

@@ -35,9 +35,6 @@ playwright-report/
 test-results/
 blob-report/
 
-# Desktop packaging sources are not generated output.
-!/apps/desktop/build/
-!/apps/desktop/build/**
 /apps/desktop/dist/
 
 # Logs

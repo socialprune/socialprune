@@ -9,6 +9,17 @@ const require = createRequire(import.meta.url);
 await mkdir(join(dist, 'red-controls'), { recursive: true });
 for (const control of [
   {
+    name: 'production-test-exclusion',
+    entry: join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs'),
+    args: [
+      'run',
+      '--config',
+      'test/red/production.vitest.config.ts',
+      '--maxWorkers=2',
+    ],
+    evidence: ['1 failed', 'PRODUCTION_TEST_IMPORT'],
+  },
+  {
     name: 'sender-zod',
     entry: join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs'),
     args: [
@@ -17,10 +28,10 @@ for (const control of [
       'test/red/router.vitest.config.ts',
       '--maxWorkers=2',
     ],
-    evidence: ['10 failed', 'instead of rejecting'],
+    evidence: ['11 failed', 'instead of rejecting'],
   },
   {
-    name: 'sqlite-error',
+    name: 'engine-error',
     entry: join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs'),
     args: [
       'run',
@@ -28,7 +39,7 @@ for (const control of [
       'test/red/workspace.vitest.config.ts',
       '--maxWorkers=2',
     ],
-    evidence: ['1 failed', 'foundationSummary', 'WORKSPACE_OPEN_FAILED'],
+    evidence: ['1 failed', 'ENGINE_UNAVAILABLE'],
   },
   {
     name: 'renderer-fuses',
@@ -42,13 +53,14 @@ for (const control of [
       '--workers=1',
     ],
     evidence: [
-      '6 failed',
+      '7 failed',
       "process: 'object'",
       'CSP_VIOLATION',
       'connect-src',
       'script-src-elem',
       'FUSE_MISMATCH_0',
       'APP_LISTENER',
+      'APP_CONNECTION',
       'BROWSER_PROCESS_REMAINS',
     ],
   },

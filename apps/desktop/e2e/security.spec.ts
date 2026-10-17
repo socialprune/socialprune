@@ -19,7 +19,9 @@ test('renderer has exact bridge, no Node, strict header/meta policy and no netwo
       if (policy) headers.push(policy);
     });
     await app.page.reload();
-    await expect(app.page.locator('[data-ready="true"]')).toBeVisible();
+    await expect(
+      app.page.getByRole('navigation', { name: 'SocialPrune' }),
+    ).toBeVisible();
     assertRenderer(await rendererState(app.page));
     const expected =
       "default-src 'none'; script-src 'self'; style-src 'self'; img-src app:; media-src app:; connect-src 'none'; worker-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types socialprune";
@@ -80,11 +82,11 @@ test('navigation, popups and permissions do not grant a second surface', async (
   const app = await launch();
   try {
     await app.page.evaluate(() => {
-      window.open('app://socialprune/index.html');
+      window.open('app://socialprune/desktop.html');
       location.href = 'app://socialprune/missing';
     });
     await expect.poll(() => app.application.windows().length).toBe(1);
-    expect(app.page.url()).toBe('app://socialprune/index.html');
+    expect(app.page.url()).toMatch(/^app:\/\/socialprune\/desktop.html/);
     expect(
       await app.application.evaluate(({ session }) =>
         session.fromPartition('socialprune').getPreloads(),
@@ -123,7 +125,7 @@ test('actual second webContents and navigated app page cannot use IPC', async ()
             preload: electronApp.getAppPath() + '/preload.cjs',
           },
         });
-        await other.loadURL('app://socialprune/index.html');
+        await other.loadURL('app://socialprune/desktop.html');
       },
     );
     await expect
@@ -143,7 +145,7 @@ test('actual second webContents and navigated app page cannot use IPC', async ()
     await expect(
       other.evaluate(() =>
         window.socialprune.request({
-          type: 'foundationRead',
+          type: 'runView',
           requestId: crypto.randomUUID(),
         }),
       ),
@@ -154,7 +156,7 @@ test('actual second webContents and navigated app page cannot use IPC', async ()
     await expect(
       app.page.evaluate(() =>
         window.socialprune.request({
-          type: 'foundationRead',
+          type: 'runView',
           requestId: '00000000-0000-4000-8000-000000000001',
         }),
       ),
@@ -166,21 +168,22 @@ test('actual second webContents and navigated app page cannot use IPC', async ()
   }
 });
 
-test('failing utility open reports a closed code repeatedly without crashing', async () => {
+test('an empty data folder opens a real workspace without crashing', async () => {
   const app = await launch('test', false);
   try {
-    expect(await app.page.locator('#status').textContent()).toBe(
-      'WORKSPACE_OPEN_FAILED',
-    );
     for (let index = 0; index < 2; index++)
       expect(
         await app.page.evaluate(() =>
           window.socialprune.request({
-            type: 'foundationRead',
+            type: 'open',
+            workspaceId: 'local',
             requestId: crypto.randomUUID(),
           }),
         ),
-      ).toMatchObject({ type: 'rejected', code: 'WORKSPACE_OPEN_FAILED' });
+      ).toMatchObject({
+        type: 'reviewReply',
+        replies: [{ type: 'opened', summary: { counts: { items: 0 } } }],
+      });
     expect(app.application.process().exitCode).toBeNull();
   } finally {
     await app.close();
@@ -207,11 +210,11 @@ test('terminated utility returns ENGINE_UNAVAILABLE and parent still quits', asy
     expect(
       await app.page.evaluate(() =>
         window.socialprune.request({
-          type: 'foundationRead',
+          type: 'runView',
           requestId: crypto.randomUUID(),
         }),
       ),
-    ).toMatchObject({ type: 'rejected', code: 'ENGINE_UNAVAILABLE' });
+    ).toMatchObject({ type: 'desktopFailed', code: 'ENGINE_UNAVAILABLE' });
     await expect
       .poll(async () =>
         (

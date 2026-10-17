@@ -35,10 +35,6 @@ export default defineConfig([
     ],
   },
   {
-    // Desktop's build/ contains packaging source, not generated output.
-    ignores: ['!apps/desktop/build/', '!apps/desktop/build/**'],
-  },
-  {
     files: ['**/*.{js,mjs,cjs}'],
     extends: [js.configs.recommended],
     rules: executionRules,

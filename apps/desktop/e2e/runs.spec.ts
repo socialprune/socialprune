@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SQLiteStore } from '../../cli/src/workspace/sqlite-store.ts';
@@ -9,9 +9,14 @@ import { fakeInstagram } from '../../cli/e2e/fake-instagram/server.ts';
 import { instagramFixture } from '../../cli/e2e/fake-instagram/fixture.ts';
 import { launch, call } from './helpers.ts';
 import { assertNoRemainingProcesses } from '../test/windows.ts';
+import { windowsShortPath } from '../test/short-path.ts';
 import type { RunView } from '../src/protocol.ts';
 
-async function generated(platform: 'x' | 'instagram', limit = false) {
+async function generated(
+  platform: 'x' | 'instagram',
+  limit = false,
+  shortDataPath = false,
+) {
   const ig = await instagramFixture(2);
   const initial = platform === 'x' ? fixtureWorkspace() : ig.workspace;
   // These rows are ordinary generated posts here. Replies/quotes deliberately
@@ -22,14 +27,31 @@ async function generated(platform: 'x' | 'instagram', limit = false) {
   const fake =
     platform === 'x' ? await fakeX(4631) : await fakeInstagram(4636, ig.items);
   if ('setVariant' in fake && limit) fake.setVariant('side-429');
-  const app = await launch('probe', false, async (data) => {
-    await mkdir(join(data, 'workspace'), { recursive: true });
-    const store = await SQLiteStore.open(
-      join(data, 'workspace/socialprune.sqlite'),
-      { initial },
-    );
-    await store.close();
-    await createProfile(join(data, 'profiles', platform), platform);
+  const app = await launch(
+    'probe',
+    false,
+    async (data) => {
+      await mkdir(join(data, 'workspace'), { recursive: true });
+      const store = await SQLiteStore.open(
+        join(data, 'workspace/socialprune.sqlite'),
+        { initial },
+      );
+      await store.close();
+      await createProfile(join(data, 'profiles', platform), platform);
+    },
+    shortDataPath
+      ? async (data) => {
+          const short = await windowsShortPath(data);
+          test.skip(
+            short === null,
+            'This volume offers no distinct Windows 8.3 alias for the generated data folder.',
+          );
+          return short!;
+        }
+      : undefined,
+  ).catch(async (error: unknown) => {
+    await fake.close();
+    throw error;
   });
   const monitor = app.page.getByTestId('desktop-monitor');
   const view = async (): Promise<RunView> => {
@@ -96,7 +118,7 @@ async function generated(platform: 'x' | 'instagram', limit = false) {
       await app.page
         .getByRole('button', { name: 'Open run monitor', exact: true })
         .click();
-      await expect(monitor).toHaveAttribute('data-phase', 'awaiting-warning');
+      await this.phase('awaiting-warning');
       expect(fake.requests).toHaveLength(requestsBefore);
       await expect(
         monitor.getByRole('button', { name: 'Start', exact: true }),
@@ -122,6 +144,42 @@ async function generated(platform: 'x' | 'instagram', limit = false) {
     },
   };
 }
+
+test('an 8.3 data folder reaches awaiting-warning through packaged main', async () => {
+  const h = await generated('x', false, true);
+  try {
+    const canonical = await realpath(h.app.data);
+    expect(h.app.selectedData).not.toBe(canonical);
+    await h.prepare();
+    expect(
+      await h.app.application.evaluate(({ app }) => app.getPath('userData')),
+    ).toBe(canonical);
+    expect(
+      await call(h.app, {
+        type: 'dataFolderInfo',
+        requestId: crypto.randomUUID(),
+      }),
+    ).toMatchObject({ type: 'dataFolderInfo', folder: { path: canonical } });
+    expect(
+      await call(h.app, {
+        type: 'dataFolderOpen',
+        requestId: crypto.randomUUID(),
+      }),
+    ).toMatchObject({ type: 'dataFolderOpened', opened: true });
+    expect(
+      await h.app.application.evaluate(
+        () =>
+          (Reflect.get(globalThis, 'desktopProbe') as { links: string[] })
+            .links,
+      ),
+    ).toEqual([canonical]);
+    expect(await realpath(join(canonical, 'logs'))).toBe(
+      join(canonical, 'logs'),
+    );
+  } finally {
+    await h.close();
+  }
+});
 
 test('packaged X monitor watches both canaries, pauses, resumes, completes the full plan and passes window switches', async () => {
   const h = await generated('x');

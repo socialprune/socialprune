@@ -1,5 +1,5 @@
 import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import {
   app,
@@ -61,14 +61,17 @@ app.commandLine.appendSwitch('no-proxy-server');
 
 export async function startDesktop(options: DesktopOptions) {
   mkdirSync(options.dataDirectory, { recursive: true });
-  app.setPath('userData', options.dataDirectory);
+  // Windows may supply an 8.3 alias. Canonicalize before Electron or the
+  // engine derives paths, without weakening the engine's profile link check.
+  const dataDirectory = realpathSync.native(options.dataDirectory);
+  app.setPath('userData', dataDirectory);
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
   }
   await app.whenReady();
   const counts: Record<string, number> = {};
-  const logs = join(options.dataDirectory, 'logs');
+  const logs = join(dataDirectory, 'logs');
   await mkdir(logs, { recursive: true });
   let logQueue = Promise.resolve();
   const record = (code: string) => {
@@ -153,7 +156,7 @@ export async function startDesktop(options: DesktopOptions) {
   const engine = launchEngine(
     options.engine,
     {
-      dataFolder: options.dataDirectory,
+      dataFolder: dataDirectory,
       ...(placement ? { windowPlacement: placement.browser } : {}),
     },
     record,
@@ -170,7 +173,7 @@ export async function startDesktop(options: DesktopOptions) {
       window.webContents.send(RUN_VIEW_CHANNEL, view);
   });
   const localMethods = mainMethods({
-    dataDirectory: options.dataDirectory,
+    dataDirectory,
     guides,
     external: (url) =>
       options.links ? options.links.external(url) : shell.openExternal(url),
@@ -184,6 +187,8 @@ export async function startDesktop(options: DesktopOptions) {
     if (type === 'backupExport') {
       const result = await dialog.showSaveDialog(window, {
         filters: [{ name: 'JSON', extensions: ['json'] }],
+        // A bare name: the dialog opens in the person's usual folder. The data
+        // folder would be wrong, because a Store uninstall deletes it.
         defaultPath: 'socialprune-backup.json',
         properties: ['showOverwriteConfirmation'],
       });

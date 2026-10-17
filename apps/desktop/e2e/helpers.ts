@@ -33,15 +33,23 @@ export async function launch(
   variant: 'test' | 'probe' = 'test',
   generated = true,
   prepare?: (data: string) => Promise<void>,
+  selectDataPath?: (data: string) => Promise<string>,
 ) {
   const temporary = await mkdtemp(join(tmpdir(), 'socialprune-desktop-'));
   const data = join(temporary, 'data');
   const items = generated ? await generatedWorkspace(data) : undefined;
   await prepare?.(data);
+  let selectedData: string;
+  try {
+    selectedData = selectDataPath ? await selectDataPath(data) : data;
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
   const started = performance.now();
   const application = await electron.launch({
     executablePath: executable(variant),
-    args: [`--data-dir=${data}`],
+    args: [`--data-dir=${selectedData}`],
     timeout: 30_000,
   });
   const process = application.process();
@@ -56,6 +64,7 @@ export async function launch(
   const startupMs = performance.now() - started;
   return {
     data,
+    selectedData,
     items,
     application,
     process,

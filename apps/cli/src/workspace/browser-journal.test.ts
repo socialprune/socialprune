@@ -50,10 +50,23 @@ async function auditFixture(confirmed = 5, skipped = 10, extra = 0, mode = '') {
         state:
           mode === 'failed' && index === 0
             ? 'failed'
+            : mode === 'not-listed' && index === 0
+              ? 'not-listed'
+              : mode === 'unavailable' && index === 0
+                ? 'unavailable'
+                : index % 2
+                  ? 'unavailable'
+                  : 'unconfirmed',
+        code:
+          index === 0 && mode
+            ? mode === 'not-listed'
+              ? 'no-row'
+              : mode === 'unavailable'
+                ? null
+                : mode
             : index % 2
-              ? 'unavailable'
-              : 'unconfirmed',
-        code: index === 0 && mode ? mode : index % 2 ? null : 'not-shown',
+              ? null
+              : 'not-shown',
       });
     else if (index < skipped + confirmed) {
       const record = instagramContractRecord(item);
@@ -129,14 +142,39 @@ test('C8 journal atomically accepts five checked records after ten skips, with c
 });
 
 test.each([
+  'owner',
+  'time',
+  'text',
+  'several',
+  'not-listed',
+  'not-shown',
+  'unavailable',
+])('C9 journal accepts five checked records after skipped %s', async (code) => {
+  const h = await auditFixture(5, 10, 0, code);
+  try {
+    await h.accept();
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run).toMatchObject({
+      canaryAcceptedAt: IG_FIXTURE.now,
+      acceptedBy: 'automatic-check',
+      endReason: 'canary',
+      canaryCounts: h.counts,
+    });
+    for (const value of [
+      ...Object.values(IG_FIXTURE.other),
+      ...h.fixture.items.map((item) => item.text),
+    ])
+      expect(JSON.stringify(run)).not.toContain(value);
+  } finally {
+    await h.close();
+  }
+});
+
+test.each([
   ['four confirmed and eleven skipped', 4, 11, 0, ''],
   ['sixteen sends', 5, 11, 0, ''],
   ['sending', 5, 9, 1, ''],
   ['failed', 5, 10, 0, 'failed'],
-  ['owner', 5, 10, 0, 'owner'],
-  ['time', 5, 10, 0, 'time'],
-  ['text', 5, 10, 0, 'text'],
-  ['several', 5, 10, 0, 'several'],
   ['short sample', 4, 0, 0, ''],
 ] as const)(
   'C8 journal refuses %s and rolls back acceptance',
@@ -157,6 +195,7 @@ test.each([
 );
 
 test.each([
+  'ambiguous',
   'missing-record',
   'missing-check',
   'bad-check',
@@ -165,9 +204,9 @@ test.each([
 ] as const)(
   'C8 journal refuses %s even with five confirmed settlements',
   async (mode) => {
-    const h = await auditFixture(5, 0);
+    const h = await auditFixture(5, mode === 'ambiguous' ? 10 : 0);
     try {
-      if (mode === 'missing-record') {
+      if (mode === 'missing-record' || mode === 'ambiguous') {
         const original = h.store.write.bind(h.store);
         h.store.write = (operation) =>
           original((tx) =>
@@ -176,9 +215,20 @@ test.each([
               instagramContext: {
                 ...tx.instagramContext,
                 get: (id) =>
-                  id === h.itemIds[0]
+                  mode === 'missing-record' && id === h.itemIds[0]
                     ? Promise.resolve(undefined)
                     : tx.instagramContext.get(id),
+              },
+              browserAttempts: {
+                ...tx.browserAttempts,
+                async *iterate() {
+                  for await (const attempt of tx.browserAttempts.iterate())
+                    yield mode === 'ambiguous' &&
+                    attempt.settles !== null &&
+                    attempt.itemId === h.fixture.items[0]!.id
+                      ? { ...attempt, state: 'ambiguous' }
+                      : attempt;
+                },
               },
             }),
           );

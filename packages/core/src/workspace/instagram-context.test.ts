@@ -9,7 +9,7 @@ import {
 } from '../model/index.ts';
 import type { Item, WorkspaceV2 } from '../model/index.ts';
 import { createMemoryStore, MemoryStoreBacking } from './memory-store.ts';
-import { createWorkspace, readWorkspace } from './store.ts';
+import { createWorkspace, readWorkspace, records } from './store.ts';
 import {
   instagramContractItem,
   instagramContractRecord,
@@ -584,7 +584,12 @@ test('memory rollback removes a settling record when context insertion fails', a
   }
 });
 
-async function canaryFixture(confirmed = 5, skipped = 10, extra = 0) {
+async function canaryFixture(
+  confirmed = 5,
+  skipped = 10,
+  extra = 0,
+  skipCode = 'not-shown',
+) {
   const store = createMemoryStore(),
     writer = new InstagramContextWriter(store),
     base = instagramContractItem(),
@@ -613,8 +618,20 @@ async function canaryFixture(confirmed = 5, skipped = 10, extra = 0) {
     if (index < skipped)
       await writer.settle({
         attemptId,
-        state: index % 2 ? 'unavailable' : 'unconfirmed',
-        code: index % 2 ? null : 'not-shown',
+        state:
+          skipCode === 'not-listed'
+            ? 'not-listed'
+            : skipCode === 'unavailable' ||
+                (skipCode === 'not-shown' && index % 2)
+              ? 'unavailable'
+              : 'unconfirmed',
+        code:
+          skipCode === 'not-listed'
+            ? 'no-row'
+            : skipCode === 'unavailable' ||
+                (skipCode === 'not-shown' && index % 2)
+              ? null
+              : skipCode,
         at,
       });
     else if (index < skipped + confirmed) {
@@ -642,6 +659,29 @@ test('C8 writer accepts exactly five checked confirmations after ten IG-6 skips'
     expect(
       await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
     ).toMatchObject({ canaryAcceptedAt: h.at });
+  } finally {
+    await h.store.close();
+  }
+});
+
+test.each([
+  'owner',
+  'time',
+  'text',
+  'several',
+  'not-listed',
+  'not-shown',
+  'unavailable',
+])('C9 writer accepts five checked records after skipped %s', async (code) => {
+  const h = await canaryFixture(5, 10, 0, code);
+  try {
+    await h.writer.acceptCanary(h.record.runId, h.at, h.checked);
+    expect(
+      await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+    ).toMatchObject({ canaryAcceptedAt: h.at });
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(5);
   } finally {
     await h.store.close();
   }
@@ -738,8 +778,8 @@ test.each([
   },
 );
 
-test.each(['owner', 'time', 'text', 'several', 'failed', 'ambiguous'] as const)(
-  'C8 writer refuses skipped code %s with five other checked confirmations',
+test.each(['failed', 'ambiguous'] as const)(
+  'C9 writer refuses skipped state %s with five other checked confirmations',
   async (mode) => {
     const h = await canaryFixture();
     const writer = new InstagramContextWriter({

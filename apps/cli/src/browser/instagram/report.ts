@@ -1,5 +1,12 @@
 import { CLI_ERRORS, CliError } from '../../cli/errors.ts';
 import type { CliErrorCode } from '../../cli/errors.ts';
+import { z } from 'zod';
+
+export const ContextStepReportSchema = z.looseObject({
+  ownerLinksOneAccount: z.boolean().optional(),
+  ownerEqualsExport: z.boolean().optional(),
+  firstProfileNamesOwner: z.boolean().optional(),
+});
 
 export const CONTEXT_STOP_TOKENS = [
   'login',

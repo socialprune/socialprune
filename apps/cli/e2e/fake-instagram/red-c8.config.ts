@@ -63,9 +63,10 @@ const cases: Record<
   },
   'writer-skip': {
     file: '/workspace/instagram-context-writer.ts',
-    before: "result.state === 'unconfirmed' && result.code === 'not-shown'",
-    after: "result.state === 'unconfirmed'",
-    tests: 'C8 writer refuses skipped code (owner|time|text|several) with five',
+    before:
+      "result.state !== 'unconfirmed' &&\n            result.state !== 'not-listed'",
+    after: "!(result.state === 'unconfirmed' && result.code === 'not-shown')",
+    tests: 'C9 writer accepts five checked records after skipped',
     include: ['packages/core/src/workspace/instagram-context.test.ts'],
   },
   'writer-limit': {
@@ -85,10 +86,40 @@ const cases: Record<
   'journal-skip': {
     file: '/workspace/browser-journal.ts',
     before:
-      "settles[0]!.state === 'unconfirmed' &&\n                settles[0]!.code === 'not-shown'",
-    after: "settles[0]!.state === 'unconfirmed'",
-    tests: 'C8 journal refuses (owner|time|text|several) and rolls back',
+      "settles[0]!.state !== 'unconfirmed' &&\n              settles[0]!.state !== 'not-listed'",
+    after:
+      "!(settles[0]!.state === 'unconfirmed' && settles[0]!.code === 'not-shown')",
+    tests: 'C9 journal accepts five checked records after skipped',
     include: ['apps/cli/src/workspace/browser-journal.test.ts'],
+  },
+  'runner-skip': {
+    file: '/instagram/run.ts',
+    before: "if (options.plan.canary && code === 'owner')",
+    after:
+      "if (options.plan.canary && code !== 'not-shown') throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');\n          if (options.plan.canary && code === 'owner')",
+    tests: 'C9 IG-7 second comment (owner|time|edited|several)',
+  },
+  'runner-not-listed': {
+    file: '/instagram/run.ts',
+    before: "stepReport.result = list.full ? 'window-full' : 'no-row';",
+    after:
+      "stepReport.result = list.full ? 'window-full' : 'no-row';\n          if (options.plan.canary) throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');",
+    tests: 'C9 IG-7 second comment (no-row|window-full)',
+  },
+  'runner-acceptance': {
+    file: '/instagram/run.ts',
+    before:
+      "settlements[0]!.state !== 'unconfirmed' &&\n            settlements[0]!.state !== 'not-listed'",
+    after:
+      "!(settlements[0]!.state === 'unconfirmed' && settlements[0]!.code === 'not-shown')",
+    tests: 'C9 IG-7 second comment owner',
+  },
+  'owner-report-schema': {
+    file: '/instagram/report.ts',
+    before: '  ownerEqualsExport: z.boolean().optional(),',
+    after: '',
+    tests: 'C9 owner report schema',
+    include: ['apps/cli/src/browser/instagram/canary.test.ts'],
   },
   'canary-selection': {
     file: '/instagram/plan.ts',

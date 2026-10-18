@@ -6,6 +6,25 @@ import {
   compareSources,
 } from './canary.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
+import { ContextStepReportSchema } from './report.ts';
+
+test.each([
+  'ownerLinksOneAccount',
+  'ownerEqualsExport',
+  'firstProfileNamesOwner',
+])('C9 owner report schema keeps optional %s boolean-only', (field) => {
+  expect(ContextStepReportSchema.parse({ result: 'owner' })).toEqual({
+    result: 'owner',
+  });
+  for (const value of [true, false])
+    expect(
+      ContextStepReportSchema.parse({ result: 'owner', [field]: value }),
+    ).toEqual({ result: 'owner', [field]: value });
+  for (const value of [IG_FIXTURE.other.username, null, 1, {}])
+    expect(() =>
+      ContextStepReportSchema.parse({ result: 'owner', [field]: value }),
+    ).toThrow();
+});
 
 const record: InstagramContext = {
   itemId: 'instagram:generated',

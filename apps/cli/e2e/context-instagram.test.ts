@@ -1433,31 +1433,36 @@ test('C8 IG-6 candidate three final not-shown results skip one comment then conf
     await h.close();
   }
 }, 180000);
-test('C8 IG-6 candidate final text result after three candidates stops before the next comment', async () => {
+test('C9 IG-7 candidate final text result after three candidates skips to the next comment', async () => {
   const h = await harness('success', 17);
   h.fake.setCandidates(0, ['owner', 'not-shown', 'edited']);
   try {
-    expect(await h.start(true)).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      steps: 6,
+      endReason: 'canary',
+    });
     const journal = await h.store.browserJournal(),
       run = journal.runs[0]!;
     expect(run).toMatchObject({
-      pageOpens: 3,
-      canaryAcceptedAt: null,
-      endReason: 'error',
-      displayEndReason: 'CANARY_CHECK_FAILED',
+      pageOpens: 8,
+      acceptedBy: 'automatic-check',
+      endReason: 'canary',
     });
-    expect(journal.attempts).toHaveLength(2);
+    expect(run.canaryAcceptedAt).toBeTruthy();
+    expect(journal.attempts).toHaveLength(12);
     expect(journal.attempts[1]).toMatchObject({
       itemId: h.fixture.items[0]!.id,
       state: 'unconfirmed',
       code: 'text',
     });
-    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
-      [],
-    );
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(5);
     expect(
       h.fake.requests
         .filter((request) => request.path.startsWith('/p/'))
+        .slice(0, 3)
         .map((request) => request.path),
     ).toEqual(IG_FIXTURE.candidateCodes.map((code) => `/p/${code}`));
     const report = await readFile(
@@ -1468,7 +1473,12 @@ test('C8 IG-6 candidate final text result after three candidates stops before th
       (JSON.parse(report) as { steps: { result: string }[] }).steps.map(
         (step) => step.result,
       ),
-    ).toEqual(['owner', 'not-shown', 'text']);
+    ).toEqual([
+      'owner',
+      'not-shown',
+      'text',
+      ...Array<string>(5).fill('confirmed'),
+    ]);
     for (const value of [
       ...IG_FIXTURE.candidateCodes,
       ...Object.values(IG_FIXTURE.other),
@@ -1477,7 +1487,7 @@ test('C8 IG-6 candidate final text result after three candidates stops before th
       expect(report).not.toContain(value);
       expect(JSON.stringify(run)).not.toContain(value);
     }
-    expect(h.notices.join('')).toContain('Stop detail: canary-check');
+    expect(h.notices.join('')).not.toContain('Stop detail:');
   } finally {
     await h.close();
   }
@@ -1633,39 +1643,129 @@ test('C8 IG-6 fifteen tried with four confirmed refuses and never opens a sixtee
     await h.close();
   }
 }, 180000);
-test.each(['owner', 'time', 'edited', 'several'] as const)(
-  'C8 IG-6 %s after a skip stops automatic and manual canaries at once',
+test.each([
+  'owner',
+  'time',
+  'edited',
+  'several',
+  'no-row',
+  'window-full',
+] as const)(
+  'C9 IG-7 second comment %s stays manual and automatic and manual canaries reach five confirmations',
   async (variant) => {
     for (const automatic of [true, false]) {
       const h = await harness('success', 16);
       h.fake.setPostVariant(0, 'unavailable');
       h.fake.setPostVariant(1, variant);
+      if (variant === 'no-row' || variant === 'window-full')
+        h.fake.beforeList(async () => {
+          const sends = (await h.store.browserJournal()).attempts.filter(
+            (attempt) => attempt.state === 'sending',
+          );
+          h.fake.setVariant(
+            sends.at(-1)?.itemId === h.fixture.items[1]!.id
+              ? variant
+              : 'success',
+          );
+        });
       try {
         const running = h.start(automatic);
         if (!automatic) {
           await h.click('Start');
-          await h.click('Continue');
+          for (let comment = 0; comment < 7; comment++)
+            await h.click('Continue');
+          await h.click('Matches');
         }
-        expect(await running).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+        expect(await running, h.notices.join('')).toMatchObject({
+          completed: 5,
+          steps: 7,
+          endReason: 'canary',
+        });
         const journal = await h.store.browserJournal();
         expect(journal.runs[0]).toMatchObject({
-          pageOpens: 2,
-          canaryAcceptedAt: null,
+          pageOpens: 7,
         });
-        expect(journal.attempts).toHaveLength(4);
-        expect(journal.attempts.at(-1)).toMatchObject({
-          state: 'unconfirmed',
+        expect(journal.runs[0]!.canaryAcceptedAt).toBeTruthy();
+        expect(journal.attempts).toHaveLength(14);
+        expect(journal.attempts[3]).toMatchObject({
+          itemId: h.fixture.items[1]!.id,
+          state: ['no-row', 'window-full'].includes(variant)
+            ? 'not-listed'
+            : 'unconfirmed',
           code: variant === 'edited' ? 'text' : variant,
         });
         expect(
           await h.store.read((tx) => records(tx.instagramContext)),
-        ).toEqual([]);
+        ).toHaveLength(5);
+        expect(
+          await h.store.read((tx) =>
+            tx.instagramContext.get(h.fixture.items[1]!.id),
+          ),
+        ).toBeUndefined();
       } finally {
         await h.close();
       }
     }
   },
   180000,
+);
+test.each([
+  ['owner', true, false, true],
+  ['collaboration', false, true, true],
+  ['owner-first-profile', true, true, false],
+] as const)(
+  'C9 IG-7 owner report %s contains only the three sub-check booleans',
+  async (variant, oneAccount, equalsExport, namesOwner) => {
+    const h = await harness('success', 6);
+    h.fake.setPostVariant(1, variant);
+    try {
+      const result = await h.start(true),
+        run = (await h.store.browserJournal()).runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as { steps: Record<string, unknown>[] };
+      expect(report.steps[1]).toMatchObject({
+        result: 'owner',
+        ownerLinksOneAccount: oneAccount,
+        ownerEqualsExport: equalsExport,
+        firstProfileNamesOwner: namesOwner,
+      });
+      for (const key of [
+        'ownerLinksOneAccount',
+        'ownerEqualsExport',
+        'firstProfileNamesOwner',
+      ]) {
+        expect(typeof report.steps[1]![key]).toBe('boolean');
+        expect(report.steps[0]).not.toHaveProperty(key);
+      }
+      expect(result, h.notices.join('')).toMatchObject({
+        completed: 5,
+        steps: 6,
+        endReason: 'canary',
+      });
+      for (const value of [
+        IG_FIXTURE.code,
+        IG_FIXTURE.caption,
+        IG_FIXTURE.captionLine,
+        IG_FIXTURE.captionTag,
+        IG_FIXTURE.postAt,
+        IG_FIXTURE.commentId,
+        ...Object.values(IG_FIXTURE.other),
+        ...Object.values(IG_FIXTURE.postDecoys),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+        ]),
+      ])
+        expect(text).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
 );
 test('C8 IG-6 manual selection keeps Continue and Matches after skips and stops at five confirmations', async () => {
   const h = await harness('success', 17);
@@ -1710,6 +1810,62 @@ test('C8 IG-6 manual selection keeps Continue and Matches after skips and stops 
     await h.close();
   }
 }, 180000);
+test.each([
+  ['different-caption', 'CANARY_MISMATCH', 'field-mismatch'],
+  ['no-json', 'CANARY_NO_SECOND_SOURCE', 'second-source'],
+  ['challenge', 'PLATFORM_CHECK', 'challenge'],
+  ['429', 'PLATFORM_CHECK', 'http-429'],
+  ['mutation', 'UNEXPECTED_ACTION', 'unexpected-action'],
+  ['de', 'PAGE_LANGUAGE', 'page-language'],
+  ['account-mismatch', 'ACCOUNT_MISMATCH', 'account-changed'],
+  ['extension', 'CANARY_CHECK_FAILED', 'extensions-added'],
+] as const)(
+  'C9 IG-7 skipped owner cannot hide the immediate %s stop',
+  async (variant, code, token) => {
+    const h = await harness('success', 7);
+    h.fake.setPostVariant(0, 'owner');
+    if (variant === 'different-caption' || variant === 'no-json')
+      h.fake.setPostVariant(1, variant);
+    else
+      h.fake.beforeList(async () => {
+        const sends = (await h.store.browserJournal()).attempts.filter(
+          (attempt) => attempt.state === 'sending',
+        );
+        if (sends.at(-1)?.itemId !== h.fixture.items[1]!.id) return;
+        if (variant === 'extension')
+          await mkdir(
+            join(h.profile, 'Default', 'Extensions', 'b'.repeat(32), '1'),
+            { recursive: true },
+          );
+        else h.fake.setVariant(variant);
+      });
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({ code });
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      expect(run.canaryAcceptedAt).toBeNull();
+      expect(run.acceptedBy).toBeUndefined();
+      expect(
+        journal.attempts
+          .filter((attempt) => attempt.state === 'sending')
+          .map((attempt) => attempt.itemId),
+      ).toEqual(h.fixture.items.slice(0, 2).map((item) => item.id));
+      expect(journal.attempts).toHaveLength(4);
+      expect(journal.attempts[1]).toMatchObject({
+        state: 'unconfirmed',
+        code: 'owner',
+      });
+      expect(journal.attempts[3]).toMatchObject({ state: 'failed', code });
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      expect(h.notices.join('')).toContain(`Stop detail: ${token}`);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test('C8 IG-6 manual limit below fifteen keeps its existing Continue and Matches boundary', async () => {
   const h = await harness('success', 17);
   h.setLimit(1);
@@ -3081,22 +3237,11 @@ test.each([
     try {
       const result = h.start();
       await h.click('Start');
-      if (
-        [
-          'other-author',
-          'not-shown',
-          'block-two-texts',
-          'block-wrong-depth',
-          'unavailable',
-        ].includes(variant)
-      ) {
-        await h.click('Continue');
-        expect(await result).toMatchObject({
-          completed: 0,
-          endReason: 'canary',
-        });
-      } else
-        expect(await result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+      await h.click('Continue');
+      expect(await result).toMatchObject({
+        completed: 0,
+        endReason: 'canary',
+      });
       const attempts = await h.store.read((tx) => records(tx.browserAttempts));
       expect(attempts).toHaveLength(2);
       expect(attempts[1]!.code).toBe(code);
@@ -3317,12 +3462,17 @@ test('a manual canary confirms its second candidate after a time mismatch and co
     await h.close();
   }
 });
-test('four candidate rows settle several after the canary tries at most three candidates', async () => {
+test('C9 IG-7 four candidate rows settle several and skip after at most three candidates', async () => {
   const h = await harness('four-candidates');
   try {
     const result = h.start();
     await h.click('Start');
-    expect(await result).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
+    await h.click('Continue');
+    expect(await result).toMatchObject({
+      completed: 0,
+      steps: 1,
+      endReason: 'canary',
+    });
     const attempts = await h.store.read((tx) => records(tx.browserAttempts));
     expect(attempts[1]).toMatchObject({
       state: 'unconfirmed',

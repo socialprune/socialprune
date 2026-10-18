@@ -19,11 +19,17 @@ import {
 import type { ProfileSnapshot } from '../profile.ts';
 import { profileWarning, EXTENSION_NOTICE } from '../copy.ts';
 import { CONTEXT_STEPS, contextEnd } from './copy.ts';
-import { planContext, contextSummary, canaryRows } from './plan.ts';
+import { planContext, contextSummary, canaryRows, ownerName } from './plan.ts';
 import type { ContextPlan } from './plan.ts';
 import { validateContextOrder } from './order.ts';
 import type { ContextOrder } from './order.ts';
-import { ContextStop, stopDetails, keyPaths, pairedCode } from './report.ts';
+import {
+  ContextStop,
+  ContextStepReportSchema,
+  stopDetails,
+  keyPaths,
+  pairedCode,
+} from './report.ts';
 import {
   productionContext,
   loadList,
@@ -262,10 +268,8 @@ export async function runContextWithDependencies(
           settlements[0]!.itemId !== send.itemId ||
           (settlements[0]!.state !== 'confirmed' &&
             settlements[0]!.state !== 'unavailable' &&
-            !(
-              settlements[0]!.state === 'unconfirmed' &&
-              settlements[0]!.code === 'not-shown'
-            ))
+            settlements[0]!.state !== 'unconfirmed' &&
+            settlements[0]!.state !== 'not-listed')
         )
           throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
         if (settlements[0]!.state === 'confirmed') {
@@ -560,8 +564,6 @@ export async function runContextWithDependencies(
           pendingAttempt = undefined;
           settled = true;
           stepReport.result = list.full ? 'window-full' : 'no-row';
-          if (options.plan.canary)
-            throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
           break;
         }
         answers.reset(options.plan.canary);
@@ -609,8 +611,14 @@ export async function runContextWithDependencies(
           });
           pendingAttempt = undefined;
           settled = true;
-          if (options.plan.canary && code !== 'not-shown')
-            throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+          if (options.plan.canary && code === 'owner')
+            Object.assign(stepReport, {
+              ownerLinksOneAccount: read.post.ownerCount === 1,
+              ownerEqualsExport:
+                ownerName(read.post.owner) ===
+                ownerName(row.item.reference.ownerHandle ?? ''),
+              firstProfileNamesOwner: read.post.ownerMatchesProfile,
+            });
           break;
         }
         const captures = await (deps.capture ?? capturePost)(
@@ -780,7 +788,12 @@ export async function runContextWithDependencies(
       reportPath = await writeStructure(
         options.workspace,
         runId,
-        report,
+        {
+          ...report,
+          steps: report.steps.map((step) =>
+            ContextStepReportSchema.parse(step),
+          ),
+        },
         Boolean(reportPath),
       );
     };

@@ -632,10 +632,8 @@ export class BrowserOutcomeWriter {
             settles[0]!.itemId !== send.itemId ||
             (settles[0]!.state !== 'confirmed' &&
               settles[0]!.state !== 'unavailable' &&
-              !(
-                settles[0]!.state === 'unconfirmed' &&
-                settles[0]!.code === 'not-shown'
-              ))
+              settles[0]!.state !== 'unconfirmed' &&
+              settles[0]!.state !== 'not-listed')
           )
             throw new CliError('CANARY_CHECK_FAILED');
           itemIds.add(send.itemId);

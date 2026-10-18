@@ -313,7 +313,8 @@ export class InstagramContextWriter {
           result.itemId !== send.itemId ||
           (result.state !== 'confirmed' &&
             result.state !== 'unavailable' &&
-            !(result.state === 'unconfirmed' && result.code === 'not-shown'))
+            result.state !== 'unconfirmed' &&
+            result.state !== 'not-listed')
         )
           throw new Error('INVALID_CANARY');
         itemIds.add(send.itemId);

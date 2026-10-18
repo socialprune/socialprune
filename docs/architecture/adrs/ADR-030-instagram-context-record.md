@@ -1,7 +1,7 @@
 # ADR-030: Instagram post context as its own workspace record
 
 - **Status:** Accepted on 2026-10-16 by the maintainer (card IG-4, version 3)
-- **Date:** 2026-10-15
+- **Date:** 2026-10-15, amended 2026-10-18 (IG-8: a post confirmed through the comments list, schema version 6)
 - **Hard constraints touched:** 2 (the records and their files stay in the workspace; a backup carries the records, not the files), 4 (the journal records every signed-in Instagram read, [ADR-023](ADR-023-acting-in-own-account.md) PA-6), 6 (tests build their workspaces from generated data)
 - **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-015](ADR-015-cli-storage-node-baseline.md). The section "Changes to other records" gives the new wording. It builds on the journal of [ADR-027](ADR-027-x-deletion-browser.md) and on schema version 4 of [ADR-029](ADR-029-signed-in-originals-pass.md), both proposed. If either is built with other numbers, this record takes the next free number for the document, the IndexedDB database and the SQLite layout, and the build notes which.
 - **Related:** [ADR-028](ADR-028-instagram-signed-in-session.md), which decides how a comment is found and confirmed and what is kept; [ADR-017](ADR-017-shared-workspace-service.md); [ADR-026](ADR-026-x-originals-fetch.md); spike [S5](../../spikes/S5.md)
@@ -109,9 +109,10 @@ InstagramContext = {
     caption: string | null,          // as the page showed it, at most 10,000 characters
     captionComplete: boolean         // false when the page offered a control to show more
   },
+  confirmedBy: 'post' | 'list',      // ADR-028 section 4; 'list' since IG-8, 2026-10-18
   comment: {
-    id: string,                      // the digits of the permalink /c/<id>/
-    createdAt: UtcTimestamp,         // the permalink's time element
+    id: string | null,               // the digits of the permalink /c/<id>/; null for 'list'
+    createdAt: UtcTimestamp | null,  // the permalink's time element; null for 'list'
     expandClicks: number             // expansion clicks it needed, 0 to 10
   },
   image: {
@@ -131,7 +132,7 @@ InstagramContext = {
 ```
 
 - Only a confirmed comment gets a record. Every other result is a journal attempt, so a comment without a record is simply not confirmed.
-- Links are built, not stored: the post is `https://www.instagram.com/<kind>/<code>/`, the comment `https://www.instagram.com/<kind>/<code>/c/<id>/`. No address string from a page enters the workspace.
+- Links are built, not stored: the post is `https://www.instagram.com/<kind>/<code>/`, the comment `https://www.instagram.com/<kind>/<code>/c/<id>/`. A record confirmed through the list has no comment link. No address string from a page enters the workspace.
 - Files sit under `<workspace>/context/instagram/<hex>/`, where `<hex>` is the post code's bytes in lowercase hexadecimal. Instagram's codes differ by letter case and Windows folder names do not, so the code itself cannot name the folder. Files are written once per post, and a second record for the same post names the same files.
 - A record is written once. A later run leaves out every item that has one. Item IDs survive a re-import ([ADR-006](ADR-006-workspace-event-log.md)), so the records stay linked.
 - What each field is read from, and the limits on the files, are in ADR-028, section 5.
@@ -156,6 +157,7 @@ InstagramContext = {
 - From 4 to 5 no record changes. The version in the metadata rises, the new store or table starts empty, and every journal run keeps `platform: 'x'`. Versions 1 to 3 migrate by way of 4, as today.
 - IndexedDB database version 5 adds the store `instagramContext` with key path `itemId`. SQLite layout 5 adds the `STRICT` table `instagram_context` with `item_id` as primary key and the record as JSON checked with `json_valid`, in a migration that copies the database file first, as the earlier layout migrations do.
 - A version 4 backup restores into a version 5 workspace in both the CLI and the browser, with no context records.
+- **Version 6 (IG-8, 2026-10-18).** The document goes to `schemaVersion: 6`; readers accept 1 to 6, writers write 6, and a reader built for version 5 refuses a version 6 file as unsupported. From 5 to 6 every context record gains `confirmedBy: 'post'` and nothing else changes. IndexedDB database version 6 and SQLite layout 6 rewrite the stored records that way, SQLite after copying the database file first, as the earlier layout migrations do. A version 5 backup restores into a version 6 workspace in both the CLI and the browser, each of its records as `post`; versions 1 to 4 migrate by way of 5.
 
 ### 5. Backup and reader checks
 
@@ -163,13 +165,13 @@ InstagramContext = {
 - The reader checks:
   - unique `itemId`, each naming an existing item with platform `instagram`, kind `comment` and the record's `accountKey`;
   - that item has nonempty text and a post owner, and `post.owner` equals the item's owner, compared in lower case without a leading `@`;
-  - `comment.createdAt` lies within 60 seconds of the item's `createdAt`;
-  - `post.code` matches `[A-Za-z0-9_-]{1,64}`, `comment.id` matches `[0-9]{1,40}`, `ownerCount` is at least 1, and no two records name the same `comment.id`;
+  - for `confirmedBy: 'post'`, `comment.id` and `comment.createdAt` are set and `comment.createdAt` lies within 60 seconds of the item's `createdAt`; for `'list'`, both are `null` (IG-8, 2026-10-18);
+  - `post.code` matches `[A-Za-z0-9_-]{1,64}`, a set `comment.id` matches `[0-9]{1,40}`, `ownerCount` is at least 1, and no two records name the same `comment.id`;
   - each `file` is one of the names above and is set exactly when its status is `stored`, and `bytes` is set exactly when the screenshot is stored;
   - `runId` names a run with platform `instagram` and mode `context`, and `attemptId` names a `confirm-comment` attempt of that run for this item whose settling record is `confirmed`;
   - every `confirmed` settling record belongs to an item that has a record.
 
-The text rule of IG-3 cannot be checked again from the record, because the record does not keep the page's text. The `confirmed` attempt stands for it, and ADR-028 says how the run decides it.
+The text rule of IG-3 cannot be checked again from the record, because the record does not keep the page's text, and neither can IG-8's row check. The `confirmed` attempt stands for both, and ADR-028 says how the run decides them.
 
 ### 6. Protocol and stores
 
@@ -190,6 +192,7 @@ Importing Instagram still needs no core change. The acting features are not plat
 | ADR-007 | The protocol table gains `getInstagramContext { itemIds ≤ 200 }`, answered by `instagramContext { records }`. The browser worker answers with an empty list. |
 | ADR-015 | The workspace gains the `STRICT` table `instagram_context` in layout 5, and the folder `context/instagram/`. |
 | ADR-027, proposed | A run carries `platform: 'x' \| 'instagram'`; mode `context`, action `confirm-comment` and the states `confirmed`, `unconfirmed` and `not-listed` belong to Instagram. A recorded request may name its `operation`. |
+| ADR-005, ADR-006, ADR-015 | Since IG-8 (2026-10-18) at version 6: the database, the document and the layout of the rows above, with `confirmedBy` in each context record. |
 
 **Decision made by:** maintainer
 **Approved on:** 2026-10-16
@@ -202,7 +205,7 @@ Importing Instagram still needs no core change. The acting features are not plat
 - A restore rejects a context whose comment time or post owner breaks IG-3.
 
 ### Negative
-- Every reader and writer moves to version 5, and a workspace written by this version cannot be opened by an older SocialPrune.
+- Every reader and writer moves to version 5, and a workspace written by this version cannot be opened by an older SocialPrune. IG-8 moves them to version 6 again, for one field.
 - The post's facts repeat for each of the person's comments on the same post.
 - The browser stores records it does not show yet.
 
@@ -219,3 +222,13 @@ Importing Instagram still needs no core change. The acting features are not plat
 - `apps/cli/src/review/server.ts` at `77c60bc` builds its API list from `HttpReviewRequestSchema`.
 - [Spike S5](../../spikes/S5.md): the post's code appears on the post page, and the comment's permalink holds its ID and exact time.
 - The limits of section 1 (10,000 characters, up to 10 expansion clicks) are this record's and ADR-028's choices, not measurements.
+
+## Superseded on 2026-10-18
+
+IG-8 replaced these lines. They are kept here unchanged:
+
+- Section 1: `id: string,                      // the digits of the permalink /c/<id>/`
+- Section 1: `createdAt: UtcTimestamp,         // the permalink's time element`
+- Section 5: `comment.createdAt` lies within 60 seconds of the item's `createdAt`;
+- Section 5: `post.code` matches `[A-Za-z0-9_-]{1,64}`, `comment.id` matches `[0-9]{1,40}`, `ownerCount` is at least 1, and no two records name the same `comment.id`;
+- Section 5: The text rule of IG-3 cannot be checked again from the record, because the record does not keep the page's text. The `confirmed` attempt stands for it, and ADR-028 says how the run decides it.

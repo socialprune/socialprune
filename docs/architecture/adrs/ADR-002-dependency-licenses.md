@@ -1,7 +1,7 @@
 # ADR-002: Dependency license policy
 
 - **Status:** Accepted
-- **Date:** 2026-10-06
+- **Date:** 2026-10-06, amended 2026-10-18 (the entries under rule 6 named here)
 - **Hard constraints touched:** 1 (nothing costs money), indirectly. A license that forces source disclosure or a commercial grant can turn into a cost or a takedown.
 - **Related:** [ADR-003](ADR-003-offline-app-shell.md), [ADR-010](ADR-010-styling-tokens.md), [ADR-011](ADR-011-internationalization.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-018](ADR-018-cli-distribution.md)
 
@@ -89,6 +89,8 @@ We chose **Option 1: strict allowlist with a per-package exception record** beca
 7. **GitHub Actions** used in workflows are pinned by commit SHA and must carry an allowlisted license, read from the tagged release.
 8. **Enforcement.** A CI step `pnpm licenses:check` reads `pnpm licenses list --json` for production and development dependencies and fails on any identifier outside the allowlist that is not covered by an exception entry naming its ADR. A package whose metadata has no license field fails unless an exception entry records the license text that was read.
 9. **Notices.** The Pages build and the npm package each carry a generated `THIRD_PARTY_NOTICES` file covering every bundled package, produced from the installed packages' license files rather than from minifier legal comments.
+
+**Entries under rule 6.** The Electron runtime archive for the desktop app ([ADR-031](ADR-031-desktop-app.md), section 10, accepted 2026-10-16), and NSIS, which builds the desktop app's direct installer and puts its stub into it (ADR-031, section 10, maintainer, card DIST-1, option A, 2026-10-18). Each entry there names the license, the notices that ship and how the build checks the downloaded file.
 
 **Decision made by:** maintainer
 **Approved on:** 2026-10-09

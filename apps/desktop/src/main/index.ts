@@ -1,7 +1,6 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { app } from 'electron';
 import { startDesktop } from './app.ts';
-
 // A named local data folder is also used by the packaged smoke. It selects no
 // test code, browser, host, or mutation; the production graph is unchanged.
 const selected = process.argv

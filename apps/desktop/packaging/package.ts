@@ -37,6 +37,11 @@ import { assertProductionModules } from './boundary.ts';
 const hash = (bytes: Uint8Array | string) =>
   createHash('sha256').update(bytes).digest('hex');
 const require = createRequire(import.meta.url);
+const metadata = JSON.parse(
+  await readFile(join(directory, 'package.json'), 'utf8'),
+) as { version: string };
+if (!/^\d+\.\d+\.\d+$/.test(metadata.version))
+  throw new Error('DESKTOP_VERSION_INVALID');
 
 async function bundle(
   entry: string,
@@ -75,11 +80,13 @@ async function resourceExecutable(path: string, asar: string): Promise<void> {
   const resources = NtExecutableResource.from(pe);
   const version = Resource.VersionInfo.fromEntries(resources.entries)[0];
   if (!version) throw new Error('VERSION_RESOURCE_MISSING');
-  version.setProductVersion('0.0.0.0');
+  version.setProductVersion(`${metadata.version}.0`);
+  version.setFileVersion(`${metadata.version}.0`);
   version.setStringValues(
     { lang: 1033, codepage: 1200 },
     {
       ProductName: 'SocialPrune',
+      CompanyName: 'SocialPrune',
       FileDescription: 'SocialPrune',
       OriginalFilename: 'SocialPrune.exe',
       InternalName: 'SocialPrune',
@@ -190,7 +197,7 @@ export async function packageDesktop(): Promise<void> {
     join(content, 'package.json'),
     JSON.stringify({
       name: '@socialprune/desktop',
-      version: '0.0.0',
+      version: metadata.version,
       main: 'main.mjs',
       type: 'module',
     }),

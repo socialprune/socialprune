@@ -25,7 +25,7 @@ async function generated(
     for (const item of initial.items)
       if (item.kind === 'reply' || item.kind === 'quote') item.kind = 'post';
   const fake =
-    platform === 'x' ? await fakeX(4631) : await fakeInstagram(4636, ig.items);
+    platform === 'x' ? await fakeX(4656) : await fakeInstagram(4661, ig.items);
   if ('setVariant' in fake && limit) fake.setVariant('side-429');
   const app = await launch(
     'probe',

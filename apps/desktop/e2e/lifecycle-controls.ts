@@ -5,13 +5,13 @@ import {
   assertNoListeners,
   assertNoRemainingProcesses,
   assertNoConnections,
-} from './windows.ts';
+} from '../test/windows.ts';
 
-export async function plantedListener(): Promise<void> {
+export async function plantedListener(port: number): Promise<void> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(port, '127.0.0.1', resolve);
   });
   try {
     await assertNoListeners([process.pid]);

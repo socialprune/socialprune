@@ -35,7 +35,7 @@ export async function exerciseControl(
     if (probe)
       await new Promise<void>((resolve, reject) => {
         probe.once('error', reject);
-        probe.listen(4643, '127.0.0.1', resolve);
+        probe.listen(4667, '127.0.0.1', resolve);
       });
     const events = await test.step('install policy observer', () =>
       observePolicy(app.page));
@@ -56,7 +56,7 @@ export async function exerciseControl(
     } else {
       await app.page.evaluate(async (control) => {
         if (control === 'network') {
-          await fetch('http://127.0.0.1:4643/planted').catch(() => undefined);
+          await fetch('http://127.0.0.1:4667/planted').catch(() => undefined);
         } else {
           const factory = Reflect.get(window, 'trustedTypes') as {
             createPolicy(

@@ -1,0 +1,7 @@
+Windows shows "Windows protected your PC" for programs that are new and not signed by a publisher it knows. The warning does not check what the program does. To confirm that this file is the one GitHub built from this repository, compare its SHA-256 value with `SHA256SUMS.txt` or run `gh attestation verify`. Then choose "More info" and "Run anyway".
+
+Download the installer and `SHA256SUMS.txt` from the same release. In PowerShell, run `Get-FileHash .\SocialPrune-Setup-<version>.exe -Algorithm SHA256` and compare the value with the installer line in that file. With GitHub CLI installed, run `gh attestation verify .\SocialPrune-Setup-<version>.exe --repo <owner>/<repository>`, using the repository that published this release. The direct installer is unsigned and installs into `%LOCALAPPDATA%\Programs\SocialPrune`. Close SocialPrune before installing or uninstalling. Uninstalling removes the files the installer wrote, its Start menu entry and its uninstall registration, but keeps files you added and `%LOCALAPPDATA%\SocialPrune Data\`.
+
+NSIS runs the uninstaller from its own copy under `%TEMP%\~nsu*.tmp`. That copy stays until Windows or you clear temporary files. SocialPrune adds no cleanup helper.
+
+`NSIS-NOTICE.txt` contains the installer's license texts from NSIS `COPYING`. The app's license texts ship in its program folder as `LICENSE` and `LICENSES.chromium.html` and in its app archive.

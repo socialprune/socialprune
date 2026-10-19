@@ -24,22 +24,14 @@ assert.equal(
   '',
   'UNTRACKED_TASK_CHANGES',
 );
-const paths = git([
-  'diff',
-  '--cached',
-  '--name-only',
-  '--diff-filter=ACMR',
-  '-z',
-])
+const paths = git(['diff', '--cached', '--no-renames', '--name-only', '-z'])
   .toString()
   .split('\0')
   .filter(Boolean)
   .sort();
 const integration = new Set([
   '.github/workflows/ci.yml',
-  '.gitignore',
-  '.prettierignore',
-  'eslint.config.js',
+  '.github/workflows/release-desktop.yml',
   'package.json',
   'pnpm-lock.yaml',
 ]);
@@ -48,9 +40,28 @@ const hash = (bytes: Uint8Array) =>
 const rows: string[] = [];
 for (const path of paths) {
   assert.ok(
-    path.startsWith('apps/desktop/') || integration.has(path),
+    (path.startsWith('apps/desktop/') &&
+      path !== 'apps/desktop/e2e/migration.spec.ts') ||
+      integration.has(path) ||
+      path.startsWith('tools/licenses-check/'),
     'WRITE_SET_MISMATCH',
   );
+  if (
+    git([
+      'diff',
+      '--cached',
+      '--no-renames',
+      '--name-only',
+      '--diff-filter=D',
+      '--',
+      path,
+    ])
+      .toString()
+      .trim()
+  ) {
+    rows.push(`DELETED ${path}`);
+    continue;
+  }
   const staged = git(['show', ':' + path]);
   // .gitattributes checks PowerShell scripts out with CRLF but stores LF.
   // Compare Git-filtered identities and hash the actual staged bytes.
@@ -65,12 +76,18 @@ for (const path of paths) {
   );
   rows.push(`${hash(staged)} ${path}`);
 }
-await writeFile(output, rows.join('\n') + '\n');
+const stagedTree = git(['write-tree']).toString().trim();
+await writeFile(
+  output,
+  `base ${git(['rev-parse', 'HEAD']).toString().trim()}\nstagedTree ${stagedTree}\n` +
+    rows.join('\n') +
+    '\n',
+);
 console.log(
   JSON.stringify({
     path: output,
     files: paths.length,
-    stagedTree: git(['write-tree']).toString().trim(),
+    stagedTree,
     sha256: hash(await readFile(output)),
     base: git(['rev-parse', 'HEAD']).toString().trim(),
   }),

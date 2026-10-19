@@ -22,6 +22,8 @@
     "build:desktop": "pnpm --filter @socialprune/desktop run build",
     "test:desktop": "pnpm --filter @socialprune/desktop run test:e2e",
     "smoke:desktop": "pnpm --filter @socialprune/desktop run smoke",
+    "release:desktop": "pnpm build:desktop && pnpm --filter @socialprune/desktop run build:release",
+    "smoke:desktop:release": "pnpm --filter @socialprune/desktop run smoke:release --require-budgets",
     "test:e2e:all": "pnpm --filter @socialprune/web run test:e2e:all",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

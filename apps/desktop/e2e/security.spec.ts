@@ -216,11 +216,22 @@ test('terminated utility returns ENGINE_UNAVAILABLE and parent still quits', asy
       ),
     ).toMatchObject({ type: 'desktopFailed', code: 'ENGINE_UNAVAILABLE' });
     await expect
-      .poll(async () =>
-        (
-          await readFile(join(app.data, 'logs/desktop.ndjson'), 'utf8')
-        ).includes('ENGINE_EXITED'),
-      )
+      .poll(async () => {
+        try {
+          return (
+            await readFile(join(app.data, 'logs/desktop.ndjson'), 'utf8')
+          ).includes('ENGINE_EXITED');
+        } catch (error) {
+          // record() queues appendFile; its first append may not exist yet.
+          if (
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'ENOENT'
+          )
+            return false;
+          throw error;
+        }
+      })
       .toBe(true);
   } finally {
     await app.close();

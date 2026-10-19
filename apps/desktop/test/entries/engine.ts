@@ -25,8 +25,8 @@ const browserEvents: {
 let now = Date.parse('2026-10-15T12:00:00.000Z');
 startEngine((options) =>
   openTestEngine(options, {
-    xOrigin: 'http://127.0.0.1:4631',
-    instagramOrigin: 'http://127.0.0.1:4636',
+    xOrigin: 'http://127.0.0.1:4656',
+    instagramOrigin: 'http://127.0.0.1:4661',
     now: () => new Date(now),
     sleep: (ms) => {
       now += ms;

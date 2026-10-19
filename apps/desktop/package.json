@@ -6,6 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "build": "node packaging/package.ts",
+    "build:release": "node packaging/release.ts",
+    "smoke:release": "node e2e/installed-proof.ts smoke",
+    "test:release-controls": "node e2e/release-controls.ts && node e2e/installed-proof.ts faults && node e2e/installed-proof.ts controls",
     "test:unit": "vitest run --project desktop --maxWorkers=2",
     "test:e2e": "playwright test --workers=1",
     "test:red": "node packaging/red-controls.ts",
@@ -14,18 +17,19 @@
   },
   "dependencies": {
     "@socialprune/core": "workspace:*",
-    "socialprune": "workspace:*",
     "playwright-core": "1.63.0",
+    "socialprune": "workspace:*",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@electron-internal/extract-zip": "1.0.1",
     "@electron/asar": "3.4.1",
     "@electron/fuses": "2.1.3",
     "@electron/get": "5.1.0",
-    "@electron-internal/extract-zip": "1.0.1",
     "@playwright/test": "1.63.0",
     "electron": "44.8.0",
     "resedit": "2.0.3",
-    "rolldown": "1.2.12"
+    "rolldown": "1.2.12",
+    "yaml": "2.9.1"
   }
 }

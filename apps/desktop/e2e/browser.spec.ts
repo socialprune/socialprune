@@ -12,11 +12,11 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
       '<!doctype html><title>Generated desktop browser probe</title>',
     ),
   );
-  // Serial browser tests reserve 4642; bind before dispatch so a foreign
+  // Serial browser tests reserve 4666; bind before dispatch so a foreign
   // listener fails this test rather than being contacted or stopped.
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(4642, '127.0.0.1', resolve);
+    server.listen(4666, '127.0.0.1', resolve);
   });
   const profile = join(app.data, 'browser-probe');
   try {
@@ -75,7 +75,7 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
           {
             executable: chromium.executablePath(),
             profile,
-            url: 'http://127.0.0.1:4642/',
+            url: 'http://127.0.0.1:4666/',
           },
         ));
     expect(result).toMatchObject({

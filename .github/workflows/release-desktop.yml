@@ -1,0 +1,147 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    # Packaging + installed controls/smoke measured 11 min locally; guard,
+    # install and units are additional. Margin includes cold runner downloads.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm guide:check
+      - run: pnpm guide:check --max-age 120 --release
+      - run: pnpm guard
+      - run: pnpm licenses:check
+      - run: pnpm exec vitest run --project desktop --maxWorkers=2
+      - run: pnpm release:desktop
+      - run: pnpm --filter @socialprune/desktop fuses:check
+      - run: pnpm --filter @socialprune/desktop test:release-controls
+      - name: Enforce calibrated runner budgets
+        run: pnpm smoke:desktop:release
+      - name: SignPath is not configured
+        if: vars.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        run: throw 'SignPath integration requires the accepted application and a separately reviewed signing step. No signing request was sent.'
+      - name: Keep the direct download unsigned
+        if: vars.SIGNPATH_ENABLED != 'true'
+        run: Write-Output 'Unsigned build. The download notices accompany the installer.'
+      - name: Read package version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid desktop version' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        id: upload
+        with:
+          name: desktop-release
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/artifacts/*
+            apps/desktop/dist/release-smoke.json
+            apps/desktop/dist/release-system.json
+            apps/desktop/dist/release-network.json
+            apps/desktop/dist/release-cleanup.json
+            apps/desktop/dist/release-samples.json
+            apps/desktop/dist/release-uninstaller.json
+            apps/desktop/dist/release-uninstaller-system.json
+            apps/desktop/dist/release-failure.json
+
+  attest:
+    needs: build-and-smoke
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: desktop-release
+          path: desktop-release
+      - name: Verify downloaded bytes before attesting
+        shell: pwsh
+        run: |
+          foreach ($line in Get-Content desktop-release/artifacts/SHA256SUMS.txt) {
+            if ($line -cnotmatch '^([a-f0-9]{64})  ([A-Za-z0-9_.-]+)$') { throw 'Checksum line refused' }
+            if ((Get-FileHash -LiteralPath "desktop-release/artifacts/$($Matches[2])" -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Matches[1]) { throw 'Artifact digest mismatch' }
+          }
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        id: provenance
+        with:
+          subject-path: desktop-release/artifacts/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-provenance
+          path: ${{ steps.provenance.outputs.bundle-path }}
+          if-no-files-found: error
+
+  draft-release:
+    needs: [build-and-smoke, attest]
+    if: ${{ vars.DESKTOP_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    environment: desktop-release
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: desktop-release
+          path: desktop-release
+      - name: Create draft only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: '1'
+          GH_PAGER: cat
+          RELEASE_VERSION: ${{ needs.build-and-smoke.outputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $tag = "desktop-v$env:RELEASE_VERSION"
+          foreach ($line in Get-Content desktop-release/artifacts/SHA256SUMS.txt) {
+            if ($line -cnotmatch '^([a-f0-9]{64})  ([A-Za-z0-9_.-]+)$') { throw 'Checksum line refused' }
+            if ((Get-FileHash -LiteralPath "desktop-release/artifacts/$($Matches[2])" -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Matches[1]) { throw 'Artifact digest mismatch' }
+          }
+          $notes = "## English`n`n" + (Get-Content desktop-release/artifacts/download-notice.en.md -Raw) + "`n## Deutsch`n`n" + (Get-Content desktop-release/artifacts/download-notice.de.md -Raw)
+          [IO.File]::WriteAllText("$pwd/desktop-release/notes.md", $notes, [Text.UTF8Encoding]::new($false))
+          $files = @(Get-ChildItem -LiteralPath desktop-release/artifacts -File | ForEach-Object { $_.FullName })
+          gh release create $tag @files --repo $env:REPOSITORY --target $env:SOURCE_SHA --draft --title "SocialPrune $env:RELEASE_VERSION for Windows" --notes-file desktop-release/notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed' }
+          $release = gh release view $tag --repo $env:REPOSITORY --json isDraft,tagName,targetCommitish,assets,body | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.isDraft -or $release.tagName -cne $tag -or $release.targetCommitish -cne $env:SOURCE_SHA) { throw 'Draft identity mismatch' }
+          $expected = @($files | ForEach-Object { [IO.Path]::GetFileName($_) })
+          if (Compare-Object ($expected | Sort-Object) (@($release.assets | ForEach-Object { $_.name }) | Sort-Object)) { throw 'Draft assets mismatch' }
+          if ($release.body.Trim() -cne $notes.Trim()) { throw 'Draft bilingual body mismatch' }
+          foreach ($asset in $release.assets) {
+            $hash = (Get-FileHash -LiteralPath "desktop-release/artifacts/$($asset.name)" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.digest -cne "sha256:$hash") { throw 'Draft asset digest mismatch' }
+          }

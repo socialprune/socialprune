@@ -37,6 +37,9 @@ export const IG_FIXTURE = {
     emptyImageButtons: 3,
     yearAge: '8y',
     fullYearAge: '8 years',
+    otherNameRows: 3,
+    accountFillers: 8,
+    navigationDelayMs: 800,
   },
   allowedClicks: [
     'Sort & filter',
@@ -96,6 +99,17 @@ export async function instagramFixture(
 }
 export type Variant =
   | 'success'
+  | 'list-other-names'
+  | 'list-other-names-nav-late'
+  | 'list-nav-other'
+  | 'list-nav-missing'
+  | 'list-nav-inside-main'
+  | 'list-half-other'
+  | 'list-majority-other'
+  | 'list-nav-other-filtered'
+  | 'list-nav-missing-filtered'
+  | 'list-half-other-filtered'
+  | 'list-majority-other-filtered'
   | 'own-link-flicker'
   | 'own-link-vanishes'
   | 'expansion-link-flicker'

@@ -10,6 +10,8 @@ import type { NetworkPolicy } from './network.ts';
 import {
   rows,
   readRows,
+  accountMatches,
+  outsideProfilePaths,
   relativeAgeMs,
   checkPage,
   clickAllowed,
@@ -124,22 +126,59 @@ async function navigateList(
     guard();
     throw new ContextStop('PLATFORM_CHECK', 'navigation');
   }
+  const deadline = performance.now() + deps.responseMs;
   await waitPage(
     page,
     async () => (await readRows(page, rowCounts)).length > 0,
-    deps.responseMs,
+    Math.max(0, deadline - performance.now()),
     'list-timeout',
     guard,
   );
   deps.navigated?.('list', performance.now() - navigationStart);
-  const accountRows = await readRows(page, rowCounts);
-  if (
-    accountRows.some(
-      (row) => row.username.toLowerCase() !== expected.toLowerCase(),
-    )
-  )
-    throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  const accountRows = await checkedAccountRows(
+    page,
+    expected,
+    deadline,
+    guard,
+    rowCounts,
+  );
   return accountRows;
+}
+async function checkedAccountRows(
+  page: Page,
+  expected: string,
+  deadline: number,
+  guard: () => void,
+  counts: RowReadCounts,
+) {
+  let hadRows = false;
+  for (;;) {
+    guard();
+    await checkPage(page);
+    const entries = await readAccountRows(page, expected, counts);
+    hadRows ||= entries.length > 0;
+    if (accountMatches(expected, await outsideProfilePaths(page), entries))
+      return entries;
+    if (performance.now() >= deadline)
+      throw hadRows
+        ? new ContextStop('ACCOUNT_MISMATCH', 'account-changed')
+        : new ContextStop('PLATFORM_CHECK', 'list-timeout');
+    await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
+  }
+}
+async function readAccountRows(
+  page: Page,
+  expected: string,
+  counts: RowReadCounts,
+) {
+  const entries = await readRows(page, counts);
+  counts.otherName = Math.max(
+    counts.otherName,
+    entries.filter(
+      (row) => row.username.toLowerCase() !== expected.toLowerCase(),
+    ).length,
+  );
+  return entries;
 }
 export async function loadList(
   page: Page,
@@ -149,7 +188,7 @@ export async function loadList(
   guard: () => void,
   oldest = false,
   now = new Date(),
-  rowCounts: RowReadCounts = { emptySkipped: 0 },
+  rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 },
 ) {
   let accountRows = await navigateList(page, expected, deps, guard, rowCounts);
   let oldestWithinWeek: boolean | null = null;
@@ -161,7 +200,9 @@ export async function loadList(
       guard,
     );
     await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
-    const first = (await readRows(page, rowCounts))[0],
+    const first = (await readAccountRows(page, expected, rowCounts)).find(
+        (row) => row.username.toLowerCase() === expected.toLowerCase(),
+      ),
       age = first ? relativeAgeMs(first.age) : null;
     if (age !== null)
       oldestWithinWeek =
@@ -171,12 +212,16 @@ export async function loadList(
     accountRows = await navigateList(page, expected, deps, guard, rowCounts);
   }
   await filterList(page, item.createdAt, guard);
-  let previous = JSON.stringify(await readRows(page, rowCounts)),
+  const filteredDeadline = performance.now() + deps.responseMs;
+  await checkedAccountRows(page, expected, filteredDeadline, guard, rowCounts);
+  let previous = JSON.stringify(
+      await readAccountRows(page, expected, rowCounts),
+    ),
     scrollLoads = 0,
     full = false;
   for (let index = 0; index < 10; index++) {
     guard();
-    const first = (await readRows(page, rowCounts))[0];
+    const first = (await readAccountRows(page, expected, rowCounts))[0];
     const box = first
       ? await rows(page).nth(first.index).locator('xpath=..').boundingBox()
       : null;
@@ -189,7 +234,9 @@ export async function loadList(
     await deps.sleep(deps.pace.scrollMs);
     guard();
     await checkPage(page);
-    const current = JSON.stringify(await readRows(page, rowCounts));
+    const current = JSON.stringify(
+      await readAccountRows(page, expected, rowCounts),
+    );
     if (current === previous) {
       full = false;
       break;
@@ -198,16 +245,29 @@ export async function loadList(
     full = index === 9;
     previous = current;
   }
-  const entries = await readRows(page, rowCounts);
-  if (
-    entries.some((row) => row.username.toLowerCase() !== expected.toLowerCase())
-  )
-    throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  const entries = await checkedAccountRows(
+    page,
+    expected,
+    filteredDeadline,
+    guard,
+    rowCounts,
+  );
   return {
-    candidates: entries.filter((row) => rowCandidate(row.text, item.text)),
-    account: entries[0]?.username ?? accountRows[0]!.username,
+    candidates: entries.filter(
+      (row) =>
+        row.username.toLowerCase() === expected.toLowerCase() &&
+        rowCandidate(row.text, item.text),
+    ),
+    account:
+      entries.find(
+        (row) => row.username.toLowerCase() === expected.toLowerCase(),
+      )?.username ??
+      accountRows.find(
+        (row) => row.username.toLowerCase() === expected.toLowerCase(),
+      )!.username,
     rowCount: entries.length,
     emptySkipped: rowCounts.emptySkipped,
+    otherName: rowCounts.otherName,
     scrollLoads,
     full,
     oldestWithinWeek,

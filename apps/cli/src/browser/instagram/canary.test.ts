@@ -8,6 +8,15 @@ import {
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 import { ContextStepReportSchema } from './report.ts';
 
+test('C12 IG-9 otherName report count accepts only nonnegative integers', () => {
+  for (const value of [0, 1, 45])
+    expect(ContextStepReportSchema.parse({ otherName: value })).toEqual({
+      otherName: value,
+    });
+  for (const value of [-1, 1.5, Infinity, IG_FIXTURE.other.username, null, {}])
+    expect(() => ContextStepReportSchema.parse({ otherName: value })).toThrow();
+});
+
 test('C10 confirmedBy report token admits post and list only', () => {
   for (const confirmedBy of ['post', 'list'])
     expect(ContextStepReportSchema.parse({ confirmedBy })).toEqual({

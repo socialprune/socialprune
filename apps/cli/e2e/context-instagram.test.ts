@@ -824,8 +824,8 @@ test('C5 foundation: six native choices cross the real driver and settle one con
   }
 });
 
-async function filterHarness(variant: Variant = 'success') {
-  const fixture = await instagramFixture(),
+async function filterHarness(variant: Variant = 'success', count = 1) {
+  const fixture = await instagramFixture(count),
     fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
   fake.setVariant(variant);
   const browser = await chromium.launch({
@@ -1106,7 +1106,10 @@ async function harness(
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
     profile = join(directory, 'profile');
   const fixture = await instagramFixture(count);
-  if (['year-rows', 'year-word-rows', 'year-empty-rows'].includes(variant)) {
+  if (
+    ['year-rows', 'year-word-rows', 'year-empty-rows'].includes(variant) ||
+    variant.startsWith('list-other-names')
+  ) {
     for (const [index, item] of fixture.items.entries())
       item.createdAt = new Date(
         Date.parse('2018-10-15T12:00:00.000Z') + index * 86400000,
@@ -1334,6 +1337,153 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each(['post', 'list'] as const)(
+  'C12 IG-9 mixed-name list keeps only own candidates and confirms by %s with closed counts',
+  async (confirmedBy) => {
+    const h = await harness('list-other-names', 5);
+    if (confirmedBy === 'list')
+      for (let index = 0; index < 5; index++) h.fake.setPostHidden(index);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        completed: 5,
+        steps: 5,
+        endReason: 'canary',
+      });
+      const journal = await h.store.browserJournal();
+      expect(journal.runs[0]!.canaryAcceptedAt).toBeTruthy();
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(contexts).toHaveLength(5);
+      expect(
+        contexts.every((record) => record.confirmedBy === confirmedBy),
+      ).toBe(true);
+      const report = await readFile(
+        join(
+          h.directory,
+          'context',
+          'instagram',
+          `canary-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      );
+      expect(JSON.parse(report)).toMatchObject({
+        rows: { otherName: IG_FIXTURE.expected.otherNameRows * 5 },
+        steps: Array.from({ length: 5 }, (_, index) => ({
+          otherName: IG_FIXTURE.expected.otherNameRows,
+          candidates: 1,
+          oldestWithinWeek: index === 0 ? true : null,
+        })),
+      });
+      expect(
+        h.fake.requests.some((request) =>
+          request.path.includes(IG_FIXTURE.other.code),
+        ),
+      ).toBe(false);
+      for (const value of [
+        ...Object.values(IG_FIXTURE.other),
+        ...Object.values(IG_FIXTURE.postDecoys),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+        ]),
+      ]) {
+        expect(report).not.toContain(value);
+        expect(JSON.stringify(contexts)).not.toContain(
+          IG_FIXTURE.other.username,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('C12 IG-9 delayed navigation is awaited within the response window before the first list click', async () => {
+  const h = await filterHarness('list-other-names-nav-late');
+  const actualClick = selectorHelpers.clickAllowed;
+  const clicks = vi.spyOn(selectorHelpers, 'clickAllowed');
+  const late: boolean[] = [];
+  clicks.mockImplementation(async (page, click, guard) => {
+    late.push((await page.locator('#navigation a').count()) === 1);
+    return actualClick(page, click, guard);
+  });
+  try {
+    const list = await driverHelpers.loadList(
+      h.page,
+      h.fixture.items[0]!,
+      h.fixture.items[0]!.account.handle!,
+      {
+        ...productionContext,
+        origin: h.fake.origin,
+        responseMs: 2000,
+        sleep: async () => {},
+      },
+      () => {},
+    );
+    expect(list.candidates).toHaveLength(1);
+    expect(late.length).toBeGreaterThan(0);
+    expect(late.every(Boolean)).toBe(true);
+  } finally {
+    clicks.mockRestore();
+    await h.close();
+  }
+});
+test.each([
+  'list-nav-other',
+  'list-nav-missing',
+  'list-nav-inside-main',
+  'list-half-other',
+  'list-majority-other',
+  'list-nav-other-filtered',
+  'list-nav-missing-filtered',
+  'list-half-other-filtered',
+  'list-majority-other-filtered',
+] as const)(
+  'C12 IG-9 %s stops account-changed before the first action beyond its account boundary',
+  async (variant) => {
+    const h = await harness(variant, 5);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        code: 'ACCOUNT_MISMATCH',
+      });
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toBe(false);
+      const clicks = h.fake.events.at(-1)?.clicks ?? [];
+      if (!variant.endsWith('-filtered')) expect(clicks).toEqual([]);
+      else {
+        expect(clicks.at(-1)).toBe('Apply');
+        expect(h.fake.events.at(-1)!.wheels).toEqual([]);
+      }
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      const journal = await h.store.browserJournal();
+      expect(journal.runs[0]!.canaryAcceptedAt).toBeNull();
+      expect(journal.attempts.map((attempt) => attempt.state)).toEqual([
+        'sending',
+        'failed',
+      ]);
+      const report = await readFile(
+        join(
+          h.directory,
+          'context',
+          'instagram',
+          `canary-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      );
+      expect(JSON.parse(report)).toMatchObject({
+        stop: { code: 'ACCOUNT_MISMATCH', token: 'account-changed' },
+      });
+      for (const value of Object.values(IG_FIXTURE.other))
+        expect(report).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test.each(['expansion-post-switch', 'expansion-kind-switch'] as const)(
   'C10 revision %s stops when expansion changes post identity under the same owner',
   async (variant) => {

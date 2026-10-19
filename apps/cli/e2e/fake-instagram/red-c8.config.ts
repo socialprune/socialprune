@@ -15,6 +15,27 @@ const cases: Record<
     include?: string[];
   }
 > = {
+  'c12-every-row': {
+    file: '/instagram/selectors.ts',
+    before:
+      'entries.filter((row) => row.username.toLowerCase() === handle).length >\n      entries.length / 2',
+    after: 'entries.every((row) => row.username.toLowerCase() === handle)',
+    tests: 'C12 IG-9 mixed-name list',
+  },
+  'c12-candidate-name': {
+    file: '/instagram/driver.ts',
+    before:
+      'row.username.toLowerCase() === expected.toLowerCase() &&\n        rowCandidate(row.text, item.text)',
+    after: 'rowCandidate(row.text, item.text)',
+    tests: 'C12 IG-9 mixed-name list',
+  },
+  'c12-oldest-name': {
+    file: '/instagram/driver.ts',
+    before:
+      '(await readAccountRows(page, expected, rowCounts)).find(\n        (row) => row.username.toLowerCase() === expected.toLowerCase(),\n      )',
+    after: '(await readAccountRows(page, expected, rowCounts))[0]',
+    tests: 'C12 IG-9 mixed-name list',
+  },
   'c10-v5-reader': {
     file: '/model/index.ts',
     before: 'WORKSPACE_SCHEMA_VERSION = 6;',

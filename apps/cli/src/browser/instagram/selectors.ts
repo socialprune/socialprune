@@ -105,6 +105,45 @@ export function relativeAgeMs(value: string): number | null {
 export interface RowReadCounts {
   /** Maximum simultaneous empty matches seen within one list load. */
   emptySkipped: number;
+  /** Maximum simultaneous other-name rows within one step's list loads. */
+  otherName: number;
+}
+export function accountMatches(
+  expected: string,
+  outsideProfilePaths: readonly string[],
+  entries: readonly { username: string }[],
+): boolean {
+  const handle = expected.toLowerCase();
+  return (
+    outsideProfilePaths.some(
+      (path) =>
+        /^\/[A-Za-z0-9_.]{1,30}\/$/.test(path) &&
+        path.toLowerCase() === `/${handle}/`,
+    ) &&
+    entries.filter((row) => row.username.toLowerCase() === handle).length >
+      entries.length / 2
+  );
+}
+export async function outsideProfilePaths(page: Page): Promise<string[]> {
+  const anchors = page.locator('xpath=//a[@href][not(ancestor::main)]'),
+    origin = new URL(page.url()).origin,
+    paths: string[] = [];
+  for (const anchor of await anchors.all()) {
+    const href = await anchor.getAttribute('href');
+    if (href === null) continue;
+    try {
+      const url = new URL(href, origin);
+      if (
+        url.origin === origin &&
+        url.href === url.origin + url.pathname &&
+        (href === url.pathname || href === url.href)
+      )
+        paths.push(url.pathname);
+    } catch {
+      continue;
+    }
+  }
+  return paths;
 }
 export async function readRows(
   page: Page,

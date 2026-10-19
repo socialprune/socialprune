@@ -158,12 +158,12 @@ export async function runContextWithDependencies(
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: { startupClosed: number; unexpectedOpened: number };
-    rows: { emptySkipped: number };
+    rows: { emptySkipped: number; otherName: number };
   } = {
     steps: [],
     confirmations: { post: 0, list: 0 },
     pace: paceSummary(pace),
-    rows: { emptySkipped: 0 },
+    rows: { emptySkipped: 0, otherName: 0 },
   };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
@@ -521,7 +521,7 @@ export async function runContextWithDependencies(
           ),
         );
         answers.reset(options.plan.canary);
-        const rowCounts = { emptySkipped: 0 };
+        const rowCounts = { emptySkipped: 0, otherName: 0 };
         const list = await (async () => {
           try {
             return await loadList(
@@ -536,6 +536,7 @@ export async function runContextWithDependencies(
             );
           } finally {
             report.rows.emptySkipped += rowCounts.emptySkipped;
+            report.rows.otherName += rowCounts.otherName;
           }
         })();
         accountBefore ??= list.account;
@@ -547,6 +548,7 @@ export async function runContextWithDependencies(
           filterByLists: true,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
+          otherName: list.otherName,
           candidates: list.candidates.length,
           scrollLoads: list.scrollLoads,
           expansionClicks: 0,

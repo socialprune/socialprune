@@ -8,11 +8,89 @@ import {
   postAddress,
   readRows,
   relativeAgeMs,
+  accountMatches,
+  outsideProfilePaths,
 } from './selectors.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+
+test('C12 IG-9 pure account check requires exact outside profile path and a strict row majority', () => {
+  const own = 'generated_person',
+    other = IG_FIXTURE.other.username;
+  for (const [names, expected] of [
+    [[own, own, other], true],
+    [[own.toUpperCase(), own, own, other], true],
+    [[own, other], false],
+    [[own, other, other], false],
+    [[], false],
+  ] as const)
+    expect(
+      accountMatches(
+        own,
+        [`/${own.toUpperCase()}/`],
+        names.map((username) => ({ username })),
+      ),
+    ).toBe(expected);
+  for (const path of [
+    `/${other}/`,
+    `/${own}`,
+    `/${own}/extra/`,
+    `/${own}/?q=1`,
+    `/${own}/#profile`,
+    `https://www.instagram.com/${own}/`,
+    `//${own}/`,
+    '',
+  ])
+    expect(accountMatches(own, [path], [{ username: own }])).toBe(false);
+});
+
+test('C12 revision outside-main locator reads preserve exact path and same-origin href checks', async () => {
+  const handle = 'generated_person',
+    origin = 'https://www.instagram.com';
+  for (const [href, expected] of [
+    [`/${handle}/`, true],
+    [`${origin}/${handle.toUpperCase()}/`, true],
+    [`/${IG_FIXTURE.other.username}/`, false],
+    [`/${handle}`, false],
+    [`/${handle}/extra/`, false],
+    [`/${handle}/?q=1`, false],
+    [`/${handle}/?`, false],
+    [`/${handle}/#profile`, false],
+    [`/${handle}/#`, false],
+    [`https://other.invalid/${handle}/`, false],
+    [`https://www.instagram.com.other.invalid/${handle}/`, false],
+    [`https://user@www.instagram.com/${handle}/`, false],
+    [`//www.instagram.com/${handle}/`, false],
+    ['http://[', false],
+    ['', false],
+    [null, false],
+  ] as const) {
+    const page = {
+      url: () => origin + '/your_activity/interactions/comments',
+      locator: (selector: string) => {
+        expect(selector).toBe('xpath=//a[@href][not(ancestor::main)]');
+        return {
+          all: () =>
+            Promise.resolve([
+              {
+                getAttribute: (attribute: string) => {
+                  expect(attribute).toBe('href');
+                  return Promise.resolve(href);
+                },
+              },
+            ]),
+        };
+      },
+    } as unknown as Page;
+    expect(
+      accountMatches(handle, await outsideProfilePaths(page), [
+        { username: handle },
+      ]),
+    ).toBe(expected);
+  }
+});
 
 test.each(
   (['p', 'reel'] as const).flatMap((kind) =>
@@ -61,7 +139,7 @@ test('C4 row scans skip normalized-empty buttons, preserve original indices and 
     allInnerTexts: () => Promise.resolve(texts),
   };
   const page = { locator: () => locator } as unknown as Page,
-    counts = { emptySkipped: 0 };
+    counts = { emptySkipped: 0, otherName: 0 };
   expect(
     (await readRows(page, counts)).map((row) => [
       row.username,

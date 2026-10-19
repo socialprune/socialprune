@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { expect, test, vi } from 'vitest';
 import type { Page } from 'playwright-core';
 import { chooseFilterOption, chooseFilterDate } from './filter.ts';
@@ -7,6 +7,84 @@ import { clickAllowed } from './selectors.ts';
 import type { Click } from './selectors.ts';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { join, relative } from 'node:path';
+
+async function productionSources() {
+  const directory = fileURLToPath(new URL('.', import.meta.url));
+  const entries = await readdir(directory, {
+    recursive: true,
+    withFileTypes: true,
+  });
+  return Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => ({
+        file: join(entry.parentPath, entry.name),
+        path: relative(
+          directory,
+          join(entry.parentPath, entry.name),
+        ).replaceAll('\\', '/'),
+      }))
+      .filter(
+        ({ path }) =>
+          !/(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(
+            path,
+          ),
+      )
+      .sort((left, right) => left.path.localeCompare(right.path))
+      .map(async ({ file, path }) => ({
+        path,
+        source: await readFile(file, 'utf8'),
+      })),
+  );
+}
+function pageScriptFindings(
+  sources: readonly { path: string; source: string }[],
+) {
+  return sources.flatMap(({ path, source }) =>
+    Array.from(
+      source.matchAll(
+        /\.\s*(evaluate|evaluateAll|evaluateHandle|addInitScript|exposeFunction|exposeBinding|\$\$?eval)\s*(?:\?\.\s*)?\(/g,
+      ),
+      (match) => ({ path, method: match[1] }),
+    ),
+  );
+}
+test('C12 revision IG-2 B production Instagram files never execute page scripts', async () => {
+  const sources = await productionSources();
+  expect(sources.map(({ path }) => path)).toEqual(
+    expect.arrayContaining([
+      'filter.ts',
+      'selectors.ts',
+      'driver.ts',
+      'run.ts',
+    ]),
+  );
+  expect(pageScriptFindings(sources)).toEqual([]);
+});
+test('C12 revision IG-2 B detector rejects each planted page-script API in every production file', async () => {
+  const sources = await productionSources();
+  expect(sources.length).toBeGreaterThan(0);
+  for (const { path } of sources)
+    for (const method of [
+      'evaluate',
+      'evaluateAll',
+      'evaluateHandle',
+      'addInitScript',
+      'exposeFunction',
+      'exposeBinding',
+      '$eval',
+      '$$eval',
+    ])
+      for (const source of [
+        `await page.${method}(() => null);`,
+        `await page .\n ${method} \n (() => null);`,
+        `await page?.${method}?.(() => null);`,
+      ])
+        expect(pageScriptFindings([{ path, source }])).toEqual([
+          { path, method },
+        ]);
+});
 
 test.each([
   { side: 'foreign', unit: 'day', value: 1 },

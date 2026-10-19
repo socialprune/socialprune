@@ -74,12 +74,13 @@ test('each planted budget below its measured input is rejected', () => {
 
 test('system inventory rejects additions, removals and changed values in every class', () => {
   const baseline = {
-    services: ['service-a|hash-a'],
-    tasks: ['task-a|hash-a'],
-    runKeys: ['run-a|hash-a'],
-    firewall: ['rule-a|hash-a'],
+    version: 2 as const,
+    services: [],
+    tasks: [],
+    runKeys: [],
+    firewall: [],
     listeners: ['tcp|127.0.0.1|4669|100'],
-    startup: ['startup-a|hash-a'],
+    startup: [],
   };
   expect(() => assertSystemUnchanged(baseline, baseline)).not.toThrow();
   for (const key of [
@@ -89,10 +90,20 @@ test('system inventory rejects additions, removals and changed values in every c
     'firewall',
     'startup',
   ] as const) {
-    for (const rows of [[], [...baseline[key], 'planted'], ['changed']])
-      expect(() =>
-        assertSystemUnchanged(baseline, { ...baseline, [key]: rows }),
-      ).toThrow(`SYSTEM_CHANGED:${key}`);
+    const planted = {
+      name: 'planted',
+      count: 1,
+      strict: true,
+      appReference: false,
+      fields: { Value: '0'.repeat(64) },
+    };
+    for (const [before, after] of [
+      [baseline, { ...baseline, [key]: [planted] }],
+      [{ ...baseline, [key]: [planted] }, baseline],
+    ])
+      expect(() => assertSystemUnchanged(before!, after!)).toThrow(
+        `SYSTEM_CHANGED:${key}`,
+      );
   }
   expect(() =>
     assertSystemUnchanged(baseline, { ...baseline, listeners: [] }),

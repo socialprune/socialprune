@@ -25,7 +25,7 @@ import { releaseVersion, artifacts } from '../packaging/release.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
 import {
-  assertSystemUnchanged,
+  compareSystemSnapshots,
   systemSnapshot,
 } from '../packaging/system-check.ts';
 import {
@@ -34,6 +34,7 @@ import {
 } from '../packaging/network-check.ts';
 import { assertNsisTemp } from '../packaging/release-temp.ts';
 import { buildNsis } from '../packaging/nsis.ts';
+import { systemTokenProof, systemTaskControl } from './system-proof.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -73,6 +74,22 @@ assert.equal(
 );
 assert.deepEqual(initial.existingShortcuts, [], 'EXISTING_SHORTCUT_REFUSED');
 const scratch = await mkdtemp(join(tmpdir(), 'socialprune-installer-proof-'));
+const referenceProof = JSON.parse(
+  (
+    await run(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-File',
+        join(directory, 'e2e/system-reference-control.ps1'),
+        '-RunRoot',
+        scratch,
+      ],
+      { timeout: 30_000, windowsHide: true },
+    )
+  ).stdout,
+) as unknown;
 // Each installer and its children inherit one empty, run-owned OS temp folder.
 // No foreign temp tree is traversed or deleted. Any NSIS residue is visible in
 // full here, without racing unrelated processes on the maintainer's machine.
@@ -107,7 +124,30 @@ const proof: string[] = [];
 await rm(join(dist, 'release-uninstaller.json'), { force: true });
 const tempSnapshot = async () => (await readdir(installerTemp)).sort();
 const network = await watchNetwork(program, join(scratch, 'network.json'));
+const tokenProof = await systemTokenProof('controls');
+const taskControl = await systemTaskControl();
 const initialSystem = await systemSnapshot();
+const systemComparisons: {
+  phase: string;
+  failures: import('../packaging/system-check.ts').SystemChange[];
+  diagnostics: import('../packaging/system-check.ts').SystemChange[];
+}[] = [];
+async function compareSystem(
+  phase: string,
+  before: Awaited<ReturnType<typeof systemSnapshot>>,
+  after: Awaited<ReturnType<typeof systemSnapshot>>,
+) {
+  const comparison = compareSystemSnapshots(before, after);
+  systemComparisons.push({ phase, ...comparison });
+  await writeFile(
+    join(dist, 'release-uninstaller-system.json'),
+    JSON.stringify({ comparisons: systemComparisons, tokenProof }, null, 2),
+  );
+  if (comparison.failures.length)
+    throw new Error(
+      `SYSTEM_CHANGED:${comparison.failures[0]!.inventory}:${JSON.stringify(comparison.failures)}`,
+    );
+}
 let uninstallCount = 0;
 let uninstallerHash = '';
 let tempCopies: Awaited<ReturnType<typeof assertNsisTemp>> = [];
@@ -460,7 +500,7 @@ try {
     pids,
     'RUNNING_APP_ENDED',
   );
-  assertSystemUnchanged(runningSystem, await systemSnapshot());
+  await compareSystem('running-refusal', runningSystem, await systemSnapshot());
   assert.deepEqual(
     await tempSnapshot(),
     runningTemp,
@@ -630,6 +670,8 @@ try {
   const networkResult = await network.stop();
   assertNoOwnedNetwork(networkResult);
   const afterSystem = await systemSnapshot();
+  const finalComparison = compareSystemSnapshots(initialSystem, afterSystem);
+  systemComparisons.push({ phase: 'after-uninstall', ...finalComparison });
   await writeFile(
     join(dist, 'release-uninstaller-system.json'),
     JSON.stringify(
@@ -638,6 +680,10 @@ try {
         after: afterSystem,
         network: networkResult,
         tempCopies,
+        comparisons: systemComparisons,
+        tokenProof,
+        taskControl,
+        referenceProof,
       },
       null,
       2,
@@ -654,12 +700,19 @@ try {
         uninstallerSha256: uninstallerHash,
         dataKept: true,
         ownedNetwork: 'none',
+        systemComparisons,
+        tokenProof,
+        taskControl,
+        referenceProof,
       },
       null,
       2,
     ),
   );
-  assertSystemUnchanged(initialSystem, afterSystem);
+  if (finalComparison.failures.length)
+    throw new Error(
+      `SYSTEM_CHANGED:${finalComparison.failures[0]!.inventory}:${JSON.stringify(finalComparison.failures)}`,
+    );
   console.log(JSON.stringify({ proof: 'nsis-uninstaller', cases: proof }));
 } finally {
   if (app?.pid) {

@@ -1,18 +1,120 @@
 $ErrorActionPreference = 'Stop'
+# Only digests, ownership flags, entry names and field names leave this process.
+# Opening a handle for a write right is an access check, never a write.
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+public static class InventoryAccess {
+  [StructLayout(LayoutKind.Sequential)] struct Mapping { public uint read,write,execute,all; }
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern uint GetLongPathNameW(string path,StringBuilder result,uint size);
+  [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool DuplicateToken(IntPtr token,int level,out IntPtr result);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool AccessCheck(byte[] descriptor,IntPtr token,uint desired,ref Mapping mapping,IntPtr privileges,ref uint length,out uint granted,out bool allowed);
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenSCManagerW(string machine,string database,uint access);
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenServiceW(IntPtr manager,string name,uint access);
+  [DllImport("advapi32.dll")] static extern bool CloseServiceHandle(IntPtr handle);
+  public static string LongPath(string path) {
+    var result=new StringBuilder(32768);
+    return GetLongPathNameW(path,result,(uint)result.Capacity)>0?result.ToString():path;
+  }
+  public static bool ServiceWritable(string name) {
+    IntPtr manager=OpenSCManagerW(null,null,1); if(manager==IntPtr.Zero) throw new Exception("INVENTORY_SCM_ACCESS");
+    try {
+      IntPtr service=OpenServiceW(manager,name,2|0x10000|0x40000|0x80000);
+      if(service!=IntPtr.Zero) { CloseServiceHandle(service); return true; }
+      int error=Marshal.GetLastWin32Error();
+      if(error!=5) throw new Exception("INVENTORY_SERVICE_ACCESS:"+error);
+      // Check the individual rights too: denial of the compound set alone
+      // does not prove that every mutation right is denied.
+      foreach(uint right in new uint[]{2,0x10000,0x40000,0x80000}) {
+        service=OpenServiceW(manager,name,right);
+        if(service!=IntPtr.Zero) { CloseServiceHandle(service); return true; }
+        if(Marshal.GetLastWin32Error()!=5) throw new Exception("INVENTORY_SERVICE_ACCESS");
+      }
+      return false;
+    } finally { CloseServiceHandle(manager); }
+  }
+  public static bool Writable(string sddl) {
+    var sd=new RawSecurityDescriptor(sddl); byte[] bytes=new byte[sd.BinaryLength]; sd.GetBinaryForm(bytes,0);
+    IntPtr token=IntPtr.Zero,copy=IntPtr.Zero,privileges=Marshal.AllocHGlobal(4096);
+    try {
+      if(!OpenProcessToken(GetCurrentProcess(),10,out token)||!DuplicateToken(token,2,out copy)) throw new Exception("INVENTORY_TOKEN_ACCESS");
+      var mapping=new Mapping {read=0x120089,write=0x120116,execute=0x1200a0,all=0x1f01ff};
+      foreach(uint right in new uint[]{2,4,0x40,0x10000,0x40000,0x80000}) {
+        uint length=4096,granted; bool allowed;
+        if(!AccessCheck(bytes,copy,right,ref mapping,privileges,ref length,out granted,out allowed)) throw new Exception("INVENTORY_ACCESS_CHECK");
+        if(allowed) return true;
+      }
+      return false;
+    } finally { if(copy!=IntPtr.Zero) CloseHandle(copy); if(token!=IntPtr.Zero) CloseHandle(token); Marshal.FreeHGlobal(privileges); }
+  }
+}
+'@
 function Digest([string]$Value) {
   $sha = [Security.Cryptography.SHA256]::Create()
   try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value)))).Replace('-', '').ToLowerInvariant() }
   finally { $sha.Dispose() }
 }
 function JsonDigest($Value) { return Digest (ConvertTo-Json -InputObject $Value -Depth 20 -Compress) }
+. "$PSScriptRoot\system-reference.ps1"
+function Row([string]$Name, $Values, [bool]$Strict) {
+  $fields=[ordered]@{}
+  foreach($field in $Values.Keys) { $fields[$field]=JsonDigest $Values[$field] }
+  return @{ name=$Name; count=1; strict=$Strict; appReference=((Test-InventoryAppReference $Values) -or (Test-InventoryAppReference $Name)); fields=$fields }
+}
+function RegistryWritable($Base,[string]$Path) {
+  foreach($right in @([Security.AccessControl.RegistryRights]::SetValue,[Security.AccessControl.RegistryRights]::CreateSubKey,[Security.AccessControl.RegistryRights]::ChangePermissions,[Security.AccessControl.RegistryRights]::TakeOwnership,[Security.AccessControl.RegistryRights]::Delete)) {
+    $key=$null
+    try { $key=$Base.OpenSubKey($Path,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,$right); if($key) { return $true } }
+    catch [UnauthorizedAccessException] { }
+    catch [Security.SecurityException] { }
+    finally { if($key) { $key.Dispose() } }
+  }
+  return $false
+}
+$serviceRegistry=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
 $services = @(Get-CimInstance Win32_Service | ForEach-Object {
   # Configuration, not transient running state. No service executable is read.
-  "$($_.Name)|$(JsonDigest @($_.PathName, $_.StartMode, $_.StartName, $_.ServiceType, $_.DesktopInteract))"
-} | Sort-Object)
+  Row $_.Name ([ordered]@{ PathName=$_.PathName; StartMode=$_.StartMode; StartName=$_.StartName; ServiceType=$_.ServiceType; DesktopInteract=$_.DesktopInteract; DisplayName=$_.DisplayName; Description=$_.Description; ErrorControl=$_.ErrorControl }) (([InventoryAccess]::ServiceWritable($_.Name)) -or (RegistryWritable $serviceRegistry "SYSTEM\CurrentControlSet\Services\$($_.Name)"))
+} | Sort-Object name)
+$serviceRegistry.Dispose()
+$identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+$currentSids=@($identity.User.Value)+@($identity.Groups | ForEach-Object { $_.Value })
+$scheduler=New-Object -ComObject Schedule.Service
+$scheduler.Connect()
 $tasks = @(Get-ScheduledTask | ForEach-Object {
-  $xml = Export-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath
-  "$($_.TaskPath)$($_.TaskName)|$(Digest $xml)"
-} | Sort-Object)
+  $task=$_
+  [xml]$xml = Export-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath
+  $values=[ordered]@{}
+  foreach($child in $xml.DocumentElement.ChildNodes) {
+    if($child.NodeType -eq [Xml.XmlNodeType]::Element) { $values[$child.LocalName]=$child.OuterXml }
+  }
+  $strict=$true
+  $folderPath=$task.TaskPath.TrimEnd('\')
+  if(-not $folderPath) { $folderPath='\' }
+  $folder=$scheduler.GetFolder($folderPath)
+  $registered=$folder.GetTask($task.TaskName)
+  try {
+    $sddl=$registered.GetSecurityDescriptor(7)
+    $values['SecurityDescriptor']=$sddl
+    $strict=[InventoryAccess]::Writable($sddl)
+    $principal=if($task.Principal.UserId) { $task.Principal.UserId } else { $task.Principal.GroupId }
+    if(-not $principal) { $strict=$true }
+    else {
+      try {
+        $sid=if($principal -match '^S-1-') { $principal } else { ([Security.Principal.NTAccount]::new($principal)).Translate([Security.Principal.SecurityIdentifier]).Value }
+        if($currentSids -contains $sid) { $strict=$true }
+      } catch [Security.Principal.IdentityNotMappedException] { $strict=$true }
+    }
+    Row "$($task.TaskPath)$($task.TaskName)" $values $strict
+  } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($registered); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($folder) }
+} | Sort-Object name)
+[void][Runtime.InteropServices.Marshal]::ReleaseComObject($scheduler)
+$identity.Dispose()
 $runKeys = @()
 foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryHive]::LocalMachine)) {
   foreach ($view in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
@@ -24,7 +126,7 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
           try {
             foreach ($name in $key.GetValueNames()) {
               $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-              $runKeys += "$hive|$view|$path|$name|$($key.GetValueKind($name))|$(JsonDigest $value)"
+              $runKeys += Row "$hive|$view|$path|$name" ([ordered]@{ Kind=[string]$key.GetValueKind($name); Value=$value; SecurityDescriptor=$key.GetAccessControl().Sddl }) (($hive -eq [Microsoft.Win32.RegistryHive]::CurrentUser) -or (RegistryWritable $base $path))
             }
           } finally { $key.Dispose() }
         }
@@ -35,18 +137,45 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
 # INetFwPolicy2 is Windows' read-only rule enumeration available to a standard
 # user. The CIM port-filter provider requires elevation on some machines.
 $policy = New-Object -ComObject HNetCfg.FwPolicy2
+$machine=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+$firewallWritable=RegistryWritable $machine 'SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules'
+$machine.Dispose()
 try {
-  $firewall = @($policy.Rules | ForEach-Object {
-    "$($_.Name)|$(JsonDigest @($_.Description, $_.ApplicationName, $_.ServiceName, $_.Protocol, $_.LocalPorts, $_.RemotePorts, $_.LocalAddresses, $_.RemoteAddresses, $_.IcmpTypesAndCodes, $_.Direction, $_.Interfaces, $_.InterfaceTypes, $_.Enabled, $_.Grouping, $_.Profiles, $_.EdgeTraversal, $_.Action))"
-  } | Sort-Object)
+  $rules=@($policy.Rules | ForEach-Object {
+    $rule=$_
+    $values=[ordered]@{}
+    foreach($field in @('Description','ApplicationName','ServiceName','Protocol','LocalPorts','RemotePorts','LocalAddresses','RemoteAddresses','IcmpTypesAndCodes','Direction','Interfaces','InterfaceTypes','Enabled','Grouping','Profiles','EdgeTraversal','Action','LocalAppPackageId','LocalUserOwner','LocalUserAuthorizedList','RemoteUserAuthorizedList','RemoteMachineAuthorizedList','SecureFlags')) { $values[$field]=$rule.$field }
+    Row $rule.Name $values ($firewallWritable -or -not [string]::IsNullOrEmpty($rule.LocalUserOwner))
+  })
+  # INetFwPolicy2 permits duplicate names. Group by name rather than treating
+  # a changed digest as a removed/added name; retain count and all field hashes.
+  $firewall=@($rules | Group-Object -Property { $_.name } | ForEach-Object {
+    $group=$_.Group
+    $fields=[ordered]@{}
+    foreach($field in $group[0].fields.Keys) { $fields[$field]=JsonDigest @($group | ForEach-Object { $_.fields[$field] } | Sort-Object) }
+    @{ name=$_.Name; count=$group.Count; strict=(@($group | Where-Object { $_.strict }).Count -gt 0); appReference=(@($group | Where-Object { $_.appReference }).Count -gt 0); fields=$fields }
+  } | Sort-Object name)
 } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($policy) }
 $tcp = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | ForEach-Object { "tcp|$($_.LocalAddress)|$($_.LocalPort)|$($_.OwningProcess)" })
 # UDP endpoints have no Listen state (ordinary DNS clients acquire ephemeral
 # ports). The app's own TCP and UDP endpoints are checked separately.
 $startup = @()
-foreach ($folder in @([Environment]::GetFolderPath('Startup'), [Environment]::GetFolderPath('CommonStartup'))) {
+$userStartup=[Environment]::GetFolderPath('Startup')
+foreach ($folder in @($userStartup, [Environment]::GetFolderPath('CommonStartup'))) {
   if (Test-Path -LiteralPath $folder) {
-    $startup += @(Get-ChildItem -LiteralPath $folder -File -Force | ForEach-Object { "$folder|$($_.Name)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())" })
+    $parentWritable=[InventoryAccess]::Writable((Get-Acl -LiteralPath $folder).Sddl)
+    $startup += @(Get-ChildItem -LiteralPath $folder -File -Force | ForEach-Object {
+      $values=[ordered]@{ Content=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash; Attributes=[string]$_.Attributes; SecurityDescriptor=(Get-Acl -LiteralPath $_.FullName).Sddl }
+      $strict=($folder -eq $userStartup) -or $parentWritable -or [InventoryAccess]::Writable((Get-Acl -LiteralPath $_.FullName).Sddl)
+      if($_.Extension -ieq '.lnk') {
+        $shell=New-Object -ComObject WScript.Shell
+        try { $shortcut=$shell.CreateShortcut($_.FullName); $values.TargetPath=$shortcut.TargetPath; $values.Arguments=$shortcut.Arguments; $values.WorkingDirectory=$shortcut.WorkingDirectory }
+        finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+      }
+      elseif($_.Extension.ToLowerInvariant() -in @('.bat','.cmd','.ps1','.vbs','.js','.wsf','.url','.hta','.txt')) { $values.TextContent=[IO.File]::ReadAllText($_.FullName) }
+      else { $strict=$true } # Unknown formats cannot be proved unattributed.
+      Row "$(if($folder -eq $userStartup) {'user'} else {'common'})|$($_.Name)" $values $strict
+    })
   }
 }
-@{ services = @($services); tasks = @($tasks); runKeys = @($runKeys | Sort-Object); firewall = @($firewall); listeners = @($tcp | Sort-Object -Unique); startup = @($startup | Sort-Object) } | ConvertTo-Json -Depth 5 -Compress
+@{ version=2; services = @($services); tasks = @($tasks); runKeys = @($runKeys | Sort-Object name); firewall = @($firewall); listeners = @($tcp | Sort-Object -Unique); startup = @($startup | Sort-Object name) } | ConvertTo-Json -Depth 8 -Compress

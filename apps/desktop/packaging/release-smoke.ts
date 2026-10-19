@@ -22,11 +22,13 @@ import { assertFuses } from './fuses.ts';
 import { assertBudgets, summarize, checkRelease } from './release-checks.ts';
 import { releaseBudgets } from './release-budgets.ts';
 import type { Measurement } from './release-checks.ts';
-import { assertSystemUnchanged, systemSnapshot } from './system-check.ts';
+import { compareSystemSnapshots, systemSnapshot } from './system-check.ts';
+import type { SystemComparison } from './system-check.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
 import { assertNsisTemp } from './release-temp.ts';
 import { assertNoOwnedNetwork, watchNetwork } from './network-check.ts';
+import { systemTokenProof } from '../e2e/system-proof.ts';
 
 const run = promisify(execFile);
 const LayoutSchema = z.strictObject({
@@ -101,6 +103,7 @@ assert.equal(
   false,
   'EXISTING_REGISTRATION_REFUSED',
 );
+const tokenProof = await systemTokenProof('smoke');
 const initial = await systemSnapshot();
 const data = await mkdtemp(join(tmpdir(), 'socialprune-release-generated-'));
 const installerTemp = join(data, 'installer-temp');
@@ -124,14 +127,26 @@ let attemptedInstall = false;
 const samples: Measurement[] = [];
 const snapshots: unknown[] = [{ phase: 'before-install', snapshot: initial }];
 const differences: string[] = [];
-const compareSystem = (
+const systemComparisons: ({ phase: string } & SystemComparison)[] = [];
+const compareSystem = async (
+  phase: string,
   snapshot: Awaited<ReturnType<typeof systemSnapshot>>,
 ) => {
-  try {
-    assertSystemUnchanged(initial, snapshot);
-  } catch (error) {
-    differences.push(error instanceof Error ? error.message : String(error));
-  }
+  const comparison = compareSystemSnapshots(initial, snapshot);
+  systemComparisons.push({ phase, ...comparison });
+  for (const failure of comparison.failures)
+    differences.push(
+      `SYSTEM_CHANGED:${failure.inventory}:${JSON.stringify(failure)}`,
+    );
+  // Preserve diagnostics immediately, including when a later launch fails.
+  await writeFile(
+    join(dist, 'release-system.json'),
+    JSON.stringify(
+      { snapshots, comparisons: systemComparisons, tokenProof },
+      null,
+      2,
+    ),
+  );
 };
 let primaryFailure: Error | undefined;
 try {
@@ -215,7 +230,7 @@ try {
         .parse(JSON.parse(stdout));
       const running = await systemSnapshot();
       snapshots.push({ phase: `running-${index + 1}`, snapshot: running });
-      compareSystem(running);
+      await compareSystem(`running-${index + 1}`, running);
       samples.push({
         startupMs: sample.interactiveAt - started,
         workingSetBytes: sample.workingSetBytes,
@@ -332,11 +347,7 @@ try {
     }
     const after = await systemSnapshot();
     snapshots.push({ phase: 'after-uninstall', snapshot: after });
-    await writeFile(
-      join(dist, 'release-system.json'),
-      JSON.stringify(snapshots, null, 2),
-    );
-    compareSystem(after);
+    await compareSystem('after-uninstall', after);
   } finally {
     networkObservation = await network.stop();
     await rm(data, { recursive: true, force: true });
@@ -382,12 +393,14 @@ const report = {
   network: networkObservation,
   tempCopies,
   summary,
-  systemUnchanged: differences.length === 0,
+  systemInvariantPassed: differences.length === 0,
   programFolderRemoved: true,
   startMenuEntryRemoved: true,
   noUpdater: true,
   remainingOwnedProcesses: 0,
   systemDifferences: differences,
+  systemComparisons,
+  tokenProof,
 };
 await writeFile(
   join(dist, 'release-smoke.json'),

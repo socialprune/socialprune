@@ -8,6 +8,16 @@ import {
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 import { ContextStepReportSchema } from './report.ts';
 
+test('C10 confirmedBy report token admits post and list only', () => {
+  for (const confirmedBy of ['post', 'list'])
+    expect(ContextStepReportSchema.parse({ confirmedBy })).toEqual({
+      confirmedBy,
+    });
+  expect(() =>
+    ContextStepReportSchema.parse({ confirmedBy: IG_FIXTURE.other.username }),
+  ).toThrow();
+});
+
 test.each([
   'ownerLinksOneAccount',
   'ownerEqualsExport',
@@ -27,6 +37,7 @@ test.each([
 });
 
 const record: InstagramContext = {
+  confirmedBy: 'post',
   itemId: 'instagram:generated',
   accountKey: 'instagram:generated',
   post: {

@@ -11,6 +11,41 @@ import { startReviewServer } from '../src/review/server.ts';
 import { reviewAssetDirectory } from '../src/review/static.ts';
 
 const own = contextInputs.items[0]!;
+test('C10 list-confirmed review states what the list checked and has no comment link', async ({
+  page,
+}) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'socialprune-list-review-'));
+  const fixture = await writeContextFixture(workspace, undefined, true);
+  const server = await startReviewServer({
+    workspace,
+    assetDirectory: reviewAssetDirectory(),
+    handleSignals: false,
+    // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+    port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
+  });
+  try {
+    await page.goto(server.launchUrl);
+    await page
+      .getByRole('navigation', { name: 'Primary navigation', exact: true })
+      .getByRole('link', { name: 'Review', exact: true })
+      .click();
+    const post = page.getByTestId('instagram-post');
+    await expect(post).toContainText('comments list');
+    await expect(post).toContainText(
+      'The post itself did not show the comment.',
+    );
+    await expect(post.locator('a[href*="/c/"]')).toHaveCount(0);
+    await expect(
+      post.getByRole('link', { name: 'Open on Instagram' }),
+    ).toHaveAttribute(
+      'href',
+      `https://www.instagram.com/p/${fixture.records[0]!.post.code}/`,
+    );
+  } finally {
+    await server.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 type ReviewWindow = Window & { workspace: WorkspaceClient };
 const foreignValues = [
   contextInputs.foreign.text,
@@ -40,6 +75,8 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
     workspace,
     assetDirectory: reviewAssetDirectory(),
     handleSignals: false,
+    // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+    port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
   });
   const origin = new URL(server.url).origin;
   const requests: string[] = [],
@@ -282,6 +319,8 @@ test('a context reply for a different item or account cannot replace the focused
     workspace,
     assetDirectory: reviewAssetDirectory(),
     handleSignals: false,
+    // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+    port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
   });
   const requests: string[] = [];
   context.on('request', (request) => requests.push(request.url()));

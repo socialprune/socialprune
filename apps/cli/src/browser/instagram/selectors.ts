@@ -189,6 +189,8 @@ export async function readPost(
   if (!element)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   const ownLinks = await postLinks(element, address);
+  if (!ownLinks.length)
+    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   const names = new Set(ownLinks.map((link) => ownerName(link.owner)));
   const owner = ownLinks[0]!.owner;
   const profiles = await profileLinks(element);

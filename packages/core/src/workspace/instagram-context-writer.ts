@@ -225,7 +225,10 @@ export class InstagramContextWriter {
       )
         throw new Error('INVALID_CONTEXT_RECORD');
       for await (const other of tx.instagramContext.iterate())
-        if (other.comment.id === record.comment.id)
+        if (
+          record.comment.id !== null &&
+          other.comment.id === record.comment.id
+        )
           throw new Error('DUPLICATE_CONTEXT_COMMENT');
       await settlement(tx, send, 'confirmed', record.confirmedAt, null);
       await tx.instagramContext.add(record);

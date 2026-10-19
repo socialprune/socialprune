@@ -50,6 +50,7 @@ export const contextInputs = {
 export async function writeContextFixture(
   workspace: string,
   jpeg: Uint8Array = Buffer.from([255, 216, 255, 217]),
+  listConfirmed = false,
 ) {
   const data = createWorkspace({
     id: 'generated-context-review',
@@ -87,6 +88,19 @@ export async function writeContextFixture(
       const runId = `generated-context-${index}`,
         attemptId = `generated-send-${index}`;
       const record: InstagramContext = {
+        ...(listConfirmed
+          ? {
+              confirmedBy: 'list' as const,
+              comment: { id: null, createdAt: null, expandClicks: 1 },
+            }
+          : {
+              confirmedBy: 'post' as const,
+              comment: {
+                id: String(910001 + index),
+                createdAt: item.createdAt,
+                expandClicks: 1,
+              },
+            }),
         itemId: item.id,
         accountKey: item.account.key,
         post: {
@@ -98,11 +112,6 @@ export async function writeContextFixture(
           caption:
             item.text + (index === 0 ? '\n' + contextInputs.captionMarkup : ''),
           captionComplete: index !== 0,
-        },
-        comment: {
-          id: String(910001 + index),
-          createdAt: item.createdAt,
-          expandClicks: 1,
         },
         image:
           index === 1

@@ -14,6 +14,7 @@ import {
   BrowserRunSchema,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  LegacyInstagramContextSchema,
   WORKSPACE_SCHEMA_VERSION,
 } from '../model/index.ts';
 import type {
@@ -363,7 +364,10 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   originals: OriginalSchema,
   browserRuns: BrowserRunSchema,
   browserAttempts: BrowserAttemptSchema,
-  instagramContext: InstagramContextSchema,
+  instagramContext: z.union([
+    InstagramContextSchema,
+    LegacyInstagramContextSchema,
+  ]),
 };
 const v1Records: Record<string, z.ZodType> = {
   imports: v1.ImportRecordSchema,
@@ -652,8 +656,7 @@ export async function applyBackup(
 ): Promise<WorkspaceV2> {
   throwIfAborted(options.signal);
   const workspace = validateWorkspace(input);
-  if (workspace.schemaVersion === 4)
-    workspace.schemaVersion = WORKSPACE_SCHEMA_VERSION;
+  workspace.schemaVersion = WORKSPACE_SCHEMA_VERSION;
   const state = deriveState(workspace);
   const batchSize = positive(options.batchSize ?? 1000, 1000);
   const {

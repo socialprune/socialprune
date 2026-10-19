@@ -7,6 +7,7 @@ import {
   ItemSchema,
   OutcomeEventSchema,
   migrateOriginal,
+  migrateInstagramContext,
   validateOriginal,
   SubmissionSchema,
   WorkspaceMetaSchema,
@@ -73,12 +74,21 @@ export class IndexedDBStore implements WorkspaceStore {
       upgrade(db, oldVersion, _newVersion, tx) {
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 5) {
+        if (oldVersion >= 1 && oldVersion < 6) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
               while (cursor) {
                 await cursor.update(migrateOriginal(cursor.value));
+                cursor = await cursor.continue();
+              }
+            }
+            if (oldVersion === 5) {
+              let cursor = await tx
+                .objectStore('instagramContext')
+                .openCursor();
+              while (cursor) {
+                await cursor.update(migrateInstagramContext(cursor.value));
                 cursor = await cursor.continue();
               }
             }

@@ -96,6 +96,13 @@ export async function instagramFixture(
 }
 export type Variant =
   | 'success'
+  | 'own-link-flicker'
+  | 'own-link-vanishes'
+  | 'expansion-link-flicker'
+  | 'expansion-link-vanishes'
+  | 'expansion-post-switch'
+  | 'expansion-kind-switch'
+  | 'list-cut'
   | 'hidden'
   | 'scroll-first'
   | 'scroll-late'

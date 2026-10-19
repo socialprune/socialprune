@@ -13,7 +13,12 @@ export async function foreignPage() {
     );
   });
   await new Promise<void>((resolve) =>
-    server.listen(4235, '127.0.0.1', () => resolve()),
+    server.listen(
+      // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+      Number(process.env['SP_REVIEW_FOREIGN_PORT'] ?? 4235),
+      '127.0.0.1',
+      () => resolve(),
+    ),
   );
   const address = server.address();
   if (!address || typeof address === 'string')

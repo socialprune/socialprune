@@ -44,6 +44,33 @@ test('context view renders caption and owner as text, builds links and keeps scr
   }
 });
 
+test('C10 list-confirmed context explains the list evidence in both languages and never builds a comment link', () => {
+  const record = instagramContractRecord();
+  Object.assign(record, { confirmedBy: 'list' });
+  Object.assign(record.comment, { id: null, createdAt: null });
+  for (const locale of ['en', 'de'] as const) {
+    const html = renderToStaticMarkup(
+      createElement(IntlProvider, {
+        locale,
+        messages: catalogs[locale],
+        children: createElement(InstagramPost, { record, zone: 'UTC' }),
+      }),
+    );
+    expect(html).toContain(
+      locale === 'en' ? 'comments list' : 'Kommentarliste',
+    );
+    expect(html).toContain(
+      locale === 'en'
+        ? 'did not show the comment'
+        : 'hat den Kommentar nicht gezeigt',
+    );
+    expect(html).not.toContain('/c/');
+    expect(html).not.toContain(
+      locale === 'en' ? 'Its text, time' : 'Text, Zeit',
+    );
+  }
+});
+
 test('RED CONTROL forbidden values from a second fixture account fail on the view without the identity wrapper', async () => {
   const fixture = JSON.parse(
     await readFile(

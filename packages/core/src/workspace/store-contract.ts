@@ -38,10 +38,11 @@ export function instagramContractItem(): Item {
 }
 export function instagramContractRecord(
   item: Item = instagramContractItem(),
-): InstagramContext {
+): Extract<InstagramContext, { confirmedBy: 'post' }> {
   return {
     itemId: item.id,
     accountKey: item.account.key,
+    confirmedBy: 'post',
     post: {
       kind: 'p',
       code: 'Generated_Aa-1',
@@ -72,7 +73,7 @@ export async function writeInstagramContextContract(
   store: WorkspaceStore,
   item: Item = instagramContractItem(),
   confirmedAt?: string,
-): Promise<InstagramContext> {
+): Promise<Extract<InstagramContext, { confirmedBy: 'post' }>> {
   const record = {
       ...instagramContractRecord(item),
       ...(confirmedAt ? { confirmedAt } : {}),

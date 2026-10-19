@@ -50,7 +50,13 @@ test('hand-written v2 document parses at one-byte boundaries and restores ordere
     await restoreBackup(target, chunks(JSON.stringify(input)), {
       batchSize: 1,
     });
-    expect(await target.read(readWorkspace)).toEqual(input);
+    expect(await target.read(readWorkspace)).toEqual({
+      ...input,
+      schemaVersion: 6,
+      browserRuns: [],
+      browserAttempts: [],
+      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
+    });
     expect(
       [...deriveState(await target.read(readWorkspace))].map(([id, value]) => [
         id,
@@ -136,7 +142,7 @@ test('writer streams bounded chunks in header order and marks the store only aft
     ]);
     expect(document).toEqual({
       ...input,
-      schemaVersion: 5,
+      schemaVersion: 6,
       browserRuns: [],
       browserAttempts: [],
       counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
@@ -358,7 +364,14 @@ test('reader accepts v1 migration and deduplicates identical log records but rej
     const result = await restoreBackup(staged, chunks(old), { batchSize: 1 });
     expect(result.migratedFrom).toBe(1);
     const migrated = await staged.read(readWorkspace);
-    expect(migrated).toEqual(await readBackup(chunks(old)));
+    const legacy = await readBackup(chunks(old));
+    expect(migrated).toEqual({
+      ...legacy,
+      schemaVersion: 6,
+      browserRuns: [],
+      browserAttempts: [],
+      counts: { ...legacy.counts, browserRuns: 0, browserAttempts: 0 },
+    });
     expect(
       migrated.decisionEvents.map((event) => [event.seq, event.value]),
     ).toEqual([
@@ -662,7 +675,13 @@ test('restore applies validated record batches of at most the requested size', a
       batchSize: 1,
     });
     expect(sizes).toEqual([1, 1, 1, 1, 1, 1]);
-    expect(await target.read(readWorkspace)).toEqual(input);
+    expect(await target.read(readWorkspace)).toEqual({
+      ...input,
+      schemaVersion: 6,
+      browserRuns: [],
+      browserAttempts: [],
+      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
+    });
   } finally {
     await target.close();
   }

@@ -165,7 +165,7 @@ test('D58 rejects an invalid view before writing and preserves old and new strea
           ...input.settings,
           ...(view ? { review: view } : {}),
         });
-        expect(restored.meta.schemaVersion).toBe(5);
+        expect(restored.meta.schemaVersion).toBe(6);
       } finally {
         await stage.close();
       }

@@ -19,6 +19,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     }[] = [];
   let beforeNavigation: (() => Promise<void>) | undefined;
   const postVariants = new Map<number, Variant>();
+  const hiddenPosts = new Set<number>();
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -124,6 +125,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
               candidate.index,
               candidate.variant,
               candidate.code,
+              hiddenPosts.has(candidate.index),
             ),
           );
           return;
@@ -147,6 +149,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             items[Math.max(0, index)]!,
             Math.max(0, index),
             postVariants.get(index) ?? variant,
+            undefined,
+            hiddenPosts.has(index),
           ),
         );
         return;
@@ -230,6 +234,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(index) || !items[index])
         throw new Error('Invalid generated post index.');
       postVariants.set(index, value);
+    },
+    setPostHidden(index: number) {
+      if (!items[index])
+        throw new Error('Invalid generated hidden post index.');
+      hiddenPosts.add(index);
     },
     setCandidates(index: number, variants: readonly Variant[]) {
       if (

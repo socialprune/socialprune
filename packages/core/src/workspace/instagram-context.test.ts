@@ -8,6 +8,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
 } from '../model/index.ts';
 import type { Item, WorkspaceV2 } from '../model/index.ts';
+import { JOURNAL_FIXTURE } from '../model/browser-fixture.ts';
 import { createMemoryStore, MemoryStoreBacking } from './memory-store.ts';
 import { createWorkspace, readWorkspace, records } from './store.ts';
 import {
@@ -16,7 +17,12 @@ import {
   writeInstagramContextContract,
 } from './store-contract.ts';
 import { InstagramContextWriter } from './instagram-context-writer.ts';
-import { createBackup, readBackup, restoreBackup } from './backup.ts';
+import {
+  applyBackup,
+  createBackup,
+  readBackup,
+  restoreBackup,
+} from './backup.ts';
 import { validateWorkspace } from './validation.ts';
 import {
   GetInstagramContextRequestSchema,
@@ -30,6 +36,325 @@ const chunks = (value: unknown) =>
     await Promise.resolve();
     yield JSON.stringify(value);
   })();
+
+test.each([2, 3] as const)(
+  'C10 revision v%i restore and apply write current metadata without changing existing data',
+  async (version) => {
+    const legacy = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../../fixtures/synthetic/workspace/backup-v2.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as WorkspaceV2;
+    legacy.schemaVersion = version;
+    if (version === 3) {
+      legacy.browserRuns = [
+        { ...JOURNAL_FIXTURE.run, accountKey: legacy.items[0]!.account.key },
+      ];
+      legacy.browserAttempts = JOURNAL_FIXTURE.attempts.map((attempt) => ({
+        ...attempt,
+        itemId: legacy.items[0]!.id,
+      }));
+      legacy.counts.browserRuns = 1;
+      legacy.counts.browserAttempts = 2;
+    }
+    expect(await readBackup(chunks(legacy))).toEqual(legacy);
+    for (const method of ['apply', 'stream'] as const) {
+      const store = createMemoryStore();
+      try {
+        if (method === 'apply') await applyBackup(store, legacy);
+        else await restoreBackup(store, chunks(legacy));
+        const restored = await store.read(readWorkspace);
+        expect(validateWorkspace(restored)).toEqual({
+          ...legacy,
+          schemaVersion: 6,
+          browserRuns: legacy.browserRuns ?? [],
+          browserAttempts: legacy.browserAttempts ?? [],
+          counts: {
+            ...legacy.counts,
+            browserRuns: version === 3 ? 1 : 0,
+            browserAttempts: version === 3 ? 2 : 0,
+          },
+        });
+      } finally {
+        await store.close();
+      }
+    }
+  },
+);
+
+test('C10 v5 context backups gain post confirmation in both readers and streaming restore, including reversed keys', async () => {
+  const current = await fixture();
+  const legacy = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
+  legacy.schemaVersion = 5;
+  for (const record of legacy.instagramContext as Record<string, unknown>[])
+    delete record.confirmedBy;
+  for (const input of [
+    legacy,
+    Object.fromEntries(Object.entries(legacy).reverse()),
+  ]) {
+    expect(validateWorkspace(input).instagramContext![0]).toHaveProperty(
+      'confirmedBy',
+      'post',
+    );
+    expect(
+      (await readBackup(chunks(input))).instagramContext![0],
+    ).toHaveProperty('confirmedBy', 'post');
+    const target = createMemoryStore();
+    try {
+      await restoreBackup(target, chunks(input), { batchSize: 1 });
+      const restored = await target.read(readWorkspace);
+      expect(restored.schemaVersion).toBe(6);
+      expect(restored.instagramContext![0]).toHaveProperty(
+        'confirmedBy',
+        'post',
+      );
+    } finally {
+      await target.close();
+    }
+  }
+});
+
+test('C10 list confirmation permits null comment identity in both readers and preserves it through backup', async () => {
+  const value = await fixture();
+  Object.assign(value, { schemaVersion: 6 });
+  Object.assign(value.instagramContext![0]!, { confirmedBy: 'list' });
+  Object.assign(value.instagramContext![0]!.comment, {
+    id: null,
+    createdAt: null,
+  });
+  expect(validateWorkspace(value)).toEqual(value);
+  expect(await readBackup(chunks(value))).toEqual(value);
+  const target = createMemoryStore();
+  try {
+    await restoreBackup(target, chunks(value));
+    const backup = createBackup(target);
+    let text = '';
+    for await (const chunk of backup.chunks)
+      text += new TextDecoder().decode(chunk);
+    await backup.complete();
+    expect(
+      (await readBackup(chunks(JSON.parse(text)))).instagramContext,
+    ).toEqual(value.instagramContext);
+  } finally {
+    await target.close();
+  }
+});
+
+test('C10 a parsed v5 backup composes with validate and apply at the current version', async () => {
+  const input = JSON.parse(JSON.stringify(await fixture())) as Record<
+    string,
+    unknown
+  >;
+  input.schemaVersion = 5;
+  for (const record of input.instagramContext as Record<string, unknown>[])
+    delete record.confirmedBy;
+  const parsed = await readBackup(chunks(input));
+  expect(validateWorkspace(parsed)).toEqual(parsed);
+  expect(parsed.schemaVersion).toBe(6);
+  const target = createMemoryStore();
+  try {
+    await applyBackup(target, parsed);
+    expect((await target.read(readWorkspace)).instagramContext).toEqual(
+      parsed.instagramContext,
+    );
+  } finally {
+    await target.close();
+  }
+});
+
+test('C10 v5 cannot carry version-six confirmation fields even when its header comes last', async () => {
+  const current = await fixture();
+  for (const confirmedBy of ['post', 'list']) {
+    const invalid = structuredClone(current);
+    Object.assign(invalid, { schemaVersion: 5 });
+    Object.assign(invalid.instagramContext![0]!, { confirmedBy });
+    if (confirmedBy === 'list')
+      Object.assign(invalid.instagramContext![0]!.comment, {
+        id: null,
+        createdAt: null,
+      });
+    for (const input of [
+      invalid,
+      Object.fromEntries(Object.entries(invalid).reverse()),
+    ]) {
+      expect(() => validateWorkspace(input)).toThrow();
+      await expect(readBackup(chunks(input))).rejects.toThrow();
+      const target = createMemoryStore();
+      try {
+        await expect(restoreBackup(target, chunks(input))).rejects.toThrow();
+      } finally {
+        await target.close();
+      }
+    }
+  }
+});
+
+test.each(['list-id', 'list-time', 'post-id', 'post-time', 'missing-kind'])(
+  'C10 readers refuse inconsistent confirmation identity %s',
+  async (mode) => {
+    const value = await fixture();
+    Object.assign(value, { schemaVersion: 6 });
+    const record = value.instagramContext![0]!;
+    Object.assign(record, {
+      confirmedBy: mode.startsWith('list') ? 'list' : 'post',
+    });
+    if (mode.startsWith('list'))
+      Object.assign(record.comment, { id: null, createdAt: null });
+    if (mode === 'list-id') record.comment.id = '123';
+    if (mode === 'list-time')
+      record.comment.createdAt = value.items[0]!.createdAt;
+    if (mode === 'post-id') Object.assign(record.comment, { id: null });
+    if (mode === 'post-time')
+      Object.assign(record.comment, { createdAt: null });
+    if (mode === 'missing-kind') Reflect.deleteProperty(record, 'confirmedBy');
+    expect(() => validateWorkspace(value)).toThrow();
+    await expect(readBackup(chunks(value))).rejects.toThrow();
+    const target = createMemoryStore();
+    try {
+      await expect(restoreBackup(target, chunks(value))).rejects.toThrow();
+    } finally {
+      await target.close();
+    }
+    const reversedTarget = createMemoryStore();
+    try {
+      await expect(
+        restoreBackup(
+          reversedTarget,
+          chunks(Object.fromEntries(Object.entries(value).reverse())),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await reversedTarget.close();
+    }
+  },
+);
+
+test('C10 two list records with null ids are accepted while two set comment ids remain refused', async () => {
+  const value = await fixture();
+  Object.assign(value, { schemaVersion: 6 });
+  const item = structuredClone(value.items[0]!);
+  item.id += '-list-second';
+  const first = value.instagramContext![0]!;
+  Object.assign(first, { confirmedBy: 'list' });
+  Object.assign(first.comment, { id: null, createdAt: null });
+  const second = {
+    ...structuredClone(first),
+    itemId: item.id,
+    attemptId: first.attemptId + '-second',
+  };
+  value.items.push(item);
+  value.counts.items++;
+  value.instagramContext!.push(second);
+  value.counts.instagramContext!++;
+  const send = value.browserAttempts!.find(
+    (attempt) => attempt.attemptId === first.attemptId,
+  )!;
+  const settle = value.browserAttempts!.find(
+    (attempt) => attempt.settles === first.attemptId,
+  )!;
+  value.browserAttempts!.push(
+    { ...send, seq: 3, attemptId: second.attemptId, itemId: item.id },
+    {
+      ...settle,
+      seq: 4,
+      attemptId: settle.attemptId + '-second',
+      settles: second.attemptId,
+      itemId: item.id,
+    },
+  );
+  value.counts.browserAttempts! += 2;
+  expect(validateWorkspace(value)).toEqual(value);
+  expect(await readBackup(chunks(value))).toEqual(value);
+  for (const record of value.instagramContext!) {
+    Object.assign(record, { confirmedBy: 'post' });
+    Object.assign(record.comment, { id: '123', createdAt: item.createdAt });
+  }
+  expect(() => validateWorkspace(value)).toThrow();
+  await expect(readBackup(chunks(value))).rejects.toThrow();
+});
+
+test('C10 readers accept version six and refuse later headers as unsupported', async () => {
+  const value = await fixture();
+  Object.assign(value, { schemaVersion: 6 });
+  expect((await readBackup(chunks(value))).schemaVersion).toBe(6);
+  const target = createMemoryStore();
+  try {
+    await restoreBackup(target, chunks(value));
+    expect((await target.read(readWorkspace)).schemaVersion).toBe(6);
+  } finally {
+    await target.close();
+  }
+  const later = { ...value, schemaVersion: 7 };
+  await expect(readBackup(chunks(later))).rejects.toMatchObject({
+    code: 'BACKUP_SCHEMA_UNSUPPORTED',
+  });
+  const refused = createMemoryStore();
+  try {
+    const before = await refused.read(readWorkspace);
+    await expect(restoreBackup(refused, chunks(later))).rejects.toMatchObject({
+      code: 'BACKUP_SCHEMA_UNSUPPORTED',
+    });
+    expect(await refused.read(readWorkspace)).toEqual(before);
+  } finally {
+    await refused.close();
+  }
+});
+
+test('C10 writer stores two list confirmations with null ids without treating null as a duplicate', async () => {
+  const store = createMemoryStore();
+  const value = await fixture();
+  const firstItem = {
+    ...instagramContractItem(),
+    id: 'instagram:generated-list-first',
+  };
+  const second = { ...firstItem, id: firstItem.id + '-second' };
+  const record = instagramContractRecord(firstItem);
+  value.items.push(firstItem, second);
+  value.counts.items += 2;
+  const writer = new InstagramContextWriter(store);
+  const at = record.confirmedAt;
+  try {
+    await store.write(async (tx) => {
+      for (const item of value.items)
+        await tx.items.put({ item, importId: '', metadataImportId: '' });
+    });
+    await writer.startRun({
+      runId: record.runId,
+      accountKey: record.accountKey,
+      planHash: 'a'.repeat(64),
+      startedAt: at,
+    });
+    for (const [index, item] of [firstItem, second].entries()) {
+      const attemptId = `generated-list-${index}`;
+      await writer.sending({
+        runId: record.runId,
+        itemId: item.id,
+        attemptId,
+        at,
+      });
+      await writer.confirm({
+        ...record,
+        itemId: item.id,
+        attemptId,
+        confirmedBy: 'list',
+        comment: { id: null, createdAt: null, expandClicks: 10 },
+      });
+    }
+    const saved = await store.read((tx) => records(tx.instagramContext));
+    expect(saved).toHaveLength(2);
+    expect(
+      saved.every(
+        (record) => record.confirmedBy === 'list' && record.comment.id === null,
+      ),
+    ).toBe(true);
+  } finally {
+    await store.close();
+  }
+});
 async function fixture(): Promise<WorkspaceV2> {
   const expected = JSON.parse(
     await readFile(
@@ -81,16 +406,27 @@ test('confirmed memory record agrees with independent fixture and survives both 
 // These documents pin the shipped version, not the moving writer version.
 test('literal schema 5 remains readable through validateWorkspace after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
-  expect(validateWorkspace(value)).toEqual(value);
+  const expected = structuredClone(value);
+  Object.assign(expected, { schemaVersion: 6 });
+  for (const record of value.instagramContext!)
+    Reflect.deleteProperty(record, 'confirmedBy');
+  expect(validateWorkspace(value)).toEqual(expected);
 });
 
 test('literal schema 5 remains readable through readBackup after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
-  expect(await readBackup(chunks(value))).toEqual(value);
+  const expected = structuredClone(value);
+  Object.assign(expected, { schemaVersion: 6 });
+  for (const record of value.instagramContext!)
+    Reflect.deleteProperty(record, 'confirmedBy');
+  expect(await readBackup(chunks(value))).toEqual(expected);
 });
 
 test('literal schema 5 remains readable through streaming restoreBackup after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
+  const expected = structuredClone(value.instagramContext);
+  for (const record of value.instagramContext!)
+    Reflect.deleteProperty(record, 'confirmedBy');
   for (const document of [
     value,
     Object.fromEntries(Object.entries(value).reverse()),
@@ -99,7 +435,7 @@ test('literal schema 5 remains readable through streaming restoreBackup after th
     try {
       await restoreBackup(target, chunks(document), { batchSize: 1 });
       expect((await target.read(readWorkspace)).instagramContext).toEqual(
-        value.instagramContext,
+        expected,
       );
     } finally {
       await target.close();
@@ -407,7 +743,7 @@ test('confirm refuses invalid records transactionally and repeated sends, and se
   }
 });
 
-test('version four restores as five without contexts; six refuses explicitly; empty context output is omitted', async () => {
+test('version four restores as six without contexts; seven refuses explicitly; empty context output is omitted', async () => {
   const old = {
     ...createWorkspace(),
     schemaVersion: 4 as const,
@@ -418,7 +754,7 @@ test('version four restores as five without contexts; six refuses explicitly; em
   const store = createMemoryStore();
   try {
     await restoreBackup(store, chunks(old));
-    expect((await store.read(readWorkspace)).schemaVersion).toBe(5);
+    expect((await store.read(readWorkspace)).schemaVersion).toBe(6);
     const text: Uint8Array[] = [];
     for await (const chunk of createBackup(store).chunks) text.push(chunk);
     const backup = JSON.parse(
@@ -426,13 +762,13 @@ test('version four restores as five without contexts; six refuses explicitly; em
     ) as Record<string, unknown>;
     expect(backup).not.toHaveProperty('instagramContext');
     expect(backup.counts).not.toHaveProperty('instagramContext');
-    const six = { ...old, schemaVersion: 6 };
-    await expect(readBackup(chunks(six))).rejects.toMatchObject({
+    const seven = { ...old, schemaVersion: 7 };
+    await expect(readBackup(chunks(seven))).rejects.toMatchObject({
       code: 'BACKUP_SCHEMA_UNSUPPORTED',
     });
     const target = createMemoryStore();
     try {
-      await expect(restoreBackup(target, chunks(six))).rejects.toMatchObject({
+      await expect(restoreBackup(target, chunks(seven))).rejects.toMatchObject({
         code: 'BACKUP_SCHEMA_UNSUPPORTED',
       });
     } finally {

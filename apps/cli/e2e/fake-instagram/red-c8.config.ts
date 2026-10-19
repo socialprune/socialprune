@@ -15,6 +15,67 @@ const cases: Record<
     include?: string[];
   }
 > = {
+  'c10-v5-reader': {
+    file: '/model/index.ts',
+    before: 'WORKSPACE_SCHEMA_VERSION = 6;',
+    after: 'WORKSPACE_SCHEMA_VERSION = 5;',
+    tests: 'C10 version-six headers',
+    include: ['packages/core/src/workspace/instagram-context.test.ts'],
+  },
+  'c10-no-settled': {
+    file: '/instagram/driver.ts',
+    before: 'await settledPost(page, deps, guard)',
+    after: 'await readPost(page, deps.origin)',
+    matches: 2,
+    tests: 'C10 settled read',
+  },
+  'c10-no-list': {
+    file: '/instagram/run.ts',
+    before: 'list.candidates.length === 1 &&',
+    after: 'false &&',
+    tests: 'C10 IG-8 scroll-late',
+  },
+  'c10-prefix-list': {
+    file: '/instagram/run.ts',
+    before: 'normalize(list.candidates[0]!.text) === normalize(row.item.text)',
+    after:
+      "normalize(row.item.text).startsWith(normalize(list.candidates[0]!.text).replace(/\\.\\.\\.$/u, ''))",
+    tests: 'C10 IG-8 list-cut',
+  },
+  'c10-two-list': {
+    file: '/instagram/run.ts',
+    before: 'list.candidates.length === 1 &&',
+    after: 'list.candidates.length >= 1 &&',
+    tests: 'C10 IG-8 two-rows',
+  },
+  'c10-time-list': {
+    file: '/instagram/run.ts',
+    before: "read.result.code === 'not-shown' &&",
+    after: "['not-shown','time'].includes(read.result.code) &&",
+    tests: 'C10 IG-8 time ',
+  },
+  'c10-sqlite-migration': {
+    file: '/workspace/sqlite-store.ts',
+    before:
+      "UPDATE instagram_context SET data=json_set(data,'$.confirmedBy','post');",
+    after: '',
+    tests: 'C10 layout 5 to 6',
+    include: ['apps/cli/src/workspace/browser-migration.test.ts'],
+  },
+  'c10-null-duplicate': {
+    file: '/workspace/instagram-context-writer.ts',
+    before:
+      '          record.comment.id !== null &&\n          other.comment.id === record.comment.id',
+    after: 'other.comment.id === record.comment.id',
+    tests: 'C10 writer stores two list',
+    include: ['packages/core/src/workspace/instagram-context.test.ts'],
+  },
+  'c10-list-caption': {
+    file: '/instagram/canary.ts',
+    before: 'if (Object.values(check.fields).some((field) => !field.agrees))',
+    after: 'if (false)',
+    tests: 'C10 IG-8 list confirmation still refuses different-caption',
+  },
   limit: {
     file: '/instagram/driver.ts',
     before: 'expandClicks < 10',

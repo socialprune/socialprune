@@ -13,6 +13,7 @@ import {
   BrowserRunSchema,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  migrateInstagramContext,
   validateInstagramContexts,
   WORKSPACE_SCHEMA_VERSION,
 } from '../model/index.ts';
@@ -149,6 +150,7 @@ export async function restoreBackup(
     highSeq = 0;
   let version: number | undefined;
   let provisionalVersion: number | undefined;
+  let implicitInstagramConfirmation = false;
   let buffers: BufferedRecord[] = [];
   let pendingLegacyEvents = 0;
 
@@ -349,7 +351,11 @@ export async function restoreBackup(
     } else if (name === 'instagramContext') {
       if (version === undefined || version < 5)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
-      const value = InstagramContextSchema.parse(record.value);
+      if (version === 5) implicitInstagramConfirmation = true;
+      const value =
+        version === 5
+          ? migrateInstagramContext(record.value)
+          : InstagramContextSchema.parse(record.value);
       acceptUnique(name, value.itemId);
       instagramContext.push(value);
       rawCounts.instagramContext = (rawCounts.instagramContext ?? 0) + 1;
@@ -480,7 +486,9 @@ export async function restoreBackup(
         const value = part.value as Record<string, unknown>;
         const inferred =
           part.name === 'instagramContext'
-            ? 5
+            ? Object.hasOwn(value, 'confirmedBy')
+              ? 6
+              : 5
             : part.name === 'originals' && Object.hasOwn(value, 'anonymous')
               ? 4
               : part.name === 'browserRuns' || part.name === 'browserAttempts'
@@ -519,6 +527,8 @@ export async function restoreBackup(
       version < 1 ||
       version > WORKSPACE_SCHEMA_VERSION
     )
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version >= 6 && implicitInstagramConfirmation)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (
       provisionalVersion !== undefined &&
@@ -778,8 +788,7 @@ export async function restoreBackup(
         }
       });
     }
-    if (meta.schemaVersion >= 4)
-      meta = { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION };
+    meta = { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION };
     await store.write(async (tx) => {
       throwIfAborted(options.signal);
       await tx.meta.set(meta);

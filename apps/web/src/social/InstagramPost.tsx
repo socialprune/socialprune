@@ -109,7 +109,14 @@ export function InstagramPost({
             />
           ))}
       </div>
-      <p className={styles.note}>{t('instagramContext.found', { date })}</p>
+      <p className={styles.note}>
+        {t(
+          record.confirmedBy === 'list'
+            ? 'instagramContext.foundInList'
+            : 'instagramContext.found',
+          { date },
+        )}
+      </p>
     </section>
   );
 }

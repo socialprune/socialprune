@@ -13,7 +13,10 @@ import { reviewAssetDirectory } from '../static.ts';
 
 // A test-only process owns import, the real HTTP/database worker, and cleanup.
 // No normal-runtime environment flag can select this entrypoint.
-const paths = process.argv.slice(2);
+const args = process.argv.slice(2);
+const portArgument = args.find((value) => value.startsWith('--test-port='));
+const port = Number(portArgument?.slice('--test-port='.length) ?? 4234);
+const paths = args.filter((value) => value !== portArgument);
 const directory = await mkdtemp(join(tmpdir(), 'socialprune-review-browser-'));
 const workspace = join(directory, 'workspace');
 const controller = new AbortController();
@@ -75,7 +78,7 @@ try {
     workspace,
     assetDirectory: reviewAssetDirectory(),
     signal: controller.signal,
-    port: 4234,
+    port,
   });
   await ipc.send({ type: 'opened', url: server.launchUrl });
   try {

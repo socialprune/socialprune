@@ -3,6 +3,7 @@ import type { CliErrorCode } from '../../cli/errors.ts';
 import { z } from 'zod';
 
 export const ContextStepReportSchema = z.looseObject({
+  confirmedBy: z.enum(['post', 'list']).optional(),
   ownerLinksOneAccount: z.boolean().optional(),
   ownerEqualsExport: z.boolean().optional(),
   firstProfileNamesOwner: z.boolean().optional(),

@@ -44,6 +44,8 @@ base(
             import.meta.url,
           ),
         ),
+        // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+        process.env['SP_REVIEW_E2E_PORT'] ?? '4234',
       ],
       { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
     );
@@ -210,6 +212,8 @@ async function reviewProcess() {
       fileURLToPath(
         new URL('../src/review/test/browser-entry.ts', import.meta.url),
       ),
+      // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+      `--test-port=${process.env['SP_REVIEW_E2E_PORT'] ?? '4234'}`,
       ...manifest.exports.map((entry) =>
         fileURLToPath(new URL(entry.directory, demo)),
       ),

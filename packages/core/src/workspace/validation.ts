@@ -3,6 +3,7 @@ import {
   migrateOriginal,
   validateOriginal,
   validateInstagramContexts,
+  migrateInstagramContext,
 } from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
@@ -49,7 +50,7 @@ export function workspaceCounts(
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
-  const candidate =
+  let candidate =
     input &&
     typeof input === 'object' &&
     'schemaVersion' in input &&
@@ -59,6 +60,26 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     Array.isArray(input.originals)
       ? { ...input, originals: input.originals.map(migrateOriginal) }
       : input;
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    'schemaVersion' in candidate &&
+    candidate.schemaVersion === 5 &&
+    'instagramContext' in candidate &&
+    Array.isArray(candidate.instagramContext)
+  ) {
+    try {
+      candidate = {
+        ...candidate,
+        schemaVersion: 6,
+        instagramContext: candidate.instagramContext.map(
+          migrateInstagramContext,
+        ),
+      };
+    } catch {
+      throw new WorkspaceError('INVALID_WORKSPACE');
+    }
+  }
   const parsed = WorkspaceV2Schema.safeParse(candidate);
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;

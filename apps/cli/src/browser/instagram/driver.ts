@@ -221,17 +221,23 @@ export async function openCandidate(
 ): Promise<boolean> {
   const navigationStart = performance.now();
   await clickAllowed(page, { kind: 'row', index }, guard);
-  await waitPage(
-    page,
-    async () =>
-      (await postElement(page, deps.origin)) !== null ||
-      (await page
-        .getByText("Sorry, this page isn't available.", { exact: true })
-        .count()) > 0,
-    deps.responseMs,
-    'post-timeout',
-    guard,
-  );
+  try {
+    await waitPage(
+      page,
+      async () =>
+        (await postElement(page, deps.origin)) !== null ||
+        (await page
+          .getByText("Sorry, this page isn't available.", { exact: true })
+          .count()) > 0,
+      deps.responseMs,
+      'post-timeout',
+      guard,
+    );
+  } catch (error) {
+    if (error instanceof ContextStop && error.token === 'post-timeout')
+      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+    throw error;
+  }
   deps.navigated?.('post', performance.now() - navigationStart);
   return (
     (await page
@@ -252,11 +258,12 @@ export async function confirmOnPost(
   expansionScrolls: number;
   source: string | null;
 }> {
-  let post = await readPost(page, deps.origin),
+  let post = await settledPost(page, deps, guard),
     result = confirmComment(post, item, handle),
     expandClicks = 0,
     expansionScrolls = 0,
     emptyScrolls = 0;
+  const { kind, code } = post;
   const blockCount = () =>
     post.element
       .locator(
@@ -296,7 +303,9 @@ export async function confirmOnPost(
       await checkPage(page);
     }
     expandClicks++;
-    post = await readPost(page, deps.origin);
+    post = await settledPost(page, deps, guard);
+    if (post.kind !== kind || post.code !== code)
+      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
     result = confirmComment(post, item, handle);
     if (!name) {
       emptyScrolls = (await blockCount()) > previous ? 0 : emptyScrolls + 1;
@@ -308,7 +317,46 @@ export async function confirmOnPost(
     result,
     expandClicks,
     expansionScrolls,
-    source:
-      result.state === 'confirmed' ? await currentImageSource(page) : null,
+    source: await currentImageSource(page),
   };
+}
+
+/** A rendered own link can disappear while Instagram replaces the post. */
+export async function settledPost(
+  page: Page,
+  deps: Pick<ContextDependencies, 'origin' | 'responseMs'>,
+  guard: () => void,
+): Promise<PostProjection> {
+  const deadline = performance.now() + deps.responseMs;
+  let foundAt: number | undefined;
+  for (;;) {
+    guard();
+    await checkPage(page);
+    try {
+      if ((await postElement(page, deps.origin)) !== null) {
+        const now = performance.now();
+        if (foundAt !== undefined && now - foundAt >= 500)
+          return await readPost(page, deps.origin);
+        foundAt ??= now;
+      } else foundAt = undefined;
+    } catch (error) {
+      if (
+        !(error instanceof ContextStop && error.token === 'post-structure') &&
+        !(error instanceof Error && error.name === 'TimeoutError')
+      )
+        throw error;
+      foundAt = undefined;
+    }
+    const remaining = deadline - performance.now();
+    if (remaining <= 0)
+      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+    await sleep(
+      Math.min(
+        foundAt === undefined
+          ? 500
+          : Math.max(1, 500 - (performance.now() - foundAt)),
+        remaining,
+      ),
+    );
+  }
 }

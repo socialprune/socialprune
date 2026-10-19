@@ -36,7 +36,7 @@ export function listPage(
     (
       candidates.get(index) ?? [{ code: `${IG_FIXTURE.code}${index || ''}` }]
     ).map(({ code }) => ({
-      text: item.text,
+      text: variant === 'list-cut' ? item.text.slice(0, 40) + '...' : item.text,
       at: item.createdAt,
       code,
       username:
@@ -105,6 +105,7 @@ export function postPage(
   index: number,
   variant: Variant,
   code = `${IG_FIXTURE.code}${index || ''}`,
+  hideComment = false,
 ): string {
   if (variant === 'unavailable')
     return doc("<p>Sorry, this page isn't available.</p>", '');
@@ -280,7 +281,8 @@ export function postPage(
     permalink(commentId, time),
     permalink(commentId, time) + permalink('282828282828282828', time),
   );
-  const scrolling = variant.startsWith('scroll-');
+  const scrolling =
+    variant.startsWith('scroll-') || variant.startsWith('expansion-');
   const filler = (ordinal: number) =>
     commentRow(
       commentBlock(
@@ -294,7 +296,7 @@ export function postPage(
   const commentRows = scrolling
     ? Array.from({ length: 10 }, (_, ordinal) => filler(ordinal)).join('')
     : commentRow(other, IG_FIXTURE.other.username) +
-      (['hidden', 'not-shown'].includes(variant)
+      (hideComment || ['hidden', 'not-shown', 'list-cut'].includes(variant)
         ? ''
         : commentRow(
             variant === 'multi-permalink' ? duplicate : comment,
@@ -304,10 +306,14 @@ export function postPage(
         ? commentRow(comment.replace(commentId, '282828282828282828'), username)
         : '');
   const body = `<main><section><div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>${mediaDecoy}${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:${variant === 'scroll-no-column' ? 'visible' : 'auto'};max-height:240px"><div><div><div><div><div id="comment-rows">${commentRows}</div></div></div></div></div></div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
+  const unsettled = `const own=document.querySelector('main>section:last-child>a');const parent=own.parentElement;mutate(()=>own.remove());${['own-link-flicker', 'expansion-link-flicker'].includes(variant) ? `setTimeout(()=>mutate(()=>parent.prepend(own)),700);` : ''}`;
   const script =
     instrumentation +
     `let expansions=0;const comment=${json(commentRow(comment, username))};function expand(event){mutate(()=>{expansions++;event.currentTarget.remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('main>section:last-child').prepend(button)}else document.getElementById('comment-rows').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
-${scrolling ? `let scrollLoads=0;const scrollFillers=${json(Array.from({ length: 12 }, (_, ordinal) => filler(100 + ordinal)))};document.getElementById('comments').addEventListener('wheel',e=>{if(e.deltaX!==0||e.deltaY!==700)return;scrollLoads++;mutate(()=>{const rows=document.getElementById('comment-rows');if(${json(variant)}==='scroll-first'&&scrollLoads===${IG_FIXTURE.scroll.first}||${json(variant)}==='scroll-late'&&scrollLoads===${IG_FIXTURE.scroll.beyondLimit})rows.insertAdjacentHTML('beforeend',comment);else if(['scroll-late','scroll-ten'].includes(${json(variant)}))rows.insertAdjacentHTML('beforeend',scrollFillers[scrollLoads-1]||'')})},{passive:true});` : ''}
+${variant.startsWith('own-link-') ? `setTimeout(()=>{${unsettled}},150);` : ''}
+${variant.startsWith('expansion-link-') ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.unsettled)return;window.unsettled=true;${unsettled}},{passive:true});` : ''}
+${['expansion-post-switch', 'expansion-kind-switch'].includes(variant) ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.switched)return;window.switched=true;const before=${json(`/${kind}/${code}`)},after=${json(variant === 'expansion-kind-switch' ? `/reel/${code}` : `/${kind}/${IG_FIXTURE.other.code}`)};mutate(()=>{for(const link of document.querySelectorAll('main a[href]'))link.setAttribute('href',link.getAttribute('href').replace(before,after));history.replaceState(null,'',after)})},{passive:true});` : ''}
+${scrolling ? `let scrollLoads=0;const scrollFillers=${json(Array.from({ length: 12 }, (_, ordinal) => filler(100 + ordinal)))};document.getElementById('comments').addEventListener('wheel',e=>{if(e.deltaX!==0||e.deltaY!==700)return;scrollLoads++;mutate(()=>{const rows=document.getElementById('comment-rows');if((${json(variant)}==='scroll-first'||${json(variant)}==='expansion-link-flicker'||${json(variant)}==='expansion-link-vanishes')&&scrollLoads===${IG_FIXTURE.scroll.first}||${json(variant)}==='scroll-late'&&scrollLoads===${IG_FIXTURE.scroll.beyondLimit})rows.insertAdjacentHTML('beforeend',comment);else if(['scroll-late','scroll-ten'].includes(${json(variant)}))rows.insertAdjacentHTML('beforeend',scrollFillers[scrollLoads-1]||'')})},{passive:true});` : ''}
 ${variant === 'no-json' ? '' : `fetch('/data/${code}.json').then(r=>r.json()).catch(()=>{});`}
 ${variant === 'two-answers' ? `fetch('/data/${code}.json?different=1').then(r=>r.json()).catch(()=>{});` : ''}
 `;

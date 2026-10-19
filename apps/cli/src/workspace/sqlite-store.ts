@@ -16,6 +16,7 @@ import {
   BrowserRunSchema,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  migrateInstagramContext,
   WORKSPACE_SCHEMA_VERSION,
 } from '@socialprune/core';
 import type {
@@ -53,7 +54,7 @@ import {
 import { journalExists } from './browser-journal.ts';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 5;
+export const SQLITE_LAYOUT_VERSION = 6;
 
 const contextLayout = `
 CREATE TABLE instagram_context (
@@ -209,6 +210,7 @@ export class SQLiteStore implements WorkspaceStore {
   private pinned = false;
   private exclusive = false;
   private hasOriginals = true;
+  private legacyContext = false;
 
   private constructor(db: DatabaseSync, path: string, readOnly: boolean) {
     this.db = db;
@@ -245,6 +247,7 @@ export class SQLiteStore implements WorkspaceStore {
       )
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
       const store = new SQLiteStore(db, path, Boolean(options.readOnly));
+      store.legacyContext = Number(version) === 5 && Boolean(options.readOnly);
       if (version === 0) {
         if (options.readOnly || !options.initial)
           throw new CliError('WORKSPACE_INVALID');
@@ -312,6 +315,15 @@ export class SQLiteStore implements WorkspaceStore {
             if (Number(version) < 5) {
               db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
               db.exec(BROWSER_JOURNAL_LAYOUT);
+            }
+            if (Number(version) < 6) {
+              db.exec(`
+                DROP TRIGGER instagram_context_no_update;
+                DROP TRIGGER instagram_context_no_delete;
+                UPDATE instagram_context SET data=json_set(data,'$.confirmedBy','post');
+                CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+                CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+              `);
             }
             const meta = JSON.parse(
               String(db.prepare('SELECT data FROM meta').get()!.data),
@@ -583,7 +595,7 @@ export class SQLiteStore implements WorkspaceStore {
     });
     const tx: WriteTransaction = {
       meta: {
-        get() {
+        get: () => {
           const value = get<unknown>('SELECT data FROM meta WHERE singleton=1');
           if (
             value &&
@@ -595,7 +607,11 @@ export class SQLiteStore implements WorkspaceStore {
             throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
           const result = WorkspaceMetaSchema.safeParse(value);
           if (!result.success) throw new CliError('WORKSPACE_INVALID');
-          return Promise.resolve(result.data);
+          return Promise.resolve(
+            this.legacyContext
+              ? { ...result.data, schemaVersion: WORKSPACE_SCHEMA_VERSION }
+              : result.data,
+          );
         },
         set(value) {
           guard(true);
@@ -725,21 +741,34 @@ export class SQLiteStore implements WorkspaceStore {
         },
       },
       instagramContext: {
-        get: (id) =>
-          Promise.resolve(
-            hasContext
-              ? get<InstagramContext>(
-                  'SELECT data FROM instagram_context WHERE item_id=?',
-                  id,
-                )
-              : undefined,
-          ),
-        iterate: hasContext
-          ? iterate<InstagramContext>('instagram_context')
-          : async function* () {
-              await Promise.resolve();
-              guard();
-            },
+        get: (id) => {
+          const value = hasContext
+            ? get<unknown>(
+                'SELECT data FROM instagram_context WHERE item_id=?',
+                id,
+              )
+            : undefined;
+          return Promise.resolve(
+            value === undefined
+              ? undefined
+              : this.legacyContext
+                ? migrateInstagramContext(value)
+                : InstagramContextSchema.parse(value),
+          );
+        },
+        iterate: (options) => {
+          const legacy = this.legacyContext;
+          return (async function* () {
+            guard();
+            if (!hasContext) return;
+            for await (const value of iterate<unknown>('instagram_context')(
+              options,
+            ))
+              yield legacy
+                ? migrateInstagramContext(value)
+                : InstagramContextSchema.parse(value);
+          })();
+        },
         add: (value) =>
           table<InstagramContext>(
             'instagram_context',

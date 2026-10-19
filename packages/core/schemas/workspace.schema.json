@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "format": { "type": "string", "const": "socialprune-workspace" },
-    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 5 },
+    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 6 },
     "id": { "type": "string", "minLength": 1 },
     "kind": { "type": "string", "enum": ["personal", "demo"] },
     "createdAt": {
@@ -1397,150 +1397,322 @@
     "instagramContext": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "itemId": {
-            "type": "string",
-            "maxLength": 512,
-            "pattern": "^instagram:[^\\s:]+$"
-          },
-          "accountKey": {
-            "type": "string",
-            "maxLength": 512,
-            "pattern": "^instagram:[^\\s:]+$"
-          },
-          "post": {
+        "oneOf": [
+          {
             "type": "object",
             "properties": {
-              "kind": { "type": "string", "enum": ["p", "reel"] },
-              "code": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-              "owner": {
+              "itemId": {
                 "type": "string",
-                "minLength": 1,
                 "maxLength": 512,
-                "pattern": "^[^@\\s/]+$"
+                "pattern": "^instagram:[^\\s:]+$"
               },
-              "ownerCount": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991
+              "accountKey": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^instagram:[^\\s:]+$"
               },
-              "createdAt": {
-                "anyOf": [
-                  {
+              "post": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["p", "reel"] },
+                  "code": {
                     "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
                   },
-                  { "type": "null" }
-                ]
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "pattern": "^[^@\\s/]+$"
+                  },
+                  "ownerCount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "caption": {
+                    "anyOf": [
+                      { "type": "string", "maxLength": 10000 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "captionComplete": { "type": "boolean" }
+                },
+                "required": [
+                  "kind",
+                  "code",
+                  "owner",
+                  "ownerCount",
+                  "createdAt",
+                  "caption",
+                  "captionComplete"
+                ],
+                "additionalProperties": false
               },
-              "caption": {
-                "anyOf": [
-                  { "type": "string", "maxLength": 10000 },
-                  { "type": "null" }
-                ]
+              "image": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["image.jpg", "image.png", "image.webp"]
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "host": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 253,
+                        "pattern": "^[A-Za-z0-9.-]+$"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["stored", "not-captured", "not-image", "too-large"]
+                  }
+                },
+                "required": ["file", "host", "status"],
+                "additionalProperties": false
               },
-              "captionComplete": { "type": "boolean" }
-            },
-            "required": [
-              "kind",
-              "code",
-              "owner",
-              "ownerCount",
-              "createdAt",
-              "caption",
-              "captionComplete"
-            ],
-            "additionalProperties": false
-          },
-          "comment": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string", "pattern": "^[0-9]{1,40}$" },
-              "createdAt": {
+              "screenshot": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "anyOf": [
+                      { "type": "string", "const": "shot.jpg" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "bytes": {
+                    "anyOf": [
+                      { "type": "integer", "minimum": 1, "maximum": 400000 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["stored", "too-large", "failed"]
+                  }
+                },
+                "required": ["file", "bytes", "status"],
+                "additionalProperties": false
+              },
+              "confirmedAt": {
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
               },
-              "expandClicks": { "type": "integer", "minimum": 0, "maximum": 10 }
-            },
-            "required": ["id", "createdAt", "expandClicks"],
-            "additionalProperties": false
-          },
-          "image": {
-            "type": "object",
-            "properties": {
-              "file": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "enum": ["image.jpg", "image.png", "image.webp"]
-                  },
-                  { "type": "null" }
-                ]
-              },
-              "host": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "maxLength": 253,
-                    "pattern": "^[A-Za-z0-9.-]+$"
-                  },
-                  { "type": "null" }
-                ]
-              },
-              "status": {
+              "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "attemptId": {
                 "type": "string",
-                "enum": ["stored", "not-captured", "not-image", "too-large"]
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "confirmedBy": { "type": "string", "const": "post" },
+              "comment": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "pattern": "^[0-9]{1,40}$" },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "expandClicks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10
+                  }
+                },
+                "required": ["id", "createdAt", "expandClicks"],
+                "additionalProperties": false
               }
             },
-            "required": ["file", "host", "status"],
+            "required": [
+              "itemId",
+              "accountKey",
+              "post",
+              "image",
+              "screenshot",
+              "confirmedAt",
+              "runId",
+              "attemptId",
+              "confirmedBy",
+              "comment"
+            ],
             "additionalProperties": false
           },
-          "screenshot": {
+          {
             "type": "object",
             "properties": {
-              "file": {
-                "anyOf": [
-                  { "type": "string", "const": "shot.jpg" },
-                  { "type": "null" }
-                ]
-              },
-              "bytes": {
-                "anyOf": [
-                  { "type": "integer", "minimum": 1, "maximum": 400000 },
-                  { "type": "null" }
-                ]
-              },
-              "status": {
+              "itemId": {
                 "type": "string",
-                "enum": ["stored", "too-large", "failed"]
+                "maxLength": 512,
+                "pattern": "^instagram:[^\\s:]+$"
+              },
+              "accountKey": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^instagram:[^\\s:]+$"
+              },
+              "post": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["p", "reel"] },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "pattern": "^[^@\\s/]+$"
+                  },
+                  "ownerCount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "caption": {
+                    "anyOf": [
+                      { "type": "string", "maxLength": 10000 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "captionComplete": { "type": "boolean" }
+                },
+                "required": [
+                  "kind",
+                  "code",
+                  "owner",
+                  "ownerCount",
+                  "createdAt",
+                  "caption",
+                  "captionComplete"
+                ],
+                "additionalProperties": false
+              },
+              "image": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["image.jpg", "image.png", "image.webp"]
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "host": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 253,
+                        "pattern": "^[A-Za-z0-9.-]+$"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["stored", "not-captured", "not-image", "too-large"]
+                  }
+                },
+                "required": ["file", "host", "status"],
+                "additionalProperties": false
+              },
+              "screenshot": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "anyOf": [
+                      { "type": "string", "const": "shot.jpg" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "bytes": {
+                    "anyOf": [
+                      { "type": "integer", "minimum": 1, "maximum": 400000 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["stored", "too-large", "failed"]
+                  }
+                },
+                "required": ["file", "bytes", "status"],
+                "additionalProperties": false
+              },
+              "confirmedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "attemptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "confirmedBy": { "type": "string", "const": "list" },
+              "comment": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "null" },
+                  "createdAt": { "type": "null" },
+                  "expandClicks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10
+                  }
+                },
+                "required": ["id", "createdAt", "expandClicks"],
+                "additionalProperties": false
               }
             },
-            "required": ["file", "bytes", "status"],
+            "required": [
+              "itemId",
+              "accountKey",
+              "post",
+              "image",
+              "screenshot",
+              "confirmedAt",
+              "runId",
+              "attemptId",
+              "confirmedBy",
+              "comment"
+            ],
             "additionalProperties": false
-          },
-          "confirmedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          },
-          "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
-          "attemptId": { "type": "string", "minLength": 1, "maxLength": 512 }
-        },
-        "required": [
-          "itemId",
-          "accountKey",
-          "post",
-          "comment",
-          "image",
-          "screenshot",
-          "confirmedAt",
-          "runId",
-          "attemptId"
-        ],
-        "additionalProperties": false
+          }
+        ]
       }
     }
   },

@@ -10,49 +10,63 @@ export const InstagramItemIdSchema = z
 export const InstagramPostCodeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/);
-export const InstagramContextSchema = z
-  .strictObject({
-    itemId: InstagramItemIdSchema,
-    accountKey: z
+const ContextFieldsSchema = z.strictObject({
+  itemId: InstagramItemIdSchema,
+  accountKey: z
+    .string()
+    .regex(/^instagram:[^\s:]+$/)
+    .max(512),
+  post: z.strictObject({
+    kind: z.enum(['p', 'reel']),
+    code: InstagramPostCodeSchema,
+    owner: z
       .string()
-      .regex(/^instagram:[^\s:]+$/)
-      .max(512),
-    post: z.strictObject({
-      kind: z.enum(['p', 'reel']),
-      code: InstagramPostCodeSchema,
-      owner: z
-        .string()
-        .min(1)
-        .max(512)
-        .regex(/^[^@\s/]+$/),
-      ownerCount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-      createdAt: UtcTimestampSchema.nullable(),
-      caption: z.string().max(10_000).nullable(),
-      captionComplete: z.boolean(),
+      .min(1)
+      .max(512)
+      .regex(/^[^@\s/]+$/),
+    ownerCount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    createdAt: UtcTimestampSchema.nullable(),
+    caption: z.string().max(10_000).nullable(),
+    captionComplete: z.boolean(),
+  }),
+  image: z.strictObject({
+    file: z.enum(['image.jpg', 'image.png', 'image.webp']).nullable(),
+    host: z
+      .string()
+      .max(253)
+      .regex(/^[A-Za-z0-9.-]+$/)
+      .nullable(),
+    status: z.enum(['stored', 'not-captured', 'not-image', 'too-large']),
+  }),
+  screenshot: z.strictObject({
+    file: z.literal('shot.jpg').nullable(),
+    bytes: z.number().int().min(1).max(400_000).nullable(),
+    status: z.enum(['stored', 'too-large', 'failed']),
+  }),
+  confirmedAt: UtcTimestampSchema,
+  runId: z.string().min(1).max(512),
+  attemptId: z.string().min(1).max(512),
+});
+const PostCommentSchema = z.strictObject({
+  id: z.string().regex(/^[0-9]{1,40}$/),
+  createdAt: UtcTimestampSchema,
+  expandClicks: z.number().int().min(0).max(10),
+});
+export const InstagramContextSchema = z
+  .discriminatedUnion('confirmedBy', [
+    ContextFieldsSchema.extend({
+      confirmedBy: z.literal('post'),
+      comment: PostCommentSchema,
     }),
-    comment: z.strictObject({
-      id: z.string().regex(/^[0-9]{1,40}$/),
-      createdAt: UtcTimestampSchema,
-      expandClicks: z.number().int().min(0).max(10),
+    ContextFieldsSchema.extend({
+      confirmedBy: z.literal('list'),
+      comment: z.strictObject({
+        id: z.null(),
+        createdAt: z.null(),
+        expandClicks: z.number().int().min(0).max(10),
+      }),
     }),
-    image: z.strictObject({
-      file: z.enum(['image.jpg', 'image.png', 'image.webp']).nullable(),
-      host: z
-        .string()
-        .max(253)
-        .regex(/^[A-Za-z0-9.-]+$/)
-        .nullable(),
-      status: z.enum(['stored', 'not-captured', 'not-image', 'too-large']),
-    }),
-    screenshot: z.strictObject({
-      file: z.literal('shot.jpg').nullable(),
-      bytes: z.number().int().min(1).max(400_000).nullable(),
-      status: z.enum(['stored', 'too-large', 'failed']),
-    }),
-    confirmedAt: UtcTimestampSchema,
-    runId: z.string().min(1).max(512),
-    attemptId: z.string().min(1).max(512),
-  })
+  ])
   .superRefine((value, ctx) => {
     if (
       (value.image.status === 'stored') !== (value.image.file !== null) ||
@@ -67,6 +81,17 @@ export const InstagramContextSchema = z
       });
   });
 export type InstagramContext = z.infer<typeof InstagramContextSchema>;
+
+/** Only version-5 readers/migrations may supply the formerly implicit kind. */
+export const LegacyInstagramContextSchema = ContextFieldsSchema.extend({
+  comment: PostCommentSchema,
+});
+export function migrateInstagramContext(input: unknown): InstagramContext {
+  return InstagramContextSchema.parse({
+    ...LegacyInstagramContextSchema.parse(input),
+    confirmedBy: 'post',
+  });
+}
 
 export function validateInstagramContextItem(
   record: InstagramContext,
@@ -83,9 +108,11 @@ export function validateInstagramContextItem(
     !item.reference.ownerHandle ||
     !owner(item.reference.ownerHandle) ||
     owner(item.reference.ownerHandle) !== owner(record.post.owner) ||
-    Math.abs(
-      Date.parse(item.createdAt) - Date.parse(record.comment.createdAt),
-    ) > 60_000
+    (record.confirmedBy === 'post' &&
+      record.comment.createdAt !== null &&
+      Math.abs(
+        Date.parse(item.createdAt) - Date.parse(record.comment.createdAt),
+      ) > 60_000)
   )
     throw new Error('INVALID_INSTAGRAM_CONTEXT');
 }
@@ -114,7 +141,7 @@ export function validateInstagramContexts(
     );
     if (
       itemIds.has(record.itemId) ||
-      commentIds.has(record.comment.id) ||
+      (record.comment.id !== null && commentIds.has(record.comment.id)) ||
       run?.platform !== 'instagram' ||
       run.mode !== 'context' ||
       run.accountKey !== record.accountKey ||
@@ -131,7 +158,7 @@ export function validateInstagramContexts(
     )
       throw new Error('INVALID_INSTAGRAM_CONTEXT');
     itemIds.add(record.itemId);
-    commentIds.add(record.comment.id);
+    if (record.comment.id !== null) commentIds.add(record.comment.id);
     confirmed.add(settlements[0]!.attemptId);
   }
   for (const attempt of attempts)

@@ -424,6 +424,7 @@
   "feed.riskLikes": "Risk, likes, date",
   "feed.reposts": "Reposts",
   "instagramContext.found": "SocialPrune found this comment on the post in your signed-in Instagram on {date}. Its text, time and the post's account match your export.",
+  "instagramContext.foundInList": "SocialPrune found this comment in your Instagram comments list on {date}. The list opened this post, and the post's account matches your export. The post itself did not show the comment.",
   "instagramContext.captionCut": "Instagram showed only the beginning of this caption.",
   "instagramContext.showScreenshot": "Show screenshot",
   "instagramContext.open": "Open on Instagram",

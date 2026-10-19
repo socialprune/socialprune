@@ -8,6 +8,184 @@ import {
   writeContextFixture,
 } from '../../cli/src/review/test/context-fixture.ts';
 
+test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites every context without changing other stores', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const workspace = await mkdtemp(join(tmpdir(), 'socialprune-ig8-idb-'));
+  try {
+    const { data } = await writeContextFixture(workspace);
+    const legacy = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
+    legacy.schemaVersion = 5;
+    for (const record of legacy.instagramContext as Record<string, unknown>[])
+      delete record.confirmedBy;
+    await waitForApp(page);
+    expect(
+      await page.evaluate(
+        (text) =>
+          window.workspace.request({
+            type: 'restore',
+            requestId: crypto.randomUUID(),
+            file: new File([text], 'generated-v5.json'),
+          }),
+        JSON.stringify(legacy),
+      ),
+    ).toMatchObject({ type: 'opened' });
+    const before = await page.evaluate(async () => {
+      let text = '';
+      await window.workspace.backup(async (file) => {
+        text = await file.text();
+      });
+      return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
+    });
+    expect(before.schemaVersion).toBe(6);
+    expect(
+      before.instagramContext!.every((record) => record.confirmedBy === 'post'),
+    ).toBe(true);
+    const id = await page.evaluate(async () => {
+      const open = (name: string, version?: number) =>
+        new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open(name, version);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () =>
+            reject(
+              request.error ?? new Error('Generated database open failed.'),
+            );
+        });
+      const read = <T>(request: IDBRequest<T>) =>
+        new Promise<T>((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () =>
+            reject(
+              request.error ?? new Error('Generated database read failed.'),
+            );
+        });
+      const done = (tx: IDBTransaction) =>
+        new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onabort = () =>
+            reject(
+              tx.error ?? new Error('Generated database transaction aborted.'),
+            );
+        });
+      const registry = await open('sp-registry');
+      const active = (await read(
+        registry.transaction('pointers').objectStore('pointers').get('active'),
+      )) as string;
+      window.workspace.dispose();
+      const source = await open('sp-ws-' + active);
+      const stores = await Promise.all(
+        [...source.objectStoreNames].map(async (name) => {
+          const store = source.transaction(name).objectStore(name);
+          const [values, keys] = await Promise.all([
+            read(store.getAll()),
+            read(store.getAllKeys()),
+          ]);
+          return {
+            name,
+            keyPath: store.keyPath,
+            autoIncrement: store.autoIncrement,
+            indexes: [...store.indexNames].map((index) => {
+              const value = store.index(index);
+              return {
+                name: index,
+                keyPath: value.keyPath,
+                unique: value.unique,
+                multiEntry: value.multiEntry,
+              };
+            }),
+            values,
+            keys,
+          };
+        }),
+      );
+      source.close();
+      const id = 'generated-v5-' + crypto.randomUUID();
+      const request = indexedDB.open('sp-ws-' + id, 5);
+      request.onupgradeneeded = () => {
+        for (const definition of stores) {
+          const store = request.result.createObjectStore(definition.name, {
+            keyPath: definition.keyPath,
+            autoIncrement: definition.autoIncrement,
+          });
+          for (const index of definition.indexes)
+            store.createIndex(index.name, index.keyPath, index);
+        }
+      };
+      const old = await new Promise<IDBDatabase>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () =>
+          reject(
+            request.error ??
+              new Error('Generated database fixture open failed.'),
+          );
+      });
+      const tx = old.transaction(
+        stores.map((store) => store.name),
+        'readwrite',
+      );
+      for (const definition of stores)
+        for (const [index, input] of definition.values.entries()) {
+          const value = structuredClone(input) as Record<string, unknown>;
+          if (
+            definition.name === 'meta' &&
+            definition.keys[index] === 'workspace'
+          )
+            value.schemaVersion = 5;
+          if (definition.name === 'instagramContext') delete value.confirmedBy;
+          const store = tx.objectStore(definition.name);
+          if (store.keyPath === null) store.put(value, definition.keys[index]);
+          else store.put(value);
+        }
+      await done(tx);
+      if (old.version !== 5)
+        throw new Error('Generated v5 physical fixture was not created.');
+      old.close();
+      const pointer = registry.transaction(
+        ['workspaces', 'pointers'],
+        'readwrite',
+      );
+      pointer
+        .objectStore('workspaces')
+        .put({ id, kind: 'personal', createdAt: new Date().toISOString() });
+      pointer.objectStore('pointers').put(id, 'active');
+      await done(pointer);
+      registry.close();
+      return id;
+    });
+    await page.reload();
+    await waitForApp(page);
+    const after = await page.evaluate(async (id) => {
+      let text = '';
+      await window.workspace.backup(async (file) => {
+        text = await file.text();
+      });
+      const request = indexedDB.open('sp-ws-' + id);
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () =>
+          reject(
+            request.error ??
+              new Error('Generated database upgraded open failed.'),
+          );
+      });
+      const version = db.version;
+      db.close();
+      return {
+        version,
+        workspace: JSON.parse(text) as import('@socialprune/core').WorkspaceV2,
+      };
+    }, id);
+    expect(after.version).toBe(6);
+    expect(after.workspace.instagramContext).toEqual(before.instagramContext);
+    expect(after.workspace.items).toEqual(before.items);
+    expect(after.workspace.browserRuns).toEqual(before.browserRuns);
+    expect(after.workspace.browserAttempts).toEqual(before.browserAttempts);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('Pages retains backed-up Instagram context but shows only each existing fallback under the real network audit', async ({
   page,
   context,

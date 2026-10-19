@@ -19,7 +19,13 @@ import {
 import type { ProfileSnapshot } from '../profile.ts';
 import { profileWarning, EXTENSION_NOTICE } from '../copy.ts';
 import { CONTEXT_STEPS, contextEnd } from './copy.ts';
-import { planContext, contextSummary, canaryRows, ownerName } from './plan.ts';
+import {
+  planContext,
+  contextSummary,
+  canaryRows,
+  ownerName,
+  normalize,
+} from './plan.ts';
 import type { ContextPlan } from './plan.ts';
 import { validateContextOrder } from './order.ts';
 import type { ContextOrder } from './order.ts';
@@ -144,6 +150,7 @@ export async function runContextWithDependencies(
     runId = crypto.randomUUID();
   const report: {
     steps: unknown[];
+    confirmations: { post: number; list: number };
     stop?: ReturnType<typeof stopDetails>;
     readback?: unknown;
     abortedHosts?: Record<string, number>;
@@ -152,7 +159,12 @@ export async function runContextWithDependencies(
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: { startupClosed: number; unexpectedOpened: number };
     rows: { emptySkipped: number };
-  } = { steps: [], pace: paceSummary(pace), rows: { emptySkipped: 0 } };
+  } = {
+    steps: [],
+    confirmations: { post: 0, list: 0 },
+    pace: paceSummary(pace),
+    rows: { emptySkipped: 0 },
+  };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
   const checkedItemIds: string[] = [];
@@ -597,7 +609,18 @@ export async function runContextWithDependencies(
         stepReport.expansionScrolls = read.expansionScrolls;
         stepReport.ownerCount = read.post.ownerCount;
         await checkpoint();
-        if (read.result.state !== 'confirmed') {
+        const fromList =
+          read.result.state === 'unconfirmed' &&
+          read.result.code === 'not-shown' &&
+          list.candidates.length === 1 &&
+          list.candidates[0]!.username.toLowerCase() ===
+            options.plan.handle.toLowerCase() &&
+          normalize(list.candidates[0]!.text) === normalize(row.item.text) &&
+          read.post.ownerCount === 1 &&
+          read.post.ownerMatchesProfile &&
+          ownerName(read.post.owner) ===
+            ownerName(row.item.reference.ownerHandle ?? '');
+        if (read.result.state !== 'confirmed' && !fromList) {
           lastUnconfirmed = read.result.code;
           stepReport.result = read.result.code;
           if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
@@ -632,6 +655,23 @@ export async function runContextWithDependencies(
         const record: InstagramContext = {
           itemId: row.item.id,
           accountKey: options.plan.accountKey,
+          ...(read.result.state === 'confirmed'
+            ? {
+                confirmedBy: 'post' as const,
+                comment: {
+                  id: read.result.comment.id,
+                  createdAt: read.result.comment.createdAt,
+                  expandClicks: read.expandClicks,
+                },
+              }
+            : {
+                confirmedBy: 'list' as const,
+                comment: {
+                  id: null,
+                  createdAt: null,
+                  expandClicks: read.expandClicks,
+                },
+              }),
           post: {
             kind: read.post.kind,
             code: read.post.code,
@@ -640,11 +680,6 @@ export async function runContextWithDependencies(
             createdAt: read.post.createdAt,
             caption: read.post.caption,
             captionComplete: read.post.captionComplete,
-          },
-          comment: {
-            id: read.result.comment.id,
-            createdAt: read.result.comment.createdAt,
-            expandClicks: read.expandClicks,
           },
           image: captures.image,
           screenshot: captures.screenshot,
@@ -666,6 +701,7 @@ export async function runContextWithDependencies(
         Object.assign(stepReport, {
           confirmed: true,
           result: 'confirmed',
+          confirmedBy: record.confirmedBy,
           fields: check.fields,
           ownerShown: check.ownerShown,
           timeShown: check.timeShown,
@@ -685,6 +721,7 @@ export async function runContextWithDependencies(
         pendingAttempt = undefined;
         settled = true;
         completed++;
+        report.confirmations[record.confirmedBy]++;
         break;
       }
       if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');

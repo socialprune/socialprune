@@ -48,6 +48,7 @@ import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
 import * as networkHelpers from '../src/browser/instagram/network.ts';
 import * as driverHelpers from '../src/browser/instagram/driver.ts';
+import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
 import {
   filterList,
@@ -471,8 +472,8 @@ test.each(['post-no-own-time', 'post-other-code', 'post-two-main'] as const)(
           () => {},
         ),
       ).rejects.toMatchObject({
-        code: 'PLATFORM_CHECK',
-        token: 'post-timeout',
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'post-structure',
       });
       await expect(readPost(h.page, h.fake.origin)).rejects.toMatchObject({
         code: 'INSTAGRAM_SHAPE_CHANGED',
@@ -1097,7 +1098,11 @@ test.each([
   },
 );
 
-async function harness(variant: Variant = 'success', count = 1) {
+async function harness(
+  variant: Variant = 'success',
+  count = 1,
+  responseMs = 1500,
+) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
     profile = join(directory, 'profile');
   const fixture = await instagramFixture(count);
@@ -1167,7 +1172,7 @@ async function harness(variant: Variant = 'success', count = 1) {
       {
         origin: fake.origin,
         port: CONTEXT_PORTS.confirmation,
-        responseMs: 1500,
+        responseMs,
         pace: {
           intervalMs: 30000,
           batch: 20,
@@ -1329,6 +1334,332 @@ async function harness(variant: Variant = 'success', count = 1) {
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each(['expansion-post-switch', 'expansion-kind-switch'] as const)(
+  'C10 revision %s stops when expansion changes post identity under the same owner',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.open();
+      const deps = {
+        ...productionContext,
+        origin: h.fake.origin,
+        responseMs: 5000,
+        sleep: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        },
+      };
+      expect(await openCandidate(h.page, 0, deps, () => {})).toBe(true);
+      expect(await readPost(h.page, h.fake.origin)).toMatchObject({
+        kind: 'p',
+        code: IG_FIXTURE.code,
+        owner: h.fixture.items[0]!.reference.ownerHandle,
+      });
+      await expect(
+        confirmOnPost(
+          h.page,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+          deps,
+          () => {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'post-structure',
+      });
+      expect(await readPost(h.page, h.fake.origin)).toMatchObject({
+        kind: variant === 'expansion-kind-switch' ? 'reel' : 'p',
+        code:
+          variant === 'expansion-post-switch'
+            ? IG_FIXTURE.other.code
+            : IG_FIXTURE.code,
+        owner: h.fixture.items[0]!.reference.ownerHandle,
+        ownerCount: 1,
+        ownerMatchesProfile: true,
+      });
+      await expect.poll(() => h.fake.events.at(-1)?.wheels.length).toBe(1);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each(['expansion-post-switch', 'expansion-kind-switch'] as const)(
+  'C10 revision %s reaches the canary as post-structure before list confirmation or capture',
+  async (variant) => {
+    const h = await harness(variant, 5);
+    const capture = vi.fn(capturePost);
+    h.setCapture(capture);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+      });
+      expect(capture).not.toHaveBeenCalled();
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      const journal = await h.store.browserJournal();
+      expect(journal.attempts.map((attempt) => attempt.state)).toEqual([
+        'sending',
+        'failed',
+      ]);
+      expect(journal.attempts.at(-1)).toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+      });
+      expect(journal.runs[0]!.canaryAcceptedAt).toBeNull();
+      const report = await readFile(
+        join(
+          h.directory,
+          'context',
+          'instagram',
+          `canary-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      );
+      expect(JSON.parse(report)).toMatchObject({
+        stop: { code: 'INSTAGRAM_SHAPE_CHANGED', token: 'post-structure' },
+      });
+      for (const value of [
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+        h.fixture.items[0]!.text,
+        h.fixture.items[0]!.account.handle!,
+        h.fixture.items[0]!.reference.ownerHandle!,
+      ])
+        expect(report).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('C10 settled read requires consecutive markup samples at least 500 ms apart', async () => {
+  const h = await filterHarness('own-link-flicker');
+  const times: number[] = [];
+  const actual = selectorHelpers.postElement;
+  const sample = vi
+    .spyOn(selectorHelpers, 'postElement')
+    .mockImplementation(async (...args) => {
+      const found = await actual(...args);
+      if (found === null) times.length = 0;
+      else times.push(performance.now());
+      return found;
+    });
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    expect(
+      await driverHelpers.settledPost(
+        h.page,
+        { origin: h.fake.origin, responseMs: 10000 },
+        () => {},
+      ),
+    ).toMatchObject({ ownerCount: 1 });
+    expect(times.length).toBeGreaterThanOrEqual(2);
+    expect(times.at(-1)! - times.at(-2)!).toBeGreaterThanOrEqual(500);
+  } finally {
+    sample.mockRestore();
+    await h.close();
+  }
+});
+test.each(['own-link-flicker', 'expansion-link-flicker'] as const)(
+  'C10 settled read %s confirms after markup returns, with two reads at least 500 ms apart',
+  async (variant) => {
+    const h = await harness(variant, 5, 5000);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        completed: 5,
+        endReason: 'canary',
+      });
+      const saved = await h.store.read((tx) => records(tx.instagramContext));
+      expect(saved).toHaveLength(5);
+      expect(
+        saved.every((record) => Reflect.get(record, 'confirmedBy') === 'post'),
+      ).toBe(true);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test.each(['own-link-vanishes', 'expansion-link-vanishes'] as const)(
+  'C10 settled read %s missing for the response window stops post-structure without confirmation',
+  async (variant) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      await expect(
+        driverHelpers.confirmOnPost(
+          h.page,
+          h.fixture.items[0]!,
+          h.fixture.items[0]!.account.handle!,
+          {
+            ...productionContext,
+            origin: h.fake.origin,
+            responseMs: 4000,
+            sleep: async () => {
+              await new Promise((resolve) => setTimeout(resolve, 30));
+            },
+          },
+          () => {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'post-structure',
+      });
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each(['scroll-late', 'not-shown'] as const)(
+  'C10 IG-8 %s confirms through one exact list row and retains the check kind',
+  async (variant) => {
+    const h = await harness('success', 5);
+    if (variant === 'scroll-late') h.fake.setPostVariant(0, 'scroll-late');
+    else
+      for (let index = 0; index < 5; index++)
+        h.fake.setPostVariant(index, 'not-shown');
+    try {
+      const running = h.start(true);
+      const count = 5;
+      expect(await running, h.notices.join('')).toMatchObject({
+        completed: count,
+        steps: count,
+        endReason: 'canary',
+      });
+      const saved = await h.store.read((tx) => records(tx.instagramContext));
+      expect(saved).toHaveLength(count);
+      for (const [index, record] of saved.entries())
+        expect(record).toMatchObject({
+          confirmedBy: variant === 'scroll-late' && index > 0 ? 'post' : 'list',
+          comment: {
+            id:
+              variant === 'scroll-late' && index > 0
+                ? (expect.any(String) as unknown)
+                : null,
+            createdAt:
+              variant === 'scroll-late' && index > 0
+                ? h.fixture.items[index]!.createdAt
+                : null,
+            expandClicks: variant === 'scroll-late' ? (index ? 0 : 10) : 2,
+          },
+          image: { status: 'stored' },
+          screenshot: { status: 'stored' },
+        });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      expect(run).toMatchObject({ acceptedBy: 'automatic-check' });
+      expect(run.canaryAcceptedAt).toBeTruthy();
+      const report = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(JSON.parse(report)).toMatchObject({
+        confirmations: {
+          post: variant === 'scroll-late' ? 4 : 0,
+          list: variant === 'scroll-late' ? 1 : count,
+        },
+        steps: Array.from(
+          { length: count },
+          (_, index) =>
+            expect.objectContaining({
+              confirmedBy:
+                variant === 'scroll-late' && index > 0 ? 'post' : 'list',
+            }) as unknown,
+        ),
+      });
+      for (const value of [
+        IG_FIXTURE.code,
+        IG_FIXTURE.postAt,
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+        ]),
+      ])
+        expect(report).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  240000,
+);
+test.each([
+  ['list-cut', 'not-shown'],
+  ['two-rows', 'not-shown'],
+  ['owner', 'owner'],
+  ['collaboration', 'owner'],
+  ['owner-first-profile', 'owner'],
+  ['time', 'time'],
+  ['edited', 'text'],
+  ['several', 'several'],
+] as const)(
+  'C10 IG-8 %s never confirms through the list and leaves no record',
+  async (variant, code) => {
+    const h = await harness(variant === 'two-rows' ? 'success' : variant);
+    if (variant === 'two-rows')
+      h.fake.setCandidates(0, ['not-shown', 'not-shown']);
+    try {
+      const running = h.start();
+      await h.click('Start');
+      await expect
+        .poll(
+          async () =>
+            (await h.store.browserJournal()).attempts.filter(
+              (attempt) => attempt.settles !== null,
+            ).length,
+          { timeout: 120000 },
+        )
+        .toBe(1);
+      expect(
+        (await h.store.read((tx) => records(tx.browserAttempts))).at(-1),
+      ).toMatchObject({ state: 'unconfirmed', code });
+      await h.click('Continue');
+      expect(await running).toMatchObject({ completed: 0 });
+      expect((await h.store.browserJournal()).attempts.at(-1)).toMatchObject({
+        state: 'unconfirmed',
+        code,
+      });
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test.each([
+  ['no-json', 'CANARY_NO_SECOND_SOURCE'],
+  ['different-owner', 'CANARY_MISMATCH'],
+  ['different-time', 'CANARY_MISMATCH'],
+  ['different-caption', 'CANARY_MISMATCH'],
+  ['different-image', 'CANARY_MISMATCH'],
+  ['image-large', 'CANARY_CHECK_FAILED'],
+  ['shot-large', 'CANARY_CHECK_FAILED'],
+] as const)(
+  'C10 IG-8 list confirmation still refuses %s with %s and accepts nothing',
+  async (variant, code) => {
+    const h = await harness(variant, 5);
+    for (let index = 0; index < 5; index++) h.fake.setPostHidden(index);
+    if (variant === 'shot-large')
+      h.setCapture(async (...args) => ({
+        ...(await capturePost(...args)),
+        screenshot: { file: null, bytes: null, status: 'too-large' },
+      }));
+    try {
+      expect(await h.start(true)).toMatchObject({ code });
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      expect(
+        (await h.store.browserJournal()).runs[0]!.canaryAcceptedAt,
+      ).toBeNull();
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test('C8 IG-6 candidate owner mismatch then confirmation counts one comment and continues to five', async () => {
   const h = await harness('success', 17);
   h.fake.setCandidates(0, ['owner', 'success']);
@@ -1493,7 +1824,7 @@ test('C9 IG-7 candidate final text result after three candidates skips to the ne
   }
 }, 180000);
 test.each([5, 10])(
-  'C8 IG-6 automatic skips %i not-shown and unavailable posts before five confirmations',
+  'C10 IG-8 automatic skips %i text mismatches and unavailable posts before five confirmations',
   async (skipped) => {
     const h = await harness('success', 17);
     const failures: string[] = [];
@@ -1528,7 +1859,7 @@ test.each([5, 10])(
         }
       });
     for (let index = 0; index < skipped; index++)
-      h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'not-shown');
+      h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'edited');
     try {
       const result = await h.start(true);
       const journal = await h.store.browserJournal(),
@@ -1619,7 +1950,7 @@ test('C8 IG-6 fifteen tried with four confirmed refuses and never opens a sixtee
   const h = await harness('success', 17);
   h.fake.setCandidates(0, ['not-shown', 'not-shown', 'not-shown']);
   for (let index = 0; index < 11; index++)
-    h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'not-shown');
+    h.fake.setPostVariant(index, index % 2 ? 'unavailable' : 'edited');
   try {
     expect(await h.start(true)).toMatchObject({ code: 'CANARY_CHECK_FAILED' });
     const journal = await h.store.browserJournal();
@@ -1769,7 +2100,7 @@ test.each([
 );
 test('C8 IG-6 manual selection keeps Continue and Matches after skips and stops at five confirmations', async () => {
   const h = await harness('success', 17);
-  h.fake.setPostVariant(0, 'not-shown');
+  h.fake.setPostVariant(0, 'edited');
   h.fake.setPostVariant(1, 'unavailable');
   try {
     const running = h.start();
@@ -2676,6 +3007,7 @@ async function fullRunReady(
     at: '2026-10-14T12:00:00.000Z',
   });
   await writer.confirm({
+    confirmedBy: 'post',
     itemId: item.id,
     accountKey: h.plan.accountKey,
     post: {
@@ -3048,6 +3380,8 @@ test.each([
   'cut-caption',
   'same-owner-links',
   'empty-caption',
+  'not-shown',
+  'other-author',
 ] as const)(
   'automatic canary %s compares every field with the page JSON, accepts once and never starts a full run',
   async (variant) => {
@@ -3070,10 +3404,8 @@ test.each([
   ['owner', 'CANARY_CHECK_FAILED'],
   ['collaboration', 'CANARY_CHECK_FAILED'],
   ['owner-first-profile', 'CANARY_CHECK_FAILED'],
-  ['not-shown', 'CANARY_CHECK_FAILED'],
   ['several', 'CANARY_CHECK_FAILED'],
   ['edited', 'CANARY_CHECK_FAILED'],
-  ['other-author', 'CANARY_CHECK_FAILED'],
   ['video', 'CANARY_CHECK_FAILED'],
   ['no-json', 'CANARY_NO_SECOND_SOURCE'],
   ['missing-owner', 'CANARY_NO_SECOND_SOURCE'],
@@ -3238,23 +3570,30 @@ test.each([
       const result = h.start();
       await h.click('Start');
       await h.click('Continue');
+      if (code === 'not-shown') await h.click('Matches');
       expect(await result).toMatchObject({
-        completed: 0,
+        completed: code === 'not-shown' ? 1 : 0,
         endReason: 'canary',
       });
       const attempts = await h.store.read((tx) => records(tx.browserAttempts));
       expect(attempts).toHaveLength(2);
-      expect(attempts[1]!.code).toBe(code);
+      expect(attempts[1]!.code).toBe(code === 'not-shown' ? null : code);
       expect(attempts[1]!.state).toBe(
         variant === 'unavailable'
           ? 'unavailable'
           : variant === 'no-row' || variant === 'window-full'
             ? 'not-listed'
-            : 'unconfirmed',
+            : code === 'not-shown'
+              ? 'confirmed'
+              : 'unconfirmed',
       );
-      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
-        [],
-      );
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(contexts).toHaveLength(code === 'not-shown' ? 1 : 0);
+      if (code === 'not-shown')
+        expect(contexts[0]).toMatchObject({
+          confirmedBy: 'list',
+          comment: { id: null, createdAt: null },
+        });
     } finally {
       await h.close();
     }
@@ -3678,6 +4017,7 @@ test('a full run uses accepted canary, observes limit and a pause before step 21
       at: '2026-10-14T12:00:00.000Z',
     });
     await writer.confirm({
+      confirmedBy: 'post',
       itemId: item.id,
       accountKey: h.plan.accountKey,
       post: {

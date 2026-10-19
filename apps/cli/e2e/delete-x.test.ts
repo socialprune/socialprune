@@ -1496,7 +1496,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         }
       ).upgradeJournalDecoy(),
     );
-    expect(upgraded).toMatchObject({ version: 5, originalPreserved: true });
+    expect(upgraded).toMatchObject({ version: 6, originalPreserved: true });
     expect(upgraded.tables).toContain('browserRuns');
     expect(upgraded.tables).toContain('browserAttempts');
     expect(upgraded.tables).toContain('instagramContext');
@@ -1567,7 +1567,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         ).roundTripJournal(value),
       JSON.stringify(v4),
     );
-    expect(oldBrowser.workspace.schemaVersion).toBe(5);
+    expect(oldBrowser.workspace.schemaVersion).toBe(6);
     expect(oldBrowser.workspace.instagramContext).toBeUndefined();
     expect(oldBrowser.workspace.browserRuns).toEqual(v4.browserRuns);
     expect(oldBrowser.workspace.browserAttempts).toEqual(v4.browserAttempts);
@@ -1587,7 +1587,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         meta: await tx.meta.get(),
         contexts: await records(tx.instagramContext),
       }));
-      expect(value.meta.schemaVersion).toBe(5);
+      expect(value.meta.schemaVersion).toBe(6);
       expect(value.contexts).toEqual([]);
     } finally {
       await oldCli.close();

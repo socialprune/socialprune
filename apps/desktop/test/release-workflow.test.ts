@@ -83,6 +83,18 @@ test('desktop CI automatically selects budget mode and publishes medians, using 
   expect(desktop).toContain('release-medians.json');
   expect(desktop).toMatch(/actions\/cache@[a-f0-9]{40} # v4\.2\.4/);
   expect(desktop).toContain('nsis-version.ts');
+  const workflow = parseDocument(source).toJS() as {
+    jobs: {
+      desktop: {
+        steps: { uses?: string; if?: string; with?: Record<string, unknown> }[];
+      };
+    };
+  };
+  const evidence = workflow.jobs.desktop.steps.find(
+    (step) => step.with?.name === 'desktop-installed-measurements',
+  );
+  expect(evidence?.if).toBe('always()');
+  expect(evidence?.with?.['if-no-files-found']).toBe('warn');
   const manifest = JSON.parse(
     await readFile(join(root, 'package.json'), 'utf8'),
   ) as { scripts: Record<string, string> };

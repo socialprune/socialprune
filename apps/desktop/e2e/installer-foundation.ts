@@ -9,6 +9,7 @@ import { directory } from '../packaging/paths.ts';
 import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { createHash } from 'node:crypto';
 import { assertNsisTemp } from '../packaging/release-temp.ts';
+import { pathExists } from '../packaging/file-presence.ts';
 
 const run = promisify(execFile);
 const layout = async () =>
@@ -55,12 +56,7 @@ try {
   console.error('FOUNDATION_CAUSE', error);
   throw error;
 } finally {
-  if (
-    await access(uninstall).then(
-      () => true,
-      () => false,
-    )
-  ) {
+  if (await pathExists(uninstall)) {
     const hash = createHash('sha256')
       .update(await readFile(uninstall))
       .digest('hex');

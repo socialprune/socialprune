@@ -1,10 +1,13 @@
 param([ValidateSet('create','remove')][string]$Action,[string]$Name,[string]$Program)
 $ErrorActionPreference='Stop'
+. "$PSScriptRoot\..\packaging\windows-readers.ps1"
 if($Name -cnotmatch '^SocialPrune-inventory-control-[a-f0-9-]{36}$') { throw 'TASK_CONTROL_NAME_REFUSED' }
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-$service=New-Object -ComObject Schedule.Service
+$service=New-WindowsOptionalCom 'Schedule.Service'
+if(-not $service) { @{name=$Name;created=$false;removed=$false;absent='com:Schedule.Service'} | ConvertTo-Json -Compress; exit 0 }
 $service.Connect()
-$root=$service.GetFolder('\')
+$root=Get-WindowsTaskFolder $service '\'
+if(-not $root) { Close-WindowsCom $service; @{name=$Name;created=$false;removed=$false;absent='task-folder:root'} | ConvertTo-Json -Compress; exit 0 }
 $description='SocialPrune run-owned disabled inventory control '+$Name
 try {
   if($Action -eq 'create') {
@@ -23,7 +26,8 @@ try {
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($definition)
     @{name=$Name;created=$true;disabled=$true;triggers=0} | ConvertTo-Json -Compress
   } else {
-    $task=$root.GetTask($Name)
+    $task=Get-WindowsRegisteredTask $root $Name
+    if(-not $task) { @{name=$Name;removed=$false;absent='task'} | ConvertTo-Json -Compress; return }
     try {
       $owner=$task.Definition.Principal.UserId
       $ownerSid=if($owner -match '^S-1-') { $owner } else { ([Security.Principal.NTAccount]::new($owner)).Translate([Security.Principal.SecurityIdentifier]).Value }

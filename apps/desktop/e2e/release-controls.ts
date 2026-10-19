@@ -1,20 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import {
-  access,
-  copyFile,
-  mkdir,
-  mkdtemp,
-  rm,
-  rmdir,
-  unlink,
-} from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, rmdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
+import { pathExists } from '../packaging/file-presence.ts';
 import { assertBudgets, summarize } from '../packaging/release-checks.ts';
 import {
   assertNoOwnedNetwork,
@@ -71,7 +64,7 @@ assert.equal(layout.registrationExists, false, 'EXISTING_REGISTRATION_REFUSED');
 const controlScratch = await mkdtemp(
   join(tmpdir(), 'socialprune-network-control-'),
 );
-await mkdir(layout.install);
+await mkdir(layout.install, { recursive: true });
 const copiedNode = join(layout.install, 'network-probe.exe');
 await copyFile(process.execPath, copiedNode);
 const network = await watchNetwork(
@@ -117,13 +110,7 @@ try {
   await network.stop();
   await unlink(copiedNode);
   await rmdir(layout.install);
-  assert.equal(
-    await access(layout.install).then(
-      () => true,
-      () => false,
-    ),
-    false,
-  );
+  assert.equal(await pathExists(layout.install), false);
   await rm(controlScratch, { recursive: true, force: true });
 }
 // A real grandchild outside the install root must be attributed through its

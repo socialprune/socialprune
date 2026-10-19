@@ -35,6 +35,7 @@ import {
 import { assertNsisTemp } from '../packaging/release-temp.ts';
 import { buildNsis } from '../packaging/nsis.ts';
 import { systemTokenProof, systemTaskControl } from './system-proof.ts';
+import { pathExists } from '../packaging/file-presence.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -115,18 +116,20 @@ const setup = join(
 );
 const digest = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
-const exists = async (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
+const exists = pathExists;
 const proof: string[] = [];
 await rm(join(dist, 'release-uninstaller.json'), { force: true });
 const tempSnapshot = async () => (await readdir(installerTemp)).sort();
+const [tokenProof, taskControl, initialSystem] = await (async () => {
+  const tokenProof = await systemTokenProof('controls');
+  const taskControl = await systemTaskControl();
+  return [tokenProof, taskControl, await systemSnapshot()] as const;
+})().catch(async (error: unknown) => {
+  // No install has started; only the exact scratch root belongs to this run.
+  await rm(scratch, { recursive: true, force: true });
+  throw error;
+});
 const network = await watchNetwork(program, join(scratch, 'network.json'));
-const tokenProof = await systemTokenProof('controls');
-const taskControl = await systemTaskControl();
-const initialSystem = await systemSnapshot();
 const systemComparisons: {
   phase: string;
   failures: import('../packaging/system-check.ts').SystemChange[];

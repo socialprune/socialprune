@@ -1,28 +1,18 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { buildNsis } from '../packaging/nsis.ts';
 import { directory, dist } from '../packaging/paths.ts';
+import { pathExists } from '../packaging/file-presence.ts';
 
 // Only explicit test entrypoints manufacture altered scripts. Neither the app
 // nor the production builder imports this file or reads a fault environment.
 const run = promisify(execFile);
-const exists = (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
+const exists = pathExists;
 const layout = async () =>
   JSON.parse(
     (

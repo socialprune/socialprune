@@ -26,6 +26,7 @@ const SnapshotSchema = z.strictObject({
   firewall: inventory,
   listeners: z.array(z.string()),
   startup: inventory,
+  absent: z.array(z.string()).optional(),
 });
 export type SystemSnapshot = z.infer<typeof SnapshotSchema>;
 const inventories = [

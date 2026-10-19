@@ -43,6 +43,7 @@ const LayoutSchema = z.strictObject({
   uninstallCommand: z.string().nullable(),
   quietUninstallCommand: z.string().nullable(),
   registrations: z.array(z.string()),
+  absent: z.array(z.string()),
 });
 async function powershell(
   script: string,

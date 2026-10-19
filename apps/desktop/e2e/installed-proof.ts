@@ -1,13 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  writeFile,
-  rm,
-  access,
-} from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -15,6 +8,7 @@ import { directory, dist } from '../packaging/paths.ts';
 import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
+import { pathExists } from '../packaging/file-presence.ts';
 
 // Test-only launcher. The installer receives no test flag and has no exemption
 // from its elevated-token guard. A restricted same-user process inherits the
@@ -133,19 +127,13 @@ try {
   if (elevated && mode === 'controls') {
     const deadline = Date.now() + 180_000;
     while (
-      !(await access(join(scratch, 'installed.ready')).then(
-        () => true,
-        () => false,
-      )) &&
+      !(await pathExists(join(scratch, 'installed.ready'))) &&
       Date.now() < deadline &&
       child.exitCode === null
     )
       await wait(50);
     assert.equal(
-      await access(join(scratch, 'installed.ready')).then(
-        () => true,
-        () => false,
-      ),
+      await pathExists(join(scratch, 'installed.ready')),
       true,
       'ELEVATED_PROOF_INSTALL_NOT_READY',
     );

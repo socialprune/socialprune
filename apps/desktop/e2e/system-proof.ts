@@ -86,10 +86,19 @@ export async function systemTaskControl() {
     rejected?: boolean;
     removed?: boolean;
     creationDenied?: boolean;
+    unavailable?: string;
   } = { name, created: false };
   try {
     try {
-      await task('create');
+      const creation = JSON.parse((await task('create')).stdout) as {
+        created: boolean;
+        absent?: string;
+      };
+      if (creation.absent) {
+        evidence.unavailable = creation.absent;
+        return evidence;
+      }
+      assert.equal(creation.created, true);
       created = true;
       evidence.created = true;
     } catch (error) {

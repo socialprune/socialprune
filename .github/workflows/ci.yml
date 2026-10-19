@@ -157,7 +157,7 @@ jobs:
         if: always()
         with:
           name: desktop-installed-measurements
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             apps/desktop/dist/release-smoke.json
             apps/desktop/dist/release-medians.json

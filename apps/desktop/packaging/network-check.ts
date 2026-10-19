@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { z } from 'zod';
 import { directory } from './paths.ts';
+import { pathExists } from './file-presence.ts';
 
 const NetworkSchema = z.strictObject({
   ticks: z.number().int().nonnegative(),
@@ -52,26 +53,18 @@ export async function watchNetwork(
     child.once('error', reject);
     child.once('exit', resolve);
   });
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline && child.exitCode === null) {
-    if (
-      await access(output + '.ready').then(
-        () => true,
-        () => false,
-      )
-    )
-      break;
-    await wait(50);
-  }
-  if (
-    !(await access(output + '.ready').then(
-      () => true,
-      () => false,
-    ))
-  ) {
+  try {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && child.exitCode === null) {
+      if (await pathExists(output + '.ready')) break;
+      await wait(50);
+    }
+    if (!(await pathExists(output + '.ready')))
+      throw new Error(`NETWORK_WATCH_NOT_READY:${errors}`);
+  } catch (error) {
     child.kill();
     await exited;
-    throw new Error(`NETWORK_WATCH_NOT_READY:${errors}`);
+    throw error;
   }
   let stopped = false;
   return {

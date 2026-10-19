@@ -8,7 +8,6 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 public static class InventoryAccess {
   [StructLayout(LayoutKind.Sequential)] struct Mapping { public uint read,write,execute,all; }
-  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern uint GetLongPathNameW(string path,StringBuilder result,uint size);
   [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
@@ -17,10 +16,6 @@ public static class InventoryAccess {
   [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenSCManagerW(string machine,string database,uint access);
   [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenServiceW(IntPtr manager,string name,uint access);
   [DllImport("advapi32.dll")] static extern bool CloseServiceHandle(IntPtr handle);
-  public static string LongPath(string path) {
-    var result=new StringBuilder(32768);
-    return GetLongPathNameW(path,result,(uint)result.Capacity)>0?result.ToString():path;
-  }
   public static bool ServiceWritable(string name) {
     IntPtr manager=OpenSCManagerW(null,null,1); if(manager==IntPtr.Zero) throw new Exception("INVENTORY_SCM_ACCESS");
     try {
@@ -61,6 +56,8 @@ function Digest([string]$Value) {
 }
 function JsonDigest($Value) { return Digest (ConvertTo-Json -InputObject $Value -Depth 20 -Compress) }
 . "$PSScriptRoot\system-reference.ps1"
+$absent=[Collections.Generic.List[string]]::new()
+if(-not $inventoryLocal) { $absent.Add('known-folder:LocalApplicationData') }
 function Row([string]$Name, $Values, [bool]$Strict) {
   $fields=[ordered]@{}
   foreach($field in $Values.Keys) { $fields[$field]=JsonDigest $Values[$field] }
@@ -84,11 +81,15 @@ $services = @(Get-CimInstance Win32_Service | ForEach-Object {
 $serviceRegistry.Dispose()
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 $currentSids=@($identity.User.Value)+@($identity.Groups | ForEach-Object { $_.Value })
-$scheduler=New-Object -ComObject Schedule.Service
+$scheduler=New-WindowsOptionalCom 'Schedule.Service'
+$tasks=@()
+if(-not $scheduler) { $absent.Add('com:Schedule.Service') }
+else {
 $scheduler.Connect()
 $tasks = @(Get-ScheduledTask | ForEach-Object {
   $task=$_
-  [xml]$xml = Export-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath
+  try { [xml]$xml = Export-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop }
+  catch { if(Test-WindowsNotFound $_.Exception) { $absent.Add("task:$($task.TaskPath)$($task.TaskName)"); return }; throw }
   $values=[ordered]@{}
   foreach($child in $xml.DocumentElement.ChildNodes) {
     if($child.NodeType -eq [Xml.XmlNodeType]::Element) { $values[$child.LocalName]=$child.OuterXml }
@@ -96,8 +97,10 @@ $tasks = @(Get-ScheduledTask | ForEach-Object {
   $strict=$true
   $folderPath=$task.TaskPath.TrimEnd('\')
   if(-not $folderPath) { $folderPath='\' }
-  $folder=$scheduler.GetFolder($folderPath)
-  $registered=$folder.GetTask($task.TaskName)
+  $folder=Get-WindowsTaskFolder $scheduler $folderPath
+  if(-not $folder) { $absent.Add("task-folder:$folderPath"); return }
+  $registered=Get-WindowsRegisteredTask $folder $task.TaskName
+  if(-not $registered) { $absent.Add("task:$($task.TaskPath)$($task.TaskName)"); Close-WindowsCom $folder; return }
   try {
     $sddl=$registered.GetSecurityDescriptor(7)
     $values['SecurityDescriptor']=$sddl
@@ -114,6 +117,7 @@ $tasks = @(Get-ScheduledTask | ForEach-Object {
   } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($registered); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($folder) }
 } | Sort-Object name)
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($scheduler)
+}
 $identity.Dispose()
 $runKeys = @()
 foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryHive]::LocalMachine)) {
@@ -121,14 +125,11 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
     $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
     try {
       foreach ($path in @('Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Microsoft\Windows\CurrentVersion\RunOnce', 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run')) {
-        $key = $base.OpenSubKey($path, $false)
-        if ($key) {
-          try {
-            foreach ($name in $key.GetValueNames()) {
-              $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-              $runKeys += Row "$hive|$view|$path|$name" ([ordered]@{ Kind=[string]$key.GetValueKind($name); Value=$value; SecurityDescriptor=$key.GetAccessControl().Sddl }) (($hive -eq [Microsoft.Win32.RegistryHive]::CurrentUser) -or (RegistryWritable $base $path))
-            }
-          } finally { $key.Dispose() }
+        $key=Open-WindowsRegistryKey $base $path
+        if(-not $key) { $absent.Add("run-key:$hive|$view|$path"); continue }
+        $key.Dispose()
+        foreach($entry in @(Get-WindowsRegistryValues $base $path)) {
+          $runKeys += Row "$hive|$view|$path|$($entry.name)" ([ordered]@{ Kind=$entry.kind; Value=$entry.value; SecurityDescriptor=$entry.securityDescriptor }) (($hive -eq [Microsoft.Win32.RegistryHive]::CurrentUser) -or (RegistryWritable $base $path))
         }
       }
     } finally { $base.Dispose() }
@@ -136,7 +137,10 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
 }
 # INetFwPolicy2 is Windows' read-only rule enumeration available to a standard
 # user. The CIM port-filter provider requires elevation on some machines.
-$policy = New-Object -ComObject HNetCfg.FwPolicy2
+$policy = New-WindowsOptionalCom 'HNetCfg.FwPolicy2'
+$firewall=@()
+if(-not $policy) { $absent.Add('com:HNetCfg.FwPolicy2') }
+else {
 $machine=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
 $firewallWritable=RegistryWritable $machine 'SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules'
 $machine.Dispose()
@@ -156,26 +160,29 @@ try {
     @{ name=$_.Name; count=$group.Count; strict=(@($group | Where-Object { $_.strict }).Count -gt 0); appReference=(@($group | Where-Object { $_.appReference }).Count -gt 0); fields=$fields }
   } | Sort-Object name)
 } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($policy) }
+}
 $tcp = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | ForEach-Object { "tcp|$($_.LocalAddress)|$($_.LocalPort)|$($_.OwningProcess)" })
 # UDP endpoints have no Listen state (ordinary DNS clients acquire ephemeral
 # ports). The app's own TCP and UDP endpoints are checked separately.
 $startup = @()
-$userStartup=[Environment]::GetFolderPath('Startup')
-foreach ($folder in @($userStartup, [Environment]::GetFolderPath('CommonStartup'))) {
-  if (Test-Path -LiteralPath $folder) {
+$userStartup=[Environment]::GetFolderPath('Startup',[Environment+SpecialFolderOption]::DoNotVerify)
+$commonStartup=[Environment]::GetFolderPath('CommonStartup',[Environment+SpecialFolderOption]::DoNotVerify)
+foreach ($folder in @($userStartup, $commonStartup)) {
+  if ($null -ne (Get-WindowsFileSystemItem $folder)) {
     $parentWritable=[InventoryAccess]::Writable((Get-Acl -LiteralPath $folder).Sddl)
-    $startup += @(Get-ChildItem -LiteralPath $folder -File -Force | ForEach-Object {
+    $startup += @(Get-WindowsFolderEntries $folder | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
       $values=[ordered]@{ Content=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash; Attributes=[string]$_.Attributes; SecurityDescriptor=(Get-Acl -LiteralPath $_.FullName).Sddl }
       $strict=($folder -eq $userStartup) -or $parentWritable -or [InventoryAccess]::Writable((Get-Acl -LiteralPath $_.FullName).Sddl)
       if($_.Extension -ieq '.lnk') {
         $shell=New-Object -ComObject WScript.Shell
+        $shortcut=$null
         try { $shortcut=$shell.CreateShortcut($_.FullName); $values.TargetPath=$shortcut.TargetPath; $values.Arguments=$shortcut.Arguments; $values.WorkingDirectory=$shortcut.WorkingDirectory }
-        finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+        finally { Close-WindowsCom $shortcut; Close-WindowsCom $shell }
       }
       elseif($_.Extension.ToLowerInvariant() -in @('.bat','.cmd','.ps1','.vbs','.js','.wsf','.url','.hta','.txt')) { $values.TextContent=[IO.File]::ReadAllText($_.FullName) }
       else { $strict=$true } # Unknown formats cannot be proved unattributed.
       Row "$(if($folder -eq $userStartup) {'user'} else {'common'})|$($_.Name)" $values $strict
     })
-  }
+  } else { $absent.Add("startup:$(if($folder -eq $userStartup) {'user'} else {'common'})") }
 }
-@{ version=2; services = @($services); tasks = @($tasks); runKeys = @($runKeys | Sort-Object name); firewall = @($firewall); listeners = @($tcp | Sort-Object -Unique); startup = @($startup | Sort-Object name) } | ConvertTo-Json -Depth 8 -Compress
+@{ version=2; services = @($services); tasks = @($tasks); runKeys = @($runKeys | Sort-Object name); firewall = @($firewall); listeners = @($tcp | Sort-Object -Unique); startup = @($startup | Sort-Object name); absent=@($absent|Sort-Object -Unique) } | ConvertTo-Json -Depth 8 -Compress

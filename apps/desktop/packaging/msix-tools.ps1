@@ -20,17 +20,5 @@ if ($OutputDirectory) {
     } finally { $format.Dispose(); $brush.Dispose(); $font.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
   }
 }
-$command = Get-Command makeappx.exe -ErrorAction SilentlyContinue
-$path = if ($command) { $command.Source } else { $null }
-if (-not $path) {
-  $sdk = 'C:\Program Files (x86)\Windows Kits\10\bin'
-  if (Test-Path -LiteralPath $sdk) {
-    $versions = @(Get-ChildItem -LiteralPath $sdk -Directory | Where-Object { $_.Name -match '^10\.0\.\d+\.\d+$' } | Sort-Object { [version]$_.Name } -Descending)
-    foreach ($version in $versions) {
-      $candidate = Join-Path $version.FullName 'x64\makeappx.exe'
-      if (Test-Path -LiteralPath $candidate) { $path = $candidate; break }
-    }
-  }
-}
-if ($path) { @{ path = $path; version = [Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileVersion } | ConvertTo-Json -Compress }
-else { @{ path = $null; version = $null } | ConvertTo-Json -Compress }
+. "$PSScriptRoot\sdk-reader.ps1"
+Find-WindowsMakeAppx | ConvertTo-Json -Compress

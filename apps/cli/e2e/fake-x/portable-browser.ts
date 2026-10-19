@@ -9,7 +9,6 @@ import {
 } from '@socialprune/core/workspace/backup';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { createWorkspace } from '@socialprune/core/workspace/store';
-import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
 import {
   runStoreContract,
   writeInstagramContextContract,
@@ -88,11 +87,11 @@ export async function upgradeDecoy(): Promise<{
     name = `sp-ws-${id}`;
   let store = await IndexedDBStore.open(id, createWorkspace({ id }));
   await store.close();
-  // Create the exact previous physical layout as a disposable decoy. Copy its
-  // metadata and original record back before the additive production upgrade.
+  // Pin layout 4, before the Instagram context store existed. Copy its metadata
+  // and original record back before the additive production upgrade.
   await deleteWorkspaceDatabase(id);
   const opened = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(name, WORKSPACE_SCHEMA_VERSION - 1);
+    const request = indexedDB.open(name, 4);
     request.onupgradeneeded = () => {
       const db = request.result;
       db.createObjectStore('meta');
@@ -149,10 +148,7 @@ export async function upgradeDecoy(): Promise<{
   void decisionEvents;
   void outcomeEvents;
   const tx = opened.transaction(['meta', 'runtime', 'originals'], 'readwrite');
-  tx.objectStore('meta').put(
-    { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION - 1 },
-    'workspace',
-  );
+  tx.objectStore('meta').put({ ...meta, schemaVersion: 4 }, 'workspace');
   tx.objectStore('runtime').put({ revision: 0, lastEventSeq: 0 }, 'runtime');
   tx.objectStore('originals').put({
     id: '901',

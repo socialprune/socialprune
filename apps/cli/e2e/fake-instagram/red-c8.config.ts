@@ -19,7 +19,7 @@ const cases: Record<
     file: '/model/index.ts',
     before: 'WORKSPACE_SCHEMA_VERSION = 6;',
     after: 'WORKSPACE_SCHEMA_VERSION = 5;',
-    tests: 'C10 version-six headers',
+    tests: 'C10 readers accept version six and refuse later headers',
     include: ['packages/core/src/workspace/instagram-context.test.ts'],
   },
   'c10-no-settled': {

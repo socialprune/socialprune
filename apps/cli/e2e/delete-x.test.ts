@@ -23,7 +23,7 @@ import {
   OriginalsFillWriter,
   records,
 } from '@socialprune/core/workspace/store';
-import { migrateOriginal } from '@socialprune/core';
+import { migrateOriginal, WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
 import type { InstagramContext, Item, WorkspaceV2 } from '@socialprune/core';
 import {
   writeInstagramContextContract,
@@ -1440,7 +1440,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
     for await (const chunk of backup.chunks)
       text += new TextDecoder().decode(chunk);
     expect((JSON.parse(text) as { schemaVersion: number }).schemaVersion).toBe(
-      5,
+      WORKSPACE_SCHEMA_VERSION,
     );
     const { build } = await import('vite');
     const output = await build({
@@ -1496,7 +1496,10 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         }
       ).upgradeJournalDecoy(),
     );
-    expect(upgraded).toMatchObject({ version: 6, originalPreserved: true });
+    expect(upgraded).toMatchObject({
+      version: WORKSPACE_SCHEMA_VERSION,
+      originalPreserved: true,
+    });
     expect(upgraded.tables).toContain('browserRuns');
     expect(upgraded.tables).toContain('browserAttempts');
     expect(upgraded.tables).toContain('instagramContext');
@@ -1567,7 +1570,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         ).roundTripJournal(value),
       JSON.stringify(v4),
     );
-    expect(oldBrowser.workspace.schemaVersion).toBe(6);
+    expect(oldBrowser.workspace.schemaVersion).toBe(WORKSPACE_SCHEMA_VERSION);
     expect(oldBrowser.workspace.instagramContext).toBeUndefined();
     expect(oldBrowser.workspace.browserRuns).toEqual(v4.browserRuns);
     expect(oldBrowser.workspace.browserAttempts).toEqual(v4.browserAttempts);
@@ -1587,7 +1590,7 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
         meta: await tx.meta.get(),
         contexts: await records(tx.instagramContext),
       }));
-      expect(value.meta.schemaVersion).toBe(6);
+      expect(value.meta.schemaVersion).toBe(WORKSPACE_SCHEMA_VERSION);
       expect(value.contexts).toEqual([]);
     } finally {
       await oldCli.close();

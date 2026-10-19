@@ -12,7 +12,7 @@ async function graph(
   visited.add(entry);
   const text = await readFile(entry, 'utf8');
   for (const match of text.matchAll(
-    /(?:from\s*|import\s*\()\s*['"]([^'"]+)['"]/g,
+    /(?:from\s*|import\s*(?:\(\s*)?)['"]([^'"]+)['"]/g,
   )) {
     const id = match[1]!;
     if (id.startsWith('.')) await graph(resolve(dirname(entry), id), visited);
@@ -53,4 +53,29 @@ test('every production entry excludes test code and runtime test selectors', asy
       resolve(directory, '../cli/e2e/engine-test-entry.ts'),
     ]),
   ).toThrow('PRODUCTION_TEST_IMPORT');
+});
+
+test('quiet window presentation is reachable only from the test entry, never through release arguments', async () => {
+  const release = await graph(resolve(directory, 'src/main/index.ts'));
+  const testing = await graph(resolve(directory, 'test/entries/main.ts'));
+  const inspecting = await graph(
+    resolve(directory, 'test/entries/quiet-main.ts'),
+  );
+  const quiet = resolve(directory, 'test/quiet-windows.ts');
+  expect(testing.has(quiet)).toBe(true);
+  expect(inspecting.has(quiet)).toBe(true);
+  expect(inspecting.has(resolve(directory, 'src/main/index.ts'))).toBe(true);
+  expect(release.has(quiet)).toBe(false);
+  for (const id of release) {
+    const source = await readFile(id, 'utf8');
+    expect(source).not.toMatch(
+      /showInactive|setFocusable|moveBottom|quiet-windows/,
+    );
+  }
+  expect(() => assertProductionGraph([...release, quiet])).toThrow(
+    'PRODUCTION_BOUNDARY',
+  );
+  const entry = await readFile(resolve(directory, 'src/main/index.ts'), 'utf8');
+  expect(entry).not.toContain('quiet');
+  expect(entry).not.toContain('inactive');
 });

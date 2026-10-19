@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   createPackageWithOptions,
+  extractFile,
   getRawHeader,
   listPackage,
 } from '@electron/asar';
@@ -209,6 +210,14 @@ export async function packageDesktop(): Promise<void> {
     await extract(archive.path, { dir: output });
     await rename(join(output, 'electron.exe'), executable(variant));
     await rm(join(output, 'resources/default_app.asar'), { force: true });
+    if (variant === 'test') {
+      await bundle(
+        'test/entries/quiet-main.ts',
+        join(content, 'main.mjs'),
+        'esm',
+        false,
+      );
+    }
     if (variant === 'probe') {
       await bundle(
         'test/entries/main.ts',
@@ -240,12 +249,61 @@ export async function packageDesktop(): Promise<void> {
       throw new Error('PRODUCTION_TEST_FILE');
   }
   const release = await readFile(join(dist, 'release/resources/app.asar'));
-  const test = await readFile(join(dist, 'test/resources/app.asar'));
-  if (!release.equals(test)) throw new Error('TEST_BUILD_CONTENT_DRIFT');
-  // The probe differs by entrypoints only; it can select generated hosts and
-  // test clocks. Neither the release nor inspect-only test variant can do so.
-  const releaseExecutable = await readFile(executable('release'));
-  const testExecutable = await readFile(executable('test'));
+  const releaseAsar = join(dist, 'release/resources/app.asar');
+  const testAsar = join(dist, 'test/resources/app.asar');
+  const names = listPackage(releaseAsar, { isPack: false });
+  if (
+    JSON.stringify(names) !==
+    JSON.stringify(listPackage(testAsar, { isPack: false }))
+  )
+    throw new Error('TEST_BUILD_FILES_DRIFT');
+  const info = JSON.parse(getRawHeader(releaseAsar).headerString) as {
+    files: Record<string, unknown>;
+  };
+  for (const name of names) {
+    const path = name.replaceAll('\\', '/').replace(/^\//, '');
+    let entry: unknown = info;
+    for (const part of path.split('/'))
+      entry = (entry as typeof info).files[part];
+    if ('files' in (entry as object) || path === 'main.mjs') continue;
+    const nativePath = join(...path.split('/'));
+    if (
+      !extractFile(releaseAsar, nativePath).equals(
+        extractFile(testAsar, nativePath),
+      )
+    )
+      throw new Error(`TEST_BUILD_CONTENT_DRIFT:${path}`);
+  }
+  if (
+    extractFile(releaseAsar, 'main.mjs').equals(
+      extractFile(testAsar, 'main.mjs'),
+    ) ||
+    !extractFile(testAsar, 'main.mjs').toString().includes('showInactive')
+  )
+    throw new Error('TEST_PRESENTATION_MISSING');
+  if (
+    /showInactive|setFocusable/.test(
+      extractFile(releaseAsar, 'main.mjs').toString(),
+    )
+  )
+    throw new Error('PRODUCTION_PRESENTATION_OVERRIDE');
+  // Only presentation and its ASAR integrity resource differ in the inspect-only
+  // test. Its real engine, preload, renderer, dependencies and fuses stay exact.
+  const releasePe = NtExecutable.from(await readFile(executable('release')));
+  const testPe = NtExecutable.from(await readFile(executable('test')));
+  const testResources = NtExecutableResource.from(testPe);
+  const releaseResources = NtExecutableResource.from(releasePe);
+  const integrity = releaseResources.entries.find(
+    (entry) => entry.type === 'INTEGRITY',
+  );
+  if (!integrity) throw new Error('RELEASE_INTEGRITY_MISSING');
+  testResources.entries = testResources.entries.map((entry) =>
+    entry.type === 'INTEGRITY' ? integrity : entry,
+  );
+  testResources.outputResource(testPe);
+  releaseResources.outputResource(releasePe);
+  const releaseExecutable = Buffer.from(releasePe.generate());
+  const testExecutable = Buffer.from(testPe.generate());
   const fuseSentinel = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX');
   const inspectOffset =
     releaseExecutable.indexOf(fuseSentinel) + fuseSentinel.length + 2 + 3;

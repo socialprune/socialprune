@@ -5,6 +5,7 @@ import {
   assertNoListeners,
   assertNoRemainingProcesses,
   assertNoConnections,
+  processIdentities,
 } from '../test/windows.ts';
 
 export async function plantedListener(port: number): Promise<void> {
@@ -22,7 +23,7 @@ export async function plantedListener(port: number): Promise<void> {
 
 export async function plantedProcess(): Promise<void> {
   // A decoy known live PID proves the detector; it never kills a process.
-  await assertNoRemainingProcesses([process.pid]);
+  await assertNoRemainingProcesses(await processIdentities([process.pid]));
 }
 
 export async function processExitControl(exits: boolean): Promise<void> {
@@ -47,7 +48,7 @@ export async function processExitControl(exits: boolean): Promise<void> {
       child.once('error', reject);
     });
     if (!child.pid) throw new Error('DECOY_PID_MISSING');
-    await assertNoRemainingProcesses([child.pid]);
+    await assertNoRemainingProcesses(await processIdentities([child.pid]));
   } finally {
     if (child.exitCode === null) child.kill();
     await ended;

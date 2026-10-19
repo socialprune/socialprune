@@ -11,6 +11,39 @@ export interface ProcessRow {
   ExecutablePath: string;
 }
 
+export interface ProcessIdentity {
+  pid: number;
+  born: string;
+}
+
+export async function processIdentities(
+  pids: number[],
+  signal?: AbortSignal,
+): Promise<ProcessIdentity[]> {
+  if (pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0))
+    throw new Error('INVALID_PID');
+  if (!pids.length) return [];
+  const { stdout } = await runPowerShell(
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `ConvertTo-Json -InputObject @(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { @{pid=$_.Id;born=$_.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()} }) -Compress`,
+    ],
+    { windowsHide: true, timeout: 20_000, signal, env: testEnvironment() },
+  );
+  return JSON.parse(stdout || '[]') as ProcessIdentity[];
+}
+
+export function matchingProcessIdentities(
+  expected: ProcessIdentity[],
+  observed: ProcessIdentity[],
+): ProcessIdentity[] {
+  return expected.filter((entry) =>
+    observed.some((row) => row.pid === entry.pid && row.born === entry.born),
+  );
+}
+
 export async function appProcesses(executable: string): Promise<ProcessRow[]> {
   const escaped = executable.replaceAll("'", "''");
   const { stdout } = await runPowerShell(
@@ -47,15 +80,29 @@ export async function remainingProcesses(
 }
 
 export async function assertNoRemainingProcesses(
-  pids: number[],
+  processes: number[] | ProcessIdentity[],
 ): Promise<void> {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), 15_000);
-  let remaining = pids;
+  let remaining: number[] | ProcessIdentity[] = processes;
   try {
     do {
       try {
-        remaining = await remainingProcesses(pids, controller.signal);
+        if (typeof processes[0] === 'object') {
+          const identities = processes as ProcessIdentity[];
+          remaining = matchingProcessIdentities(
+            identities,
+            await processIdentities(
+              identities.map((entry) => entry.pid),
+              controller.signal,
+            ),
+          );
+        } else {
+          remaining = await remainingProcesses(
+            processes as number[],
+            controller.signal,
+          );
+        }
         if (!remaining.length) return;
         await wait(100, undefined, { signal: controller.signal });
       } catch (error) {

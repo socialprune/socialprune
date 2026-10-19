@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { chromium, expect, test } from '@playwright/test';
 import { assertNoRemainingProcesses } from '../test/windows.ts';
+import type { ProcessIdentity } from '../test/windows.ts';
 import { launch } from './helpers.ts';
 
 test('packaged utility starts Playwright from asar, opens and closes only disposable Chromium', async () => {
@@ -84,9 +85,11 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
       closed: true,
     });
     const pids = (result as { pids: number[] }).pids;
+    const processes = (result as { processes: ProcessIdentity[] }).processes;
     expect(pids.length).toBeGreaterThanOrEqual(2);
+    expect(processes.length).toBeGreaterThanOrEqual(2);
     await test.step('verify owned Chromium process cleanup', () =>
-      assertNoRemainingProcesses(pids));
+      assertNoRemainingProcesses(processes));
     console.log(
       JSON.stringify({
         proof: 'packaged-playwright',

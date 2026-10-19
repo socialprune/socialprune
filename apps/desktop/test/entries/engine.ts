@@ -2,6 +2,8 @@ import { chromium } from 'playwright-core';
 import { z } from 'zod';
 import { startEngine } from '../../src/engine-host/host.ts';
 import { openTestEngine } from '../../../cli/e2e/engine-test-entry.ts';
+import { processIdentities } from '../windows.ts';
+import type { ProcessIdentity } from '../windows.ts';
 import type { BrowserContext } from 'playwright-core';
 
 const ProbeSchema = z.strictObject({
@@ -15,7 +17,7 @@ const ProbeSchema = z.strictObject({
 });
 const contexts: BrowserContext[] = [];
 const commandLines: string[][] = [];
-const browserPids = new Set<number>();
+const browserProcesses = new Map<string, ProcessIdentity>();
 const browserEvents: {
   event: string;
   url: string;
@@ -73,9 +75,14 @@ startEngine((options) =>
       const browser = context.browser();
       if (!browser) throw new Error('BROWSER_PROCESS_ID_MISSING');
       const system = await browser.newBrowserCDPSession();
-      for (const info of (await system.send('SystemInfo.getProcessInfo'))
-        .processInfo)
-        browserPids.add(Number(info.id));
+      const identities = await processIdentities(
+        (await system.send('SystemInfo.getProcessInfo')).processInfo.map(
+          (info) => Number(info.id),
+        ),
+      );
+      if (!identities.length) throw new Error('BROWSER_PROCESS_ID_MISSING');
+      for (const identity of identities)
+        browserProcesses.set(`${identity.pid}|${identity.born}`, identity);
       await system.detach();
     },
   }),
@@ -94,7 +101,8 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
         type: 'runProbe',
         commandLines,
         browserEvents,
-        pids: [...browserPids],
+        pids: [...browserProcesses.values()].map((entry) => entry.pid),
+        processes: [...browserProcesses.values()],
         pages,
         openPages: contexts.reduce(
           (sum, context) => sum + context.pages().length,
@@ -137,6 +145,8 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
       const cdp = await browser.newBrowserCDPSession();
       const processes = await cdp.send('SystemInfo.getProcessInfo');
       const pids = processes.processInfo.map((info) => Number(info.id));
+      const identities = await processIdentities(pids);
+      if (!identities.length) throw new Error('BROWSER_PROCESS_ID_MISSING');
       await cdp.detach();
       await context.close();
       context = undefined;
@@ -145,6 +155,7 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
         title,
         closed: true,
         pids,
+        processes: identities,
       });
     } catch {
       process.parentPort.postMessage({

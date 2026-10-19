@@ -9,6 +9,7 @@ import { fakeInstagram } from '../../cli/e2e/fake-instagram/server.ts';
 import { instagramFixture } from '../../cli/e2e/fake-instagram/fixture.ts';
 import { launch, call } from './helpers.ts';
 import { assertNoRemainingProcesses } from '../test/windows.ts';
+import type { ProcessIdentity } from '../test/windows.ts';
 import { windowsShortPath } from '../test/short-path.ts';
 import type { RunView } from '../src/protocol.ts';
 
@@ -77,7 +78,7 @@ async function generated(
         probe.engine.child.postMessage(command);
       });
     }, type);
-  let browserPids: number[] = [];
+  let browserProcesses: ProcessIdentity[] = [];
   return {
     app,
     fake,
@@ -131,16 +132,19 @@ async function generated(
     async close() {
       try {
         if (app.process.exitCode === null)
-          browserPids = ((await control('runProbe')) as { pids: number[] })
-            .pids;
+          browserProcesses = (
+            (await control('runProbe')) as { processes: ProcessIdentity[] }
+          ).processes;
         await app.close();
-        await assertNoRemainingProcesses(browserPids);
+        await assertNoRemainingProcesses(browserProcesses);
       } finally {
         await fake.close();
       }
     },
     async rememberBrowsers() {
-      browserPids = ((await control('runProbe')) as { pids: number[] }).pids;
+      browserProcesses = (
+        (await control('runProbe')) as { processes: ProcessIdentity[] }
+      ).processes;
     },
   };
 }

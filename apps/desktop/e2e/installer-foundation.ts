@@ -52,6 +52,10 @@ try {
   );
   assert.equal((await layout()).registrations.length, 1);
   await access(join(initial.install, 'SocialPrune.exe'));
+  if (process.argv.includes('--inactive-launch-trial')) {
+    const { trialInactiveRelease } = await import('./inactive-launch-trial.ts');
+    await trialInactiveRelease(join(initial.install, 'SocialPrune.exe'));
+  }
 } catch (error) {
   console.error('FOUNDATION_CAUSE', error);
   throw error;

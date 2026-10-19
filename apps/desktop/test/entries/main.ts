@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { app, session } from 'electron';
 import { startDesktop } from '../../src/main/app.ts';
+import '../quiet-windows.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 
 const dataDirectory = process.argv

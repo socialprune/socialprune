@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 
-const run = promisify(execFile);
 export interface ProcessRow {
   ProcessId: number;
   ParentProcessId: number;
@@ -14,8 +12,7 @@ export interface ProcessRow {
 
 export async function appProcesses(executable: string): Promise<ProcessRow[]> {
   const escaped = executable.replaceAll("'", "''");
-  const { stdout } = await run(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -36,8 +33,7 @@ export async function remainingProcesses(
   if (!pids.length) return [];
   // CDP supplied these exact disposable-browser PIDs. No other browser's
   // process, command line, profile or metadata is inspected.
-  const { stdout } = await run(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -81,8 +77,7 @@ export async function assertNoListeners(pids: number[]): Promise<void> {
     "'",
     "''",
   );
-  const { stdout } = await run(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -105,8 +100,7 @@ export async function assertNoConnections(pids: number[]): Promise<void> {
     "'",
     "''",
   );
-  const { stdout } = await run(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

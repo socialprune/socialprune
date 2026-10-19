@@ -9,6 +9,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 import { proofWorkspace } from './proof-context.ts';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 import { assertBudgets, summarize } from '../packaging/release-checks.ts';
 import {
   assertNoOwnedNetwork,
@@ -46,8 +47,7 @@ for (const [variant, expected] of [
 // must be absent before this run creates it, and no app entry is modified.
 const layout = JSON.parse(
   (
-    await promisify(execFile)(
-      'powershell.exe',
+    await runPowerShell(
       [
         '-NoProfile',
         '-NonInteractive',

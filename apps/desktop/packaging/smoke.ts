@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { assertFuses } from './fuses.ts';
 import { directory, dist, executable } from './paths.ts';
+import { runPowerShell } from './windows-powershell.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
 
@@ -30,8 +30,7 @@ const exited = new Promise<number | null>((resolve, reject) => {
 });
 try {
   if (!child.pid) throw new Error('SMOKE_NO_PID');
-  const { stdout } = await promisify(execFile)(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

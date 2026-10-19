@@ -40,13 +40,16 @@ import { systemTokenProof, systemTaskControl } from './system-proof.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 import { failureRecord } from './proof-failure.ts';
 import { root } from '../packaging/paths.ts';
+import {
+  runPowerShell,
+  spawnPowerShell,
+} from '../packaging/windows-powershell.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
 const run = promisify(execFile);
 const ps = (script: string, args: string[] = []) =>
-  run(
-    'powershell.exe',
+  runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -81,8 +84,7 @@ assert.deepEqual(initial.existingShortcuts, [], 'EXISTING_SHORTCUT_REFUSED');
 const scratch = await mkdtemp(join(tmpdir(), 'socialprune-installer-proof-'));
 const referenceProof = JSON.parse(
   (
-    await run(
-      'powershell.exe',
+    await runPowerShell(
       [
         '-NoProfile',
         '-NonInteractive',
@@ -347,8 +349,7 @@ try {
   // Exercise the partial list branch and retain the Apps repair/removal route.
   const lockReady = join(scratch, 'lock.ready');
   const lockStop = join(scratch, 'lock.stop');
-  const locked = spawn(
-    'powershell.exe',
+  const locked = spawnPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -523,8 +524,7 @@ try {
   const quietHash = digest(await readFile(uninstall));
   const quietBefore = await tempSnapshot();
   const childReady = join(scratch, 'child-watch.ready');
-  const childWatcher = spawn(
-    'powershell.exe',
+  const childWatcher = spawnPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

@@ -9,6 +9,7 @@ import { directory } from '../packaging/paths.ts';
 import { collectProof } from '../e2e/proof-collection.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import assert from 'node:assert/strict';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 
 test('causal receipts expose only repo-relative or run-owned paths', () => {
   const repo = join(tmpdir(), 'generated-repo');
@@ -52,8 +53,7 @@ test.skipIf(process.platform !== 'win32')(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'socialprune-proof-access-'));
     const ps = (action: string) =>
-      promisify(execFile)(
-        'powershell.exe',
+      runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',
@@ -90,8 +90,7 @@ process.exitCode=await runProof('smoke',${JSON.stringify(join(root, 'child'))},$
       const token = join(root, 'release-token-smoke.json');
       await writeFile(args, JSON.stringify([entry]));
       await expect(
-        promisify(execFile)(
-          'powershell.exe',
+        runPowerShell(
           [
             '-NoProfile',
             '-NonInteractive',

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import {
+  runPowerShell,
+  spawnPowerShell,
+} from '../packaging/windows-powershell.ts';
 import {
   appendFile,
   mkdir,
@@ -34,8 +38,7 @@ assert.ok(
 );
 const run = promisify(execFile);
 const ps = (script: string, args: string[] = []) =>
-  run(
-    'powershell.exe',
+  runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -57,8 +60,7 @@ assert.equal(before.installExists, false, 'EXISTING_INSTALL_REFUSED');
 assert.equal(before.dataExists, false, 'EXISTING_DATA_REFUSED');
 assert.equal(before.registrationExists, false, 'EXISTING_REGISTRATION_REFUSED');
 assert.deepEqual(before.existingShortcuts, [], 'EXISTING_SHORTCUT_REFUSED');
-const { stdout } = await run(
-  'powershell.exe',
+const { stdout } = await runPowerShell(
   [
     '-NoProfile',
     '-NonInteractive',
@@ -161,8 +163,7 @@ try {
     TEMP: parentTemp,
     TMP: parentTemp,
   };
-  const child = spawn(
-    'powershell.exe',
+  const child = spawnPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnPowerShell } from './windows-powershell.ts';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -28,8 +28,7 @@ export async function watchNetwork(
     throw new Error('NETWORK_ROOT_PID_INVALID');
   for (const suffix of ['', '.ready', '.stop'])
     await rm(output + suffix, { force: true });
-  const child = spawn(
-    'powershell.exe',
+  const child = spawnPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

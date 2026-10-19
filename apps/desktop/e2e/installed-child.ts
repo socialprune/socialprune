@@ -11,8 +11,7 @@ import { dirname, join } from 'node:path';
 import { directory } from '../packaging/paths.ts';
 import { proofOutput } from './proof-context.ts';
 import { runProof } from './proof-runtime.ts';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 
 // The sole installed-proof child entry. Imported test modules can write only
 // through this run's workspace, never into the elevated builder's outputs.
@@ -34,8 +33,7 @@ process.exitCode = await runProof(
   async () => {
     const layout = JSON.parse(
       (
-        await promisify(execFile)(
-          'powershell.exe',
+        await runPowerShell(
           [
             '-NoProfile',
             '-NonInteractive',
@@ -72,8 +70,7 @@ process.exitCode = await runProof(
     );
     const acl = JSON.parse(
       (
-        await promisify(execFile)(
-          'powershell.exe',
+        await runPowerShell(
           [
             '-NoProfile',
             '-NonInteractive',

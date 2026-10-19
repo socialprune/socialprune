@@ -1,17 +1,14 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 
-const run = promisify(execFile);
 const ps = (script: string, args: string[]) =>
-  run(
-    'powershell.exe',
+  runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

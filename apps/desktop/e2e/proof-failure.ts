@@ -42,14 +42,34 @@ export function failureRecord(
     : entry
       ? classify(entry)
       : { pathClass: 'unknown', path: null };
+  const shell =
+    value.powerShell && typeof value.powerShell === 'object'
+      ? (value.powerShell as Record<string, unknown>)
+      : undefined;
   return {
     name: typeof value.name === 'string' ? value.name : 'Error',
     code:
       typeof value.code === 'string' || typeof value.code === 'number'
         ? value.code
-        : 'PROOF_FAILED',
+        : shell?.killed === true && shell.signal
+          ? 'WINDOWS_POWERSHELL_TIMEOUT'
+          : 'PROOF_FAILED',
     syscall: typeof value.syscall === 'string' ? value.syscall : null,
     file,
+    ...(shell
+      ? {
+          powerShell: {
+            executable: 'WindowsPowerShell',
+            script:
+              typeof shell.script === 'string' ? classify(shell.script) : null,
+            timeoutMs:
+              typeof shell.timeoutMs === 'number' ? shell.timeoutMs : null,
+            killed: shell.killed === true,
+            signal: typeof shell.signal === 'string' ? shell.signal : null,
+            errorId: typeof shell.errorId === 'string' ? shell.errorId : null,
+          },
+        }
+      : {}),
     location:
       frame
         ?.match(/:(\d+):(\d+)$/)

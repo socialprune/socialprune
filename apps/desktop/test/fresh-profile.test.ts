@@ -1,8 +1,8 @@
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
+import { pathToFileURL } from 'node:url';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
@@ -27,8 +27,7 @@ test.skipIf(process.platform !== 'win32')(
   async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'socialprune-fresh-readers-'));
     try {
-      const { stdout } = await promisify(execFile)(
-        'powershell.exe',
+      const { stdout } = await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',
@@ -59,8 +58,7 @@ test.skipIf(process.platform !== 'win32')(
   async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'socialprune-profile-hive-'));
     try {
-      await promisify(execFile)(
-        'powershell.exe',
+      await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',
@@ -78,11 +76,10 @@ test.skipIf(process.platform !== 'win32')(
       const child = join(scratch, 'child.mjs');
       await writeFile(
         child,
-        `import {execFileSync} from 'node:child_process'; console.log(execFileSync('powershell.exe', ${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])}, {encoding:'utf8'}));`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])})).stdout);`,
       );
       await writeFile(args, JSON.stringify([child]));
-      await promisify(execFile)(
-        'powershell.exe',
+      await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',

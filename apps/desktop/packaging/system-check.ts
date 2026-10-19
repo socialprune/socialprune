@@ -1,6 +1,5 @@
-import { execFile } from 'node:child_process';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runPowerShell } from './windows-powershell.ts';
 import { z } from 'zod';
 import { directory } from './paths.ts';
 
@@ -118,16 +117,25 @@ export function compareSystemSnapshots(
   return result;
 }
 
+// D-R4, 2026-10-19: after bulk firewall normalization, three restricted runs
+// with the concurrent CLI suite measured 44,131 / 18,354 / 16,475 ms on this
+// workstation. ceil(max * 2 to seconds) = 89 s; CPU samples and all section
+// timings are retained in the parent's r9-after-load evidence. No retry.
+export const SYSTEM_SNAPSHOT_TIMEOUT_MS = 89_000;
+
 export async function systemSnapshot(): Promise<SystemSnapshot> {
-  const { stdout } = await promisify(execFile)(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
       '-File',
       join(directory, 'packaging/system-snapshot.ps1'),
     ],
-    { timeout: 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+    {
+      timeout: SYSTEM_SNAPSHOT_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    },
   );
   return SnapshotSchema.parse(JSON.parse(stdout));
 }

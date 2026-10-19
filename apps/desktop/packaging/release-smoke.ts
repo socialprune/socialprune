@@ -33,6 +33,7 @@ import { proofOutput } from '../e2e/proof-context.ts';
 import { proofWorkspace } from '../e2e/proof-context.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import { root } from './paths.ts';
+import { runPowerShell } from './windows-powershell.ts';
 
 const run = promisify(execFile);
 const LayoutSchema = z.strictObject({
@@ -54,8 +55,7 @@ async function powershell(
   args: string[] = [],
   timeout = 60_000,
 ) {
-  return run(
-    'powershell.exe',
+  return runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

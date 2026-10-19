@@ -1,15 +1,13 @@
-import { execFile } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 
 /** Read the actual Windows alias of a generated directory, not a made-up one. */
 export async function windowsShortPath(
   directory: string,
 ): Promise<string | null> {
   if (process.platform !== 'win32') return null;
-  const { stdout } = await promisify(execFile)(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

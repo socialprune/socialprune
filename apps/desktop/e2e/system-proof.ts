@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 import { directory } from '../packaging/paths.ts';
 import { proofOutput } from './proof-context.ts';
 import { randomUUID } from 'node:crypto';
@@ -14,8 +13,7 @@ import {
 
 export async function systemTokenProof(phase: string) {
   const output = proofOutput(`release-system-token-${phase}.json`);
-  await promisify(execFile)(
-    'powershell.exe',
+  await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',
@@ -49,8 +47,7 @@ export async function systemTaskControl() {
   const name = `SocialPrune-inventory-control-${randomUUID()}`;
   const local = JSON.parse(
     (
-      await promisify(execFile)(
-        'powershell.exe',
+      await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',
@@ -62,8 +59,7 @@ export async function systemTaskControl() {
     ).stdout,
   ) as { install: string };
   const task = (action: string) =>
-    promisify(execFile)(
-      'powershell.exe',
+    runPowerShell(
       [
         '-NoProfile',
         '-NonInteractive',

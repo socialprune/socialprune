@@ -37,7 +37,7 @@ public static class LimitedProof {
     text.Append('\\',slashes*2); return text.Append('"').ToString();
   }
   public static uint ChildPid;
-  public static uint Run(string app,string[] args,string cwd,int timeout,string profileScript,string markerKey,string marker,string expectedSid,string profileReport) {
+  public static uint Run(string app,string[] args,string cwd,int timeout,string profileEntry,string profileScript,string markerKey,string marker,string expectedSid,string profileReport) {
     IntPtr token=IntPtr.Zero,limited=IntPtr.Zero,impersonation=IntPtr.Zero,medium=IntPtr.Zero;
     IntPtr admins=Marshal.AllocHGlobal(68); uint size=68;
     ProcessInfo info=new ProcessInfo();
@@ -56,11 +56,10 @@ public static class LimitedProof {
       var startup=new Startup { cb=Marshal.SizeOf(typeof(Startup)), desktop="winsta0\\default", flags=0x100, input=GetStdHandle(-10), output=GetStdHandle(-11), error=GetStdHandle(-12) };
       // Verify the inherited user's hive from a real child of this same
       // restricted primary token. Do not call LoadUserProfile or create a hive.
-      string ps=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell\\v1.0\\powershell.exe");
-      var profile=new StringBuilder(Quote(ps));
-      foreach(string arg in new string[]{"-NoProfile","-NonInteractive","-File",profileScript,"-MarkerKey",markerKey,"-Marker",marker,"-ExpectedSid",expectedSid,"-Report",profileReport}) profile.Append(" ").Append(Quote(arg));
+      var profile=new StringBuilder(Quote(app));
+      foreach(string arg in new string[]{profileEntry,profileScript,"-MarkerKey",markerKey,"-Marker",marker,"-ExpectedSid",expectedSid,"-Report",profileReport}) profile.Append(" ").Append(Quote(arg));
       ProcessInfo proof;
-      Require(CreateProcessAsUserW(limited,ps,profile,IntPtr.Zero,IntPtr.Zero,true,0,IntPtr.Zero,cwd,ref startup,out proof),"CreateProfileProofChild");
+      Require(CreateProcessAsUserW(limited,app,profile,IntPtr.Zero,IntPtr.Zero,true,0,IntPtr.Zero,cwd,ref startup,out proof),"CreateProfileProofChild");
       try {
         if(WaitForSingleObject(proof.process,30000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT");
         uint proofCode; Require(GetExitCodeProcess(proof.process,out proofCode),"ProfileProofExit");
@@ -88,7 +87,7 @@ $key=$hive.CreateSubKey($markerKey)
 try { $key.SetValue('Marker',$marker) } finally { $key.Dispose() }
 try {
   $profileReport=$TokenReport+'.profile.json'
-  $code = [LimitedProof]::Run($Executable, $arguments, (Get-Location).Path, $TimeoutSeconds, "$PSScriptRoot\profile-hive-proof.ps1", $markerKey, $marker, $identity.User.Value, $profileReport)
+  $code = [LimitedProof]::Run($Executable, $arguments, (Get-Location).Path, $TimeoutSeconds, "$PSScriptRoot\profile-hive-child.ts", "$PSScriptRoot\profile-hive-proof.ps1", $markerKey, $marker, $identity.User.Value, $profileReport)
   $profile=Get-Content -LiteralPath $profileReport -Raw | ConvertFrom-Json
   @{ method = 'CreateRestrictedToken(DISABLE_MAX_PRIVILEGE|LUA_TOKEN)+CreateProcessAsUserW'; adminMember = $false; integrity = 'medium'; childPid = [LimitedProof]::ChildPid; childExit = $code; profile=$profile } | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $TokenReport -Encoding UTF8
 } finally {

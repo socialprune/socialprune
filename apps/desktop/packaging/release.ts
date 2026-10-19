@@ -16,6 +16,7 @@ import { buildNsis } from './nsis.ts';
 import { NSIS_VERSION } from './nsis-version.ts';
 import { assertFuses } from './fuses.ts';
 import { directory, dist, executable } from './paths.ts';
+import { runPowerShell } from './windows-powershell.ts';
 
 export const artifacts = join(dist, 'artifacts');
 export async function releaseVersion(): Promise<string> {
@@ -72,8 +73,7 @@ export async function buildRelease(requireMsix = true): Promise<void> {
     await readFile(join(directory, 'packaging/AppxManifest.xml'), 'utf8')
   ).replace('{{VERSION}}', version);
   await writeFile(join(staging, 'AppxManifest.xml'), manifest);
-  const { stdout } = await promisify(execFile)(
-    'powershell.exe',
+  const { stdout } = await runPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

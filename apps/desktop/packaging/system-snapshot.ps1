@@ -141,24 +141,13 @@ $policy = New-WindowsOptionalCom 'HNetCfg.FwPolicy2'
 $firewall=@()
 if(-not $policy) { $absent.Add('com:HNetCfg.FwPolicy2') }
 else {
+. "$PSScriptRoot\firewall-inventory.ps1"
 $machine=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
 $firewallWritable=RegistryWritable $machine 'SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules'
 $machine.Dispose()
 try {
-  $rules=@($policy.Rules | ForEach-Object {
-    $rule=$_
-    $values=[ordered]@{}
-    foreach($field in @('Description','ApplicationName','ServiceName','Protocol','LocalPorts','RemotePorts','LocalAddresses','RemoteAddresses','IcmpTypesAndCodes','Direction','Interfaces','InterfaceTypes','Enabled','Grouping','Profiles','EdgeTraversal','Action','LocalAppPackageId','LocalUserOwner','LocalUserAuthorizedList','RemoteUserAuthorizedList','RemoteMachineAuthorizedList','SecureFlags')) { $values[$field]=$rule.$field }
-    Row $rule.Name $values ($firewallWritable -or -not [string]::IsNullOrEmpty($rule.LocalUserOwner))
-  })
-  # INetFwPolicy2 permits duplicate names. Group by name rather than treating
-  # a changed digest as a removed/added name; retain count and all field hashes.
-  $firewall=@($rules | Group-Object -Property { $_.name } | ForEach-Object {
-    $group=$_.Group
-    $fields=[ordered]@{}
-    foreach($field in $group[0].fields.Keys) { $fields[$field]=JsonDigest @($group | ForEach-Object { $_.fields[$field] } | Sort-Object) }
-    @{ name=$_.Name; count=$group.Count; strict=(@($group | Where-Object { $_.strict }).Count -gt 0); appReference=(@($group | Where-Object { $_.appReference }).Count -gt 0); fields=$fields }
-  } | Sort-Object name)
+  $rules=@(Get-FirewallInventoryInput $policy.Rules)
+  $firewall=@(ConvertTo-FirewallInventoryRows $rules $firewallWritable)
 } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($policy) }
 }
 $tcp = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | ForEach-Object { "tcp|$($_.LocalAddress)|$($_.LocalPort)|$($_.OwningProcess)" })

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,10 @@ import { directory } from '../packaging/paths.ts';
 import { fetchNsis } from '../packaging/nsis-fetch.ts';
 import { proofOutput, proofWorkspace } from './proof-context.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import {
+  runPowerShell,
+  spawnPowerShell,
+} from '../packaging/windows-powershell.ts';
 
 // Only explicit test entrypoints manufacture altered scripts. Neither the app
 // nor the production builder imports this file or reads a fault environment.
@@ -18,8 +22,7 @@ const exists = pathExists;
 const layout = async () =>
   JSON.parse(
     (
-      await run(
-        'powershell.exe',
+      await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',
@@ -148,8 +151,7 @@ try {
   assert.equal(await invoke(partialSetup), 0);
   const ready = join(scratch, 'lock.ready'),
     stop = join(scratch, 'lock.stop');
-  const lock = spawn(
-    'powershell.exe',
+  const lock = spawnPowerShell(
     [
       '-NoProfile',
       '-NonInteractive',

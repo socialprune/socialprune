@@ -33,6 +33,16 @@ const compare = (before: object, after: object) =>
     after as system.SystemSnapshot,
   );
 
+test('snapshot limit retains at least twice the measured restricted maximum under concurrent CLI load', () => {
+  const measuredMax = Math.max(44_131, 18_354, 16_475);
+  expect(system.SYSTEM_SNAPSHOT_TIMEOUT_MS).toBe(
+    Math.ceil((measuredMax * 2) / 1000) * 1000,
+  );
+  expect(
+    system.SYSTEM_SNAPSHOT_TIMEOUT_MS / measuredMax,
+  ).toBeGreaterThanOrEqual(2);
+});
+
 test('a system-owned StartMode-only change is a persistent field-name diagnostic, not app damage', () => {
   const before = {
     ...empty(),

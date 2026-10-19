@@ -10,13 +10,13 @@ import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { createHash } from 'node:crypto';
 import { assertNsisTemp } from '../packaging/release-temp.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import { runPowerShell } from '../packaging/windows-powershell.ts';
 
 const run = promisify(execFile);
 const layout = async () =>
   JSON.parse(
     (
-      await run(
-        'powershell.exe',
+      await runPowerShell(
         [
           '-NoProfile',
           '-NonInteractive',

@@ -417,3 +417,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-11 to 2026-10-19, the board and its tools above)
+
+### [LL-2026-10-016] 2026-10-19 ORCHESTRATION: Give every running lane a stop signal it checks before each command
+
+**ID:** LL-2026-10-016
+**Severity:** HIGH
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). Times, process counts and file names below are dated evidence from 2026-10-19.
+
+**Feedback:** "so stop bitte erstmal weil ich will cs spielen und durch dich lag ich" The maintainer at 21:34Z, while two lanes ran tests on his machine.
+**Problem:** I sent both lanes a STOP through their tasks and ended 24 of their test processes at 21:36Z; a check 20 seconds later found none. The lanes had not read the STOP, because an update sent through a task reaches a running lane only when its current turn ends, and they started further test runs until 21:42Z, when their evidence files stop. His machine stayed loaded for about eight minutes after he asked for quiet, until he restarted it. The same delivery gap had already kept lane R waiting through eleven unanswered requests that afternoon.
+**5 Whys Analysis:**
+1. Why did the lanes keep running? -> They never saw the STOP before their next commands.
+2. Why not? -> The only channel into a running task lane is the task update, and it is delivered at the lane's turn boundary; the board was full and the lanes are not Agent Manager sessions.
+3. Why did ending the processes not stop them? -> Ending a process ends that command; the lane then reads a failed command and starts the next one.
+4. Why was there no other signal? -> Dispatch prompts gave the lanes scope, ports and proof, but nothing they check on their own while they work.
+5. Why? -> Root cause: no control lets the parent pause a running lane between its commands. LL-2026-10-003 settled how authority reaches a lane, at its task boundary, and I treated a pause as one more update instead of a signal that must arrive before the next command.
+**Rule(s):**
+1. Every dispatch prompt names one stop signal the lane checks itself before each command it starts, and says what to do when it is set: start nothing more, leave the worktree, end the turn as blocked.
+2. In this project the signal is the file `STOP` in the parent's phase-2 scratch folder; the parent creates it the moment the person asks for a pause, removes it on resume, and ends the lanes' running processes until both lanes report their turns ended.
+3. A pause is reported as in effect only after a read-back shows no lane process for at least one full command length, not after the first clean check.
+**Detection Pattern:** a pause or stop sent through a task update to a running lane; a lane's evidence files written after the person's stop; "the processes are ended" reported from one check.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the header of the live board `socialprune-handoff\BOARD.md`, which the parent edits every turn and reads before every dispatch, names the stop file and points here.
+**Related Lessons:** LL-2026-10-003 (authority reaches a lane through its task; a stop is not authority but must not wait for the task boundary), LL-2026-10-015 (state outside temp).
+**Regression / Verification Note:** applied on 2026-10-19 22:25Z: both re-dispatch prompts name the stop file, and the two lanes run one after the other instead of in parallel.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-19 21:34 to 21:42Z, the pause above)

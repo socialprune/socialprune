@@ -102,6 +102,9 @@ importers:
       '@playwright/test':
         specifier: 1.63.0
         version: 1.63.0
+      '@zip.js/zip.js':
+        specifier: 2.23.0
+        version: 2.23.0
       electron:
         specifier: 44.8.0
         version: 44.8.0

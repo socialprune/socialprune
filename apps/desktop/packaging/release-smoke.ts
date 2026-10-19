@@ -29,6 +29,10 @@ import { appProcesses } from '../test/windows.ts';
 import { assertNsisTemp } from './release-temp.ts';
 import { assertNoOwnedNetwork, watchNetwork } from './network-check.ts';
 import { systemTokenProof } from '../e2e/system-proof.ts';
+import { proofOutput } from '../e2e/proof-context.ts';
+import { proofWorkspace } from '../e2e/proof-context.ts';
+import { failureRecord } from '../e2e/proof-failure.ts';
+import { root } from './paths.ts';
 
 const run = promisify(execFile);
 const LayoutSchema = z.strictObject({
@@ -120,7 +124,7 @@ const installedExe = join(beforeLayout.install, 'SocialPrune.exe');
 const updater = join(beforeLayout.install, 'Uninstall.exe');
 const network = await watchNetwork(
   beforeLayout.install,
-  join(dist, 'release-network.json'),
+  proofOutput('release-network.json'),
 );
 let networkObservation: Awaited<ReturnType<typeof network.stop>> | undefined;
 let tempCopies: Awaited<ReturnType<typeof assertNsisTemp>> = [];
@@ -141,7 +145,7 @@ const compareSystem = async (
     );
   // Preserve diagnostics immediately, including when a later launch fails.
   await writeFile(
-    join(dist, 'release-system.json'),
+    proofOutput('release-system.json'),
     JSON.stringify(
       { snapshots, comparisons: systemComparisons, tokenProof },
       null,
@@ -238,7 +242,7 @@ try {
         installerBytes: (await stat(setup)).size,
       });
       await writeFile(
-        join(dist, 'release-samples.json'),
+        proofOutput('release-samples.json'),
         JSON.stringify(samples, null, 2),
       );
       await powershell('release-window.ps1', [
@@ -282,9 +286,14 @@ try {
   primaryFailure = error instanceof Error ? error : new Error(String(error));
   console.error(error);
   await writeFile(
-    join(dist, 'release-failure.json'),
+    proofOutput('release-failure.json'),
     JSON.stringify(
-      { message: error instanceof Error ? error.message : String(error) },
+      failureRecord(
+        error,
+        root,
+        proofWorkspace(),
+        join(directory, 'packaging/release-smoke.ts'),
+      ),
       null,
       2,
     ),
@@ -329,7 +338,7 @@ try {
         remaining = await layout();
       }
       await writeFile(
-        join(dist, 'release-cleanup.json'),
+        proofOutput('release-cleanup.json'),
         JSON.stringify(remaining, null, 2),
       );
       assert.equal(remaining.installExists, false, 'PROGRAM_FOLDER_REMAINS');
@@ -404,11 +413,11 @@ const report = {
   tokenProof,
 };
 await writeFile(
-  join(dist, 'release-smoke.json'),
+  proofOutput('release-smoke.json'),
   JSON.stringify(report, null, 2),
 );
 await writeFile(
-  join(dist, 'release-medians.json'),
+  proofOutput('release-medians.json'),
   JSON.stringify(
     {
       measuredAt: report.measuredAt,

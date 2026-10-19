@@ -12,6 +12,17 @@ import {
   watchNetwork,
 } from '../packaging/network-check.ts';
 import { assertNsisTemp } from '../packaging/release-temp.ts';
+import {
+  proofOutput,
+  proofWorkspace,
+  setProofWorkspace,
+} from './proof-context.ts';
+
+const workspace = process.argv
+  .find((arg) => arg.startsWith('--proof-workspace='))
+  ?.slice('--proof-workspace='.length);
+if (!workspace) throw new Error('RESTRICTED_PROOF_WORKSPACE_REQUIRED');
+setProofWorkspace(workspace);
 
 // Intentionally exits nonzero. This file is never bundled into any app.
 if (process.argv.includes('--budget')) {
@@ -27,7 +38,7 @@ if (process.argv.includes('--budget')) {
 } else if (process.argv.includes('--listener')) {
   const monitor = await watchNetwork(
     join(dist, 'unused-install-root'),
-    join(dist, 'red-listener.json'),
+    proofOutput('red-listener.json'),
   );
   const server = createServer();
   try {
@@ -55,11 +66,12 @@ if (process.argv.includes('--budget')) {
 } else if (process.argv.includes('--nsis-hash')) {
   await buildNsis(
     join(dist, 'release'),
-    join(dist, 'must-not-build.exe'),
+    join(proofWorkspace(), 'must-not-build.exe'),
     '0.0.0',
     {
       source: join(directory, 'packaging/installer.nsi'),
-      fetch: () => fetchNsis('0'.repeat(64)),
+      fetch: () => fetchNsis('0'.repeat(64), { workspace: proofWorkspace() }),
+      generated: join(proofWorkspace(), 'red-hash-generated'),
     },
   );
 } else if (process.argv.includes('--nsis-compressor')) {
@@ -74,9 +86,13 @@ if (process.argv.includes('--budget')) {
     );
     await buildNsis(
       join(dist, 'release'),
-      join(dist, 'must-not-build.exe'),
+      join(proofWorkspace(), 'must-not-build.exe'),
       '0.0.0',
-      { source, fetch: fetchNsis },
+      {
+        source,
+        fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
+        generated: join(proofWorkspace(), 'red-compressor-generated'),
+      },
     );
   } finally {
     await rm(scratch, { recursive: true, force: true });

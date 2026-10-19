@@ -78,7 +78,7 @@ public static class LimitedProof {
   }
 }
 '@
-$arguments = [string[]]@(Get-Content -LiteralPath $ArgumentsFile -Raw | ConvertFrom-Json)
+$arguments = [string[]](Get-Content -LiteralPath $ArgumentsFile -Raw | ConvertFrom-Json)
 $markerKey='Software\SocialPrune-test-'+[guid]::NewGuid().ToString()
 $marker=[guid]::NewGuid().ToString()
 $hive=[Microsoft.Win32.Registry]::CurrentUser

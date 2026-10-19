@@ -59,6 +59,20 @@ test.skipIf(process.platform !== 'win32')(
   async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'socialprune-profile-hive-'));
     try {
+      await promisify(execFile)(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          join(directory, 'e2e/proof-acl.ps1'),
+          '-Action',
+          'grant',
+          '-Root',
+          scratch,
+        ],
+        { timeout: 30_000, windowsHide: true },
+      );
       const args = join(scratch, 'args.json'),
         report = join(scratch, 'token.json');
       const child = join(scratch, 'child.mjs');
@@ -81,7 +95,16 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
         ],
-        { timeout: 45_000, windowsHide: true },
+        {
+          timeout: 45_000,
+          windowsHide: true,
+          env: {
+            // eslint-disable-next-line no-restricted-properties -- Test-only subprocess inherits the CLI environment, with OS temp confined to the granted fixture.
+            ...process.env,
+            TEMP: scratch,
+            TMP: scratch,
+          },
+        },
       );
       expect(
         JSON.parse((await readFile(report, 'utf8')).replace(/^\uFEFF/, '')),

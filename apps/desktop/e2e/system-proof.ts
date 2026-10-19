@@ -3,7 +3,8 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { directory, dist } from '../packaging/paths.ts';
+import { directory } from '../packaging/paths.ts';
+import { proofOutput } from './proof-context.ts';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import {
@@ -12,7 +13,7 @@ import {
 } from '../packaging/system-check.ts';
 
 export async function systemTokenProof(phase: string) {
-  const output = join(dist, `release-system-token-${phase}.json`);
+  const output = proofOutput(`release-system-token-${phase}.json`);
   await promisify(execFile)(
     'powershell.exe',
     [
@@ -144,7 +145,7 @@ export async function systemTaskControl() {
       evidence.removed = true;
     }
     await writeFile(
-      join(dist, 'release-system-positive-control.json'),
+      proofOutput('release-system-positive-control.json'),
       JSON.stringify(evidence, null, 2),
     );
   }

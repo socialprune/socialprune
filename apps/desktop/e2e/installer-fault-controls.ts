@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { buildNsis } from '../packaging/nsis.ts';
-import { directory, dist } from '../packaging/paths.ts';
+import { directory } from '../packaging/paths.ts';
+import { fetchNsis } from '../packaging/nsis-fetch.ts';
+import { proofOutput, proofWorkspace } from './proof-context.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 
 // Only explicit test entrypoints manufacture altered scripts. Neither the app
@@ -103,6 +105,7 @@ try {
       await writeFile(path, script);
       const setup = join(scratch, `${name}-${red}.exe`);
       await buildNsis(input, setup, '0.0.0', {
+        fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
         source: path,
         history: ['probe.txt'],
         generated: join(scratch, `${name}-${red}`),
@@ -137,6 +140,7 @@ try {
   const partialSetup = join(scratch, 'partial.exe');
   await writeFile(partialPath, partialSource);
   await buildNsis(input, partialSetup, '0.0.0', {
+    fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
     source: partialPath,
     history: ['probe.txt'],
     generated: join(scratch, 'partial'),
@@ -198,6 +202,7 @@ try {
     await writeFile(canonicalPath, source);
     const canonicalSetup = join(scratch, 'canonical.exe');
     await buildNsis(input, canonicalSetup, '0.0.0', {
+      fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
       source: canonicalPath,
       history: ['probe.txt'],
       generated: join(scratch, 'canonical'),
@@ -206,7 +211,7 @@ try {
     await removeOwned();
   }
   await writeFile(
-    join(dist, 'release-installer-faults.json'),
+    proofOutput('release-installer-faults.json'),
     JSON.stringify(results, null, 2),
   );
 } finally {

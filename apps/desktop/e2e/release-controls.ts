@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import { proofWorkspace } from './proof-context.ts';
 import { assertBudgets, summarize } from '../packaging/release-checks.ts';
 import {
   assertNoOwnedNetwork,
@@ -25,7 +26,11 @@ for (const [variant, expected] of [
   await assert.rejects(
     promisify(execFile)(
       process.execPath,
-      [join(directory, 'e2e/release-red.ts'), variant],
+      [
+        join(directory, 'e2e/release-red.ts'),
+        variant,
+        `--proof-workspace=${proofWorkspace()}`,
+      ],
       { timeout: 60_000, windowsHide: true },
     ),
     (error: unknown) =>

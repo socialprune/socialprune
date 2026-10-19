@@ -20,7 +20,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
-import { dist, directory } from '../packaging/paths.ts';
+import { directory } from '../packaging/paths.ts';
+import { fetchNsis } from '../packaging/nsis-fetch.ts';
+import { proofOutput, proofWorkspace } from './proof-context.ts';
 import { releaseVersion, artifacts } from '../packaging/release.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
@@ -36,6 +38,8 @@ import { assertNsisTemp } from '../packaging/release-temp.ts';
 import { buildNsis } from '../packaging/nsis.ts';
 import { systemTokenProof, systemTaskControl } from './system-proof.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import { failureRecord } from './proof-failure.ts';
+import { root } from '../packaging/paths.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -118,7 +122,6 @@ const digest = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
 const exists = pathExists;
 const proof: string[] = [];
-await rm(join(dist, 'release-uninstaller.json'), { force: true });
 const tempSnapshot = async () => (await readdir(installerTemp)).sort();
 const [tokenProof, taskControl, initialSystem] = await (async () => {
   const tokenProof = await systemTokenProof('controls');
@@ -143,7 +146,7 @@ async function compareSystem(
   const comparison = compareSystemSnapshots(before, after);
   systemComparisons.push({ phase, ...comparison });
   await writeFile(
-    join(dist, 'release-uninstaller-system.json'),
+    proofOutput('release-uninstaller-system.json'),
     JSON.stringify({ comparisons: systemComparisons, tokenProof }, null, 2),
   );
   if (comparison.failures.length)
@@ -294,11 +297,13 @@ try {
   const installerB = join(variants, 'B.exe');
   const history = ['common.txt', 'old.txt', 'new.txt'];
   await buildNsis(inputA, installerA, '0.0.1', {
+    fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
     history,
     previous: history,
     generated: join(variants, 'gen-a'),
   });
   await buildNsis(inputB, installerB, '0.0.2', {
+    fetch: () => fetchNsis(undefined, { workspace: proofWorkspace() }),
     history,
     previous: history,
     generated: join(variants, 'gen-b'),
@@ -676,7 +681,7 @@ try {
   const finalComparison = compareSystemSnapshots(initialSystem, afterSystem);
   systemComparisons.push({ phase: 'after-uninstall', ...finalComparison });
   await writeFile(
-    join(dist, 'release-uninstaller-system.json'),
+    proofOutput('release-uninstaller-system.json'),
     JSON.stringify(
       {
         before: initialSystem,
@@ -693,7 +698,7 @@ try {
     ),
   );
   await writeFile(
-    join(dist, 'release-uninstaller.json'),
+    proofOutput('release-uninstaller.json'),
     JSON.stringify(
       {
         proof,
@@ -717,35 +722,77 @@ try {
       `SYSTEM_CHANGED:${finalComparison.failures[0]!.inventory}:${JSON.stringify(finalComparison.failures)}`,
     );
   console.log(JSON.stringify({ proof: 'nsis-uninstaller', cases: proof }));
+} catch (error) {
+  await writeFile(
+    proofOutput('release-controls-failure.json'),
+    JSON.stringify(
+      {
+        phase: 'execute',
+        failure: failureRecord(
+          error,
+          root,
+          proofWorkspace(),
+          join(directory, 'e2e/uninstall-controls.ts'),
+        ),
+      },
+      null,
+      2,
+    ),
+  );
+  throw error;
 } finally {
-  if (app?.pid) {
-    await ps('release-window.ps1', [
-      '-AppProcessId',
-      String(app.pid),
-      '-Executable',
-      exe,
-      '-CloseOnly',
-    ]).catch(() => undefined);
-  }
-  if (programOwned && (await exists(uninstall))) await remove();
-  await network.stop();
-  // Exact run-created remnants only. Never recursively remove the program or
-  // data root, even on a failed assertion.
-  for (const path of [
-    join(program, 'planted-link'),
-    join(program, 'locales'),
-  ]) {
-    if (await exists(path)) {
-      if ((await lstat(path)).isSymbolicLink()) await unlink(path);
+  try {
+    if (app?.pid) {
+      await ps('release-window.ps1', [
+        '-AppProcessId',
+        String(app.pid),
+        '-Executable',
+        exe,
+        '-CloseOnly',
+      ]).catch(() => undefined);
+    }
+    if (programOwned && (await exists(uninstall))) await remove();
+    // Exact run-created remnants only. Never recursively remove the program or
+    // data root, even on a failed assertion.
+    for (const path of [
+      join(program, 'planted-link'),
+      join(program, 'locales'),
+    ]) {
+      if (await exists(path)) {
+        if ((await lstat(path)).isSymbolicLink()) await unlink(path);
+      }
+    }
+    if (programOwned) {
+      await unlink(join(program, 'planted-program.txt')).catch(() => undefined);
+      await rmdir(program).catch(() => undefined);
+    }
+    if (dataOwned) {
+      await unlink(join(initial.data, 'planted-data.txt'));
+      await rmdir(initial.data);
+    }
+  } catch (error) {
+    await writeFile(
+      proofOutput('release-controls-cleanup-failure.json'),
+      JSON.stringify(
+        {
+          phase: 'cleanup',
+          failure: failureRecord(
+            error,
+            root,
+            proofWorkspace(),
+            join(directory, 'e2e/uninstall-controls.ts'),
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+    throw error;
+  } finally {
+    try {
+      await network.stop();
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
     }
   }
-  if (programOwned) {
-    await unlink(join(program, 'planted-program.txt')).catch(() => undefined);
-    await rmdir(program).catch(() => undefined);
-  }
-  if (dataOwned) {
-    await unlink(join(initial.data, 'planted-data.txt'));
-    await rmdir(initial.data);
-  }
-  await rm(scratch, { recursive: true, force: true });
 }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { runPowerShell } from '../packaging/windows-powershell.ts';
+import { testEnvironment } from './process-environment.ts';
 import {
   compareSystemSnapshots,
   type SystemSnapshot,
@@ -23,7 +24,7 @@ test.skipIf(process.platform !== 'win32')(
           '-Scratch',
           scratch,
         ],
-        { timeout: 45000, windowsHide: true },
+        { timeout: 45000, windowsHide: true, env: testEnvironment() },
       );
       const result = JSON.parse(stdout) as {
         controlRow: SystemSnapshot['firewall'][number];

@@ -19,6 +19,7 @@ import {
   spawnPowerShell,
 } from '../packaging/windows-powershell.ts';
 import { windowsShortPath } from './short-path.ts';
+import { testEnvironment } from './process-environment.ts';
 
 test.skipIf(process.platform !== 'win32')(
   'proof ACL loads Windows PowerShell modules despite an inherited incompatible Security module',
@@ -36,18 +37,12 @@ test.skipIf(process.platform !== 'win32')(
         join(module, 'Security.psm1'),
         "#requires -Version 7.0\nfunction Get-Acl { throw 'GENERATED_INCOMPATIBLE_MODULE_LOADED' }; Export-ModuleMember -Function Get-Acl",
       );
-      const env = {
-        ...Object.fromEntries(
-          // eslint-disable-next-line no-restricted-properties -- Opaque subprocess inheritance; only fixture module/cache locations are overridden, no credential values are read.
-          Object.entries(process.env).filter(
-            ([key]) => !/^PSModule(Path|AnalysisCachePath)$/i.test(key),
-          ),
-        ),
+      const env = testEnvironment({
         PSModulePath: modules,
         PSModuleAnalysisCachePath: join(scratch, 'analysis-cache'),
         TEMP: scratch,
         TMP: scratch,
-      };
+      });
       const args = [
         '-NoProfile',
         '-NonInteractive',
@@ -123,7 +118,7 @@ test.skipIf(process.platform !== 'win32')(
       const restricted = join(scratch, 'restricted.mjs');
       await writeFile(
         restricted,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; const env=${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}; console.log((await runPowerShell(${JSON.stringify(args)},{env:{...process.env,...env},timeout:30000})).stdout);`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(args)},{env:testEnvironment(${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}),timeout:30000})).stdout);`,
       );
       const argumentsFile = join(scratch, 'arguments.json'),
         report = join(scratch, 'token.json');
@@ -182,6 +177,89 @@ test('the shared boundary removes discovery state case-insensitively without rel
   });
   expect(source.PSModulePath).toBe('poison');
 });
+
+test('explicit Windows caller values replace every inherited case variant before spawn', () => {
+  const source = {
+    PSEXECUTIONPOLICYPREFERENCE: 'Bypass',
+    PSExecutionPolicyPreference: 'Restricted',
+    __PSLOCKDOWNPOLICY: '4',
+    __PSLockdownPolicy: '4',
+    TEMP: 'parent-owned',
+    Temp: 'generated-child',
+  };
+  const result = powerShellEnvironment(source);
+  for (const [name, expected] of [
+    ['PSEXECUTIONPOLICYPREFERENCE', 'Restricted'],
+    ['__PSLOCKDOWNPOLICY', '4'],
+    ['TEMP', 'generated-child'],
+  ] as const) {
+    expect(
+      Object.entries(result).filter(([key]) => key.toUpperCase() === name),
+    ).toHaveLength(1);
+    expect(
+      Object.entries(result).find(([key]) => key.toUpperCase() === name)?.[1],
+    ).toBe(expected);
+  }
+  expect(source.PSEXECUTIONPOLICYPREFERENCE).toBe('Bypass');
+});
+
+test('fixture environments admit OS settings only and never inherit PowerShell policy/discovery overrides', () => {
+  const env = testEnvironment({
+    TEMP: 'generated-child',
+    Temp: 'generated-final',
+    PSExecutionPolicyPreference: 'Restricted',
+  });
+  expect(
+    Object.entries(env).filter(([name]) => name.toUpperCase() === 'TEMP'),
+  ).toEqual([['Temp', 'generated-final']]);
+  expect(
+    Object.entries(env).filter(
+      ([name]) => name.toUpperCase() === 'PSEXECUTIONPOLICYPREFERENCE',
+    ),
+  ).toEqual([['PSExecutionPolicyPreference', 'Restricted']]);
+  const clean = testEnvironment();
+  expect(
+    Object.keys(clean).filter((name) => /^(?:PS|POWERSHELL_|__PS)/i.test(name)),
+  ).toEqual([]);
+});
+
+test.skipIf(process.platform !== 'win32')(
+  'buffered launches resolve duplicate-case explicit policy while preserving unoverridden policy and lockdown',
+  async () => {
+    for (const inherited of ['Bypass', 'Restricted']) {
+      const source = {
+        ...testEnvironment(),
+        PSEXECUTIONPOLICYPREFERENCE: inherited,
+        __PSLockdownPolicy: '0',
+      };
+      const command = [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "[Console]::Write((Get-ExecutionPolicy -Scope Process).ToString()+'|'+$env:__PSLockdownPolicy)",
+      ];
+      expect(
+        (
+          await runPowerShell(command, {
+            env: source,
+            timeout: 15000,
+            windowsHide: true,
+          })
+        ).stdout,
+      ).toBe(`${inherited}|0`);
+      expect(
+        (
+          await runPowerShell(command, {
+            env: { ...source, PSExecutionPolicyPreference: 'Restricted' },
+            timeout: 15000,
+            windowsHide: true,
+          })
+        ).stdout,
+      ).toBe('Restricted|0');
+    }
+  },
+  45000,
+);
 
 function assertLaunchBoundary(source: string) {
   if (
@@ -248,9 +326,7 @@ test.skipIf(process.platform !== 'win32')(
         "[Console]::Write(($PSVersionTable.PSVersion.Major).ToString()+'|'+(Get-ExecutionPolicy -Scope Process))",
       ],
       {
-        env: powerShellEnvironment({
-          // eslint-disable-next-line no-restricted-properties -- Opaque fixture subprocess inheritance, not a credential read.
-          ...process.env,
+        env: testEnvironment({
           PSModulePath: 'generated-unusable',
           PSExecutionPolicyPreference: 'Restricted',
         }),
@@ -284,6 +360,7 @@ test.skipIf(process.platform !== 'win32')(
       );
       await expect(
         promisify(execFile)(process.execPath, [child], {
+          env: testEnvironment(),
           timeout: 15_000,
           windowsHide: true,
         }),
@@ -316,6 +393,7 @@ test.skipIf(process.platform !== 'win32')(
       );
       await expect(
         promisify(execFile)(process.execPath, [child], {
+          env: testEnvironment(),
           timeout: 15_000,
           windowsHide: true,
         }),
@@ -349,7 +427,7 @@ test.skipIf(process.platform !== 'win32')(
             '-Report',
             profileReport,
           ],
-          { timeout: 15_000, windowsHide: true },
+          { timeout: 15_000, windowsHide: true, env: testEnvironment() },
         ),
       ).rejects.toMatchObject({ code: 1 });
       const profileFailure = JSON.parse(

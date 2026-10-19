@@ -15,16 +15,27 @@ export function powerShellEnvironment(
   source?: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
   // eslint-disable-next-line no-restricted-properties -- Opaque subprocess inheritance only; environment values are not read as credentials.
-  const env = { ...(source ?? process.env) };
-  for (const name of Object.keys(env))
+  const inherited = source ?? process.env;
+  const env: NodeJS.ProcessEnv = {};
+  const names = new Map<string, string>();
+  for (const [name, value] of Object.entries(inherited)) {
+    const identity = name.toUpperCase();
+    const previous = names.get(identity);
+    if (previous) delete env[previous];
+    names.set(identity, name);
     if (
       [
         'PSMODULEPATH',
         'PSMODULEANALYSISCACHEPATH',
         'PSDISABLEMODULEANALYSISCACHECLEANUP',
-      ].includes(name.toUpperCase())
+      ].includes(identity)
     )
-      delete env[name];
+      continue;
+    // A caller's rightmost override wins before Node sorts Windows env keys.
+    // Otherwise an inherited uppercase policy/TEMP key can defeat the caller's
+    // mixed-case override. Unoverridden policy and lockdown values stay intact.
+    env[name] = value;
+  }
   return env;
 }
 

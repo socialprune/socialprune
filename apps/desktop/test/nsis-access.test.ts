@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { runPowerShell } from '../packaging/windows-powershell.ts';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
+import { testEnvironment } from './process-environment.ts';
 
 const ps = (script: string, args: string[]) =>
   runPowerShell(
@@ -16,7 +17,7 @@ const ps = (script: string, args: string[]) =>
       join(directory, 'e2e', script),
       ...args,
     ],
-    { timeout: 45_000, windowsHide: true },
+    { timeout: 45_000, windowsHide: true, env: testEnvironment() },
   );
 
 test.skipIf(process.platform !== 'win32')(

@@ -10,6 +10,7 @@ import { collectProof } from '../e2e/proof-collection.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import assert from 'node:assert/strict';
 import { runPowerShell } from '../packaging/windows-powershell.ts';
+import { testEnvironment } from './process-environment.ts';
 
 test('causal receipts expose only repo-relative or run-owned paths', () => {
   const repo = join(tmpdir(), 'generated-repo');
@@ -64,7 +65,7 @@ test.skipIf(process.platform !== 'win32')(
           '-Root',
           root,
         ],
-        { timeout: 30_000, windowsHide: true },
+        { timeout: 30_000, windowsHide: true, env: testEnvironment() },
       );
     let denied = false;
     try {
@@ -103,7 +104,7 @@ process.exitCode=await runProof('smoke',${JSON.stringify(join(root, 'child'))},$
             '-TokenReport',
             token,
           ],
-          { timeout: 45_000, windowsHide: true },
+          { timeout: 45_000, windowsHide: true, env: testEnvironment() },
         ),
       ).rejects.toMatchObject({ code: 1 });
       expect(
@@ -170,6 +171,7 @@ await runProof('controls',${JSON.stringify(root)},${JSON.stringify(entry)},()=>n
       promisify(execFile)(process.execPath, [entry], {
         timeout: 15_000,
         windowsHide: true,
+        env: testEnvironment(),
       }),
     ).rejects.toMatchObject({ code: 1 });
     expect(
@@ -189,7 +191,7 @@ await runProof('controls',${JSON.stringify(root)},${JSON.stringify(entry)},()=>n
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 test('all installed modes use one child entry and build inputs remain read-only', async () => {
   const launcher = await readFile(

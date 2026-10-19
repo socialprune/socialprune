@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
+import { testEnvironment } from './process-environment.ts';
 
 export interface ProcessRow {
   ProcessId: number;
@@ -19,7 +20,7 @@ export async function appProcesses(executable: string): Promise<ProcessRow[]> {
       '-Command',
       `@((Get-CimInstance Win32_Process -Filter "Name = 'SocialPrune.exe'") | Where-Object { $_.ExecutablePath -eq '${escaped}' } | Select-Object ProcessId, ParentProcessId, ExecutablePath) | ConvertTo-Json -Compress`,
     ],
-    { windowsHide: true, timeout: 20_000 },
+    { windowsHide: true, timeout: 20_000, env: testEnvironment() },
   );
   return JSON.parse(stdout || '[]') as ProcessRow[];
 }
@@ -40,7 +41,7 @@ export async function remainingProcesses(
       '-Command',
       `ConvertTo-Json -InputObject @(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) -Compress`,
     ],
-    { windowsHide: true, timeout: 20_000, signal },
+    { windowsHide: true, timeout: 20_000, signal, env: testEnvironment() },
   );
   return JSON.parse(stdout || '[]') as number[];
 }
@@ -84,7 +85,7 @@ export async function assertNoListeners(pids: number[]): Promise<void> {
       '-Command',
       `& '${script}' -ProcessIds @(${pids.join(',')})`,
     ],
-    { windowsHide: true, timeout: 20_000 },
+    { windowsHide: true, timeout: 20_000, env: testEnvironment() },
   );
   const counts = JSON.parse(stdout) as { tcp: number; udp: number };
   assert.deepEqual(counts, { tcp: 0, udp: 0 }, 'APP_LISTENER');
@@ -107,7 +108,7 @@ export async function assertNoConnections(pids: number[]): Promise<void> {
       '-Command',
       `& '${script}' -ProcessIds @(${pids.join(',')})`,
     ],
-    { windowsHide: true, timeout: 20_000 },
+    { windowsHide: true, timeout: 20_000, env: testEnvironment() },
   );
   assert.deepEqual(JSON.parse(stdout) as unknown, [], 'APP_CONNECTION');
 }

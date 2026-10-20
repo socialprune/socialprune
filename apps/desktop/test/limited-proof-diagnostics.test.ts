@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
@@ -6,8 +13,10 @@ import { directory } from '../packaging/paths.ts';
 import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
+  RESTRICTED_LAUNCH_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
+import { RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 
 test('limited proof diagnostics preserve a child receipt before scratch cleanup, correlate parent/query evidence, and redact raw startup paths', async () => {
   const module = await import('../packaging/limited-proof-diagnostics.ts');
@@ -108,6 +117,10 @@ test.skipIf(process.platform !== 'win32')(
         'utf8',
       );
       const launcher = join(scratch, 'limited-token.ps1');
+      await copyFile(
+        join(directory, 'e2e/limited-desktop.cs'),
+        join(scratch, 'limited-desktop.cs'),
+      );
       const missing = join(scratch, 'generated-profile-missing.mjs');
       await writeFile(
         launcher,
@@ -137,7 +150,7 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
         ],
-        { timeout: 180000, env: testEnvironment() },
+        { timeout: RESTRICTED_LAUNCH_TIMEOUT_MS, env: testEnvironment() },
       ).catch((error: unknown) => error);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain('PROFILE_PROOF_FAILED');
@@ -152,7 +165,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  240000,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
 );
 
 test('runner-derived test budgets enclose the slow query and the restricted sequence, not the old 5/60 second test defaults', async () => {

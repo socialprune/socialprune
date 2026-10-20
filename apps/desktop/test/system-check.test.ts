@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { expect, test } from 'vitest';
 import * as system from '../packaging/system-check.ts';
+import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
@@ -36,7 +37,10 @@ const compare = (before: object, after: object) =>
 test('snapshot limit retains at least three times the measured restricted maximum and the cold-query floor', () => {
   const measuredMax = Math.max(44_131, 18_354, 16_475);
   expect(system.SYSTEM_SNAPSHOT_TIMEOUT_MS).toBe(
-    Math.max(60_000, Math.ceil((measuredMax * 3) / 1000) * 1000),
+    Math.max(
+      WINDOWS_QUERY_TIMEOUT_MS,
+      Math.ceil((measuredMax * 3) / 1000) * 1000,
+    ),
   );
   expect(
     system.SYSTEM_SNAPSHOT_TIMEOUT_MS / measuredMax,

@@ -11,8 +11,10 @@ import {
   runPowerShell,
   runNativeQuery,
   WINDOWS_QUERY_TIMEOUT_MS,
+  RESTRICTED_LAUNCH_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
+import { RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 
 test('causal receipts expose only repo-relative or run-owned paths', () => {
   const repo = join(tmpdir(), 'generated-repo');
@@ -111,7 +113,7 @@ process.exitCode=await runProof('smoke',${JSON.stringify(join(root, 'child'))},$
             token,
           ],
           {
-            timeout: WINDOWS_QUERY_TIMEOUT_MS,
+            timeout: RESTRICTED_LAUNCH_TIMEOUT_MS,
             windowsHide: true,
             env: testEnvironment(),
           },
@@ -165,7 +167,7 @@ process.exitCode=await runProof('smoke',${JSON.stringify(join(root, 'child'))},$
       await rm(root, { recursive: true, force: true });
     }
   },
-  60_000,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
 );
 
 test('an uncaught callback writes a causal receipt before Node exits without swallowing the error', async () => {

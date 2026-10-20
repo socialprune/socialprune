@@ -2,15 +2,14 @@ import assert from 'node:assert/strict';
 import { setTimeout as wait } from 'node:timers/promises';
 import { WINDOWS_QUERY_TIMEOUT_MS } from './windows-powershell.ts';
 
-// CI 39395902168, 2026-10-20: process identities 22,375 ms,
-// listeners 46,441 ms, TCP connections 23,570 ms. Keep these measured
-// predecessors until the runner measures their native replacements.
-export const RUNNER_PROCESS_QUERY_MAX_MS = 22_375;
-export const RUNNER_NETWORK_QUERY_MAX_MS = 46_441;
+// CI 39442592668, 2026-10-20: actual native replacements, not CIM
+// predecessors: processes 63, identities 106, TCP/UDP 79 ms maximum.
+export const RUNNER_PROCESS_QUERY_MAX_MS = 106;
+export const RUNNER_NETWORK_QUERY_MAX_MS = 79;
 export function queryPollBudget(
   measuredMaximumMs: number,
   intervalMs: number,
-  floorMs = WINDOWS_QUERY_TIMEOUT_MS,
+  floorMs = 60_000,
 ) {
   return Math.max(floorMs, Math.ceil(measuredMaximumMs * 3)) + intervalMs;
 }
@@ -19,7 +18,7 @@ export const PROCESS_POLL_TIMEOUT_MS = queryPollBudget(
   RUNNER_PROCESS_QUERY_MAX_MS,
   PROCESS_POLL_INTERVAL_MS,
 );
-// No runner layout measurement yet: reserve three full 60 s query windows.
+// No runner layout measurement yet: reserve three complete PS query windows.
 export const LAYOUT_POLL_TIMEOUT_MS = queryPollBudget(
   WINDOWS_QUERY_TIMEOUT_MS,
   500,

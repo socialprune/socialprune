@@ -26,8 +26,8 @@ import { collectProof } from './proof-collection.ts';
 import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 
 // Test-only launcher. The installer receives no test flag and has no exemption
-// from its elevated-token guard. A restricted same-user process inherits the
-// current interactive desktop and profile; no account or machine setting changes.
+// from its elevated-token guard. A restricted same-user process uses an owned
+// desktop and the same user's hive; no account or machine setting changes.
 const mode = process.argv[2];
 assert.ok(
   mode === 'smoke' ||
@@ -47,7 +47,7 @@ const ps = (script: string, args: string[] = []) =>
       join(directory, script),
       ...args,
     ],
-    { timeout: 60_000, windowsHide: true },
+    { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
   );
 const before = JSON.parse(
   (await ps('packaging/install-layout.ps1')).stdout,
@@ -225,7 +225,7 @@ try {
       run(
         join(installed.install, 'Uninstall.exe'),
         ['/S', `_?=${installed.install}`],
-        { timeout: 60_000, windowsHide: true },
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
       ),
       (error: unknown) =>
         error instanceof Error && 'code' in error && error.code === 10,

@@ -4,12 +4,17 @@ import { join } from 'node:path';
 import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
+  RESTRICTED_LAUNCH_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { pathToFileURL } from 'node:url';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 import { testEnvironment } from './process-environment.ts';
+import {
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
+} from './windows-test-budgets.ts';
 
 test('TS presence readers admit only ENOENT as absence, not denied or wrong-type reads', async () => {
   expect(
@@ -58,7 +63,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  90_000,
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
 );
 
 test.skipIf(process.platform !== 'win32')(
@@ -88,7 +93,7 @@ test.skipIf(process.platform !== 'win32')(
       const child = join(scratch, 'child.mjs');
       await writeFile(
         child,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])},{timeout:60000,env:testEnvironment()})).stdout);`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])},{timeout:${WINDOWS_QUERY_TIMEOUT_MS},env:testEnvironment()})).stdout);`,
       );
       await writeFile(args, JSON.stringify([child]));
       await runPowerShell(
@@ -104,10 +109,10 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
           '-TimeoutSeconds',
-          '75',
+          String(Math.ceil(WINDOWS_QUERY_TIMEOUT_MS / 1000)),
         ],
         {
-          timeout: 180_000,
+          timeout: RESTRICTED_LAUNCH_TIMEOUT_MS,
           windowsHide: true,
           env: testEnvironment({
             TEMP: scratch,
@@ -130,7 +135,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  240_000,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
 );
 
 test('production wrappers keep fixed paths and use the tested readers without a test flag', async () => {
@@ -167,17 +172,17 @@ test.skipIf(process.platform !== 'win32')(
       );
       const marker = join(scratch, 'descendant-completed.txt'),
         ready = join(scratch, 'descendant-started.txt'),
-        script = join(scratch, 'waiting.ps1'),
+        script = join(scratch, 'waiting.mjs'),
         entry = join(scratch, 'child.mjs'),
         args = join(scratch, 'args.json'),
         report = join(scratch, 'token.json');
       await writeFile(
         script,
-        `[IO.File]::WriteAllText('${ready.replaceAll("'", "''")}',[string]$PID); [Threading.Thread]::Sleep(8000); [IO.File]::WriteAllText('${marker.replaceAll("'", "''")}','generated late descendant')`,
+        `import {writeFile} from 'node:fs/promises'; await writeFile(${JSON.stringify(ready)},String(process.pid)); await new Promise(resolve=>setTimeout(resolve,8000)); await writeFile(${JSON.stringify(marker)},'generated late descendant');`,
       );
       await writeFile(
         entry,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; await runPowerShell(['-NoProfile','-NonInteractive','-File',${JSON.stringify(script)}],{timeout:10000});`,
+        `import {runNativeQuery} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; await runNativeQuery(process.execPath,[${JSON.stringify(script)}],{timeout:10000,queryClass:'generated-job-descendant'});`,
       );
       await writeFile(args, JSON.stringify([entry]));
       await expect(
@@ -197,7 +202,7 @@ test.skipIf(process.platform !== 'win32')(
             '5',
           ],
           {
-            timeout: 120_000,
+            timeout: RESTRICTED_LAUNCH_TIMEOUT_MS,
             env: testEnvironment({ TEMP: scratch, TMP: scratch }),
           },
         ),
@@ -226,5 +231,5 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  150_000,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
 );

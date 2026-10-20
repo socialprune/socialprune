@@ -17,10 +17,14 @@ import {
   spawnPowerShell,
   runNativeQuery,
   WINDOWS_QUERY_TIMEOUT_MS,
+  RESTRICTED_LAUNCH_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { windowsShortPath } from './short-path.ts';
 import { testEnvironment } from './process-environment.ts';
-import { WINDOWS_QUERY_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
+import {
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
+  windowsTestBudget,
+} from './windows-test-budgets.ts';
 
 test.skipIf(process.platform !== 'win32')(
   'proof ACL loads Windows PowerShell modules despite an inherited incompatible Security module',
@@ -76,11 +80,12 @@ test.skipIf(process.platform !== 'win32')(
       const old = join(scratch, 'old.mjs');
       await writeFile(
         old,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(baseline).href)}; await runPowerShell(${JSON.stringify(args)}, {timeout:60000});`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(baseline).href)}; await runPowerShell(${JSON.stringify(args)}, {timeout:${WINDOWS_QUERY_TIMEOUT_MS}});`,
       );
       const legacy = await runNativeQuery(process.execPath, [old], {
         env,
-        timeout: 90_000,
+        timeout: WINDOWS_QUERY_TIMEOUT_MS + 100,
+        queryClass: 'generated-incompatible-module-red',
         windowsHide: true,
       }).then(
         () => ({ code: 0, stderr: '' }),
@@ -124,7 +129,7 @@ test.skipIf(process.platform !== 'win32')(
       const restricted = join(scratch, 'restricted.mjs');
       await writeFile(
         restricted,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(args)},{env:testEnvironment(${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}),timeout:60000})).stdout);`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(args)},{env:testEnvironment(${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}),timeout:${WINDOWS_QUERY_TIMEOUT_MS}})).stdout);`,
       );
       const argumentsFile = join(scratch, 'arguments.json'),
         report = join(scratch, 'token.json');
@@ -142,7 +147,7 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
         ],
-        { env, timeout: 180_000, windowsHide: true },
+        { env, timeout: RESTRICTED_LAUNCH_TIMEOUT_MS, windowsHide: true },
       );
       expect(
         JSON.parse((await readFile(report, 'utf8')).replace(/^\uFEFF/, '')),
@@ -159,7 +164,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  300_000,
+  windowsTestBudget(8),
 );
 
 test('the shared boundary removes discovery state case-insensitively without relaxing policy or changing caller env', () => {
@@ -264,7 +269,8 @@ test.skipIf(process.platform !== 'win32')(
       ).toBe('Restricted|0');
     }
   },
-  150_000,
+  // Two inherited policy values, each with inherited and explicit calls.
+  windowsTestBudget(4),
 );
 
 function assertLaunchBoundary(source: string) {
@@ -370,6 +376,7 @@ test.skipIf(process.platform !== 'win32')(
         runNativeQuery(process.execPath, [child], {
           env: testEnvironment(),
           timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          queryClass: 'generated-missing-cwd-red',
           windowsHide: true,
         }),
       ).rejects.toMatchObject({ code: 1 });
@@ -403,6 +410,7 @@ test.skipIf(process.platform !== 'win32')(
         runNativeQuery(process.execPath, [child], {
           env: testEnvironment(),
           timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          queryClass: 'generated-timeout-receipt-red',
           windowsHide: true,
         }),
       ).rejects.toMatchObject({ code: 1 });
@@ -437,6 +445,7 @@ test.skipIf(process.platform !== 'win32')(
           ],
           {
             timeout: WINDOWS_QUERY_TIMEOUT_MS,
+            queryClass: 'generated-absent-profile-script-red',
             windowsHide: true,
             env: testEnvironment(),
           },
@@ -454,5 +463,5 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  60_000,
+  windowsTestBudget(3),
 );

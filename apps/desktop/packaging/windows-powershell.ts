@@ -12,17 +12,20 @@ import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
 import { dist } from './paths.ts';
 
-// 2026-10-20, R13: fresh WinPS cold/warm (ms): NetTCPIP load 352/2,
-// listener 547/440, TCP 463/451, CIM load 41/11, CIM process 142/127,
-// identity 29/6, layout 447/46, snapshot 9203/5890.
-// Full fresh-process cold/warm: listeners 1077/978, TCP 951/1105,
-// CIM 416/418, identity 253/239, layout 517/519, short-path 331/259,
-// token 207/182, ACL 428/367, fresh-profile 908/712, firewall 1492/1439.
-// CI 39381392529 lost a listener query at 20.1 s (kill inferred, not recorded).
-// 60 s is the
-// requested floor and exceeds 3x this cold maximum. Keep longer budgets;
-// release-query-*.json on the next runner run is the recalibration input.
-export const WINDOWS_QUERY_TIMEOUT_MS = 60_000;
+// 2026-10-20, CI 39413479033 + 39442592668, retained artifact maxima (ms):
+// native-query-compile 45974 (not only the 26753 first call), firewall 36981,
+// NSIS fixture 33390, ACL 33055, inline 29760, identity parity 28940,
+// socket parity 28782, fresh-profile 28300, short-path 27744.
+// Use the maximum over BOTH artifacts, not the dispatch's selected samples.
+// Native table calls remain 50-106 ms; fault-injection deadlines stay explicit.
+export const WINDOWS_QUERY_TIMEOUT_MS = Math.max(60_000, 45_974 * 3) + 100;
+// Outer restricted launch includes this PS start, profile verification's PS
+// start and a generated child's PS start, each allowed its full query window.
+export const RESTRICTED_LAUNCH_TIMEOUT_MS =
+  WINDOWS_QUERY_TIMEOUT_MS * 3 + 15_000 + 100;
+// Test-only native token probes receive the same target; they cannot select an
+// alternate shell or discovery path outside this launcher boundary.
+export const WINDOWS_POWERSHELL_EXECUTABLE = 'powershell.exe';
 
 type QueryOptions = Omit<ExecFileOptions, 'encoding' | 'shell'> & {
   queryClass?: string;
@@ -215,12 +218,16 @@ export async function runPowerShell(
   const { queryClass = powerShellClass(args), ...execution } = options;
   const started = performance.now();
   try {
-    const result = await promisify(execFile)('powershell.exe', args, {
-      ...execution,
-      shell: false,
-      encoding: 'utf8',
-      env: powerShellEnvironment(options.env),
-    });
+    const result = await promisify(execFile)(
+      WINDOWS_POWERSHELL_EXECUTABLE,
+      args,
+      {
+        ...execution,
+        shell: false,
+        encoding: 'utf8',
+        env: powerShellEnvironment(options.env),
+      },
+    );
     recordQuery(receiptFor(queryClass, started, options.timeout));
     return result;
   } catch (error) {
@@ -299,7 +306,7 @@ export function spawnPowerShell(
 ): ReturnType<typeof spawn>;
 export function spawnPowerShell(args: string[], options: SpawnOptions = {}) {
   const started = performance.now();
-  const child = spawn('powershell.exe', args, {
+  const child = spawn(WINDOWS_POWERSHELL_EXECUTABLE, args, {
     ...options,
     shell: false,
     env: powerShellEnvironment(options.env),

@@ -18,6 +18,7 @@ import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
+import { windowsTestBudget } from './windows-test-budgets.ts';
 
 test.skipIf(process.platform !== 'win32')(
   'native identities retain exact creation times, exclude reused PIDs, and observe only the generated child lifecycle',
@@ -61,7 +62,7 @@ test.skipIf(process.platform !== 'win32')(
       }
     }
   },
-  60_000,
+  windowsTestBudget(2),
 );
 
 test.skipIf(process.platform !== 'win32')(
@@ -97,7 +98,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  60_000,
+  windowsTestBudget(1),
 );
 
 test.skipIf(process.platform !== 'win32')(
@@ -167,7 +168,7 @@ test.skipIf(process.platform !== 'win32')(
       }
     }
   },
-  60_000,
+  windowsTestBudget(3),
 );
 
 test('owned process/socket queries no longer invoke CIM or NetTCPIP and cleanup cannot use the old bare predicate deadline', async () => {

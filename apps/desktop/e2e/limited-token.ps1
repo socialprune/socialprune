@@ -5,12 +5,14 @@ $ErrorActionPreference = 'Stop'
 # token exception to CreateProcessAsUser's assign-primary-token privilege.
 # https://learn.microsoft.com/windows/win32/secauthz/restricted-tokens
 # https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken
-Add-Type -TypeDefinition @'
+Add-Type -TypeDefinition (@'
 using System;
 using System.Text;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Collections.Generic;
+using System.Security.Principal;
 public static class LimitedProof {
   [StructLayout(LayoutKind.Sequential)] struct SidEntry { public IntPtr sid; public uint attributes; }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct Startup {
@@ -48,6 +50,7 @@ public static class LimitedProof {
   }
   public static uint ChildPid;
   public static string Phase="initialize";
+  public static string DesktopEvidence="null";
   static ProcessInfo StartOwned(IntPtr token,IntPtr job,string app,StringBuilder command,string cwd,ref Startup startup) {
     ProcessInfo child;
     Require(CreateProcessAsUserW(token,app,command,IntPtr.Zero,IntPtr.Zero,true,4,IntPtr.Zero,cwd,ref startup,out child),"CreateSuspendedChild");
@@ -63,6 +66,7 @@ public static class LimitedProof {
     IntPtr token=IntPtr.Zero,limited=IntPtr.Zero,impersonation=IntPtr.Zero,medium=IntPtr.Zero,job=IntPtr.Zero;
     IntPtr admins=Marshal.AllocHGlobal(68); uint size=68;
     ProcessInfo info=new ProcessInfo(),proof=new ProcessInfo();
+    LimitedDesktop ownedDesktop=null;
     try {
       Require(OpenProcessToken(GetCurrentProcess(),0x02000000,out token),"OpenProcessToken");
       Require(CreateWellKnownSid(26,IntPtr.Zero,admins,ref size),"AdministratorsSid");
@@ -74,11 +78,13 @@ public static class LimitedProof {
       Require(DuplicateToken(limited,2,out impersonation),"DuplicateToken");
       bool member; Require(CheckTokenMembership(impersonation,admins,out member),"CheckTokenMembership");
       if(member) throw new Exception("LIMITED_TOKEN_STILL_ADMIN");
+      ownedDesktop=new LimitedDesktop(limited,impersonation);
+      DesktopEvidence=ownedDesktop.Evidence();
       job=CreateJobObjectW(IntPtr.Zero,null);Require(job!=IntPtr.Zero,"CreateOwnedChildJob");
       var limits=new JobLimits {basic=new BasicLimits {flags=0x2000}};
       Require(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(JobLimits))),"SetKillOwnedChildrenOnClose");
       var command=new StringBuilder(Quote(app)); foreach(string arg in args) command.Append(" ").Append(Quote(arg));
-      var startup=new Startup { cb=Marshal.SizeOf(typeof(Startup)), desktop="winsta0\\default", flags=0x100, input=GetStdHandle(-10), output=GetStdHandle(-11), error=GetStdHandle(-12) };
+      var startup=new Startup { cb=Marshal.SizeOf(typeof(Startup)), desktop=ownedDesktop.Path, flags=0x100, input=GetStdHandle(-10), output=GetStdHandle(-11), error=GetStdHandle(-12) };
       // Verify the inherited user's hive from a real child of this same
       // restricted primary token. Do not call LoadUserProfile or create a hive.
       var profile=new StringBuilder(Quote(app));
@@ -93,10 +99,10 @@ public static class LimitedProof {
         Require(SetHandleInformation(profileStartup.error,1,1),"InheritProfileError");
         proof=StartOwned(limited,job,app,profile,cwd,ref profileStartup);
         try {
-        // R14 2026-10-20: no runner profile reading measurement yet; reserve
-        // 3 full 60 s PowerShell query windows plus start/settlement (15 s).
+        // R16 2026-10-20: compile max over both runner artifacts 45974 ms;
+        // 3x+100 => 138022 query window, plus 15 s Node start/settlement.
         var profileClock=System.Diagnostics.Stopwatch.StartNew();
-        if(WaitForSingleObject(proof.process,195000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT;killed=true;signal=job-close;timeoutMs=195000;durationMs="+profileClock.ElapsedMilliseconds);
+        if(WaitForSingleObject(proof.process,153022)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT;killed=true;signal=job-close;timeoutMs=153022;durationMs="+profileClock.ElapsedMilliseconds);
         uint proofCode; Require(GetExitCodeProcess(proof.process,out proofCode),"ProfileProofExit");
         if(proofCode!=0) throw new Exception("PROFILE_PROOF_FAILED:"+proofCode);
         } finally { CloseHandle(proof.thread); proof.thread=IntPtr.Zero; }
@@ -112,11 +118,12 @@ public static class LimitedProof {
       if(job!=IntPtr.Zero) { CloseHandle(job); job=IntPtr.Zero; }
       foreach(IntPtr process in new IntPtr[]{info.process,proof.process}) if(process!=IntPtr.Zero) WaitForSingleObject(process,5000);
       foreach(IntPtr handle in new IntPtr[]{info.thread,info.process,proof.thread,proof.process,impersonation,limited,token}) if(handle!=IntPtr.Zero) CloseHandle(handle);
+      if(ownedDesktop!=null)ownedDesktop.Dispose();
       if(medium!=IntPtr.Zero) LocalFree(medium); Marshal.FreeHGlobal(admins);
     }
   }
 }
-'@
+'@ + [IO.File]::ReadAllText("$PSScriptRoot\limited-desktop.cs"))
 $arguments = [string[]](Get-Content -LiteralPath $ArgumentsFile -Raw | ConvertFrom-Json)
 $markerKey='Software\SocialPrune-test-'+[guid]::NewGuid().ToString()
 $marker=[guid]::NewGuid().ToString()
@@ -129,11 +136,11 @@ try {
   $profileReport=$TokenReport+'.profile.json'
   $code = [LimitedProof]::Run($Executable, $arguments, (Get-Location).Path, $TimeoutSeconds, "$PSScriptRoot\profile-hive-child.ts", "$PSScriptRoot\profile-hive-proof.ps1", $markerKey, $marker, $identity.User.Value, $profileReport)
   $profile=Get-Content -LiteralPath $profileReport -Raw | ConvertFrom-Json
-  @{ method = 'CreateRestrictedToken(DISABLE_MAX_PRIVILEGE|LUA_TOKEN)+CreateProcessAsUserW'; adminMember = $false; integrity = 'medium'; childPid = [LimitedProof]::ChildPid; childExit = $code; profile=$profile; lifecycle='owned-job-kill-on-close' } | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $TokenReport -Encoding UTF8
+  @{ method = 'CreateRestrictedToken(DISABLE_MAX_PRIVILEGE|LUA_TOKEN)+CreateProcessAsUserW'; adminMember = $false; integrity = 'medium'; childPid = [LimitedProof]::ChildPid; childExit = $code; profile=$profile; desktop=([LimitedProof]::DesktopEvidence|ConvertFrom-Json); lifecycle='owned-job-kill-on-close' } | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $TokenReport -Encoding UTF8
 } catch {
   $failure=$_.Exception.ToString()
   $closed=if($failure.Contains('LIMITED_PROOF_WAIT:')){'LIMITED_PROOF_WAIT'}elseif($failure.Contains('PROFILE_PROOF_TIMEOUT')){'PROFILE_PROOF_TIMEOUT'}elseif($failure.Contains('PROFILE_PROOF_FAILED')){'PROFILE_PROOF_FAILED'}else{'LIMITED_LAUNCH_FAILED'}
-  @{state='failed';phase=[LimitedProof]::Phase;failure=@{code=$closed};childPid=[LimitedProof]::ChildPid;lifecycle='owned-job-kill-on-close'} | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $TokenReport -Encoding UTF8
+  @{state='failed';phase=[LimitedProof]::Phase;failure=@{code=$closed};childPid=[LimitedProof]::ChildPid;desktop=([LimitedProof]::DesktopEvidence|ConvertFrom-Json);lifecycle='owned-job-kill-on-close'} | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $TokenReport -Encoding UTF8
   throw
 } finally {
   $key=$hive.OpenSubKey($markerKey,$false)

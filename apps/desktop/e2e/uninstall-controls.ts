@@ -63,7 +63,7 @@ const ps = (script: string, args: string[] = []) =>
       join(directory, 'packaging', script),
       ...args,
     ],
-    { timeout: 60_000, windowsHide: true },
+    { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
   );
 type Layout = {
   install: string;

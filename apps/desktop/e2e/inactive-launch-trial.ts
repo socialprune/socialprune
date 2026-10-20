@@ -3,7 +3,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as wait } from 'node:timers/promises';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { directory } from '../packaging/paths.ts';
 import { proofOutput } from './proof-context.ts';
@@ -32,7 +35,7 @@ export async function trialInactiveRelease(executable: string) {
             String(child.pid),
             ...args,
           ],
-          { windowsHide: true, timeout: 60_000 },
+          { windowsHide: true, timeout: WINDOWS_QUERY_TIMEOUT_MS },
         );
       try {
         const beforeFocus = JSON.parse(

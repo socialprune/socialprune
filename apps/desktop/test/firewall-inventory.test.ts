@@ -8,6 +8,7 @@ import {
   WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
+import { WINDOWS_QUERY_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 import {
   compareSystemSnapshots,
   type SystemSnapshot,
@@ -85,5 +86,5 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  90_000,
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
 );

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
+  RESTRICTED_LAUNCH_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
@@ -22,7 +23,10 @@ const ps = (script: string, args: string[]) =>
       ...args,
     ],
     {
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
+      timeout:
+        script === 'limited-token.ps1'
+          ? RESTRICTED_LAUNCH_TIMEOUT_MS
+          : WINDOWS_QUERY_TIMEOUT_MS,
       windowsHide: true,
       env: testEnvironment(),
     },

@@ -32,7 +32,11 @@ import { proofOutput } from '../e2e/proof-context.ts';
 import { proofWorkspace } from '../e2e/proof-context.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import { root } from './paths.ts';
-import { runPowerShell, runNativeQuery } from './windows-powershell.ts';
+import {
+  runPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from './windows-powershell.ts';
 import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
 
 const run = runNativeQuery;
@@ -53,7 +57,7 @@ const LayoutSchema = z.strictObject({
 async function powershell(
   script: string,
   args: string[] = [],
-  timeout = 60_000,
+  timeout = WINDOWS_QUERY_TIMEOUT_MS,
 ) {
   return runPowerShell(
     [

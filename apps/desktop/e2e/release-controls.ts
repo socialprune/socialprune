@@ -95,7 +95,7 @@ const network = await watchNetwork(
 const planted = spawn(
   copiedNode,
   [join(directory, 'e2e/network-control-child.ts')],
-  { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+  { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: false },
 );
 const childExit = once(planted, 'exit');
 try {
@@ -150,7 +150,7 @@ const unattributed = await watchNetwork(
 const parent = spawn(
   process.execPath,
   [join(directory, 'e2e/network-control-parent.ts')],
-  { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+  { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: false },
 );
 const parentExited = once(parent, 'exit');
 try {

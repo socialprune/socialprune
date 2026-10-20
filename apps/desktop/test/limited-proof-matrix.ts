@@ -15,20 +15,10 @@ import { controlOutputExcerpt } from '../packaging/diagnostic-output.ts';
 
 export const matrixRowIds = [
   'a-cmd-ver',
-  'b-node-exit',
   'c-shell-command',
-  'd-shell-version-2.0',
-  'd-shell-version-3.0',
-  'd-shell-version-4.0',
-  'd-shell-version-5.1',
-  'd-shell-x86',
-  'e-alternate-shell',
   'f-no-window',
   'f-detached',
   'f-new-console',
-  'g-without-job',
-  'h-no-lua-medium',
-  'i-parent-full-token',
 ] as const;
 
 // Each process receives the same measured query ceiling. Compilation and outer

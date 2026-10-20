@@ -1,11 +1,10 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type {
   ChildProcessByStdio,
   ExecFileOptions,
   SpawnOptions,
 } from 'node:child_process';
 import type { Readable } from 'node:stream';
-import { promisify } from 'node:util';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -32,6 +31,93 @@ export const WINDOWS_PWSH_EXECUTABLE = 'pwsh.exe';
 type QueryOptions = Omit<ExecFileOptions, 'encoding' | 'shell'> & {
   queryClass?: string;
 };
+
+// Harness only. Node 24.21.0 libuv adds CREATE_NO_WINDOW for windowsHide when
+// every stdio slot is a pipe/ignore. Inherit fd 0 instead: the existing console
+// stays attached, SW_HIDE remains set, and the owned kill-on-close job remains
+// inherited. No detached process, breakaway, new console, or token change.
+export function inheritedConsoleStdio(
+  stdio: SpawnOptions['stdio'],
+): SpawnOptions['stdio'] {
+  if (stdio === 'inherit') return stdio;
+  if (Array.isArray(stdio)) {
+    if (stdio.some((slot) => slot === 'inherit' || typeof slot === 'number'))
+      return stdio;
+    if (stdio[0] !== 'ignore' && stdio[0] !== undefined && stdio[0] !== null)
+      throw new Error('HARNESS_CONSOLE_REQUIRES_INHERITED_FD');
+    return ['inherit', ...stdio.slice(1)];
+  }
+  return [
+    'inherit',
+    stdio === 'ignore' ? 'ignore' : 'pipe',
+    stdio === 'ignore' ? 'ignore' : 'pipe',
+  ];
+}
+
+async function bufferedQuery(
+  executable: string,
+  args: string[],
+  options: Omit<QueryOptions, 'queryClass'>,
+) {
+  const { maxBuffer = 1024 * 1024, ...execution } = options;
+  const child = spawn(executable, args, {
+    ...execution,
+    shell: false,
+    stdio: ['inherit', 'pipe', 'pipe'],
+  });
+  const stdout: Buffer[] = [],
+    stderr: Buffer[] = [];
+  let outputBytes = 0,
+    errorBytes = 0,
+    failure: Error | undefined;
+  const collect = (
+    target: Buffer[],
+    stream: 'stdout' | 'stderr',
+    bytes: Buffer,
+  ) => {
+    if (stream === 'stdout') outputBytes += bytes.length;
+    else errorBytes += bytes.length;
+    if (outputBytes > maxBuffer || errorBytes > maxBuffer) {
+      failure ??= Object.assign(
+        new Error(stream + ' maxBuffer length exceeded'),
+        { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' },
+      );
+      child.kill();
+      return;
+    }
+    target.push(bytes);
+  };
+  child.stdout.on('data', (bytes: Buffer) => collect(stdout, 'stdout', bytes));
+  child.stderr.on('data', (bytes: Buffer) => collect(stderr, 'stderr', bytes));
+  child.once('error', (error) => {
+    failure ??= error;
+  });
+  const [code, signal] = await new Promise<
+    [number | null, NodeJS.Signals | null]
+  >((resolve) => {
+    child.once('close', (code, signal) => resolve([code, signal]));
+  });
+  const result = {
+    stdout: Buffer.concat(stdout).toString('utf8'),
+    stderr: Buffer.concat(stderr).toString('utf8'),
+  };
+  if (failure || code !== 0 || signal !== null || child.killed) {
+    const error =
+      failure ??
+      Object.assign(
+        new Error(
+          `Command failed: ${executable} ${args.join(' ')}\n${result.stderr}`,
+        ),
+        { code: child.killed ? null : code },
+      );
+    throw Object.assign(error, result, {
+      killed: child.killed,
+      signal:
+        signal ?? (child.killed ? (options.killSignal ?? 'SIGTERM') : null),
+    });
+  }
+  return result;
+}
 type QueryReceipt = {
   queryClass: string;
   durationMs: number;
@@ -147,10 +233,8 @@ export async function runNativeQuery(
   } = options;
   const started = performance.now();
   try {
-    const result = await promisify(execFile)(executable, args, {
+    const result = await bufferedQuery(executable, args, {
       ...execution,
-      shell: false,
-      encoding: 'utf8',
     });
     recordQuery(receiptFor(queryClass, started, options.timeout));
     return result;
@@ -220,16 +304,10 @@ export async function runPowerShell(
   const { queryClass = powerShellClass(args), ...execution } = options;
   const started = performance.now();
   try {
-    const result = await promisify(execFile)(
-      WINDOWS_POWERSHELL_EXECUTABLE,
-      args,
-      {
-        ...execution,
-        shell: false,
-        encoding: 'utf8',
-        env: powerShellEnvironment(options.env),
-      },
-    );
+    const result = await bufferedQuery(WINDOWS_POWERSHELL_EXECUTABLE, args, {
+      ...execution,
+      env: powerShellEnvironment(options.env),
+    });
     recordQuery(receiptFor(queryClass, started, options.timeout));
     return result;
   } catch (error) {
@@ -311,6 +389,7 @@ export function spawnPowerShell(args: string[], options: SpawnOptions = {}) {
   const child = spawn(WINDOWS_POWERSHELL_EXECUTABLE, args, {
     ...options,
     shell: false,
+    stdio: inheritedConsoleStdio(options.stdio),
     env: powerShellEnvironment(options.env),
   });
   child.prependListener('error', (error) => {

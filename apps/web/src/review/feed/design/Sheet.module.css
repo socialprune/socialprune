@@ -1,0 +1,247 @@
+@layer components {
+  :global(html),
+  :global(body) {
+    height: 100%;
+    overflow: clip;
+  }
+  :global(#root) {
+    height: 100%;
+    min-height: 0;
+  }
+  .sheet {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    overflow: clip;
+  }
+  .designBar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+    background: var(--color-social-cover);
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+  }
+  .designBar > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .designBar nav {
+    margin-left: auto;
+  }
+  .designBar nav {
+    display: flex;
+    gap: var(--space-1);
+  }
+  .designBar button {
+    min-height: var(--target-size);
+    padding: var(--space-1) var(--space-2);
+    background: transparent;
+    border-color: transparent;
+    font-size: var(--type-xs);
+  }
+  .designBar button[aria-pressed='true'] {
+    text-decoration: underline;
+    text-underline-offset: var(--space-1);
+    color: var(--color-action);
+  }
+  .designBar {
+    min-width: 0;
+  }
+  .layout {
+    overflow: clip;
+    max-width: 1040px;
+    margin: 0 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 680px) minmax(0, 280px);
+    gap: var(--space-6);
+    align-items: stretch;
+    padding-inline: var(--space-4);
+  }
+  .mainColumn {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mainColumn > section {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+  .side {
+    overflow: auto;
+    padding: var(--space-4) 0;
+    font-size: var(--type-sm);
+  }
+  .side h2 {
+    margin: 0 0 var(--space-4);
+  }
+  .side h3 {
+    font-size: var(--type-sm);
+    margin: var(--space-4) 0 var(--space-2);
+  }
+  .side p {
+    margin: var(--space-2) 0;
+  }
+  .side .account {
+    font-weight: var(--weight-heading);
+  }
+  .summaryLine {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-block: var(--space-4);
+    color: var(--color-text-secondary);
+  }
+  .summaryLine svg {
+    flex: none;
+  }
+  .side button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-action);
+    font-size: var(--type-sm);
+    background: transparent;
+  }
+  .side hr {
+    margin-block: var(--space-5);
+    border: 0;
+    border-top: var(--border-width) solid var(--color-divider);
+  }
+  .meta {
+    font-size: var(--type-xs);
+    color: var(--color-text-secondary);
+    padding-top: var(--space-3);
+  }
+  .editor {
+    background: var(--color-surface);
+    border-inline: var(--border-width) solid var(--color-social-divider);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .editorScroll {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    scroll-padding-block: var(--space-3);
+    scrollbar-color: var(--color-boundary) var(--color-surface);
+  }
+  .editorHeader {
+    padding: var(--space-4) var(--space-5) 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--type-xs);
+    color: var(--color-text-secondary);
+    flex-wrap: wrap;
+  }
+  .editorHeader button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    border-color: transparent;
+    color: var(--color-action);
+    padding-inline: 0;
+    font-size: var(--type-sm);
+  }
+  .editor > h1 {
+    padding-inline: var(--space-5);
+    margin-block: var(--space-4) 0;
+  }
+  .editorFooter {
+    position: relative;
+    flex: none;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface);
+    border-top: var(--border-width) solid var(--color-boundary);
+  }
+  .editorFooter button {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-2);
+    align-items: center;
+    color: var(--color-on-action);
+    background: var(--color-action);
+    border-color: var(--color-action);
+    width: 100%;
+  }
+  .stateTools {
+    padding: var(--space-4);
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .stateTools h1 {
+    flex-basis: 100%;
+  }
+  .stateTools button {
+    font-size: var(--type-sm);
+  }
+  .additional {
+    display: none;
+  }
+  .additional > h2 {
+    padding: var(--space-4);
+  }
+  @media (max-width: 900px) {
+    .layout {
+      display: flex;
+      max-width: 712px;
+    }
+    .mainColumn,
+    .editor {
+      width: 100%;
+    }
+    .side {
+      display: none;
+    }
+  }
+  @media (max-width: 540px) {
+    .designBar {
+      padding: 0 var(--space-2);
+    }
+    .designBar nav {
+      justify-content: space-between;
+    }
+    .designBar > strong {
+      display: none;
+    }
+    .designBar > svg {
+      flex: none;
+    }
+    .designBar nav {
+      min-width: 0;
+      margin-left: 0;
+    }
+    .designBar nav button {
+      padding-inline: var(--space-1);
+    }
+    .layout {
+      margin-top: 0;
+      padding: 0;
+    }
+    .editorHeader {
+      padding-inline: var(--space-4);
+    }
+    .editor > h1 {
+      padding-inline: var(--space-4);
+    }
+  }
+}

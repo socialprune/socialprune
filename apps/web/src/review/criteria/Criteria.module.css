@@ -1,0 +1,312 @@
+@layer components {
+  .picker,
+  .rules {
+    padding: var(--space-5);
+    min-width: 0;
+  }
+  .picker h2,
+  .rules h2 {
+    margin: 0 0 var(--space-2);
+  }
+  .rules {
+    border-top: var(--border-width) solid var(--color-social-divider);
+  }
+  .rules h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .intro {
+    color: var(--color-text-secondary);
+    font-size: var(--type-sm);
+    line-height: var(--line-sm);
+    margin: 0 0 var(--space-5);
+    max-width: 65ch;
+  }
+  .options {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .option {
+    display: flex;
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+  }
+  .option[data-selected='true'] {
+    background: var(--color-selected-bg);
+  }
+  .option > label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    width: 100%;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .option input,
+  .ruleToggle input,
+  .unknown input,
+  .level input {
+    width: 18px;
+    height: 18px;
+    margin: var(--space-1) 0 0;
+    accent-color: var(--color-action);
+    flex: none;
+  }
+  .optionText {
+    display: grid;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+  }
+  .optionTitle {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: var(--type-sm);
+    font-weight: var(--weight-heading);
+    overflow-wrap: anywhere;
+  }
+  .hitCount {
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--weight-regular);
+    color: var(--color-text-secondary);
+  }
+  .help {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .unchecked {
+    color: var(--color-suggestion);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .own {
+    margin-top: var(--space-5);
+  }
+  .own h3 {
+    font-size: var(--type-md);
+    margin: 0 0 var(--space-2);
+  }
+  .own > p {
+    margin: 0 0 var(--space-4);
+  }
+  .field {
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--type-sm);
+    margin-top: var(--space-3);
+  }
+  .field input,
+  .field textarea,
+  .ruleValue,
+  .addRule select {
+    width: 100%;
+    min-height: var(--target-size);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: var(--space-2) var(--space-3);
+    font: inherit;
+    caret-color: var(--color-action);
+  }
+  .field textarea {
+    resize: vertical;
+  }
+  .field input::placeholder {
+    color: var(--color-text-secondary);
+    opacity: 1;
+  }
+  .ownActions,
+  .ruleLine {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .ownActions {
+    margin-top: var(--space-3);
+  }
+  .ownActions button,
+  .ruleOffer button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--type-sm);
+  }
+  .level {
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    border: 0;
+  }
+  .level legend {
+    font-weight: var(--weight-heading);
+    font-size: var(--type-md);
+    margin-bottom: var(--space-2);
+  }
+  .level label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--target-size);
+    margin-right: var(--space-4);
+    font-size: var(--type-sm);
+  }
+  .level input {
+    margin-top: 0;
+  }
+  .total {
+    margin: var(--space-4) 0 0;
+    padding: var(--space-4);
+    background: var(--color-social-hint);
+    border-radius: var(--radius-control);
+    font-size: var(--type-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .rule {
+    border-bottom: var(--border-width) solid var(--color-social-divider);
+    padding: var(--space-4) 0;
+  }
+  .rule:first-of-type {
+    padding-top: 0;
+  }
+  .ruleToggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--target-size);
+    font-size: var(--type-sm);
+    flex: 1;
+  }
+  .ruleToggle input {
+    margin-top: 0;
+  }
+  .ruleValue {
+    width: 88px;
+    font-size: var(--type-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .ruleValue[type='date'] {
+    width: 166px;
+  }
+  .heldCount {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .unknown {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--target-size);
+    margin-left: calc(var(--space-3) + 18px);
+    font-size: var(--type-xs);
+    color: var(--color-text-secondary);
+  }
+  .unknown input {
+    margin: 0;
+  }
+  .iconButton {
+    display: grid;
+    place-items: center;
+    padding: var(--space-2);
+    min-width: var(--target-size);
+    border-color: transparent;
+    color: var(--color-text-secondary);
+  }
+  .iconButton:hover {
+    color: var(--color-danger);
+    border-color: var(--color-boundary);
+  }
+  .addRule {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+  }
+  .addRule > label {
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--type-sm);
+    flex: 1;
+  }
+  .addRule > svg {
+    margin-bottom: var(--space-3);
+  }
+  .ruleOffer {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-selected-bg);
+    border-radius: var(--radius-control);
+    font-size: var(--type-sm);
+  }
+  .ruleOffer p {
+    margin-top: 0;
+  }
+  .error {
+    color: var(--color-error);
+    font-size: var(--type-sm);
+  }
+  [aria-invalid='true'] {
+    border-color: var(--color-error);
+  }
+  .srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .picker ::selection,
+  .rules ::selection {
+    color: var(--color-text);
+    background: var(--color-evidence-bg);
+  }
+  @media (max-width: 540px) {
+    .picker,
+    .rules {
+      padding: var(--space-4);
+    }
+    .options {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ruleLine {
+      gap: var(--space-2);
+    }
+    .ruleToggle {
+      flex-basis: 100%;
+    }
+    .ruleValue {
+      margin-left: calc(var(--space-3) + 18px);
+    }
+    .unknown {
+      margin-left: 0;
+    }
+    .level label {
+      display: flex;
+    }
+    .heldCount {
+      margin-left: auto;
+    }
+  }
+  @media (forced-colors: active) {
+    .option[data-selected='true'] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    .total,
+    .ruleOffer {
+      border: var(--border-width) solid CanvasText;
+      background: Canvas;
+      color: CanvasText;
+    }
+  }
+}

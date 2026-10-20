@@ -1,7 +1,7 @@
 import type { InstagramContext } from '@socialprune/core';
 import { normalize, ownerName } from './plan.ts';
 import { ContextStop, keyPaths } from './report.ts';
-import { SECOND_SOURCE_KEYS } from './selectors.ts';
+import { postObjects } from './answers.ts';
 
 type Field = 'owner' | 'time' | 'caption' | 'image';
 export interface FieldCheck {
@@ -21,25 +21,9 @@ export function compareSources(
   imageAddress: string | null,
   bodies: readonly unknown[],
 ): SourceChecks {
-  const candidates: Record<string, unknown>[] = [];
-  let visits = 0;
-  function walk(input: unknown, depth: number): void {
-    if (++visits > 100000 || depth > 40) return;
-    if (Array.isArray(input)) {
-      input.forEach((entry) => walk(entry, depth + 1));
-      return;
-    }
-    const value = object(input);
-    if (
-      value[SECOND_SOURCE_KEYS.code] === record.post.code ||
-      value.shortcode === record.post.code
-    )
-      candidates.push(value);
-    Object.values(value).forEach((entry) => {
-      if (entry && typeof entry === 'object') walk(entry, depth + 1);
-    });
-  }
-  bodies.forEach((body) => walk(body, 0));
+  const candidates = postObjects(bodies, record.post.code).objects.map(
+    (entry) => entry.value,
+  );
   const expected = {
     owner: ownerName(record.post.owner),
     time: record.post.createdAt
@@ -94,6 +78,7 @@ export function compareSources(
       );
       const agrees =
         values.length > 0 &&
+        values.length === candidates.length &&
         signatures.size === 1 &&
         values.every((value) =>
           field === 'image'
@@ -136,7 +121,7 @@ export function compareSources(
       return [
         field,
         {
-          found: values.length > 0,
+          found: values.length > 0 && values.length === candidates.length,
           agrees,
           paths,
           equalPaths: values.length

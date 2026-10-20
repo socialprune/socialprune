@@ -45,6 +45,7 @@ export const SecondSourceReportSchema = z.strictObject({
     )
     .max(64),
   objectsCapped: z.boolean(),
+  skippedParameters: count,
 });
 export type SecondSourceReport = z.infer<typeof SecondSourceReportSchema>;
 
@@ -95,6 +96,140 @@ export class ContextStop extends CliError {
     this.token = token;
   }
 }
+export const CONTEXT_CAUSE_STAGES = [
+  'run',
+  'run-start',
+  'browser-launch',
+  'browser-setup',
+  'start',
+  'checkpoint',
+  'pace',
+  'attempt',
+  'list-read',
+  'post-open',
+  'post-read',
+  'capture',
+  'compare',
+  'settlement',
+  'canary-check',
+  'progress',
+  'answers',
+  'network',
+  'manual-match',
+  'snapshot',
+  'read-back',
+  'structure-report',
+  'extension-report',
+  'automatic-check',
+  'audit',
+  'end-run',
+  'acceptance',
+  'browser-close',
+  'confirmation-close',
+  'projection',
+] as const;
+export type ContextCauseStage = (typeof CONTEXT_CAUSE_STAGES)[number];
+const CAUSE_TOKENS = [
+  'browser-timeout',
+  'browser-closed',
+  'aborted',
+  'type-error',
+  'range-error',
+  'reference-error',
+  'syntax-error',
+  'unexpected-error',
+  'unexpected-value',
+  'fs-EEXIST',
+  'fs-ENOSPC',
+  'fs-EACCES',
+  'fs-EPERM',
+  'fs-ENOENT',
+  'fs-EBUSY',
+  'socket-EADDRINUSE',
+  'socket-ECONNRESET',
+  'socket-ECONNREFUSED',
+  'socket-ETIMEDOUT',
+  'sqlite-busy',
+  'sqlite-error',
+] as const;
+type CauseToken = (typeof CAUSE_TOKENS)[number];
+export const ContextCauseSchema = z.strictObject({
+  runId: z.uuid(),
+  stage: z.enum(CONTEXT_CAUSE_STAGES),
+  step: z.number().int().nonnegative(),
+  token: z.enum(CAUSE_TOKENS),
+  chain: z.array(z.enum(CAUSE_TOKENS)).min(1).max(4),
+});
+function causeToken(error: unknown): CauseToken {
+  if (error && typeof error === 'object') {
+    if ('code' in error) {
+      for (const code of [
+        'EEXIST',
+        'ENOSPC',
+        'EACCES',
+        'EPERM',
+        'ENOENT',
+        'EBUSY',
+      ] as const)
+        if (error.code === code) return `fs-${code}`;
+      for (const code of [
+        'EADDRINUSE',
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'ETIMEDOUT',
+      ] as const)
+        if (error.code === code) return `socket-${code}`;
+      if (error.code === 'ERR_SQLITE_ERROR') {
+        return 'errcode' in error &&
+          (error.errcode === 5 || error.errcode === 6)
+          ? 'sqlite-busy'
+          : 'sqlite-error';
+      }
+    }
+    if ('name' in error) {
+      if (error.name === 'TimeoutError') return 'browser-timeout';
+      if (error.name === 'TargetClosedError') return 'browser-closed';
+      if (error.name === 'AbortError') return 'aborted';
+    }
+  }
+  if (error instanceof TypeError) return 'type-error';
+  if (error instanceof RangeError) return 'range-error';
+  if (error instanceof ReferenceError) return 'reference-error';
+  if (error instanceof SyntaxError) return 'syntax-error';
+  return error instanceof Error ? 'unexpected-error' : 'unexpected-value';
+}
+export function contextCause(
+  error: unknown,
+  runId: string,
+  stage: ContextCauseStage,
+  step: number,
+) {
+  return ContextCauseSchema.parse({ runId, stage, step, ...causeChain(error) });
+}
+function causeChain(error: unknown) {
+  const seen = new Set<unknown>();
+  const chain: CauseToken[] = [];
+  let current = error;
+  while (chain.length < 4 && !seen.has(current)) {
+    seen.add(current);
+    chain.push(causeToken(current));
+    if (
+      !current ||
+      typeof current !== 'object' ||
+      !('cause' in current) ||
+      current.cause === undefined
+    )
+      break;
+    current = current.cause;
+  }
+  const token =
+    [...chain]
+      .reverse()
+      .find(
+        (value) => !['unexpected-error', 'unexpected-value'].includes(value),
+      ) ?? chain[0]!;
+  return { token, chain };
+}
 export function stopDetails(error: unknown): { code: string; token: string } {
   if (
     error instanceof ContextStop &&
@@ -103,21 +238,8 @@ export function stopDetails(error: unknown): { code: string; token: string } {
     return { code: error.code, token: error.token };
   if (error instanceof CliError && Object.hasOwn(CLI_ERRORS, error.code))
     return { code: error.code, token: error.code };
-  if (error && typeof error === 'object' && 'code' in error)
-    for (const code of [
-      'EEXIST',
-      'ENOSPC',
-      'EACCES',
-      'EPERM',
-      'ENOENT',
-      'EBUSY',
-    ] as const)
-      if (error.code === code)
-        return { code: `fs-${code}`, token: `fs-${code}` };
-  return {
-    code: error instanceof TypeError ? 'type-error' : 'other',
-    token: error instanceof TypeError ? 'type-error' : 'other',
-  };
+  const { token } = causeChain(error);
+  return { code: token, token };
 }
 const KEYS = new Set([
   'data',

@@ -18,11 +18,19 @@ export function parseAnswer(input: string): ParsedAnswer {
   const values: unknown[] = [];
   const primitive =
     /(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/uy;
+  const prefix = /for\s*\(\s*;\s*;\s*\)\s*;/uy;
   let offset = 0;
   while (offset < text.length) {
     if (values.length === 4096) return FAILED;
     while (/\s/u.test(text[offset] ?? '') && offset < text.length) offset++;
     if (offset === text.length) break;
+    prefix.lastIndex = offset;
+    const framing = prefix.exec(text);
+    if (framing) {
+      offset += framing[0].length;
+      while (/\s/u.test(text[offset] ?? '') && offset < text.length) offset++;
+      if (offset === text.length) return FAILED;
+    }
     const start = offset;
     const first = text[offset];
     if (first === '{' || first === '[' || first === '"') {
@@ -82,6 +90,76 @@ function object(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+const PARAMETER_CONTAINERS = new Set([
+  'instanceParams',
+  'variables',
+  'params',
+  'route_match_infos',
+]);
+function mediaObject(value: Record<string, unknown>): boolean {
+  return (
+    ['pk', 'id', 'taken_at', 'image_versions2', 'carousel_media'].some((key) =>
+      Object.hasOwn(value, key),
+    ) ||
+    (value.user !== null &&
+      typeof value.user === 'object' &&
+      !Array.isArray(value.user))
+  );
+}
+/** One qualification rule for field comparison and value-free diagnostics. */
+export function postObjects(bodies: readonly unknown[], code: string | null) {
+  const objects: { value: Record<string, unknown>; path: string }[] = [];
+  let visits = 0,
+    skippedParameters = 0,
+    capped = false;
+  function walk(
+    input: unknown,
+    path: string,
+    depth: number,
+    parameter: boolean,
+  ): void {
+    if (++visits > 100000 || depth > 40) {
+      capped = true;
+      return;
+    }
+    if (Array.isArray(input)) {
+      for (const entry of input) {
+        if (visits >= 100000) {
+          capped = true;
+          break;
+        }
+        walk(entry, path + '[]', depth + 1, parameter);
+      }
+      return;
+    }
+    const value = object(input);
+    if (code && (value.code === code || value.shortcode === code)) {
+      if (parameter) skippedParameters++;
+      else if (mediaObject(value)) objects.push({ value, path: path || '*' });
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      if (visits >= 100000) {
+        capped = true;
+        break;
+      }
+      if (entry && typeof entry === 'object')
+        walk(
+          entry,
+          (path ? path + '.' : '') + reportKey(key),
+          depth + 1,
+          parameter || PARAMETER_CONTAINERS.has(key),
+        );
+    }
+  }
+  for (const body of bodies) {
+    if (visits >= 100000) {
+      capped = true;
+      break;
+    }
+    walk(body, '', 0, false);
+  }
+  return { objects, skippedParameters, capped };
+}
 export function answerSummary(
   entries: readonly CollectedAnswer[],
   code: string | null,
@@ -99,60 +177,38 @@ export function answerSummary(
     contentTypes: { json: counts(), javascript: counts() },
     objects: [],
     objectsCapped: false,
+    skippedParameters: 0,
   };
   const codeBytes = code ? Buffer.from(code) : null;
-  let visits = 0;
-  function walk(input: unknown, path: string, depth: number): void {
-    if (++visits > 100000 || depth > 40) {
-      result.objectsCapped = true;
-      return;
-    }
-    if (Array.isArray(input)) {
-      for (const entry of input) {
-        if (visits >= 100000) {
-          result.objectsCapped = true;
-          break;
-        }
-        walk(entry, path + '[]', depth + 1);
-      }
-      return;
-    }
-    const value = object(input);
-    if (code && (value.code === code || value.shortcode === code)) {
-      if (result.objects.length === 64) result.objectsCapped = true;
-      else {
-        const keys = [...new Set(Object.keys(value).map(reportKey))].sort();
-        const user = object(value.user),
-          caption = object(value.caption),
-          images = object(value.image_versions2);
-        const first = Array.isArray(value.carousel_media)
-          ? object(value.carousel_media[0])
-          : value;
-        result.objects.push({
-          path: path || '*',
-          keys: keys.slice(0, 64),
-          keysCapped: keys.length > 64,
-          fields: {
-            owner: typeof user.username === 'string',
-            time: typeof value.taken_at === 'number',
-            caption:
-              Object.hasOwn(value, 'caption') &&
-              (value.caption === null || typeof caption.text === 'string'),
-            image: Array.isArray(
-              object(first.image_versions2).candidates ?? images.candidates,
-            ),
-          },
-        });
-      }
-    }
-    for (const [key, entry] of Object.entries(value)) {
-      if (visits >= 100000) {
-        result.objectsCapped = true;
-        break;
-      }
-      if (entry && typeof entry === 'object')
-        walk(entry, (path ? path + '.' : '') + reportKey(key), depth + 1);
-    }
+  const candidates = postObjects(
+    entries.flatMap((entry) => entry.parsed.values),
+    code,
+  );
+  result.skippedParameters = candidates.skippedParameters;
+  result.objectsCapped = candidates.capped || candidates.objects.length > 64;
+  for (const { value, path } of candidates.objects.slice(0, 64)) {
+    const keys = [...new Set(Object.keys(value).map(reportKey))].sort();
+    const user = object(value.user),
+      caption = object(value.caption),
+      images = object(value.image_versions2);
+    const first = Array.isArray(value.carousel_media)
+      ? object(value.carousel_media[0])
+      : value;
+    result.objects.push({
+      path,
+      keys: keys.slice(0, 64),
+      keysCapped: keys.length > 64,
+      fields: {
+        owner: typeof user.username === 'string',
+        time: typeof value.taken_at === 'number',
+        caption:
+          Object.hasOwn(value, 'caption') &&
+          (value.caption === null || typeof caption.text === 'string'),
+        image: Array.isArray(
+          object(first.image_versions2).candidates ?? images.candidates,
+        ),
+      },
+    });
   }
   for (const entry of entries) {
     const count = result.contentTypes[entry.type];
@@ -170,7 +226,6 @@ export function answerSummary(
       count.responsesWithCode++;
     for (const body of entry.parsed.values) {
       if (code && containsCode(body, code)) count.bodiesWithCode++;
-      walk(body, '', 0);
     }
   }
   return result;

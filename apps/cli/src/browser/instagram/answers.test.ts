@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { expect, test } from 'vitest';
 import type { Page, Request } from 'playwright-core';
 import { pageAnswers } from './capture.ts';
+import { parseAnswer, postObjects } from './answers.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 
 const code = IG_FIXTURE.code;
@@ -16,6 +17,116 @@ const deferred = {
   path: ['items', 0],
   data: { items: [post] },
 };
+test.each(['\r\n', '\n', ''] as const)(
+  'C15 every top-level document accepts its own prefix with separator %j',
+  (separator) => {
+    const documents = [
+      head,
+      deferred,
+      { path: ['items', 1], items: [post] },
+      null,
+      { done: true },
+    ];
+    const source = documents
+      .map((value) => 'for (;;);' + JSON.stringify(value))
+      .join(separator);
+    expect(parseAnswer(source)).toEqual({
+      mode: 'sequence',
+      values: documents,
+    });
+  },
+);
+test('C15 framed sequences retain scanner document and nesting bounds', () => {
+  expect(
+    parseAnswer(Array.from({ length: 4097 }, () => 'for (;;);{}').join('\r\n')),
+  ).toEqual({ mode: 'failed', values: [] });
+  expect(
+    parseAnswer(
+      'for (;;);{}for (;;);' + '['.repeat(129) + '0' + ']'.repeat(129),
+    ),
+  ).toEqual({ mode: 'failed', values: [] });
+});
+test.each([
+  { pk: 'generated-media-id' },
+  { id: 'generated-media-id' },
+  { taken_at: 1 },
+  { user: {} },
+  { image_versions2: {} },
+  { carousel_media: [] },
+])('C15 media marker %j qualifies an otherwise code-only post', (marker) => {
+  expect(
+    postObjects([{ shortcode: code, ...marker }], code).objects,
+  ).toHaveLength(1);
+});
+test.each([null, 'generated-user', [], 42])(
+  'C15 non-object user %j is not a media marker',
+  (user) => {
+    expect(postObjects([{ code, user, caption: null }], code).objects).toEqual(
+      [],
+    );
+  },
+);
+test('C15 framing respects strings escapes and tolerant per-document prefixes', () => {
+  const documents = [{ text: 'Generated for (;;); } { " \\ marker' }, deferred];
+  const text =
+    ' \tfor ( ; ; );' +
+    JSON.stringify(documents[0]) +
+    '\r\n \tfor(;;); ' +
+    JSON.stringify(documents[1]);
+  expect(parseAnswer(text)).toEqual({ mode: 'sequence', values: documents });
+});
+test.each([
+  'for (;;);',
+  'for (;;);{"data":',
+  'for (;;);notJson',
+  'for (;;);for (;;);{}',
+])('C15 malformed framed tail refuses all documents %s', (tail) => {
+  expect(
+    parseAnswer('for (;;);' + JSON.stringify(post) + '\r\n' + tail),
+  ).toEqual({ mode: 'failed', values: [] });
+});
+test('C15 diagnostics skip code-keyed parameter objects before the 64-object cap', () => {
+  const route = {
+    payload: {
+      result: {
+        route_match_infos: [
+          {
+            instanceParams: Array.from({ length: 70 }, () => ({
+              ...post,
+              id: 'generated-route-id',
+            })),
+          },
+        ],
+      },
+    },
+    preloaders: [{ variables: { shortcode: code } }],
+    params: { child: { ...post } },
+  };
+  const media = {
+    result: {
+      result: {
+        data: { xdt_api__v1__media__shortcode__web_info: { items: [post] } },
+      },
+    },
+  };
+  const h = collector();
+  h.send(JSON.stringify({ route, media }));
+  return h.answers.flush(1000).then(() => {
+    const summary = h.answers.summary(code);
+    expect(summary).toMatchObject({
+      skippedParameters: 72,
+      objectsCapped: false,
+    });
+    expect(summary.objects).toHaveLength(1);
+    expect(summary.objects[0]).toMatchObject({
+      path: 'media.*.*.data.*.items[]',
+      fields: { owner: true, time: false, caption: true, image: false },
+    });
+    for (const value of [code, ...Object.values(IG_FIXTURE.other)])
+      expect(JSON.stringify(summary)).not.toContain(value);
+    h.answers.dispose();
+  });
+});
 function collector() {
   const page = new EventEmitter();
   const answers = pageAnswers(page as unknown as Page, {

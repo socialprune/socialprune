@@ -380,6 +380,72 @@ export function postAnswer(
 
 export function answerResponse(answer: unknown, variant: Variant) {
   const single = JSON.stringify(answer);
+  if (
+    variant.startsWith('answer-probe8-') ||
+    variant === 'answer-route-caption' ||
+    variant === 'answer-real-disagreement'
+  ) {
+    const value = (answer as { data: { items: unknown[] } }).data.items[0];
+    const media = {
+      __type: 'GeneratedMedia',
+      id: 'generated-response-id',
+      result: {
+        result: {
+          data: { xdt_api__v1__media__shortcode__web_info: { items: [value] } },
+        },
+      },
+    };
+    const code = (value as { code: string }).code;
+    const caption =
+      variant === 'answer-route-caption'
+        ? { text: IG_FIXTURE.other.text }
+        : null;
+    const route = {
+      payload: {
+        result: {
+          route_match_infos: [
+            {
+              instanceParams: {
+                shortcode: code,
+                caption,
+                username: IG_FIXTURE.other.username,
+                img_index: '1',
+                ...(variant === 'answer-route-caption'
+                  ? { pk: 'generated-route-identity' }
+                  : {}),
+              },
+            },
+          ],
+        },
+      },
+      preloaders: [{ variables: { shortcode: code } }],
+      params: { nested: { shortcode: code, caption } },
+    };
+    const documents: unknown[] = [
+      { __type: 'GeneratedStart', result: null },
+      route,
+      media,
+      { __type: 'GeneratedDeferred', result: { status: 'ok' } },
+      { __type: 'GeneratedEnd', result: null },
+    ];
+    if (variant === 'answer-real-disagreement') {
+      const other = structuredClone(value) as { caption: unknown };
+      other.caption = { text: IG_FIXTURE.other.text };
+      documents[3] = { path: ['media'], data: { items: [other] } };
+    }
+    const separator =
+      variant === 'answer-probe8-concatenated'
+        ? ''
+        : variant === 'answer-probe8-lf'
+          ? '\n'
+          : '\r\n';
+    return {
+      type: 'application/json',
+      body: documents
+        .map((value) => 'for (;;);' + JSON.stringify(value))
+        .join(separator),
+    };
+  }
   if (variant === 'answer-ndjson' || variant === 'answer-concatenated')
     return {
       type: 'application/json',

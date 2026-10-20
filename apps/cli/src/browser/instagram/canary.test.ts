@@ -77,6 +77,81 @@ const answer = {
   caption: { text: IG_FIXTURE.caption as string },
   image_versions2: { candidates: [{ url: address }] },
 };
+test.each([
+  'instanceParams',
+  'variables',
+  'params',
+  'route_match_infos',
+] as const)(
+  'C15 %s excludes every descendant code match even with media fields',
+  (key) => {
+    const route = { ...answer, caption: { text: IG_FIXTURE.other.text } };
+    const fields = compareSources(record, address, [
+      { [key]: [{ nested: route }] },
+      answer,
+    ]);
+    expect(
+      Object.values(fields).every((field) => field.found && field.agrees),
+    ).toBe(true);
+    expect(
+      Object.values(
+        compareSources(record, address, [{ [key]: { nested: route } }]),
+      ).every((field) => !field.found && !field.agrees),
+    ).toBe(true);
+  },
+);
+test.each(['caption', 'shortcode'] as const)(
+  'C15 a code object with only %s is not a post',
+  (field) => {
+    const decoy =
+      field === 'caption'
+        ? { code: IG_FIXTURE.code, caption: null }
+        : { shortcode: IG_FIXTURE.code };
+    expect(
+      Object.values(compareSources(record, address, [decoy])).every(
+        (field) => !field.found && !field.agrees,
+      ),
+    ).toBe(true);
+    expect(
+      Object.values(compareSources(record, address, [decoy, answer])).every(
+        (field) => field.found && field.agrees,
+      ),
+    ).toBe(true);
+  },
+);
+test.each(['owner', 'time', 'caption', 'image'] as const)(
+  'C15 every real post must carry %s for a complete second source',
+  (field) => {
+    const partial: Record<string, unknown> = {
+      ...answer,
+      id: 'generated-real-post-id',
+    };
+    delete partial[
+      (
+        {
+          owner: 'user',
+          time: 'taken_at',
+          caption: 'caption',
+          image: 'image_versions2',
+        } as const
+      )[field]
+    ];
+    const fields = compareSources(record, address, [answer, partial]);
+    expect(fields[field]).toMatchObject({ found: false, agrees: false });
+    expect(() =>
+      automaticCanaryCheck({
+        confirmed: true,
+        ownerShown: true,
+        timeShown: true,
+        imageStored: true,
+        screenshotStored: true,
+        fields,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'CANARY_NO_SECOND_SOURCE' }),
+    );
+  },
+);
 test('C14 secondSource report validates every closed count path key and field flag', () => {
   const count = {
     responses: 1,
@@ -108,11 +183,15 @@ test('C14 secondSource report validates every closed count path key and field fl
       },
     ],
     objectsCapped: false,
+    skippedParameters: 0,
   };
   expect(ContextStepReportSchema.parse({ secondSource })).toMatchObject({
     secondSource,
   });
   for (const changed of [
+    { ...secondSource, skippedParameters: -1 },
+    { ...secondSource, skippedParameters: 1.5 },
+    { ...secondSource, skippedParameters: IG_FIXTURE.other.username },
     { ...secondSource, private: IG_FIXTURE.other.text },
     {
       ...secondSource,

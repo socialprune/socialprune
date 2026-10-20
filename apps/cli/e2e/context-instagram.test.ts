@@ -1346,6 +1346,133 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test('C16 unexpected list-read error survives CONTEXT_FAILED as a closed correlated cause', async () => {
+  const h = await harness('success', 1);
+  const timeout = new Error(IG_FIXTURE.other.text);
+  timeout.name = 'TimeoutError';
+  const failure = new Error(IG_FIXTURE.other.username, { cause: timeout });
+  const load = vi
+    .spyOn(driverHelpers, 'loadList')
+    .mockRejectedValueOnce(failure);
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      stop: { token: 'browser-timeout' },
+      cause: {
+        runId: run.runId,
+        stage: 'list-read',
+        step: 1,
+        token: 'browser-timeout',
+        chain: ['unexpected-error', 'browser-timeout'],
+      },
+    });
+    expect(h.notices.join('')).toContain(
+      `Stop detail: browser-timeout; stage=list-read; step=1; run=${run.runId}`,
+    );
+    expect(run.canaryAcceptedAt).toBeNull();
+    expect(journal.attempts.at(-1)).toMatchObject({
+      state: 'failed',
+      code: 'CONTEXT_FAILED',
+    });
+    for (const value of [
+      h.plan.handle,
+      IG_FIXTURE.code,
+      ...Object.values(IG_FIXTURE.other),
+    ]) {
+      expect(text).not.toContain(value);
+      expect(h.notices.join('')).not.toContain(value);
+    }
+  } finally {
+    load.mockRestore();
+    await h.close();
+  }
+});
+test('C16 first unexpected cause survives a later finalization failure without exposing messages', async () => {
+  const h = await harness('success', 1);
+  const failure = Object.assign(new Error(IG_FIXTURE.other.text), {
+    code: 'EBUSY',
+  });
+  h.setCapture(() => Promise.reject(failure));
+  const later = vi
+    .spyOn(profileHelpers, 'writeExtensionReport')
+    .mockRejectedValue(new TypeError(IG_FIXTURE.other.username));
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(text) as {
+      finalization: { stage: string; stop: { code: string; token: string } }[];
+    };
+    expect(report).toMatchObject({
+      stop: { token: 'fs-EBUSY' },
+      cause: {
+        runId: run.runId,
+        stage: 'capture',
+        step: 1,
+        token: 'fs-EBUSY',
+        chain: ['fs-EBUSY'],
+      },
+    });
+    expect(report.finalization).toContainEqual({
+      stage: 'extension-report',
+      stop: { code: 'type-error', token: 'type-error' },
+    });
+    expect(h.notices.join('')).toContain(
+      `Stop detail: fs-EBUSY; stage=capture; step=1; run=${run.runId}`,
+    );
+    for (const value of Object.values(IG_FIXTURE.other)) {
+      expect(text).not.toContain(value);
+      expect(h.notices.join('')).not.toContain(value);
+    }
+  } finally {
+    later.mockRestore();
+    await h.close();
+  }
+});
+test('C16 an unexpected browser-close failure is persisted after the earlier structure write', async () => {
+  const h = await harness('success', 5);
+  const failure = new RangeError(IG_FIXTURE.other.text);
+  let reset: (() => void) | undefined;
+  h.afterLaunch(() => {
+    const close = vi.spyOn(h.context!, 'close').mockRejectedValueOnce(failure);
+    reset = () => close.mockRestore();
+    return Promise.resolve();
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      stop: { token: 'range-error' },
+      cause: {
+        runId: run.runId,
+        stage: 'browser-close',
+        step: 5,
+        token: 'range-error',
+        chain: ['range-error'],
+      },
+    });
+    expect(h.notices.join('')).toContain(
+      `Stop detail: range-error; stage=browser-close; step=5; run=${run.runId}`,
+    );
+    expect(text).not.toContain(IG_FIXTURE.other.text);
+  } finally {
+    reset?.();
+    await h.close();
+  }
+}, 120000);
 test('C13 Continue waits for the generated read to settle, not a 30-second click over an unfinished step', async () => {
   const h = await harness('owner-first-profile', 1, 45000);
   let first = true;
@@ -3655,6 +3782,95 @@ test.each([
         h.fake.requests.filter((request) => request.path.startsWith('/media/')),
       ).toHaveLength(code ? 1 : 5);
       assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each([
+  ['answer-probe8-crlf', false],
+  ['answer-probe8-lf', false],
+  ['answer-probe8-concatenated', false],
+  ['answer-route-caption', false],
+  ['answer-real-disagreement', true],
+] as const)(
+  'C15 framed second-source %s excludes parameters but never real disagreement',
+  async (variant, disagrees) => {
+    const h = await harness(variant, 5);
+    try {
+      const result = await h.start(true);
+      expect(result, h.notices.join('')).toMatchObject(
+        disagrees
+          ? { code: 'CANARY_MISMATCH' }
+          : { completed: 5, endReason: 'canary' },
+      );
+      const journal = await h.store.browserJournal();
+      expect(Boolean(journal.runs[0]!.canaryAcceptedAt)).toBe(!disagrees);
+      const reportText = await readFile(
+        join(
+          h.directory,
+          'context',
+          'instagram',
+          `canary-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      );
+      const report = JSON.parse(reportText) as {
+        steps: {
+          secondSource: {
+            skippedParameters: number;
+            objectsCapped: boolean;
+            contentTypes: { json: Record<string, number> };
+            objects: { path: string; fields: Record<string, boolean> }[];
+          };
+          fields: Record<string, { found: boolean; agrees: boolean }>;
+        }[];
+      };
+      expect(report.steps).toHaveLength(disagrees ? 1 : 5);
+      for (const step of report.steps) {
+        expect(step.secondSource.contentTypes.json).toMatchObject({
+          responses: 1,
+          sequence: 1,
+          single: 0,
+          failed: 0,
+          bodies: IG_FIXTURE.expected.framedDocuments,
+          bodiesWithCode:
+            IG_FIXTURE.expected.framedCodeDocuments + (disagrees ? 1 : 0),
+        });
+        expect(step.secondSource.skippedParameters).toBe(
+          IG_FIXTURE.expected.framedParameterObjects,
+        );
+        expect(step.secondSource.objectsCapped).toBe(false);
+        expect(step.secondSource.objects).toHaveLength(disagrees ? 2 : 1);
+        expect(step.secondSource.objects[0]).toMatchObject({
+          path: '*.*.data.*.items[]',
+          fields: { owner: true, time: true, caption: true, image: true },
+        });
+        expect(step.fields.caption).toMatchObject({
+          found: true,
+          agrees: !disagrees,
+        });
+      }
+      for (const value of [
+        IG_FIXTURE.code,
+        IG_FIXTURE.caption,
+        IG_FIXTURE.postAt,
+        IG_FIXTURE.commentId,
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+          item.id,
+        ]),
+        h.fake.origin,
+      ])
+        expect(reportText).not.toContain(value);
+      assertRecordedEvents(h.fake.events);
+      expect(
+        h.fake.requests.filter((request) => request.path.startsWith('/media/')),
+      ).toHaveLength(disagrees ? 1 : 5);
     } finally {
       await h.close();
     }

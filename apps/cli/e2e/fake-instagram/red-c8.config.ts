@@ -15,6 +15,18 @@ const cases: Record<
     include?: string[];
   }
 > = {
+  'c15-leading-prefix-only': {
+    file: '/instagram/answers.ts',
+    before: 'const framing = prefix.exec(text);',
+    after: 'const framing = null as ReturnType<typeof prefix.exec>;',
+    tests: '^C15 framed second-source answer-probe8-crlf',
+  },
+  'c15-parameter-exclusion': {
+    file: '/instagram/answers.ts',
+    before: 'PARAMETER_CONTAINERS.has(key)',
+    after: 'false',
+    tests: '^C15 framed second-source answer-route-caption',
+  },
   'c14-whole-body-only': {
     file: '/instagram/capture.ts',
     before:

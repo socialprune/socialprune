@@ -35,7 +35,10 @@ import {
   stopDetails,
   keyPaths,
   pairedCode,
+  contextCause,
+  ContextCauseSchema,
 } from './report.ts';
+import type { ContextCauseStage } from './report.ts';
 import {
   productionContext,
   loadList,
@@ -152,6 +155,7 @@ export async function runContextWithDependencies(
     steps: unknown[];
     confirmations: { post: number; list: number };
     stop?: ReturnType<typeof stopDetails>;
+    cause?: ReturnType<typeof contextCause>;
     readback?: unknown;
     abortedHosts?: Record<string, number>;
     finalization?: { stage: string; stop: ReturnType<typeof stopDetails> }[];
@@ -186,6 +190,11 @@ export async function runContextWithDependencies(
     accountBefore: string | null = null,
     accountAfter: string | null = null;
   let pendingAttempt: string | undefined;
+  let stage: ContextCauseStage = 'run';
+  const recordCause = (caught: unknown, at: ContextCauseStage) => {
+    if (!(caught instanceof CliError) && !report.cause)
+      report.cause = contextCause(caught, runId, at, steps);
+  };
   const profileNames: string[] = [];
   let cancel!: () => void;
   const cancelled = new Promise<false>((resolve) => {
@@ -302,6 +311,7 @@ export async function runContextWithDependencies(
     });
   };
   try {
+    stage = 'run-start';
     options.session?.before(before, null);
     options.notice(summary.warning + '\n');
     const start = options.order
@@ -341,7 +351,9 @@ export async function runContextWithDependencies(
       await options.store
         .browserOutcomeWriter()
         .recordContextOrder(runId, options.order.sha256);
+    stage = 'browser-launch';
     context = await deps.launch(options.profile, options.executablePath);
+    stage = 'browser-setup';
     options.session?.browser(() => context!.close());
     network = await guardInstagramNetwork(
       context,
@@ -364,6 +376,7 @@ export async function runContextWithDependencies(
     await context.setOffline(false);
     if (!options.session) await local.goto(confirmation.launchUrl);
     options.notice(`Confirmation: ${confirmation.url}\n`);
+    stage = 'start';
     if (
       !(await Promise.race([start, cancelled, interrupted.then(() => false)]))
     ) {
@@ -381,6 +394,7 @@ export async function runContextWithDependencies(
       ).hash !== options.plan.hash
     )
       throw new CliError('STALE_PLAN');
+    stage = 'checkpoint';
     await checkpoint();
     const page = options.session ? local : await pages.newPage();
     answers = pageAnswers(page, deps.policy);
@@ -398,6 +412,7 @@ export async function runContextWithDependencies(
     const resumeChecks = async () => {
       // The next counted, paced list step verifies account and language before
       // opening a post. Resume itself must not navigate an uncounted page.
+      stage = 'checkpoint';
       await checkpoint();
     };
     const boundaryWait = async (ms: number) => {
@@ -436,9 +451,11 @@ export async function runContextWithDependencies(
         endReason = 'daily-cap';
         break;
       }
+      stage = 'checkpoint';
       await checkpoint();
       options.session?.entry(entryView(row.item, 'confirm-comment'));
       const attemptId = crypto.randomUUID();
+      stage = 'attempt';
       await writer.sending({
         runId,
         attemptId,
@@ -450,6 +467,7 @@ export async function runContextWithDependencies(
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
+        stage = 'pace';
         const pausedBefore = controls?.pausedMs ?? 0;
         await controls?.checkpoint(resumeChecks, waits.signal);
         last += (controls?.pausedMs ?? 0) - pausedBefore;
@@ -458,6 +476,7 @@ export async function runContextWithDependencies(
           dateInZone(options.now(), options.plan.timeZone) !== day ||
           steps >= max
         ) {
+          stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'unconfirmed',
@@ -494,8 +513,10 @@ export async function runContextWithDependencies(
           });
           await boundaryWait(wait);
         }
+        stage = 'checkpoint';
         await checkpoint();
         if (dateInZone(options.now(), options.plan.timeZone) !== day) {
+          stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'unconfirmed',
@@ -508,6 +529,7 @@ export async function runContextWithDependencies(
           break outer;
         }
         await controls?.checkpoint(resumeChecks, waits.signal);
+        stage = 'attempt';
         await writer.step(runId, options.now().toISOString());
         if (candidate === 0) commentsTried++;
         steps++;
@@ -524,6 +546,7 @@ export async function runContextWithDependencies(
         answers.reset(options.plan.canary);
         answerReport = undefined;
         const rowCounts = { emptySkipped: 0, otherName: 0 };
+        stage = 'list-read';
         const list = await (async () => {
           try {
             return await loadList(
@@ -545,6 +568,7 @@ export async function runContextWithDependencies(
         accountAfter = list.account;
         options.session?.before(before, accountBefore);
         await network?.flush();
+        stage = 'answers';
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
           filterByLists: true,
@@ -580,6 +604,7 @@ export async function runContextWithDependencies(
         answerReport?.();
         profileNames.push(list.account);
         if (list.full || !list.candidates[candidate]) {
+          stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'not-listed',
@@ -591,6 +616,7 @@ export async function runContextWithDependencies(
           stepReport.result = list.full ? 'window-full' : 'no-row';
           break;
         }
+        stage = 'post-open';
         if (
           !(await openCandidate(
             page,
@@ -599,6 +625,7 @@ export async function runContextWithDependencies(
             guard,
           ))
         ) {
+          stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'unavailable',
@@ -610,6 +637,7 @@ export async function runContextWithDependencies(
           stepReport.result = 'unavailable';
           break;
         }
+        stage = 'post-read';
         const read = await confirmOnPost(
           page,
           row.item,
@@ -642,6 +670,7 @@ export async function runContextWithDependencies(
           if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
           const code =
             list.candidates.length > 3 ? 'several' : read.result.code;
+          stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'unconfirmed',
@@ -660,6 +689,7 @@ export async function runContextWithDependencies(
             });
           break;
         }
+        stage = 'capture';
         const captures = await (deps.capture ?? capturePost)(
           options.workspace,
           read.post.code,
@@ -703,10 +733,12 @@ export async function runContextWithDependencies(
           runId,
           attemptId,
         };
+        stage = 'answers';
         await answers.flush(deps.responseMs);
         if (options.plan.canary)
           stepReport.secondSource = answers.summary(read.post.code);
         await checkpoint();
+        stage = 'compare';
         const check: CanaryCheck = {
           confirmed: true,
           fields: compareSources(record, read.source, answers.bodies),
@@ -730,7 +762,9 @@ export async function runContextWithDependencies(
           },
           paths: [...new Set(answers.bodies.flatMap((body) => keyPaths(body)))],
         });
+        stage = 'canary-check';
         if (options.order && options.plan.canary) automaticCanaryCheck(check);
+        stage = 'settlement';
         await writer.confirm(record);
         if (automatic) {
           checkedAttempts.set(attemptId, check);
@@ -743,6 +777,7 @@ export async function runContextWithDependencies(
         break;
       }
       if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
+      stage = 'progress';
       options.session?.progress(
         used,
         completed,
@@ -779,10 +814,12 @@ export async function runContextWithDependencies(
     }
     if (options.plan.canary && commentsTried === 15 && completed < 5)
       throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+    stage = 'canary-check';
     if (automatic && chosen.length) await assertAutomaticCanary();
     if (options.plan.canary && report.steps.length > 0 && endReason === 'done')
       endReason = 'canary';
   } catch (caught) {
+    recordCause(caught, stage);
     error = caught;
     endReason =
       caught instanceof CliError && caught.code === 'CANCELLED'
@@ -796,6 +833,8 @@ export async function runContextWithDependencies(
   } finally {
     let matches = false,
       reportPath: string | undefined;
+    let persistedCause: ReturnType<typeof contextCause> | undefined;
+    let announcedCause: ReturnType<typeof contextCause> | undefined;
     type FinalStage =
       | 'answers'
       | 'settlement'
@@ -811,8 +850,9 @@ export async function runContextWithDependencies(
       | 'acceptance'
       | 'browser-close'
       | 'confirmation-close';
-    const retain = (caught: unknown) => {
+    const retain = (caught: unknown, at: ContextCauseStage = 'projection') => {
       if (error !== undefined) return;
+      recordCause(caught, at);
       error = caught;
       endReason =
         caught instanceof CliError && caught.code === 'CANCELLED'
@@ -832,7 +872,7 @@ export async function runContextWithDependencies(
         await action();
         return true;
       } catch (caught) {
-        retain(caught);
+        retain(caught, stage);
         (report.finalization ??= []).push({ stage, stop: stopDetails(caught) });
         return false;
       }
@@ -848,9 +888,13 @@ export async function runContextWithDependencies(
           steps: report.steps.map((step) =>
             ContextStepReportSchema.parse(step),
           ),
+          ...(report.cause
+            ? { cause: ContextCauseSchema.parse(report.cause) }
+            : {}),
         },
         Boolean(reportPath),
       );
+      persistedCause = report.cause;
     };
     await finalize('answers', async () => {
       await answers?.flush(deps.responseMs);
@@ -1058,7 +1102,10 @@ export async function runContextWithDependencies(
     }
     if (error) {
       report.stop = stopDetails(error);
-      options.notice(`Stop detail: ${report.stop.token}\n`);
+      options.notice(
+        `Stop detail: ${report.stop.token}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}\n`,
+      );
+      announcedCause = report.cause;
     }
     if (reportPath) options.notice(`Structure report: ${reportPath}\n`);
     const text = contextEnd(endReason, options.lang, Boolean(options.order));
@@ -1099,6 +1146,14 @@ export async function runContextWithDependencies(
       options.signal.removeEventListener('abort', stop);
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);
+    }
+    if (report.cause && persistedCause !== report.cause)
+      await finalize('structure-report', structure);
+    if (report.cause && announcedCause !== report.cause) {
+      report.stop = stopDetails(error);
+      options.notice(
+        `Stop detail: ${report.stop.token}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}\n`,
+      );
     }
   }
   if (error)

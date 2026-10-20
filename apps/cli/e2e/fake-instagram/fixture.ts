@@ -40,6 +40,9 @@ export const IG_FIXTURE = {
     otherNameRows: 3,
     accountFillers: 8,
     navigationDelayMs: 800,
+    framedDocuments: 5,
+    framedCodeDocuments: 2,
+    framedParameterObjects: 3,
   },
   allowedClicks: [
     'Sort & filter',
@@ -104,6 +107,11 @@ export type Variant =
   | 'answer-javascript'
   | 'answer-disagreement'
   | 'answer-unparsable'
+  | 'answer-probe8-crlf'
+  | 'answer-probe8-lf'
+  | 'answer-probe8-concatenated'
+  | 'answer-route-caption'
+  | 'answer-real-disagreement'
   | 'list-other-names'
   | 'list-other-names-nav-late'
   | 'list-nav-other'

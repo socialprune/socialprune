@@ -342,7 +342,8 @@ export function Review({ client }: { client: WorkspaceClient }) {
       // still settling. Its reply must not evict the newly focused window.
       if (
         forRange &&
-        visibleIndex(virtualizer.range?.startIndex ?? 0) !== start
+        (visibleIndex(virtualizer.range?.startIndex ?? 0) !== start ||
+          (movingFocus.current && visibleIndex(focusedIndex.current) !== start))
       )
         return;
       windowOffset.current = start;
@@ -364,6 +365,19 @@ export function Review({ client }: { client: WorkspaceClient }) {
   useEffect(() => {
     const first = virtualizer.range?.startIndex;
     if (first !== undefined) {
+      // rangeExtractor pins the focus even while the viewport is still at the
+      // previous end. A pinned item is not evidence that a keyboard jump has
+      // landed: loading that old range would evict the destination's rows.
+      if (movingFocus.current) {
+        const destination = focusedIndex.current;
+        if (
+          destination < first ||
+          destination > (virtualizer.range?.endIndex ?? first) ||
+          !rowAt(destination)
+        )
+          return;
+        movingFocus.current = false;
+      }
       if (visibleIndex(first) !== windowOffset.current) {
         void loadWindow(visibleIndex(first), undefined, true);
         if (!movingFocus.current) {
@@ -372,11 +386,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
         }
       }
       if (
-        movingFocus.current &&
-        virtualItems.some(({ index }) => index === focusedIndex.current)
-      )
-        movingFocus.current = false;
-      if (
         !movingFocus.current &&
         !virtualItems.some(({ index }) => index === focusedIndex.current)
       ) {
@@ -384,11 +393,20 @@ export function Review({ client }: { client: WorkspaceClient }) {
         setFocusIndex(first);
       }
     }
-  }, [virtualizer.range?.startIndex]);
+  }, [
+    virtualizer.range?.startIndex,
+    virtualizer.range?.endIndex,
+    focusIndex,
+    rows,
+    offset,
+  ]);
 
   async function move(index: number, extend = false) {
     movingFocus.current = true;
     const bounded = Math.min(Math.max(0, index), Math.max(0, total - 1));
+    // Protect the destination while its worker page is still in flight, not
+    // the previously focused row that is already visible at the other end.
+    focusedIndex.current = bounded;
     if (visibleIndex(bounded) !== windowOffset.current)
       await loadWindow(visibleIndex(bounded));
     else {
@@ -398,8 +416,11 @@ export function Review({ client }: { client: WorkspaceClient }) {
       windowRequest.current = null;
     }
     setFocusIndex(bounded);
-    focusedIndex.current = bounded;
-    if (!paged) virtualizer.scrollToIndex(bounded, { align: 'auto' });
+    if (!paged)
+      virtualizer.scrollToIndex(bounded, {
+        align: 'auto',
+        behavior: 'instant',
+      });
     if (extend) {
       allViewSelected.current = false;
       setSelectionAll(false);
@@ -1294,7 +1315,8 @@ export function Review({ client }: { client: WorkspaceClient }) {
                     aria-rowcount={total}
                     aria-activedescendant={
                       focused &&
-                      virtualItems.some(({ index }) => index === focusIndex)
+                      virtualItems.some(({ index }) => index === focusIndex) &&
+                      rowAt(focusIndex)
                         ? `review-cell-${focusIndex}`
                         : undefined
                     }

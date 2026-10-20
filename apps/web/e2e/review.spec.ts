@@ -6,6 +6,10 @@ import {
   waitForApp,
 } from './helpers.ts';
 import { restoreReview, reviewFixture } from './review-fixture.ts';
+import {
+  captureReviewNavigation,
+  traceReviewNavigation,
+} from './review-navigation.ts';
 
 test('W2a an imported archive reaches a keyboard-only review without suggestions', async ({
   page,
@@ -229,47 +233,87 @@ test('W2a example badges appear only on a restored demo workspace', async ({
 
 test('W2a recycled rows keep a valid active descendant and bounded page memory', async ({
   page,
-}) => {
-  await restoreReview(page, reviewFixture('personal', false, 600));
-  const grid = page.getByRole('grid');
-  await grid.focus();
-  await page.keyboard.press('End');
-  await expect(grid).toHaveAttribute(
-    'aria-activedescendant',
-    'review-cell-599',
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const grid = document.querySelector('[role="grid"]');
-        const active = grid?.getAttribute('aria-activedescendant');
-        return active ? document.getElementById(active)?.textContent : null;
+  browserName,
+}, info) => {
+  await traceReviewNavigation(page, browserName === 'chromium');
+  try {
+    await restoreReview(page, reviewFixture('personal', false, 600));
+    const grid = page.getByRole('grid');
+    await grid.focus();
+    await page.keyboard.press('End');
+    await expect(grid).toHaveAttribute(
+      'aria-activedescendant',
+      'review-cell-599',
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const grid = document.querySelector('[role="grid"]');
+          const active = grid?.getAttribute('aria-activedescendant');
+          return active ? document.getElementById(active)?.textContent : null;
+        }),
+      )
+      .toBeTruthy();
+    expect(await page.getByRole('row').count()).toBeLessThan(30);
+    expect(
+      await page.evaluate(() => window.workspace.rows.length),
+    ).toBeLessThanOrEqual(200);
+    // Keep the browser scroll asynchronous while fourfold Chromium throttling
+    // separates the Home focus commit from the old range's scroll notification.
+    await grid.evaluate((element) => {
+      element.style.scrollBehavior = 'smooth';
+    });
+    await page.keyboard.press('Home');
+    await expect(grid).toHaveAttribute(
+      'aria-activedescendant',
+      'review-cell-0',
+    );
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.getByRole('row').nth(0)).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.getByRole('row').nth(1)).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(grid).toHaveAttribute(
+      'aria-activedescendant',
+      'review-cell-1',
+    );
+    await expect(grid.locator('#review-cell-1')).toBeAttached();
+    await expect(page.getByRole('row').nth(0)).toHaveAttribute(
+      'aria-rowindex',
+      '1',
+    );
+    await expect(page.getByRole('row').nth(1)).toHaveAttribute(
+      'aria-rowindex',
+      '2',
+    );
+    await expect
+      .poll(() => grid.evaluate((element) => element.scrollTop))
+      .toBeLessThan(200);
+    const indices = await page
+      .getByRole('row')
+      .evaluateAll((rows) =>
+        rows.map((row) => Number(row.getAttribute('data-index'))),
+      );
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+    expect(
+      await page.evaluate(() => window.workspace.rows.length),
+    ).toBeLessThanOrEqual(200);
+    const before = await page.evaluate(() =>
+      window.workspace.request({
+        type: 'history',
+        requestId: crypto.randomUUID(),
+        limit: 50,
       }),
-    )
-    .toBeTruthy();
-  expect(await page.getByRole('row').count()).toBeLessThan(30);
-  expect(
-    await page.evaluate(() => window.workspace.rows.length),
-  ).toBeLessThanOrEqual(200);
-  await page.keyboard.press('Home');
-  await expect(grid).toHaveAttribute('aria-activedescendant', 'review-cell-0');
-  await page.keyboard.press('Shift+ArrowDown');
-  await expect(page.getByRole('row').nth(0)).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await expect(page.getByRole('row').nth(1)).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  const before = await page.evaluate(() =>
-    window.workspace.request({
-      type: 'history',
-      requestId: crypto.randomUUID(),
-      limit: 50,
-    }),
-  );
-  expect(before).toMatchObject({ type: 'historyEntries', entries: [] });
+    );
+    expect(before).toMatchObject({ type: 'historyEntries', entries: [] });
+  } catch (error) {
+    await captureReviewNavigation(page, info);
+    throw error;
+  }
 });
 
 test('W2a a delayed bottom window cannot replace the settled Home rows', async ({

@@ -2,7 +2,7 @@
 
 Each record states one decision, the options it was weighed against, the evidence that decided it and what it costs. [ADR-001](ADR-001-decision-records.md) sets the format and the rule for changing a record: once accepted, a record changes only through a new record that supersedes it. Shared measurement tables are in [evidence-2026-10.md](../evidence-2026-10.md). The overview of how the pieces fit is in [docs/architecture/README.md](../README.md).
 
-The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance". Records 023, 026, 027 and 029 are `Proposed`: they follow his change of hard constraint 4 on 2026-10-11 and wait for his approval. He accepted 028, 030 and 031 on 2026-10-16.
+The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Accepted` and `Approved on` carries that date. The last column states the choices he made where a record left one to him. A record that was corrected before acceptance lists each correction under "Changes before acceptance". Records 023, 026, 027 and 029 are `Proposed`: they follow his change of hard constraint 4 on 2026-10-11 and wait for his approval. He accepted 028, 030 and 031 on 2026-10-16, and 032 on 2026-10-20.
 
 | ADR | Title | Status | Date | Decided by the maintainer |
 |---|---|---|---|---|
@@ -37,6 +37,7 @@ The maintainer accepted records 001 to 022 on 2026-10-09, so their status is `Ac
 | [029](ADR-029-signed-in-originals-pass.md) | The signed-in originals pass on X | Proposed | 2026-10-11 | on 2026-10-11: the originals as complete as possible, signing in is accepted; what works without a login stays anonymous |
 | [030](ADR-030-instagram-context-record.md) | Instagram post context as its own workspace record | Accepted | 2026-10-16 | on 2026-10-15 (IG-3 point 2): what is kept per confirmed comment; accepted on 2026-10-16 (IG-4), workspace version 5 with a copy first |
 | [031](ADR-031-desktop-app.md) | A Windows desktop app around the review and the engine | Accepted | 2026-10-16 | on 2026-10-16 (DESK-1): Electron, the platform in the installed browser beside the app, Microsoft Store first with a Partner Center account in his name, the GitHub download unsigned until SignPath Foundation accepts, his SignPath application after the first release |
+| [032](ADR-032-review-feed.md) | The review feed with criteria, keep rules and one final mark | Accepted | 2026-10-20 | on 2026-10-20: a feed that scrolls like X with tabs, criteria he ticks one by one and his own criteria, keep rules the program checks on the export's numbers, one counted final mark; new workspaces start with nothing ticked, politically incorrect is its own category, S2 gains 160 invented items he reads first, entries set to Later are marked only one by one |
 
 ## Earlier choices these records replace
 

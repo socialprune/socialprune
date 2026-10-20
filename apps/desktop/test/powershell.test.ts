@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import {
   mkdir,
   mkdtemp,
@@ -10,13 +9,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import {
   powerShellEnvironment,
   runPowerShell,
   spawnPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { windowsShortPath } from './short-path.ts';
 import { testEnvironment } from './process-environment.ts';
@@ -62,19 +62,24 @@ test.skipIf(process.platform !== 'win32')(
       const baseline = join(scratch, 'baseline.mts');
       await writeFile(
         baseline,
-        source.replaceAll(
-          'env: powerShellEnvironment(options.env)',
-          'env: options.env',
-        ),
+        source
+          .replaceAll(
+            'env: powerShellEnvironment(options.env)',
+            'env: options.env',
+          )
+          .replace(
+            "from './paths.ts'",
+            `from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/paths.ts')).href)}`,
+          ),
       );
       const old = join(scratch, 'old.mjs');
       await writeFile(
         old,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(baseline).href)}; await runPowerShell(${JSON.stringify(args)}, {timeout:30000});`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(baseline).href)}; await runPowerShell(${JSON.stringify(args)}, {timeout:60000});`,
       );
-      const legacy = await promisify(execFile)(process.execPath, [old], {
+      const legacy = await runNativeQuery(process.execPath, [old], {
         env,
-        timeout: 35_000,
+        timeout: 90_000,
         windowsHide: true,
       }).then(
         () => ({ code: 0, stderr: '' }),
@@ -92,7 +97,7 @@ test.skipIf(process.platform !== 'win32')(
       expect(legacy.stderr).toContain('CouldNotAutoloadMatchingModule');
       const { stdout } = await runPowerShell(args, {
         env,
-        timeout: 30_000,
+        timeout: WINDOWS_QUERY_TIMEOUT_MS,
         windowsHide: true,
       });
       expect(JSON.parse(stdout)).toMatchObject({
@@ -108,7 +113,7 @@ test.skipIf(process.platform !== 'win32')(
             (
               await runPowerShell(shortArgs, {
                 env,
-                timeout: 30_000,
+                timeout: WINDOWS_QUERY_TIMEOUT_MS,
                 windowsHide: true,
               })
             ).stdout,
@@ -118,7 +123,7 @@ test.skipIf(process.platform !== 'win32')(
       const restricted = join(scratch, 'restricted.mjs');
       await writeFile(
         restricted,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(args)},{env:testEnvironment(${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}),timeout:30000})).stdout);`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(args)},{env:testEnvironment(${JSON.stringify({ PSModulePath: modules, PSModuleAnalysisCachePath: join(scratch, 'foreign-cache') })}),timeout:60000})).stdout);`,
       );
       const argumentsFile = join(scratch, 'arguments.json'),
         report = join(scratch, 'token.json');
@@ -136,7 +141,7 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
         ],
-        { env, timeout: 45_000, windowsHide: true },
+        { env, timeout: 180_000, windowsHide: true },
       );
       expect(
         JSON.parse((await readFile(report, 'utf8')).replace(/^\uFEFF/, '')),
@@ -153,7 +158,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  75_000,
+  300_000,
 );
 
 test('the shared boundary removes discovery state case-insensitively without relaxing policy or changing caller env', () => {
@@ -242,7 +247,7 @@ test.skipIf(process.platform !== 'win32')(
         (
           await runPowerShell(command, {
             env: source,
-            timeout: 15000,
+            timeout: WINDOWS_QUERY_TIMEOUT_MS,
             windowsHide: true,
           })
         ).stdout,
@@ -251,14 +256,14 @@ test.skipIf(process.platform !== 'win32')(
         (
           await runPowerShell(command, {
             env: { ...source, PSExecutionPolicyPreference: 'Restricted' },
-            timeout: 15000,
+            timeout: WINDOWS_QUERY_TIMEOUT_MS,
             windowsHide: true,
           })
         ).stdout,
       ).toBe('Restricted|0');
     }
   },
-  45000,
+  150_000,
 );
 
 function assertLaunchBoundary(source: string) {
@@ -359,9 +364,9 @@ test.skipIf(process.platform !== 'win32')(
         `import {runProof} from ${JSON.stringify(pathToFileURL(join(directory, 'e2e/proof-runtime.ts')).href)}; import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; process.exitCode=await runProof('controls',${JSON.stringify(scratch)},${JSON.stringify(join(directory, 'packaging/windows-powershell.ts'))},()=>runPowerShell(['-NoProfile','-NonInteractive','-Command','exit 0'],{cwd:${JSON.stringify(join(scratch, 'absent'))}}));`,
       );
       await expect(
-        promisify(execFile)(process.execPath, [child], {
+        runNativeQuery(process.execPath, [child], {
           env: testEnvironment(),
-          timeout: 15_000,
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
           windowsHide: true,
         }),
       ).rejects.toMatchObject({ code: 1 });
@@ -392,9 +397,9 @@ test.skipIf(process.platform !== 'win32')(
         `import {runProof} from ${JSON.stringify(pathToFileURL(join(directory, 'e2e/proof-runtime.ts')).href)}; import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; process.exitCode=await runProof('smoke',${JSON.stringify(timed)},${JSON.stringify(child)},()=>runPowerShell(['-NoProfile','-NonInteractive','-File',${JSON.stringify(waiting)}],{timeout:300}));`,
       );
       await expect(
-        promisify(execFile)(process.execPath, [child], {
+        runNativeQuery(process.execPath, [child], {
           env: testEnvironment(),
-          timeout: 15_000,
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
           windowsHide: true,
         }),
       ).rejects.toMatchObject({ code: 1 });
@@ -419,7 +424,7 @@ test.skipIf(process.platform !== 'win32')(
         'release-token-controls.profile.json',
       );
       await expect(
-        promisify(execFile)(
+        runNativeQuery(
           process.execPath,
           [
             join(directory, 'e2e/profile-hive-child.ts'),
@@ -427,7 +432,11 @@ test.skipIf(process.platform !== 'win32')(
             '-Report',
             profileReport,
           ],
-          { timeout: 15_000, windowsHide: true, env: testEnvironment() },
+          {
+            timeout: WINDOWS_QUERY_TIMEOUT_MS,
+            windowsHide: true,
+            env: testEnvironment(),
+          },
         ),
       ).rejects.toMatchObject({ code: 1 });
       const profileFailure = JSON.parse(

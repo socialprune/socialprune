@@ -64,6 +64,8 @@ export function failureRecord(
               typeof shell.script === 'string' ? classify(shell.script) : null,
             timeoutMs:
               typeof shell.timeoutMs === 'number' ? shell.timeoutMs : null,
+            durationMs:
+              typeof shell.durationMs === 'number' ? shell.durationMs : null,
             killed: shell.killed === true,
             signal: typeof shell.signal === 'string' ? shell.signal : null,
             errorId: typeof shell.errorId === 'string' ? shell.errorId : null,
@@ -96,6 +98,22 @@ export function failureRecord(
                 : null,
           }
         : null,
+    ...(value.query && typeof value.query === 'object'
+      ? {
+          query: Object.fromEntries(
+            Object.entries(value.query).filter(([name]) =>
+              [
+                'queryClass',
+                'durationMs',
+                'timeoutMs',
+                'killed',
+                'signal',
+                'failed',
+              ].includes(name),
+            ),
+          ),
+        }
+      : {}),
     ...(typeof value.path === 'string'
       ? classify(value.path)
       : { pathClass: 'unknown', path: null }),

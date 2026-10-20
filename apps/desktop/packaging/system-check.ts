@@ -117,11 +117,10 @@ export function compareSystemSnapshots(
   return result;
 }
 
-// D-R4, 2026-10-19: after bulk firewall normalization, three restricted runs
-// with the concurrent CLI suite measured 44,131 / 18,354 / 16,475 ms on this
-// workstation. ceil(max * 2 to seconds) = 89 s; CPU samples and all section
-// timings are retained in the parent's r9-after-load evidence. No retry.
-export const SYSTEM_SNAPSHOT_TIMEOUT_MS = 89_000;
+// R13, 2026-10-20: fresh-process cold/warm 9,203/5,890 ms; retain the
+// earlier restricted/concurrent maximum 44,131 ms (D-R4, 2026-10-19).
+// ceil(3 * 44,131 to seconds) = 133 s; next runner query receipts recalibrate.
+export const SYSTEM_SNAPSHOT_TIMEOUT_MS = 133_000;
 
 export async function systemSnapshot(): Promise<SystemSnapshot> {
   const { stdout } = await runPowerShell(

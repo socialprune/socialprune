@@ -1,7 +1,6 @@
-import { execFile } from 'node:child_process';
+import { runNativeQuery } from '../packaging/windows-powershell.ts';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { root } from '../packaging/paths.ts';
 import { launch, call, select } from './helpers.ts';
@@ -38,10 +37,10 @@ test('demo review decision crosses the real bridge, portable backup, CLI and res
       source: { kind: 'human', via: 'local-review' },
     });
     const cli = async (args: string[]) => {
-      const { stdout } = await promisify(execFile)(
+      const { stdout } = await runNativeQuery(
         process.execPath,
         [join(root, 'apps/cli/src/main.ts'), ...args, '--json'],
-        { windowsHide: true, timeout: 60_000 },
+        { windowsHide: true, timeout: 60_000, queryClass: 'cli-backup' },
       );
       return JSON.parse(stdout) as unknown;
     };

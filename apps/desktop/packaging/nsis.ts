@@ -1,8 +1,10 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import {
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from './windows-powershell.ts';
 import { directory, dist } from './paths.ts';
 import {
   assertCompressor,
@@ -38,9 +40,9 @@ export async function buildNsis(
   let previous = dependencies.previous;
   if (!previous && !dependencies.history) {
     const git = (args: string[]) =>
-      promisify(execFile)('git', args, {
+      runNativeQuery('git', args, {
         cwd: directory,
-        timeout: 10_000,
+        timeout: WINDOWS_QUERY_TIMEOUT_MS,
         windowsHide: true,
       });
     if (
@@ -121,7 +123,7 @@ export async function buildNsis(
     `/DOBSOLETE_LIST=${join(generated, 'obsolete.nsh')}`,
     source,
   ];
-  const { stdout } = await promisify(execFile)(
+  const { stdout } = await runNativeQuery(
     join(nsis.directory, 'makensis.exe'),
     args,
     {

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import {
   runPowerShell,
   spawnPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import {
   appendFile,
@@ -14,7 +15,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { directory, dist } from '../packaging/paths.ts';
 import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -36,7 +36,7 @@ assert.ok(
     mode === 'faults',
   'INSTALLED_PROOF_MODE',
 );
-const run = promisify(execFile);
+const run = runNativeQuery;
 const ps = (script: string, args: string[] = []) =>
   runPowerShell(
     [
@@ -67,7 +67,7 @@ const { stdout } = await runPowerShell(
     '-Command',
     '[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
   ],
-  { timeout: 15_000, windowsHide: true },
+  { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
 );
 const elevated = stdout.trim() === 'True';
 const scratch = await mkdtemp(join(tmpdir(), 'socialprune-token-proof-'));

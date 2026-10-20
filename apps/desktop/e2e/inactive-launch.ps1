@@ -37,7 +37,8 @@ public static class InactiveRelease {
       Require(AssignProcessToJobObject(job,child.process),"AssignInactiveChild");assigned=true;
       Require(ResumeThread(child.thread)!=0xffffffff,"ResumeInactiveChild");
       System.IO.File.WriteAllText(receipt,"{\"pid\":"+child.pid+",\"showCommand\":"+show+",\"startupFlags\":257,\"ownedJob\":true}");
-      if(WaitForSingleObject(child.process,180000)!=0)throw new Exception("INACTIVE_CHILD_TIMEOUT");
+      var clock=System.Diagnostics.Stopwatch.StartNew();
+      if(WaitForSingleObject(child.process,180000)!=0)throw new Exception("INACTIVE_CHILD_TIMEOUT;killed=true;signal=job-close;timeoutMs=180000;durationMs="+clock.ElapsedMilliseconds);
       uint code;Require(GetExitCodeProcess(child.process,out code),"InactiveChildExit");return code;
     }finally{
       if(!assigned&&child.process!=IntPtr.Zero)TerminateProcess(child.process,1);

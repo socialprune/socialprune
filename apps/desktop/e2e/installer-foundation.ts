@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { createHash } from 'node:crypto';
 import { assertNsisTemp } from '../packaging/release-temp.ts';
 import { pathExists } from '../packaging/file-presence.ts';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 
-const run = promisify(execFile);
+const run = runNativeQuery;
 const layout = async () =>
   JSON.parse(
     (
@@ -23,7 +25,7 @@ const layout = async () =>
           '-File',
           join(directory, 'packaging/install-layout.ps1'),
         ],
-        { timeout: 30_000 },
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS },
       )
     ).stdout,
   ) as {

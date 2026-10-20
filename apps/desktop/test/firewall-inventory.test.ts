@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 import {
   compareSystemSnapshots,
@@ -24,7 +27,11 @@ test.skipIf(process.platform !== 'win32')(
           '-Scratch',
           scratch,
         ],
-        { timeout: 45000, windowsHide: true, env: testEnvironment() },
+        {
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          windowsHide: true,
+          env: testEnvironment(),
+        },
       );
       const result = JSON.parse(stdout) as {
         controlRow: SystemSnapshot['firewall'][number];
@@ -78,5 +85,5 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  60000,
+  90_000,
 );

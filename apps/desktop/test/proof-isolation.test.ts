@@ -1,15 +1,17 @@
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { collectProof } from '../e2e/proof-collection.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import assert from 'node:assert/strict';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 
 test('causal receipts expose only repo-relative or run-owned paths', () => {
@@ -65,7 +67,11 @@ test.skipIf(process.platform !== 'win32')(
           '-Root',
           root,
         ],
-        { timeout: 30_000, windowsHide: true, env: testEnvironment() },
+        {
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          windowsHide: true,
+          env: testEnvironment(),
+        },
       );
     let denied = false;
     try {
@@ -104,7 +110,11 @@ process.exitCode=await runProof('smoke',${JSON.stringify(join(root, 'child'))},$
             '-TokenReport',
             token,
           ],
-          { timeout: 45_000, windowsHide: true, env: testEnvironment() },
+          {
+            timeout: WINDOWS_QUERY_TIMEOUT_MS,
+            windowsHide: true,
+            env: testEnvironment(),
+          },
         ),
       ).rejects.toMatchObject({ code: 1 });
       expect(
@@ -168,8 +178,8 @@ test('an uncaught callback writes a causal receipt before Node exits without swa
 await runProof('controls',${JSON.stringify(root)},${JSON.stringify(entry)},()=>new Promise(()=>{setImmediate(()=>{throw Object.assign(new Error('generated failure'),{code:'EPERM',syscall:'rmdir',path:${JSON.stringify(join(root, 'temp/probe'))}});});}));`,
     );
     await expect(
-      promisify(execFile)(process.execPath, [entry], {
-        timeout: 15_000,
+      runNativeQuery(process.execPath, [entry], {
+        timeout: WINDOWS_QUERY_TIMEOUT_MS,
         windowsHide: true,
         env: testEnvironment(),
       }),

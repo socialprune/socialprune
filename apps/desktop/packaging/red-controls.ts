@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { directory, dist, root } from './paths.ts';
+import { setQueryMeasurementDirectory } from './windows-powershell.ts';
 
 const require = createRequire(import.meta.url);
 const controls = [
@@ -225,6 +226,7 @@ export async function runRedControl(
     });
   const outputFile = join(folder, `${control.name}.txt`);
   const failureFile = join(folder, `${control.name}.failure.json`);
+  setQueryMeasurementDirectory(folder);
   let output = '';
   let exitCode: number | null = null;
   let outputSaved = false;

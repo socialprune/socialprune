@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   access,
   copyFile,
@@ -17,7 +17,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import { directory } from '../packaging/paths.ts';
@@ -43,11 +42,13 @@ import { root } from '../packaging/paths.ts';
 import {
   runPowerShell,
   spawnPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
-const run = promisify(execFile);
+const run = runNativeQuery;
 const ps = (script: string, args: string[] = []) =>
   runPowerShell(
     [
@@ -93,7 +94,7 @@ const referenceProof = JSON.parse(
         '-RunRoot',
         scratch,
       ],
-      { timeout: 30_000, windowsHide: true },
+      { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
     )
   ).stdout,
 ) as unknown;

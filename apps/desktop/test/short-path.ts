@@ -1,6 +1,9 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 
 /** Read the actual Windows alias of a generated directory, not a made-up one. */
@@ -15,7 +18,11 @@ export async function windowsShortPath(
       '-Command',
       `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${directory.replaceAll("'", "''")}').ShortPath`,
     ],
-    { windowsHide: true, timeout: 20_000, env: testEnvironment() },
+    {
+      windowsHide: true,
+      timeout: WINDOWS_QUERY_TIMEOUT_MS,
+      env: testEnvironment(),
+    },
   );
   const short = stdout.trim();
   if (

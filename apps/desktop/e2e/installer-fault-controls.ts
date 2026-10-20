@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { setTimeout as wait } from 'node:timers/promises';
 import { buildNsis } from '../packaging/nsis.ts';
 import { directory } from '../packaging/paths.ts';
@@ -13,11 +11,13 @@ import { pathExists } from '../packaging/file-presence.ts';
 import {
   runPowerShell,
   spawnPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 
 // Only explicit test entrypoints manufacture altered scripts. Neither the app
 // nor the production builder imports this file or reads a fault environment.
-const run = promisify(execFile);
+const run = runNativeQuery;
 const exists = pathExists;
 const layout = async () =>
   JSON.parse(
@@ -29,7 +29,7 @@ const layout = async () =>
           '-File',
           join(directory, 'packaging/install-layout.ps1'),
         ],
-        { timeout: 30_000 },
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS },
       )
     ).stdout,
   ) as {
@@ -59,7 +59,11 @@ const env = {
 const results: { name: string; redExit: number; greenExit: number }[] = [];
 async function invoke(file: string): Promise<number> {
   try {
-    await run(file, ['/S'], { timeout: 30_000, windowsHide: true, env });
+    await run(file, ['/S'], {
+      timeout: WINDOWS_QUERY_TIMEOUT_MS,
+      windowsHide: true,
+      env,
+    });
     return 0;
   } catch (error) {
     if (
@@ -74,7 +78,7 @@ async function invoke(file: string): Promise<number> {
 async function removeOwned() {
   const uninstaller = join(before.install, 'Uninstall.exe');
   if (!(await exists(uninstaller))) return;
-  await run(uninstaller, ['/S'], { timeout: 30_000, env });
+  await run(uninstaller, ['/S'], { timeout: WINDOWS_QUERY_TIMEOUT_MS, env });
   const deadline = Date.now() + 15_000;
   while ((await exists(uninstaller)) && Date.now() < deadline) await wait(50);
   assert.equal((await layout()).registrationExists, false);
@@ -176,7 +180,7 @@ try {
     assert.equal(await exists(ready), true);
     const uninstaller = join(before.install, 'Uninstall.exe');
     const code = await run(uninstaller, ['/S', `_?=${before.install}`], {
-      timeout: 30_000,
+      timeout: WINDOWS_QUERY_TIMEOUT_MS,
       env,
     }).then(
       () => 0,

@@ -5,6 +5,8 @@ import { openTestEngine } from '../../../cli/e2e/engine-test-entry.ts';
 import { processIdentities } from '../windows.ts';
 import type { ProcessIdentity } from '../windows.ts';
 import type { BrowserContext } from 'playwright-core';
+import { join } from 'node:path';
+import { setQueryMeasurementDirectory } from '../../packaging/windows-powershell.ts';
 
 const ProbeSchema = z.strictObject({
   type: z.literal('browserProbe'),
@@ -25,8 +27,9 @@ const browserEvents: {
   detail?: string;
 }[] = [];
 let now = Date.parse('2026-10-15T12:00:00.000Z');
-startEngine((options) =>
-  openTestEngine(options, {
+startEngine((options) => {
+  setQueryMeasurementDirectory(join(options.dataFolder, 'query-measurements'));
+  return openTestEngine(options, {
     xOrigin: 'http://127.0.0.1:4656',
     instagramOrigin: 'http://127.0.0.1:4661',
     now: () => new Date(now),
@@ -85,8 +88,8 @@ startEngine((options) =>
         browserProcesses.set(`${identity.pid}|${identity.born}`, identity);
       await system.detach();
     },
-  }),
-);
+  });
+});
 process.parentPort.on('message', (event: Electron.MessageEvent) => {
   if (event.data === 'runProbe') {
     void Promise.all(
@@ -157,7 +160,9 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
         pids,
         processes: identities,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && 'query' in error)
+        console.error('BROWSER_PROBE_QUERY_FAILED', error.message);
       process.parentPort.postMessage({
         type: 'browserProbeResult',
         error: 'BROWSER_PROBE_FAILED',

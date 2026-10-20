@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { directory } from '../packaging/paths.ts';
 import { proofOutput } from './proof-context.ts';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +25,7 @@ export async function systemTokenProof(phase: string) {
       '-Output',
       output,
     ],
-    { timeout: 30_000, windowsHide: true },
+    { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
   );
   const evidence = JSON.parse(
     (await readFile(output, 'utf8')).replace(/^\uFEFF/, ''),
@@ -54,7 +57,7 @@ export async function systemTaskControl() {
           '-File',
           join(directory, 'packaging/install-layout.ps1'),
         ],
-        { timeout: 30_000, windowsHide: true },
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
       )
     ).stdout,
   ) as { install: string };
@@ -72,7 +75,7 @@ export async function systemTaskControl() {
         '-Program',
         join(local.install, 'SocialPrune.exe'),
       ],
-      { timeout: 30_000, windowsHide: true },
+      { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
     );
   let created = false;
   const evidence: {

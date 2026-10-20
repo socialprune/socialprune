@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 import { root } from '../packaging/paths.ts';
 import { setProofWorkspace } from './proof-context.ts';
 import { failureRecord } from './proof-failure.ts';
+import { setQueryMeasurementDirectory } from '../packaging/windows-powershell.ts';
 
 export async function runProof(
   mode: string,
@@ -38,6 +39,7 @@ export async function runProof(
     await mkdir(join(workspace, 'evidence'));
     await mkdir(join(workspace, 'temp'));
     setProofWorkspace(workspace);
+    setQueryMeasurementDirectory(join(workspace, 'evidence'));
     /* eslint-disable no-restricted-properties -- Test-only child redirects OS temp and CI summary to its explicit run-owned workspace. */
     process.env.TEMP = join(workspace, 'temp');
     process.env.TMP = join(workspace, 'temp');

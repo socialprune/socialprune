@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cp,
@@ -11,12 +10,15 @@ import {
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
 import { buildNsis } from './nsis.ts';
 import { NSIS_VERSION } from './nsis-version.ts';
 import { assertFuses } from './fuses.ts';
 import { directory, dist, executable } from './paths.ts';
-import { runPowerShell } from './windows-powershell.ts';
+import {
+  runPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from './windows-powershell.ts';
 
 export const artifacts = join(dist, 'artifacts');
 export async function releaseVersion(): Promise<string> {
@@ -82,14 +84,14 @@ export async function buildRelease(requireMsix = true): Promise<void> {
       '-OutputDirectory',
       join(staging, 'Assets'),
     ],
-    { timeout: 30_000, windowsHide: true },
+    { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
   );
   const sdk = JSON.parse(stdout) as {
     path: string | null;
     version: string | null;
   };
   if (sdk.path) {
-    await promisify(execFile)(
+    await runNativeQuery(
       sdk.path,
       [
         'pack',

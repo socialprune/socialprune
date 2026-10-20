@@ -84,15 +84,18 @@ public static class LimitedProof {
       Phase="profile";
       proof=StartOwned(limited,job,app,profile,cwd,ref startup);
       try {
-        if(WaitForSingleObject(proof.process,30000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT");
+        // R13 2026-10-20: 60 s query floor plus owned-child start/settlement.
+        var profileClock=System.Diagnostics.Stopwatch.StartNew();
+        if(WaitForSingleObject(proof.process,75000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT;killed=true;signal=job-close;timeoutMs=75000;durationMs="+profileClock.ElapsedMilliseconds);
         uint proofCode; Require(GetExitCodeProcess(proof.process,out proofCode),"ProfileProofExit");
         if(proofCode!=0) throw new Exception("PROFILE_PROOF_FAILED:"+proofCode);
       } finally { CloseHandle(proof.thread); proof.thread=IntPtr.Zero; }
       Phase="child";
       info=StartOwned(limited,job,app,command,cwd,ref startup);
       ChildPid=info.pid;
+      var childClock=System.Diagnostics.Stopwatch.StartNew();
       uint waited=WaitForSingleObject(info.process,(uint)timeout*1000);
-      if(waited!=0) throw new Exception("LIMITED_PROOF_WAIT:"+waited+";pid="+info.pid);
+      if(waited!=0) throw new Exception("LIMITED_PROOF_WAIT:"+waited+";pid="+info.pid+";killed=true;signal=job-close;timeoutMs="+(timeout*1000)+";durationMs="+childClock.ElapsedMilliseconds);
       uint code; Require(GetExitCodeProcess(info.process,out code),"GetExitCodeProcess"); return code;
     } finally {
       if(job!=IntPtr.Zero) { CloseHandle(job); job=IntPtr.Zero; }

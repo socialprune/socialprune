@@ -1,13 +1,12 @@
-import { execFile } from 'node:child_process';
+import { runNativeQuery } from '../packaging/windows-powershell.ts';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { root } from '../packaging/paths.ts';
 
 export async function generatedWorkspace(data: string): Promise<number> {
   const workspace = join(data, 'workspace');
   await mkdir(workspace, { recursive: true });
-  await promisify(execFile)(
+  await runNativeQuery(
     process.execPath,
     [
       join(root, 'apps/cli/src/main.ts'),
@@ -17,7 +16,7 @@ export async function generatedWorkspace(data: string): Promise<number> {
       workspace,
       '--json',
     ],
-    { timeout: 60_000, windowsHide: true },
+    { timeout: 60_000, windowsHide: true, queryClass: 'generated-workspace' },
   );
   const manifest = JSON.parse(
     await readFile(join(root, 'fixtures/synthetic/demo/manifest.json'), 'utf8'),

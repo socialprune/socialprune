@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   access,
@@ -14,7 +14,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { promisify } from 'node:util';
 import { z } from 'zod';
 import { directory, dist, executable } from './paths.ts';
 import { artifacts, releaseVersion } from './release.ts';
@@ -33,9 +32,9 @@ import { proofOutput } from '../e2e/proof-context.ts';
 import { proofWorkspace } from '../e2e/proof-context.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import { root } from './paths.ts';
-import { runPowerShell } from './windows-powershell.ts';
+import { runPowerShell, runNativeQuery } from './windows-powershell.ts';
 
-const run = promisify(execFile);
+const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
   install: z.string(),
   installExists: z.boolean(),

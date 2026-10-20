@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, rm, rmdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,7 +8,11 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 import { proofWorkspace } from './proof-context.ts';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  runNativeQuery,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { assertBudgets, summarize } from '../packaging/release-checks.ts';
 import {
   assertNoOwnedNetwork,
@@ -25,7 +28,7 @@ for (const [variant, expected] of [
   ['--nsis-compressor', 'NSIS_COMPRESSOR_REFUSED'],
 ] as const) {
   await assert.rejects(
-    promisify(execFile)(
+    runNativeQuery(
       process.execPath,
       [
         join(directory, 'e2e/release-red.ts'),
@@ -54,7 +57,7 @@ const layout = JSON.parse(
         '-File',
         join(directory, 'packaging/install-layout.ps1'),
       ],
-      { timeout: 20_000, windowsHide: true },
+      { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
     )
   ).stdout,
 ) as {

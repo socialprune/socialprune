@@ -1,7 +1,10 @@
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import {
+  runPowerShell,
+  WINDOWS_QUERY_TIMEOUT_MS,
+} from '../packaging/windows-powershell.ts';
 import { pathToFileURL } from 'node:url';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
@@ -37,7 +40,11 @@ test.skipIf(process.platform !== 'win32')(
           '-Scratch',
           scratch,
         ],
-        { timeout: 45_000, windowsHide: true, env: testEnvironment() },
+        {
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          windowsHide: true,
+          env: testEnvironment(),
+        },
       );
       expect(JSON.parse(stdout)).toMatchObject({
         missingRegistryViews: 2,
@@ -51,7 +58,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  60_000,
+  90_000,
 );
 
 test.skipIf(process.platform !== 'win32')(
@@ -70,14 +77,18 @@ test.skipIf(process.platform !== 'win32')(
           '-Root',
           scratch,
         ],
-        { timeout: 30_000, windowsHide: true, env: testEnvironment() },
+        {
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          windowsHide: true,
+          env: testEnvironment(),
+        },
       );
       const args = join(scratch, 'args.json'),
         report = join(scratch, 'token.json');
       const child = join(scratch, 'child.mjs');
       await writeFile(
         child,
-        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])},{timeout:20000,env:testEnvironment()})).stdout);`,
+        `import {runPowerShell} from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)}; import {testEnvironment} from ${JSON.stringify(pathToFileURL(join(directory, 'test/process-environment.ts')).href)}; console.log((await runPowerShell(${JSON.stringify(['-NoProfile', '-NonInteractive', '-File', join(directory, 'e2e/fresh-profile-controls.ps1'), '-Scratch', scratch])},{timeout:60000,env:testEnvironment()})).stdout);`,
       );
       await writeFile(args, JSON.stringify([child]));
       await runPowerShell(
@@ -93,10 +104,10 @@ test.skipIf(process.platform !== 'win32')(
           '-TokenReport',
           report,
           '-TimeoutSeconds',
-          '25',
+          '75',
         ],
         {
-          timeout: 45_000,
+          timeout: 180_000,
           windowsHide: true,
           env: testEnvironment({
             TEMP: scratch,
@@ -119,7 +130,7 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  60_000,
+  240_000,
 );
 
 test('production wrappers keep fixed paths and use the tested readers without a test flag', async () => {
@@ -152,7 +163,7 @@ test.skipIf(process.platform !== 'win32')(
           '-Root',
           scratch,
         ],
-        { timeout: 30000, env: testEnvironment() },
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS, env: testEnvironment() },
       );
       const marker = join(scratch, 'descendant-completed.txt'),
         ready = join(scratch, 'descendant-started.txt'),
@@ -186,7 +197,7 @@ test.skipIf(process.platform !== 'win32')(
             '5',
           ],
           {
-            timeout: 20000,
+            timeout: 120_000,
             env: testEnvironment({ TEMP: scratch, TMP: scratch }),
           },
         ),
@@ -215,5 +226,5 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  45000,
+  150_000,
 );

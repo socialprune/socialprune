@@ -1,12 +1,13 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
-import { executable } from '../packaging/paths.ts';
+import { dist, executable } from '../packaging/paths.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
 import type { DesktopRequest, DesktopReply } from '../src/protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
+import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
 
 export async function call(
   app: Awaited<ReturnType<typeof launch>>,
@@ -35,6 +36,8 @@ export async function launch(
   prepare?: (data: string) => Promise<void>,
   selectDataPath?: (data: string) => Promise<string>,
 ) {
+  // Leave room for a 60 s cold OS query to emit its own causal receipt.
+  test.setTimeout(Math.max(test.info().timeout, WINDOWS_QUERY_TIMEOUT_MS * 3));
   const temporary = await mkdtemp(join(tmpdir(), 'socialprune-desktop-'));
   const data = join(temporary, 'data');
   const items = generated
@@ -87,6 +90,25 @@ export async function launch(
             timeout: 20_000,
           })
           .toBe(0));
+      const queryFolder = join(data, 'query-measurements');
+      for (const file of await readdir(queryFolder).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        )
+          return [];
+        throw error;
+      })) {
+        if (!/^release-query-[a-f0-9-]+\.json$/.test(file))
+          throw new Error('QUERY_EVIDENCE_NAME_REFUSED');
+        await mkdir(join(dist, 'red-controls'), { recursive: true });
+        await copyFile(
+          join(queryFolder, file),
+          join(dist, 'red-controls', file),
+        );
+        await copyFile(join(queryFolder, file), join(dist, file));
+      }
       await test.step('remove generated data directory', () =>
         rm(temporary, { recursive: true, force: true }));
     },

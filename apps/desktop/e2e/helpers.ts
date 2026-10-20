@@ -8,6 +8,12 @@ import { appProcesses } from '../test/windows.ts';
 import type { DesktopRequest, DesktopReply } from '../src/protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
+import { prepareWindowsQuery } from '../packaging/windows-query.ts';
+import {
+  pollQuery,
+  PROCESS_POLL_TIMEOUT_MS,
+  PROCESS_POLL_INTERVAL_MS,
+} from '../packaging/query-poll.ts';
 
 export async function call(
   app: Awaited<ReturnType<typeof launch>>,
@@ -36,14 +42,24 @@ export async function launch(
   prepare?: (data: string) => Promise<void>,
   selectDataPath?: (data: string) => Promise<string>,
 ) {
-  // Leave room for a 60 s cold OS query to emit its own causal receipt.
-  test.setTimeout(Math.max(test.info().timeout, WINDOWS_QUERY_TIMEOUT_MS * 3));
+  // Compiler setup, Chromium work, derived cleanup poll, last query settlement.
+  test.setTimeout(
+    Math.max(
+      test.info().timeout,
+      WINDOWS_QUERY_TIMEOUT_MS * 3 + PROCESS_POLL_TIMEOUT_MS,
+    ),
+  );
   const temporary = await mkdtemp(join(tmpdir(), 'socialprune-desktop-'));
   const data = join(temporary, 'data');
   const items = generated
     ? await test.step('prepare generated SQLite workspace', () =>
         generatedWorkspace(data))
     : undefined;
+  const nativeQuery = await prepareWindowsQuery();
+  if (variant === 'probe') {
+    await mkdir(data, { recursive: true });
+    await copyFile(nativeQuery, join(data, 'desktop-query.exe'));
+  }
   await test.step('prepare scenario', async () => prepare?.(data));
   let selectedData: string;
   try {
@@ -85,11 +101,15 @@ export async function launch(
       if (process.exitCode === null)
         await test.step('close Electron and engine', () => application.close());
       await test.step('wait for owned Electron processes to exit', () =>
-        expect
-          .poll(async () => (await appProcesses(executable(variant))).length, {
-            timeout: 20_000,
-          })
-          .toBe(0));
+        pollQuery(
+          () => appProcesses(executable(variant)),
+          (rows) => rows.length === 0,
+          {
+            timeoutMs: PROCESS_POLL_TIMEOUT_MS,
+            intervalMs: PROCESS_POLL_INTERVAL_MS,
+            message: 'OWNED_ELECTRON_PROCESSES_REMAIN',
+          },
+        ));
       const queryFolder = join(data, 'query-measurements');
       for (const file of await readdir(queryFolder).catch((error: unknown) => {
         if (

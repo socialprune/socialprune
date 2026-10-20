@@ -10,6 +10,7 @@ import {
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { testEnvironment } from './process-environment.ts';
+import { RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 
 const ps = (script: string, args: string[]) =>
   runPowerShell(
@@ -121,5 +122,5 @@ console.log('ACL_REUSE_PASS: deny-delete verified, corrupted parent preserved, f
       await rm(root, { recursive: true, force: true });
     }
   },
-  60_000,
+  RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS,
 );

@@ -227,7 +227,36 @@ export async function runPowerShell(
     const receipt = receiptFor(queryClass, started, options.timeout, error);
     recordQuery(receipt);
     queryFailure(error, receipt);
-    throw powerShellFailure(error, args, options.timeout, receipt.durationMs);
+    powerShellFailure(error, args, options.timeout, receipt.durationMs);
+    const file = args.findIndex((arg) => arg.toLowerCase() === '-file');
+    const report = args.findIndex(
+      (arg) => arg.toLowerCase() === '-tokenreport',
+    );
+    if (
+      file >= 0 &&
+      /(?:^|[\\/])limited-token\.ps1$/i.test(args[file + 1] ?? '') &&
+      report >= 0 &&
+      args[report + 1]
+    ) {
+      try {
+        const { preserveLimitedProofFailure } =
+          await import('./limited-proof-diagnostics.ts');
+        const evidence = await preserveLimitedProofFailure(
+          args[report + 1]!,
+          error,
+        );
+        if (error instanceof Error)
+          Object.assign(error, { limitedProofEvidence: evidence });
+      } catch (diagnosticError) {
+        console.error(
+          'LIMITED_PROOF_CAUSE_WRITE_FAILED',
+          diagnosticError instanceof Error && 'code' in diagnosticError
+            ? diagnosticError.code
+            : 'UNKNOWN',
+        );
+      }
+    }
+    throw error;
   }
 }
 

@@ -10,6 +10,7 @@ using System;
 using System.Text;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.IO;
 public static class LimitedProof {
   [StructLayout(LayoutKind.Sequential)] struct SidEntry { public IntPtr sid; public uint attributes; }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct Startup {
@@ -22,6 +23,7 @@ public static class LimitedProof {
   [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
   [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int id);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetHandleInformation(IntPtr handle,uint mask,uint flags);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr token,uint flags,uint count,ref SidEntry disabled,uint delete,IntPtr privileges,uint restrict,IntPtr sids,out IntPtr result);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateWellKnownSid(int kind,IntPtr domain,IntPtr sid,ref uint size);
@@ -82,14 +84,23 @@ public static class LimitedProof {
       var profile=new StringBuilder(Quote(app));
       foreach(string arg in new string[]{profileEntry,profileScript,"-MarkerKey",markerKey,"-Marker",marker,"-ExpectedSid",expectedSid,"-Report",profileReport}) profile.Append(" ").Append(Quote(arg));
       Phase="profile";
-      proof=StartOwned(limited,job,app,profile,cwd,ref startup);
-      try {
-        // R13 2026-10-20: 60 s query floor plus owned-child start/settlement.
+      using(var output=new FileStream(profileReport+".stdout.txt",FileMode.Create,FileAccess.Write,FileShare.ReadWrite))
+      using(var errors=new FileStream(profileReport+".stderr.txt",FileMode.Create,FileAccess.Write,FileShare.ReadWrite)) {
+        var profileStartup=startup;
+        profileStartup.output=output.SafeFileHandle.DangerousGetHandle();
+        profileStartup.error=errors.SafeFileHandle.DangerousGetHandle();
+        Require(SetHandleInformation(profileStartup.output,1,1),"InheritProfileOutput");
+        Require(SetHandleInformation(profileStartup.error,1,1),"InheritProfileError");
+        proof=StartOwned(limited,job,app,profile,cwd,ref profileStartup);
+        try {
+        // R14 2026-10-20: no runner profile reading measurement yet; reserve
+        // 3 full 60 s PowerShell query windows plus start/settlement (15 s).
         var profileClock=System.Diagnostics.Stopwatch.StartNew();
-        if(WaitForSingleObject(proof.process,75000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT;killed=true;signal=job-close;timeoutMs=75000;durationMs="+profileClock.ElapsedMilliseconds);
+        if(WaitForSingleObject(proof.process,195000)!=0) throw new Exception("PROFILE_PROOF_TIMEOUT;killed=true;signal=job-close;timeoutMs=195000;durationMs="+profileClock.ElapsedMilliseconds);
         uint proofCode; Require(GetExitCodeProcess(proof.process,out proofCode),"ProfileProofExit");
         if(proofCode!=0) throw new Exception("PROFILE_PROOF_FAILED:"+proofCode);
-      } finally { CloseHandle(proof.thread); proof.thread=IntPtr.Zero; }
+        } finally { CloseHandle(proof.thread); proof.thread=IntPtr.Zero; }
+      }
       Phase="child";
       info=StartOwned(limited,job,app,command,cwd,ref startup);
       ChildPid=info.pid;

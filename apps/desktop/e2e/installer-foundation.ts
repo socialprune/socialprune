@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as wait } from 'node:timers/promises';
+import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from '../packaging/query-poll.ts';
 import { directory } from '../packaging/paths.ts';
 import { artifacts, releaseVersion } from '../packaging/release.ts';
 import { createHash } from 'node:crypto';
@@ -67,9 +67,11 @@ try {
       .update(await readFile(uninstall))
       .digest('hex');
     await run(uninstall, ['/S'], { env, timeout: 60_000 });
-    const deadline = Date.now() + 30_000;
-    while ((await layout()).installExists && Date.now() < deadline)
-      await wait(100);
+    await pollQuery(layout, (value) => !value.installExists, {
+      timeoutMs: LAYOUT_POLL_TIMEOUT_MS,
+      intervalMs: 100,
+      message: 'FOUNDATION_INSTALL_REMAINS',
+    });
     assert.equal((await layout()).installExists, false);
     assert.deepEqual((await layout()).registrations, []);
     await assertNsisTemp(scratch, 1, hash);

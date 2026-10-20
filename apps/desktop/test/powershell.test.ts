@@ -20,6 +20,7 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { windowsShortPath } from './short-path.ts';
 import { testEnvironment } from './process-environment.ts';
+import { WINDOWS_QUERY_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 
 test.skipIf(process.platform !== 'win32')(
   'proof ACL loads Windows PowerShell modules despite an inherited incompatible Security module',
@@ -337,6 +338,7 @@ test.skipIf(process.platform !== 'win32')(
         }),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        timeout: WINDOWS_QUERY_TIMEOUT_MS,
       },
     );
     let stdout = '';
@@ -346,11 +348,12 @@ test.skipIf(process.platform !== 'win32')(
     child.stderr.resume();
     const code = await new Promise<number | null>((resolve, reject) => {
       child.once('error', reject);
-      child.once('exit', resolve);
+      child.once('close', resolve);
     });
     expect(code).toBe(0);
     expect(stdout).toBe('5|Restricted');
   },
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
 );
 
 test.skipIf(process.platform !== 'win32')(

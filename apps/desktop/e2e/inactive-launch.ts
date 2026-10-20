@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { spawnPowerShell } from '../packaging/windows-powershell.ts';
+import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 
 export async function launchInactive(
   executable: string,
@@ -40,7 +41,7 @@ export async function launchInactive(
     child.once('exit', resolve);
   });
   try {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
     let launch: {
       pid: number;
       showCommand: number;

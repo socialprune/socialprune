@@ -4,6 +4,7 @@ import { chromium, expect, test } from '@playwright/test';
 import { assertNoRemainingProcesses } from '../test/windows.ts';
 import type { ProcessIdentity } from '../test/windows.ts';
 import { launch } from './helpers.ts';
+import { PROCESS_POLL_TIMEOUT_MS } from '../packaging/query-poll.ts';
 
 test('packaged utility starts Playwright from asar, opens and closes only disposable Chromium', async () => {
   // This checks packaged browser capability, not archive import or review.
@@ -59,17 +60,19 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
                 clean();
                 reject(new Error('BROWSER_PROBE_ENGINE_EXITED'));
               };
-              // Match the existing Chromium launch budget instead of waiting
-              // forever when the utility cannot return its probe result.
+              // Existing 30 s Chromium launch plus the runner-derived identity
+              // query budget (3 * 22375 + 100 ms; CI 39395902168).
               const timer = setTimeout(() => {
                 clean();
                 reject(new Error('BROWSER_PROBE_TIMEOUT'));
-              }, 30_000);
+              }, options.timeoutMs);
               child.on('message', receive);
               child.once('exit', exited);
               child.postMessage({
                 type: 'browserProbe',
-                ...options,
+                executable: options.executable,
+                profile: options.profile,
+                url: options.url,
               });
             });
           },
@@ -77,6 +80,7 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
             executable: chromium.executablePath(),
             profile,
             url: 'http://127.0.0.1:4666/',
+            timeoutMs: 30_000 + PROCESS_POLL_TIMEOUT_MS,
           },
         ));
     expect(result).toMatchObject({

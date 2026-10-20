@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { setTimeout as wait } from 'node:timers/promises';
 import { directory } from '../packaging/paths.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import { WATCH_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 import { proofWorkspace } from './proof-context.ts';
 import {
   runPowerShell,
@@ -35,7 +36,12 @@ for (const [variant, expected] of [
         variant,
         `--proof-workspace=${proofWorkspace()}`,
       ],
-      { timeout: 60_000, windowsHide: true },
+      // Listener control owns watcher readiness + final sample; let those
+      // runner-derived waits settle before this enclosing command can expire.
+      {
+        timeout: WATCH_READY_TIMEOUT_MS * 2 + WINDOWS_QUERY_TIMEOUT_MS,
+        windowsHide: true,
+      },
     ),
     (error: unknown) =>
       error instanceof Error &&

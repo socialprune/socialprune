@@ -8,6 +8,7 @@ import { directory } from '../packaging/paths.ts';
 import { fetchNsis } from '../packaging/nsis-fetch.ts';
 import { proofOutput, proofWorkspace } from './proof-context.ts';
 import { pathExists } from '../packaging/file-presence.ts';
+import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 import {
   runPowerShell,
   spawnPowerShell,
@@ -175,7 +176,7 @@ try {
     lock.once('exit', resolve);
   });
   try {
-    const deadline = Date.now() + 15_000;
+    const deadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
     while (!(await exists(ready)) && Date.now() < deadline) await wait(20);
     assert.equal(await exists(ready), true);
     const uninstaller = join(before.install, 'Uninstall.exe');

@@ -40,6 +40,11 @@ import { pathExists } from '../packaging/file-presence.ts';
 import { failureRecord } from './proof-failure.ts';
 import { root } from '../packaging/paths.ts';
 import {
+  pollQuery,
+  LAYOUT_POLL_TIMEOUT_MS,
+  POWERSHELL_READY_TIMEOUT_MS,
+} from '../packaging/query-poll.ts';
+import {
   runPowerShell,
   spawnPowerShell,
   runNativeQuery,
@@ -224,15 +229,25 @@ async function remove() {
     windowsHide: true,
     env: installerEnv,
   });
-  const deadline = Date.now() + 30_000;
-  while ((await layout()).registrationExists && Date.now() < deadline)
-    await wait(100);
+  await pollQuery(layout, (value) => !value.registrationExists, {
+    timeoutMs: LAYOUT_POLL_TIMEOUT_MS,
+    intervalMs: 100,
+    message: 'UNINSTALL_REGISTRATION_REMAINS',
+  });
   assert.equal(
     (await layout()).registrationExists,
     false,
     'UNINSTALL_REGISTRATION_REMAINS',
   );
-  while ((await exists(uninstall)) && Date.now() < deadline) await wait(100);
+  await pollQuery(
+    () => exists(uninstall),
+    (value) => !value,
+    {
+      timeoutMs: 30_000,
+      intervalMs: 100,
+      message: 'UNINSTALLER_REMAINS',
+    },
+  );
   assert.equal(await exists(uninstall), false, 'UNINSTALLER_REMAINS');
   await wait(1000);
   uninstallCount++;
@@ -260,7 +275,10 @@ try {
     ?.slice('--elevated-proof='.length);
   if (elevatedProof) {
     await writeFile(join(elevatedProof, 'installed.ready'), 'installed');
-    const deadline = Date.now() + 90_000;
+    // Parent reads layout twice around a direct refusal; three query windows
+    // for each reader plus the existing native refusal limit.
+    const deadline =
+      Date.now() + LAYOUT_POLL_TIMEOUT_MS * 2 + WINDOWS_QUERY_TIMEOUT_MS;
     while (
       !(await exists(join(elevatedProof, 'refused.ready'))) &&
       Date.now() < deadline
@@ -372,7 +390,7 @@ try {
   locked.stdout.resume();
   locked.stderr.pipe(process.stderr);
   try {
-    const deadline = Date.now() + 15_000;
+    const deadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
     while (
       !(await exists(lockReady)) &&
       Date.now() < deadline &&
@@ -548,9 +566,11 @@ try {
   });
   const watcherExited = new Promise<number | null>((resolve, reject) => {
     childWatcher.once('error', reject);
-    childWatcher.once('exit', resolve);
+    // close, not exit: the failing query's stderr must be fully drained before
+    // the assertion and its causal diagnostic are persisted.
+    childWatcher.once('close', resolve);
   });
-  const watchDeadline = Date.now() + 15_000;
+  const watchDeadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
   while (
     !(await exists(childReady)) &&
     Date.now() < watchDeadline &&
@@ -560,7 +580,9 @@ try {
   assert.equal(await exists(childReady), true, 'NSIS_COPY_WATCH_NOT_READY');
   await refusal(uninstall, ['/S'], 0, 'uninstall-running-registered-outer');
   // Wait for the actual ~nsu executable, not the already-exited outer launch.
-  assert.equal(await watcherExited, 0, childErrors);
+  const watcherCode = await watcherExited;
+  if (watcherCode !== 0) console.error('NSIS_COPY_QUERY_FAILED', childErrors);
+  assert.equal(watcherCode, 0, childErrors);
   const childProof = JSON.parse(childOutput) as {
     exitCodes: number[];
     remaining: number;

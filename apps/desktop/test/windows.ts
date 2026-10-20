@@ -1,17 +1,19 @@
-import {
-  runPowerShell,
-  WINDOWS_QUERY_TIMEOUT_MS,
-} from '../packaging/windows-powershell.ts';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
-import { setTimeout as wait } from 'node:timers/promises';
-import { directory } from '../packaging/paths.ts';
-import { testEnvironment } from './process-environment.ts';
+import {
+  windowsQuery,
+  prepareWindowsQuery,
+} from '../packaging/windows-query.ts';
+import {
+  pollQuery,
+  PROCESS_POLL_TIMEOUT_MS,
+  PROCESS_POLL_INTERVAL_MS,
+} from '../packaging/query-poll.ts';
 
 export interface ProcessRow {
   ProcessId: number;
   ParentProcessId: number;
   ExecutablePath: string;
+  born: string;
 }
 
 export interface ProcessIdentity {
@@ -26,20 +28,7 @@ export async function processIdentities(
   if (pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0))
     throw new Error('INVALID_PID');
   if (!pids.length) return [];
-  const { stdout } = await runPowerShell(
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `ConvertTo-Json -InputObject @(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { @{pid=$_.Id;born=$_.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()} }) -Compress`,
-    ],
-    {
-      windowsHide: true,
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      signal,
-      env: testEnvironment(),
-    },
-  );
+  const stdout = await windowsQuery('identities', pids.join(','), signal);
   return JSON.parse(stdout || '[]') as ProcessIdentity[];
 }
 
@@ -53,20 +42,7 @@ export function matchingProcessIdentities(
 }
 
 export async function appProcesses(executable: string): Promise<ProcessRow[]> {
-  const escaped = executable.replaceAll("'", "''");
-  const { stdout } = await runPowerShell(
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `@((Get-CimInstance Win32_Process -Filter "Name = 'SocialPrune.exe'") | Where-Object { $_.ExecutablePath -eq '${escaped}' } | Select-Object ProcessId, ParentProcessId, ExecutablePath) | ConvertTo-Json -Compress`,
-    ],
-    {
-      windowsHide: true,
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      env: testEnvironment(),
-    },
-  );
+  const stdout = await windowsQuery('processes', executable);
   return JSON.parse(stdout || '[]') as ProcessRow[];
 }
 
@@ -77,60 +53,32 @@ export async function remainingProcesses(
   if (pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0))
     throw new Error('INVALID_PID');
   if (!pids.length) return [];
-  // CDP supplied these exact disposable-browser PIDs. No other browser's
-  // process, command line, profile or metadata is inspected.
-  const { stdout } = await runPowerShell(
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `ConvertTo-Json -InputObject @(Get-Process -Id @(${pids.join(',')}) -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) -Compress`,
-    ],
-    {
-      windowsHide: true,
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      signal,
-      env: testEnvironment(),
-    },
-  );
-  return JSON.parse(stdout || '[]') as number[];
+  return (await processIdentities(pids, signal)).map((row) => row.pid);
 }
 
 export async function assertNoRemainingProcesses(
   processes: number[] | ProcessIdentity[],
 ): Promise<void> {
-  const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), 15_000);
-  let remaining: number[] | ProcessIdentity[] = processes;
-  try {
-    do {
-      try {
-        if (typeof processes[0] === 'object') {
-          const identities = processes as ProcessIdentity[];
-          remaining = matchingProcessIdentities(
-            identities,
-            await processIdentities(
-              identities.map((entry) => entry.pid),
-              controller.signal,
-            ),
-          );
-        } else {
-          remaining = await remainingProcesses(
-            processes as number[],
-            controller.signal,
-          );
-        }
-        if (!remaining.length) return;
-        await wait(100, undefined, { signal: controller.signal });
-      } catch (error) {
-        if (!controller.signal.aborted) throw error;
-        if (error instanceof Error && 'query' in error)
-          console.error('PROCESS_QUERY_ABORTED', error.message);
+  if (!processes.length) return;
+  await prepareWindowsQuery();
+  const remaining = await pollQuery(
+    async () => {
+      if (typeof processes[0] === 'object') {
+        const identities = processes as ProcessIdentity[];
+        return matchingProcessIdentities(
+          identities,
+          await processIdentities(identities.map((entry) => entry.pid)),
+        );
       }
-    } while (!controller.signal.aborted);
-  } finally {
-    clearTimeout(deadline);
-  }
+      return remainingProcesses(processes as number[]);
+    },
+    (value) => value.length === 0,
+    {
+      timeoutMs: PROCESS_POLL_TIMEOUT_MS,
+      intervalMs: PROCESS_POLL_INTERVAL_MS,
+      message: 'BROWSER_PROCESS_REMAINS',
+    },
+  );
   assert.deepEqual(remaining, [], 'BROWSER_PROCESS_REMAINS');
 }
 
@@ -140,23 +88,7 @@ export async function assertNoListeners(pids: number[]): Promise<void> {
     pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
   )
     throw new Error('INVALID_PID');
-  const script = join(directory, 'packaging/listeners.ps1').replaceAll(
-    "'",
-    "''",
-  );
-  const { stdout } = await runPowerShell(
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `& '${script}' -ProcessIds @(${pids.join(',')})`,
-    ],
-    {
-      windowsHide: true,
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      env: testEnvironment(),
-    },
-  );
+  const stdout = await windowsQuery('listeners', pids.join(','));
   const counts = JSON.parse(stdout) as { tcp: number; udp: number };
   assert.deepEqual(counts, { tcp: 0, udp: 0 }, 'APP_LISTENER');
 }
@@ -167,22 +99,6 @@ export async function assertNoConnections(pids: number[]): Promise<void> {
     pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
   )
     throw new Error('INVALID_PID');
-  const script = join(directory, 'packaging/connections.ps1').replaceAll(
-    "'",
-    "''",
-  );
-  const { stdout } = await runPowerShell(
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `& '${script}' -ProcessIds @(${pids.join(',')})`,
-    ],
-    {
-      windowsHide: true,
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      env: testEnvironment(),
-    },
-  );
+  const stdout = await windowsQuery('connections', pids.join(','));
   assert.deepEqual(JSON.parse(stdout) as unknown, [], 'APP_CONNECTION');
 }

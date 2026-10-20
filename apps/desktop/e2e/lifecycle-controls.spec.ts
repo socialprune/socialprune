@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
+import { PROCESS_POLL_TIMEOUT_MS } from '../packaging/query-poll.ts';
 import {
   plantedListener,
   plantedProcess,
   plantedConnection,
   processExitControl,
 } from './lifecycle-controls.ts';
+
+// Compiler setup, complete 3x runner query poll, last query settlement.
+test.setTimeout(WINDOWS_QUERY_TIMEOUT_MS * 2 + PROCESS_POLL_TIMEOUT_MS);
 
 test('positive control catches a live listener owned by the test', async () => {
   await expect(plantedListener(4668)).rejects.toThrow('APP_LISTENER');

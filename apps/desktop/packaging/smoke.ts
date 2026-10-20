@@ -43,7 +43,8 @@ try {
       '-ExpectedItems',
       String(count),
     ],
-    { timeout: 60_000, windowsHide: true },
+    // Native-table/UIA polling owns 137935 ms; allow init and final readback.
+    { timeout: 240_000, windowsHide: true },
   );
   const sample = JSON.parse(stdout) as {
     interactiveAt: number;

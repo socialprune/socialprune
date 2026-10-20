@@ -5,6 +5,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { z } from 'zod';
 import { directory } from './paths.ts';
 import { pathExists } from './file-presence.ts';
+import { WATCH_READY_TIMEOUT_MS } from './query-poll.ts';
 
 const NetworkSchema = z.strictObject({
   ticks: z.number().int().nonnegative(),
@@ -53,7 +54,8 @@ export async function watchNetwork(
     child.once('exit', resolve);
   });
   try {
-    const deadline = Date.now() + 30_000;
+    // Native table watch: use 3x runner predecessor max + 50 ms interval.
+    const deadline = Date.now() + WATCH_READY_TIMEOUT_MS;
     while (Date.now() < deadline && child.exitCode === null) {
       if (await pathExists(output + '.ready')) break;
       await wait(50);
@@ -74,7 +76,9 @@ export async function watchNetwork(
       await writeFile(output + '.stop', 'stop');
       const code = await Promise.race([
         exited,
-        wait(30_000, undefined, { ref: false }).then(() => 'timeout'),
+        wait(WATCH_READY_TIMEOUT_MS, undefined, { ref: false }).then(
+          () => 'timeout',
+        ),
       ]);
       if (code !== 0) {
         if (code === 'timeout') {

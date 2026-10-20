@@ -7,6 +7,7 @@ import type { ProcessIdentity } from '../windows.ts';
 import type { BrowserContext } from 'playwright-core';
 import { join } from 'node:path';
 import { setQueryMeasurementDirectory } from '../../packaging/windows-powershell.ts';
+import { setWindowsQueryExecutable } from '../../packaging/windows-query.ts';
 
 const ProbeSchema = z.strictObject({
   type: z.literal('browserProbe'),
@@ -29,6 +30,7 @@ const browserEvents: {
 let now = Date.parse('2026-10-15T12:00:00.000Z');
 startEngine((options) => {
   setQueryMeasurementDirectory(join(options.dataFolder, 'query-measurements'));
+  setWindowsQueryExecutable(join(options.dataFolder, 'desktop-query.exe'));
   return openTestEngine(options, {
     xOrigin: 'http://127.0.0.1:4656',
     instagramOrigin: 'http://127.0.0.1:4661',

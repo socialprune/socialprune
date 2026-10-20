@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { directory, dist, root } from './paths.ts';
 import { setQueryMeasurementDirectory } from './windows-powershell.ts';
+import { controlOutputExcerpt } from './diagnostic-output.ts';
+export { controlOutputExcerpt } from './diagnostic-output.ts';
 
 const require = createRequire(import.meta.url);
 const controls = [
@@ -77,70 +79,6 @@ interface DiagnosticPaths {
 
 const diagnosticPaths = { repo: root, temp: tmpdir(), home: homedir() };
 const outputDirectory = join(dist, 'red-controls');
-
-export function controlOutputExcerpt(
-  output: string,
-  paths: DiagnosticPaths = diagnosticPaths,
-): string[] {
-  let text = stripVTControlCharacters(output).replace(/\\+/g, '/');
-  text = text
-    .replace(/file:\/\/\/[^\s"'<>]+/gi, (url) => {
-      try {
-        return decodeURIComponent(url);
-      } catch {
-        return url;
-      }
-    })
-    .replace(/file:\/\/\/(?=[a-z]:\/)/gi, '')
-    .replace(/file:\/\/(?=\/)/gi, '');
-  // Longest first: a checkout or TEMP may itself be inside the user profile.
-  const roots: [string, string][] = [
-    ['repo', paths.repo],
-    ['temp', paths.temp],
-    ['home', paths.home],
-  ];
-  for (const [kind, path] of roots.sort(
-    ([, left], [, right]) => right.length - left.length,
-  )) {
-    const normalized = path.replace(/\\+/g, '/').replace(/\/$/, '');
-    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    text = text.replace(
-      new RegExp(escaped + '(?=/|[\\s"\'():]|$)', 'gi'),
-      `<${kind}>`,
-    );
-  }
-  // Also cover other profiles and GitHub's long/8.3 runner path spellings.
-  text = text
-    .replace(/[a-z]:\/a\/_temp\b/gi, '<temp>')
-    .replace(/[a-z]:\/a\/[^/\s"']+\/[^/\s"']+(?=\/)/gi, '<repo>')
-    .replace(/\/(?:home|Users)\/[^/\n"']+\/work\/_temp\b/g, '<temp>')
-    .replace(
-      /\/(?:home|Users)\/[^/\n"']+\/work\/[^/\s"']+\/[^/\s"']+(?=\/)/g,
-      '<repo>',
-    )
-    .replace(
-      /(?:[a-z]:)?\/Users\/[^/\n"']+\/AppData\/Local\/Temp\b/gi,
-      '<temp>',
-    )
-    .replace(/(?:[a-z]:)?\/Users\/[^/\n"']+(?=\/|$)/gim, '<home>')
-    .replace(/\/home\/[^/\s"']+(?=\/|$)/gm, '<home>');
-  // Redact before cutting, so neither a truncated prefix nor a split escape leaks.
-  return text
-    .replace(/\r\n?/g, '\n')
-    .trimEnd()
-    .split('\n')
-    .slice(-200)
-    .map((line) =>
-      [...line]
-        .filter(
-          (character) =>
-            character === '\t' ||
-            (character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127),
-        )
-        .join('')
-        .slice(0, 400),
-    );
-}
 
 export function classifyControlFailure(
   output: string,

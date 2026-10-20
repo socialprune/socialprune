@@ -1,6 +1,5 @@
 param([int[]]$ProcessIds)
 $ErrorActionPreference = 'Stop'
 if (-not $ProcessIds.Count -or @($ProcessIds | Where-Object { $_ -le 0 }).Count) { throw 'INVALID_PROCESS_IDS' }
-$tcp = @((Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue) | Where-Object { $ProcessIds -contains $_.OwningProcess })
-$udp = @((Get-NetUDPEndpoint -ErrorAction SilentlyContinue) | Where-Object { $ProcessIds -contains $_.OwningProcess })
-@{ tcp = $tcp.Count; udp = $udp.Count } | ConvertTo-Json -Compress
+if (-not ('DesktopQuery' -as [type])) { Add-Type -Path "$PSScriptRoot\windows-query.cs" }
+[DesktopQuery]::Query('listeners', ($ProcessIds -join ','))

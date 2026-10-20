@@ -2,6 +2,7 @@ param([int]$AppProcessId, [string]$Executable, [switch]$CloseOnly)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -Path "$PSScriptRoot\windows-query.cs"
 $pidCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
 $nameCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'SocialPrune')
 $condition = New-Object System.Windows.Automation.AndCondition($pidCondition, $nameCondition)
@@ -29,7 +30,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
 if (-not $window) { throw 'RELEASE_INTERACTIVE_FRAME_MISSING' }
 if ($CloseOnly) { $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close(); exit 0 }
 Start-Sleep -Seconds 3
-$processes = @((Get-CimInstance Win32_Process -Filter "Name = 'SocialPrune.exe'") | Where-Object { $_.ExecutablePath -eq $Executable })
+$processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json
 $ids = @($processes | ForEach-Object { $_.ProcessId })
 if (-not ($ids -contains $AppProcessId)) { throw 'RELEASE_PROCESS_MISSING' }
 $workingSet = [int64]0

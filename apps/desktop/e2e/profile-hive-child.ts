@@ -8,6 +8,8 @@ import { dirname } from 'node:path';
 import { directory, root } from '../packaging/paths.ts';
 import { join } from 'node:path';
 import { failureRecord } from './proof-failure.ts';
+import { homedir } from 'node:os';
+import { controlOutputExcerpt } from '../packaging/diagnostic-output.ts';
 
 // The native restricted-token launcher starts Node here. Even the first profile
 // proof uses the same WinPS environment boundary as every later harness call.
@@ -34,6 +36,10 @@ try {
           root,
           dirname(report),
           join(directory, 'e2e/profile-hive-child.ts'),
+        ),
+        diagnostic: controlOutputExcerpt(
+          error instanceof Error ? error.message : 'PROFILE_UNKNOWN_FAILURE',
+          { repo: root, temp: dirname(report), home: homedir() },
         ),
       },
       null,

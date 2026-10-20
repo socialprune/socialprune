@@ -33,6 +33,12 @@ test('every production entry excludes test code and runtime test selectors', asy
   ]) {
     const modules = await graph(resolve(directory, entry));
     assertProductionGraph(modules);
+    expect(modules.has(resolve(directory, 'packaging/windows-query.ts'))).toBe(
+      false,
+    );
+    expect(modules.has(resolve(directory, 'packaging/query-poll.ts'))).toBe(
+      false,
+    );
     for (const id of modules) {
       const source = await readFile(id, 'utf8');
       expect(source).not.toMatch(

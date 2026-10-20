@@ -12,6 +12,7 @@ import { assertNoRemainingProcesses } from '../test/windows.ts';
 import type { ProcessIdentity } from '../test/windows.ts';
 import { windowsShortPath } from '../test/short-path.ts';
 import type { RunView } from '../src/protocol.ts';
+import { PROCESS_POLL_TIMEOUT_MS } from '../packaging/query-poll.ts';
 
 async function generated(
   platform: 'x' | 'instagram',
@@ -88,7 +89,9 @@ async function generated(
     async phase(expected: RunView['phase']) {
       try {
         await expect(monitor).toHaveAttribute('data-phase', expected, {
-          timeout: 30_000,
+          // The test engine's launched callback reads owned browser identities.
+          // Keep the existing 30 s page budget plus 3x runner query max + 100 ms.
+          timeout: 30_000 + PROCESS_POLL_TIMEOUT_MS,
         });
       } catch (error) {
         console.log(

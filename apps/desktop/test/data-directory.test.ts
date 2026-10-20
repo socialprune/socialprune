@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, vi } from 'vitest';
 import { windowsShortPath } from './short-path.ts';
+import { WINDOWS_QUERY_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
 
 const electron = vi.hoisted(() => ({
   app: {
@@ -27,36 +28,38 @@ vi.mock('electron', () => ({
 }));
 const { startDesktop } = await import('../src/main/app.ts');
 
-test('main creates and canonicalizes an 8.3 data folder before setting Electron userData', async ({
-  skip,
-}) => {
-  const temporary = await realpath(
-    await mkdtemp(join(tmpdir(), 'socialprune-desktop-short-directory-')),
-  );
-  try {
-    const short = await windowsShortPath(temporary);
-    if (!short) {
-      console.info(
-        'SHORT_PATH_UNAVAILABLE: this volume offers no distinct Windows 8.3 alias.',
-      );
-      skip();
-      return;
-    }
-    electron.app.setPath.mockClear();
-    const selected = join(short, 'SocialPrune Data');
-    await startDesktop({
-      dataDirectory: selected,
-      assets: '',
-      preload: '',
-      engine: '',
-    });
-    const canonical = await realpath(join(temporary, 'SocialPrune Data'));
-    expect(selected).not.toBe(canonical);
-    expect(electron.app.setPath).toHaveBeenCalledExactlyOnceWith(
-      'userData',
-      canonical,
+test(
+  'main creates and canonicalizes an 8.3 data folder before setting Electron userData',
+  async ({ skip }) => {
+    const temporary = await realpath(
+      await mkdtemp(join(tmpdir(), 'socialprune-desktop-short-directory-')),
     );
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
+    try {
+      const short = await windowsShortPath(temporary);
+      if (!short) {
+        console.info(
+          'SHORT_PATH_UNAVAILABLE: this volume offers no distinct Windows 8.3 alias.',
+        );
+        skip();
+        return;
+      }
+      electron.app.setPath.mockClear();
+      const selected = join(short, 'SocialPrune Data');
+      await startDesktop({
+        dataDirectory: selected,
+        assets: '',
+        preload: '',
+        engine: '',
+      });
+      const canonical = await realpath(join(temporary, 'SocialPrune Data'));
+      expect(selected).not.toBe(canonical);
+      expect(electron.app.setPath).toHaveBeenCalledExactlyOnceWith(
+        'userData',
+        canonical,
+      );
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  },
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
+);

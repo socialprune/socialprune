@@ -33,6 +33,7 @@ import { proofWorkspace } from '../e2e/proof-context.ts';
 import { failureRecord } from '../e2e/proof-failure.ts';
 import { root } from './paths.ts';
 import { runPowerShell, runNativeQuery } from './windows-powershell.ts';
+import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
 
 const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
@@ -185,15 +186,15 @@ try {
     1,
     'START_MENU_SHORTCUT_MISSING',
   );
-  const registrationDeadline = Date.now() + 30_000;
-  let registered = installed;
-  while (
-    registered.uninstallCommand !== `"${updater}"` &&
-    Date.now() < registrationDeadline
-  ) {
-    await wait(250);
-    registered = await layout();
-  }
+  const registered = await pollQuery(
+    layout,
+    (value) => value.uninstallCommand === `"${updater}"`,
+    {
+      timeoutMs: LAYOUT_POLL_TIMEOUT_MS,
+      intervalMs: 250,
+      message: 'WINDOWS_SETTINGS_UNINSTALL_WIRING',
+    },
+  );
   assert.equal(
     registered.uninstallCommand,
     `"${updater}"`,
@@ -310,9 +311,11 @@ try {
           windowsHide: true,
           env: installerEnv,
         });
-        const deadline = Date.now() + 30_000;
-        while ((await layout()).registrationExists && Date.now() < deadline)
-          await wait(100);
+        await pollQuery(layout, (value) => !value.registrationExists, {
+          timeoutMs: LAYOUT_POLL_TIMEOUT_MS,
+          intervalMs: 100,
+          message: 'UNINSTALL_REGISTRATION_REMAINS',
+        });
         await wait(500);
         tempCopies = await assertNsisTemp(installerTemp, 1, uninstallerHash);
       } catch (error) {
@@ -324,18 +327,19 @@ try {
         )
           throw error;
       }
-      const deadline = Date.now() + 150_000;
-      let remaining = await layout();
-      while (
-        (remaining.installExists ||
-          remaining.updateExists ||
-          remaining.existingShortcuts.length ||
-          remaining.registrationExists) &&
-        Date.now() < deadline
-      ) {
-        await wait(500);
-        remaining = await layout();
-      }
+      const remaining = await pollQuery(
+        layout,
+        (value) =>
+          !value.installExists &&
+          !value.updateExists &&
+          !value.existingShortcuts.length &&
+          !value.registrationExists,
+        {
+          timeoutMs: LAYOUT_POLL_TIMEOUT_MS,
+          intervalMs: 500,
+          message: 'RELEASE_LAYOUT_REMAINS',
+        },
+      );
       await writeFile(
         proofOutput('release-cleanup.json'),
         JSON.stringify(remaining, null, 2),

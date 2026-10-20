@@ -23,6 +23,7 @@ import { pathExists } from '../packaging/file-presence.ts';
 import { failureRecord } from './proof-failure.ts';
 import { root } from '../packaging/paths.ts';
 import { collectProof } from './proof-collection.ts';
+import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 
 // Test-only launcher. The installer receives no test flag and has no exemption
 // from its elevated-token guard. A restricted same-user process inherits the
@@ -188,7 +189,9 @@ try {
   });
   childExited = exited;
   if (elevated && mode === 'controls') {
-    const deadline = Date.now() + 180_000;
+    // Restricted child initializes its hive, system reader and native watcher
+    // before this handshake. Keep three complete query windows for each.
+    const deadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS * 4;
     while (
       !(await pathExists(join(scratch, 'installed.ready'))) &&
       Date.now() < deadline &&

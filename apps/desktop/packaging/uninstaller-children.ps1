@@ -1,7 +1,9 @@
 param([string]$TempRoot, [string]$Ready)
 $ErrorActionPreference='Stop'
 $codes=@()
-$deadline=[DateTime]::UtcNow.AddSeconds(30)
+# CI 39395902168 (2026-10-20): process query max 22375 ms.
+# 3 complete observations plus the 5 ms poll interval; native Process reads stay.
+$deadline=[DateTime]::UtcNow.AddMilliseconds(67130)
 [IO.File]::WriteAllText($Ready,'watching')
 $seen=$false
 while([DateTime]::UtcNow -lt $deadline) {
@@ -10,7 +12,7 @@ while([DateTime]::UtcNow -lt $deadline) {
       if($process.MainModule.FileName.StartsWith($TempRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) {
         $seen=$true
         $handle=$process.Handle
-        if(-not $process.WaitForExit(15000)) { throw 'NSIS_COPY_DID_NOT_EXIT' }
+        if(-not $process.WaitForExit(67130)) { throw 'NSIS_COPY_DID_NOT_EXIT' }
         $codes += $process.ExitCode
       }
     } catch [InvalidOperationException] { } finally { $process.Dispose() }

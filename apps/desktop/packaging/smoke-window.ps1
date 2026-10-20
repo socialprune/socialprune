@@ -2,14 +2,18 @@ param([int]$AppProcessId, [string]$Executable, [int]$ExpectedItems)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -Path "$PSScriptRoot\windows-query.cs"
 $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
-$deadline = [DateTime]::UtcNow.AddSeconds(30)
+# CI 39395902168 (2026-10-20): predecessor identities 22375 ms +
+# TCP 23570 ms; 3 * their sum + 100 ms interval. Native tables replace both.
+$deadline = [DateTime]::UtcNow.AddMilliseconds(137935)
 $window = $null
 $connections = @{}
 $interactiveAt = $null
 $observeUntil = $null
 while ([DateTime]::UtcNow -lt $deadline) {
-  $ids = @((Get-CimInstance Win32_Process -Filter "Name = 'SocialPrune.exe'") | Where-Object { $_.ExecutablePath -eq $Executable } | ForEach-Object { $_.ProcessId })
+  $processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json
+  $ids = @($processes | ForEach-Object { $_.ProcessId })
   # Assign before enumeration: @('[]' | ConvertFrom-Json) has one empty-array
   # element on Windows PowerShell 5.1 and would invent a remote endpoint.
   $tcpConnections = (& "$PSScriptRoot\connections.ps1" -ProcessIds $ids) | ConvertFrom-Json
@@ -27,7 +31,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
   Start-Sleep -Milliseconds 100
 }
 if (-not $window) { throw 'SMOKE_INTERACTIVE_WINDOW_MISSING' }
-$processes = @((Get-CimInstance Win32_Process -Filter "Name = 'SocialPrune.exe'") | Where-Object { $_.ExecutablePath -eq $Executable })
+$processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json
 $ids = @($processes | ForEach-Object { $_.ProcessId })
 $listeners = (& "$PSScriptRoot\listeners.ps1" -ProcessIds $ids) | ConvertFrom-Json
 $workingSet = [int64]0

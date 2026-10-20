@@ -317,7 +317,7 @@ ${variant.startsWith('own-link-') ? `setTimeout(()=>{${unsettled}},150);` : ''}
 ${variant.startsWith('expansion-link-') ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.unsettled)return;window.unsettled=true;${unsettled}},{passive:true});` : ''}
 ${['expansion-post-switch', 'expansion-kind-switch'].includes(variant) ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.switched)return;window.switched=true;const before=${json(`/${kind}/${code}`)},after=${json(variant === 'expansion-kind-switch' ? `/reel/${code}` : `/${kind}/${IG_FIXTURE.other.code}`)};mutate(()=>{for(const link of document.querySelectorAll('main a[href]'))link.setAttribute('href',link.getAttribute('href').replace(before,after));history.replaceState(null,'',after)})},{passive:true});` : ''}
 ${scrolling ? `let scrollLoads=0;const scrollFillers=${json(Array.from({ length: 12 }, (_, ordinal) => filler(100 + ordinal)))};document.getElementById('comments').addEventListener('wheel',e=>{if(e.deltaX!==0||e.deltaY!==700)return;scrollLoads++;mutate(()=>{const rows=document.getElementById('comment-rows');if((${json(variant)}==='scroll-first'||${json(variant)}==='expansion-link-flicker'||${json(variant)}==='expansion-link-vanishes')&&scrollLoads===${IG_FIXTURE.scroll.first}||${json(variant)}==='scroll-late'&&scrollLoads===${IG_FIXTURE.scroll.beyondLimit})rows.insertAdjacentHTML('beforeend',comment);else if(['scroll-late','scroll-ten'].includes(${json(variant)}))rows.insertAdjacentHTML('beforeend',scrollFillers[scrollLoads-1]||'')})},{passive:true});` : ''}
-${variant === 'no-json' ? '' : `fetch('/data/${code}.json').then(r=>r.json()).catch(()=>{});`}
+${variant === 'no-json' ? '' : variant.startsWith('answer-') ? `fetch('/ajax/${code}.json',{method:'POST',headers:{'x-fb-friendly-name':'PostQuery'}}).then(r=>r.text()).catch(()=>{});` : `fetch('/data/${code}.json').then(r=>r.json()).catch(()=>{});`}
 ${variant === 'two-answers' ? `fetch('/data/${code}.json?different=1').then(r=>r.json()).catch(()=>{});` : ''}
 `;
   const decoy =
@@ -376,4 +376,35 @@ export function postAnswer(
       [IG_FIXTURE.other.code]: IG_FIXTURE.other.time,
     },
   };
+}
+
+export function answerResponse(answer: unknown, variant: Variant) {
+  const single = JSON.stringify(answer);
+  if (variant === 'answer-ndjson' || variant === 'answer-concatenated')
+    return {
+      type: 'application/json',
+      body:
+        JSON.stringify({ data: null, hasNext: true }) +
+        (variant === 'answer-ndjson' ? '\n' : '') +
+        JSON.stringify({
+          label: 'Generated deferred answer',
+          path: ['media'],
+          data: answer,
+        }),
+    };
+  if (variant === 'answer-javascript')
+    return { type: 'text/javascript', body: 'for (;;);' + single };
+  if (variant === 'answer-disagreement') {
+    const changed = structuredClone(answer) as {
+      data: { items: { caption: unknown }[] };
+    };
+    changed.data.items[0]!.caption = { text: IG_FIXTURE.other.text };
+    return {
+      type: 'application/json',
+      body: single + '\n' + JSON.stringify({ path: ['media'], data: changed }),
+    };
+  }
+  if (variant === 'answer-unparsable')
+    return { type: 'application/json', body: single + '\n{"data":' };
+  return { type: 'application/json', body: single };
 }

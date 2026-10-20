@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import type { Item } from '@socialprune/core';
 import { IG_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
-import { listPage, postPage, postAnswer } from './pages.ts';
+import { listPage, postPage, postAnswer, answerResponse } from './pages.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
@@ -153,6 +153,25 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             hiddenPosts.has(index),
           ),
         );
+        return;
+      }
+      if (path.startsWith('/ajax/')) {
+        const index = items.findIndex(
+          (_, index) => path === `/ajax/${IG_FIXTURE.code}${index || ''}.json`,
+        );
+        const selected = postVariants.get(index) ?? variant;
+        const answer = answerResponse(
+          postAnswer(
+            items[Math.max(0, index)]!,
+            Math.max(0, index),
+            selected,
+            `http://127.0.0.1:${port}`,
+            false,
+          ),
+          selected,
+        );
+        response.writeHead(200, { 'Content-Type': answer.type });
+        response.end(answer.body);
         return;
       }
       if (path.startsWith('/data/')) {

@@ -99,6 +99,11 @@ export async function instagramFixture(
 }
 export type Variant =
   | 'success'
+  | 'answer-ndjson'
+  | 'answer-concatenated'
+  | 'answer-javascript'
+  | 'answer-disagreement'
+  | 'answer-unparsable'
   | 'list-other-names'
   | 'list-other-names-nav-late'
   | 'list-nav-other'

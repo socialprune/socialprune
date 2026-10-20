@@ -61,7 +61,7 @@ import {
   canaryAudit,
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
-import { CLICK_NAMES, POST_SCROLL_ACTION } from './selectors.ts';
+import { CLICK_NAMES, POST_SCROLL_ACTION, postAddress } from './selectors.ts';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
@@ -242,6 +242,7 @@ export async function runContextWithDependencies(
     network?.stop(caught);
   };
   let answers: ReturnType<typeof pageAnswers> | undefined;
+  let answerReport: (() => void) | undefined;
   let observedAfter: ProfileSnapshot | undefined;
   let observedReport: BrowserProfileReport | null = null;
   const rejectIncomplete = () => {
@@ -521,6 +522,7 @@ export async function runContextWithDependencies(
           ),
         );
         answers.reset(options.plan.canary);
+        answerReport = undefined;
         const rowCounts = { emptySkipped: 0, otherName: 0 };
         const list = await (async () => {
           try {
@@ -567,6 +569,15 @@ export async function runContextWithDependencies(
           oldestWithinWeek: list.oldestWithinWeek,
         };
         report.steps.push(stepReport);
+        answers.reset(options.plan.canary);
+        answerReport = options.plan.canary
+          ? () => {
+              stepReport.secondSource = answers!.summary(
+                postAddress(page.url(), deps.origin)?.code ?? null,
+              );
+            }
+          : undefined;
+        answerReport?.();
         profileNames.push(list.account);
         if (list.full || !list.candidates[candidate]) {
           await writer.settle({
@@ -580,7 +591,6 @@ export async function runContextWithDependencies(
           stepReport.result = list.full ? 'window-full' : 'no-row';
           break;
         }
-        answers.reset(options.plan.canary);
         if (
           !(await openCandidate(
             page,
@@ -610,6 +620,10 @@ export async function runContextWithDependencies(
         stepReport.expansionClicks = read.expandClicks;
         stepReport.expansionScrolls = read.expansionScrolls;
         stepReport.ownerCount = read.post.ownerCount;
+        if (options.plan.canary) {
+          await answers.flush(deps.responseMs);
+          stepReport.secondSource = answers.summary(read.post.code);
+        }
         await checkpoint();
         const fromList =
           read.result.state === 'unconfirmed' &&
@@ -690,6 +704,8 @@ export async function runContextWithDependencies(
           attemptId,
         };
         await answers.flush(deps.responseMs);
+        if (options.plan.canary)
+          stepReport.secondSource = answers.summary(read.post.code);
         await checkpoint();
         const check: CanaryCheck = {
           confirmed: true,
@@ -836,7 +852,9 @@ export async function runContextWithDependencies(
         Boolean(reportPath),
       );
     };
-    await finalize('answers', () => {
+    await finalize('answers', async () => {
+      await answers?.flush(deps.responseMs);
+      answerReport?.();
       answers?.dispose();
     });
     if (began) {

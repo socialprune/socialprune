@@ -15,6 +15,23 @@ const cases: Record<
     include?: string[];
   }
 > = {
+  'c14-whole-body-only': {
+    file: '/instagram/capture.ts',
+    before:
+      "parsed = parseAnswer(\n              new TextDecoder('utf-8', { fatal: true }).decode(bytes),\n            );",
+    after:
+      "parsed = { mode: 'single', values: [JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown] };",
+    tests: '^C14 second-source answer-(ndjson|concatenated)',
+  },
+  'c14-whole-body-unit': {
+    file: '/instagram/capture.ts',
+    before:
+      "parsed = parseAnswer(\n              new TextDecoder('utf-8', { fatal: true }).decode(bytes),\n            );",
+    after:
+      "parsed = { mode: 'single', values: [JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown] };",
+    tests: '^C14 (newline|concatenated) answers',
+    include: ['apps/cli/src/browser/instagram/answers.test.ts'],
+  },
   'c12-every-row': {
     file: '/instagram/selectors.ts',
     before:

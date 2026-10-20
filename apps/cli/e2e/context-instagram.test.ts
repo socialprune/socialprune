@@ -3582,6 +3582,86 @@ test.each([
   },
 );
 test.each([
+  ['answer-ndjson', null, 'sequence', 'json', 2],
+  ['answer-concatenated', null, 'sequence', 'json', 2],
+  ['answer-javascript', null, 'single', 'javascript', 1],
+  ['answer-disagreement', 'CANARY_MISMATCH', 'sequence', 'json', 2],
+  ['answer-unparsable', 'CANARY_NO_SECOND_SOURCE', 'failed', 'json', 0],
+] as const)(
+  'C14 second-source %s retains every document and reports closed evidence',
+  async (variant, code, mode, type, bodies) => {
+    const h = await harness(variant, 5);
+    try {
+      const result = await h.start(true);
+      expect(result, h.notices.join('')).toMatchObject(
+        code ? { code } : { completed: 5, endReason: 'canary' },
+      );
+      const journal = await h.store.browserJournal();
+      expect(Boolean(journal.runs[0]!.canaryAcceptedAt)).toBe(code === null);
+      const reportText = await readFile(
+        join(
+          h.directory,
+          'context',
+          'instagram',
+          `canary-${journal.runs[0]!.runId}.json`,
+        ),
+        'utf8',
+      );
+      const report = JSON.parse(reportText) as {
+        steps: {
+          secondSource: {
+            contentTypes: Record<string, Record<string, number>>;
+            objects: { fields: Record<string, boolean> }[];
+          };
+        }[];
+      };
+      expect(report.steps).toHaveLength(code ? 1 : 5);
+      for (const step of report.steps) {
+        expect(step.secondSource.contentTypes[type]).toMatchObject({
+          responses: 1,
+          bodies,
+          [mode]: 1,
+          responsesWithCode: 1,
+        });
+        if (mode === 'failed') expect(step.secondSource.objects).toEqual([]);
+        else
+          expect(step.secondSource.objects).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                fields: { owner: true, time: true, caption: true, image: true },
+              }),
+            ]),
+          );
+      }
+      for (const value of [
+        IG_FIXTURE.code,
+        IG_FIXTURE.caption,
+        IG_FIXTURE.postAt,
+        IG_FIXTURE.commentId,
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+          item.id,
+        ]),
+        h.fake.origin,
+      ])
+        expect(reportText).not.toContain(value);
+      expect(
+        h.fake.requests.filter((request) => request.path.startsWith('/ajax/')),
+      ).toHaveLength(code ? 1 : 5);
+      expect(
+        h.fake.requests.filter((request) => request.path.startsWith('/media/')),
+      ).toHaveLength(code ? 1 : 5);
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each([
   ['time', 'CANARY_CHECK_FAILED'],
   ['owner', 'CANARY_CHECK_FAILED'],
   ['collaboration', 'CANARY_CHECK_FAILED'],

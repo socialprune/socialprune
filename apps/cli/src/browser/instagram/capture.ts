@@ -13,6 +13,8 @@ import type { InstagramContextFile } from '../../workspace/context-files.ts';
 import type { NetworkPolicy } from './network.ts';
 import { productionPolicy } from './network.ts';
 import { ContextStop } from './report.ts';
+import { parseAnswer, answerSummary } from './answers.ts';
+import type { CollectedAnswer } from './answers.ts';
 
 export function pageAnswers(
   page: Page,
@@ -20,6 +22,7 @@ export function pageAnswers(
 ) {
   const images = new Map<string, Response>(),
     bodies: unknown[] = [],
+    collected: CollectedAnswer[] = [],
     tasks = new Set<Promise<void>>();
   let totalBytes = 0;
   const generations = new WeakMap<Request, number>();
@@ -29,13 +32,18 @@ export function pageAnswers(
     generations.set(request, generation);
   };
   const receive = (response: Response) => {
-    const type = response.headers()['content-type']?.split(';', 1)[0] ?? '';
+    const type =
+      response
+        .headers()
+        ['content-type']?.split(';', 1)[0]
+        ?.trim()
+        .toLowerCase() ?? '';
     if (policy.image(response.url())) images.set(response.url(), response);
     if (
       !json ||
       generations.get(response.request()) !== generation ||
       !policy.platform(response.url()) ||
-      type !== 'application/json' ||
+      (type !== 'application/json' && type !== 'text/javascript') ||
       response.status() !== 200 ||
       Number(response.headers()['content-length']) > INSTAGRAM_IMAGE_MAX_BYTES
     )
@@ -51,14 +59,28 @@ export function pageAnswers(
           totalBytes + bytes.length <= 50 * 1024 ** 2
         ) {
           totalBytes += bytes.length;
-          bodies.push(
-            JSON.parse(
+          let parsed: ReturnType<typeof parseAnswer>;
+          try {
+            parsed = parseAnswer(
               new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-            ) as unknown,
-          );
+            );
+          } catch {
+            parsed = { mode: 'failed', values: [] };
+          }
+          collected.push({
+            type: type === 'application/json' ? 'json' : 'javascript',
+            bytes,
+            parsed,
+          });
+          bodies.push(...parsed.values);
         }
       } catch {
-        /* A missing or invalid second source is represented by the comparison. */
+        if (current === generation && json)
+          collected.push({
+            type: type === 'application/json' ? 'json' : 'javascript',
+            bytes: new Uint8Array(),
+            parsed: { mode: 'failed', values: [] },
+          });
       }
     })();
     tasks.add(task);
@@ -69,10 +91,14 @@ export function pageAnswers(
   return {
     images,
     bodies,
+    summary(code: string | null) {
+      return answerSummary(collected, code);
+    },
     reset(collectJSON: boolean) {
       generation++;
       images.clear();
       bodies.length = 0;
+      collected.length = 0;
       totalBytes = 0;
       json = collectJSON;
     },

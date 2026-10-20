@@ -2,7 +2,54 @@ import { CLI_ERRORS, CliError } from '../../cli/errors.ts';
 import type { CliErrorCode } from '../../cli/errors.ts';
 import { z } from 'zod';
 
+const count = z.number().int().nonnegative();
+const sourceCountSchema = z.strictObject({
+  responses: count,
+  bodies: count,
+  single: count,
+  sequence: count,
+  failed: count,
+  responsesWithCode: count,
+  bodiesWithCode: count,
+});
+const sourceFieldsSchema = z.strictObject({
+  owner: z.boolean(),
+  time: z.boolean(),
+  caption: z.boolean(),
+  image: z.boolean(),
+});
+export const SecondSourceReportSchema = z.strictObject({
+  contentTypes: z.strictObject({
+    json: sourceCountSchema,
+    javascript: sourceCountSchema,
+  }),
+  objects: z
+    .array(
+      z.strictObject({
+        path: z
+          .string()
+          .max(1024)
+          .refine((path) =>
+            path.split('.').every((part) => {
+              const stem = part.replace(/(?:\[\])+$/u, '');
+              return (
+                /^(?:[a-z_]+|\*)?(?:\[\])*$/u.test(part) &&
+                (REPORT_KEYS.has(stem) || (stem === '' && part.length > 0))
+              );
+            }),
+          ),
+        keys: z.array(z.string().refine((key) => REPORT_KEYS.has(key))).max(64),
+        keysCapped: z.boolean(),
+        fields: sourceFieldsSchema,
+      }),
+    )
+    .max(64),
+  objectsCapped: z.boolean(),
+});
+export type SecondSourceReport = z.infer<typeof SecondSourceReportSchema>;
+
 export const ContextStepReportSchema = z.looseObject({
+  secondSource: SecondSourceReportSchema.optional(),
   otherName: z.number().int().nonnegative().optional(),
   confirmedBy: z.enum(['post', 'list']).optional(),
   ownerLinksOneAccount: z.boolean().optional(),
@@ -96,6 +143,11 @@ const KEYS = new Set([
   'timestamp',
   'display_url',
 ]);
+const REPORT_KEYS = new Set([...KEYS].map((key) => key.replace(/\d/g, '')));
+REPORT_KEYS.add('*');
+export function reportKey(key: string): string {
+  return KEYS.has(key) ? key.replace(/\d/g, '') : '*';
+}
 export function keyPaths(body: unknown, equal?: unknown): string[] {
   const paths = new Set<string>();
   let visited = 0;
@@ -106,12 +158,7 @@ export function keyPaths(body: unknown, equal?: unknown): string[] {
       for (const entry of value) walk(entry, path + '[]', depth + 1);
     else if (value && typeof value === 'object')
       for (const [key, entry] of Object.entries(value))
-        walk(
-          entry,
-          (path ? path + '.' : '') +
-            (KEYS.has(key) ? key.replace(/\d/g, '') : '*'),
-          depth + 1,
-        );
+        walk(entry, (path ? path + '.' : '') + reportKey(key), depth + 1);
   }
   walk(body, '', 0);
   return [...paths].sort();

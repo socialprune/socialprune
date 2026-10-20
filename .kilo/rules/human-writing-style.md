@@ -2,6 +2,7 @@
 
 > **Version:** 1.9.0
 > **Updated:** 2026-08-30
+> **Local adaptation:** 2026-10-20, one line in section B for messages to the maintainer (LL-2026-10-005, LL-2026-10-009), on his request
 
 ## A. Purpose
 
@@ -53,6 +54,8 @@ Match the register to the artifact:
 - **GitHub pull request bodies and initial issues:** write in the target repository's language, English by default. Lead with the finding, never with a greeting. Prefer a reproducer, a command, or a diff over description. Say plainly what is proven and what is not. Do not demand a fix when the choice belongs to the maintainer, and do not claim a full pass while unrelated failures exist. Never add unsolicited AI, model, tool, generated-by, or co-author attribution unless the target repository requires it.
 - **GitHub issue comments and pull request replies:** write as one conversation turn. Answer one point, request one artifact, or give one next check. Keep one paragraph by default and stop before the reply becomes a complete incident report.
 - **Direct messages to a person, in chat, DM, or a platform inbox:** the operator is speaking, not the project publishing. Shorter than a GitHub comment, no framing clause, no closing formula. Hold the detailed proof back until someone asks for it. A message that needs a second paragraph of evidence is a document in the wrong channel.
+
+A message to the maintainer starts from his stated goal, says per point done, not possible and why, or his choice, and uses his words, one line per item (LL-2026-10-005, LL-2026-10-009).
 
 ### B1. Operator voice markers, chat and direct messages only
 

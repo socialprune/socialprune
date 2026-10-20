@@ -54,7 +54,12 @@ export function prepareWindowsQuery(): Promise<string> {
   return compiled;
 }
 export async function windowsQuery(
-  operation: 'processes' | 'identities' | 'listeners' | 'connections',
+  operation:
+    | 'processes'
+    | 'identities'
+    | 'listeners'
+    | 'connections'
+    | 'uninstall-processes',
   argument: string,
   signal?: AbortSignal,
 ) {

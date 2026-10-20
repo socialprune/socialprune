@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.IO;
+using System.Text.RegularExpressions;
 
 // Harness-only read-only kernel/IP Helper tables, as in network-watch.ps1.
 // Identity is PID + creation time. No command lines or profiles are read.
@@ -15,6 +17,7 @@ public static class DesktopQuery {
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32NextW(IntPtr snapshot, ref Entry entry);
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder path, ref uint size);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetLongPathNameW(string path,StringBuilder output,uint size);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
   [DllImport("iphlpapi.dll")] static extern uint GetExtendedTcpTable(IntPtr table, ref uint size, bool order, uint family, int kind, uint reserved);
@@ -79,6 +82,41 @@ public static class DesktopQuery {
     } finally { CloseHandle(snapshot); }
     return "["+string.Join(",",rows)+"]";
   }
+  static string LongPath(string value) {
+    string path=Path.GetFullPath(value);var missing=new Stack<string>();
+    for(;;) {
+      var output=new StringBuilder(32768);uint count=GetLongPathNameW(path,output,(uint)output.Capacity);
+      if(count>0&&count<output.Capacity){path=output.ToString();break;}
+      int error=Marshal.GetLastWin32Error();if(error!=2&&error!=3)throw new Win32Exception(error,"UNINSTALL_SCOPE_PATH_FAILED");
+      string parent=Path.GetDirectoryName(path);if(String.IsNullOrEmpty(parent)||parent==path)throw new Exception("UNINSTALL_SCOPE_ROOT_MISSING");
+      missing.Push(Path.GetFileName(path));path=parent;
+    }
+    while(missing.Count>0)path=Path.Combine(path,missing.Pop());return path;
+  }
+  static string UninstallProcesses(string scope) {
+    string[] paths=scope.Split('|');if(paths.Length!=2)throw new Exception("UNINSTALL_SCOPE_INVALID");
+    string temp=LongPath(paths[0]).TrimEnd('\\')+"\\",uninstaller=LongPath(paths[1]);
+    var rows=new List<string>();IntPtr snapshot=CreateToolhelp32Snapshot(2,0);
+    if(snapshot==new IntPtr(-1))throw new Win32Exception(Marshal.GetLastWin32Error(),"UNINSTALL_SNAPSHOT_FAILED");
+    try {
+      Entry entry=new Entry();entry.size=(uint)Marshal.SizeOf(typeof(Entry));bool next=Process32FirstW(snapshot,ref entry);
+      while(next) {
+        // Do not inspect browser processes, command lines or foreign profiles.
+        if(string.Equals(entry.name,"Un.exe",StringComparison.OrdinalIgnoreCase)||string.Equals(entry.name,"Uninstall.exe",StringComparison.OrdinalIgnoreCase)) {
+          IntPtr handle=Open(entry.pid);if(handle!=IntPtr.Zero)try {
+            var path=new StringBuilder(32768);uint size=32768;
+            if(!QueryFullProcessImageNameW(handle,0,path,ref size))throw new Win32Exception(Marshal.GetLastWin32Error(),"UNINSTALL_IMAGE_FAILED");
+            string image=path.ToString();bool installed=string.Equals(image,uninstaller,StringComparison.OrdinalIgnoreCase);
+            bool ownedCopy=image.StartsWith(temp,StringComparison.OrdinalIgnoreCase)&&Regex.IsMatch(image.Substring(temp.Length),@"^~nsu[0-9A-F]*\.tmp\\Un\.exe$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
+            if(installed||ownedCopy)rows.Add("{\"pid\":"+entry.pid+",\"born\":"+Json(Born(handle).ToString())+",\"imageClass\":"+Json(installed?"owned-installed-uninstaller":"run-owned-nsis-copy")+"}");
+          }finally{CloseHandle(handle);}
+        }
+        next=Process32NextW(snapshot,ref entry);
+      }
+      int error=Marshal.GetLastWin32Error();if(error!=18)throw new Win32Exception(error,"UNINSTALL_SNAPSHOT_READ_FAILED");
+    }finally{CloseHandle(snapshot);}
+    return "["+string.Join(",",rows)+"]";
+  }
   static void Sockets(HashSet<uint> ids, bool tcp, uint family, List<string> connections, ref int listeners, ref int udp) {
     uint size=0;
     uint code=tcp?GetExtendedTcpTable(IntPtr.Zero,ref size,false,family,5,0):GetExtendedUdpTable(IntPtr.Zero,ref size,false,family,1,0);
@@ -115,6 +153,7 @@ public static class DesktopQuery {
   public static string Query(string operation, string argument) {
     switch(operation) {
       case "processes": return Processes(argument);
+      case "uninstall-processes": return UninstallProcesses(argument);
       case "identities": return Identities(Pids(argument));
       case "listeners": return Network(Pids(argument),true);
       case "connections": return Network(Pids(argument),false);

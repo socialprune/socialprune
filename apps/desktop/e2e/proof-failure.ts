@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { layoutDifference } from './layout-difference.ts';
 
 export function failureRecord(
   error: unknown,
@@ -46,6 +47,10 @@ export function failureRecord(
     value.powerShell && typeof value.powerShell === 'object'
       ? (value.powerShell as Record<string, unknown>)
       : undefined;
+  const difference =
+    value.code === 'ERR_ASSERTION'
+      ? layoutDifference(value.actual, value.expected)
+      : null;
   return {
     name: typeof value.name === 'string' ? value.name : 'Error',
     code:
@@ -98,6 +103,7 @@ export function failureRecord(
                 : null,
           }
         : null,
+    ...(difference ? { layoutDifference: difference } : {}),
     ...(value.query && typeof value.query === 'object'
       ? {
           query: Object.fromEntries(

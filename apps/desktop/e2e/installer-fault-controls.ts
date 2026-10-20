@@ -10,6 +10,15 @@ import { proofOutput, proofWorkspace } from './proof-context.ts';
 import { pathExists } from '../packaging/file-presence.ts';
 import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
 import {
+  prepareWindowsQuery,
+  windowsQuery,
+} from '../packaging/windows-query.ts';
+import { settleOwnedUninstall } from './owned-uninstall.ts';
+import type { OwnedUninstaller } from './owned-uninstall.ts';
+import { layoutDifference } from './layout-difference.ts';
+import { failureRecord } from './proof-failure.ts';
+import { root } from '../packaging/paths.ts';
+import {
   runPowerShell,
   spawnPowerShell,
   runNativeQuery,
@@ -38,6 +47,9 @@ const layout = async () =>
     installExists: boolean;
     dataExists: boolean;
     registrationExists: boolean;
+    updateExists: boolean;
+    existingShortcuts: string[];
+    registrations: string[];
   };
 const before = await layout();
 assert.equal(before.installExists, false);
@@ -58,6 +70,53 @@ const env = {
   TMP: scratch,
 };
 const results: { name: string; redExit: number; greenExit: number }[] = [];
+const lifecycle: {
+  phase: string;
+  difference: ReturnType<typeof layoutDifference>;
+  processes?: number;
+  productLayoutAbsent?: boolean;
+  queries?: number;
+  maximumOwnedProcesses?: number;
+}[] = [];
+async function recordLayout(
+  phase: string,
+  actual: Awaited<ReturnType<typeof layout>>,
+  expected = before,
+  state?: { processes: number; productLayoutAbsent: boolean },
+) {
+  const previous =
+    lifecycle.at(-1)?.phase === phase ? lifecycle.at(-1) : undefined;
+  const record = {
+    phase,
+    difference: layoutDifference(actual, expected),
+    ...state,
+    ...(state
+      ? {
+          queries: (previous?.queries ?? 0) + 1,
+          maximumOwnedProcesses: Math.max(
+            previous?.maximumOwnedProcesses ?? 0,
+            state.processes,
+          ),
+        }
+      : {}),
+  };
+  // One current cleanup sample per phase bounds output during a stuck child.
+  if (lifecycle.at(-1)?.phase === phase)
+    lifecycle[lifecycle.length - 1] = record;
+  else lifecycle.push(record);
+  await writeFile(
+    proofOutput('release-installer-faults-lifecycle.json'),
+    JSON.stringify(
+      {
+        version: 1,
+        baseline: 'immediate-before-each-attempt',
+        events: lifecycle,
+      },
+      null,
+      2,
+    ),
+  );
+}
 async function invoke(file: string): Promise<number> {
   try {
     await run(file, ['/S'], {
@@ -78,12 +137,23 @@ async function invoke(file: string): Promise<number> {
 }
 async function removeOwned() {
   const uninstaller = join(before.install, 'Uninstall.exe');
-  if (!(await exists(uninstaller))) return;
-  await run(uninstaller, ['/S'], { timeout: WINDOWS_QUERY_TIMEOUT_MS, env });
-  const deadline = Date.now() + 15_000;
-  while ((await exists(uninstaller)) && Date.now() < deadline) await wait(50);
-  assert.equal((await layout()).registrationExists, false);
+  await prepareWindowsQuery();
+  if (await exists(uninstaller))
+    await run(uninstaller, ['/S'], { timeout: WINDOWS_QUERY_TIMEOUT_MS, env });
+  await settleOwnedUninstall(
+    layout,
+    async () =>
+      JSON.parse(
+        await windowsQuery('uninstall-processes', scratch + '|' + uninstaller),
+      ) as OwnedUninstaller[],
+    async ({ processes, productLayoutAbsent, layout: current }) =>
+      recordLayout('owned-cleanup', current, before, {
+        processes,
+        productLayoutAbsent,
+      }),
+  );
 }
+let primaryFailure: unknown;
 try {
   for (const [name, needle, injected, badBranch] of [
     [
@@ -118,6 +188,11 @@ try {
         history: ['probe.txt'],
         generated: join(scratch, `${name}-${red}`),
       });
+      const attemptBefore = await layout();
+      await recordLayout(
+        `${name}-${red ? 'red' : 'green'}-before`,
+        attemptBefore,
+      );
       const code = await invoke(setup);
       if (red) {
         assert.equal(code, 0, `RED_NOT_REACHED:${name}`);
@@ -129,7 +204,9 @@ try {
         await removeOwned();
       } else {
         assert.equal(code, 10, `FAULT_NOT_REFUSED:${name}`);
-        assert.deepEqual(await layout(), before);
+        const actual = await layout();
+        await recordLayout(`${name}-green-after`, actual, attemptBefore);
+        assert.deepEqual(actual, attemptBefore);
         results.at(-1)!.greenExit = code;
         console.log(
           `GREEN_RUN: ${name} exact refusing branch exits 10; layout unchanged`,
@@ -221,7 +298,27 @@ try {
     proofOutput('release-installer-faults.json'),
     JSON.stringify(results, null, 2),
   );
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
-  await removeOwned();
-  await rm(scratch, { recursive: true, force: true });
+  try {
+    await removeOwned();
+    await rm(scratch, { recursive: true, force: true });
+  } catch (cleanup) {
+    await writeFile(
+      proofOutput('release-installer-faults-cleanup.json'),
+      JSON.stringify(
+        {
+          primary: primaryFailure
+            ? failureRecord(primaryFailure, root, proofWorkspace())
+            : null,
+          cleanup: failureRecord(cleanup, root, proofWorkspace()),
+        },
+        null,
+        2,
+      ),
+    );
+    if (!primaryFailure) throw cleanup;
+  }
 }

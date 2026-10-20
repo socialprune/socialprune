@@ -1,7 +1,7 @@
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './quiet-review-fixture.ts';
 import type { WorkspaceClient } from '../../web/src/workspace/client.ts';
 import {
   contextInputs,

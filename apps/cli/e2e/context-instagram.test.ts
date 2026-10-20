@@ -61,6 +61,7 @@ import {
   chooseFilterOption,
 } from '../src/browser/instagram/filter.ts';
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
+import { contextDiagnostics } from './context-diagnostics.ts';
 
 test.each([
   {
@@ -1103,6 +1104,7 @@ async function harness(
   count = 1,
   responseMs = 1500,
 ) {
+  const diagnostics = contextDiagnostics(variant);
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
     profile = join(directory, 'profile');
   const fixture = await instagramFixture(count);
@@ -1200,6 +1202,7 @@ async function harness(
             ignoreDefaultArgs: ['--disable-infobars'],
             serviceWorkers: 'block',
           });
+          diagnostics.observe(context);
           const probe = await context.newCDPSession(context.pages()[0]!);
           const command = await probe.send('Browser.getBrowserCommandLine');
           expect(command.arguments).toContain('--disable-extensions');
@@ -1256,10 +1259,15 @@ async function harness(
   };
   const click = async (name: string) => {
     const page = await local();
+    diagnostics.event('click:start', { name });
     try {
+      // The browser action timeout measures a click, not the preceding read.
+      // Observe the runner publishing its pending action before auto-waiting.
+      await diagnostics.waitForAction(name);
       await page.getByRole('button', { name, exact: true }).click({
         timeout: count > 5 ? 60000 : variant === 'window-full' ? 45000 : 30000,
       });
+      diagnostics.event('click:end', { name });
     } catch (error) {
       throw new Error(`${String(error)}\nRun notices: ${notices.join('')}`);
     }
@@ -1291,6 +1299,7 @@ async function harness(
       });
       assertRecordedEvents(fake.events);
     })().finally(() => {
+      diagnostics.close();
       closeSettled = true;
     }));
   onTestFinished(() => (closeSettled ? undefined : close()));
@@ -1337,6 +1346,29 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test('C13 Continue waits for the generated read to settle, not a 30-second click over an unfinished step', async () => {
+  const h = await harness('owner-first-profile', 1, 45000);
+  let first = true;
+  h.fake.beforeList(async () => {
+    if (!first) return;
+    first = false;
+    await new Promise((resolve) => setTimeout(resolve, 31000));
+  });
+  try {
+    const running = h.start();
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await running).toMatchObject({ completed: 0, endReason: 'canary' });
+    const attempts = await h.store.read((tx) => records(tx.browserAttempts));
+    expect(attempts.map((attempt) => attempt.state)).toEqual([
+      'sending',
+      'unconfirmed',
+    ]);
+    expect(attempts[1]!.code).toBe('owner');
+  } finally {
+    await h.close();
+  }
+}, 120000);
 test.each(['post', 'list'] as const)(
   'C12 IG-9 mixed-name list keeps only own candidates and confirms by %s with closed counts',
   async (confirmedBy) => {

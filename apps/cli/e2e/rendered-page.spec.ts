@@ -926,3 +926,59 @@ test('an older in-flight confirmation poll cannot overwrite the ended state', as
     await server.close();
   }
 });
+
+test('C13 an unfocused confirmation tab polls and exposes Continue without native activation', async ({
+  page,
+  context,
+}) => {
+  const server = await startConfirmation(
+    {
+      phase: 'start',
+      warning: 'Generated',
+      profileWarning: 'Generated',
+      planned: 1,
+      bulk: 0,
+      estimateMs: 0,
+      list: 'generated',
+      rows: [],
+      completed: 0,
+      result: 'Generated read',
+    },
+    TEST_PORTS.confirmation,
+  );
+  const polls: number[] = [];
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === '/api/view')
+      polls.push(performance.now());
+  });
+  try {
+    const starting = server.wait('start');
+    await page.goto(server.launchUrl);
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    expect(await starting).toBe(true);
+    const platform = await context.newPage();
+    await platform.goto('data:text/html,<title>Generated platform tab</title>');
+    const visibility = await page.evaluate(() => document.visibilityState);
+    const continuing = server.wait('continue');
+    const published = performance.now();
+    server.update({ phase: 'canary', result: 'Generated step settled' });
+    await expect(
+      page.getByRole('button', { name: 'Continue', exact: true }),
+    ).toBeVisible();
+    const visible = performance.now();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    expect(await continuing).toBe(true);
+    console.log(
+      JSON.stringify({
+        kind: 'C13-background-poll',
+        visibility,
+        publishedToVisibleMs: visible - published,
+        polls: polls.length,
+      }),
+    );
+    expect(polls.some((time) => time >= published)).toBe(true);
+    await platform.close();
+  } finally {
+    await server.close();
+  }
+});

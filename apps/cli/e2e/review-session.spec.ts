@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect } from './quiet-review-fixture.ts';
 import type { BrowserContext, Page, Response } from '@playwright/test';
 import type { Workspace } from '@socialprune/core';
 import type { Item } from '@socialprune/core';

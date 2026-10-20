@@ -26,6 +26,8 @@ export const RESTRICTED_LAUNCH_TIMEOUT_MS =
 // Test-only native token probes receive the same target; they cannot select an
 // alternate shell or discovery path outside this launcher boundary.
 export const WINDOWS_POWERSHELL_EXECUTABLE = 'powershell.exe';
+// Diagnostic discovery only. Existing proof launches never select this engine.
+export const WINDOWS_PWSH_EXECUTABLE = 'pwsh.exe';
 
 type QueryOptions = Omit<ExecFileOptions, 'encoding' | 'shell'> & {
   queryClass?: string;

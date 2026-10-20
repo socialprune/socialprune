@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { directory } from '../packaging/paths.ts';
+import { directory, dist } from '../packaging/paths.ts';
 import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
@@ -38,6 +39,7 @@ test.skipIf(process.platform !== 'win32')(
         },
       );
       const result = JSON.parse(stdout) as {
+        parentElevated: boolean;
         denied: number;
         granted: number;
         desktopObjectsClosed: boolean;
@@ -48,6 +50,16 @@ test.skipIf(process.platform !== 'win32')(
         jobKillOnClose: boolean;
         heapRecreated: boolean;
       };
+      await mkdir(dist, { recursive: true });
+      await writeFile(
+        join(dist, `release-desktop-access-${randomUUID()}.json`),
+        JSON.stringify(result),
+      );
+      if (result.parentElevated === true) {
+        console.log('DESKTOP_ACCESS_PRECONDITION', JSON.stringify(result));
+        return;
+      }
+      expect(result.parentElevated).toBe(false);
       expect(result).toMatchObject({
         denied: 3221225794,
         granted: 0,

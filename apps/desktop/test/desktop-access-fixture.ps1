@@ -4,6 +4,11 @@ $source=[IO.File]::ReadAllText("$PSScriptRoot\..\e2e\limited-token.ps1")
 $native=[regex]::Match($source,"(?s)Add-Type -TypeDefinition \(@'\r?\n(.*?)\r?\n'@ \+").Groups[1].Value
 if(-not $native) { throw 'DESKTOP_FIXTURE_SOURCE_DRIFT' }
 $method=@'
+  public static bool ParentElevated() {
+    IntPtr token=IntPtr.Zero,data=Marshal.AllocHGlobal(4);uint needed;
+    try {Require(OpenProcessToken(GetCurrentProcess(),8,out token),"ElevationToken");Require(DesktopDeny.GetTokenInformation(token,20,data,4,out needed),"TokenElevation");return Marshal.ReadInt32(data)!=0;}
+    finally{if(token!=IntPtr.Zero)CloseHandle(token);Marshal.FreeHGlobal(data);}
+  }
   public static uint DesktopQueryTimeoutMs;
   public static string DesktopAccessProof(string scratch,string node,string shell,uint queryTimeoutMs) {
     DesktopQueryTimeoutMs=queryTimeoutMs;
@@ -50,6 +55,7 @@ $method=@'
     }finally{if(job!=IntPtr.Zero)CloseHandle(job);if(owned!=null)owned.Dispose();foreach(IntPtr handle in new IntPtr[]{impersonation,limited,token})if(handle!=IntPtr.Zero)CloseHandle(handle);if(medium!=IntPtr.Zero)LocalFree(medium);Marshal.FreeHGlobal(admins);}
   }
   static class DesktopDeny {
+    [DllImport("advapi32.dll",SetLastError=true)]public static extern bool GetTokenInformation(IntPtr token,int kind,IntPtr data,uint size,out uint needed);
     public static void WaitFile(string path){var clock=System.Diagnostics.Stopwatch.StartNew();while(!File.Exists(path)){if(clock.ElapsedMilliseconds>DesktopQueryTimeoutMs+1000)throw new Exception("OWNED_NESTED_READY_TIMEOUT");System.Threading.Thread.Sleep(10);}}
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string text,uint rev,out IntPtr sd,out uint size);
     [DllImport("user32.dll",SetLastError=true)]static extern bool SetUserObjectSecurity(IntPtr obj,ref uint info,IntPtr sd);
@@ -59,4 +65,10 @@ $method=@'
 '@
 $native=$native.Replace('  public static uint Run(', $method+"`n  public static uint Run(")
 Add-Type -TypeDefinition ($native+[IO.File]::ReadAllText("$PSScriptRoot\..\e2e\limited-desktop.cs"))
-[LimitedProof]::DesktopAccessProof($Scratch,(Get-Command node.exe).Source,(Get-Command $Shell).Source,$QueryTimeoutMs)
+if ([LimitedProof]::ParentElevated()) {
+  @{parentElevated=$true;state='record-only';reason='non-elevated-parent-required';mechanismRun=$false} | ConvertTo-Json -Compress
+} else {
+  $result=[LimitedProof]::DesktopAccessProof($Scratch,(Get-Command node.exe).Source,(Get-Command $Shell).Source,$QueryTimeoutMs) | ConvertFrom-Json
+  $result | Add-Member -NotePropertyName parentElevated -NotePropertyValue $false
+  $result | ConvertTo-Json -Depth 8 -Compress
+}

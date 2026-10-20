@@ -1,5 +1,12 @@
-param([string]$Executable, [string]$ArgumentsFile, [string]$TokenReport, [int]$TimeoutSeconds = 1200)
+param([string]$Executable, [string]$ArgumentsFile, [string]$TokenReport, [int]$TimeoutSeconds = 1200, [string]$DiagnosticVariant = '')
 $ErrorActionPreference = 'Stop'
+# DIAGNOSTIC_MATRIX_DISPATCH_BEGIN
+if ($DiagnosticVariant -eq 'runner-matrix') {
+  & "$PSScriptRoot\limited-proof-matrix.ps1" -Node $Executable -ConfigurationFile $ArgumentsFile -Report $TokenReport
+  exit 0
+}
+if ($DiagnosticVariant -ne '') { throw 'UNKNOWN_DIAGNOSTIC_VARIANT' }
+# DIAGNOSTIC_MATRIX_DISPATCH_END
 # Test harness only. Same user/profile/desktop, no account creation, no UAC
 # setting change. Microsoft documents LUA_TOKEN and the restricted-primary-
 # token exception to CreateProcessAsUser's assign-primary-token privilege.

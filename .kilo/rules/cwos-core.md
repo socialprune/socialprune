@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR NON-TRIVIAL DELEGATED `.kilo` WORK**
 > Preserve structured protocol data, pass-forward knowledge, and auditability without rebuilding a rule warehouse.
-> **Version:** 1.1.0
-> **Updated:** 2026-04-19
+> **Version:** 1.2.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,12 +15,10 @@ CWOS survives in `.kilo` as a compressed constitutional core.
 
 ## Hard Laws
 
-1. Non-trivial delegated work must produce structured protocol or handoff data.
-2. Knowledge discovered in one lane must be passable to later lanes.
 3. Orchestrated work must remain auditable.
-4. Fresh-context artifact handoff remains the default posture for delegated work.
-5. Procedural detail such as exact templates, log mechanics, and audit formatting belongs outside this constitutional rule.
 6. Non-trivial delegated lanes use the operational companion for status vocabulary, compact artifact packaging, and anti-nested-recursion enforcement.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

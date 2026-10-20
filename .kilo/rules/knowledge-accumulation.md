@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR MULTI-LANE `.kilo` WORK**
 > Important knowledge from one lane must be passed forward explicitly.
-> **Version:** 1.3.0
-> **Updated:** 2026-07-18
+> **Version:** 1.4.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,17 +15,12 @@ Multi-lane work requires one frozen authority packet and shared evidence board s
 
 ## Hard Laws
 
-1. In multi-lane or multi-round work, the next lane must receive the important knowledge from earlier lanes.
 2. The minimum pass-forward set is:
    - decisions,
    - discoveries,
    - warnings.
-3. The next lane may receive this as a compact `prior_knowledge` block, a task artifact section, or a clearly equivalent handoff.
-4. Every non-trivial lane should contribute new knowledge back into the pass-forward set when it learns something material.
-5. Single-lane trivial work is exempt.
-6. Reuse unchanged evidence. Invalidate it when its source, schema, generated output, fixtures, runtime identity, or merge resolution changes.
-7. Fresh context is selective, not universal. Reserve it where independent reconstruction adds value, especially final acceptance and security, recovery, or transaction review.
-8. Pass forward the active contract, current phase, domain ownership, foundation-gate state, next ready nodes, and reusable proof when later work depends on them.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR NON-TRIVIAL ORCHESTRATED `.kilo` WORK**
 > Keep temporary evidence outside Git and durable task evidence compact.
-> **Version:** 1.4.0
-> **Updated:** 2026-07-25
+> **Version:** 1.5.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,18 +15,10 @@ When the contract authorizes filesystem output, task evidence must stay recovera
 
 ## Hard Laws
 
-1. The newest user request and Active Execution Contract determine write authority. A skill, agent, mode, template, task procedure, tool capability, frontmatter permission, or artifact default never creates it.
-2. If the task is read-only, inspection-only, explanation-only, planning-only without authorized writes, or has no authorized write domain, render plans, contracts, handoffs, protocols, explanations, and evidence inline. Do not create `.kilo/plans/`, `docs/tasks/`, checkpoints, reports, evidence files, temporary task files, task directories, or any other filesystem artifact, and do not request write permission merely to satisfy a template.
 3. "Write" or "render the template explicitly" means visible structured output, not file creation, unless filesystem output is already authorized.
-4. Temporary storage is not a loophole. Read-only work may not create `%LOCALAPPDATA%\Temp\kilo` task files unless the user or an accepted runtime operation explicitly authorizes temporary output.
 5. When filesystem output is authorized, put scratch, raw output, staging copies, and intermediate evidence under `%LOCALAPPDATA%\Temp\kilo\<task-slug>\`, not in Git. Temp can be swept at any time, so anything that costs model runs or hours to regenerate also gets a durable copy outside temp in the same flow that creates it.
-5a. Temp scratch is reachable by the built-in read, write, and shell tools and is **not** reachable by `semantic_search` or the MCP filesystem tools, which are bounded to the workspace. Retrieve temp scratch by exact path. Do not search it, and do not treat the resulting `path must be within the current workspace` refusal as a fault to work around.
-6. Durable task evidence is legal only when the user explicitly requests or authorizes it, the accepted end state requires repository delivery, or it has named lasting recovery, compliance, forensic, irreversible-operation, or explicit cross-session handoff value. Keep it to at most one compact execution/decision artifact, one validation artifact, and one closure artifact when the applicable closure contract requires it.
-7. Do not create per-lane reports, per-round narratives, duplicate manifests, or committed raw-output warehouses.
-8. Before commit, classify every changed or untracked path as product/source, durable test, migration, operational documentation, compact task evidence, generated/staging, or unrelated pre-existing work.
-9. Stage exact task-owned paths only. Generated/staging and unrelated paths remain unstaged; task-owned residue must receive an explicit terminal action rather than being ignored.
-10. Default execution truth to one inline/shared board containing source identity, active owner, open invariant classes, reusable proof, invalidated proof, next ready node, and execution-budget state.
-11. Without artifact authority, stay inline or fail closed as `needs_context` / `blocked`; do not take a permission-seeking artifact detour.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles IN THE CURRENT REPO / ACTIVE SHELL**
 > Deferral must stay honest, explicit, and outside the active task boundary.
-> **Version:** 1.0.1
-> **Updated:** 2026-04-25
+> **Version:** 1.1.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,12 +15,7 @@ The backlog exists to track legitimate later work, not to excuse incomplete curr
 
 ## Hard Laws
 
-1. The backlog is not a same-scope escape hatch.
-2. Work required to satisfy the current task boundary may not be labeled deferred.
-3. Deferral is allowed only when value, priority, or prerequisites genuinely support doing the work later.
-4. Deferred work must be captured as an explicit backlog entry, not a narrative handwave.
-5. If deferral reasoning is weak, vague, or convenience-driven, the default action is to finish the active task instead.
-6. Thin constitutional guidance stays here; detailed scoring and evaluation procedure belong in skill space.
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

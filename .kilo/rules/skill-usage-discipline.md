@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Available skills must be loaded when applicable, not silently skipped.
-> **Version:** 1.5.0
-> **Updated:** 2026-07-24
+> **Version:** 1.6.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -16,20 +16,11 @@ The skill catalog exists to shape behavior without creating procedural stacks. E
 ## Hard Laws
 
 1. Before starting non-trivial work, check the available skill catalog and select one primary procedural skill for the current phase.
-2. Load the primary skill when its trigger and behavior change fit the concrete phase action.
 3. Admit an additional skill only after recording all four: the capability missing from the primary skill; the concrete upcoming action; the exact behavior the additional skill changes; and confirmation that it does not enlarge topology, scope, artifacts, or write authority.
-4. A trigger keyword, catalog match, typical pairing, or companion hint is not enough to admit another skill.
-5. Do not invent ad-hoc procedures when the admitted primary skill already covers the capability.
-6. Do not load skills that clearly do not change the current phase just to appear thorough.
 7. Applicability judgments must be honest. `Not useful here` is not valid unless the reason names the actual boundary, missing condition, or stronger governing surface.
-8. A skill's typical pairing or companion note is conditional guidance, not an automatic trigger chain.
-9. Skill loading must not manufacture a larger topology. Topology follows the task's actual uncertainty and risk, not the number of skills named.
-10. Evaluate skills against the Active Execution Contract. Loading a skill authorizes no phase, lane, artifact, surface, write domain, deployment, or approval-bound action.
-11. Prefer partial application when only part of a skill fits. Do not execute unrelated companion machinery.
-12. Skill checks must not block already-safe parallel-ready nodes without a real dependency or risk gate.
 13. Skill loading must change procedure, not decorate reporting. Implementation normally selects `feature-implementation` or a more specific local implementation skill as the phase primary; review normally selects `quality-gate-verification` as the phase primary.
-14. `context-management` requires real continuity, handoff, or recovery complexity; `continuous-learning` requires criticism or a lesson signal; `refactoring-safe` requires structural transformation with behavior preservation.
-15. A skill name, `100/100`, logger wording, or generic orchestration language does not enlarge topology. `complex-implementation-convergence` requires real cross-cutting risk, repeated distinct gap classes, contradictory evidence, migration/recovery/irreversibility, or an explicit adversarial/independent acceptance request.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

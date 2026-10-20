@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Preserve learning retrieval, criticism capture, and repeat-mistake prevention as always-on constitutional behavior.
-> **Version:** 1.5.0
-> **Updated:** 2026-08-17
+> **Version:** 1.6.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -18,15 +18,9 @@ This is a docs-first binding, not a requirement to add a new `.kilo`-local memor
 
 ## Hard Laws
 
-1. Relevant lessons must be retrieved before non-trivial work.
-2. User criticism or high-signal correction must be converted into durable learning in the same flow, either by adding a new lesson or by explicitly mapping to an existing lesson and applying it.
-3. Repeated mistakes are constitutional failures.
-4. Learning must influence the current task rather than being archived and ignored.
-5. Thin always-on law stays here; detailed lesson workflow belongs in procedural skill space.
-6. After criticism or a high-signal correction is detected, the workflow must not continue substantive task progress until durable learning has been captured or explicitly mapped to an existing lesson and applied.
-7. A lesson that mandates a pre-action check is not durably captured until its trigger also exists on a surface the actor reads at the moment of that action.
 8. A lesson's first rule states the principle in a form that survives its example.
-9. A lesson's permanence applies to its rule kernel. Measured thresholds, external behavior, versions, paths, and command names inside it are dated evidence and do not inherit that permanence.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

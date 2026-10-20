@@ -2,8 +2,8 @@
 
 > **MANDATORY WHEN CONNECTIVITY OR RUNTIME PATHS CHANGE**
 > Correct files are insufficient when the system path is unwired.
-> **Version:** 1.4.0
-> **Updated:** 2026-07-16
+> **Version:** 1.5.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,11 +15,7 @@
 
 ## Hard Laws
 
-1. Correct files are insufficient if the system path is unwired.
-2. When a change affects runtime or workflow connectivity, wiring must be checked explicitly.
-3. Dead or disconnected workflow components count as failure.
-4. Wiring verification is part of the quality stack, not an optional polish step.
-5. Detailed wiring checklists and category-specific examples belong outside the constitutional core.
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

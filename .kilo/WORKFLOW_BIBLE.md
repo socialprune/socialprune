@@ -1,6 +1,6 @@
 # SocialPrune Workflow Bible
 
-> **Version:** 1.2.0 | **Last updated:** 2026-10-06
+> **Version:** 1.3.0 | **Last updated:** 2026-10-20
 > **Scope:** the live `.kilo` shell of this repository
 > **Owner:** the maintainer. Changes follow `.kilo/rules/governance-protection.md`.
 
@@ -155,8 +155,15 @@ Each optional surface is decided on its own, against the work `PLAN.md` schedule
 - The workflow template evolves separately. Its updates do not arrive here on their own, and local changes stay local unless the maintainer distributes them on purpose.
 - When a template surface is left out, record it in section 6 with the reason, so a later sync does not add it back.
 
-## 8. Changelog
+## 8. Retired doctrine
 
+`.kilo/RETIRED_DOCTRINE.md` lists every law, rule file, skill, agent and runtime surface that was taken out of this workflow, with the reason and the evidence for each. Check it before you add any of these. A retired item comes back only with new evidence that it is needed, such as a measurement on the model in use, and the return is recorded in that file.
+
+The Workflow Lab owns the file and distributes it with each change. Do not edit this copy; a repo that needs to keep a law the Workflow Lab removed says so next to the law in its rule file.
+
+## 9. Changelog
+
+- **2026-10-20, 1.3.0.** Added the retired-doctrine section and `.kilo/RETIRED_DOCTRINE.md`. The rule files lost the laws the Workflow Lab retired after measurement on Opus 5.5 and GPT-6.1 Sol; each Hard Laws section points to the registry instead.
 - **2026-10-06, 1.2.0.** The independent review of 1.1.0 returned FAIL with one targeted revision and ten findings, all fixed. Removed the name of a private repository from tracked files. Ignored `.kilo/plans/` and extracted export folders. Allowed the maintainer's own classification run through an endpoint he names, with aggregate-only reads by agents. Limited BL-001 to Agent Manager parent and child work. Let the factual sections of `AGENTS.md` follow the code. Routed the product Agent Skill to `feature-implementation`. Adapted `adr-creation` and the descriptions of `workflow-implementation` and `workflow-validation`. Recorded the comparison with domain skills of other repositories, and added the S2 labelling rules to `AGENTS.md`. Kilo 7.8.3 rediscovered 22 of 22 skills afterwards.
 - **2026-10-06, 1.1.0.** Audit after the maintainer asked whether anything was missing. Activated `overnight-run`, `adr-creation` (unchanged), `strategic-compact`, `workflow-implementation` and `workflow-validation` (activation notes adapted), so the shell has 22 skills. Copied the local voice samples for `human-writing`. Ignored the files Kilo writes into `.kilo/` on startup. Added `$schema` and `default_agent` to `kilo.jsonc` and a `.gitattributes` for LF line endings. Replaced the single optional-layer row in section 6 with a decision per item. Proved discovery with `kilo debug skill` and `kilo debug config` 7.8.3 on a disposable copy: 22 of 22 skills, 16 of 16 rules, 7 of 7 agents.
 - **2026-10-06, 1.0.0.** Shell set up from the workflow template: 7 agents, 15 baseline rules and 17 skills copied with hash parity. `protected-surface-boundary` activated and filled. `governance-protection` and `workflow-routing` adapted. `AGENTS.md`, `kilo.jsonc`, `.gitignore`, `LICENSE` (Apache-2.0), `docs/LESSONS_ARCHIVE.md`, `docs/BACKLOG.md`, this file and `.kilo/README.md` written for SocialPrune.

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Shell and command tools are not general file-CRUD tools; controlled copy is allowed when verified.
-> **Version:** 1.8.0
-> **Updated:** 2026-09-08
+> **Version:** 1.9.0
+> **Updated:** 2026-10-20
 
 ---
 
@@ -15,17 +15,11 @@ File truth must be protected by using the right tool for the right job.
 
 ## Hard Laws
 
-1. Shell or command tools must not create, modify, delete, or move files as a general editing path.
-2. Dedicated file tools remain the default path for file CRUD.
-3. Controlled shell copy is allowed when no dedicated copy primitive is available and the operation is copy-only, bounded, and verified.
-4. File-truth discipline is a quality law, not just a convenience preference.
 5. Verification commands, inspection commands, package commands, and version-control commands are allowed when they do not mutate files except through the tool's intended domain behavior.
-6. Thin constitutional guidance stays here; long operational examples belong outside the constitutional core.
-7. Long commands, development services, watchers, and acceptance runs use the tracked background-process tool when available. Inspect lifecycle status and logs with separate calls; if the adopted repo lacks that tool, use the bounded parent-owned fallback below.
 8. A lane may stop only runtimes it owns inside the current scope. Foreign or out-of-scope runtimes are blockers to report, not processes to kill. A mechanical invocation retry stays with the current owner. Before stopping a managed session, verify that its ID, title, model, and origin identify the intended child rather than the current parent; an ambiguous single-session listing is not stoppable.
-9. Agent Manager visible sessions, worktrees, and model comparisons may be started only when the user explicitly requests those exact things. Generic requests to orchestrate, parallelize, or reach 100/100 do not authorize Agent Manager.
 10. A whole-file write on a path that already has content is a replace operation, not an edit. Use an anchored edit on existing files, never send a placeholder body, and give an untracked shared execution/evidence board a scratch copy under the task temp path before its first append in a multi-lane run.
-11. GitHub mutations and readback must be non-interactive and pager-free. A successful mutation command, URL, or exit code is not effect proof when the accepted claim depends on the hosted object; read the object back with `gh` and compare it to the frozen expected identity.
+
+Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 
 ---
 

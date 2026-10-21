@@ -76,7 +76,10 @@ async function bundle(
   return modules;
 }
 
-async function resourceExecutable(path: string, asar: string): Promise<void> {
+export async function resourceExecutable(
+  path: string,
+  asar: string,
+): Promise<void> {
   const pe = NtExecutable.from(await readFile(path));
   const resources = NtExecutableResource.from(pe);
   const version = Resource.VersionInfo.fromEntries(resources.entries)[0];

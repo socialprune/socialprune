@@ -1,0 +1,143 @@
+name: Desktop diagnostic matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: Comma-separated variants, or empty for all seven
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# No cache action or setup-node cache: diagnostic bytes never enter release caches.
+# Budget target <20 min: build <=8 + parallel probes <=9 + summary <=2 min.
+# 39576445580 on 2026-10-21: checkout10s, pnpm setup29s, Node8s,
+# install10s, package11s, fuses1s, complete release/control step221s,
+# upload1s. Setup/transfer caps round max*3+1s up to whole minutes;
+# build's 5min includes the existing release build plus an additional ASAR.
+# Probe's 5min step uses the 221s complete step as a conservative outer cap;
+# native subcommands retain their measured bounds. Readiness is unchanged.
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    outputs:
+      variants: ${{ steps.variants.outputs.variants }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        timeout-minutes: 2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 2
+        with:
+          node-version: '24.21.0'
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 3
+      - name: Validate variant list
+        id: variants
+        timeout-minutes: 1
+        env:
+          DIAGNOSE_VARIANTS: ${{ inputs.variants }}
+        run: |
+          $value = node apps/desktop/packaging/diagnose-policy.ts $env:DIAGNOSE_VARIANTS
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "variants=$value" >> $env:GITHUB_OUTPUT
+      - name: Build pinned shipped app and read fuses
+        timeout-minutes: 5
+        run: |
+          pnpm build:desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm --filter @socialprune/desktop fuses:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm --filter @socialprune/desktop build:release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node apps/desktop/packaging/diagnose-build.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        timeout-minutes: 2
+        with:
+          name: desktop-diagnose-build
+          path: apps/desktop/dist/diagnose-bundle/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  probe:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.build.outputs.variants) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        timeout-minutes: 2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 2
+        with:
+          node-version: '24.21.0'
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 3
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        timeout-minutes: 2
+        with:
+          name: desktop-diagnose-build
+          path: apps/desktop/dist/diagnose-bundle/
+      - name: Probe one question, diagnostic only
+        timeout-minutes: 5
+        env:
+          DIAGNOSE_VARIANT: ${{ matrix.variant }}
+        run: node apps/desktop/e2e/desktop-diagnose.ts $env:DIAGNOSE_VARIANT apps/desktop/dist/diagnose-bundle apps/desktop/dist/diagnose-results/${{ matrix.variant }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        timeout-minutes: 2
+        with:
+          name: desktop-diagnose-result-${{ matrix.variant }}
+          path: apps/desktop/dist/diagnose-results/${{ matrix.variant }}/
+          if-no-files-found: warn
+          retention-days: 7
+
+  summary:
+    needs: [build, probe]
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 1
+        with:
+          node-version: '24.21.0'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        continue-on-error: true
+        timeout-minutes: 1
+        with:
+          pattern: desktop-diagnose-result-*
+          path: apps/desktop/dist/diagnose-all/
+      - name: Print observation table
+        timeout-minutes: 1
+        run: |
+          node apps/desktop/e2e/diagnose-summary.ts apps/desktop/dist/diagnose-all apps/desktop/dist/diagnose-summary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content apps/desktop/dist/diagnose-summary/summary.md >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        timeout-minutes: 1
+        with:
+          name: desktop-diagnose-summary
+          path: apps/desktop/dist/diagnose-summary/
+          if-no-files-found: warn
+          retention-days: 7

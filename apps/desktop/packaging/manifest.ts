@@ -30,6 +30,7 @@ const paths = git(['diff', '--cached', '--no-renames', '--name-only', '-z'])
   .filter(Boolean)
   .sort();
 const integration = new Set([
+  '.github/workflows/desktop-diagnose.yml',
   '.github/workflows/ci.yml',
   '.github/workflows/release-desktop.yml',
   'package.json',

@@ -46,6 +46,33 @@ const startupCodes = (text: string) => [
   ),
 ];
 
+export async function readReviewAppReceipt(
+  file: string,
+  onRetry: () => void,
+  read: (path: string) => Promise<string> = (path) => readFile(path, 'utf8'),
+): Promise<NativeLaunch> {
+  // The native File.Replace writer was measured on 2026-10-21 to expose both
+  // ENOENT and EBUSY to concurrent reads. Keep the existing retry count/bound;
+  // malformed JSON and all other errors still propagate immediately.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return JSON.parse(await read(file)) as NativeLaunch;
+    } catch (error) {
+      if (
+        !(
+          error instanceof Error &&
+          'code' in error &&
+          (error.code === 'EBUSY' || error.code === 'ENOENT')
+        ) ||
+        attempt === 20
+      )
+        throw error;
+      onRetry();
+      await wait(25);
+    }
+  }
+}
+
 export async function launchReviewApp(
   executable: string,
   args: string[],
@@ -132,27 +159,8 @@ export async function launchReviewApp(
   });
   let launch: NativeLaunch;
   let observationReadRetries = 0;
-  const readNative = async () => {
-    // File.Replace can briefly hold the same owned receipt during a read.
-    // Retry only that measured sharing conflict; retain its count and bound.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return JSON.parse(await readFile(nativeFile, 'utf8')) as NativeLaunch;
-      } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'EBUSY'
-          ) ||
-          attempt === 20
-        )
-          throw error;
-        observationReadRetries++;
-        await wait(25);
-      }
-    }
-  };
+  const readNative = () =>
+    readReviewAppReceipt(nativeFile, () => observationReadRetries++);
   const persist = async () => {
     const native = await readNative();
     const readOptional = async (path: string) =>

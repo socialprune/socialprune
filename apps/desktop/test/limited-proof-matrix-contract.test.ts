@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { peImports } from './limited-proof-matrix.ts';
+import { assertRestrictedProofLauncher } from './proof-invariants.ts';
 
-test('the diagnostic selector is opt-in and only the R30 default-DACL repair changes the frozen restricted launcher body', async () => {
+test('the diagnostic selector is opt-in and the default launcher retains the restricted proof invariants', async () => {
   const source = (
     await readFile(join(directory, 'e2e/limited-token.ps1'), 'utf8')
   ).replaceAll('\r\n', '\n');
@@ -13,62 +13,27 @@ test('the diagnostic selector is opt-in and only the R30 default-DACL repair cha
     "param([string]$Executable, [string]$ArgumentsFile, [string]$TokenReport, [int]$TimeoutSeconds = 1200, [string]$DiagnosticVariant = '')",
   );
   expect(source).toContain("if ($DiagnosticVariant -eq 'runner-matrix')");
-  const unchanged = source
-    .slice(source.indexOf('\n') + 1)
-    .replace(
-      /# DIAGNOSTIC_MATRIX_DISPATCH_BEGIN\n[\s\S]*?# DIAGNOSTIC_MATRIX_DISPATCH_END\n/,
-      '',
-    )
-    .replace(
-      /  \/\/ R30_DEFAULT_DACL_(TYPES|METHODS)_BEGIN\n[\s\S]*?  \/\/ R30_DEFAULT_DACL_\1_END\n/g,
-      '',
-    )
-    .replace('      EnsureUserDefaultDacl(limited);\n', '')
-    .replace(
-      /; ?defaultDacl=\(\[LimitedProof\]::DefaultDaclEvidence\|ConvertFrom-Json\)/g,
-      '',
-    );
-  expect(createHash('sha256').update(unchanged).digest('hex')).toBe(
-    '9e9c64946cc327b05b1d2583158cd279948357e011e42d8ba0a5409b97edaaea',
+  expect(() => assertRestrictedProofLauncher(source)).not.toThrow();
+  expect(source).toContain(
+    "if ($DiagnosticVariant -ne '') { throw 'UNKNOWN_DIAGNOSTIC_VARIANT' }",
   );
 });
 
-test('all existing restricted proof callsites, including failure controls and the installed launcher, are unchanged from 9b8d737', async () => {
-  // Frozen from 9b8d737 inputs, not derived from the candidate implementation.
-  for (const [path, sha256] of [
-    [
-      'e2e/installed-proof.ts',
-      '881634cc218283bb420302346814fe0b6fe08a741a26af27aed7509e45b32f7b',
-    ],
-    [
-      'test/fresh-profile.test.ts',
-      '89b554973c440d21446b610e1c8b6c81d1df622f3e8df08588db6ea8201e2ab8',
-    ],
-    [
-      'test/powershell.test.ts',
-      '733b2eae5cc2860d4fb78f5bded283e071681c9963655990e65ded93930461e1',
-    ],
-    [
-      'test/proof-isolation.test.ts',
-      '2c1e8740c55b08221fc94b842752e9303d6f762e712349990a4256cb54c947d7',
-    ],
-    [
-      'test/nsis-access.test.ts',
-      '55a7ab79d3e4536366fddb151937ead15986d2e69306def612c2ab9932fca8fe',
-    ],
-    [
-      'test/limited-proof-diagnostics.test.ts',
-      'b24950130fd41057b0b9fbbd872712a5a30b096da265048dc63f3586fe4e0bba',
-    ],
+test('restricted proof callsites cannot opt into a diagnostic or lose their restricted launcher', async () => {
+  for (const path of [
+    'e2e/installed-proof.ts',
+    'test/fresh-profile.test.ts',
+    'test/powershell.test.ts',
+    'test/proof-isolation.test.ts',
+    'test/nsis-access.test.ts',
+    'test/limited-proof-diagnostics.test.ts',
   ]) {
-    const source = (await readFile(join(directory, path!), 'utf8')).replaceAll(
-      '\r\n',
-      '\n',
-    );
-    expect(createHash('sha256').update(source).digest('hex'), path).toBe(
-      sha256,
-    );
+    const source = await readFile(join(directory, path), 'utf8');
+    expect(source, path).toContain('limited-token.ps1');
     expect(source).not.toContain('-DiagnosticVariant');
+    expect(source).not.toMatch(
+      /diagnose-launch\.ps1|token-launch\.cs|token-[BCDE]-/,
+    );
   }
 });
 

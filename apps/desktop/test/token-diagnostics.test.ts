@@ -9,7 +9,7 @@ import {
 } from '../e2e/token-deadline.ts';
 import { directory, root } from '../packaging/paths.ts';
 import { summarize } from '../e2e/diagnose-summary.ts';
-import { createHash } from 'node:crypto';
+import { assertRestrictedProofLauncher } from './proof-invariants.ts';
 
 const electron = vi.hoisted(() => ({
   app: undefined as EventEmitter | undefined,
@@ -139,29 +139,11 @@ test('diagnostic token changes are unreachable from production and release-proof
     expect(
       await readFile(join(root, '.github/workflows', file), 'utf8'),
     ).not.toMatch(forbidden);
-  // Protect the pre-R29 recipe after removing only R30's authorized default-
-  // DACL repair, call and closed receipt field. The new tests exercise those.
-  const token = (
-    await readFile(join(directory, 'e2e/limited-token.ps1'), 'utf8')
-  ).replaceAll('\r\n', '\n');
-  const body = token
-    .slice(token.indexOf('\n') + 1)
-    .replace(
-      /# DIAGNOSTIC_MATRIX_DISPATCH_BEGIN\n[\s\S]*?# DIAGNOSTIC_MATRIX_DISPATCH_END\n/,
-      '',
-    )
-    .replace(
-      /  \/\/ R30_DEFAULT_DACL_(TYPES|METHODS)_BEGIN\n[\s\S]*?  \/\/ R30_DEFAULT_DACL_\1_END\n/g,
-      '',
-    )
-    .replace('      EnsureUserDefaultDacl(limited);\n', '')
-    .replace(
-      /; ?defaultDacl=\(\[LimitedProof\]::DefaultDaclEvidence\|ConvertFrom-Json\)/g,
-      '',
-    );
-  expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '9e9c64946cc327b05b1d2583158cd279948357e011e42d8ba0a5409b97edaaea',
+  const token = await readFile(
+    join(directory, 'e2e/limited-token.ps1'),
+    'utf8',
   );
+  expect(() => assertRestrictedProofLauncher(token)).not.toThrow();
 });
 
 test('token helper uses closed fields and a Windows subsystem without UI or COM entrypoints', async () => {

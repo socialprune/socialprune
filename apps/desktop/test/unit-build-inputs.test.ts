@@ -89,6 +89,9 @@ test('the post-build release check rejects test markers and remains wired to the
     'diagnostic-events=',
     'startup-fixture',
     'startup-case=',
+    'limited-token',
+    'EnsureUserDefaultDacl',
+    'MergeUserDefaultDacl',
   ])
     expect(() => assertReleaseEntry(marker)).toThrow('RELEASE_TEST_ENTRY');
   expect(() => assertReleaseEntry('production main')).not.toThrow();

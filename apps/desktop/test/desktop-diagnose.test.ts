@@ -18,6 +18,91 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 
+type WorkflowJob = {
+  steps: {
+    uses?: string;
+    run?: string;
+    with?: Record<string, unknown>;
+  }[];
+};
+
+function assertHistoryCheckouts(jobs: Record<string, WorkflowJob>): void {
+  // build:release reaches nsis.ts, which compares the index, HEAD and HEAD^.
+  // Keep the check command-based so moving a reader to another job cannot
+  // silently inherit checkout's depth-1 default.
+  const readsHistory =
+    /\b(?:build:release|release:desktop)\b|\bpackaging[/\\](?:release|nsis)\.ts\b|\bgit(?:\.exe)?\s+(?:(?:--[\w-]+(?:=\S+)?|-C\s+\S+|-c\s+\S+)\s+)*(?:log|show|rev-list|rev-parse|describe|merge-base|diff|blame|shortlog|cat-file|for-each-ref|name-rev|tag)\b/;
+  for (const [name, job] of Object.entries(jobs)) {
+    let checkout: WorkflowJob['steps'][number] | undefined;
+    for (const step of job.steps) {
+      if (step.uses?.startsWith('actions/checkout@')) checkout = step;
+      if (step.run && readsHistory.test(step.run))
+        expect(
+          checkout?.with?.['fetch-depth'],
+          `${name}: Git history reader requires an earlier fetch-depth: 0 checkout`,
+        ).toBe(0);
+    }
+  }
+}
+
+test('every diagnostic job that reads Git history checks out full history first', async () => {
+  const value = parse(
+    await readFile(
+      join(root, '.github/workflows/desktop-diagnose.yml'),
+      'utf8',
+    ),
+  ) as { jobs: Record<string, WorkflowJob> };
+  assertHistoryCheckouts(value.jobs);
+});
+
+test('history checkout policy follows readers across jobs and rejects missing, shallow or late checkout', () => {
+  const checkout = (depth?: number) => ({
+    uses: 'actions/checkout@fixture',
+    with: depth === undefined ? {} : { 'fetch-depth': depth },
+  });
+  for (const name of ['build', 'probe', 'summary'])
+    for (const run of [
+      'pnpm --filter @socialprune/desktop build:release',
+      'pnpm release:desktop',
+      'node packaging/release.ts',
+      'git --no-pager show HEAD^:apps/desktop/packaging/shipped-files.json',
+      'git log -1',
+      'git describe --tags',
+      'git -C apps/desktop cat-file -p HEAD^',
+      'git tag --list',
+    ]) {
+      const reader = { run };
+      for (const steps of [
+        [reader],
+        [checkout(), reader],
+        [checkout(1), reader],
+        [reader, checkout(0)],
+      ])
+        expect(() => assertHistoryCheckouts({ [name]: { steps } })).toThrow(
+          `${name}: Git history reader requires an earlier fetch-depth: 0 checkout`,
+        );
+      expect(() =>
+        assertHistoryCheckouts({ [name]: { steps: [checkout(0), reader] } }),
+      ).not.toThrow();
+    }
+  expect(() =>
+    assertHistoryCheckouts({
+      probe: {
+        steps: [
+          checkout(),
+          { run: 'node apps/desktop/e2e/desktop-diagnose.ts' },
+        ],
+      },
+      summary: {
+        steps: [
+          checkout(),
+          { run: 'node apps/desktop/e2e/diagnose-summary.ts' },
+        ],
+      },
+    }),
+  ).not.toThrow();
+});
+
 test('diagnostic workflow has dispatch-only read permission, immutable actions, no publish or release cache', async () => {
   const text = await readFile(
     join(root, '.github/workflows/desktop-diagnose.yml'),

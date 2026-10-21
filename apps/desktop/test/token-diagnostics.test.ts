@@ -139,7 +139,8 @@ test('diagnostic token changes are unreachable from production and release-proof
     expect(
       await readFile(join(root, '.github/workflows', file), 'utf8'),
     ).not.toMatch(forbidden);
-  // This input hash predates R29 and protects the full release launch recipe.
+  // Protect the pre-R29 recipe after removing only R30's authorized default-
+  // DACL repair, call and closed receipt field. The new tests exercise those.
   const token = (
     await readFile(join(directory, 'e2e/limited-token.ps1'), 'utf8')
   ).replaceAll('\r\n', '\n');
@@ -147,6 +148,15 @@ test('diagnostic token changes are unreachable from production and release-proof
     .slice(token.indexOf('\n') + 1)
     .replace(
       /# DIAGNOSTIC_MATRIX_DISPATCH_BEGIN\n[\s\S]*?# DIAGNOSTIC_MATRIX_DISPATCH_END\n/,
+      '',
+    )
+    .replace(
+      /  \/\/ R30_DEFAULT_DACL_(TYPES|METHODS)_BEGIN\n[\s\S]*?  \/\/ R30_DEFAULT_DACL_\1_END\n/g,
+      '',
+    )
+    .replace('      EnsureUserDefaultDacl(limited);\n', '')
+    .replace(
+      /; ?defaultDacl=\(\[LimitedProof\]::DefaultDaclEvidence\|ConvertFrom-Json\)/g,
       '',
     );
   expect(createHash('sha256').update(body).digest('hex')).toBe(

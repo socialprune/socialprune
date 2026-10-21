@@ -5,7 +5,7 @@ import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
 import { peImports } from './limited-proof-matrix.ts';
 
-test('the diagnostic selector is opt-in and the default restricted launcher body remains byte-identical to 9b8d737 after LF normalization', async () => {
+test('the diagnostic selector is opt-in and only the R30 default-DACL repair changes the frozen restricted launcher body', async () => {
   const source = (
     await readFile(join(directory, 'e2e/limited-token.ps1'), 'utf8')
   ).replaceAll('\r\n', '\n');
@@ -17,6 +17,15 @@ test('the diagnostic selector is opt-in and the default restricted launcher body
     .slice(source.indexOf('\n') + 1)
     .replace(
       /# DIAGNOSTIC_MATRIX_DISPATCH_BEGIN\n[\s\S]*?# DIAGNOSTIC_MATRIX_DISPATCH_END\n/,
+      '',
+    )
+    .replace(
+      /  \/\/ R30_DEFAULT_DACL_(TYPES|METHODS)_BEGIN\n[\s\S]*?  \/\/ R30_DEFAULT_DACL_\1_END\n/g,
+      '',
+    )
+    .replace('      EnsureUserDefaultDacl(limited);\n', '')
+    .replace(
+      /; ?defaultDacl=\(\[LimitedProof\]::DefaultDaclEvidence\|ConvertFrom-Json\)/g,
       '',
     );
   expect(createHash('sha256').update(unchanged).digest('hex')).toBe(

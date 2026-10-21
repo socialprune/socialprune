@@ -1,6 +1,7 @@
 import { CLI_ERRORS, CliError } from '../../cli/errors.ts';
 import type { CliErrorCode } from '../../cli/errors.ts';
 import { z } from 'zod';
+import { POST_PATH_CLASSES } from './signals.ts';
 
 const count = z.number().int().nonnegative();
 const sourceCountSchema = z.strictObject({
@@ -48,8 +49,51 @@ export const SecondSourceReportSchema = z.strictObject({
   skippedParameters: count,
 });
 export type SecondSourceReport = z.infer<typeof SecondSourceReportSchema>;
+export const BODY_CLASSES = [
+  'bare-not-found',
+  'json',
+  'html',
+  'empty',
+  'other',
+  'unreadable',
+  'large',
+  'not-classified',
+] as const;
+export type BodyClass = (typeof BODY_CLASSES)[number];
+export const PostRequestsSchema = z
+  .array(
+    z
+      .strictObject({
+        path: z.enum(POST_PATH_CLASSES),
+        status: z.number().int().min(100).max(599),
+        count: z.number().int().positive(),
+        bodyClasses: z
+          .array(
+            z.strictObject({
+              class: z.enum(BODY_CLASSES),
+              count: z.number().int().positive(),
+            }),
+          )
+          .max(BODY_CLASSES.length)
+          .optional(),
+      })
+      .refine((group) => {
+        if (group.status < 400 || group.status > 499)
+          return group.bodyClasses === undefined;
+        return (
+          group.bodyClasses !== undefined &&
+          new Set(group.bodyClasses.map((body) => body.class)).size ===
+            group.bodyClasses.length &&
+          group.bodyClasses.reduce((sum, body) => sum + body.count, 0) ===
+            group.count
+        );
+      }),
+  )
+  .max(POST_PATH_CLASSES.length * 500);
+export type PostRequestStatus = z.infer<typeof PostRequestsSchema>[number];
 
 export const ContextStepReportSchema = z.looseObject({
+  postRequests: PostRequestsSchema.optional(),
   secondSource: SecondSourceReportSchema.optional(),
   otherName: z.number().int().nonnegative().optional(),
   confirmedBy: z.enum(['post', 'list']).optional(),

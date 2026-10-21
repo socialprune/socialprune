@@ -35,12 +35,17 @@ export interface ContextPlan {
   manual: { emptyText: number; noOwner: number; closeTwin: number };
   confirmed: number;
   excluded: { unconfirmed: number; 'not-listed': number; unavailable: number };
+  personExcluded: number;
+  excludeUnmatched: number;
 }
 export async function planContext(
   store: WorkspaceStore,
   accountKey: string,
   include: ReadonlySet<string> = new Set(),
+  exclude: ReadonlySet<string> = new Set(),
 ): Promise<ContextPlan> {
+  if ([...exclude].some((id) => include.has(id)))
+    throw new CliError('INVALID_ARGUMENTS');
   return store.read(async (tx) => {
     const meta = await tx.meta.get();
     let handle: string | null = null,
@@ -105,6 +110,14 @@ export async function planContext(
     const manual = { emptyText: 0, noOwner: 0, closeTwin: 0 },
       excluded = { unconfirmed: 0, 'not-listed': 0, unavailable: 0 };
     let confirmed = 0;
+    let personExcluded = 0;
+    const unmatched = new Set(exclude);
+    const personExcludes = (itemId: string) => {
+      if (!exclude.has(itemId)) return false;
+      personExcluded++;
+      unmatched.delete(itemId);
+      return true;
+    };
     const rows: ContextRow[] = [];
     const humanDecisions = new Map<string, boolean>();
     for await (const event of tx.decisionEvents.iterate())
@@ -114,15 +127,15 @@ export async function planContext(
       );
     for (const item of items) {
       if (!normalize(item.text)) {
-        manual.emptyText++;
+        if (!personExcludes(item.id)) manual.emptyText++;
         continue;
       }
       if (!ownerName(item.reference.ownerHandle ?? '')) {
-        manual.noOwner++;
+        if (!personExcludes(item.id)) manual.noOwner++;
         continue;
       }
       if (twins.has(item.id)) {
-        manual.closeTwin++;
+        if (!personExcludes(item.id)) manual.closeTwin++;
         continue;
       }
       if (await tx.instagramContext.get(item.id)) {
@@ -139,6 +152,7 @@ export async function planContext(
         excluded[state]++;
         continue;
       }
+      if (personExcludes(item.id)) continue;
       const current = await tx.state.get(item.id);
       rows.push({
         item,
@@ -153,10 +167,16 @@ export async function planContext(
         Date.parse(a.item.createdAt) - Date.parse(b.item.createdAt) ||
         a.item.id.localeCompare(b.item.id),
     );
+    const selected = rows.map(({ item, marked }) => ({
+      itemId: item.id,
+      marked,
+    }));
     const hash = createHash('sha256')
       .update(
         JSON.stringify(
-          rows.map(({ item, marked }) => ({ itemId: item.id, marked })),
+          exclude.size
+            ? { rows: selected, exclude: [...exclude].sort() }
+            : selected,
         ),
       )
       .digest('hex');
@@ -178,6 +198,8 @@ export async function planContext(
       manual,
       confirmed,
       excluded,
+      personExcluded,
+      excludeUnmatched: unmatched.size,
     };
   });
 }
@@ -193,6 +215,8 @@ export function contextSummary(
     manual: plan.manual,
     confirmed: plan.confirmed,
     excluded: plan.excluded,
+    personExcluded: plan.personExcluded,
+    excludeUnmatched: plan.excludeUnmatched,
     canary: plan.canary,
     planHash: plan.hash,
     steps: plan.rows.length,

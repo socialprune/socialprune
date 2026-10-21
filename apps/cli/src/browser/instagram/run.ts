@@ -81,6 +81,7 @@ export interface ContextOptions {
   executablePath: string;
   list: string;
   include: ReadonlySet<string>;
+  exclude?: ReadonlySet<string>;
   limit: number;
   order?: ContextOrder;
   signal: AbortSignal;
@@ -105,8 +106,14 @@ export async function runContextWithDependencies(
     },
   };
   if (
-    (await planContext(options.store, options.plan.accountKey, options.include))
-      .hash !== options.plan.hash
+    (
+      await planContext(
+        options.store,
+        options.plan.accountKey,
+        options.include,
+        options.exclude,
+      )
+    ).hash !== options.plan.hash
   )
     throw new CliError('STALE_PLAN');
   await validateProfile(options.profile, 'instagram');
@@ -251,6 +258,8 @@ export async function runContextWithDependencies(
     network?.stop(caught);
   };
   let answers: ReturnType<typeof pageAnswers> | undefined;
+  let postRequests:
+    ReturnType<NonNullable<typeof network>['beginPostRequests']> | undefined;
   let answerReport: (() => void) | undefined;
   let observedAfter: ProfileSnapshot | undefined;
   let observedReport: BrowserProfileReport | null = null;
@@ -390,6 +399,7 @@ export async function runContextWithDependencies(
           options.store,
           options.plan.accountKey,
           options.include,
+          options.exclude,
         )
       ).hash !== options.plan.hash
     )
@@ -467,6 +477,7 @@ export async function runContextWithDependencies(
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
+        postRequests?.close();
         stage = 'pace';
         const pausedBefore = controls?.pausedMs ?? 0;
         await controls?.checkpoint(resumeChecks, waits.signal);
@@ -617,6 +628,12 @@ export async function runContextWithDependencies(
           break;
         }
         stage = 'post-open';
+        postRequests = network.beginPostRequests(page);
+        const postRequestsForStep = postRequests;
+        Object.defineProperty(stepReport, 'postRequests', {
+          enumerable: true,
+          get: () => postRequestsForStep.summary(),
+        });
         if (
           !(await openCandidate(
             page,
@@ -897,6 +914,7 @@ export async function runContextWithDependencies(
       persistedCause = report.cause;
     };
     await finalize('answers', async () => {
+      postRequests?.close();
       await answers?.flush(deps.responseMs);
       answerReport?.();
       answers?.dispose();

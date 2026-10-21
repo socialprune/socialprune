@@ -11,7 +11,11 @@ import { planContext } from '../src/browser/instagram/plan.ts';
 import { runContextWithDependencies } from '../src/browser/instagram/run.ts';
 import type { ContextOrder } from '../src/browser/instagram/order.ts';
 import { fakeInstagram } from './fake-instagram/server.ts';
-import { instagramFixture, IG_FIXTURE } from './fake-instagram/fixture.ts';
+import {
+  instagramFixture,
+  IG_FIXTURE,
+  POST_NOTICE_FIXTURE,
+} from './fake-instagram/fixture.ts';
 import type { Variant } from './fake-instagram/fixture.ts';
 import { instagramContextDirectory } from '../src/workspace/context-files.ts';
 import { instagramDailyCount } from '../src/browser/instagram/pace.ts';
@@ -1135,6 +1139,7 @@ async function harness(
   let limit = 200;
   let maxSteps: number | undefined;
   let paceFields: Record<string, unknown> = {};
+  let exclude: ReadonlySet<string> = new Set();
   const shown = new Promise<void>((resolve) => {
     started = resolve;
   });
@@ -1167,6 +1172,7 @@ async function harness(
         executablePath: chromium.executablePath(),
         list: 'generated-list',
         include: new Set(),
+        exclude,
         limit,
         order: written,
         signal: controller.signal,
@@ -1324,6 +1330,13 @@ async function harness(
     setCapture(value: typeof capturePost) {
       captureOverride = value;
     },
+    async setExclude(value: ReadonlySet<string>) {
+      exclude = new Set(value);
+      Object.assign(
+        plan,
+        await planContext(store, plan.accountKey, new Set(), exclude),
+      );
+    },
     setLimit(value: number) {
       limit = value;
     },
@@ -1340,12 +1353,351 @@ async function harness(
       return context;
     },
     refresh: async () => {
-      Object.assign(plan, await planContext(store, plan.accountKey));
+      Object.assign(
+        plan,
+        await planContext(store, plan.accountKey, new Set(), exclude),
+      );
     },
     close,
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each(POST_NOTICE_FIXTURE.cases)(
+  'C19 $variant keeps only bounded closed body counts and still stops at the notice',
+  async (entry) => {
+    const h = await harness('success', 3);
+    h.fake.setPostVariant(0, entry.variant);
+    const reads: string[] = [];
+    h.afterLaunch(() => {
+      h.context!.on('response', (response) => {
+        if (
+          response.status() !== 404 ||
+          new URL(response.url()).pathname !== entry.path
+        )
+          return;
+        const original = response.body.bind(response);
+        vi.spyOn(response, 'body').mockImplementation(() => {
+          reads.push(entry.variant);
+          return original();
+        });
+      });
+      return Promise.resolve();
+    });
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+      });
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      const database = new DatabaseSync(
+        join(h.directory, 'socialprune.sqlite'),
+        { readOnly: true },
+      );
+      try {
+        expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
+          user_version: 7,
+        });
+      } finally {
+        database.close();
+      }
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        steps: {
+          postRequests: {
+            path: string;
+            status: number;
+            count: number;
+            bodyClasses?: { class: string; count: number }[];
+          }[];
+        }[];
+        stop: { token: string };
+      };
+      const responses = 'responses' in entry ? entry.responses : 1;
+      const expectedBodies = [
+        {
+          class: entry.bodyClass,
+          count: Math.min(responses, POST_NOTICE_FIXTURE.perStepBodies),
+        },
+        ...(responses > POST_NOTICE_FIXTURE.perStepBodies
+          ? [
+              {
+                class: 'not-classified',
+                count: responses - POST_NOTICE_FIXTURE.perStepBodies,
+              },
+            ]
+          : []),
+      ];
+      expect(report.steps).toHaveLength(1);
+      expect(report.stop.token).toBe('notice-error');
+      expect(h.notices.join('')).toContain('Stop detail: notice-error');
+      expect(report.steps[0]!.postRequests).toEqual(
+        expect.arrayContaining([
+          {
+            path: entry.pathClass,
+            status: 404,
+            count: responses,
+            bodyClasses: expectedBodies,
+          },
+        ]),
+      );
+      expect(reads).toHaveLength(
+        entry.bodyClass === 'large'
+          ? 0
+          : Math.min(responses, POST_NOTICE_FIXTURE.perStepBodies),
+      );
+      expect(
+        journal.attempts.filter((attempt) => attempt.state === 'sending'),
+      ).toHaveLength(1);
+      expect(journal.attempts.at(-1)).toMatchObject({
+        state: 'failed',
+        code: 'PLATFORM_CHECK',
+      });
+      expect(run.canaryAcceptedAt).toBeNull();
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      expect(
+        h.fake.requests.filter((request) =>
+          /^\/(?:p|reel)\//.test(request.path),
+        ),
+      ).toEqual([]);
+      expect(
+        h.fake.requests.filter((request) => request.path === entry.path),
+      ).toHaveLength(responses);
+      for (const value of [
+        POST_NOTICE_FIXTURE.mediaId,
+        IG_FIXTURE.commentId,
+        IG_FIXTURE.code,
+        'Not Found',
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+          item.id,
+        ]),
+        h.fake.origin,
+      ])
+        expect(text).not.toContain(value);
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  60000,
+);
+test('C18 excluded oldest comment is never chosen in an ordered canary and the reduced plan survives both stale checks', async () => {
+  const h = await harness('success', 6);
+  try {
+    await h.setExclude(new Set([h.fixture.items[0]!.id]));
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    expect(journal.attempts.map((attempt) => attempt.itemId)).not.toContain(
+      h.fixture.items[0]!.id,
+    );
+    expect(journal.runs[0]!.canaryAcceptedAt).toBeTruthy();
+    expect(
+      h.fake.requests.filter((request) =>
+        request.path.startsWith('/api/v1/generated/post-notice/'),
+      ),
+    ).toEqual([]);
+    expect(
+      h.fake.requests.some(
+        (request) =>
+          request.path === `/p/${IG_FIXTURE.code}` ||
+          request.path === `/p/${IG_FIXTURE.code}/`,
+      ),
+    ).toBe(false);
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(5);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test('C18 person-excluded entry stays out of a later full run', async () => {
+  const h = await harness('success', 4);
+  try {
+    await fullRunReady(h);
+    await h.setExclude(new Set([h.fixture.items[0]!.id]));
+    h.setLimit(2);
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 2,
+      endReason: 'done',
+    });
+    const journal = await h.store.browserJournal();
+    expect(journal.attempts.map((attempt) => attempt.itemId)).not.toContain(
+      h.fixture.items[0]!.id,
+    );
+    expect(
+      h.fake.requests.filter((request) =>
+        request.path.startsWith('/api/v1/generated/post-notice/'),
+      ),
+    ).toEqual([]);
+    expect(
+      h.fake.requests.some(
+        (request) =>
+          request.path === `/p/${IG_FIXTURE.code}` ||
+          request.path === `/p/${IG_FIXTURE.code}/`,
+      ),
+    ).toBe(false);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test.each([404, 429, 503] as const)(
+  'C17 post-open notice HTTP %s stops immediately and reports only own step status classes',
+  async (status) => {
+    const h = await harness('success', 3);
+    h.fake.setPostVariant(0, `post-notice-${status}`);
+    try {
+      expect(await h.start(true)).toMatchObject({ code: 'PLATFORM_CHECK' });
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        steps: {
+          postRequests: { path: string; status: number; count: number }[];
+        }[];
+        limits: {
+          responses: { path: string; status4xx: Record<string, number> }[];
+        };
+        stop: { token: string };
+      };
+      expect(report.steps).toHaveLength(1);
+      if (status === 429)
+        expect(report.stop.token).toMatch(/^(?:http-429|notice-error)$/);
+      else expect(report.stop.token).toBe('notice-error');
+      expect(report.steps[0]!.postRequests).toEqual(
+        expect.arrayContaining([
+          {
+            path: 'api-v1-other',
+            status,
+            count: 1,
+            ...(status < 500
+              ? { bodyClasses: [{ class: 'json', count: 1 }] }
+              : {}),
+          },
+        ]),
+      );
+      expect(
+        report.steps[0]!.postRequests.some(
+          (group) => group.path === 'post-page' || group.path === 'list-page',
+        ),
+      ).toBe(false);
+      if (status === 429)
+        expect(report.limits.responses).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              path: 'api-v1-read',
+              status4xx: { '429': 1 },
+            }),
+          ]),
+        );
+      expect(
+        journal.attempts.filter((attempt) => attempt.state === 'sending'),
+      ).toHaveLength(1);
+      expect(journal.attempts.at(-1)).toMatchObject({
+        state: 'failed',
+        code: 'PLATFORM_CHECK',
+      });
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      expect(
+        h.fake.requests.filter((request) =>
+          /^\/(?:p|reel)\//.test(request.path),
+        ),
+      ).toEqual([]);
+      expect(
+        h.fake.requests.filter((request) =>
+          request.path.startsWith('/api/v1/generated/post-notice/'),
+        ),
+      ).toHaveLength(1);
+      for (const value of [
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.flatMap((item) => [
+          item.text,
+          item.account.handle!,
+          item.reference.ownerHandle!,
+          item.id,
+        ]),
+        h.fake.origin,
+      ])
+        expect(text).not.toContain(value);
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  60000,
+);
+test('C17 a later comment notice keeps preceding post responses in their own steps and still stops before a third', async () => {
+  const h = await harness('success', 3);
+  h.fake.setPostVariant(1, 'post-notice-404');
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'PLATFORM_CHECK' });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(text) as {
+      steps: {
+        postRequests: { path: string; status: number; count: number }[];
+      }[];
+    };
+    expect(report.steps).toHaveLength(2);
+    expect(report.steps[0]!.postRequests).toEqual(
+      expect.arrayContaining([{ path: 'post-page', status: 200, count: 1 }]),
+    );
+    expect(
+      report.steps[0]!.postRequests.some((group) => group.status === 404),
+    ).toBe(false);
+    expect(report.steps[1]!.postRequests).toEqual(
+      expect.arrayContaining([
+        {
+          path: 'api-v1-other',
+          status: 404,
+          count: 1,
+          bodyClasses: [{ class: 'json', count: 1 }],
+        },
+      ]),
+    );
+    expect(
+      report.steps[1]!.postRequests.some(
+        (group) => group.path === 'post-page' || group.path === 'list-page',
+      ),
+    ).toBe(false);
+    expect(
+      journal.attempts.filter((attempt) => attempt.state === 'sending'),
+    ).toHaveLength(2);
+    expect(journal.attempts.at(-1)).toMatchObject({
+      state: 'failed',
+      code: 'PLATFORM_CHECK',
+    });
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(1);
+    expect(run.canaryAcceptedAt).toBeNull();
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 120000);
 test('C16 unexpected list-read error survives CONTEXT_FAILED as a closed correlated cause', async () => {
   const h = await harness('success', 1);
   const timeout = new Error(IG_FIXTURE.other.text);

@@ -1,7 +1,35 @@
 import type { BrowserContext, Request, Response, Page } from 'playwright-core';
 import type { BrowserRequest } from '@socialprune/core';
 import { ContextStop } from './report.ts';
-import { LimitSignals, hostClass, pathClass, rateSignal } from './signals.ts';
+import type { BodyClass, PostRequestStatus } from './report.ts';
+import {
+  LimitSignals,
+  hostClass,
+  pathClass,
+  postPathClass,
+  rateSignal,
+} from './signals.ts';
+
+function bodyClass(bytes: Buffer): BodyClass {
+  // The bare-not-found exception requires whole-body equality after trimming;
+  // every other format check uses only the bounded prefix below.
+  if (bytes.toString('utf8').trim() === 'Not Found') return 'bare-not-found';
+  const prefix = bytes.subarray(0, 512).toString('utf8').trim();
+  const complete = bytes.length <= 512;
+  // A prefix alone cannot prove the whole body is empty.
+  if (complete && !prefix) return 'empty';
+  if (!prefix) return 'other';
+  try {
+    JSON.parse(prefix);
+    return 'json';
+  } catch {
+    /* Try the bounded shape. */
+  }
+  if (!complete && /^[\[{]/.test(prefix)) return 'json';
+  if (/^<(?:!doctype\s+html\b|[a-z][a-z0-9:-]*(?:\s|>|\/))/i.test(prefix))
+    return 'html';
+  return 'other';
+}
 
 export const INSTAGRAM_ORIGIN = 'https://www.instagram.com';
 export const COMMENTS_PATH = '/your_activity/interactions/comments';
@@ -95,6 +123,22 @@ export async function guardInstagramNetwork(
   const requests: BrowserRequest[] = [];
   const pending = new Set<Promise<void>>();
   const ids = new WeakMap<Request, BrowserRequest>();
+  type PostWindow = {
+    page: Page;
+    groups: Map<string, PostRequestStatus>;
+    classified: number;
+  };
+  let postWindow: PostWindow | undefined;
+  const postWindows = new WeakMap<Request, PostWindow>();
+  const onRequest = (request: Request) => {
+    if (!postWindow || disposed || !policy.platform(request.url())) return;
+    try {
+      if (request.frame().page() === postWindow.page)
+        postWindows.set(request, postWindow);
+    } catch {
+      // Requests without an owned page cannot supply a post-step response.
+    }
+  };
   let failure: ContextStop | undefined;
   let disposed = false;
   let signalFailure!: () => void;
@@ -109,6 +153,8 @@ export async function guardInstagramNetwork(
     }
   };
   const inspections = new Set<Promise<void>>();
+  const bodyInspections = new Set<Promise<void>>();
+  const bodyCancels = new Set<() => void>();
   const persist = (value: BrowserRequest) => {
     const task = record(value);
     pending.add(task);
@@ -185,7 +231,79 @@ export async function guardInstagramNetwork(
   });
   const onResponse = (response: Response) => {
     if (disposed || !policy.platform(response.url())) return;
+    const ownWindow = postWindows.get(response.request());
+    const status = response.status();
     const headers = response.headers();
+    const inspectRate = (bytes: Buffer) => {
+      if (disposed || bytes.length > 5 * 1024 ** 2) return;
+      try {
+        if (
+          rateSignal(
+            JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)),
+          )
+        )
+          fail(new ContextStop('PLATFORM_CHECK', 'rate-signal'));
+      } catch {
+        /* Invalid or absent JSON is not an enumerated limit signal. */
+      }
+    };
+    const isJson =
+      headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() ===
+      'application/json';
+    if (ownWindow) {
+      const path = postPathClass(
+        response.url(),
+        policy.image(response.url()) ||
+          ['image', 'media'].includes(response.request().resourceType()),
+      );
+      const key = `${path}|${status}`;
+      const group = ownWindow.groups.get(key) ?? { path, status, count: 0 };
+      group.count++;
+      ownWindow.groups.set(key, group);
+      if (status >= 400 && status <= 499) {
+        const addBody = (value: BodyClass) => {
+          const counts = (group.bodyClasses ??= []);
+          const prior = counts.find((body) => body.class === value);
+          if (prior) prior.count++;
+          else counts.push({ class: value, count: 1 });
+          counts.sort((a, b) => a.class.localeCompare(b.class));
+        };
+        if (ownWindow.classified >= 20) addBody('not-classified');
+        else {
+          // Reserve the slot synchronously so concurrent responses share the cap.
+          ownWindow.classified++;
+          if (Number(headers['content-length']) > 1048576) addBody('large');
+          else {
+            const inspection = (async () => {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              let cancel: (() => void) | undefined;
+              try {
+                const bytes = await Promise.race([
+                  response.body(),
+                  new Promise<null>((resolve) => {
+                    timer = setTimeout(() => resolve(null), 30000);
+                  }),
+                  new Promise<null>((resolve) => {
+                    cancel = () => resolve(null);
+                    bodyCancels.add(cancel);
+                  }),
+                ]);
+                addBody(bytes === null ? 'unreadable' : bodyClass(bytes));
+                // Share this one read with the existing limit-signal observer.
+                if (bytes && isJson) inspectRate(bytes);
+              } catch {
+                addBody('unreadable');
+              } finally {
+                if (timer) clearTimeout(timer);
+                if (cancel) bodyCancels.delete(cancel);
+              }
+            })();
+            bodyInspections.add(inspection);
+            void inspection.then(() => bodyInspections.delete(inspection));
+          }
+        }
+      }
+    }
     limitSignals.response(
       hostClass(response.url()),
       pathClass(
@@ -200,8 +318,8 @@ export async function guardInstagramNetwork(
     if (response.status() === 429)
       fail(new ContextStop('PLATFORM_CHECK', 'http-429'));
     if (
-      headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() ===
-        'application/json' &&
+      !(ownWindow && status >= 400 && status <= 499) &&
+      isJson &&
       Number(headers['content-length'] ?? 0) <= 5 * 1024 ** 2
     ) {
       const inspection = (async () => {
@@ -214,15 +332,7 @@ export async function guardInstagramNetwork(
             }),
             failed.then(() => null),
           ]);
-          if (disposed || !bytes || bytes.length > 5 * 1024 ** 2) return;
-          if (
-            rateSignal(
-              JSON.parse(
-                new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-              ),
-            )
-          )
-            fail(new ContextStop('PLATFORM_CHECK', 'rate-signal'));
+          if (bytes) inspectRate(bytes);
         } catch {
           /* Invalid or absent JSON is not an enumerated limit signal. */
         } finally {
@@ -238,16 +348,39 @@ export async function guardInstagramNetwork(
       void persist({ ...prior }).catch(() => undefined);
     }
   };
+  context.on('request', onRequest);
   context.on('response', onResponse);
   const check = () => {
     if (failure) throw failure;
   };
   return {
+    beginPostRequests(page: Page) {
+      const window: PostWindow = { page, groups: new Map(), classified: 0 };
+      postWindow = window;
+      return {
+        summary: () =>
+          [...window.groups.values()]
+            .sort((a, b) => a.path.localeCompare(b.path) || a.status - b.status)
+            .map((group) => ({
+              ...group,
+              ...(group.bodyClasses
+                ? {
+                    bodyClasses: group.bodyClasses.map((body) => ({ ...body })),
+                  }
+                : {}),
+            })),
+        close: () => {
+          if (postWindow === window) postWindow = undefined;
+        },
+      };
+    },
     abortedHosts,
     requests,
     stop: fail,
     check,
     async flush() {
+      // Stopping the run does not erase the diagnostic for its failing response.
+      await Promise.all([...bodyInspections]);
       check();
       await Promise.race([Promise.all([...inspections]), failed]);
       check();
@@ -256,6 +389,10 @@ export async function guardInstagramNetwork(
     },
     dispose() {
       disposed = true;
+      for (const cancel of bodyCancels) cancel();
+      bodyCancels.clear();
+      postWindow = undefined;
+      context.off('request', onRequest);
       context.off('response', onResponse);
     },
   };

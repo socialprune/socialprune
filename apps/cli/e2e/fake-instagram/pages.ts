@@ -1,5 +1,5 @@
 import type { Item } from '@socialprune/core';
-import { IG_FIXTURE } from './fixture.ts';
+import { IG_FIXTURE, POST_NOTICE_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
 import { CONTEXT_ORIGINS } from './ports.ts';
 const escape = (input: string) =>
@@ -30,6 +30,7 @@ export function listPage(
   zoneHours: number,
   filter = { today: IG_FIXTURE.now.slice(0, 10), firstYear: 1919 },
   candidates: ReadonlyMap<number, readonly { code: string }[]> = new Map(),
+  postVariants: ReadonlyMap<number, Variant> = new Map(),
 ): string {
   const handle = items[0]!.account.handle!;
   const records = items.flatMap((item, index) =>
@@ -39,6 +40,16 @@ export function listPage(
       text: variant === 'list-cut' ? item.text.slice(0, 40) + '...' : item.text,
       at: item.createdAt,
       code,
+      noticeBody: POST_NOTICE_FIXTURE.cases.find(
+        (entry) => entry.variant === (postVariants.get(index) ?? variant),
+      ),
+      noticeStatus: (postVariants.get(index) ?? variant).startsWith(
+        'post-notice-',
+      )
+        ? Number(
+            (postVariants.get(index) ?? variant).slice('post-notice-'.length),
+          )
+        : null,
       username:
         variant === 'account-mismatch' ? IG_FIXTURE.other.username : handle,
     })),
@@ -67,6 +78,7 @@ function navigation(){const mode=accountVariant(),nav=document.getElementById('n
 function emptyImageButton(){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label','Generated image decoration');node.innerHTML='<img alt="" src="/thumb.png">';list.append(node)};
 function render(){mutate(()=>{navigation();list.replaceChildren();const empty=['empty-image-buttons','year-empty-rows'].includes(variant);if(empty)emptyImageButton();let chosen=rows.filter(row=>{const day=new Date(Date.parse(row.at)+zone*3600000).toISOString().slice(0,10);return(!start||day>=start)&&(!end||day<=end)});if(variant==='no-row')chosen=chosen.map(row=>({...row,text:'Different generated row'}));if(variant==='window-full')chosen=Array.from({length:120},(_,i)=>({...rows[0],text:'Window filler '+i})).slice(0,10*(loads+1));if(!oldest)chosen=chosen.slice().reverse();const mode=accountVariant(),mixed=variant.startsWith('list-other-names');if(mixed){const exact=chosen[0]?.text||rows[0].text;chosen=Array.from({length:${IG_FIXTURE.expected.otherNameRows}},(_,i)=>({...rows[0],username:other.username,text:i===0?exact:other.text,code:other.code+i})).concat(chosen,Array.from({length:${IG_FIXTURE.expected.accountFillers}},(_,i)=>({...rows[0],text:'Generated own filler '+i})));}if(['list-half-other','list-majority-other'].includes(mode)){const others=mode==='list-half-other'?chosen.length:chosen.length+1;chosen=chosen.concat(Array.from({length:others},()=>({...rows[0],username:other.username,text:other.text,code:other.code})));}for(const [index,row]of chosen.entries()){const node=document.createElement('div');node.setAttribute('role','button');node.setAttribute('aria-label',mixed||mode.startsWith('list-')?row.username+' commented on a post':'Comment row');node.innerHTML='<img alt="" src="/thumb.png"><img alt="" src="/thumb.png">';const age=row.username===other.username&&mixed?'1h':variant==='unknown-age'?'8q':oldest&&(mixed||['year-rows','year-empty-rows','year-word-rows'].includes(variant))?(variant==='year-word-rows'?${json(IG_FIXTURE.expected.fullYearAge)}:${json(IG_FIXTURE.expected.yearAge)}):index%2===0?'1w':'2d';node.append(document.createTextNode(row.username+' '+row.text+'\\n'+age));node.onclick=()=>location.href='/${variant === 'reel' ? 'reel' : 'p'}/'+row.code;list.append(node)}if(empty)for(let index=1;index<${IG_FIXTURE.expected.emptyImageButtons};index++)emptyImageButton()})};
 list.addEventListener('wheel',()=>{if(oldest){loads++;render()}});render();
+list.addEventListener('click',event=>{const node=event.target.closest('[role=button]');if(!node)return;const row=rows.find(row=>(row.noticeStatus||row.noticeBody)&&node.textContent.includes(row.text));if(!row)return;event.preventDefault();event.stopImmediatePropagation();const entry=row.noticeBody,paths=entry?Array.from({length:entry.responses||1},(_,i)=>entry.path+'?generated_case='+entry.variant+'&request='+i):['/api/v1/generated/post-notice/'+row.noticeStatus+'/'];Promise.all(paths.map(path=>fetch(path).then(response=>response.text()).catch(()=>{}))).then(()=>mutate(()=>{document.querySelector('main').innerHTML='<p>Something went wrong</p>'}));},true);
 ${variant === 'list-other-names-nav-late' ? `setTimeout(()=>mutate(()=>{navReady=true;navigation()}),${IG_FIXTURE.expected.navigationDelayMs});` : ''}
 document.querySelector('main>[role=button]').onclick=()=>mutate(()=>{
   if(applied)return;

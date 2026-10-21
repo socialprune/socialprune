@@ -100,8 +100,79 @@ export async function instagramFixture(
   };
   return { workspace, items };
 }
+export const POST_NOTICE_FIXTURE = {
+  mediaId: '918181818181818181',
+  prefixBytes: 512,
+  maximumDeclaredBytes: 1048576,
+  perStepBodies: 20,
+  cases: [
+    {
+      variant: 'post-notice-bare',
+      path: '/api/v1/media/918181818181818181/comments/',
+      type: 'application/json',
+      body: ' \r\nNot Found\t ',
+      pathClass: 'api-v1-media-comments',
+      bodyClass: 'bare-not-found',
+    },
+    {
+      variant: 'post-notice-info-json',
+      path: '/api/v1/media/918181818181818181/info/',
+      type: 'application/json',
+      body: JSON.stringify({ message: IG_FIXTURE.other.text }),
+      pathClass: 'api-v1-media-info',
+      bodyClass: 'json',
+    },
+    {
+      variant: 'post-notice-html',
+      path: '/api/v1/qe/expose/',
+      type: 'text/html',
+      body: `<html><body>${IG_FIXTURE.other.text}</body></html>`,
+      pathClass: 'api-v1-other',
+      bodyClass: 'html',
+    },
+    {
+      variant: 'post-notice-empty',
+      path: '/api/v1/media/918181818181818181/comments/191919191919191919/inline_child_comments/',
+      type: 'text/plain',
+      body: '',
+      pathClass: 'api-v1-media-comments',
+      bodyClass: 'empty',
+    },
+    {
+      variant: 'post-notice-unreadable',
+      path: '/api/v1/media/918181818181818181/comments/',
+      type: 'text/plain',
+      body: IG_FIXTURE.other.text,
+      encoding: 'gzip',
+      pathClass: 'api-v1-media-comments',
+      bodyClass: 'unreadable',
+    },
+    {
+      variant: 'post-notice-large',
+      path: '/api/v1/media/918181818181818181/info/',
+      type: 'application/json',
+      body: '',
+      padding: 1048577,
+      pathClass: 'api-v1-media-info',
+      bodyClass: 'large',
+    },
+    {
+      variant: 'post-notice-cap',
+      path: '/api/v1/media/918181818181818181/comments/',
+      type: 'application/json',
+      body: JSON.stringify({ message: IG_FIXTURE.other.text }),
+      responses: 22,
+      pathClass: 'api-v1-media-comments',
+      bodyClass: 'json',
+    },
+  ],
+} as const;
 export type Variant =
   | 'success'
+  | (typeof POST_NOTICE_FIXTURE.cases)[number]['variant']
+  | 'post-notice-404'
+  | 'post-notice-429'
+  | 'post-notice-503'
   | 'answer-ndjson'
   | 'answer-concatenated'
   | 'answer-javascript'

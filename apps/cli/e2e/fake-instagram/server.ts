@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { Item } from '@socialprune/core';
-import { IG_FIXTURE } from './fixture.ts';
+import { IG_FIXTURE, POST_NOTICE_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
 import { listPage, postPage, postAnswer, answerResponse } from './pages.ts';
 
@@ -66,6 +66,32 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         );
         return;
       }
+      const notice = POST_NOTICE_FIXTURE.cases.find(
+        (entry) =>
+          entry.variant === url.searchParams.get('generated_case') &&
+          entry.path === path,
+      );
+      if (notice) {
+        const body =
+          'padding' in notice
+            ? Buffer.alloc(notice.padding, 32)
+            : Buffer.from(notice.body);
+        response.writeHead(404, {
+          'Content-Type': notice.type,
+          'Content-Length': String(body.length),
+          ...('encoding' in notice
+            ? { 'Content-Encoding': notice.encoding }
+            : {}),
+        });
+        response.end(body);
+        return;
+      }
+      if (path.startsWith('/api/v1/generated/post-notice/')) {
+        const status = Number(path.split('/').at(-2));
+        response.writeHead(status, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ status: 'generated-read-error' }));
+        return;
+      }
       if (path === '/api/v1/generated/read/') {
         response.setHeader('Content-Type', 'application/json');
         response.setHeader('Retry-After', IG_FIXTURE.other.code);
@@ -106,7 +132,14 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           'Content-Type': 'text/html',
         });
         response.end(
-          listPage(items, variant, zone, { today, firstYear }, candidates),
+          listPage(
+            items,
+            variant,
+            zone,
+            { today, firstYear },
+            candidates,
+            postVariants,
+          ),
         );
         return;
       }

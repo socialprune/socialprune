@@ -21,6 +21,18 @@ export const PATH_CLASSES = [
 ] as const;
 export type HostClass = (typeof HOST_CLASSES)[number];
 export type PathClass = (typeof PATH_CLASSES)[number];
+export const POST_PATH_CLASSES = [
+  'list-page',
+  'post-page',
+  'wbloks-fetch',
+  'graphql',
+  'api-v1-media-comments',
+  'api-v1-media-info',
+  'api-v1-other',
+  'media',
+  'other',
+] as const;
+export type PostPathClass = (typeof POST_PATH_CLASSES)[number];
 export type ReadyKind = 'list' | 'post';
 export function hostClass(input: string): HostClass {
   const host = new URL(input).hostname.toLowerCase();
@@ -35,13 +47,26 @@ export function pathClass(input: string, media = false): PathClass {
   if (media) return 'media';
   if (path.replace(/\/$/, '') === '/your_activity/interactions/comments')
     return 'list-page';
-  if (/^\/(?:p|reel)\/[A-Za-z0-9_-]{1,64}\/$/.test(path)) return 'post-page';
+  if (/^\/(?:p|reel)\/[A-Za-z0-9_-]{1,64}\/?$/.test(path)) return 'post-page';
   if (path === '/async/wbloks/fetch/' || path === '/async/wbloks/fetch')
     return 'wbloks-fetch';
   if (path === '/graphql/query' || path.startsWith('/graphql/'))
     return 'graphql';
   if (path.startsWith('/api/v1/')) return 'api-v1-read';
   return 'other';
+}
+export function postPathClass(input: string, media = false): PostPathClass {
+  const generic = pathClass(input, media);
+  if (generic !== 'api-v1-read') return generic;
+  const path = new URL(input).pathname;
+  // Numeric media PKs and PK_owner IDs occur in instagrapi's media and comment
+  // readers (2026-10-21); Instaloader also uses these API paths in structures.py.
+  // Only the category leaves this function, never an ID.
+  if (/^\/api\/v1\/media\/\d+(?:_\d+)?\/comments(?:\/|$)/.test(path))
+    return 'api-v1-media-comments';
+  if (/^\/api\/v1\/media\/\d+(?:_\d+)?\/info(?:\/|$)/.test(path))
+    return 'api-v1-media-info';
+  return 'api-v1-other';
 }
 export function rateSignal(body: unknown): boolean {
   let visits = 0;

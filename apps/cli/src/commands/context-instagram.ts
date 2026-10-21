@@ -43,6 +43,13 @@ export const contextInstagramCommand = buildCommand({
         brief:
           'Explicit file of Instagram item IDs to reconsider after earlier results',
       },
+      exclude: {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief:
+          'Person-written file of Instagram item IDs to leave out of this plan',
+      },
       list: {
         kind: 'parsed',
         parse: String,
@@ -102,6 +109,7 @@ export const contextInstagramCommand = buildCommand({
       dryRun: boolean;
       json: boolean;
       include?: string;
+      exclude?: string;
       list?: string;
       profile?: string;
       plan?: string;
@@ -123,21 +131,26 @@ export const contextInstagramCommand = buildCommand({
       throw new CliError('INVALID_ARGUMENTS');
     if (!flags.dryRun && !flags.order && (flags.json || !this.stdoutIsTerminal))
       throw new CliError('NOT_INTERACTIVE');
-    const include = new Set<string>();
-    if (flags.include)
-      for (const line of (await readFile(flags.include, 'utf8')).split(
-        /\r?\n/,
-      )) {
-        const value = line.trim();
-        if (!value) continue;
-        if (!InstagramItemIdSchema.safeParse(value).success)
-          throw new CliError('INVALID_ARGUMENTS');
-        include.add(value);
-      }
+    const include = new Set<string>(),
+      exclude = new Set<string>();
+    for (const [file, ids] of [
+      [flags.include, include],
+      [flags.exclude, exclude],
+    ] as const)
+      if (file)
+        for (const line of (await readFile(file, 'utf8')).split(/\r?\n/)) {
+          const value = line.trim();
+          if (!value) continue;
+          if (!InstagramItemIdSchema.safeParse(value).success)
+            throw new CliError('INVALID_ARGUMENTS');
+          ids.add(value);
+        }
+    if ([...exclude].some((id) => include.has(id)))
+      throw new CliError('INVALID_ARGUMENTS');
     const path = await workspacePath(flags.workspace, false),
       store = await SQLiteStore.open(path.path, { readOnly: flags.dryRun });
     try {
-      const plan = await planContext(store, flags.account, include);
+      const plan = await planContext(store, flags.account, include, exclude);
       if (
         plan.handle &&
         handle &&
@@ -172,7 +185,7 @@ export const contextInstagramCommand = buildCommand({
         }
         this.reply({
           data,
-          human: `${data.planned} planned, ${data.marked} marked for deletion. Manual: ${JSON.stringify(data.manual)}. Already confirmed: ${data.confirmed}. Earlier results left out: ${JSON.stringify(data.excluded)}.\nPlan: ${data.planHash}\nAt least ${data.steps} steps across ${data.days} days.\n${paceText(pace, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
+          human: `${data.planned} planned, ${data.marked} marked for deletion. Manual: ${JSON.stringify(data.manual)}. Already confirmed: ${data.confirmed}. Earlier results left out: ${JSON.stringify(data.excluded)}. Person-excluded: ${data.personExcluded}. Exclusion IDs without a planned or manual entry: ${data.excludeUnmatched}.\nPlan: ${data.planHash}\nAt least ${data.steps} steps across ${data.days} days.\n${paceText(pace, flags.lang)}\n${data.warning}\n${flags.list ? '' : text}`,
         });
         return;
       }
@@ -215,6 +228,7 @@ export const contextInstagramCommand = buildCommand({
         executablePath,
         list,
         include,
+        exclude,
         limit: flags.limit === undefined ? pace.perDay : limit,
         order,
         signal: this.signal,

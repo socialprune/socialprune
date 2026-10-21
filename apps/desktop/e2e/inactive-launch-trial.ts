@@ -3,12 +3,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as wait } from 'node:timers/promises';
-import {
-  runPowerShell,
-  WINDOWS_QUERY_TIMEOUT_MS,
-} from '../packaging/windows-powershell.ts';
+import { runWindowProbe } from '../packaging/window-readiness.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
-import { directory } from '../packaging/paths.ts';
 import { proofOutput } from './proof-context.ts';
 import { launchInactive } from './inactive-launch.ts';
 
@@ -24,18 +20,18 @@ export async function trialInactiveRelease(executable: string) {
         [`--data-dir=${data}`, '--force-renderer-accessibility'],
         showCommand,
       );
-      const probe = (script: string, args: string[] = []) =>
-        runPowerShell(
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-File',
-            join(directory, script),
-            '-AppProcessId',
-            String(child.pid),
-            ...args,
-          ],
-          { windowsHide: true, timeout: WINDOWS_QUERY_TIMEOUT_MS },
+      let probeNumber = 0;
+      const probe = (
+        script:
+          'packaging/release-window.ps1' | 'e2e/inactive-window-probe.ps1',
+        args: string[] = [],
+      ) =>
+        runWindowProbe(
+          script,
+          ['-AppProcessId', String(child.pid), ...args],
+          proofOutput(
+            `release-window-inactive-${showCommand}-${++probeNumber}.json`,
+          ),
         );
       try {
         const beforeFocus = JSON.parse(

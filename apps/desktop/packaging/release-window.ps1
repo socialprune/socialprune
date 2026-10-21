@@ -1,33 +1,11 @@
-param([int]$AppProcessId, [string]$Executable, [switch]$CloseOnly)
+param([int]$AppProcessId, [string]$Executable, [switch]$CloseOnly, [int]$ReadinessTimeoutMs, [string]$Receipt)
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
+. "$PSScriptRoot\window-readiness.ps1"
 Add-Type -Path "$PSScriptRoot\windows-query.cs"
-$pidCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
-$nameCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'SocialPrune')
-$condition = New-Object System.Windows.Automation.AndCondition($pidCondition, $nameCondition)
-$deadline = [DateTime]::UtcNow.AddSeconds(45)
-$window = $null
-$interactiveAt = $null
-while ([DateTime]::UtcNow -lt $deadline) {
-  $candidate = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-  if ($candidate) {
-    if ($CloseOnly) { $window = $candidate; break }
-    $keep = @($candidate.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -match '^Keep(\s|$)' -and $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled })
-    if ($keep.Count) {
-      # An enabled review action on generated data, not just a window title or
-      # static navigation. Focus is read back without writing a decision.
-      $keep[0].SetFocus()
-      if ($keep[0].Current.HasKeyboardFocus -and -not $keep[0].Current.IsOffscreen) {
-        $interactiveAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        $window = $candidate
-        break
-      }
-    }
-  }
-  Start-Sleep -Milliseconds 50
-}
-if (-not $window) { throw 'RELEASE_INTERACTIVE_FRAME_MISSING' }
+$mode = if ($CloseOnly) { 'Close' } else { 'ReviewAction' }
+$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode $mode -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt
+$window = $ready.window
+$interactiveAt = $ready.interactiveAt
 if ($CloseOnly) { $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close(); exit 0 }
 Start-Sleep -Seconds 3
 $processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json

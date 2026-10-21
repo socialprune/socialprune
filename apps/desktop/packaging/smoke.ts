@@ -4,8 +4,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertFuses } from './fuses.ts';
-import { directory, dist, executable } from './paths.ts';
-import { runPowerShell } from './windows-powershell.ts';
+import { dist, executable } from './paths.ts';
+import { runWindowProbe } from './window-readiness.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
 import { appProcesses } from '../test/windows.ts';
 
@@ -30,12 +30,9 @@ const exited = new Promise<number | null>((resolve, reject) => {
 });
 try {
   if (!child.pid) throw new Error('SMOKE_NO_PID');
-  const { stdout } = await runPowerShell(
+  const { stdout } = await runWindowProbe(
+    'packaging/smoke-window.ps1',
     [
-      '-NoProfile',
-      '-NonInteractive',
-      '-File',
-      join(directory, 'packaging/smoke-window.ps1'),
       '-AppProcessId',
       String(child.pid),
       '-Executable',
@@ -43,8 +40,7 @@ try {
       '-ExpectedItems',
       String(count),
     ],
-    // Native-table/UIA polling owns 137935 ms; allow init and final readback.
-    { timeout: 240_000, windowsHide: true },
+    join(dist, 'release-window-packaged-smoke.json'),
   );
   const sample = JSON.parse(stdout) as {
     interactiveAt: number;

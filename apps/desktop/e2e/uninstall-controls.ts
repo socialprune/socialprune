@@ -50,6 +50,7 @@ import {
   runNativeQuery,
   WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
+import { runWindowProbe } from '../packaging/window-readiness.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -485,12 +486,11 @@ try {
     { stdio: 'ignore', env: installerEnv },
   );
   if (!app.pid) throw new Error('APP_PID_MISSING');
-  await ps('release-window.ps1', [
-    '-AppProcessId',
-    String(app.pid),
-    '-Executable',
-    exe,
-  ]);
+  await runWindowProbe(
+    'packaging/release-window.ps1',
+    ['-AppProcessId', String(app.pid), '-Executable', exe],
+    proofOutput('release-window-controls-ready.json'),
+  );
   const runningBefore = await installedSnapshot();
   const runningSystem = await systemSnapshot();
   const runningTemp = await tempSnapshot();
@@ -604,13 +604,11 @@ try {
   await rm(installerTemp, { recursive: true });
   await mkdir(installerTemp);
   uninstallCount = 0;
-  await ps('release-window.ps1', [
-    '-AppProcessId',
-    String(app.pid),
-    '-Executable',
-    exe,
-    '-CloseOnly',
-  ]);
+  await runWindowProbe(
+    'packaging/release-window.ps1',
+    ['-AppProcessId', String(app.pid), '-Executable', exe, '-CloseOnly'],
+    proofOutput('release-window-controls-close.json'),
+  );
   await new Promise<void>((resolve) => app!.once('exit', () => resolve()));
   app = undefined;
   await mkdir(initial.data);
@@ -766,13 +764,11 @@ try {
 } finally {
   try {
     if (app?.pid) {
-      await ps('release-window.ps1', [
-        '-AppProcessId',
-        String(app.pid),
-        '-Executable',
-        exe,
-        '-CloseOnly',
-      ]).catch(() => undefined);
+      await runWindowProbe(
+        'packaging/release-window.ps1',
+        ['-AppProcessId', String(app.pid), '-Executable', exe, '-CloseOnly'],
+        proofOutput('release-window-controls-cleanup.json'),
+      ).catch(() => undefined);
     }
     if (programOwned && (await exists(uninstall))) await remove();
     // Exact run-created remnants only. Never recursively remove the program or

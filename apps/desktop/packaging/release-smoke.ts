@@ -38,6 +38,7 @@ import {
   WINDOWS_QUERY_TIMEOUT_MS,
 } from './windows-powershell.ts';
 import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
+import { runWindowProbe } from './window-readiness.ts';
 
 const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
@@ -222,12 +223,11 @@ try {
     });
     try {
       if (!child.pid) throw new Error('RELEASE_PID_MISSING');
-      const { stdout } = await powershell('release-window.ps1', [
-        '-AppProcessId',
-        String(child.pid),
-        '-Executable',
-        installedExe,
-      ]);
+      const { stdout } = await runWindowProbe(
+        'packaging/release-window.ps1',
+        ['-AppProcessId', String(child.pid), '-Executable', installedExe],
+        proofOutput(`release-window-smoke-${index + 1}-ready.json`),
+      );
       const sample = z
         .strictObject({
           interactiveAt: z.number(),
@@ -249,13 +249,17 @@ try {
         proofOutput('release-samples.json'),
         JSON.stringify(samples, null, 2),
       );
-      await powershell('release-window.ps1', [
-        '-AppProcessId',
-        String(child.pid),
-        '-Executable',
-        installedExe,
-        '-CloseOnly',
-      ]);
+      await runWindowProbe(
+        'packaging/release-window.ps1',
+        [
+          '-AppProcessId',
+          String(child.pid),
+          '-Executable',
+          installedExe,
+          '-CloseOnly',
+        ],
+        proofOutput(`release-window-smoke-${index + 1}-close.json`),
+      );
       assert.equal(
         await Promise.race([
           exited,
@@ -275,13 +279,17 @@ try {
       );
     } finally {
       if (child.exitCode === null) {
-        await powershell('release-window.ps1', [
-          '-AppProcessId',
-          String(child.pid),
-          '-Executable',
-          installedExe,
-          '-CloseOnly',
-        ]).catch(() => child.kill());
+        await runWindowProbe(
+          'packaging/release-window.ps1',
+          [
+            '-AppProcessId',
+            String(child.pid),
+            '-Executable',
+            installedExe,
+            '-CloseOnly',
+          ],
+          proofOutput(`release-window-smoke-${index + 1}-cleanup.json`),
+        ).catch(() => child.kill());
         await exited;
       }
     }

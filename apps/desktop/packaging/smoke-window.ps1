@@ -1,17 +1,9 @@
-param([int]$AppProcessId, [string]$Executable, [int]$ExpectedItems)
+param([int]$AppProcessId, [string]$Executable, [int]$ExpectedItems, [int]$ReadinessTimeoutMs, [string]$Receipt)
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
+. "$PSScriptRoot\window-readiness.ps1"
 Add-Type -Path "$PSScriptRoot\windows-query.cs"
-$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
-# CI 39395902168 (2026-10-20): predecessor identities 22375 ms +
-# TCP 23570 ms; 3 * their sum + 100 ms interval. Native tables replace both.
-$deadline = [DateTime]::UtcNow.AddMilliseconds(137935)
-$window = $null
 $connections = @{}
-$interactiveAt = $null
-$observeUntil = $null
-while ([DateTime]::UtcNow -lt $deadline) {
+$observeNetwork = {
   $processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json
   $ids = @($processes | ForEach-Object { $_.ProcessId })
   # Assign before enumeration: @('[]' | ConvertFrom-Json) has one empty-array
@@ -19,18 +11,16 @@ while ([DateTime]::UtcNow -lt $deadline) {
   $tcpConnections = (& "$PSScriptRoot\connections.ps1" -ProcessIds $ids) | ConvertFrom-Json
   foreach ($tcp in $tcpConnections) { $connections["$($tcp.processId)|$($tcp.remoteAddress)|$($tcp.remotePort)"] = $true }
   if ($connections.Count) { throw ('SMOKE_APP_OUTBOUND_TCP ' + ($connections.Keys -join ',')) }
-  $candidate = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-  if ($candidate -and $candidate.Current.Name -eq 'SocialPrune') {
-    $names = @($candidate.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name })
-    if ($names -contains 'Review' -and $names -contains 'Data and backups') {
-      $window = $candidate
-      if ($null -eq $interactiveAt) { $interactiveAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); $observeUntil = [DateTime]::UtcNow.AddSeconds(3) }
-      if ([DateTime]::UtcNow -ge $observeUntil) { break }
-    }
-  }
-  Start-Sleep -Milliseconds 100
 }
-if (-not $window) { throw 'SMOKE_INTERACTIVE_WINDOW_MISSING' }
+# Preserve network observation throughout readiness as well as after it.
+$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode Navigation -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt -OnPoll $observeNetwork
+$window = $ready.window
+$interactiveAt = $ready.interactiveAt
+$observeUntil = [DateTime]::UtcNow.AddSeconds(3)
+do {
+  & $observeNetwork
+  Start-Sleep -Milliseconds 100
+} while ([DateTime]::UtcNow -lt $observeUntil)
 $processes = [DesktopQuery]::Query('processes', $Executable) | ConvertFrom-Json
 $ids = @($processes | ForEach-Object { $_.ProcessId })
 $listeners = (& "$PSScriptRoot\listeners.ps1" -ProcessIds $ids) | ConvertFrom-Json

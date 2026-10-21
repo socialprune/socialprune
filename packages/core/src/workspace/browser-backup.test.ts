@@ -8,6 +8,11 @@ import { validateWorkspace } from './validation.ts';
 
 const fixture = () => {
   const base = contractWorkspace();
+  for (const submission of base.submissions) delete submission.criteria;
+  delete base.reviewPlans;
+  delete base.counts.reviewPlans;
+  delete base.settings.criteria;
+  delete base.settings.keepRules;
   return {
     ...base,
     schemaVersion: 3 as const,
@@ -42,7 +47,7 @@ test('v3 journal round trip preserves unresolved ambiguity with reordered proper
     await restoreBackup(target, chunks(reversed), { batchSize: 1 });
     const result = await target.read(readWorkspace);
     expect(result.browserAttempts).toEqual(JOURNAL_FIXTURE.attempts);
-    expect(result.schemaVersion).toBe(6);
+    expect(result.schemaVersion).toBe(7);
     expect(
       await readBackup(chunks(JSON.stringify(contractWorkspace()))),
     ).toEqual(contractWorkspace());
@@ -104,13 +109,14 @@ test('writer promotes an old v2 document to v3 without changing its entries or d
     for await (const chunk of createBackup(store, { batchSize: 1 }).chunks)
       text += new TextDecoder().decode(chunk);
     const result = await readBackup(chunks(text));
-    expect(result.schemaVersion).toBe(6);
+    expect(result.schemaVersion).toBe(7);
     expect(result.browserRuns).toEqual([]);
     expect(result.browserAttempts).toEqual([]);
     expect(result.counts).toEqual({
       ...old.counts,
       browserRuns: 0,
       browserAttempts: 0,
+      reviewPlans: 0,
     });
     expect(result.items).toEqual(old.items);
     expect(result.decisionEvents).toEqual(old.decisionEvents);

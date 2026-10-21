@@ -15,6 +15,7 @@ import {
   BrowserAttemptSchema,
   InstagramContextSchema,
   WORKSPACE_SCHEMA_VERSION,
+  ReviewPlanSchema,
 } from '@socialprune/core';
 import type { WorkspaceV2, WorkspaceMeta, Original } from '@socialprune/core';
 import {
@@ -31,6 +32,10 @@ import type {
   WorkspaceRuntime,
   MigrationEvent,
 } from '@socialprune/core/workspace/store';
+import {
+  migrateReviewSettings,
+  migrateSubmission,
+} from '@socialprune/core/criteria';
 
 const TABLES = [
   'meta',
@@ -49,6 +54,7 @@ const TABLES = [
   'browserRuns',
   'browserAttempts',
   'instagramContext',
+  'reviewPlans',
 ] as const;
 export type StorageLifecycle = 'blocked' | 'versionchange' | 'terminated';
 const request = <T>(value: IDBRequest<T>) =>
@@ -72,9 +78,11 @@ export class IndexedDBStore implements WorkspaceStore {
   ): Promise<IndexedDBStore> {
     const db = await openDB(`sp-ws-${workspaceId}`, WORKSPACE_SCHEMA_VERSION, {
       upgrade(db, oldVersion, _newVersion, tx) {
+        if (oldVersion < 7)
+          db.createObjectStore('reviewPlans', { keyPath: 'actionId' });
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 6) {
+        if (oldVersion >= 1 && oldVersion < 7) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
@@ -93,13 +101,31 @@ export class IndexedDBStore implements WorkspaceStore {
               }
             }
             const meta: unknown = await tx.objectStore('meta').get('workspace');
-            if (meta && typeof meta === 'object')
-              await tx
-                .objectStore('meta')
-                .put(
-                  { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION },
-                  'workspace',
+            if (meta && typeof meta === 'object') {
+              const oldSettings = WorkspaceMetaSchema.parse(meta).settings;
+              const assessments = (
+                await tx.objectStore('assessments').getAll()
+              ).map((value: unknown) => AssessmentSchema.parse(value));
+              const settings = migrateReviewSettings(oldSettings, assessments);
+              let cursor = await tx.objectStore('submissions').openCursor();
+              while (cursor) {
+                await cursor.update(
+                  migrateSubmission(
+                    SubmissionSchema.parse(cursor.value),
+                    oldSettings,
+                  ),
                 );
+                cursor = await cursor.continue();
+              }
+              await tx.objectStore('meta').put(
+                {
+                  ...meta,
+                  settings,
+                  schemaVersion: WORKSPACE_SCHEMA_VERSION,
+                },
+                'workspace',
+              );
+            }
           })().catch(() => tx.abort());
         }
         if (oldVersion < 3) {
@@ -170,6 +196,7 @@ export class IndexedDBStore implements WorkspaceStore {
       browserRuns,
       browserAttempts,
       instagramContext,
+      reviewPlans,
       ...meta
     } = workspace;
     void _counts;
@@ -182,6 +209,7 @@ export class IndexedDBStore implements WorkspaceStore {
         await tx.items.put({ item, importId, metadataImportId: importId });
       }
       for (const record of submissions) await tx.submissions.add(record);
+      for (const record of reviewPlans ?? []) await tx.reviewPlans.add(record);
       for (const record of originals ?? []) await tx.originals.put(record);
       for (const record of browserRuns ?? []) await tx.browserRuns.add(record);
       for (const record of browserAttempts ?? [])
@@ -417,8 +445,24 @@ export class IndexedDBStore implements WorkspaceStore {
       browserAttempts: table('browserAttempts', (value) =>
         BrowserAttemptSchema.parse(value),
       ),
-      submissions: table('submissions', (value) =>
-        SubmissionSchema.parse(value),
+      submissions: {
+        ...table('submissions', (value) => SubmissionSchema.parse(value)),
+        async add(value) {
+          guard(true);
+          const meta = (await request(
+            native.objectStore('meta').get('workspace'),
+          )) as WorkspaceMeta;
+          await request(
+            native
+              .objectStore('submissions')
+              .add(
+                migrateSubmission(SubmissionSchema.parse(value), meta.settings),
+              ),
+          );
+        },
+      },
+      reviewPlans: table('reviewPlans', (value) =>
+        ReviewPlanSchema.parse(value),
       ),
       assessments: log('assessments', (value) => AssessmentSchema.parse(value)),
       decisionEvents: log('decisionEvents', (value) =>

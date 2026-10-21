@@ -176,6 +176,7 @@ test('v2 committed JSON schemas match zod and encode required strict object shap
       source: { kind: 'agent', name: 'synthetic', version: null },
       receivedAt: timestamp,
       labelCount: 0,
+      criteria: [],
     }),
     workspace: {
       ...workspace,
@@ -183,6 +184,7 @@ test('v2 committed JSON schemas match zod and encode required strict object shap
       browserRuns: [],
       browserAttempts: [],
       instagramContext: [],
+      reviewPlans: [],
     },
   };
   for (const [name, sample] of Object.entries(samples)) {

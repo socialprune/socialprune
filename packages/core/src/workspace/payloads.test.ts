@@ -10,6 +10,39 @@ import {
   BATCH_NOTICE,
 } from './payloads.ts';
 import { generateJsonSchemas } from '../node/schemas.ts';
+import { LabelService } from './labels.ts';
+import { createMemoryStore } from './memory-store.ts';
+
+test('summary tab counts are an additive optional data field with unchanged output version', async () => {
+  const store = createMemoryStore();
+  try {
+    const existing = await new LabelService(store).summary();
+    expect(SummarySchema.parse(existing)).toEqual(existing);
+    const tabs = {
+      suggested: 1,
+      held: 2,
+      kept: 3,
+      unclear: 4,
+      marked: 5,
+      all: 15,
+    };
+    expect(SummarySchema.parse({ ...existing, tabs })).toEqual({
+      ...existing,
+      tabs,
+    });
+    expect(existing.schemaVersion).toBe(2);
+    expect(
+      SummarySchema.safeParse({ ...existing, tabs: { ...tabs, held: -1 } })
+        .success,
+    ).toBe(false);
+    expect(
+      SummarySchema.safeParse({ ...existing, tabs: { ...tabs, unexpected: 1 } })
+        .success,
+    ).toBe(false);
+  } finally {
+    await store.close();
+  }
+});
 
 test('neutral payload schemas preserve their exact shapes and reject decision fields in label input', () => {
   const label = {

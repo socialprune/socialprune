@@ -11,6 +11,7 @@ import {
   BrowserRunSchema,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  ReviewPlanSchema,
 } from '../model/index.ts';
 import type {
   WorkspaceV2,
@@ -37,6 +38,7 @@ import type {
   WriteTransaction,
 } from './store.ts';
 import { validateWorkspace } from './validation.ts';
+import { migrateSubmission } from '../criteria/migration.ts';
 
 function database(workspace: WorkspaceV2) {
   const {
@@ -51,6 +53,7 @@ function database(workspace: WorkspaceV2) {
     browserRuns,
     browserAttempts,
     instagramContext,
+    reviewPlans,
     ...meta
   } = workspace;
   void _counts;
@@ -88,6 +91,9 @@ function database(workspace: WorkspaceV2) {
     submissions: new Map(
       submissions.map((record) => [record.submissionId, record]),
     ),
+    reviewPlans: new Map(
+      (reviewPlans ?? []).map((record) => [record.actionId, record]),
+    ),
     assessments: [...assessments],
     decisionEvents: [...decisionEvents],
     outcomeEvents: [...outcomeEvents],
@@ -116,6 +122,7 @@ function fork(source: Database): Database {
     browserRuns: new Map(source.browserRuns),
     browserAttempts: new Map(source.browserAttempts),
     submissions: new Map(source.submissions),
+    reviewPlans: new Map(source.reviewPlans),
     commands: new Map(source.commands),
     state: new Map(source.state),
     sequences: new Set(source.sequences),
@@ -294,7 +301,13 @@ export function createMemoryStore(
         submissions: table(
           db.submissions,
           (record) => record.submissionId,
-          (record) => SubmissionSchema.parse(record),
+          (record) =>
+            migrateSubmission(SubmissionSchema.parse(record), db.meta.settings),
+        ),
+        reviewPlans: table(
+          db.reviewPlans,
+          (record) => record.actionId,
+          (record) => ReviewPlanSchema.parse(record),
         ),
         originals: table(
           db.originals,

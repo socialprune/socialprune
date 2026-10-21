@@ -9,6 +9,8 @@ import { resolveTimeZone } from './time.ts';
 import { QueryProjection } from './projection.ts';
 import type { CompactAssessment } from './projection.ts';
 import { currentRowSources } from './row-sources.ts';
+import { currentAssessments } from '../criteria/suggestions.ts';
+import { records } from './store.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -352,12 +354,18 @@ export class QueryEngine implements ReviewQuery {
         )
           throw new WorkspaceError('EVENT_CHAIN');
       const latest = new Map<number, Map<string, CompactAssessment>>();
-      for await (const assessment of tx.assessments.iterate()) {
+      const checked = currentAssessments({
+        assessments: await records(tx.assessments),
+        submissions: await records(tx.submissions),
+        settings: meta.settings,
+      });
+      for (const assessment of [...checked.values()].flat()) {
         const index = result.idIndex.get(assessment.itemId);
         if (index === undefined) throw new WorkspaceError('UNKNOWN_ITEM');
         const source = JSON.stringify([
           assessment.source.kind,
           assessment.source.name,
+          assessment.category,
         ]);
         const current =
           latest.get(index) ?? new Map<string, CompactAssessment>();
@@ -445,13 +453,24 @@ export class QueryEngine implements ReviewQuery {
           state.outcome = event.value;
         }
         const latest = new Map<string, Map<string, CompactAssessment>>();
-        for await (const assessment of tx.assessments.iterate()) {
+        const checked = currentAssessments({
+          assessments: (await records(tx.assessments)).filter((value) =>
+            ids.has(value.itemId),
+          ),
+          submissions: await records(tx.submissions),
+          settings: meta.settings,
+        });
+        for (const assessment of [...checked.values()].flat()) {
           if (!ids.has(assessment.itemId)) continue;
           const sources =
             latest.get(assessment.itemId) ??
             new Map<string, CompactAssessment>();
           sources.set(
-            JSON.stringify([assessment.source.kind, assessment.source.name]),
+            JSON.stringify([
+              assessment.source.kind,
+              assessment.source.name,
+              assessment.category,
+            ]),
             {
               risk: assessment.risk,
               category: assessment.category,

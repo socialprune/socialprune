@@ -261,7 +261,12 @@ export async function importWorkspace(input: ImportCall) {
 export async function summarizeWorkspace(input: WorkspaceCall) {
   const store = await readOnlyWorkspace(input);
   try {
-    const data = await new LabelService(store).summary();
+    const summary = await new LabelService(store).summary();
+    const { feedCounts } = await import('@socialprune/core/criteria');
+    const data = {
+      ...summary,
+      tabs: feedCounts(await store.read(readWorkspace)).tabs,
+    };
     return {
       workspace: { id: data.workspaceId, revision: data.revision },
       data,

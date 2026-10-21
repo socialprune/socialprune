@@ -47,6 +47,9 @@ test('valid streaming restore preserves fixture submissions shared sequence and 
       source,
       receivedAt: fixture.createdAt,
       labelCount: 1,
+      criteria: (await import('@socialprune/core/criteria')).PRESETS.map(
+        ({ id, hash }) => ({ id, hash }),
+      ),
     },
   ];
   fixture.assessments = [

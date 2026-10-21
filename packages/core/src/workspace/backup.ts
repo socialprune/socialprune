@@ -16,6 +16,7 @@ import {
   InstagramContextSchema,
   LegacyInstagramContextSchema,
   WORKSPACE_SCHEMA_VERSION,
+  ReviewPlanSchema,
 } from '../model/index.ts';
 import type {
   WorkspaceCounts,
@@ -36,6 +37,12 @@ import { migrateV1 } from './migrate.ts';
 import { importForItem } from './store.ts';
 import type { ReadTransaction, WorkspaceStore } from './store.ts';
 import { validateWorkspace } from './validation.ts';
+import { assertReviewVersion } from '../criteria/admission.ts';
+import {
+  migrateReviewContract,
+  migrateReviewSettings,
+  migrateSubmission,
+} from '../criteria/migration.ts';
 
 const ARRAY_KEYS = [
   'imports',
@@ -48,6 +55,7 @@ const ARRAY_KEYS = [
   'browserRuns',
   'browserAttempts',
   'instagramContext',
+  'reviewPlans',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 export interface BackupOptions {
@@ -142,12 +150,26 @@ export function createBackup(
       decisionEvents: 0,
       outcomeEvents: 0,
     };
+    const legacyCurrent = new Map<
+      string,
+      import('../model/index.ts').Assessment
+    >();
     for (const key of ARRAY_KEYS) {
       counts[key] = await store.read(async (tx) => {
         await guardSnapshot(tx);
         let count = 0;
         for await (const _value of tx[key].iterate()) {
-          void _value;
+          if (key === 'assessments' && sourceMeta!.schemaVersion < 7) {
+            const value = AssessmentSchema.parse(_value);
+            legacyCurrent.set(
+              JSON.stringify([
+                value.itemId,
+                value.source.kind,
+                value.source.name,
+              ]),
+              value,
+            );
+          }
           throwIfAborted(options.signal);
           count++;
         }
@@ -160,6 +182,12 @@ export function createBackup(
     const useV3 = true;
     const header = {
       ...sourceMeta,
+      settings:
+        sourceMeta.schemaVersion < 7
+          ? migrateReviewSettings(sourceMeta.settings, [
+              ...legacyCurrent.values(),
+            ])
+          : sourceMeta.settings,
       schemaVersion: WORKSPACE_SCHEMA_VERSION,
       lastBackupAt: createdAt,
       counts,
@@ -194,7 +222,14 @@ export function createBackup(
         });
         for (const value of values) {
           throwIfAborted(options.signal);
-          const text = JSON.stringify(value);
+          const text = JSON.stringify(
+            key === 'submissions'
+              ? migrateSubmission(
+                  SubmissionSchema.parse(value),
+                  sourceMeta.settings,
+                )
+              : value,
+          );
           if (new TextEncoder().encode(text).length > maxElementBytes)
             throw new ArchiveLimitError('maxElementBytes', maxElementBytes);
           yield `${first ? '' : ','}${text}`;
@@ -358,6 +393,7 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   imports: ImportRecordSchema,
   items: ItemSchema,
   submissions: SubmissionSchema,
+  reviewPlans: ReviewPlanSchema,
   assessments: AssessmentSchema,
   decisionEvents: DecisionEventSchema,
   outcomeEvents: OutcomeEventSchema,
@@ -533,6 +569,7 @@ export async function readBackup(
           'browserRuns',
           'browserAttempts',
           'instagramContext',
+          'reviewPlans',
           'decisions',
           'outcomes',
         ].includes(name)
@@ -617,6 +654,12 @@ export async function readBackup(
     }
     if ((await cursor.nonWhitespace()) !== null) throw new JsonFormatError();
     throwIfAborted(options.signal);
+    assertReviewVersion(
+      version ?? 0,
+      document.settings,
+      document.reviewPlans !== undefined,
+      document.submissions as { criteria?: unknown }[] | undefined,
+    );
     if (version === 1) {
       const migrated = await migrateV1(document);
       throwIfAborted(options.signal);
@@ -655,8 +698,7 @@ export async function applyBackup(
   options: BackupApplyOptions = {},
 ): Promise<WorkspaceV2> {
   throwIfAborted(options.signal);
-  const workspace = validateWorkspace(input);
-  workspace.schemaVersion = WORKSPACE_SCHEMA_VERSION;
+  const workspace = migrateReviewContract(validateWorkspace(input));
   const state = deriveState(workspace);
   const batchSize = positive(options.batchSize ?? 1000, 1000);
   const {
@@ -671,6 +713,7 @@ export async function applyBackup(
     browserRuns,
     browserAttempts,
     instagramContext,
+    reviewPlans,
     ...meta
   } = workspace;
   void _counts;
@@ -708,6 +751,7 @@ export async function applyBackup(
       throwIfAborted(options.signal);
       await tx.submissions.add(record);
     }
+    for (const record of reviewPlans ?? []) await tx.reviewPlans.add(record);
     for (const original of originals ?? []) await tx.originals.put(original);
     for (const run of browserRuns ?? []) await tx.browserRuns.add(run);
     for (const attempt of browserAttempts ?? [])

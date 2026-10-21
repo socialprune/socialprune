@@ -93,6 +93,17 @@ export const SummarySchema = z.strictObject({
   outcomes: OutcomeCountsSchema,
   lastImportAt: UtcTimestampSchema.nullable(),
   lastBackupAt: UtcTimestampSchema.nullable(),
+  // Additive summary data; the ADR-013 envelope and existing fields stay unchanged.
+  tabs: z
+    .strictObject({
+      suggested: count,
+      held: count,
+      kept: count,
+      unclear: count,
+      marked: count,
+      all: count,
+    })
+    .optional(),
 });
 export type Summary = z.infer<typeof SummarySchema>;
 export { ClickListSchema } from './clicklist-schema.ts';

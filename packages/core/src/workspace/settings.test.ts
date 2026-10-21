@@ -36,7 +36,7 @@ test('D58 optional review view validates the existing query shapes and strict wo
       ...old,
       settings: { ...old.settings, review: REVIEW_VIEW },
     }).schemaVersion,
-  ).toBe(2);
+  ).toBe(7);
   for (const view of [
     REVIEW_VIEW,
     { ...REVIEW_VIEW, accountKey: null },
@@ -165,7 +165,7 @@ test('D58 rejects an invalid view before writing and preserves old and new strea
           ...input.settings,
           ...(view ? { review: view } : {}),
         });
-        expect(restored.meta.schemaVersion).toBe(6);
+        expect(restored.meta.schemaVersion).toBe(7);
       } finally {
         await stage.close();
       }

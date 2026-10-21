@@ -7,6 +7,10 @@ import {
 } from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
+import {
+  assertReviewSettings,
+  assertReviewVersion,
+} from '../criteria/admission.ts';
 import { deriveState } from './state.ts';
 import {
   validateBrowserJournal,
@@ -26,6 +30,7 @@ export function workspaceCounts(
     | 'browserRuns'
     | 'browserAttempts'
     | 'instagramContext'
+    | 'reviewPlans'
   >,
 ): WorkspaceCounts {
   return {
@@ -35,6 +40,9 @@ export function workspaceCounts(
     submissions: workspace.submissions.length,
     decisionEvents: workspace.decisionEvents.length,
     outcomeEvents: workspace.outcomeEvents.length,
+    ...(workspace.reviewPlans !== undefined
+      ? { reviewPlans: workspace.reviewPlans.length }
+      : {}),
     ...(workspace.originals !== undefined
       ? { originals: workspace.originals.length }
       : {}),
@@ -50,6 +58,24 @@ export function workspaceCounts(
   };
 }
 export function validateWorkspace(input: unknown): WorkspaceV2 {
+  if (
+    input &&
+    typeof input === 'object' &&
+    'schemaVersion' in input &&
+    typeof input.schemaVersion === 'number'
+  ) {
+    const value = input as {
+      settings?: unknown;
+      reviewPlans?: unknown;
+      submissions?: { criteria?: unknown }[];
+    };
+    assertReviewVersion(
+      input.schemaVersion,
+      value.settings,
+      value.reviewPlans !== undefined,
+      value.submissions,
+    );
+  }
   let candidate =
     input &&
     typeof input === 'object' &&
@@ -84,6 +110,15 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
   if (
+    workspace.schemaVersion >= 7 &&
+    (!workspace.settings.criteria ||
+      !workspace.settings.keepRules ||
+      !workspace.reviewPlans ||
+      workspace.submissions.some((value) => !value.criteria))
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
+  if (workspace.schemaVersion >= 7) assertReviewSettings(workspace.settings);
+  if (
     (workspace.schemaVersion >= 3 &&
       (!workspace.browserRuns || !workspace.browserAttempts)) ||
     (workspace.schemaVersion < 5 &&
@@ -96,7 +131,7 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     throw new WorkspaceError('INVALID_WORKSPACE');
   const actual = workspaceCounts(workspace);
   for (const key of Object.keys(actual) as (keyof WorkspaceCounts)[])
-    if (workspace.counts[key] !== actual[key])
+    if ((workspace.counts[key] ?? 0) !== actual[key])
       throw new WorkspaceError('COUNT_MISMATCH');
   const unique = (values: string[]) => {
     if (new Set(values).size !== values.length)
@@ -114,6 +149,7 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     throw new WorkspaceError('COUNT_MISMATCH');
   unique(workspace.assessments.map((record) => record.assessmentId));
   unique(workspace.submissions.map((record) => record.submissionId));
+  unique((workspace.reviewPlans ?? []).map((record) => record.actionId));
   unique(
     [...workspace.decisionEvents, ...workspace.outcomeEvents].map(
       (record) => record.eventId,
@@ -269,6 +305,22 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
       first.action.reverts !== null &&
       (first.action.reverts === first.action.id ||
         !actions.has(first.action.reverts))
+    )
+      throw new WorkspaceError('ACTION_INVALID');
+  }
+  for (const plan of workspace.reviewPlans ?? []) {
+    const group = actions.get(plan.actionId);
+    if (
+      !group ||
+      group[0]!.action.kind !== 'bulk' ||
+      group.some(
+        (event) =>
+          !('decidedAt' in event) ||
+          event.value !== 'delete' ||
+          workspace.items.find((item) => item.id === event.itemId)?.account
+            .key !== plan.accountKey,
+      ) ||
+      plan.counts.suggested !== group.length
     )
       throw new WorkspaceError('ACTION_INVALID');
   }

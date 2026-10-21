@@ -7,7 +7,7 @@
     "source": {
       "type": "object",
       "properties": {
-        "kind": { "type": "string", "const": "agent" },
+        "kind": { "type": "string", "enum": ["agent", "model", "rules"] },
         "name": { "type": "string", "minLength": 1 },
         "version": { "type": ["string", "null"] }
       },
@@ -23,6 +23,19 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "criteria": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        },
+        "required": ["id", "hash"],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

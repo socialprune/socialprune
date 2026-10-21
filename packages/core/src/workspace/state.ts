@@ -7,6 +7,7 @@ import type {
   WorkspaceV2,
 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
+import { currentAssessments } from '../criteria/suggestions.ts';
 
 export interface DerivedItemState {
   decision: DecisionValue;
@@ -17,7 +18,8 @@ export function deriveState(
   workspace: Pick<
     WorkspaceV2,
     'items' | 'assessments' | 'decisionEvents' | 'outcomeEvents'
-  >,
+  > &
+    Partial<Pick<WorkspaceV2, 'settings' | 'submissions'>>,
 ): Map<string, DerivedItemState> {
   const state = new Map<string, DerivedItemState>(
     workspace.items.map((item) => [
@@ -38,6 +40,16 @@ export function deriveState(
   }
   for (const [id, sources] of assessments)
     state.get(id)!.assessments = [...sources.values()];
+  if (workspace.settings && workspace.submissions) {
+    const checks = currentAssessments({
+      assessments: workspace.assessments,
+      settings: workspace.settings,
+      submissions: workspace.submissions,
+    });
+    for (const [id, value] of state) {
+      value.assessments = checks.get(id) ?? [];
+    }
+  }
   applyEvents(workspace.decisionEvents, state, 'decision', 'undecided');
   applyEvents(workspace.outcomeEvents, state, 'outcome', 'unknown');
   return state;

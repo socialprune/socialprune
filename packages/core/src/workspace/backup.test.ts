@@ -15,6 +15,7 @@ import { ReviewService } from './review.ts';
 import { LabelService } from './labels.ts';
 import { contentHash } from './canonical.ts';
 import { WorkspaceError } from './errors.ts';
+import { migrateReviewContract } from '../criteria/migration.ts';
 
 async function fixture() {
   const input: unknown = JSON.parse(
@@ -50,13 +51,9 @@ test('hand-written v2 document parses at one-byte boundaries and restores ordere
     await restoreBackup(target, chunks(JSON.stringify(input)), {
       batchSize: 1,
     });
-    expect(await target.read(readWorkspace)).toEqual({
-      ...input,
-      schemaVersion: 6,
-      browserRuns: [],
-      browserAttempts: [],
-      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
-    });
+    expect(await target.read(readWorkspace)).toEqual(
+      migrateReviewContract(input),
+    );
     expect(
       [...deriveState(await target.read(readWorkspace))].map(([id, value]) => [
         id,
@@ -139,13 +136,10 @@ test('writer streams bounded chunks in header order and marks the store only aft
       'outcomeEvents',
       'browserRuns',
       'browserAttempts',
+      'reviewPlans',
     ]);
     expect(document).toEqual({
-      ...input,
-      schemaVersion: 6,
-      browserRuns: [],
-      browserAttempts: [],
-      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
+      ...migrateReviewContract(input),
       lastBackupAt: createdAt,
     });
     await session.complete();
@@ -366,11 +360,7 @@ test('reader accepts v1 migration and deduplicates identical log records but rej
     const migrated = await staged.read(readWorkspace);
     const legacy = await readBackup(chunks(old));
     expect(migrated).toEqual({
-      ...legacy,
-      schemaVersion: 6,
-      browserRuns: [],
-      browserAttempts: [],
-      counts: { ...legacy.counts, browserRuns: 0, browserAttempts: 0 },
+      ...migrateReviewContract(legacy),
     });
     expect(
       migrated.decisionEvents.map((event) => [event.seq, event.value]),
@@ -522,7 +512,7 @@ test('submission records survive deduplication and differing submission hashes r
         },
       ],
     });
-    const document = await source.read(readWorkspace);
+    const document = migrateReviewContract(await source.read(readWorkspace));
     document.submissions.push(structuredClone(document.submissions[0]!));
     document.counts.submissions++;
     document.outcomeEvents.push(structuredClone(document.outcomeEvents[0]!));
@@ -676,11 +666,7 @@ test('restore applies validated record batches of at most the requested size', a
     });
     expect(sizes).toEqual([1, 1, 1, 1, 1, 1]);
     expect(await target.read(readWorkspace)).toEqual({
-      ...input,
-      schemaVersion: 6,
-      browserRuns: [],
-      browserAttempts: [],
-      counts: { ...input.counts, browserRuns: 0, browserAttempts: 0 },
+      ...migrateReviewContract(input),
     });
   } finally {
     await target.close();

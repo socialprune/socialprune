@@ -24,6 +24,7 @@ import {
   restoreBackup,
 } from './backup.ts';
 import { validateWorkspace } from './validation.ts';
+import { migrateReviewContract } from '../criteria/migration.ts';
 import {
   GetInstagramContextRequestSchema,
   InstagramContextReplySchema,
@@ -36,6 +37,26 @@ const chunks = (value: unknown) =>
     await Promise.resolve();
     yield JSON.stringify(value);
   })();
+
+function withoutReviewV7(value: {
+  settings: unknown;
+  counts?: unknown;
+  reviewPlans?: unknown;
+  submissions?: unknown;
+}): void {
+  delete value.reviewPlans;
+  if (value.counts)
+    delete (value.counts as Record<string, unknown>).reviewPlans;
+  const settings = value.settings as Record<string, unknown>;
+  delete settings.criteria;
+  delete settings.keepRules;
+  if (settings.review) delete (settings.review as Record<string, unknown>).feed;
+  for (const submission of (value.submissions ?? []) as Record<
+    string,
+    unknown
+  >[])
+    delete submission.criteria;
+}
 
 test.each([2, 3] as const)(
   'C10 revision v%i restore and apply write current metadata without changing existing data',
@@ -68,17 +89,9 @@ test.each([2, 3] as const)(
         if (method === 'apply') await applyBackup(store, legacy);
         else await restoreBackup(store, chunks(legacy));
         const restored = await store.read(readWorkspace);
-        expect(validateWorkspace(restored)).toEqual({
-          ...legacy,
-          schemaVersion: 6,
-          browserRuns: legacy.browserRuns ?? [],
-          browserAttempts: legacy.browserAttempts ?? [],
-          counts: {
-            ...legacy.counts,
-            browserRuns: version === 3 ? 1 : 0,
-            browserAttempts: version === 3 ? 2 : 0,
-          },
-        });
+        expect(validateWorkspace(restored)).toEqual(
+          migrateReviewContract(legacy),
+        );
       } finally {
         await store.close();
       }
@@ -90,6 +103,9 @@ test('C10 v5 context backups gain post confirmation in both readers and streamin
   const current = await fixture();
   const legacy = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
   legacy.schemaVersion = 5;
+  withoutReviewV7(legacy as { settings: unknown });
+  delete legacy.reviewPlans;
+  delete (legacy.counts as Record<string, unknown>).reviewPlans;
   for (const record of legacy.instagramContext as Record<string, unknown>[])
     delete record.confirmedBy;
   for (const input of [
@@ -107,7 +123,7 @@ test('C10 v5 context backups gain post confirmation in both readers and streamin
     try {
       await restoreBackup(target, chunks(input), { batchSize: 1 });
       const restored = await target.read(readWorkspace);
-      expect(restored.schemaVersion).toBe(6);
+      expect(restored.schemaVersion).toBe(7);
       expect(restored.instagramContext![0]).toHaveProperty(
         'confirmedBy',
         'post',
@@ -121,6 +137,9 @@ test('C10 v5 context backups gain post confirmation in both readers and streamin
 test('C10 list confirmation permits null comment identity in both readers and preserves it through backup', async () => {
   const value = await fixture();
   Object.assign(value, { schemaVersion: 6 });
+  withoutReviewV7(value);
+  delete value.reviewPlans;
+  delete value.counts.reviewPlans;
   Object.assign(value.instagramContext![0]!, { confirmedBy: 'list' });
   Object.assign(value.instagramContext![0]!.comment, {
     id: null,
@@ -150,6 +169,7 @@ test('C10 a parsed v5 backup composes with validate and apply at the current ver
     unknown
   >;
   input.schemaVersion = 5;
+  withoutReviewV7(input as { settings: unknown });
   for (const record of input.instagramContext as Record<string, unknown>[])
     delete record.confirmedBy;
   const parsed = await readBackup(chunks(input));
@@ -171,6 +191,7 @@ test('C10 v5 cannot carry version-six confirmation fields even when its header c
   for (const confirmedBy of ['post', 'list']) {
     const invalid = structuredClone(current);
     Object.assign(invalid, { schemaVersion: 5 });
+    withoutReviewV7(invalid);
     Object.assign(invalid.instagramContext![0]!, { confirmedBy });
     if (confirmedBy === 'list')
       Object.assign(invalid.instagramContext![0]!.comment, {
@@ -198,6 +219,7 @@ test.each(['list-id', 'list-time', 'post-id', 'post-time', 'missing-kind'])(
   async (mode) => {
     const value = await fixture();
     Object.assign(value, { schemaVersion: 6 });
+    withoutReviewV7(value);
     const record = value.instagramContext![0]!;
     Object.assign(record, {
       confirmedBy: mode.startsWith('list') ? 'list' : 'post',
@@ -236,6 +258,7 @@ test.each(['list-id', 'list-time', 'post-id', 'post-time', 'missing-kind'])(
 test('C10 two list records with null ids are accepted while two set comment ids remain refused', async () => {
   const value = await fixture();
   Object.assign(value, { schemaVersion: 6 });
+  withoutReviewV7(value);
   const item = structuredClone(value.items[0]!);
   item.id += '-list-second';
   const first = value.instagramContext![0]!;
@@ -280,15 +303,18 @@ test('C10 two list records with null ids are accepted while two set comment ids 
 test('C10 readers accept version six and refuse later headers as unsupported', async () => {
   const value = await fixture();
   Object.assign(value, { schemaVersion: 6 });
+  withoutReviewV7(value);
+  delete value.reviewPlans;
+  delete value.counts.reviewPlans;
   expect((await readBackup(chunks(value))).schemaVersion).toBe(6);
   const target = createMemoryStore();
   try {
     await restoreBackup(target, chunks(value));
-    expect((await target.read(readWorkspace)).schemaVersion).toBe(6);
+    expect((await target.read(readWorkspace)).schemaVersion).toBe(7);
   } finally {
     await target.close();
   }
-  const later = { ...value, schemaVersion: 7 };
+  const later = { ...value, schemaVersion: 8 };
   await expect(readBackup(chunks(later))).rejects.toMatchObject({
     code: 'BACKUP_SCHEMA_UNSUPPORTED',
   });
@@ -406,6 +432,9 @@ test('confirmed memory record agrees with independent fixture and survives both 
 // These documents pin the shipped version, not the moving writer version.
 test('literal schema 5 remains readable through validateWorkspace after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
+  withoutReviewV7(value);
+  delete value.reviewPlans;
+  delete value.counts.reviewPlans;
   const expected = structuredClone(value);
   Object.assign(expected, { schemaVersion: 6 });
   for (const record of value.instagramContext!)
@@ -415,6 +444,9 @@ test('literal schema 5 remains readable through validateWorkspace after the writ
 
 test('literal schema 5 remains readable through readBackup after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
+  withoutReviewV7(value);
+  delete value.reviewPlans;
+  delete value.counts.reviewPlans;
   const expected = structuredClone(value);
   Object.assign(expected, { schemaVersion: 6 });
   for (const record of value.instagramContext!)
@@ -424,6 +456,9 @@ test('literal schema 5 remains readable through readBackup after the writer vers
 
 test('literal schema 5 remains readable through streaming restoreBackup after the writer version advances', async () => {
   const value = { ...(await fixture()), schemaVersion: 5 as const };
+  withoutReviewV7(value);
+  delete value.reviewPlans;
+  delete value.counts.reviewPlans;
   const expected = structuredClone(value.instagramContext);
   for (const record of value.instagramContext!)
     Reflect.deleteProperty(record, 'confirmedBy');
@@ -743,7 +778,7 @@ test('confirm refuses invalid records transactionally and repeated sends, and se
   }
 });
 
-test('version four restores as six without contexts; seven refuses explicitly; empty context output is omitted', async () => {
+test('version four restores as seven without contexts; eight refuses explicitly; empty context output is omitted', async () => {
   const old = {
     ...createWorkspace(),
     schemaVersion: 4 as const,
@@ -751,10 +786,13 @@ test('version four restores as six without contexts; seven refuses explicitly; e
     browserAttempts: [],
   };
   old.counts = { ...old.counts, browserRuns: 0, browserAttempts: 0 };
+  withoutReviewV7(old);
+  delete old.reviewPlans;
+  delete old.counts.reviewPlans;
   const store = createMemoryStore();
   try {
     await restoreBackup(store, chunks(old));
-    expect((await store.read(readWorkspace)).schemaVersion).toBe(6);
+    expect((await store.read(readWorkspace)).schemaVersion).toBe(7);
     const text: Uint8Array[] = [];
     for await (const chunk of createBackup(store).chunks) text.push(chunk);
     const backup = JSON.parse(
@@ -762,7 +800,7 @@ test('version four restores as six without contexts; seven refuses explicitly; e
     ) as Record<string, unknown>;
     expect(backup).not.toHaveProperty('instagramContext');
     expect(backup.counts).not.toHaveProperty('instagramContext');
-    const seven = { ...old, schemaVersion: 7 };
+    const seven = { ...old, schemaVersion: 8 };
     await expect(readBackup(chunks(seven))).rejects.toMatchObject({
       code: 'BACKUP_SCHEMA_UNSUPPORTED',
     });

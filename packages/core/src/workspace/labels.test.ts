@@ -262,5 +262,5 @@ test('batch permits one oversized item without truncation and requires an accoun
   } finally {
     await store.close();
   }
-  expect(createWorkspace().schemaVersion).toBe(2);
+  expect(createWorkspace().schemaVersion).toBe(7);
 });

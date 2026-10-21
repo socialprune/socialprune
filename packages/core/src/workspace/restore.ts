@@ -16,6 +16,7 @@ import {
   migrateInstagramContext,
   validateInstagramContexts,
   WORKSPACE_SCHEMA_VERSION,
+  ReviewPlanSchema,
 } from '../model/index.ts';
 import type {
   Action,
@@ -31,6 +32,7 @@ import type {
   BrowserAttempt,
   InstagramContext,
   Item,
+  ReviewPlan,
 } from '../model/index.ts';
 import * as v1 from '../model/v1.ts';
 import {
@@ -48,6 +50,14 @@ import type {
   WorkspaceStore,
   WriteTransaction,
 } from './store.ts';
+import {
+  migrateReviewSettings,
+  migrateSubmission,
+} from '../criteria/migration.ts';
+import {
+  assertReviewSettings,
+  assertReviewVersion,
+} from '../criteria/admission.ts';
 
 export type RestoreOptions = BackupReadOptions & BackupApplyOptions;
 export interface RestoreResult {
@@ -59,8 +69,10 @@ export interface RestoreResult {
 /** The staging target must be discarded on every rejection; active data is separate. */
 export class RestoreFailure extends WorkspaceError {
   readonly discardTarget = true;
-  constructor(code: WorkspaceErrorCode) {
+  constructor(code: WorkspaceErrorCode, cause?: unknown) {
     super(code);
+    if (cause !== undefined)
+      Object.defineProperty(this, 'cause', { value: cause });
   }
 }
 const ARRAY_KEYS = [
@@ -74,6 +86,7 @@ const ARRAY_KEYS = [
   'browserRuns',
   'browserAttempts',
   'instagramContext',
+  'reviewPlans',
 ] as const;
 type ArrayKey = (typeof ARRAY_KEYS)[number];
 const decisionValues = ['undecided', 'keep', 'delete', 'later'] as const;
@@ -123,6 +136,8 @@ export async function restoreBackup(
   const sequenceSet = new Set<number>();
   const actions = new Map<string, ActionIndex>();
   const submissions = new Map<string, SubmissionIndex>();
+  const submissionRecords: Submission[] = [];
+  const reviewPlans: ReviewPlan[] = [];
   const assessmentSubmissions = new Map<
     string,
     { source: string; count: number }
@@ -409,6 +424,13 @@ export async function restoreBackup(
         });
       }
       await buffered(name, index, value);
+    } else if (name === 'reviewPlans') {
+      if (version !== 7) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      const value = ReviewPlanSchema.parse(record.value);
+      acceptUnique(name, value.actionId);
+      reviewPlans.push(value);
+      rawCounts.reviewPlans = (rawCounts.reviewPlans ?? 0) + 1;
+      counts.reviewPlans = (counts.reviewPlans ?? 0) + 1;
     } else if (name === 'submissions') {
       const value = SubmissionSchema.parse(record.value);
       rawCounts.submissions++;
@@ -420,7 +442,7 @@ export async function restoreBackup(
         declared: value.labelCount,
         actual: 0,
       });
-      await buffered(name, index, value);
+      submissionRecords.push(value);
     } else if (name === 'decisions' || name === 'outcomes') {
       if (version !== 1) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const kind = name === 'decisions' ? 'decision' : 'outcome';
@@ -528,6 +550,12 @@ export async function restoreBackup(
       version > WORKSPACE_SCHEMA_VERSION
     )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    assertReviewVersion(
+      version,
+      header.settings,
+      arraysSeen.has('reviewPlans'),
+      submissionRecords,
+    );
     if (version >= 6 && implicitInstagramConfirmation)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (
@@ -545,12 +573,14 @@ export async function restoreBackup(
       version === 1
         ? ['imports', 'items', 'assessments', 'decisions', 'outcomes']
         : ARRAY_KEYS.filter((key) =>
-            key === 'originals' || key === 'instagramContext'
-              ? arraysSeen.has(key) &&
-                (key !== 'instagramContext' || (version ?? 0) >= 5)
-              : ['browserRuns', 'browserAttempts'].includes(key)
-                ? (version ?? 0) >= 3
-                : true,
+            key === 'reviewPlans'
+              ? (version ?? 0) >= 7
+              : key === 'originals' || key === 'instagramContext'
+                ? arraysSeen.has(key) &&
+                  (key !== 'instagramContext' || (version ?? 0) >= 5)
+                : ['browserRuns', 'browserAttempts'].includes(key)
+                  ? (version ?? 0) >= 3
+                  : true,
           );
     if (
       expectedArrays.some((name) => !arraysSeen.has(name)) ||
@@ -681,6 +711,24 @@ export async function restoreBackup(
           throw new WorkspaceError('ACTION_INVALID');
       }
     }
+    for (const plan of reviewPlans) {
+      const group = actions.get(plan.actionId);
+      if (
+        !group ||
+        group.domain !== 'decision' ||
+        group.action.kind !== 'bulk' ||
+        group.count !== plan.counts.suggested
+      )
+        throw new WorkspaceError('ACTION_INVALID');
+      await store.read(async (tx) => {
+        for (const id of group.items)
+          if ((await tx.items.get(id))?.item.account.key !== plan.accountKey)
+            throw new WorkspaceError('ACTION_INVALID');
+        for await (const event of tx.decisionEvents.iterate())
+          if (event.action.id === plan.actionId && event.value !== 'delete')
+            throw new WorkspaceError('ACTION_INVALID');
+      });
+    }
     if (version >= 3) {
       try {
         validateBrowserJournal(
@@ -788,10 +836,41 @@ export async function restoreBackup(
         }
       });
     }
+    const previousSettings = meta.settings;
+    if (version < 7) {
+      const current = new Map<string, Assessment>();
+      await store.read(async (tx) => {
+        for await (const assessment of tx.assessments.iterate())
+          current.set(
+            JSON.stringify([
+              assessment.itemId,
+              assessment.source.kind,
+              assessment.source.name,
+            ]),
+            assessment,
+          );
+      });
+      meta = {
+        ...meta,
+        settings: migrateReviewSettings(meta.settings, [...current.values()]),
+      };
+    } else if (
+      !meta.settings.criteria ||
+      !meta.settings.keepRules ||
+      submissionRecords.some((value) => !value.criteria)
+    )
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version >= 7) assertReviewSettings(meta.settings);
     meta = { ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION };
+    counts.reviewPlans ??= 0;
     await store.write(async (tx) => {
       throwIfAborted(options.signal);
       await tx.meta.set(meta);
+      for (const submission of submissionRecords)
+        await tx.submissions.add(
+          migrateSubmission(submission, previousSettings),
+        );
+      for (const plan of reviewPlans) await tx.reviewPlans.add(plan);
       const runtime = await tx.runtime.get();
       await tx.runtime.set({
         revision: runtime.revision + 1,
@@ -812,6 +891,6 @@ export async function restoreBackup(
         : error instanceof Error && error.name === 'ZodError'
           ? 'BACKUP_INVALID_SCHEMA'
           : 'STORAGE';
-    throw new RestoreFailure(code);
+    throw new RestoreFailure(code, error);
   }
 }

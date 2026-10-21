@@ -1,3 +1,4 @@
+import '../browser-init.ts';
 import { z } from 'zod';
 
 export const PlatformIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);

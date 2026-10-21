@@ -148,7 +148,8 @@ export class QueryProjection {
       categoryOrder.add(assessment.category);
       if (category >= 0) categories |= 1 << category;
       sources |= 1 << SOURCES.indexOf(assessment.kind);
-      sourceIds.push(assessment.sourceId);
+      if (!sourceIds.includes(assessment.sourceId))
+        sourceIds.push(assessment.sourceId);
     }
     if (this.risk[index] !== risk) this.orders.clear();
     this.risk[index] = risk;

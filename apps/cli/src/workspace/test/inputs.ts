@@ -1,5 +1,6 @@
 import type { Item, WorkspaceV2 } from '@socialprune/core';
 import { createWorkspace } from '@socialprune/core/workspace/store';
+import { PRESETS } from '@socialprune/core/criteria';
 
 /** All expected state below is hand-built input, independent of SQLite/core projections. */
 export function browserWorkspace(): WorkspaceV2 {
@@ -64,6 +65,7 @@ export function browserWorkspace(): WorkspaceV2 {
       source,
       receivedAt: workspace.createdAt,
       labelCount: 1,
+      criteria: PRESETS.map(({ id, hash }) => ({ id, hash })),
     },
   ];
   workspace.assessments = [
@@ -131,6 +133,9 @@ export function browserWorkspace(): WorkspaceV2 {
     submissions: 1,
     decisionEvents: 2,
     outcomeEvents: 1,
+    browserRuns: 0,
+    browserAttempts: 0,
+    reviewPlans: 0,
   };
   return workspace;
 }

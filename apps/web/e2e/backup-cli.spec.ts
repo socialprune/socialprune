@@ -221,8 +221,27 @@ function assertLabels(
       .sort((a, b) => a.itemId.localeCompare(b.itemId)),
   );
   expect(
-    records.submissions.map(({ receivedAt: _at, ...value }) => {
+    records.submissions.map(({ receivedAt: _at, criteria, ...value }) => {
       void _at;
+      expect(criteria).toHaveLength(14);
+      expect(criteria!.map((value) => value.id)).toEqual([
+        'toxic',
+        'personal-attack',
+        'political',
+        'sexual',
+        'drugs-illegal',
+        'personal-info',
+        'embarrassing',
+        'empty',
+        'harmless',
+        'unclear',
+        'racist',
+        'misogynistic',
+        'group-hostility',
+        'politically-incorrect',
+      ]);
+      for (const value of criteria!)
+        expect(value.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
       return value;
     }),
   ).toEqual([
@@ -379,6 +398,7 @@ test('I1 backups carry fixture labels into the browser and a human decision and 
       decisionEvents: 1,
       browserRuns: 0,
       browserAttempts: 0,
+      reviewPlans: 0,
     });
     expect(summary.assessments).toEqual([
       { kind: 'agent', name: input.source.name, count: input.labels.length },

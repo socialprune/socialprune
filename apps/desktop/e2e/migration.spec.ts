@@ -45,7 +45,7 @@ test('pinned packaged utility copies a layout-4 database before migration and qu
       readOnly: true,
     });
     try {
-      expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(6);
+      expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(7);
       expect(
         db.prepare('SELECT count(*) AS total FROM items').get()?.total,
       ).toBe(300);

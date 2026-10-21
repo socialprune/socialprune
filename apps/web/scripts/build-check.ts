@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { assertPagesIsolation, outputFiles } from '../tooling/review-output.ts';
+import { assertSchemaInitialization } from '../tooling/schema-init-output.ts';
 
 const directory = fileURLToPath(new URL('../dist/', import.meta.url));
 const demo = JSON.parse(
@@ -62,6 +63,7 @@ async function walk(folder: string) {
 }
 await walk(directory);
 assertPagesIsolation(await outputFiles(directory));
+await assertSchemaInitialization(await outputFiles(directory));
 const serviceWorker = await readFile(resolve(directory, 'sw.js'), 'utf8');
 for (const { archive } of demo.exports) {
   const asset = rows.find(({ name }) =>

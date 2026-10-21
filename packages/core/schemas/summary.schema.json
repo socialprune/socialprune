@@ -62,6 +62,11 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "reviewPlans": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -212,6 +217,39 @@
         },
         { "type": "null" }
       ]
+    },
+    "tabs": {
+      "type": "object",
+      "properties": {
+        "suggested": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "held": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "kept": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unclear": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "marked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "all": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      },
+      "required": ["suggested", "held", "kept", "unclear", "marked", "all"],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -13,8 +13,10 @@ import type {
   BrowserRun,
   BrowserAttempt,
   InstagramContext,
+  ReviewPlan,
 } from '../model/index.ts';
 import { DEFAULT_CATEGORIES } from '../model/index.ts';
+import { defaultCriteria, defaultKeepRules } from '../criteria/schema.ts';
 import type { WorkspaceErrorCode } from './errors.ts';
 import { deriveState } from './state.ts';
 import { validateWorkspace, workspaceCounts } from './validation.ts';
@@ -108,6 +110,7 @@ export interface ReadTransaction {
   browserRuns: RecordReader<BrowserRun>;
   browserAttempts: RecordReader<BrowserAttempt>;
   submissions: RecordReader<Submission>;
+  reviewPlans: RecordReader<ReviewPlan>;
   assessments: OrderedReader<Assessment>;
   decisionEvents: OrderedReader<DecisionEvent>;
   outcomeEvents: OrderedReader<OutcomeEvent>;
@@ -128,6 +131,7 @@ export interface WriteTransaction extends ReadTransaction {
   browserRuns: RecordWriter<BrowserRun> & UniqueWriter<BrowserRun>;
   browserAttempts: UniqueWriter<BrowserAttempt>;
   submissions: UniqueWriter<Submission>;
+  reviewPlans: UniqueWriter<ReviewPlan>;
   assessments: AppendWriter<Assessment>;
   decisionEvents: AppendWriter<DecisionEvent>;
   outcomeEvents: AppendWriter<OutcomeEvent>;
@@ -162,6 +166,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
   const browserRuns = await records(tx.browserRuns);
   const browserAttempts = await records(tx.browserAttempts);
   const instagramContext = await records(tx.instagramContext);
+  const reviewPlans = await records(tx.reviewPlans);
   const arrays = {
     imports,
     items: stored.map(({ item }) => item),
@@ -171,6 +176,7 @@ export async function readWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     outcomeEvents: await records(tx.outcomeEvents),
     ...(originals.length ? { originals } : {}),
     ...(instagramContext.length ? { instagramContext } : {}),
+    ...(meta.schemaVersion >= 7 || reviewPlans.length ? { reviewPlans } : {}),
     ...(meta.schemaVersion >= 3 || browserRuns.length || browserAttempts.length
       ? { browserRuns, browserAttempts }
       : {}),
@@ -189,7 +195,7 @@ export function createWorkspace(
   const time = (options.now ?? new Date()).toISOString();
   return validateWorkspace({
     format: 'socialprune-workspace',
-    schemaVersion: 2,
+    schemaVersion: 7,
     id: options.id ?? crypto.randomUUID(),
     kind: options.kind ?? 'personal',
     createdAt: time,
@@ -198,6 +204,8 @@ export function createWorkspace(
     settings: {
       categories: options.categories ?? [...DEFAULT_CATEGORIES],
       timeZone: options.timeZone ?? null,
+      criteria: defaultCriteria(),
+      keepRules: defaultKeepRules(),
     },
     counts: {
       imports: 0,
@@ -206,6 +214,9 @@ export function createWorkspace(
       submissions: 0,
       decisionEvents: 0,
       outcomeEvents: 0,
+      browserRuns: 0,
+      browserAttempts: 0,
+      reviewPlans: 0,
     },
     imports: [],
     items: [],
@@ -213,6 +224,9 @@ export function createWorkspace(
     assessments: [],
     decisionEvents: [],
     outcomeEvents: [],
+    browserRuns: [],
+    browserAttempts: [],
+    reviewPlans: [],
   });
 }
 export function initialState(workspace: WorkspaceV2): StoredState[] {

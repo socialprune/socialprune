@@ -18,6 +18,7 @@ import {
   InstagramContextSchema,
   migrateInstagramContext,
   WORKSPACE_SCHEMA_VERSION,
+  ReviewPlanSchema,
 } from '@socialprune/core';
 import type {
   WorkspaceV2,
@@ -52,9 +53,19 @@ import {
   BROWSER_JOURNAL_LAYOUT,
 } from './browser-journal.ts';
 import { journalExists } from './browser-journal.ts';
+import {
+  migrateReviewSettings,
+  migrateSubmission,
+} from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 6;
+export const SQLITE_LAYOUT_VERSION = 7;
+
+const plansLayout = `
+CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+CREATE TRIGGER IF NOT EXISTS review_plans_no_update BEFORE UPDATE ON review_plans BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS review_plans_no_delete BEFORE DELETE ON review_plans BEGIN SELECT RAISE(ABORT,'append-only'); END;
+`;
 
 const contextLayout = `
 CREATE TABLE instagram_context (
@@ -146,6 +157,7 @@ PRAGMA user_version=3;
 ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data));
 ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;
 ${contextLayout}
+${plansLayout}
 PRAGMA user_version=${SQLITE_LAYOUT_VERSION};
 `;
 
@@ -328,6 +340,34 @@ export class SQLiteStore implements WorkspaceStore {
             const meta = JSON.parse(
               String(db.prepare('SELECT data FROM meta').get()!.data),
             ) as Record<string, unknown>;
+            if (Number(version) < 7) {
+              db.exec(plansLayout);
+              const oldSettings = WorkspaceMetaSchema.parse(meta).settings;
+              meta.settings = migrateReviewSettings(
+                oldSettings,
+                db
+                  .prepare('SELECT data FROM assessments ORDER BY seq')
+                  .all()
+                  .map((row) =>
+                    AssessmentSchema.parse(JSON.parse(String(row.data))),
+                  ),
+              );
+              db.exec('DROP TRIGGER submissions_no_update;');
+              for (const row of db
+                .prepare('SELECT data FROM submissions')
+                .all()) {
+                const submission = migrateSubmission(
+                  SubmissionSchema.parse(JSON.parse(String(row.data))),
+                  oldSettings,
+                );
+                db.prepare(
+                  'UPDATE submissions SET data=? WHERE submission_id=?',
+                ).run(JSON.stringify(submission), submission.submissionId);
+              }
+              db.exec(
+                "CREATE TRIGGER submissions_no_update BEFORE UPDATE ON submissions BEGIN SELECT RAISE(ABORT,'append-only'); END;",
+              );
+            }
             db.prepare('UPDATE meta SET data=?').run(
               JSON.stringify({
                 ...meta,
@@ -379,6 +419,7 @@ export class SQLiteStore implements WorkspaceStore {
         browserRuns,
         browserAttempts,
         instagramContext,
+        reviewPlans,
         ...meta
       } = workspace;
       void _counts;
@@ -393,6 +434,7 @@ export class SQLiteStore implements WorkspaceStore {
           await tx.items.put({ item, importId, metadataImportId: importId });
         }
         for (const value of submissions) await tx.submissions.add(value);
+        for (const value of reviewPlans ?? []) await tx.reviewPlans.add(value);
         for (const value of originals ?? []) await tx.originals.put(value);
         for (const value of browserRuns ?? []) await tx.browserRuns.add(value);
         for (const value of browserAttempts ?? [])
@@ -425,6 +467,11 @@ export class SQLiteStore implements WorkspaceStore {
         .prepare(
           "SELECT name FROM sqlite_schema WHERE type='table' AND name='instagram_context'",
         )
+        .get(),
+    );
+    const hasPlans = Boolean(
+      db
+        .prepare("SELECT name FROM sqlite_schema WHERE name='review_plans'")
         .get(),
     );
     let active = true;
@@ -609,7 +656,7 @@ export class SQLiteStore implements WorkspaceStore {
           if (!result.success) throw new CliError('WORKSPACE_INVALID');
           return Promise.resolve(
             this.legacyContext
-              ? { ...result.data, schemaVersion: WORKSPACE_SCHEMA_VERSION }
+              ? { ...result.data, schemaVersion: 6 }
               : result.data,
           );
         },
@@ -864,8 +911,37 @@ export class SQLiteStore implements WorkspaceStore {
         'submissions',
         'submission_id',
         (value) => value.submissionId,
-        (value) => SubmissionSchema.parse(value),
+        (value) =>
+          migrateSubmission(
+            SubmissionSchema.parse(value),
+            WorkspaceMetaSchema.parse(
+              get<unknown>('SELECT data FROM meta WHERE singleton=1'),
+            ).settings,
+          ),
       ),
+      reviewPlans: {
+        ...table(
+          'review_plans',
+          'action_id',
+          (value: import('@socialprune/core').ReviewPlan) => value.actionId,
+          (value) => ReviewPlanSchema.parse(value),
+        ),
+        iterate: hasPlans
+          ? iterate<import('@socialprune/core').ReviewPlan>('review_plans')
+          : async function* () {
+              await Promise.resolve();
+              guard();
+            },
+        get: (id) =>
+          Promise.resolve(
+            hasPlans
+              ? get<import('@socialprune/core').ReviewPlan>(
+                  'SELECT data FROM review_plans WHERE action_id=?',
+                  id,
+                )
+              : undefined,
+          ),
+      },
       assessments: log(
         'assessments',
         'assessment_id',

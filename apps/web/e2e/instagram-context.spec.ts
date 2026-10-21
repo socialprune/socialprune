@@ -17,6 +17,15 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
     const { data } = await writeContextFixture(workspace);
     const legacy = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
     legacy.schemaVersion = 5;
+    delete legacy.reviewPlans;
+    delete (legacy.counts as Record<string, unknown>).reviewPlans;
+    const settings = legacy.settings as Record<string, unknown>;
+    delete settings.criteria;
+    delete settings.keepRules;
+    if (settings.review)
+      delete (settings.review as Record<string, unknown>).feed;
+    for (const record of legacy.submissions as Record<string, unknown>[])
+      delete record.criteria;
     for (const record of legacy.instagramContext as Record<string, unknown>[])
       delete record.confirmedBy;
     await waitForApp(page);
@@ -38,7 +47,7 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
       });
       return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
     });
-    expect(before.schemaVersion).toBe(6);
+    expect(before.schemaVersion).toBe(7);
     expect(
       before.instagramContext!.every((record) => record.confirmedBy === 'post'),
     ).toBe(true);
@@ -75,29 +84,31 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
       window.workspace.dispose();
       const source = await open('sp-ws-' + active);
       const stores = await Promise.all(
-        [...source.objectStoreNames].map(async (name) => {
-          const store = source.transaction(name).objectStore(name);
-          const [values, keys] = await Promise.all([
-            read(store.getAll()),
-            read(store.getAllKeys()),
-          ]);
-          return {
-            name,
-            keyPath: store.keyPath,
-            autoIncrement: store.autoIncrement,
-            indexes: [...store.indexNames].map((index) => {
-              const value = store.index(index);
-              return {
-                name: index,
-                keyPath: value.keyPath,
-                unique: value.unique,
-                multiEntry: value.multiEntry,
-              };
-            }),
-            values,
-            keys,
-          };
-        }),
+        [...source.objectStoreNames]
+          .filter((name) => name !== 'reviewPlans')
+          .map(async (name) => {
+            const store = source.transaction(name).objectStore(name);
+            const [values, keys] = await Promise.all([
+              read(store.getAll()),
+              read(store.getAllKeys()),
+            ]);
+            return {
+              name,
+              keyPath: store.keyPath,
+              autoIncrement: store.autoIncrement,
+              indexes: [...store.indexNames].map((index) => {
+                const value = store.index(index);
+                return {
+                  name: index,
+                  keyPath: value.keyPath,
+                  unique: value.unique,
+                  multiEntry: value.multiEntry,
+                };
+              }),
+              values,
+              keys,
+            };
+          }),
       );
       source.close();
       const id = 'generated-v5-' + crypto.randomUUID();
@@ -130,8 +141,15 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
           if (
             definition.name === 'meta' &&
             definition.keys[index] === 'workspace'
-          )
+          ) {
             value.schemaVersion = 5;
+            const settings = value.settings as Record<string, unknown>;
+            delete settings.criteria;
+            delete settings.keepRules;
+            if (settings.review)
+              delete (settings.review as Record<string, unknown>).feed;
+          }
+          if (definition.name === 'submissions') delete value.criteria;
           if (definition.name === 'instagramContext') delete value.confirmedBy;
           const store = tx.objectStore(definition.name);
           if (store.keyPath === null) store.put(value, definition.keys[index]);
@@ -176,7 +194,7 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
         workspace: JSON.parse(text) as import('@socialprune/core').WorkspaceV2,
       };
     }, id);
-    expect(after.version).toBe(6);
+    expect(after.version).toBe(7);
     expect(after.workspace.instagramContext).toEqual(before.instagramContext);
     expect(after.workspace.items).toEqual(before.items);
     expect(after.workspace.browserRuns).toEqual(before.browserRuns);

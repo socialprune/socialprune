@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import {
+  CheckedCriteriaSchema,
+  CriteriaSettingsSchema,
+  KeepRulesSchema,
+  FeedViewSchema,
+  ReviewPlanSchema,
+} from '../criteria/schema.ts';
+export * from '../criteria/schema.ts';
+export { DEFAULT_CATEGORIES } from '../criteria/presets.ts';
 import * as v1 from './v1.ts';
 import { BrowserRunSchema, BrowserAttemptSchema } from './browser.ts';
 export * from './browser.ts';
@@ -7,13 +16,12 @@ export * from './original.ts';
 import { InstagramContextSchema } from './instagram-context.ts';
 export * from './instagram-context.ts';
 
-export const WORKSPACE_SCHEMA_VERSION = 6;
+export const WORKSPACE_SCHEMA_VERSION = 7;
 
 export {
   PlatformIdSchema,
   CategoryIdSchema,
   UtcTimestampSchema,
-  DEFAULT_CATEGORIES,
   ItemKindSchema,
   AccountSchema,
   DiagnosticSchema,
@@ -105,9 +113,12 @@ export type OutcomeEvent = z.infer<typeof OutcomeEventSchema>;
 export const SubmissionSchema = z.strictObject({
   submissionId: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
   contentHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-  source: AssessmentSourceSchema.extend({ kind: z.literal('agent') }),
+  source: AssessmentSourceSchema.extend({
+    kind: z.enum(['agent', 'model', 'rules']),
+  }),
   receivedAt: v1.UtcTimestampSchema,
   labelCount: count,
+  criteria: CheckedCriteriaSchema.optional(),
 });
 export type Submission = z.infer<typeof SubmissionSchema>;
 export const WorkspaceCountsSchema = z.strictObject({
@@ -121,6 +132,7 @@ export const WorkspaceCountsSchema = z.strictObject({
   browserRuns: count.optional(),
   browserAttempts: count.optional(),
   instagramContext: count.optional(),
+  reviewPlans: count.optional(),
 });
 export type WorkspaceCounts = z.infer<typeof WorkspaceCountsSchema>;
 const DateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -169,6 +181,7 @@ export const ReviewViewSchema = z.strictObject({
   filter: QueryFilterSchema,
   sort: QuerySortSchema,
   search: z.string().max(4096),
+  feed: FeedViewSchema.optional(),
 });
 export type ReviewView = z.infer<typeof ReviewViewSchema>;
 export const WorkspaceMetaSchema = z.strictObject({
@@ -183,6 +196,8 @@ export const WorkspaceMetaSchema = z.strictObject({
     categories: z.array(v1.CategoryIdSchema).max(32),
     timeZone: z.string().min(1).nullable(),
     review: ReviewViewSchema.optional(),
+    criteria: CriteriaSettingsSchema.optional(),
+    keepRules: KeepRulesSchema.optional(),
   }),
 });
 export type WorkspaceMeta = z.infer<typeof WorkspaceMetaSchema>;
@@ -198,6 +213,7 @@ export const WorkspaceV2Schema = WorkspaceMetaSchema.extend({
   browserRuns: z.array(BrowserRunSchema).optional(),
   browserAttempts: z.array(BrowserAttemptSchema).optional(),
   instagramContext: z.array(InstagramContextSchema).optional(),
+  reviewPlans: z.array(ReviewPlanSchema).optional(),
 });
 export type WorkspaceV2 = z.infer<typeof WorkspaceV2Schema>;
 export const WorkspaceV3Schema = WorkspaceV2Schema.extend({

@@ -6,6 +6,8 @@ import {
   copyFile,
   mkdir,
   writeFile,
+  realpath,
+  readdir,
 } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -20,9 +22,14 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 import { settleOwnedUninstall } from '../e2e/owned-uninstall.ts';
-import { windowsQuery } from '../packaging/windows-query.ts';
+import {
+  windowsQuery,
+  setWindowsQueryDiagnosticDirectory,
+} from '../packaging/windows-query.ts';
 import { runNativeQuery } from '../packaging/windows-powershell.ts';
 import { pathToFileURL } from 'node:url';
+import { windowsShortPath } from './short-path.ts';
+import { dist } from '../packaging/paths.ts';
 
 test('layout assertion receipts retain changed field names and both path classes without serializing either side', () => {
   const before = {
@@ -149,9 +156,13 @@ test(
         output = join(scratch, 'collected');
       await mkdir(workspace);
       await mkdir(output);
+      const queryProbe =
+        process.platform === 'win32'
+          ? `await windowsQuery('uninstall-processes',${JSON.stringify(join(workspace, 'temp') + '|' + join(workspace, 'program/Uninstall.exe'))});`
+          : '';
       await writeFile(
         entry,
-        `import assert from 'node:assert/strict';import{runProof}from ${JSON.stringify(pathToFileURL(join(directory, 'e2e/proof-runtime.ts')).href)};process.exitCode=await runProof('faults',${JSON.stringify(workspace)},${JSON.stringify(entry)},async()=>{assert.deepEqual({installExists:true,registrationExists:false,install:'C:/private-actual'},{installExists:false,registrationExists:false,install:'C:/private-expected'});});`,
+        `import assert from 'node:assert/strict';import{runProof}from ${JSON.stringify(pathToFileURL(join(directory, 'e2e/proof-runtime.ts')).href)};import{windowsQuery}from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-query.ts')).href)};process.exitCode=await runProof('faults',${JSON.stringify(workspace)},${JSON.stringify(entry)},async()=>{${queryProbe}assert.deepEqual({installExists:true,registrationExists:false,install:'C:/private-actual'},{installExists:false,registrationExists:false,install:'C:/private-expected'});});`,
       );
       await expect(
         runNativeQuery(process.execPath, [entry], {
@@ -160,9 +171,12 @@ test(
         }),
       ).rejects.toMatchObject({ code: 1 });
       const { collectProof } = await import('../e2e/proof-collection.ts');
-      expect((await collectProof(workspace, output)).collected).toContain(
-        'release-child-faults.json',
+      const collected = (await collectProof(workspace, output)).collected;
+      expect(collected).toContain('release-child-faults.json');
+      const queryReceipt = collected.find((name) =>
+        name.startsWith('release-uninstall-query-'),
       );
+      if (process.platform === 'win32') expect(queryReceipt).toBeDefined();
       await rm(workspace, { recursive: true });
       const retained = await readFile(
         join(output, 'release-child-faults.json'),
@@ -181,6 +195,14 @@ test(
         },
       });
       expect(retained).not.toMatch(/private-actual|private-expected/);
+      if (queryReceipt) {
+        const query = await readFile(join(output, queryReceipt), 'utf8');
+        expect(JSON.parse(query)).toMatchObject({
+          queryClass: 'native-uninstall-processes',
+          queries: [{ state: 'returned' }],
+        });
+        expect(query).not.toContain(scratch);
+      }
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
@@ -286,14 +308,24 @@ test.skipIf(process.platform !== 'win32')(
     const scratch = await mkdtemp(
       join(tmpdir(), 'socialprune-owned-uninstall-'),
     );
+    const diagnostics = join(scratch, 'evidence');
+    setWindowsQueryDiagnosticDirectory(diagnostics);
     const children: ReturnType<typeof spawn>[] = [];
     try {
-      const temp = join(scratch, 'owned'),
-        installed = join(scratch, 'program', 'Uninstall.exe');
+      const canonical = await realpath(scratch);
+      const shortLaunch = await windowsShortPath(canonical);
+      expect(
+        shortLaunch,
+        'an actual generated 8.3 launch alias is required',
+      ).not.toBe(null);
+      if (!shortLaunch) throw new Error('GENERATED_SHORT_LAUNCH_REQUIRED');
+      const temp = join(canonical, 'owned'),
+        installed = join(canonical, 'program', 'Uninstall.exe');
       const paths = [
-        join(temp, '~nsu77000A.tmp', 'Un.exe'),
-        installed,
-        join(scratch, 'neighbor', '~nsu770002.tmp', 'Un.exe'),
+        join(shortLaunch, 'owned', '~nsu77000A.tmp', 'Un.exe'),
+        join(shortLaunch, 'program', 'Uninstall.exe'),
+        join(shortLaunch, 'owned-neighbor', '~nsu770002.tmp', 'Un.exe'),
+        join(shortLaunch, 'owned', '~nsuNOTHEX.tmp', 'Un.exe'),
       ];
       for (const path of paths) {
         await mkdir(join(path, '..'), { recursive: true });
@@ -312,7 +344,51 @@ test.skipIf(process.platform !== 'win32')(
           born: string;
           imageClass: string;
         }[];
+      const before = JSON.parse(
+        await windowsQuery(
+          'identities',
+          children.map((child) => child.pid!).join(','),
+        ),
+      ) as { pid: number; born: string }[];
       const first = await read(temp + '|' + installed);
+      const after: unknown = JSON.parse(
+        await windowsQuery(
+          'identities',
+          children.map((child) => child.pid!).join(','),
+        ),
+      );
+      process.stdout.write(
+        'UNINSTALL_GENERATED_LIFECYCLE ' +
+          JSON.stringify({
+            launchPathClass: 'generated-short-name-temp',
+            scopePathClasses: [
+              'generated-long-name-temp',
+              'generated-short-name-temp',
+              'generated-uppercase-scope',
+            ],
+            candidates: children.map((child, index) => ({
+              pid: child.pid,
+              born: before.find((row) => row.pid === child.pid)?.born,
+              expectedClass: [
+                'run-owned-nsis-copy',
+                'owned-installed-uninstaller',
+                'outside-uninstall-scope',
+                'run-owned-temp-other',
+              ][index],
+              alive: child.exitCode === null && child.signalCode === null,
+            })),
+            before,
+            after,
+          }) +
+          '\n',
+      );
+      expect(
+        children.every(
+          (child) => child.exitCode === null && child.signalCode === null,
+        ),
+      ).toBe(true);
+      expect(before).toHaveLength(paths.length);
+      expect(after).toEqual(before);
       expect(first.map((row) => row.pid).sort()).toEqual(
         children
           .slice(0, 2)
@@ -320,38 +396,80 @@ test.skipIf(process.platform !== 'win32')(
           .sort(),
       );
       expect(first.every((row) => /^\d+$/.test(row.born))).toBe(true);
+      for (const row of first)
+        expect(row.born).toBe(
+          before.find((value) => value.pid === row.pid)?.born,
+        );
       expect(new Set(first.map((row) => row.imageClass))).toEqual(
         new Set(['owned-installed-uninstaller', 'run-owned-nsis-copy']),
       );
-      const escaped = scratch.replaceAll("'", "''");
-      const short = (
-        await runPowerShell(
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            `$f=New-Object -ComObject Scripting.FileSystemObject; try { $f.GetFolder('${escaped}').ShortPath } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($f) }`,
-          ],
-          {
-            timeout: WINDOWS_QUERY_TIMEOUT_MS,
-            windowsHide: true,
-            env: testEnvironment(),
-          },
-        )
-      ).stdout.trim();
       expect(
         await read(
-          join(short, 'owned') + '|' + join(short, 'program', 'Uninstall.exe'),
+          join(shortLaunch, 'owned') +
+            '|' +
+            join(shortLaunch, 'program', 'Uninstall.exe'),
         ),
       ).toEqual(first);
+      expect(
+        await read(temp.toUpperCase() + '|' + installed.toUpperCase()),
+      ).toEqual(first);
+      const files = await readdir(diagnostics);
+      expect(files).toHaveLength(1);
+      const retained = await readFile(join(diagnostics, files[0]!), 'utf8');
+      const record = JSON.parse(retained) as {
+        queries: {
+          candidates: {
+            pid: number;
+            filter: string;
+            pathClass: string;
+            canonicalized: boolean;
+            rawMatched: boolean;
+          }[];
+        }[];
+      };
+      for (const child of children.slice(0, 2))
+        expect(
+          record.queries[0]?.candidates.find((row) => row.pid === child.pid),
+        ).toMatchObject({
+          filter: 'accepted',
+          canonicalized: true,
+          rawMatched: false,
+        });
+      expect(
+        record.queries[0]?.candidates.find(
+          (row) => row.pid === children[2]!.pid,
+        ),
+      ).toMatchObject({
+        filter: 'scope-mismatch',
+        pathClass: 'outside-uninstall-scope',
+      });
+      expect(
+        record.queries[0]?.candidates.find(
+          (row) => row.pid === children[3]!.pid,
+        ),
+      ).toMatchObject({
+        filter: 'nsis-shape-mismatch',
+        pathClass: 'run-owned-temp-other',
+      });
+      expect(retained).not.toContain(canonical);
+      expect(retained).not.toContain(shortLaunch);
+      await mkdir(dist, { recursive: true });
+      await writeFile(join(dist, 'release-uninstall-generated.json'), retained);
       for (const child of children.slice(0, 2)) {
         const exited = once(child, 'exit');
         child.kill();
         await exited;
       }
       expect(await read(temp + '|' + installed)).toEqual([]);
-      expect(children[2]!.exitCode).toBe(null);
+      expect(
+        children
+          .slice(2)
+          .every(
+            (child) => child.exitCode === null && child.signalCode === null,
+          ),
+      ).toBe(true);
     } finally {
+      setWindowsQueryDiagnosticDirectory(dist);
       for (const child of children)
         if (child.exitCode === null && !child.killed) {
           const exited = once(child, 'exit');
@@ -362,4 +480,69 @@ test.skipIf(process.platform !== 'win32')(
     }
   },
   WINDOWS_QUERY_TIMEOUT_MS * 3 + 100,
+);
+
+test.skipIf(process.platform !== 'win32')(
+  'an access-limited generated uninstaller query remains fatal and records the exact denied filter, not false absence',
+  async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-query-denied-'));
+    const image = join(scratch, 'Uninstall.exe');
+    const diagnostics = join(scratch, 'evidence');
+    let child: ReturnType<typeof spawn> | undefined;
+    setWindowsQueryDiagnosticDirectory(diagnostics);
+    try {
+      await runPowerShell(
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Add-Type -Path '${join(directory, 'test/uninstall-access-fixture.cs').replaceAll("'", "''")}' -OutputAssembly '${image.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
+        ],
+        { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
+      );
+      child = spawn(image, [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: false,
+      });
+      await once(child.stdout!, 'data');
+      let failure: unknown;
+      try {
+        await windowsQuery('uninstall-processes', scratch + '|' + image);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ code: 1 });
+      expect(
+        failure instanceof Error && 'stderr' in failure ? failure.stderr : '',
+      ).toContain('PROCESS_OPEN_FAILED');
+      expect(child.exitCode).toBe(null);
+      const files = await readdir(diagnostics);
+      expect(files).toHaveLength(1);
+      const retained = await readFile(join(diagnostics, files[0]!), 'utf8');
+      const record = JSON.parse(retained) as {
+        queries: { state: string; candidates: unknown[] }[];
+      };
+      expect(record.queries.at(-1)).toMatchObject({ state: 'failed' });
+      const candidate: unknown = expect.objectContaining({
+        pid: child.pid,
+        filter: 'process-open-failed',
+        pathClass: 'unreadable',
+        win32Error: 5,
+      });
+      expect(record.queries.at(-1)?.candidates).toContainEqual(candidate);
+      expect(retained).not.toContain(scratch);
+      process.stdout.write(
+        'UNINSTALL_ACCESS_DENIED_PROOF ' + retained.replaceAll('\n', '') + '\n',
+      );
+    } finally {
+      setWindowsQueryDiagnosticDirectory(dist);
+      if (child && child.exitCode === null && child.signalCode === null) {
+        const ended = once(child, 'exit');
+        child.stdin!.end('done\n');
+        await ended;
+      }
+      await rm(scratch, { recursive: true, force: true });
+    }
+  },
+  WINDOWS_QUERY_TIMEOUT_MS * 2 + 100,
 );

@@ -1,8 +1,9 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { directory } from './paths.ts';
+import { directory, dist } from './paths.ts';
 import {
   runNativeQuery,
   runPowerShell,
@@ -11,6 +12,43 @@ import {
 
 let configured: string | undefined;
 let compiled: Promise<string> | undefined;
+let diagnosticDirectory = dist;
+const diagnosticId = randomUUID();
+const uninstallQueries: unknown[] = [];
+export function setWindowsQueryDiagnosticDirectory(directory: string) {
+  diagnosticDirectory = directory;
+  uninstallQueries.length = 0;
+}
+function recordUninstallQuery(stderr: string, state: 'returned' | 'failed') {
+  try {
+    const candidates: unknown[] = stderr
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('UNINSTALL_PROCESS_FILTER '))
+      .map(
+        (line) =>
+          JSON.parse(line.slice('UNINSTALL_PROCESS_FILTER '.length)) as unknown,
+      );
+    const record = { sequence: uninstallQueries.length + 1, state, candidates };
+    uninstallQueries.push(record);
+    process.stderr.write(
+      'UNINSTALL_QUERY_RECEIPT ' + JSON.stringify(record) + '\n',
+    );
+    mkdirSync(diagnosticDirectory, { recursive: true });
+    writeFileSync(
+      join(diagnosticDirectory, `release-uninstall-query-${diagnosticId}.json`),
+      JSON.stringify({
+        version: 1,
+        queryClass: 'native-uninstall-processes',
+        queries: uninstallQueries,
+      }),
+    );
+  } catch (error) {
+    console.error(
+      'UNINSTALL_QUERY_RECEIPT_WRITE_FAILED',
+      error instanceof Error && 'code' in error ? error.code : 'UNKNOWN',
+    );
+  }
+}
 export function setWindowsQueryExecutable(executable: string) {
   configured = executable;
 }
@@ -63,15 +101,31 @@ export async function windowsQuery(
   argument: string,
   signal?: AbortSignal,
 ) {
-  const { stdout } = await runNativeQuery(
-    await prepareWindowsQuery(),
-    [operation, argument],
-    {
-      timeout: WINDOWS_QUERY_TIMEOUT_MS,
-      windowsHide: true,
-      signal,
-      queryClass: `native-${operation}`,
-    },
-  );
-  return stdout;
+  let result;
+  try {
+    result = await runNativeQuery(
+      await prepareWindowsQuery(),
+      [operation, argument],
+      {
+        timeout: WINDOWS_QUERY_TIMEOUT_MS,
+        windowsHide: true,
+        signal,
+        queryClass: `native-${operation}`,
+      },
+    );
+  } catch (error) {
+    if (operation === 'uninstall-processes')
+      recordUninstallQuery(
+        error instanceof Error &&
+          'stderr' in error &&
+          typeof error.stderr === 'string'
+          ? error.stderr
+          : '',
+        'failed',
+      );
+    throw error;
+  }
+  if (operation === 'uninstall-processes')
+    recordUninstallQuery(result.stderr, 'returned');
+  return result.stdout;
 }

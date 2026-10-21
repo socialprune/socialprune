@@ -93,6 +93,10 @@ public static class DesktopQuery {
     }
     while(missing.Count>0)path=Path.Combine(path,missing.Pop());return path;
   }
+  static void UninstallFilter(uint pid,string filter,string pathClass,bool canonicalized=false,bool rawMatched=false,int error=0,long born=0) {
+    // Correlate only candidate IDs and closed classes, never image or scope paths.
+    Console.Error.WriteLine("UNINSTALL_PROCESS_FILTER {\"pid\":"+pid+",\"filter\":"+Json(filter)+",\"pathClass\":"+Json(pathClass)+",\"canonicalized\":"+(canonicalized?"true":"false")+",\"rawMatched\":"+(rawMatched?"true":"false")+",\"win32Error\":"+error+",\"born\":"+(born==0?"null":Json(born.ToString()))+"}");
+  }
   static string UninstallProcesses(string scope) {
     string[] paths=scope.Split('|');if(paths.Length!=2)throw new Exception("UNINSTALL_SCOPE_INVALID");
     string temp=LongPath(paths[0]).TrimEnd('\\')+"\\",uninstaller=LongPath(paths[1]);
@@ -103,17 +107,36 @@ public static class DesktopQuery {
       while(next) {
         // Do not inspect browser processes, command lines or foreign profiles.
         if(string.Equals(entry.name,"Un.exe",StringComparison.OrdinalIgnoreCase)||string.Equals(entry.name,"Uninstall.exe",StringComparison.OrdinalIgnoreCase)) {
-          IntPtr handle=Open(entry.pid);if(handle!=IntPtr.Zero)try {
+          IntPtr handle;
+          try { handle=Open(entry.pid); }
+          catch(Win32Exception error) { UninstallFilter(entry.pid,"process-open-failed","unreadable",false,false,error.NativeErrorCode);throw; }
+          if(handle==IntPtr.Zero)UninstallFilter(entry.pid,"process-not-found","unavailable");
+          else try {
             var path=new StringBuilder(32768);uint size=32768;
-            if(!QueryFullProcessImageNameW(handle,0,path,ref size))throw new Win32Exception(Marshal.GetLastWin32Error(),"UNINSTALL_IMAGE_FAILED");
-            string image=path.ToString();bool installed=string.Equals(image,uninstaller,StringComparison.OrdinalIgnoreCase);
+            if(!QueryFullProcessImageNameW(handle,0,path,ref size)) {
+              int error=Marshal.GetLastWin32Error();UninstallFilter(entry.pid,"image-read-failed","unreadable",false,false,error);
+              throw new Win32Exception(error,"UNINSTALL_IMAGE_FAILED");
+            }
+            string raw=path.ToString(),image;
+            try { image=LongPath(raw); }
+            catch(Win32Exception error) { UninstallFilter(entry.pid,"image-canonicalization-failed","unreadable",false,false,error.NativeErrorCode);throw; }
+            bool canonicalized=!string.Equals(raw,image,StringComparison.OrdinalIgnoreCase);
+            bool rawMatched=string.Equals(raw,uninstaller,StringComparison.OrdinalIgnoreCase)||(raw.StartsWith(temp,StringComparison.OrdinalIgnoreCase)&&Regex.IsMatch(raw.Substring(temp.Length),@"^~nsu[0-9A-F]*\.tmp\\Un\.exe$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant));
+            bool installed=string.Equals(image,uninstaller,StringComparison.OrdinalIgnoreCase);
             bool ownedCopy=image.StartsWith(temp,StringComparison.OrdinalIgnoreCase)&&Regex.IsMatch(image.Substring(temp.Length),@"^~nsu[0-9A-F]*\.tmp\\Un\.exe$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
-            if(installed||ownedCopy)rows.Add("{\"pid\":"+entry.pid+",\"born\":"+Json(Born(handle).ToString())+",\"imageClass\":"+Json(installed?"owned-installed-uninstaller":"run-owned-nsis-copy")+"}");
+            string pathClass=installed?"owned-installed-uninstaller":ownedCopy?"run-owned-nsis-copy":image.StartsWith(temp,StringComparison.OrdinalIgnoreCase)?"run-owned-temp-other":"outside-uninstall-scope";
+            if(installed||ownedCopy) {
+              long born;
+              try { born=Born(handle); }
+              catch(Win32Exception error) { UninstallFilter(entry.pid,"birth-read-failed",pathClass,canonicalized,rawMatched,error.NativeErrorCode);throw; }
+              rows.Add("{\"pid\":"+entry.pid+",\"born\":"+Json(born.ToString())+",\"imageClass\":"+Json(pathClass)+"}");
+              UninstallFilter(entry.pid,"accepted",pathClass,canonicalized,rawMatched,0,born);
+            } else UninstallFilter(entry.pid,image.StartsWith(temp,StringComparison.OrdinalIgnoreCase)?"nsis-shape-mismatch":"scope-mismatch",pathClass,canonicalized,rawMatched);
           }finally{CloseHandle(handle);}
         }
         next=Process32NextW(snapshot,ref entry);
       }
-      int error=Marshal.GetLastWin32Error();if(error!=18)throw new Win32Exception(error,"UNINSTALL_SNAPSHOT_READ_FAILED");
+      int snapshotError=Marshal.GetLastWin32Error();if(snapshotError!=18)throw new Win32Exception(snapshotError,"UNINSTALL_SNAPSHOT_READ_FAILED");
     }finally{CloseHandle(snapshot);}
     return "["+string.Join(",",rows)+"]";
   }

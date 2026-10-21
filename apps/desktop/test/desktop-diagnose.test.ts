@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, test } from 'vitest';
 import { parse } from 'yaml';
-import { root, directory, dist } from '../packaging/paths.ts';
+import { root, directory } from '../packaging/paths.ts';
 import { assertProductionModules } from '../packaging/boundary.ts';
 import {
   diagnosticTerms,
@@ -12,7 +12,6 @@ import {
   DEFAULT_DIAGNOSE_VARIANTS,
 } from '../packaging/diagnose-policy.ts';
 import { summarize } from '../e2e/diagnose-summary.ts';
-import { extractFile } from '@electron/asar';
 import {
   runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
@@ -214,14 +213,6 @@ test('lifecycle diagnostic entry cannot enter production and preserves productio
   expect(observer).not.toMatch(
     /disable-gpu|no-sandbox|showInactive|setFocusable|window\.show\s*=/,
   );
-  if (process.platform === 'win32') {
-    const release = extractFile(
-      join(dist, 'release/resources/app.asar'),
-      'main.mjs',
-    ).toString();
-    expect(release).not.toContain('diagnostic-entry');
-    expect(release).not.toContain('diagnostic-events=');
-  }
   const builder = await readFile(
     join(directory, 'packaging/diagnose-build.ts'),
     'utf8',

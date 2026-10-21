@@ -22,6 +22,7 @@ import {
   WINDOW_PREFERENCES,
 } from './policy.ts';
 import { launchEngine } from './engine.ts';
+import { loadReview } from './startup.ts';
 import { mainMethods, splitWorkArea } from './methods.ts';
 import type { DesktopRequest, RunView } from '../protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
@@ -352,7 +353,15 @@ export async function startDesktop(options: DesktopOptions) {
       window.focus();
     }
   });
-  await window.loadURL(APP_URL);
-  window.show();
+  const loaded = await loadReview({
+    contents: window.webContents,
+    load: () => window.loadURL(APP_URL),
+    dataDirectory,
+    locale: () => app.getLocale(),
+    message: (box) => dialog.showMessageBox(box),
+    // Use before-quit, including its run Stop and engine settlement.
+    quit: () => app.quit(),
+  });
+  if (loaded) window.show();
   return { window, engine, counts };
 }

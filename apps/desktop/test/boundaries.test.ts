@@ -88,3 +88,21 @@ test('quiet window presentation is reachable only from the test entry, never thr
   expect(entry).not.toContain('quiet');
   expect(entry).not.toContain('inactive');
 });
+
+test('startup faults and the dialog recorder are reachable only from their separate test entry', async () => {
+  const release = await graph(resolve(directory, 'src/main/index.ts'));
+  const fixture = resolve(directory, 'test/startup-fixture.ts');
+  const testing = await graph(
+    resolve(directory, 'test/entries/startup-main.ts'),
+  );
+  expect(testing.has(fixture)).toBe(true);
+  expect(testing.has(resolve(directory, 'src/main/index.ts'))).toBe(true);
+  expect(release.has(fixture)).toBe(false);
+  for (const id of release)
+    expect(await readFile(id, 'utf8')).not.toMatch(
+      /startup-case|startup-fixture|startupFixture/,
+    );
+  expect(() => assertProductionModules(testing)).toThrow(
+    'PRODUCTION_TEST_IMPORT',
+  );
+});

@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   createPackageWithOptions,
+  extractAll,
   extractFile,
   getRawHeader,
   listPackage,
@@ -339,6 +340,23 @@ export async function packageDesktop(): Promise<void> {
       2,
     ),
   );
+  // Fault injection is a fourth, inspect-only test entry with no release selector.
+  const startup = join(dist, 'startup');
+  const startupContent = join(dist, 'startup-content');
+  await rm(startup, { recursive: true, force: true });
+  await rm(startupContent, { recursive: true, force: true });
+  await cp(join(dist, 'test'), startup, { recursive: true });
+  extractAll(releaseAsar, startupContent);
+  await bundle(
+    'test/entries/startup-main.ts',
+    join(startupContent, 'main.mjs'),
+    'esm',
+    false,
+  );
+  const startupAsar = join(startup, 'resources/app.asar');
+  await createPackageWithOptions(startupContent, startupAsar, {});
+  await resourceExecutable(join(startup, 'SocialPrune.exe'), startupAsar);
+  await assertFuses(join(startup, 'SocialPrune.exe'), true);
   console.log(
     JSON.stringify({
       type: 'desktop-packaged',

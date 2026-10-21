@@ -1,6 +1,6 @@
 # Retired Doctrine
 
-> **Generated:** 2026-10-20 from the Workflow Lab at commit `30527ec` by `docs/tasks/law-probes/harness/retired-registry.js`
+> **Generated:** 2026-10-21 from the Workflow Lab at commit `8aeca61` by `docs/tasks/law-probes/harness/retired-registry.js`
 > **Copies:** the same file sits in every repo shell. Change it in the Workflow Lab and distribute it again; a copy is never edited by itself.
 
 Read this before you add a law, a rule, a skill, an agent or a runtime surface. Everything listed here was taken out on purpose. An item comes back only with evidence that it is needed now, such as a new measurement on the model in use, or a repo that runs a model nobody measured. When one comes back, record it here with that evidence.
@@ -610,7 +610,9 @@ New wording:
 
 ## Retirement notes from the Workflow Lab rule files
 
-Each Workflow Lab rule file recorded its removals and rewrites as notes in its Hard Laws section. They are copied here word for word on 2026-10-20. Paths in them point into the Workflow Lab.
+Each Workflow Lab rule file recorded its removals and rewrites as notes in its Hard Laws section. They are copied here word for word. Paths in them point into the Workflow Lab.
+
+Round `r17-notes` measured the rule files without these notes on both models, 96 clean pairs on Opus 5.5 and 95 on GPT-6.1 Sol, and passed on 2026-10-21 with no confirmed relapse. Since then every Hard Laws section carries only a pointer to this file, in the Workflow Lab as in `_template` and the child shells.
 
 ### `backlog-management.md`
 

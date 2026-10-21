@@ -60,6 +60,7 @@ In this template package, that means setting up a reusable orchestration posture
 - A user-facing node closes only after the person's steps are counted and the screens were looked at (LL-2026-10-007).
 - Before explaining a state your own earlier work may have produced, or asking the maintainer about it, search the board, handoff and session history for the step that produced it (LL-2026-10-011).
 - Before asking the maintainer for another manual step on a route not yet proven on the real platform, state in one line what it can still gain, what it costs him and the simplest other route (LL-2026-10-012).
+- A budget or tripwire never slows accepted work by itself: first shorten the feedback loop, and put any slowdown to the maintainer as a card (LL-2026-10-017).
 - Verification depth is proportional: bounded work may close through direct proof; shared-contract, convergence-sensitive, irreversible, recovery, migration, or explicitly requested acceptance uses an independent gate.
 - Non-trivial delegated runs must follow the compact CWOS operational companion.
 - Complexity >= 3 requires visible pre-analysis before topology is finalized.

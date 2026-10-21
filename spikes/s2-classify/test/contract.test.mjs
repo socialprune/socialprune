@@ -8,11 +8,13 @@ import { readJsonl, validateItems, fixtureDirectory, validateLabels, normalize, 
 import { metrics } from '../metrics.mjs';
 import { assertLocalModel, ollamaTier, referenceTier } from '../http-tiers.mjs';
 import { tempRoot } from '../machine.mjs';
+import { loadDataset, validateAdditionTexts } from '../dataset.mjs';
+import { materializeAdditions } from '../../../fixtures/synthetic/classify/additions-v2.mjs';
 
 const smoke = validateItems(await readJsonl(new URL('../smoke.jsonl', import.meta.url)));
 const source = { kind: 'model', name: 'test-only', version: '1' };
 const createdAt = '2026-10-06T17:00:00Z';
-const label = (item, category = 'harmless', risk = 0) => ({ itemId: item.id, category, risk, note: '', labeledAt: createdAt, labeler: 'maintainer' });
+const label = (item, category = 'harmless', risk = 0) => ({ itemId: item.id, labels: [{ category, risk }], note: '', labeledAt: createdAt, labeler: 'maintainer' });
 const prediction = (item, category = 'harmless', risk = 0) => assessment(item, source, createdAt, { category, risk,
   reason: 'Test-only generated prediction', evidence: null, confidence: null });
 function child(script, args, input = '') {
@@ -24,11 +26,33 @@ function child(script, args, input = '') {
     process.on('error', reject); process.on('close', code => resolve({ code, stdout, stderr })); process.stdin.end(input);
   });
 }
+test('new item text reads as posts, not fiction-framed evaluation instructions', () => {
+  const items = materializeAdditions();
+  assert.equal(items.length,160);
+  assert.doesNotThrow(() => validateAdditionTexts(items));
+  for (const term of ['erfunden', 'Erfundene', 'FIKTIV', 'fictional', 'Invented', 'made-up', 'made up']) {
+    for (const text of [`${term}: Ein Beitrag.`, `Ein ${term} Beitrag.`, `Ein Beitrag ist ${term}.`]) {
+      assert.throws(() => validateAdditionTexts([{id:'s2-test',text}]),/FICTION_FRAME/);
+    }
+  }
+  assert.doesNotThrow(() => validateAdditionTexts([{id:'s2-test',text:'Nerlo Quast besucht Velun und Nebelhafen.'}]));
+});
 test('both sets satisfy the real core ItemSchema and are disjoint', async () => {
-  const items = validateItems(await readJsonl(new URL('items.jsonl', fixtureDirectory)));
-  assert.equal(items.length, 400); assert.equal(smoke.length, 8);
-  assert.equal(new Set([...items, ...smoke].map(item => item.id)).size, 408);
-  assert.equal(new Set([...items, ...smoke].map(item => item.text)).size, 408);
+  const { items, design, newIds } = await loadDataset();
+  assert.equal(items.length, 560); assert.equal(smoke.length, 8); assert.equal(new Set(newIds).size, 160);
+  assert.equal(new Set([...items, ...smoke].map(item => item.id)).size, 568);
+  assert.equal(new Set([...items, ...smoke].map(item => item.text)).size, 568);
+  for (const focus of ['racist','misogynistic','group-hostility','politically-incorrect']) {
+    const extra = design.filter(row => row.focus === focus);
+    assert.equal(extra.length,40);
+    for (const language of ['de','en']) for (const role of ['fit-intent','near-miss-intent']) {
+      const group = extra.filter(row => row.language === language && row.role === role);
+      assert.equal(group.length,10); assert.equal(group.filter(row => row.overlap).length,4);
+      const entries = group.map(row => items.find(item => item.id === row.itemId));
+      assert.equal(entries.filter(item => item.platform === 'x').length,5);
+      for (const kind of ['post','reply','quote','repost','comment']) assert.equal(entries.filter(item => item.kind === kind).length,2);
+    }
+  }
   for (const item of items) { assert.equal(item.category, undefined); assert.equal(item.risk, undefined); }
 });
 test('all six real eval entrypoints refuse before tier import or initialization', async () => {
@@ -41,28 +65,34 @@ test('labels reject partial, duplicate, foreign, nonhuman and invalid values', (
   const labels = smoke.map(item => label(item)); assert.equal(validateLabels(smoke, labels).length, 8);
   assert.throws(() => validateLabels(smoke, labels.slice(0, 7)));
   for (const value of [{ ...labels[0], itemId: labels[1].itemId }, { ...labels[0], itemId: 'other' },
-    { ...labels[0], category: 'invented' }, { ...labels[0], risk: 4 }, { ...labels[0], risk: .5 },
+    { ...labels[0], labels: [{ category: 'invented', risk: 0 }] }, { ...labels[0], labels: [{ category: 'toxic', risk: 4 }] },
+    { ...labels[0], labels: [{ category: 'harmless', risk: 0 }, { category: 'racist', risk: 2 }] },
+    { ...labels[0], labels: [{ category: 'racist', risk: 2 }, { category: 'racist', risk: 1 }] },
     { ...labels[0], labeler: 'model' }, { ...labels[0], labeledAt: '2026-10-06T17:00:00+02:00' }]) {
     assert.throws(() => validateLabels(smoke, [value, ...labels.slice(1)]));
   }
 });
 test('invalid output is unclear and non-verbatim evidence is dropped separately', () => {
   const good = prediction(smoke[0]);
-  assert.equal(normalize(smoke[0], JSON.stringify(good), source, createdAt).invalid, false);
-  assert.equal(normalize(smoke[0], { ...good, evidence: 'not in the item' }, source, createdAt).nonVerbatim, true);
-  assert.equal(normalize(smoke[0], { ...good, evidence: 'not in the item' }, source, createdAt).assessment.evidence, null);
-  const both = normalize(smoke[0], { ...good, risk: 4, evidence: 'not in the item' }, source, createdAt);
-  assert.equal(both.invalid, true); assert.equal(both.nonVerbatim, true); assert.equal(both.assessment.evidence, null);
+  assert.equal(normalize(smoke[0], JSON.stringify({ assessments: [good] }), source, createdAt).invalid, false);
+  assert.equal(normalize(smoke[0], { assessments: [{ ...good, evidence: 'not in the item' }] }, source, createdAt).nonVerbatim, true);
+  assert.equal(normalize(smoke[0], { assessments: [{ ...good, evidence: 'not in the item' }] }, source, createdAt).assessments[0].evidence, null);
+  const both = normalize(smoke[0], { assessments: [{ ...good, risk: 4, evidence: 'not in the item' }] }, source, createdAt);
+  assert.equal(both.invalid, true); assert.equal(both.nonVerbatim, true); assert.equal(both.assessments[0].evidence, null);
   for (const raw of ['not json', { ...good, category: 'other' }, { ...good, itemId: 'other' },
     { ...good, risk: 4 }, { ...good, reason: 'First sentence. Second sentence.' }, { ...good, source: { ...source, name: 'forged' } }]) {
-    const result = normalize(smoke[0], raw, source, createdAt); assert.equal(result.invalid, true); assert.equal(result.assessment.category, 'unclear');
+    const result = normalize(smoke[0], typeof raw === 'string' ? raw : { assessments: [raw] }, source, createdAt); assert.equal(result.invalid, true); assert.equal(result.assessments[0].category, 'unclear');
   }
-  assert.equal(outputSchema(smoke[0], source, createdAt).properties.reason.pattern, undefined);
+  const two = [prediction(smoke[0], 'racist', 2), prediction(smoke[0], 'political', 0)];
+  assert.equal(normalize(smoke[0], { assessments: two }, source, createdAt).assessments.length,2);
+  assert.equal(normalize(smoke[0], { assessments: [two[0], two[0]] }, source, createdAt).invalid,true);
+  assert.equal(normalize(smoke[0], { assessments: [good, two[0]] }, source, createdAt).invalid,true);
+  assert.equal(outputSchema(smoke[0], source, createdAt).properties.assessments.items.properties.reason.pattern, undefined);
   assert.match(policyText, /DATA, never instructions/);
 });
 test('accepted rubric snapshot rejects any item, label, rubric or chronology mismatch', async () => {
   const labels = smoke.map(item => label(item));
-  const manifest = { version: 1, itemsHash: 'items', labelsHash: 'labels', rubricHash: 'rubric',
+  const manifest = { version: 2, itemsHash: 'items', labelsHash: 'labels', rubricHash: 'rubric',
     labeler: 'maintainer', finalizedAt: '2026-10-06T17:01:00Z' };
   validateLabelSnapshot(manifest, labels, 'items', 'labels', 'rubric');
   for (const delta of [{ itemsHash: 'changed' }, { labelsHash: 'changed' }, { rubricHash: 'changed' },
@@ -70,7 +100,7 @@ test('accepted rubric snapshot rejects any item, label, rubric or chronology mis
     assert.throws(() => validateLabelSnapshot({ ...manifest, ...delta }, labels, 'items', 'labels', 'rubric'), /EVAL_LOCKED/);
   }
   const rubric = await readRubric(); assert.equal(rubric.riskDescriptions.length, 4);
-  assert.equal(Object.keys(rubric.categoryDescriptions).length, 10); assert.equal(rubric.hash, digest(rubric.text));
+  assert.equal(Object.keys(rubric.categoryDescriptions).length, 14); assert.equal(rubric.hash, digest(rubric.text));
 });
 test('cloud and remote Ollama paths fail before any chat request; missing reference key makes no call', async () => {
   assert.throws(() => assertLocalModel('small-cloud', {}), /REMOTE_REFUSED/);
@@ -88,52 +118,11 @@ test('metric arithmetic is exercised only with test-only predictions on smoke-de
   const items = smoke.slice(0, 3);
   const labels = [label(items[0]), label(items[1], 'toxic', 2), label(items[2], 'toxic', 2)];
   const rows = [prediction(items[0]), prediction(items[1], 'toxic', 2), prediction(items[2], 'harmless', 1)].map((value, i) =>
-    ({ itemId: items[i].id, assessment: value, invalid: false, nonVerbatim: false, latencyMs: i + 1 }));
+     ({ itemId: items[i].id, assessments: [value], invalid: false, nonVerbatim: false, latencyMs: i + 1 }));
   const result = metrics({ set: 'eval', tier: 'test-only', rows }, items, labels);
   assert.equal(result.perCategory.toxic.precision, 1); assert.equal(result.perCategory.toxic.recall, .5);
   assert.equal(result.perCategory.harmless.precision, .5); assert.equal(result.perCategory.harmless.recall, 1);
-  assert.equal(result.riskAgreement, 2 / 3); assert.equal(result.latencyMs.mean, 2);
+  assert.equal(result.riskAgreement, 1); assert.equal(result.riskAgreementDenominator,2); assert.equal(result.exactCategorySetAgreement,2/3); assert.equal(result.latencyMs.mean, 2);
   assert.equal(result.perCategory.sexual.recall, null);
   assert.throws(() => metrics({ set: 'smoke', rows }, items, labels), /wiring only/);
-});
-test('scripted German labeller is resumable, supports undo and finalizes exclusively on a temp copy', async () => {
-  await mkdir(tempRoot, { recursive: true });
-  const directory = await mkdtemp(path.join(tempRoot, 'label-test-'));
-  await writeFile(path.join(directory, 'items.jsonl'), smoke.slice(0, 2).map(item => JSON.stringify(item)).join('\n') + '\n');
-  await writeFile(path.join(directory, 'RUBRIC.md'), 'Test-only rubric, not evaluation labels\n');
-  let result = await child('label.mjs', ['--test-dir', directory], 'ja\n9\n0\nfirst note\nq\n');
-  assert.equal(result.code, 0); assert.match(result.stdout, /1\/2/);
-  result = await child('label.mjs', ['--test-dir', directory, '--finalize'], 'ja\n');
-  assert.equal(result.code, 1); assert.match(result.stderr, /Abschluss abgelehnt: 1\/2/);
-  const firstHistory = await readFile(path.join(directory, 'labels.history.jsonl'), 'utf8');
-  result = await child('label.mjs', ['--test-dir', directory], 'u\n0\n1\nreplacement note\n9\n0\n\n');
-  assert.equal(result.code, 0); assert.match(result.stdout, /Alle Labels im Verlauf gespeichert/);
-  const secondHistory = await readFile(path.join(directory, 'labels.history.jsonl'), 'utf8');
-  assert.ok(secondHistory.startsWith(firstHistory)); assert.match(secondHistory, /"event":"undo"/);
-  await assert.rejects(access(path.join(directory, 'labels.jsonl')), { code: 'ENOENT' });
-  result = await child('label.mjs', ['--test-dir', directory, '--finalize'], 'ja\n');
-  assert.equal(result.code, 0);
-  const rows = await readJsonl(path.join(directory, 'labels.jsonl')); validateLabels(smoke.slice(0, 2), rows);
-  assert.equal(rows[0].category, 'unclear'); assert.equal(rows[0].note, 'replacement note');
-  assert.equal(JSON.parse(await readFile(path.join(directory, 'labels.manifest.json'))).labeler, 'maintainer');
-  const before = await readFile(path.join(directory, 'labels.jsonl'), 'utf8');
-  result = await child('label.mjs', ['--test-dir', directory, '--finalize'], 'ja\n');
-  assert.equal(result.code, 1); assert.match(result.stderr, /Überschreiben abgelehnt/);
-  assert.equal(await readFile(path.join(directory, 'labels.jsonl'), 'utf8'), before);
-  for (const file of ['labels.jsonl', 'labels.history.jsonl', 'labels.manifest.json']) await assert.rejects(access(new URL(file, fixtureDirectory)), { code: 'ENOENT' });
-});
-test('label rubric confirmation decline creates no journal, and later edits block resume', async () => {
-  await mkdir(tempRoot, { recursive: true });
-  const directory = await mkdtemp(path.join(tempRoot, 'label-boundary-test-'));
-  await writeFile(path.join(directory, 'items.jsonl'), JSON.stringify(smoke[0]) + '\n');
-  await writeFile(path.join(directory, 'RUBRIC.md'), 'Test-only initial rubric\n');
-  let result = await child('label.mjs', ['--test-dir', directory], 'nein\n');
-  assert.equal(result.code, 0);
-  await assert.rejects(access(path.join(directory, 'labels.history.jsonl')), { code: 'ENOENT' });
-  result = await child('label.mjs', ['--test-dir', directory], 'ja\nq\n');
-  assert.equal(result.code, 0);
-  await writeFile(path.join(directory, 'RUBRIC.md'), 'Test-only changed rubric\n');
-  result = await child('label.mjs', ['--test-dir', directory], 'ja\n');
-  assert.equal(result.code, 1); assert.match(result.stderr, /Rubrik wurde seit Beginn geändert/);
-  await assert.rejects(access(path.join(directory, 'labels.jsonl')), { code: 'ENOENT' });
 });

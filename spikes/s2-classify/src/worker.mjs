@@ -55,15 +55,17 @@ async function classify(payload) {
     return { raw: response.choices[0].message.content, usage: response.usage, transportOk: true };
   }
   const descriptions = Object.values(payload.descriptions), categories = Object.keys(payload.descriptions);
-  const answer = await classifier(payload.item.text, descriptions, { hypothesis_template: 'This social post contains {}.', multi_label: false });
-  const index = descriptions.indexOf(answer.labels[0]);
-  if (index < 0) throw new Error('NLI returned an unknown label');
+  const answer = await classifier(payload.item.text, descriptions, { hypothesis_template: 'This social post contains {}.', multi_label: true });
+  // Fixed uncalibrated threshold, not tuned on evaluation labels. Outcomes are exclusive.
+  const selected = answer.labels.map((value, i) => ({ category: categories[descriptions.indexOf(value)], score: answer.scores[i] }))
+    .filter(value => value.category && !['harmless', 'unclear'].includes(value.category) && value.score >= .5);
+  if (!selected.length) selected.push({ category: 'unclear', score: null });
   const riskLabels = payload.riskDescriptions;
   const risk = await classifier(payload.item.text, riskLabels, { hypothesis_template: 'For account tidying before a job application this post presents {}.', multi_label: false });
-  const category = categories[index];
-  return { raw: { itemId: payload.item.id, source: payload.source, category, risk: riskLabels.indexOf(risk.labels[0]),
+  return { raw: { assessments: selected.map(({ category, score }) => ({ assessmentId: `s2-${payload.item.id}-${category}`, submissionId: null,
+    itemId: payload.item.id, source: payload.source, category, risk: riskLabels.indexOf(risk.labels[0]),
     reason: `The NLI adapter selected ${category} from the shared category definitions`, evidence: null,
-    confidence: answer.scores[0], createdAt: payload.createdAt }, transportOk: true,
+    confidence: score, createdAt: payload.createdAt })) }, transportOk: true,
     usage: { categoryScores: answer, riskScores: risk, policyContract: payload.contractVersion } };
 }
 self.onmessage = async ({ data }) => {

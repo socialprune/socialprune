@@ -4,6 +4,8 @@ import { corpus } from './corpus.mjs';
 
 const directory = new URL('../../fixtures/synthetic/classify/', import.meta.url);
 for (const file of ['labels.jsonl', 'labels.history.jsonl', 'labels.manifest.json']) {
+  try { await access(new URL(`local/${file}`, import.meta.url)); throw new Error('Refusing to regenerate a set with human label state'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { await access(new URL(file, directory)); throw new Error('Refusing to regenerate a set with human label state'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
@@ -18,7 +20,7 @@ const rows = shuffled.map((row, index) => {
   const kind = kinds[index % kinds.length];
   const year = 2012 + index % 15;
   const platform = index % 2 ? 'instagram' : 'x';
-  const item = ItemSchema.parse({ id, platform, account: { key: `s2-${platform}-invented`, handle: 'zava_fenn_demo' },
+  const item = ItemSchema.parse({ id, platform, mediaCount: null, account: { key: `s2-${platform}-invented`, handle: 'zava_fenn_demo' },
     kind, text: row.text, createdAt: new Date(Date.UTC(year, index % (year === 2026 ? 9 : 12), 1 + index % 27, index % 24, index % 60)).toISOString(),
     engagement: { likes: index % 7 === 0 ? null : (index * 13) % 57, reposts: index % 9 === 0 ? null : (index * 3) % 8 },
     reference: { replyToId: kind === 'reply' ? `invented-parent-${index}` : null,
@@ -37,4 +39,4 @@ const rows = shuffled.map((row, index) => {
 await mkdir(directory, { recursive: true });
 await writeFile(new URL('items.jsonl', directory), rows.map(row => JSON.stringify(row.item)).join('\n') + '\n');
 await writeFile(new URL('design.jsonl', directory), rows.map(row => JSON.stringify(row.design)).join('\n') + '\n');
-console.log('AUTHORED_UNLABELLED_ITEMS', rows.length, 'SHUFFLE_SEED', 20261006);
+console.log('AUTHORED_BASE_UNLABELLED_ITEMS', rows.length, 'SHUFFLE_SEED', 20261006, 'ADR032_ADDITIONS', 160, 'loaded separately by dataset.mjs');

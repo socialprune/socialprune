@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>S2 · Von Hand labeln</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css"><script type="module" src="/app.mjs"></script></head>
+<body><main>
+  <header><div><span class="eyebrow">SOCIALPRUNE / S2</span><h1 id="title"></h1></div><nav aria-label="Display"><button id="lang">English</button><button id="theme"></button></nav></header>
+  <p id="privacy" class="muted"></p>
+  <div id="progress" role="status" aria-live="polite"></div><progress id="meter" max="560" value="0"></progress>
+  <section id="intro"><h2 id="intro-title"></h2><p id="intro-text"></p><details><summary id="rubric-title"></summary><pre id="rubric"></pre></details><button id="accept" class="primary"></button></section>
+  <article id="item"><div id="meta" class="eyebrow"></div><p id="text"></p><details><summary id="details-title"></summary><pre id="details"></pre></details></article>
+  <button id="read" class="primary"></button>
+  <section id="controls"><h2 id="choose"></h2><p id="help" class="muted"></p><div id="categories"></div><fieldset id="risks"><legend id="risk-title"></legend><div id="risk-buttons"></div></fieldset>
+  <label for="note" id="note-title"></label><textarea id="note" maxlength="2000" rows="2"></textarea>
+  <div class="actions"><button id="back"></button><button id="skip"></button><button id="undo"></button><button id="save" class="primary"></button></div>
+  <button id="finalize"></button></section>
+  <p id="error" role="alert"></p><p id="notice" class="muted" role="status"></p>
+</main></body></html>

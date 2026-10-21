@@ -13,7 +13,7 @@ async function bounded(promise, ms, phase) {
 }
 
 export async function browserTier(tier, requestedModel, rubric = { text: '', categoryDescriptions: descriptions }) {
-  const response = await fetch('http://127.0.0.1:4174/build-identity.json', { signal: AbortSignal.timeout(10000), redirect: 'error' });
+  const response = await fetch('http://127.0.0.1:4765/build-identity.json', { signal: AbortSignal.timeout(10000), redirect: 'error' });
   if (!response.ok || (await response.json()).hash !== (await buildIdentity()).hash) throw new Error('Browser build is stale; run the spike build before inference');
   const model = requestedModel ?? (tier === 'webllm' ? 'Qwen3-0.6B-q4f16_1-MLC' : tier === 'mdeberta' ? nliModel.repository : 'Chrome-Gemini-Nano');
   if (tier === 'webllm' && !webModels[model]) throw new Error('Use a pinned Qwen3 0.6B or 1.7B WebLLM id');
@@ -28,7 +28,7 @@ export async function browserTier(tier, requestedModel, rubric = { text: '', cat
     profile: directory, profileBytes: null, cache: [], externalOrigins: [], cspViolations: [] };
   const external = new Set(), requests = [];
   context.on('request', request => { const url = new URL(request.url()); requests.push({ origin: url.origin, path: url.pathname });
-    if (url.origin !== 'http://127.0.0.1:4174') external.add(url.origin); });
+    if (url.origin !== 'http://127.0.0.1:4765') external.add(url.origin); });
   const page = context.pages()[0] ?? await context.newPage();
   page.on('console', message => { if (message.type() === 'error') console.error('BROWSER', message.text().slice(0, 800)); });
   const close = async () => {
@@ -39,7 +39,7 @@ export async function browserTier(tier, requestedModel, rubric = { text: '', cat
     finally { identity.externalOrigins = [...external]; identity.requests = requests; await context.close(); identity.profileBytes = (await bytes(directory)).bytes; }
   };
   try {
-    await page.goto('http://127.0.0.1:4174', { waitUntil: 'load' });
+    await page.goto('http://127.0.0.1:4765', { waitUntil: 'load' });
     await page.waitForFunction(() => window.s2Ready, { timeout: 30000 });
     await page.evaluate(() => { window.s2Csp = []; document.addEventListener('securitypolicyviolation', event =>
       window.s2Csp.push({ directive: event.effectiveDirective, blockedURI: event.blockedURI })); });

@@ -7,7 +7,7 @@ const files = [];
 async function walk(directory) {
   for (const entry of await readdir(path.join(root, directory), { withFileTypes: true })) {
     if (entry.isSymbolicLink()) throw new Error('Task source must not contain symbolic links');
-    if (['node_modules', 'dist', 'results', '.cache'].includes(entry.name)) continue;
+    if (['node_modules', 'dist', 'results', '.cache', 'local'].includes(entry.name)) continue;
     const file = `${directory}/${entry.name}`;
     if (entry.isDirectory()) await walk(file);
     else files.push(file);

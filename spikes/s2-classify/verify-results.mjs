@@ -1,11 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { ItemSchema, normalize, readJsonl, digest } from './contract.mjs';
+import { validateItems, normalize, readJsonl, digest } from './contract.mjs';
 import { sourceIdentity } from './provenance.mjs';
 
 const directory = new URL('results/', import.meta.url);
 const files = (await readdir(directory)).filter(file => file.endsWith('.json')).sort();
 const current = (await sourceIdentity()).hash;
-const smoke = (await readJsonl(new URL('smoke.jsonl', import.meta.url))).map(row => ItemSchema.parse(row));
+const smoke = validateItems(await readJsonl(new URL('smoke.jsonl', import.meta.url)));
 const smokeHash = digest(await readFile(new URL('smoke.jsonl', import.meta.url)));
 const expected = ['rules/default', 'ollama/qwen3:0.6b', 'ollama/qwen3:1.7b',
   'webllm/Qwen3-0.6B-q4f16_1-MLC', 'webllm/Qwen3-1.7B-q4f16_1-MLC', 'mdeberta/default'];
@@ -20,8 +20,8 @@ for (const file of files) {
   for (let i = 0; i < smoke.length; i++) {
     const row = result.rows[i], item = smoke[i];
     if (row.itemId !== item.id || !row.transportOk) throw new Error('Smoke transport did not return every item');
-    const normalized = normalize(item, row.raw, row.assessment.source, row.assessment.createdAt);
-    if (JSON.stringify(normalized.assessment) !== JSON.stringify(row.assessment) || normalized.invalid !== row.invalid ||
+    const normalized = normalize(item, row.raw, row.assessments[0].source, row.assessments[0].createdAt);
+    if (JSON.stringify(normalized.assessments) !== JSON.stringify(row.assessments) || normalized.invalid !== row.invalid ||
       normalized.nonVerbatim !== row.nonVerbatim) throw new Error('Stored normalization differs from core validator');
   }
   let model = result.modelIdentity?.canonical ?? result.modelIdentity?.requested ?? 'default';

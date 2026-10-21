@@ -6,11 +6,11 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4174 --strictPort",
-    "test": "node --test test/*.test.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 4765 --strictPort",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "validate": "node validate.mjs",
     "licenses": "node audit.mjs",
-    "label": "node label.mjs"
+    "label": "node label-server.mjs"
   },
   "dependencies": {
     "@socialprune/core": "link:../../packages/core",

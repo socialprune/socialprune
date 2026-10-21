@@ -1,9 +1,9 @@
-param([int]$AppProcessId, [string]$Executable, [switch]$CloseOnly, [int]$ReadinessTimeoutMs, [string]$Receipt)
+param([int]$AppProcessId, [string]$Executable, [switch]$CloseOnly, [int]$ReadinessTimeoutMs, [string]$Receipt, [string]$DesktopPath = $env:SP_PROOF_DESKTOP)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\window-readiness.ps1"
 Add-Type -Path "$PSScriptRoot\windows-query.cs"
 $mode = if ($CloseOnly) { 'Close' } else { 'ReviewAction' }
-$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode $mode -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt
+$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode $mode -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt -DesktopPath $DesktopPath
 $window = $ready.window
 $interactiveAt = $ready.interactiveAt
 if ($CloseOnly) { $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close(); exit 0 }

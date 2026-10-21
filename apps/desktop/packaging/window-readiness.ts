@@ -21,6 +21,11 @@ export function runWindowProbe(
   args: string[],
   receipt: string,
 ) {
+  // The restricted launcher owns and publishes this exact station/desktop.
+  // A normal packaged launch has no override; native code then derives the
+  // app thread's desktop, not this PowerShell probe's current thread.
+  // eslint-disable-next-line no-restricted-properties -- Closed harness desktop identity, never credentials or an application selector.
+  const desktopPath = process.env.SP_PROOF_DESKTOP;
   return runPowerShell(
     [
       '-NoProfile',
@@ -32,6 +37,7 @@ export function runWindowProbe(
       String(WINDOW_READINESS_TIMEOUT_MS),
       '-Receipt',
       receipt,
+      ...(desktopPath ? ['-DesktopPath', desktopPath] : []),
     ],
     { timeout: WINDOW_PROBE_TIMEOUT_MS, windowsHide: true },
   );

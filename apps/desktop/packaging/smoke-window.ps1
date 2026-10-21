@@ -1,4 +1,4 @@
-param([int]$AppProcessId, [string]$Executable, [int]$ExpectedItems, [int]$ReadinessTimeoutMs, [string]$Receipt)
+param([int]$AppProcessId, [string]$Executable, [int]$ExpectedItems, [int]$ReadinessTimeoutMs, [string]$Receipt, [string]$DesktopPath = $env:SP_PROOF_DESKTOP)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\window-readiness.ps1"
 Add-Type -Path "$PSScriptRoot\windows-query.cs"
@@ -13,7 +13,7 @@ $observeNetwork = {
   if ($connections.Count) { throw ('SMOKE_APP_OUTBOUND_TCP ' + ($connections.Keys -join ',')) }
 }
 # Preserve network observation throughout readiness as well as after it.
-$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode Navigation -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt -OnPoll $observeNetwork
+$ready = Wait-AppWindow -AppProcessId $AppProcessId -Mode Navigation -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt -OnPoll $observeNetwork -DesktopPath $DesktopPath
 $window = $ready.window
 $interactiveAt = $ready.interactiveAt
 $observeUntil = [DateTime]::UtcNow.AddSeconds(3)

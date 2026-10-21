@@ -23,6 +23,8 @@ public sealed class LimitedDesktop : IDisposable {
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool AccessCheck(IntPtr sd,IntPtr token,uint desired,ref Mapping mapping,IntPtr privileges,ref uint size,out uint granted,out bool allowed);
   [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
   IntPtr original,station,desktop,descriptor;
+  string previousProofDesktop;
+  bool proofDesktopPublished;
   public string Path { get; private set; }
   public IntPtr DesktopHandle { get { return desktop; } }
   public bool OwnStation { get { return station!=IntPtr.Zero; } }
@@ -106,6 +108,11 @@ public sealed class LimitedDesktop : IDisposable {
       try {desktop=CreateDesktopW(desktopName,IntPtr.Zero,IntPtr.Zero,0,0xF01FF,ref sa);Require(desktop!=IntPtr.Zero,"CREATE_OWNED_DESKTOP");}
       finally {Require(SetProcessWindowStation(original),"RESTORE_ORIGINAL_STATION");}
       Path=stationName+"\\"+desktopName;ownedHeapKb=Heap(desktop);Verify(impersonation);
+      // Closed harness metadata inherited by the same owned child tree. The
+      // handle stays owned here; probes reopen only this exact desktop read-only.
+      previousProofDesktop=Environment.GetEnvironmentVariable("SP_PROOF_DESKTOP");
+      Environment.SetEnvironmentVariable("SP_PROOF_DESKTOP",Path);
+      proofDesktopPublished=true;
     } catch {SetProcessWindowStation(original);Dispose();throw;}
   }
   public void Verify(IntPtr impersonation) {Check(station!=IntPtr.Zero?station:original,impersonation,true);Check(desktop,impersonation,false);AccessVerified=true;}
@@ -115,6 +122,7 @@ public sealed class LimitedDesktop : IDisposable {
   }
   public string Evidence() {return "{\"ownedDesktop\":true,\"ownedStation\":"+OwnStation.ToString().ToLowerInvariant()+",\"restrictedAccessVerified\":"+AccessVerified.ToString().ToLowerInvariant()+",\"hasRestrictions\":"+hasRestrictions.ToString().ToLowerInvariant()+",\"mediumIntegrityVerified\":"+mediumIntegrityVerified.ToString().ToLowerInvariant()+",\"restrictingSidCount\":"+RestrictingSidCount+",\"previousTargetStationAccess\":"+previousTargetStationAccess.ToString().ToLowerInvariant()+",\"previousTargetDesktopAccess\":"+previousTargetDesktopAccess.ToString().ToLowerInvariant()+",\"inheritedStationAccess\":"+inheritedStationAccess.ToString().ToLowerInvariant()+",\"inheritedDesktopAccess\":"+inheritedDesktopAccess.ToString().ToLowerInvariant()+",\"inheritedHeapKb\":"+inheritedHeapKb+",\"ownedHeapKb\":"+ownedHeapKb+",\"environmentNullMeansParent\":true,\"systemRootPresent\":"+(!String.IsNullOrEmpty(Environment.GetEnvironmentVariable("SystemRoot"))).ToString().ToLowerInvariant()+",\"windirPresent\":"+(!String.IsNullOrEmpty(Environment.GetEnvironmentVariable("windir"))).ToString().ToLowerInvariant()+",\"pathExtPresent\":"+(!String.IsNullOrEmpty(Environment.GetEnvironmentVariable("PATHEXT"))).ToString().ToLowerInvariant()+",\"existingDaclChanged\":false}";}
   public void Dispose() {
+    if(proofDesktopPublished){Environment.SetEnvironmentVariable("SP_PROOF_DESKTOP",previousProofDesktop);proofDesktopPublished=false;}
     if(desktop!=IntPtr.Zero){Require(CloseDesktop(desktop),"CLOSE_OWNED_DESKTOP");desktop=IntPtr.Zero;}
     if(station!=IntPtr.Zero){Require(CloseWindowStation(station),"CLOSE_OWNED_STATION");station=IntPtr.Zero;}
     if(descriptor!=IntPtr.Zero){LocalFree(descriptor);descriptor=IntPtr.Zero;}ObjectsClosed=true;

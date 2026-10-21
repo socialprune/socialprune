@@ -40,6 +40,7 @@ public static class WindowStationFixture {
   static void Require(bool value,string code) { if(!value) throw new Win32Exception(Marshal.GetLastWin32Error(),code); }
   public static uint Run(string node,string entry,int timeoutMs) {
     IntPtr original=GetProcessWindowStation(),station=IntPtr.Zero,desktop=IntPtr.Zero,job=IntPtr.Zero;
+    string previous=Environment.GetEnvironmentVariable("SP_PROOF_DESKTOP");
     var info=new Info();
     try {
       station=CreateWindowStationW(null,0,0xF037F,IntPtr.Zero);
@@ -56,12 +57,14 @@ public static class WindowStationFixture {
       var limits=new JobLimits { basic=new Limits { flags=0x2000 } };
       Require(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(JobLimits))),"FIXTURE_JOB_LIMIT");
       var startup=new Startup { cb=Marshal.SizeOf(typeof(Startup)),desktop=name+"\\"+desk,flags=0x100,input=GetStdHandle(-10),output=GetStdHandle(-11),error=GetStdHandle(-12) };
+      Environment.SetEnvironmentVariable("SP_PROOF_DESKTOP",startup.desktop);
       Require(CreateProcessW(node,new StringBuilder("\""+node+"\" \""+entry+"\""),IntPtr.Zero,IntPtr.Zero,true,4,IntPtr.Zero,Environment.CurrentDirectory,ref startup,out info),"FIXTURE_CHILD_CREATE");
       Require(AssignProcessToJobObject(job,info.process),"FIXTURE_JOB_ASSIGN");
       Require(ResumeThread(info.thread)!=0xffffffff,"FIXTURE_CHILD_RESUME");
       if(WaitForSingleObject(info.process,(uint)timeoutMs)!=0) throw new Exception("FIXTURE_CHILD_TIMEOUT");
       uint code; Require(GetExitCodeProcess(info.process,out code),"FIXTURE_CHILD_EXIT"); return code;
     } finally {
+      Environment.SetEnvironmentVariable("SP_PROOF_DESKTOP",previous);
       SetProcessWindowStation(original);
       if(job!=IntPtr.Zero) CloseHandle(job);
       if(info.process!=IntPtr.Zero) {

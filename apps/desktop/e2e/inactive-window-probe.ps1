@@ -1,4 +1,4 @@
-param([int]$AppProcessId, [int]$ReadinessTimeoutMs, [string]$Receipt)
+param([int]$AppProcessId, [int]$ReadinessTimeoutMs, [string]$Receipt, [string]$DesktopPath = $env:SP_PROOF_DESKTOP)
 $ErrorActionPreference='Stop'
 . "$PSScriptRoot\..\packaging\window-readiness.ps1"
 Add-Type -TypeDefinition @'
@@ -9,7 +9,7 @@ public static class InactiveWindowProbe {
  [DllImport("user32.dll")]public static extern bool IsIconic(IntPtr window);
 }
 '@
-$ready=Wait-AppWindow -AppProcessId $AppProcessId -Mode ObserveAction -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt
+$ready=Wait-AppWindow -AppProcessId $AppProcessId -Mode ObserveAction -TimeoutMs $ReadinessTimeoutMs -Receipt $Receipt -DesktopPath $DesktopPath
 # Observe settled launch state without activating or changing bounds.
 Start-Sleep -Seconds 2
 $handle=[IntPtr]$ready.window.Current.NativeWindowHandle

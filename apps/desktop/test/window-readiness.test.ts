@@ -39,6 +39,7 @@ test('all window probes share owned-desktop discovery, condition receipts and a 
   expect(native).not.toMatch(
     /SetForegroundWindow|SwitchDesktop|SetThreadDesktop/,
   );
+  expect(native).toContain('OpenOwned');
   const budget = await readFile(
     join(directory, 'packaging/window-readiness.ts'),
     'utf8',
@@ -104,7 +105,11 @@ $null=$window.ShowDialog()
       await writeFile(
         child,
         `import assert from'node:assert/strict';import{readFile}from'node:fs/promises';
-import{spawnPowerShell,runPowerShell,WINDOWS_QUERY_TIMEOUT_MS}from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)};
+ import{spawnPowerShell,runPowerShell,WINDOWS_QUERY_TIMEOUT_MS}from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/windows-powershell.ts')).href)};
+ const missingReceipt=${JSON.stringify(join(scratch, 'release-window-native-failure.json'))};
+ const missing=". '"+${JSON.stringify(join(directory, 'packaging/window-readiness.ps1').replaceAll("'", "''"))}+"';$station=$env:SP_PROOF_DESKTOP.Split([char]92)[0];$null=Wait-AppWindow -AppProcessId "+process.pid+" -Mode ReviewAction -TimeoutMs 1500 -DesktopPath ($station+[char]92+'SocialPrune-test-absent') -Receipt '"+missingReceipt.replaceAll("'","''")+"'";
+ const missingExit=await runPowerShell(['-NoProfile','-NonInteractive','-Command',missing],{timeout:WINDOWS_QUERY_TIMEOUT_MS,windowsHide:true}).then(()=>0,()=>1);assert.equal(missingExit,1);
+ const nativeFailure=JSON.parse(await readFile(missingReceipt,'utf8'));assert.deepEqual(nativeFailure.nativeFailure,{call:'OpenDesktopW',win32Error:2});assert.equal(nativeFailure.errorId,'READINESS_NATIVE_FAILED:OpenDesktopW:2');
  for(const mode of ['ready','title-only','disabled','offscreen','not-focusable']){
  const app=spawnPowerShell(['-NoProfile','-NonInteractive','-STA','-File',${JSON.stringify(ui)},'-Mode',mode],{stdio:['ignore','pipe','pipe'],windowsHide:true});app.stdout.resume();app.stderr.pipe(process.stderr);const exited=new Promise(r=>app.once('close',r));
   const receipt=${JSON.stringify(scratch)}+'/release-window-'+mode+'.json';
@@ -151,6 +156,7 @@ import{spawnPowerShell,runPowerShell,WINDOWS_QUERY_TIMEOUT_MS}from ${JSON.string
       const collected = await collectProof(scratch, output);
       expect(collected.collected.sort()).toEqual([
         'release-window-disabled.json',
+        'release-window-native-failure.json',
         'release-window-not-focusable.json',
         'release-window-offscreen.json',
         'release-window-ready.json',
@@ -169,6 +175,9 @@ import{spawnPowerShell,runPowerShell,WINDOWS_QUERY_TIMEOUT_MS}from ${JSON.string
         last: { keepCount: 1, enabled: true, offscreen: false },
       });
       process.stdout.write(`WINDOW_READINESS_PROOF ${text}\n`);
+      process.stdout.write(
+        `WINDOW_READINESS_NATIVE_FAILURE ${await readFile(join(output, 'release-window-native-failure.json'), 'utf8')}\n`,
+      );
       process.stdout.write(
         `WINDOW_READINESS_RED ${await readFile(join(output, 'release-window-red.json'), 'utf8')}\n`,
       );

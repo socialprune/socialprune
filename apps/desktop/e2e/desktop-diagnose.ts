@@ -15,7 +15,7 @@ import {
   diagnosticTerms,
   variants,
   DIAGNOSE_JOB_MS,
-  DIAGNOSE_CHILD_SECONDS,
+  DIAGNOSE_WORK_MS,
   type DiagnoseVariant,
 } from '../packaging/diagnose-policy.ts';
 import {
@@ -26,6 +26,11 @@ import { directory } from '../packaging/paths.ts';
 import { collectProof } from './proof-collection.ts';
 import type { DiagnoseConfig } from './diagnose-child.ts';
 import { controlOutputExcerpt } from '../packaging/diagnostic-output.ts';
+import {
+  diagnosticPhase,
+  collectDiagnosticReceipts,
+  copyDiagnosticBundle,
+} from './token-deadline.ts';
 
 type Summary = Record<string, unknown> & {
   variant: DiagnoseVariant;
@@ -54,66 +59,64 @@ export async function runDiagnostic(
   bundle: string,
   results: string,
 ) {
+  const startedAt = Date.now();
+  const deadline = startedAt + DIAGNOSE_WORK_MS;
+  const returnDeadline = startedAt + DIAGNOSE_JOB_MS;
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error('DIAGNOSE_WORK_DEADLINE');
+    return ms;
+  };
   variants(variant);
   await mkdir(results, { recursive: true });
-  const initial = JSON.parse(
-    (await ps('packaging/install-layout.ps1', [])).stdout,
-  ) as {
-    installExists: boolean;
-    dataExists: boolean;
-    registrationExists: boolean;
-    existingShortcuts: string[];
-  };
-  assert.equal(
-    initial.installExists,
-    false,
-    'DIAGNOSE_EXISTING_INSTALL_REFUSED',
-  );
-  assert.equal(initial.dataExists, false, 'DIAGNOSE_EXISTING_DATA_REFUSED');
-  assert.equal(
-    initial.registrationExists,
-    false,
-    'DIAGNOSE_EXISTING_REGISTRATION_REFUSED',
-  );
-  assert.deepEqual(
-    initial.existingShortcuts,
-    [],
-    'DIAGNOSE_EXISTING_SHORTCUT_REFUSED',
-  );
   const terms = diagnosticTerms(variant);
   const build = JSON.parse(
     await readFile(join(bundle, 'diagnose-build.json'), 'utf8'),
   ) as {
-    installer: string;
-    installerSha256: string;
     releaseAsarSha256: string;
+    tokenProbe: { executable: string; sha256: string };
   };
-  const setup = join(bundle, build.installer);
+  const tokenProbe = join(bundle, build.tokenProbe.executable);
   assert.equal(
-    hash(await readFile(setup)),
-    build.installerSha256,
-    'DIAGNOSE_INSTALLER_HASH',
+    hash(await readFile(tokenProbe)),
+    build.tokenProbe.sha256,
+    'DIAGNOSE_TOKEN_HELPER_HASH',
   );
   const scratch = await mkdtemp(join(tmpdir(), 'socialprune-diagnose-'));
   const config: DiagnoseConfig = {
     variant,
-    bundle,
-    setup,
+    bundle: join(scratch, 'bundle'),
     data: join(scratch, 'generated'),
     results,
     source: build.releaseAsarSha256,
+    deadline,
+    returnDeadline,
   };
   const configFile = join(scratch, 'config.json');
   await writeFile(configFile, JSON.stringify(config));
-  let installed = false;
   const annotate = async (path: string): Promise<void> => {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const full = join(path, entry.name);
       if (entry.isDirectory()) await annotate(full);
       else if (entry.name.endsWith('.json')) {
-        const row: unknown = JSON.parse(
-          (await readFile(full, 'utf8')).replace(/^\uFEFF/, ''),
-        );
+        let row: unknown;
+        try {
+          row = JSON.parse(
+            (await readFile(full, 'utf8')).replace(/^\uFEFF/, ''),
+          );
+        } catch {
+          // A killed writer can leave its last JSON incomplete. Keep those
+          // bytes and add a causal record, never erase the native receipt.
+          await writeFile(
+            full + '.unparsed.json',
+            JSON.stringify({
+              ...terms,
+              state: 'partial-receipt',
+              file: entry.name,
+            }),
+          );
+          continue;
+        }
         await writeFile(
           full,
           JSON.stringify(
@@ -130,11 +133,7 @@ export async function runDiagnostic(
       }
     }
   };
-  const launch = async (
-    mode: 'install' | 'probe' | 'cleanup',
-    selection:
-      'restricted-owned' | 'unrestricted-owned' | 'restricted-session-desktop',
-  ) => {
+  const launch = async (mode: 'probe', selection: DiagnoseVariant) => {
     const workspace = join(scratch, mode);
     await mkdir(workspace);
     const argumentFile = join(scratch, `${mode}-arguments.json`);
@@ -148,40 +147,60 @@ export async function runDiagnostic(
       ]),
     );
     const tokenReport = join(workspace, 'release-diagnose-token.json');
+    const outputDirectory = join(results, mode);
+    await mkdir(outputDirectory, { recursive: true });
+    const collect = () => collectDiagnosticReceipts(workspace, outputDirectory);
+    let collection = Promise.resolve();
+    let collectionFailures = 0;
+    const collector = setInterval(() => {
+      collection = collection.then(collect).catch((error: unknown) => {
+        collectionFailures++;
+        console.error(
+          'DIAGNOSE_INCREMENTAL_COLLECTION_FAILED',
+          error instanceof Error && 'code' in error ? error.code : 'unknown',
+        );
+      });
+    }, 500);
+    const phaseDeadline = deadline;
     let returned = true;
     try {
-      const output =
-        selection === 'restricted-owned'
-          ? await ps(
-              'e2e/limited-token.ps1',
-              [
-                '-Executable',
-                process.execPath,
-                '-ArgumentsFile',
-                argumentFile,
-                '-TokenReport',
-                tokenReport,
-                '-TimeoutSeconds',
-                String(DIAGNOSE_CHILD_SECONDS),
-              ],
-              DIAGNOSE_JOB_MS,
-            )
-          : await ps(
-              'e2e/diagnose-launch.ps1',
-              [
-                '-Mode',
-                selection,
-                '-Executable',
-                process.execPath,
-                '-ArgumentsFile',
-                argumentFile,
-                '-TokenReport',
-                tokenReport,
-                '-TimeoutSeconds',
-                String(DIAGNOSE_CHILD_SECONDS),
-              ],
-              DIAGNOSE_JOB_MS,
-            );
+      const output = await diagnosticPhase(
+        phaseDeadline,
+        async (ms, signal) => {
+          const nativeTimeout = Math.max(1, Math.floor(ms / 1000));
+          return await runPowerShell(
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-File',
+              join(directory, 'e2e/diagnose-launch.ps1'),
+              '-Mode',
+              selection,
+              '-Executable',
+              process.execPath,
+              '-ArgumentsFile',
+              argumentFile,
+              '-TokenReport',
+              tokenReport,
+              '-TimeoutSeconds',
+              String(nativeTimeout),
+              ...(selection === 'restricted-session-desktop'
+                ? []
+                : [
+                    '-TokenProbe',
+                    tokenProbe,
+                    '-DeadlineUnixMs',
+                    String(phaseDeadline),
+                  ]),
+            ],
+            { timeout: ms, signal, windowsHide: true },
+          );
+        },
+        async () => {
+          await collection;
+          await collect();
+        },
+      );
       console.log(output.stdout);
       if (output.stderr) console.error(output.stderr);
     } catch (error) {
@@ -203,29 +222,47 @@ export async function runDiagnostic(
         }),
       );
     } finally {
+      clearInterval(collector);
+      await collection;
       await mkdir(join(results, mode), { recursive: true });
-      const collection = await collectProof(workspace, join(results, mode));
+      await collect();
+      const collected = await collectProof(workspace, join(results, mode));
       await writeFile(
         join(results, `release-diagnose-collection-${mode}.json`),
-        JSON.stringify({ ...terms, ...collection }),
+        JSON.stringify({
+          ...terms,
+          ...collected,
+          incrementalCollectionFailures: collectionFailures,
+        }),
       );
       await annotate(join(results, mode));
     }
     return returned;
   };
   try {
-    await ps('e2e/proof-acl.ps1', ['-Action', 'grant', '-Root', scratch]);
-    // Results live in run-owned scratch while low-token children write. Only
-    // the parent copies bytes into the checkout's artifact output afterwards.
-    installed = await launch('install', 'restricted-owned');
-    if (!installed) throw new Error('DIAGNOSE_INSTALL_FAILED');
-    const selection =
-      variant === 'unrestricted-owned'
-        ? 'unrestricted-owned'
-        : variant === 'restricted-session-desktop'
-          ? 'restricted-session-desktop'
-          : 'restricted-owned';
-    await launch('probe', selection);
+    remaining();
+    await mkdir(config.bundle);
+    if (variant !== 'token-chain') {
+      const name = variant === 'lifecycle-test-build' ? 'lifecycle' : 'release';
+      await diagnosticPhase(
+        deadline,
+        (_ms, signal) =>
+          copyDiagnosticBundle(
+            join(bundle, name),
+            join(config.bundle, name),
+            signal,
+          ),
+        () => Promise.resolve(),
+      );
+    }
+    await ps(
+      'e2e/proof-acl.ps1',
+      ['-Action', 'grant', '-Root', scratch],
+      remaining(),
+    );
+    // Pinned release bytes run from disposable scratch, with the same baseline
+    // token/desktop/job recipe. This probes no installer or fixed user layout.
+    await launch('probe', variant);
     let summary: Summary;
     try {
       summary = JSON.parse(
@@ -235,40 +272,65 @@ export async function runDiagnostic(
         ),
       ) as Summary;
     } catch {
-      const token: unknown = JSON.parse(
+      const token = JSON.parse(
         (
           await readFile(
             join(results, 'probe/release-diagnose-token.json'),
             'utf8',
           ).catch(() => '{}')
         ).replace(/^\uFEFF/, ''),
-      );
+      ) as { state?: string };
       summary = {
         ...terms,
-        state: 'blocked-or-launch-failed',
+        state:
+          token.state === 'not-applicable'
+            ? 'not-applicable'
+            : variant === 'token-chain' && token.state === 'returned'
+              ? 'token-probe-returned'
+              : 'blocked-or-launch-failed',
         reason: 'See token/native/child receipts; no readiness inference',
         token,
       };
     }
+    summary = {
+      ...summary,
+      workDeadline: deadline,
+      returnedWithinWorkDeadline: Date.now() <= deadline,
+      tokenReceipts: [
+        'release-token-owner.ndjson',
+        'release-token-helper.ndjson',
+        'release-token-launch.ndjson',
+      ],
+      deployment: 'byte-checked-release-copy-not-installed',
+    };
     await writeFile(
       join(results, 'release-diagnose-summary.json'),
       JSON.stringify(summary, null, 2),
     );
     return summary;
   } finally {
-    // The initial fixed layout was empty. Even an installer that failed after
-    // changing it belongs to this attempt and must settle before closure.
-    let cleaned = !installed;
-    const after = JSON.parse(
-      (await ps('packaging/install-layout.ps1', [])).stdout,
-    ) as { installExists: boolean; registrationExists: boolean };
-    if (installed || after.installExists || after.registrationExists)
-      cleaned = await launch('cleanup', 'restricted-owned');
     // Every uploaded JSON, including reused lower-level receipts, carries the
     // variant and diagnostic-only terms. None can be mistaken for acceptance.
     await annotate(results);
-    await rm(scratch, { recursive: true, force: true });
-    assert.equal(cleaned, true, 'DIAGNOSE_CLEANUP_FAILED');
+    assert.ok(Date.now() < returnDeadline, 'DIAGNOSE_RETURN_DEADLINE');
+    await rm(scratch, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+    await writeFile(
+      join(results, 'release-diagnose-deadline.json'),
+      JSON.stringify({
+        ...terms,
+        startedAt,
+        deadline,
+        returnDeadline,
+        returnedAt: Date.now(),
+        workMs: DIAGNOSE_WORK_MS,
+        cleanupReserveMs: DIAGNOSE_JOB_MS - DIAGNOSE_WORK_MS,
+      }),
+    );
   }
 }
 

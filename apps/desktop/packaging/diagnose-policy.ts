@@ -4,17 +4,22 @@ import { resolve } from 'node:path';
 export const DIAGNOSE_VARIANTS = [
   'baseline',
   'unrestricted-owned',
-  'restricted-session-desktop',
   'lifecycle-test-build',
-  'chromium-verbose',
-  'software-rendering',
-  'no-renderer-sandbox',
+  'token-B-default-dacl',
+  'token-C-object-dacl',
+  'token-D-object-label',
+  'token-E-no-lua',
+  'token-chain',
+  'restricted-session-desktop',
 ] as const;
+export const DEFAULT_DIAGNOSE_VARIANTS = DIAGNOSE_VARIANTS.filter(
+  (name) => name !== 'restricted-session-desktop',
+);
 export type DiagnoseVariant = (typeof DIAGNOSE_VARIANTS)[number];
 export function variants(input = ''): DiagnoseVariant[] {
   const values = input
     ? input.split(',').map((part) => part.trim())
-    : [...DIAGNOSE_VARIANTS];
+    : [...DEFAULT_DIAGNOSE_VARIANTS];
   if (
     !values.length ||
     new Set(values).size !== values.length ||
@@ -27,25 +32,20 @@ export const diagnosticTerms = (variant: DiagnoseVariant) => ({
   variant,
   diagnosticOnly: true,
   acceptance: false,
-  commandLineChanged: [
-    'chromium-verbose',
-    'software-rendering',
-    'no-renderer-sandbox',
-  ].includes(variant),
+  commandLineChanged: false,
   testBuild: variant === 'lifecycle-test-build',
+  tokenChange:
+    variant.startsWith('token-') && variant !== 'token-chain'
+      ? variant
+      : 'none',
+  tokenOnly: variant === 'token-chain',
 });
 
-// 2026-10-21 runner observations: Add-Type max 45974 ms, release-window
-// failure max 45977 ms, NSIS outer lifecycle max 67130 ms. Keep the diagnostic
-// outer bound (not the strict readiness predicate) 3 * (67130+45974+45977)
-// +100 =477343 ms. The short workflow uses a stricter diagnostic ceiling:
-// observed release build/red/faults/failed-controls step221s *1.2 +100=265300ms,
-// below its 5min step, and reports timeout rather than weakening readiness.
-export const DIAGNOSE_JOB_MS = Math.min(
-  (67_130 + 45_974 + 45_977) * 3 + 100,
-  221_000 * 1.2 + 100,
-);
-export const DIAGNOSE_CHILD_SECONDS = Math.ceil(DIAGNOSE_JOB_MS / 1000);
+// R29: one absolute work deadline for the entire step, not one per phase.
+// Termination, incremental collection and cleanup share the final 60 seconds.
+export const DIAGNOSE_WORK_MS = 240_000;
+export const DIAGNOSE_RETURN_MS = 60_000;
+export const DIAGNOSE_JOB_MS = DIAGNOSE_WORK_MS + DIAGNOSE_RETURN_MS;
 
 if (
   process.argv[1] &&

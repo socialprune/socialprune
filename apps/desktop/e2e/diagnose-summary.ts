@@ -42,11 +42,7 @@ export async function summarize(input: string, output: string) {
       variant,
       diagnosticOnly: true,
       acceptance: false,
-      commandLineChanged: [
-        'chromium-verbose',
-        'software-rendering',
-        'no-renderer-sandbox',
-      ].includes(variant),
+      commandLineChanged: false,
     };
   });
   const columns = [
@@ -57,6 +53,8 @@ export async function summarize(input: string, output: string) {
     'loadURL',
     'rendererAlive',
     'gpuState',
+    'systemErrorCode',
+    'tokenReceipts',
     'appExit',
     'readinessReached',
     'branch',

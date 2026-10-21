@@ -11,7 +11,7 @@ import { build } from 'rolldown';
 import { resourceExecutable } from './package.ts';
 import { assertFuses } from './fuses.ts';
 import { dist, directory } from './paths.ts';
-import { releaseVersion } from './release.ts';
+import { buildTokenProbe } from '../e2e/token-build.ts';
 
 const hash = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
@@ -20,6 +20,8 @@ const original = hash(await readFile(releaseAsar));
 const bundle = join(dist, 'diagnose-bundle');
 await rm(bundle, { recursive: true, force: true });
 await mkdir(bundle);
+const tokenProbe = await buildTokenProbe(bundle);
+await cp(join(dist, 'release'), join(bundle, 'release'), { recursive: true });
 await cp(join(dist, 'release'), join(bundle, 'lifecycle'), { recursive: true });
 const content = join(dist, 'diagnose-content');
 await rm(content, { recursive: true, force: true });
@@ -57,8 +59,6 @@ if (
   !extractFile(lifecycleAsar, 'main.mjs').toString().includes(marker)
 )
   throw new Error('DIAGNOSE_ENTRY_BOUNDARY');
-const setupName = `SocialPrune-Setup-${await releaseVersion()}.exe`;
-await cp(join(dist, 'artifacts', setupName), join(bundle, setupName));
 const releaseAssembly: unknown = JSON.parse(
   await readFile(join(dist, 'assembly.json'), 'utf8'),
 );
@@ -67,6 +67,7 @@ await writeFile(
   JSON.stringify(
     {
       diagnosticOnly: true,
+      tokenProbe: { ...tokenProbe, executable: 'token-probe.exe' },
       source:
         'same release renderer/preload/engine with test-only lifecycle main',
       releaseAsarSha256: original,
@@ -74,8 +75,6 @@ await writeFile(
       lifecycleHeaderSha256: hash(
         Buffer.from(getRawHeader(lifecycleAsar).headerString),
       ),
-      installer: setupName,
-      installerSha256: hash(await readFile(join(bundle, setupName))),
       lifecycleModules: modules,
       releaseAssembly,
     },

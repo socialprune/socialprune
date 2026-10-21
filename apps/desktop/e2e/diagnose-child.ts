@@ -6,26 +6,16 @@ import { proofOutput } from './proof-context.ts';
 import { directory } from '../packaging/paths.ts';
 import {
   runPowerShell,
-  runNativeQuery,
   WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { launchReviewApp } from '../packaging/review-app-launch.ts';
-import { runWindowProbe } from '../packaging/window-readiness.ts';
+import { WINDOW_READINESS_TIMEOUT_MS } from '../packaging/window-readiness.ts';
 import {
   diagnosticTerms,
   variants,
   type DiagnoseVariant,
 } from '../packaging/diagnose-policy.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
-import {
-  settleOwnedUninstall,
-  type ProductLayout,
-  type OwnedUninstaller,
-} from './owned-uninstall.ts';
-import {
-  prepareWindowsQuery,
-  windowsQuery,
-} from '../packaging/windows-query.ts';
 import { assertFuses } from '../packaging/fuses.ts';
 import {
   systemSnapshot,
@@ -36,10 +26,11 @@ import { watchNetwork } from '../packaging/network-check.ts';
 export type DiagnoseConfig = {
   variant: DiagnoseVariant;
   bundle: string;
-  setup: string;
   data: string;
   results: string;
   source: string;
+  deadline: number;
+  returnDeadline: number;
 };
 const mode = process.argv[2]!;
 const workspace = process.argv[3]!;
@@ -47,21 +38,33 @@ const config = JSON.parse(
   await readFile(process.argv[4]!, 'utf8'),
 ) as DiagnoseConfig;
 variants(config.variant);
-assert.ok(['install', 'probe', 'cleanup'].includes(mode));
-const ps = async () =>
-  JSON.parse(
-    (
-      await runPowerShell(
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-File',
-          join(directory, 'packaging/install-layout.ps1'),
-        ],
-        { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
-      )
-    ).stdout,
-  ) as ProductLayout & { install: string };
+assert.equal(mode, 'probe');
+const remaining = () => {
+  const value = config.deadline - Date.now();
+  if (value <= 0) throw new Error('DIAGNOSE_WORK_DEADLINE');
+  return Math.min(value, WINDOWS_QUERY_TIMEOUT_MS);
+};
+const windowProbe = (args: string[], receipt: string) => {
+  // Diagnostic caller only: preserve the release readiness predicate and its
+  // inner clock; the remaining step time bounds the outer native call.
+  // eslint-disable-next-line no-restricted-properties -- Closed harness desktop identity, never credentials.
+  const desktop = process.env.SP_PROOF_DESKTOP;
+  return runPowerShell(
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-File',
+      join(directory, 'packaging/release-window.ps1'),
+      ...args,
+      '-ReadinessTimeoutMs',
+      String(WINDOW_READINESS_TIMEOUT_MS),
+      '-Receipt',
+      receipt,
+      ...(desktop ? ['-DesktopPath', desktop] : []),
+    ],
+    { timeout: remaining(), windowsHide: true },
+  );
+};
 
 process.exitCode = await runProof(
   `diagnose-${mode}`,
@@ -69,85 +72,23 @@ process.exitCode = await runProof(
   import.meta.filename,
   async () => {
     const terms = diagnosticTerms(config.variant);
-    const before = await ps();
     const nativeReceipt = proofOutput('release-diagnose-process-window.json');
-    if (mode === 'install') {
-      assert.equal(
-        before.installExists,
-        false,
-        'DIAGNOSE_EXISTING_INSTALL_REFUSED',
-      );
-      assert.equal(before.dataExists, false, 'DIAGNOSE_EXISTING_DATA_REFUSED');
-      assert.equal(
-        before.registrationExists,
-        false,
-        'DIAGNOSE_EXISTING_REGISTRATION_REFUSED',
-      );
-      const result = await runNativeQuery(config.setup, ['/S'], {
-        timeout: WINDOWS_QUERY_TIMEOUT_MS,
-        windowsHide: true,
-      });
-      const after = await ps();
-      assert.equal(after.installExists, true);
-      assert.equal(after.registrationExists, true);
-      await writeFile(
-        proofOutput('release-diagnose-install.json'),
-        JSON.stringify({
-          ...terms,
-          state: 'installed',
-          exitCode: 0,
-          stdoutBytes: result.stdout.length,
-          source: config.source,
-        }),
-      );
-      return;
-    }
-    if (mode === 'cleanup') {
-      if (before.installExists) {
-        const uninstaller = join(before.install, 'Uninstall.exe');
-        await prepareWindowsQuery();
-        await runNativeQuery(uninstaller, ['/S'], {
-          timeout: WINDOWS_QUERY_TIMEOUT_MS,
-          windowsHide: true,
-        });
-        await settleOwnedUninstall(
-          ps,
-          async () =>
-            JSON.parse(
-              await windowsQuery(
-                'uninstall-processes',
-                `${join(workspace, 'temp')}|${uninstaller}`,
-              ),
-            ) as OwnedUninstaller[],
-          async () => {
-            await Promise.resolve();
-          },
-        );
-      }
-      const after = await ps();
-      assert.equal(after.installExists, false);
-      assert.equal(after.registrationExists, false);
-      await writeFile(
-        proofOutput('release-diagnose-cleanup.json'),
-        JSON.stringify({ ...terms, state: 'removed', layoutAbsent: true }),
-      );
-      return;
-    }
-    assert.equal(before.installExists, true, 'DIAGNOSE_INSTALL_REQUIRED');
     await mkdir(config.data, { recursive: true });
     await generatedWorkspace(config.data);
     const executable =
       config.variant === 'lifecycle-test-build'
         ? join(config.bundle, 'lifecycle/SocialPrune.exe')
-        : join(before.install, 'SocialPrune.exe');
+        : join(config.bundle, 'release/SocialPrune.exe');
     if (config.variant !== 'lifecycle-test-build') {
       const { createHash } = await import('node:crypto');
       assert.equal(
         createHash('sha256')
-          .update(await readFile(join(before.install, 'resources/app.asar')))
+          .update(
+            await readFile(join(config.bundle, 'release/resources/app.asar')),
+          )
           .digest('hex'),
         config.source,
-        'DIAGNOSE_INSTALLED_ASAR_HASH',
+        'DIAGNOSE_RELEASE_ASAR_HASH',
       );
     }
     const fuse = await assertFuses(executable, false);
@@ -158,12 +99,9 @@ process.exitCode = await runProof(
         wire: fuse,
         rendererSandboxSwitchFuse: 'not-defined-by-Electron-V1',
         appEnableSandbox: true,
-        requestedRendererSandboxOff: config.variant === 'no-renderer-sandbox',
+        requestedRendererSandboxOff: false,
         fuseForbidsRendererSwitch: false,
-        switchEffect:
-          config.variant === 'no-renderer-sandbox'
-            ? 'requested-not-assumed-effective'
-            : 'unchanged',
+        switchEffect: 'unchanged',
       }),
     );
     const events = join(workspace, 'evidence/lifecycle.ndjson');
@@ -173,21 +111,17 @@ process.exitCode = await runProof(
     ];
     if (config.variant === 'lifecycle-test-build')
       args.push(`--diagnostic-events=${events}`);
-    if (config.variant === 'chromium-verbose')
-      args.push(
-        '--v=1',
-        '--enable-logging',
-        '--vmodule=gpu*=2,child_process_launcher*=2,render_process_host*=2',
-      );
-    if (config.variant === 'software-rendering') args.push('--disable-gpu');
-    if (config.variant === 'no-renderer-sandbox') args.push('--no-sandbox');
+    args.push(
+      '--v=1',
+      '--vmodule=*sandbox*=2,broker_services*=2,restricted_token*=2,access_token*=2,child_process_launcher*=2,gpu_process_host*=2',
+    );
     const systemBefore = await systemSnapshot();
     await writeFile(
       proofOutput('release-diagnose-system-before.json'),
       JSON.stringify({ ...terms, snapshot: systemBefore }),
     );
     const network = await watchNetwork(
-      before.install,
+      config.bundle,
       proofOutput('release-diagnose-network.json'),
     );
     let app: Awaited<ReturnType<typeof launchReviewApp>>;
@@ -207,8 +141,7 @@ process.exitCode = await runProof(
     let failure: string | null = null;
     let during: Awaited<ReturnType<typeof app.snapshot>> | undefined;
     try {
-      await runWindowProbe(
-        'packaging/release-window.ps1',
+      await windowProbe(
         ['-AppProcessId', String(app.pid), '-Executable', executable],
         windowReceipt,
       );
@@ -232,7 +165,7 @@ process.exitCode = await runProof(
           ',$env:SP_PROOF_DESKTOP);try{$watch.ObserveApp()|ConvertTo-Json -Depth 9 -Compress}finally{$watch.Dispose()}';
         const observed = await runPowerShell(
           ['-NoProfile', '-NonInteractive', '-Command', script],
-          { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
+          { timeout: remaining(), windowsHide: true },
         );
         nativeWindow = JSON.parse(observed.stdout) as typeof nativeWindow;
         await writeFile(
@@ -250,8 +183,7 @@ process.exitCode = await runProof(
         );
       }
       if (during.state === 'running')
-        await runWindowProbe(
-          'packaging/release-window.ps1',
+        await windowProbe(
           [
             '-AppProcessId',
             String(app.pid),
@@ -353,6 +285,12 @@ process.exitCode = await runProof(
           (row) => row.event === 'ready-to-show',
         ),
         lifecycleShow: lifecycle.some((row) => row.event === 'show'),
+        systemErrorCode:
+          config.variant === 'lifecycle-test-build'
+            ? lifecycle
+                .filter((row) => row.event === 'child-process-gone')
+                .map((row) => row.systemErrorCode ?? null)
+            : null,
         sandboxObserved: final.log.chromiumEvidence.lines.filter((row) =>
           /sandbox/i.test(row.message),
         ),

@@ -9,6 +9,7 @@ import {
   diagnosticTerms,
   variants,
   DIAGNOSE_VARIANTS,
+  DEFAULT_DIAGNOSE_VARIANTS,
 } from '../packaging/diagnose-policy.ts';
 import { summarize } from '../e2e/diagnose-summary.ts';
 import { extractFile } from '@electron/asar';
@@ -148,14 +149,14 @@ test('diagnostic workflow has dispatch-only read permission, immutable actions, 
   );
   expect(text).toContain('pnpm build:desktop');
   expect(text).toContain('fuses:check');
-  expect(text).toContain('build:release');
+  expect(text).not.toContain('build:release');
   expect(
     await readFile(join(directory, 'packaging/manifest.ts'), 'utf8'),
   ).toContain("'.github/workflows/desktop-diagnose.yml'");
 });
 
-test('all seven diagnostic terms and input validation reject workflow injection', () => {
-  expect(variants()).toEqual([...DIAGNOSE_VARIANTS]);
+test('token diagnostic terms and input validation reject workflow injection', () => {
+  expect(variants()).toEqual([...DEFAULT_DIAGNOSE_VARIANTS]);
   expect(variants('baseline,lifecycle-test-build')).toEqual([
     'baseline',
     'lifecycle-test-build',
@@ -172,12 +173,15 @@ test('all seven diagnostic terms and input validation reject workflow injection'
       diagnosticOnly: true,
       acceptance: false,
     });
-  for (const variant of [
+  expect(DEFAULT_DIAGNOSE_VARIANTS).not.toContain('restricted-session-desktop');
+  for (const removed of [
     'chromium-verbose',
     'software-rendering',
     'no-renderer-sandbox',
-  ] as const)
-    expect(diagnosticTerms(variant).commandLineChanged).toBe(true);
+  ])
+    expect(() => variants(removed)).toThrow('DIAGNOSE_VARIANTS_INVALID');
+  for (const variant of DIAGNOSE_VARIANTS)
+    expect(diagnosticTerms(variant).commandLineChanged).toBe(false);
 });
 
 test('lifecycle diagnostic entry cannot enter production and preserves production behaviour', async () => {

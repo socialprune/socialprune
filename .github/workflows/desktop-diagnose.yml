@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       variants:
-        description: Comma-separated variants, or empty for all seven
+        description: Comma-separated diagnostic variants, or empty for the token matrix
         type: string
         required: false
         default: ''
@@ -17,9 +17,10 @@ permissions:
 # 39576445580 on 2026-10-21: checkout10s, pnpm setup29s, Node8s,
 # install10s, package11s, fuses1s, complete release/control step221s,
 # upload1s. Setup/transfer caps round max*3+1s up to whole minutes;
-# build's 5min includes the existing release build plus an additional ASAR.
-# Probe's 5min step uses the 221s complete step as a conservative outer cap;
-# native subcommands retain their measured bounds. Readiness is unchanged.
+# build's 5min includes the pinned release package and diagnostic helper/ASAR.
+# No installer or fixed user-layout mutation is needed for token diagnosis.
+# Probe has one absolute 240s work deadline, then 60s for owned termination,
+# incremental receipt collection and return. No per-phase budget reset.
 jobs:
   build:
     runs-on: windows-latest
@@ -31,7 +32,7 @@ jobs:
         timeout-minutes: 2
         with:
           persist-credentials: false
-          # build:release checks the NSIS shipped-file ledger at HEAD and HEAD^.
+          # Preserve the full-history checkout if release readers return here.
           fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         timeout-minutes: 2
@@ -56,8 +57,6 @@ jobs:
           pnpm build:desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm --filter @socialprune/desktop fuses:check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm --filter @socialprune/desktop build:release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node apps/desktop/packaging/diagnose-build.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -96,7 +95,7 @@ jobs:
           name: desktop-diagnose-build
           path: apps/desktop/dist/diagnose-bundle/
       - name: Probe one question, diagnostic only
-        timeout-minutes: 5
+        timeout-minutes: 6
         env:
           DIAGNOSE_VARIANT: ${{ matrix.variant }}
         run: node apps/desktop/e2e/desktop-diagnose.ts $env:DIAGNOSE_VARIANT apps/desktop/dist/diagnose-bundle apps/desktop/dist/diagnose-results/${{ matrix.variant }}

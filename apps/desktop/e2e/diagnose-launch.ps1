@@ -1,5 +1,26 @@
-param([ValidateSet('unrestricted-owned','restricted-session-desktop')][string]$Mode,[string]$Executable,[string]$ArgumentsFile,[string]$TokenReport,[int]$TimeoutSeconds)
+param([ValidateSet('baseline','unrestricted-owned','restricted-session-desktop','lifecycle-test-build','token-B-default-dacl','token-C-object-dacl','token-D-object-label','token-E-no-lua','token-chain')][string]$Mode,[string]$Executable,[string]$ArgumentsFile,[string]$TokenReport,[int]$TimeoutSeconds,[string]$TokenProbe='',[long]$DeadlineUnixMs=0)
 $ErrorActionPreference='Stop'
+if ($TokenProbe -ne '') {
+  if ($DeadlineUnixMs -le 0) { throw 'TOKEN_DEADLINE_REQUIRED' }
+  $desktop=[IO.File]::ReadAllText("$PSScriptRoot\limited-desktop.cs")
+  if ($Mode -eq 'unrestricted-owned') {
+    $invariant='if(!hasRestrictions||!mediumIntegrityVerified)throw new Exception("LIMITED_DESKTOP_TOKEN_INVARIANT");'
+    if (-not $desktop.Contains($invariant)) { throw 'DIAGNOSE_DESKTOP_SOURCE_DRIFT' }
+    $desktop=$desktop.Replace($invariant,'// Diagnostic normal-token comparison only.')
+  }
+  Add-Type -TypeDefinition ("using System;using System.Text;using System.IO;using System.ComponentModel;using System.Runtime.InteropServices;using System.Security.Principal;using System.Collections.Generic;`n"+[IO.File]::ReadAllText("$PSScriptRoot\token-launch.cs")+"`n"+$desktop)
+  try {
+    $arguments=[string[]]([IO.File]::ReadAllText($ArgumentsFile)|ConvertFrom-Json)
+    $code=[TokenLaunch]::Run($Mode,$Executable,$arguments,$TokenProbe,[IO.Path]::GetDirectoryName($TokenReport),$DeadlineUnixMs)
+    @{diagnosticOnly=$true;acceptance=$false;variant=$Mode;state=$(if($code-eq3){'not-applicable'}else{'returned'});childExit=$code;desktop=([TokenLaunch]::DesktopEvidence|ConvertFrom-Json);lifecycle='owned-job-kill-on-close'}|ConvertTo-Json -Depth 7 -Compress|Set-Content -LiteralPath $TokenReport -Encoding UTF8
+    if ($code -eq 3) { exit 0 }; exit $code
+  } catch {
+    $cause=$_.Exception;while($cause.InnerException){$cause=$cause.InnerException}
+    $native=if($cause-is[ComponentModel.Win32Exception]){$cause.NativeErrorCode}else{$null}
+    @{diagnosticOnly=$true;acceptance=$false;variant=$Mode;state='blocked';reason=$(if($cause.Message.Contains('DIAGNOSE_WORK_DEADLINE')){'DIAGNOSE_WORK_DEADLINE'}else{'TOKEN_LAUNCH_FAILED'});win32Error=$native;desktop=([TokenLaunch]::DesktopEvidence|ConvertFrom-Json)}|ConvertTo-Json -Depth 7 -Compress|Set-Content -LiteralPath $TokenReport -Encoding UTF8
+    exit 2
+  }
+}
 # Diagnostic-only normal-token comparison uses the same owned objects and
 # descriptor, but does not assert that this intentionally normal token is LUA.
 $desktopSource=[IO.File]::ReadAllText("$PSScriptRoot\limited-desktop.cs")

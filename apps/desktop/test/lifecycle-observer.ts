@@ -26,6 +26,7 @@ app.on('child-process-gone', (_event, details) =>
     type: details.type,
     reason: details.reason,
     exitCode: details.exitCode,
+    systemErrorCode: details.systemErrorCode ?? null,
   }),
 );
 app.on('browser-window-created', (_event, window: BrowserWindow) => {

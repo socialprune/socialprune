@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Complex work must be analyzed before execution starts.
-> **Version:** 1.9.0
-> **Updated:** 2026-10-20
+> **Version:** 1.10.1
+> **Updated:** 2026-10-21
 
 ---
 
@@ -21,7 +21,7 @@ Anti-shallow-execution is a quality law. Complex or ambiguous tasks must not pro
 8. Multi-lane plans must define a dependency DAG before dispatch: foundation nodes and proof gates, critical path, parallel-ready nodes, integration order, and one long-lived domain owner for every writable surface and semantic contract.
 8a. **Deletion test.** Before dispatching any lane, answer one question: if this lane is removed, what decision, domain, or proof becomes unavailable? No concrete answer means no lane. Scope overlap and decision duplication disqualify a lane; sharing a role name does not, because two lanes of the same role on disjoint write sets with distinct acceptance results are a legal wave.
 8b. **Topology declaration.** Before the first delegated launch in a session, record four compact lines inline: complexity and topology; expected lanes and peak concurrency; why parallelism is warranted, or that it is not; and whether an extra independent perspective would change a decision rather than restate evidence. This belongs in a rule rather than in an agent prompt, because rules arrive in every session while a planning skill only loads when something chooses to load it.
-14. For cross-process tasks, the dependency DAG must place an executable foundation gate before a large matrix or broad review: disposable shared state reachable; real API/build entrypoint compiles and starts; workers start/stop under tracked lifecycle; fakes stay outside production entrypoints; and one minimal real lifecycle path asserts state transitions.
+14. For cross-process tasks, the dependency DAG must place an executable foundation gate before a large matrix or broad review: disposable shared state reachable; real API/build entrypoint compiles and starts; workers start/stop under tracked lifecycle; fakes are outside production entrypoints; and one minimal real lifecycle path asserts state transitions.
 15. Before building anything that fills a perceived gap, prove the gap exists. Search for the behavior or capability across plausible owners and entrypoints, not only for the identifier you expect, and record what already exists, which required guarantee is missing, or why intentional replacement is justified. An exact-name miss is not evidence of capability absence.
 20. A small obvious fix may use a compact fast path. Material open latency, cost, state, dependency, security, privacy, maintenance, or operations choices block a normal ready pull request; do not guess maintainer intent.
 21. Before editing for an upstream contribution, record its Contribution Fit: exactly one contribution type (`normal-pr`, `draft-or-prototype`, `issue-or-discussion`, `local-only`, `docs`, or `no-change`) and exactly one implementation admission (`admitted`, `admitted-fast-path`, `blocked-material-choice`, or `not-an-implementation-contribution`). When the change needs a name, setting or behavior the maintainers have not chosen, the admission is `blocked-material-choice` and the type is not `normal-pr`.
@@ -46,7 +46,7 @@ Numbers missing from this section belong to laws the Workflow Lab removed after 
 
 ## Failure Rule
 
-If a complex task proceeds directly to file edits without visible pre-analysis, a perceived gap is accepted from an identifier miss without capability-level evidence, or upstream implementation begins without the required Contribution Fit verdict, the pre-planning mandate has failed even if the resulting implementation is otherwise competent.
+If a complex task proceeds directly to file edits without visible pre-analysis, a perceived gap is accepted from an identifier miss without capability-level evidence, upstream implementation begins without the required Contribution Fit verdict, or an option is retired on an effort estimate nobody measured, the pre-planning mandate has failed even if the resulting implementation is otherwise competent.
 
 ---
 

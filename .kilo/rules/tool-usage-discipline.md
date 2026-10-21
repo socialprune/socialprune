@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Shell and command tools are not general file-CRUD tools; controlled copy is allowed when verified.
-> **Version:** 1.9.0
-> **Updated:** 2026-10-20
+> **Version:** 1.10.0
+> **Updated:** 2026-10-21
 
 ---
 
@@ -42,6 +42,10 @@ Review a command's possible output shape before running it, not after. A broad s
 - Exercise a protected-content control against synthetic fixtures first; run only metadata-level checks against the real protected surface.
 - If protected material is exposed by accident, stop that path, do not repeat the material in later output, and replace it with a bounded projection of the fields actually needed.
 
+### Queries against a live shared database
+
+A long read on a database that running sessions write to is not harmless because it is read-only. Bound queries against the live `kilo.db` through an index so they return in seconds: by session id, with a time window only inside a session, because `part` has no time index. Run full scans only while no Kilo session is running.
+
 ### Command return reliability
 
 Before execution, classify every command on two axes: **interactive or non-interactive**, and **return-critical or ordinary**.
@@ -62,6 +66,7 @@ Return recovery is time-bounded:
 4. Preserve parent, child, process, and session ownership during recovery. Do not make another lane or unrelated process absorb the stalled return.
 
 Polling is state-driven:
+
 - every tracked process declares one of: a readiness condition, expected completion, outer timeout, or explicit long-running-service classification,
 - short command: one terminal status check,
 - medium command: poll against an expected completion or readiness signal,
@@ -70,9 +75,9 @@ Polling is state-driven:
 - do not alternate status and logs without a state signal,
 - after three unchanged polls, record exactly one transition: `WAIT_UNTIL <declared time or readiness signal>`, `PROCESS_STALL`, `RETURN_STALL`, `STALE_UI`, `CHANGE_MONITORING_STRATEGY`, `ESCALATE`, or `ABORT_AT <declared outer deadline>`,
 - prohibit another unchanged poll until the declared time, readiness signal, changed process state, or recorded monitoring transition occurs,
-- track one process ID and one log cursor,
+- track one process ID and one log cursor so old output is not reread as new evidence,
 - treat process exit and Kilo return as separate states,
-- recover retained completed evidence before rerun.
+- recover retained completed evidence before any rerun.
 
 If the adopted repo does not have a tracked background-process tool, keep return-critical execution parent-owned. Use a bounded synchronous fallback only for commands that do not require a real TTY, emit an immediate visible checkpoint before execution, and apply the same inspection, classification, retained-evidence, and ownership rules.
 
@@ -137,6 +142,12 @@ Still forbidden:
 ## Failure Rule
 
 If a command path is used to create/edit/delete/move file content, controlled copy lacks source/destination verification and post-copy proof, return-critical execution ignores parent ownership and bounded return recovery, or a GitHub mutation is accepted without non-interactive hosted-object readback, tool discipline has failed even if the command itself completed.
+
+---
+
+## Left out on purpose
+
+- The owner shell's law 8 ends with one more sentence, which says that a tracked runner whose own program has ended still holds the detached processes it adopted and ends them when it is stopped. It anchors owner lesson `LL-2026-10-004`, which this shell does not carry, and stays root-only by the owner's decision of 2026-10-11. Carry it only together with a lesson that backs it.
 
 ---
 

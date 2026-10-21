@@ -3,8 +3,10 @@
 > **MANDATORY FOR ALL `.kilo` roles**
 > Governance surfaces and decision history change only on explicit human request, never as a side effect of other work.
 > **Version:** 1.0.0
-> **Updated:** 2026-08-26
+> **Updated:** 2026-10-21
+<!-- local: adds | Keep the local adaptation header; WORKFLOW_BIBLE.md sections 6 and 9 -->
 > **Local adaptation:** 2026-10-06, concrete SocialPrune paths filled in and an exception added for the factual sections of `AGENTS.md`
+<!-- /local -->
 
 ---
 
@@ -18,12 +20,14 @@ They are protected against creeping self-softening: an implementation request is
 ## Protected Governance Surfaces
 
 - `AGENTS.md`
+<!-- local: replaces 6 baseline lines #e54125e5 "- `.kilo/**` (rules, agents, skills, and the local Workflow " | Concrete repository governance paths; AGENTS.md Kilo workflow shell and WORKFLOW_BIBLE.md section 6 -->
 - `.kilo/**`: agents, rules, skills, `.kilo/README.md`, and `.kilo/WORKFLOW_BIBLE.md`
 - `kilo.jsonc`
 - `LICENSE`
 - the data-protection entries in `.gitignore`: real exports, `PLAN.md`, secrets
 - documented architecture decisions: the decisions table in the maintainer's private `PLAN.md` (section 3) while it exists, and the public decision records under `docs/architecture/adrs/` once `adr-creation` starts them
 - `docs/LESSONS_ARCHIVE.md`: its schema, existing lessons, and their prevention rules
+<!-- /local -->
 
 ---
 
@@ -42,7 +46,9 @@ They are protected against creeping self-softening: an implementation request is
 - **Appending new lessons** stays allowed and required in-flow (`continuous-learning` demands same-flow capture). Protected are the schema and the existing corpus, not the act of appending.
 - Metric updates of existing lessons (prevented/violated) when a lesson was applied or violated.
 - Explicitly scoped workflow maintenance: when the human requests a change to a named governance surface, exactly that change is authorized, nothing more.
+<!-- local: adds | Factual instruction sections follow code changes; AGENTS.md Kilo workflow shell and WORKFLOW_BIBLE.md section 9 -->
 - **Factual sections of `AGENTS.md`.** A task that adds or changes code keeps the Status, Planned layout, Commands and Proof sections, and contributor how-tos such as adding a platform adapter, true for that code. The hard constraints and the sections on reuse, writing, outside submissions, the Kilo shell, delivery, permissions and decisions still change only on explicit request.
+<!-- /local -->
 
 ---
 

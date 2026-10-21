@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Available skills must be loaded when applicable, not silently skipped.
-> **Version:** 1.6.0
-> **Updated:** 2026-10-20
+> **Version:** 1.6.1
+> **Updated:** 2026-10-21
 
 ---
 
@@ -29,8 +29,9 @@ Numbers missing from this section belong to laws the Workflow Lab removed after 
 | Situation | Required behavior |
 |---|---|
 | Task is a feature implementation | Load `feature-implementation` |
+| Task is workflow implementation and the repo has adopted the optional `workflow-implementation` skill | Load `workflow-implementation` as the phase primary |
 | Task is a cross-cutting high-blast-radius, logger-style cross-cutting, explicit adversarial/independent acceptance, migration/recovery, contradictory, or repeated-distinct-gap implementation | Use `complex-implementation-convergence` as the phase primary; admit another implementation skill only through the four-part gate |
-| Task says only `100/100` without another convergence trigger | Keep the smallest honest implementation/proof path; do not load convergence or create a reviewer/test-writer wave from the phrase alone |
+| Task says only `100/100` without another convergence trigger | Keep the smallest honest implementation/proof path; do not load convergence or create a reviewer wave from the phrase alone |
 | Task involves debugging | Load `bug-diagnosis` |
 | Current phase action is planning for a complex/multi-step task | Use `pre-planning` as that phase's primary; do not add it automatically to another phase's primary |
 | Task involves design choices | Load `brainstorming` |
@@ -42,8 +43,8 @@ Numbers missing from this section belong to laws the Workflow Lab removed after 
 | Skill is named in a prompt but not admitted and loaded | Do not list it under `skills_loaded` or `skills_expected` |
 | Discovery is incomplete and a candidate skill depends on missing context | Load the discovery skill first or record why the task cannot honestly proceed |
 | Known exact reversible change passes the bounded fast-path test | Load only the implementation and proof skills whose conditions actually hold; do not chain into convergence from runtime/security vocabulary alone |
-| A skill contains broader phases than the accepted plan | Apply only the in-contract portion; treat the rest as outside authority |
-| User asks for Agent Manager sessions/worktrees/model comparison explicitly | Use Agent Manager within that exact request; otherwise do not infer permission from workflow or orchestration language |
+| A skill contains broader phases than the accepted plan | Apply only the in-contract portion; the excluded portion is outside authority, not a skill gap |
+| User asks for Agent Manager sessions/worktrees/model comparison explicitly | Use Agent Manager within that exact request, with `session-steering` as the phase primary for dispatch; otherwise do not infer permission from workflow or orchestration language |
 
 ---
 
@@ -55,13 +56,11 @@ Numbers missing from this section belong to laws the Workflow Lab removed after 
 | `workflow-orchestrator` agent | Should check skill catalog when designing delegation topology |
 | `workflow-routing` skill | Routes to correct lane; this rule ensures skills are loaded within the lane |
 
----
-
 ## Applicability honesty
 
 Good non-admission reasons:
-- the primary implementation skill already governs the exact action, so a generic companion adds no missing capability
-- deterministic proof is frozen by the contract, so a second verification skill would not change the upcoming check
+- the primary implementation skill already governs the exact authoring phase, so a generic implementation skill adds no missing capability
+- deterministic proof is already frozen by the contract, so a second verification skill would not change the upcoming check
 - discovery left one viable option, so `brainstorming` would not change a concrete decision
 
 Bad skip reasons:

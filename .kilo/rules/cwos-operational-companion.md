@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR NON-TRIVIAL DELEGATED `.kilo` WORK**
 > Compact operational standard for delegated-lane artifacts, status honesty, and bounded convergence.
-> **Version:** 1.7.1
-> **Updated:** 2026-07-25
+> **Version:** 1.8.0
+> **Updated:** 2026-10-21
 
 ---
 
@@ -51,7 +51,7 @@ This is shared vocabulary, not a new warehouse procedure. Use it to keep orchest
 
 ## Active Execution Contract And Shared Evidence Board
 
-The accountable parent freezes one authority packet before implementation and maintains one shared execution/evidence artifact. It must contain:
+The accountable parent freezes one authority packet before implementation and maintains one compact shared execution/evidence artifact. It must contain:
 
 - `request_anchor`, `accepted_plan`, `target_end_state`, `authorized_phases`, `current_phase`,
 - `approval_boundaries`, `authorized_write_domains`, `non_goals`, `acceptance_invariants`, and `plan_invalidation_conditions`,
@@ -60,18 +60,18 @@ The accountable parent freezes one authority packet before implementation and ma
 - evidence records with command/readback, source identity, result, and freshness,
 - findings grouped by invariant or risk class,
 - stop-loss decisions for extra lanes, tests, revisions, or artifacts,
-- source identity, active long-lived owner, open invariant classes, reusable proof, invalidated proof, next ready node, and execution-budget state,
+- `source_identity`, active long-lived owner, open invariant classes, reusable proof, invalidated proof, next ready node, and execution-budget state,
 - pending approval cards with internal ID, version/hash, item IDs, expiry, evidence, thread binding, visible material terms, and declared effect (`confirm-only`, `confirm-and-queue`, or `immediate-execute`).
 
 Use one active write owner per writable surface. Parallel lanes may append structured returns through the parent, but may not concurrently author the same file or semantic contract.
 
 Before every extra subagent, reviewer, test-writer, broad rerun, or revision, the parent records: remaining acceptance classes; missing or invalidated evidence; why the long-lived owner cannot close it; unique evidence the extra work will produce; and coordination cost. If no new risk class or independent-authority requirement exists, the extra work is prohibited and stays with the owner.
 
-Before every additional procedural skill, record the missing primary capability, concrete upcoming action, exact behavior change, and confirmation that topology and authority do not enlarge. Default to one primary procedural skill per phase.
+Before every additional procedural skill, record: missing capability in the current primary skill; concrete upcoming action; exact behavior changed by the additional skill; and confirmation that it does not enlarge topology or authority. Default to one primary procedural skill per phase.
 
-Execution-budget state tracks delegated launches, independent reviews, broad suites per repo, routine revisions, unchanged process polls, and product/test delta versus workflow/evidence delta. Every tracked process declares readiness, expected completion, an outer timeout, or long-running-service status. After three unchanged polls, record exactly one canonical transition from the tool rule and block another unchanged poll until the declared condition, changed state, or monitoring transition occurs. Crossing 5 launches, 2 reviews, or 1 broad suite per repo without invalidation triggers a topology reset and marginal-value decision. Apply the same reset when process residue materially exceeds implementation/test value without recovery/compliance/irreversibility need, or an already-authorized node requires a manual user release.
+Execution-budget state tracks delegated launches / normal threshold, independent reviews / threshold, broad suites per repo, routine revisions, unchanged process polls, and product/test delta versus workflow/evidence delta. Every tracked process declares readiness, expected completion, an outer timeout, or long-running-service status. After three unchanged polls, record exactly one canonical transition from the tool rule and block another unchanged poll until the declared condition, changed state, or monitoring transition occurs. The parent performs a topology reset plus marginal-value decision when launches exceed 5, reviews exceed 2, a repo exceeds one broad suite without invalidation, process residue materially exceeds implementation/test value without a recovery/compliance/irreversibility reason, or the user has to release an already-authorized node manually. A tripwire diagnoses waste; it never overrides safety or permits a defect.
 
-At every phase boundary, compare next nodes to the contract. `done` releases authorized dependents whose foundation gates passed; it never expands the plan. Only a real scope delta requires user approval.
+At every phase boundary, compare the next nodes to the Active Execution Contract. `done` releases authorized dependents whose foundation gates passed; it never expands the plan. Only a real scope delta requires user approval. A newest user request may confirm, expand, restrict, replace, pause, or abort the contract.
 
 Evidence freshness uses these states:
 
@@ -86,19 +86,19 @@ Do not create per-lane narrative reports. Scratch, raw output, staging, and inte
 
 ### Cross-process foundation gate
 
-The first executable cross-process command gate must prove one foundation before a large scenario matrix, broad review, downstream wave, or deep test-modernization work:
+The first executable cross-process command gate must prove one foundation before any large scenario matrix, broad review, downstream wave, or deep test-modernization work:
 
 1. a disposable datastore or equivalent shared state is reachable,
 2. the real API/build entrypoint compiles and starts,
 3. each worker/service starts and stops under the tracked background-process lifecycle,
 4. fakes, fault injection, and test mutations are unreachable from production entrypoints and normal runtime environments,
-5. one minimal real lifecycle path crosses the domain's confirmation, ownership claim, start, test request, and settlement states with asserted changes.
+5. one minimal real path crosses `confirm -> claim -> start -> fake request -> settle`, or the domain-equivalent lifecycle, with asserted state changes.
 
 Keep downstream matrix, review, and deep test-modernization nodes inactive until this gate passes.
 
 ### Approval continuity
 
-Use a channel-neutral, mobile-first card. The user sees exact recipients, text, material values, exclusions, selected items, and the effect of approval; the system keeps machine identity internal. Natural replies such as `yes`, `looks good`, or `do it` are examples, not required phrases. A natural reply resolves only the one fresh pending card most recently and immediately presented in the same conversation/thread. If any visible term or declared effect changes, explicitly mark the old card superseded and no longer pending, then present a new versioned card. Confirmation aimed at the superseded card fails; confirmation of the immediately presented replacement stores reply plus card reference. Zero, multiple, expired, stale-thread, ambiguous, or free-floating approval fails closed. Preserve pending approval through handoff or compaction and block only the affected action.
+Use a channel-neutral, mobile-first card. The user sees exact recipients, text, material values, exclusions, selected items, and the effect of approval; the system keeps machine identity internal. A natural `yes`, `looks good`, or `do it` resolves only the one fresh pending card most recently and immediately presented in the same conversation/thread. These are examples, not required phrases. If any visible term or declared effect changes, explicitly mark the old card superseded and no longer pending, then present a new versioned card. Confirmation aimed at the superseded card fails; confirmation of the immediately presented replacement stores reply plus card reference. Zero, multiple, expired, stale-thread, ambiguous, or free-floating approval fails closed. Preserve pending approval through handoff or compaction and block only the affected action.
 
 ---
 
@@ -106,10 +106,10 @@ Use a channel-neutral, mobile-first card. The user sees exact recipients, text, 
 
 For non-trivial delegated work, maintain a compact artifact package:
 
-1. **task** — scope, owner, acceptance, and non-goals
-2. **status** — current lane state using the delegated-lane vocabulary
-3. **handoff** — what the next lane must know
-4. **convergence** — required only when multiple lanes or rounds must be synthesized
+1. **task:** scope, owner, acceptance, and non-goals
+2. **status:** current lane state using the delegated-lane vocabulary
+3. **handoff:** what the next lane must know
+4. **convergence:** required only when multiple lanes or rounds must be synthesized
 
 These normally live in the shared execution/evidence artifact. The package must stay compact and auditable.
 
@@ -132,9 +132,9 @@ Each non-trivial delegated lane must leave enough structured truth to show:
 - next-lane handoff or explicit close-out.
 
 Use short D/F/W-style knowledge transfer when possible:
-- **Decision** — a choice that later lanes should not silently undo
-- **Discovery** — a finding that changes later execution
-- **Warning** — a pitfall, blocker, or anti-pattern the next lane must respect
+- **Decision:** a choice that later lanes should not silently undo
+- **Discovery:** a finding that changes later execution
+- **Warning:** a pitfall, blocker, or anti-pattern the next lane must respect
 
 ### Compact protocol template
 
@@ -175,10 +175,28 @@ In the CWOS execution artifact, include:
 | Field | Content |
 |---|---|
 | `skills_loaded` | List of skills actually loaded/invoked during the lane, backed by tool output, local/global path, or explicit invocation evidence |
-| `skills_expected` | Skills admitted for the phase: the primary skill plus additional skills that passed the four-part admission gate |
-| `skills_gap` | An admitted skill that could not be loaded, or a required phase capability that remains uncovered; matching catalog entries alone are not gaps |
+| `skills_expected` | Skills admitted for the phase: the primary skill plus any additional skills that passed the four-part admission gate |
+| `skills_gap` | An admitted skill that could not be loaded, or a required phase capability that remains uncovered; merely matching catalog entries are not gaps |
 
-Do not list a skill under `skills_loaded` or `skills_expected` because it was named, loosely matched, or appeared in a pairing hint. `skills_expected` is an admission record.
+### Example
+
+```
+## Skill Tracking
+- skills_loaded: feature-implementation (primary; loaded via skill tool)
+- skills_expected: feature-implementation
+- skills_gap: none
+```
+
+Do not list a skill under `skills_loaded` or `skills_expected` because it was named, loosely matched, or appeared in a pairing hint. `skills_expected` is an admission record, not a catalog-match inventory.
+
+### Retrospective use
+
+A later review or optimization lane can read the skill-tracking fields across multiple CWOS artifacts to:
+
+1. **Detect under-use:** skills that should fire but consistently do not.
+2. **Detect over-use:** skills loaded without real need, adding friction.
+3. **Improve routing:** adjust trigger conditions or routing logic based on observed patterns.
+4. **Validate doctrine:** confirm that the shell's skill ring actually shapes behavior in practice, not just on paper.
 
 ---
 
@@ -188,7 +206,7 @@ Do not list a skill under `skills_loaded` or `skills_expected` because it was na
 - real cross-session recovery is likely,
 - an irreversible or expensive operation needs restart evidence,
 - compliance or forensic value requires durability,
-- or an explicit durable handoff cannot stay inline.
+- or an explicit durable handoff cannot be preserved inline.
 
 A checkpoint should preserve:
 - current objective,
@@ -200,12 +218,11 @@ A checkpoint should preserve:
 Handoffs must also preserve working paths, governing authority, and failed attempts. Reuse this evidence instead of forcing later lanes to rediscover it.
 
 ### If context condenses or continuity is lost
+- treat every compaction as this trigger: after a compaction, re-read the shared execution/evidence artifact or session state surface before the next substantive step, because summaries can drop still-true state while files survive untouched,
 - re-read the governing authority,
 - re-read the latest checkpoint if one exists,
 - restore the D/F/W knowledge before continuing,
 - and do not ask the user to restate the request if the task artifact already preserves it.
-
----
 
 ## Topology Vocabulary
 
@@ -220,9 +237,9 @@ Use explicit topology names instead of vague orchestration language:
 
 `bounded-wave` is legal only when one lane's output is not needed before another can begin honestly, write sets are disjoint, acceptance results are distinct, discovery/test/review perspectives are not duplicated, and integration order is known before dispatch. Otherwise use one foundation/integration owner or a baton pass.
 
-Use the maximum safe concurrency inside that boundary. A long-lived domain owner keeps discovery, implementation, focused proof, and in-plan bug loopbacks. Do not create commit-only, status-only, retry-only, per-callsite, duplicate-reviewer, or narration-only micro-lanes.
+Use the maximum safe concurrency inside that boundary. A long-lived domain owner keeps discovery, implementation, focused proof, and in-plan bug loopbacks for that domain. Do not fragment the work into commit-only, status-only, retry-only, per-callsite re-audit, duplicate-reviewer, or narration-only micro-lanes.
 
-That owner also keeps every callsite of the invariant class, fixtures, clocks, paths, stale signatures, scenario isolation, focused test repairs, mechanical retries, and one bundled revision. A new lane requires a new domain, independent authority, or genuinely new acceptance-risk class. The owner may not return `done` or `done_with_concerns` with failing required tests, missing required proof, incomplete required harness behavior, or fixable same-scope failures.
+That owner also keeps every callsite of the invariant class, fixtures, clocks, paths, stale signatures, scenario isolation, focused test repairs, mechanical invocation retries, and one bundled class-based review revision. A new lane requires a new domain, independent authority, or genuinely new acceptance-risk class. The owner may not return `done` or `done_with_concerns` with failing required tests, missing required proof, incomplete required harness behavior, or fixable same-scope failures; use `revision` or `blocked`.
 
 ---
 
@@ -244,7 +261,7 @@ If recursive delegation is not pre-authorized, the lane must return `needs_conte
 - Do not keep a lane in `revision` just because another round feels cheap. If the new round is not reducing the actual problem, the next honest gate is `escalation`, not another quiet retry.
 - `done_with_concerns` may carry only external non-blocking caveats. Failing required tests, missing proof, incomplete harness behavior, and fixable same-scope failures are `revision` or `blocked`.
 - Do not create another review lane solely because a lane returned `done_with_concerns`; continue or converge while surfacing the external caveat.
-- A mechanical quoting or invocation failure may be corrected once by the same owner without invalidating unrelated valid evidence.
+- Do not narrate mechanical retries as new workflow phases. A command quoting or invocation failure may be corrected once by the same owner; unrelated valid evidence stays valid.
 - Findings must name `invariant_class` and consolidate all known in-scope callsites. Another callsite does not justify another lane.
 - Long commands, services, watchers, and acceptance runs use the tracked background-process tool. Read status and logs separately. A lane must not stop a foreign or out-of-scope runtime; it reports the blocker to the parent.
 - Agent Manager visible sessions, worktrees, and model comparisons require an explicit user request for that exact behavior. Generic orchestration language is not authority.
@@ -292,7 +309,7 @@ The reviewer role remains the independent owner of that judgment.
 
 Evidence may be deduplicated across the sequence. One fail-closed structured check may prove several related claims, and unchanged claims need not be repeated in each lane unless the acceptance contract requires independent fresh observation.
 
-Out-of-plan findings are recorded and routed without opening a lane. In-plan findings stay with the long-lived domain owner when needed for an existing acceptance invariant.
+Out-of-plan findings are recorded and routed without opening a lane or fixing the bug. In-plan findings stay with the current domain owner when they are required for an existing acceptance invariant.
 
 ---
 

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR MULTI-LANE `.kilo` WORK**
 > Important knowledge from one lane must be passed forward explicitly.
-> **Version:** 1.4.0
-> **Updated:** 2026-10-20
+> **Version:** 1.4.1
+> **Updated:** 2026-10-21
 
 ---
 
@@ -50,7 +50,7 @@ This should live in the shared execution/evidence artifact rather than per-lane 
 ```md
 prior_knowledge:
 - decisions: D1: Keep this task limited to the target repo's active `.kilo` shell; do not widen into package refresh work in the same wave.
-- discoveries: F1: The current rule already covers the core law, but lacks a compact repo-local example.
+- discoveries: F1: The current rule already covers the core law, but lacks a compact reproducibility example.
 - warnings: W1: Historical or imported wording can be useful for substance mining, but live wording must stay local and shorter.
 
 knowledge_contributed:

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Active references must stay real, aligned, and non-ambiguous.
-> **Version:** 1.1.0
-> **Updated:** 2026-10-20
+> **Version:** 1.2.0
+> **Updated:** 2026-10-21
 
 ---
 
@@ -16,6 +16,7 @@ Broken doctrine references are system failures, not editorial nits.
 ## Hard Laws
 
 6. Cross-reference discipline must stay compact here; bulk procedural maintenance logic belongs outside the constitutional core.
+7. When you leave source content out of a derived surface, record each omitted item in that surface with its reason and the person, decision or document that authorized leaving it out, and keep the attributions already recorded there when you refresh it. An omission with no named authority is drift to the next reader, including the next automated comparison, and the next sync re-adds what the target already decided against.
 
 Numbers missing from this section belong to laws the Workflow Lab removed after measurement on Opus 5.5 and GPT-6.1 Sol, and they stay retired. `.kilo/RETIRED_DOCTRINE.md` keeps each one with its wording and evidence.
 

@@ -2,8 +2,8 @@
 
 > **MANDATORY FOR ALL `.kilo` roles**
 > Preserve learning retrieval, criticism capture, and repeat-mistake prevention as always-on constitutional behavior.
-> **Version:** 1.6.0
-> **Updated:** 2026-10-20
+> **Version:** 1.6.1
+> **Updated:** 2026-10-21
 
 ---
 
@@ -106,7 +106,7 @@ For a mandating lesson:
 
 An always-loaded surface is one the actor receives without choosing to look, such as the repo instruction file. An action-adjacent surface is the document the actor is already reading in order to perform that action, such as the runbook describing the step.
 
-The repo-local lessons archive alone is not a retrieval anchor. Archiving satisfies PERSIST. It does not satisfy RETRIEVE for an actor who has no reason to suspect the risk.
+The lesson archive alone is not a retrieval anchor. Archiving satisfies PERSIST. It does not satisfy RETRIEVE for an actor who has no reason to suspect the risk.
 
 Explanatory, architectural, and historical lessons are not mandating and need no anchor.
 

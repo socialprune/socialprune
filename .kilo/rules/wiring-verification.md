@@ -2,8 +2,8 @@
 
 > **MANDATORY WHEN CONNECTIVITY OR RUNTIME PATHS CHANGE**
 > Correct files are insufficient when the system path is unwired.
-> **Version:** 1.5.0
-> **Updated:** 2026-10-20
+> **Version:** 1.5.1
+> **Updated:** 2026-10-21
 
 ---
 
@@ -47,7 +47,7 @@ If the change spans more than one type, verify each affected type instead of tre
 
 | Type | Example proof shape |
 |---|---|
-| **reference wiring** | readback shows the reference, and the referenced path resolves to a real target |
+| **reference wiring** | readback shows the reference, and the referenced path resolves to a real file |
 | **registration wiring** | readback or lookup path shows the component in the live registry/discovery surface |
 | **propagation wiring** | downstream template or child-repo artifact shows the expected adopted change, or the gap is explicitly documented |
 | **consumption wiring** | at least one real consumer file references or invokes the rule, skill, or pattern |
@@ -57,8 +57,8 @@ These examples are intentionally thin. Use the lightest proof that honestly show
 ### Synchronization note for derived doctrine
 
 If a template doctrine change is supposed to propagate into target-repo copies or another derived surface, wiring verification is not complete until one of these is true:
-- the downstream sync happened and was verified,
-- or the current lane explicitly records that sync as later work outside the active scope.
+- the downstream sync happened and was verified, or
+- the current lane explicitly records that sync as later work outside the active scope.
 
 Do not imply propagation happened just because the source template file was updated.
 

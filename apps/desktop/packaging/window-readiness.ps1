@@ -26,25 +26,39 @@ function Wait-AppWindow {
   $desktop = $null
   $nativeFailure = $null
   $emptyEnumerations = 0
+  $appWatch = $null
+  $appObservation = $null
+  $maximumEnumeratedWindows = 0
+  $firstOwnedWindowMs = $null
+  $nextAppObservationMs = 0
+  $firstAppObservation = $null
   $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
   $pidCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
   $nameCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'SocialPrune')
   $condition = New-Object System.Windows.Automation.AndCondition($pidCondition, $nameCondition)
   $saveReceipt = {
     $selection = if ($desktop) { @{ source = $desktop.Source; requestedAccess = 65; probeDesktopMatches = $desktop.ProbeDesktopMatches } } else { $null }
-    $value = [ordered]@{ version = 1; state = $state; mode = $Mode; branch = $branch; appProcessId = $AppProcessId; sessionId = $sessionId; windowStationVisible = $stationVisible; desktopSelection = $selection; nativeFailure = $nativeFailure; emptyEnumerations = $emptyEnumerations; timeoutMs = $TimeoutMs; elapsedMs = $clock.ElapsedMilliseconds; iterations = $iterations; firstWindowMs = $firstWindowMs; firstKeepMs = $firstKeepMs; maximumWalkMs = $maximumWalkMs; errorId = $errorId; last = $last }
-    $text = $value | ConvertTo-Json -Depth 5 -Compress
+    $value = [ordered]@{ version = 1; state = $state; mode = $Mode; branch = $branch; appProcessId = $AppProcessId; sessionId = $sessionId; windowStationVisible = $stationVisible; desktopSelection = $selection; nativeFailure = $nativeFailure; firstAppObservation = $firstAppObservation; appObservation = $appObservation; maximumEnumeratedWindows = $maximumEnumeratedWindows; firstOwnedWindowMs = $firstOwnedWindowMs; emptyEnumerations = $emptyEnumerations; timeoutMs = $TimeoutMs; elapsedMs = $clock.ElapsedMilliseconds; iterations = $iterations; firstWindowMs = $firstWindowMs; firstKeepMs = $firstKeepMs; maximumWalkMs = $maximumWalkMs; errorId = $errorId; last = $last }
+    $text = $value | ConvertTo-Json -Depth 9 -Compress
     [IO.File]::WriteAllText($Receipt, $text, [Text.UTF8Encoding]::new($false))
     if ($state -ne 'observing') { [Console]::Error.WriteLine('WINDOW_READINESS_RECEIPT ' + $text) }
   }
   try {
     $stationVisible = [ReadinessWindows]::StationVisible()
+    $appWatch = [ReadinessWindows]::WatchApp($AppProcessId, $DesktopPath)
+    $appObservation = $appWatch.ObserveApp()
+    $firstAppObservation = $appObservation
     $desktop = [ReadinessWindows]::OpenOwned($AppProcessId, $DesktopPath)
     do {
       $iterations++
       $last = [ordered]@{ stage = 'window-lookup'; windowFound = $false; rootWindowFound = $null; nativeWindowCount = 0; windowProcessMatched = $null; windowNameMatched = $null; keepCount = 0; enabledKeepCount = 0; enabled = $null; focusAttempted = $false; focusResult = $null; focusError = $null; offscreen = $null; keyboardFocusable = $null; invokeAvailable = $null; navigationFound = $false; walkMs = $null }
       & $saveReceipt
       if ($OnPoll) { $null = & $OnPoll }
+      if ($clock.ElapsedMilliseconds -ge $nextAppObservationMs) {
+        $appObservation = $appWatch.ObserveApp()
+        $nextAppObservationMs = $clock.ElapsedMilliseconds + 1000
+      }
+      if (-not $appObservation.alive) { throw 'REVIEW_APP_EXITED_BEFORE_READY' }
       # Root lookup is diagnostic only. Its absence is not app-window absence.
       $last.rootWindowFound = $null -ne [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
       $handles = @($desktop.FindOwned($AppProcessId))
@@ -52,8 +66,10 @@ function Wait-AppWindow {
       $last.nativeReturned = $desktop.EnumerationReturned
       $last.win32Error = $desktop.EnumerationError
       $last.enumeratedWindows = $desktop.Callbacks
+      $maximumEnumeratedWindows = [Math]::Max($maximumEnumeratedWindows, $desktop.Callbacks)
       if (-not $desktop.EnumerationReturned -and $desktop.EnumerationError -eq 0 -and $desktop.Callbacks -eq 0) { $emptyEnumerations++ }
       $last.nativeWindowCount = $handles.Count
+      if ($handles.Count -and $null -eq $firstOwnedWindowMs) { $firstOwnedWindowMs = $clock.ElapsedMilliseconds }
       foreach ($handle in $handles) {
         $candidate = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
         $last.windowProcessMatched = $candidate.Current.ProcessId -eq $AppProcessId
@@ -81,6 +97,9 @@ function Wait-AppWindow {
           $action = if ($enabledKeep.Count) { $enabledKeep[0] } else { $keep[0] }
           $last.enabled = $action.Current.IsEnabled
           $last.offscreen = $action.Current.IsOffscreen
+          $bounds = $action.Current.BoundingRectangle
+          $last.boundingRectangle = @{ left = $bounds.Left; top = $bounds.Top; width = $bounds.Width; height = $bounds.Height; empty = $bounds.IsEmpty }
+          $last.onScreenBranch = 'uia-not-offscreen-required'
           $last.keyboardFocusable = $action.Current.IsKeyboardFocusable
           $pattern = $null
           $last.invokeAvailable = $action.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)
@@ -118,6 +137,7 @@ function Wait-AppWindow {
     throw 'WINDOW_READINESS_MISSING'
   } catch {
     $state = 'failed'
+    if ($appWatch) { try { $appObservation = $appWatch.ObserveApp() } catch { $nativeFailure = @{ call = 'ObserveApp'; win32Error = $null } } }
     $cause = $_.Exception
     while ($cause.InnerException) { $cause = $cause.InnerException }
     if ($cause -is [ReadinessWindows+NativeFailure]) {
@@ -142,6 +162,6 @@ function Wait-AppWindow {
         $errorId = 'READINESS_NATIVE_FAILED:' + $cause.Call + ':' + $cause.NativeErrorCode
       } else { $errorId = $cause.GetType().Name }
       throw
-    } finally { & $saveReceipt }
+    } finally { & $saveReceipt; if ($appWatch) { $appWatch.Dispose() } }
   }
 }

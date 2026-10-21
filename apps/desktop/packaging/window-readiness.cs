@@ -19,6 +19,59 @@ public static class ReadinessWindows {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowTextW(IntPtr window, StringBuilder value, int count);
   [DllImport("user32.dll", SetLastError=true)] static extern bool GetUserObjectInformationW(IntPtr handle, int kind, IntPtr value, uint size, out uint needed);
   [DllImport("kernel32.dll", EntryPoint="SetLastError")] static extern void ClearLastError(uint error);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
+  [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr process,uint milliseconds);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
+  [UnmanagedFunctionPointer(CallingConvention.Winapi,CharSet=CharSet.Unicode)] delegate bool DesktopCallback([MarshalAs(UnmanagedType.LPWStr)] string name,IntPtr argument);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool EnumDesktopsW(IntPtr station,DesktopCallback callback,IntPtr argument);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+  [StructLayout(LayoutKind.Sequential)] public struct Rectangle { public int left,top,right,bottom; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window,out Rectangle rectangle);
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+  delegate bool MonitorCallback(IntPtr monitor,IntPtr dc,ref Rectangle rectangle,IntPtr argument);
+  [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc,IntPtr clip,MonitorCallback callback,IntPtr argument);
+
+  public sealed class ThreadDesktop { public int threadId;public string desktopName;public string stationName;public bool? matchesPublished;public string failedCall;public int win32Error; }
+  public sealed class OwnedWindow { public string desktopName;public long hwnd;public bool visible,minimized;public Rectangle bounds; }
+  public sealed class DisplayObservation { public int width,height,virtualLeft,virtualTop,virtualWidth,virtualHeight,monitorCount;public bool stationVisible; }
+  public sealed class AppObservation { public int pid;public long observedAt;public bool alive;public uint? exitCode;public string processFailedCall;public int processWin32Error;public string stationName,publishedStationName,publishedDesktopName;public List<ThreadDesktop> threads=new List<ThreadDesktop>();public List<OwnedWindow> windows=new List<OwnedWindow>();public List<string> desktopNames=new List<string>();public List<string> failures=new List<string>();public DisplayObservation display; }
+  public sealed class AppWatch : IDisposable {
+    IntPtr process;int pid;string selected;
+    internal AppWatch(int appPid,string path) { pid=appPid;selected=path;process=RequireHandle(OpenProcess(0x101000,false,pid),"OpenProcess"); }
+    public AppObservation ObserveApp() {
+      var value=new AppObservation{pid=pid,observedAt=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),alive=WaitForSingleObject(process,0)==258};
+      uint exit;if(GetExitCodeProcess(process,out exit)){if(!value.alive)value.exitCode=exit;}else{value.processFailedCall="GetExitCodeProcess";value.processWin32Error=Marshal.GetLastWin32Error();}
+      IntPtr station=RequireHandle(GetProcessWindowStation(),"GetProcessWindowStation");value.stationName=Name(station);
+      string[] parts=String.IsNullOrEmpty(selected)?new string[0]:selected.Split('\\');
+      if(parts.Length==2){value.publishedStationName=parts[0];value.publishedDesktopName=parts[1];}
+      if(value.alive) {
+        try { using(var app=Process.GetProcessById(pid))foreach(ProcessThread thread in app.Threads)using(thread){
+          var row=new ThreadDesktop{threadId=thread.Id};
+          ClearLastError(0);IntPtr desktop=GetThreadDesktop((uint)thread.Id);
+          if(desktop==IntPtr.Zero){row.failedCall="GetThreadDesktop";row.win32Error=Marshal.GetLastWin32Error();}
+          else try{row.desktopName=Name(desktop);row.stationName=value.stationName;if(value.publishedDesktopName!=null)row.matchesPublished=String.Equals(row.desktopName,value.publishedDesktopName,StringComparison.OrdinalIgnoreCase);}catch(NativeFailure error){row.failedCall=error.Call;row.win32Error=error.NativeErrorCode;}
+          value.threads.Add(row);
+        }} catch(Exception error){value.failures.Add("AppThreads:"+error.GetType().Name);}
+      }
+      ClearLastError(0);
+      if(!EnumDesktopsW(station,delegate(string name,IntPtr argument){value.desktopNames.Add(name);return true;},IntPtr.Zero)){int error=Marshal.GetLastWin32Error();if(error!=0)value.failures.Add("EnumDesktopsW:"+error);}
+      foreach(string name in value.desktopNames) {
+        IntPtr desktop=OpenDesktopW(name,0,false,0x41);
+        if(desktop==IntPtr.Zero){value.failures.Add("OpenDesktopW:"+Marshal.GetLastWin32Error());continue;}
+        try {
+          ClearLastError(0);bool result=EnumDesktopWindows(desktop,delegate(IntPtr window,IntPtr argument){uint owner;GetWindowThreadProcessId(window,out owner);if(owner==pid){Rectangle bounds;GetWindowRect(window,out bounds);value.windows.Add(new OwnedWindow{desktopName=name,hwnd=window.ToInt64(),visible=IsWindowVisible(window),minimized=IsIconic(window),bounds=bounds});}return true;},IntPtr.Zero);
+          int error=Marshal.GetLastWin32Error();if(!result&&error!=0)value.failures.Add("EnumDesktopWindows:"+error);
+        } finally { CloseDesktop(desktop); }
+      }
+      int monitors=0;EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,delegate(IntPtr monitor,IntPtr dc,ref Rectangle bounds,IntPtr argument){monitors++;return true;},IntPtr.Zero);
+      value.display=new DisplayObservation{width=GetSystemMetrics(0),height=GetSystemMetrics(1),virtualLeft=GetSystemMetrics(76),virtualTop=GetSystemMetrics(77),virtualWidth=GetSystemMetrics(78),virtualHeight=GetSystemMetrics(79),monitorCount=monitors,stationVisible=StationVisible()};
+      return value;
+    }
+    public void Dispose(){if(process!=IntPtr.Zero){CloseHandle(process);process=IntPtr.Zero;}}
+  }
+  public static AppWatch WatchApp(int pid,string desktopPath) { return new AppWatch(pid,desktopPath); }
 
   public sealed class NativeFailure : Win32Exception {
     public string Call { get; private set; }

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   access,
@@ -39,6 +38,7 @@ import {
 } from './windows-powershell.ts';
 import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
 import { runWindowProbe } from './window-readiness.ts';
+import { launchReviewApp } from './review-app-launch.ts';
 
 const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
@@ -207,20 +207,12 @@ try {
   );
   for (let index = 0; index < 5; index++) {
     const started = Date.now();
-    const child = spawn(
+    const child = await launchReviewApp(
       installedExe,
       [`--data-dir=${data}`, '--force-renderer-accessibility'],
-      { stdio: 'pipe', windowsHide: false },
+      proofOutput(`release-app-smoke-${index + 1}.json`),
+      { dataDirectory: data, chromiumLog: true },
     );
-    let errors = '';
-    child.stdout.resume();
-    child.stderr.on('data', (bytes: Buffer) => {
-      errors += bytes.toString();
-    });
-    const exited = new Promise<number | null>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', resolve);
-    });
     try {
       if (!child.pid) throw new Error('RELEASE_PID_MISSING');
       const { stdout } = await runWindowProbe(
@@ -262,7 +254,7 @@ try {
       );
       assert.equal(
         await Promise.race([
-          exited,
+          child.exited,
           wait(30_000, undefined, { ref: false }).then(() => 'timeout'),
         ]),
         0,
@@ -274,11 +266,11 @@ try {
         'RELEASE_CHILD_REMAINS',
       );
       assert.doesNotMatch(
-        errors,
+        (await child.snapshot()).log.stderr,
         /DESKTOP_START_FAILED|DESKTOP_LOG_WRITE_FAILED|Debugger listening|INSTALL_LIFECYCLE_FAILED/,
       );
     } finally {
-      if (child.exitCode === null) {
+      if ((await child.snapshot()).state === 'running') {
         await runWindowProbe(
           'packaging/release-window.ps1',
           [
@@ -289,9 +281,9 @@ try {
             '-CloseOnly',
           ],
           proofOutput(`release-window-smoke-${index + 1}-cleanup.json`),
-        ).catch(() => child.kill());
-        await exited;
+        ).catch(() => undefined);
       }
+      await child.close();
     }
   }
 } catch (error) {

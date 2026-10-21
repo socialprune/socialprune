@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import {
   access,
   copyFile,
@@ -51,6 +50,7 @@ import {
   WINDOWS_QUERY_TIMEOUT_MS,
 } from '../packaging/windows-powershell.ts';
 import { runWindowProbe } from '../packaging/window-readiness.ts';
+import { launchReviewApp } from '../packaging/review-app-launch.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -258,7 +258,7 @@ async function remove() {
     uninstallerHash,
   );
 }
-let app: ReturnType<typeof spawn> | undefined;
+let app: Awaited<ReturnType<typeof launchReviewApp>> | undefined;
 let dataOwned = false;
 let programOwned = false;
 try {
@@ -480,10 +480,11 @@ try {
   );
   const generated = join(scratch, 'generated');
   await generatedWorkspace(generated);
-  app = spawn(
+  app = await launchReviewApp(
     exe,
     [`--data-dir=${generated}`, '--force-renderer-accessibility'],
-    { stdio: 'ignore', env: installerEnv },
+    proofOutput('release-app-controls.json'),
+    { dataDirectory: generated, chromiumLog: true },
   );
   if (!app.pid) throw new Error('APP_PID_MISSING');
   await runWindowProbe(
@@ -609,7 +610,8 @@ try {
     ['-AppProcessId', String(app.pid), '-Executable', exe, '-CloseOnly'],
     proofOutput('release-window-controls-close.json'),
   );
-  await new Promise<void>((resolve) => app!.once('exit', () => resolve()));
+  assert.equal(await app.exited, 0, 'RELEASE_CLOSE_FAILED');
+  await app.close();
   app = undefined;
   await mkdir(initial.data);
   dataOwned = true;
@@ -744,6 +746,7 @@ try {
     );
   console.log(JSON.stringify({ proof: 'nsis-uninstaller', cases: proof }));
 } catch (error) {
+  if (app) await app.snapshot();
   await writeFile(
     proofOutput('release-controls-failure.json'),
     JSON.stringify(
@@ -763,12 +766,15 @@ try {
   throw error;
 } finally {
   try {
-    if (app?.pid) {
-      await runWindowProbe(
-        'packaging/release-window.ps1',
-        ['-AppProcessId', String(app.pid), '-Executable', exe, '-CloseOnly'],
-        proofOutput('release-window-controls-cleanup.json'),
-      ).catch(() => undefined);
+    if (app) {
+      const state = await app.snapshot();
+      if (state.state === 'running')
+        await runWindowProbe(
+          'packaging/release-window.ps1',
+          ['-AppProcessId', String(app.pid), '-Executable', exe, '-CloseOnly'],
+          proofOutput('release-window-controls-cleanup.json'),
+        ).catch(() => undefined);
+      await app.close();
     }
     if (programOwned && (await exists(uninstall))) await remove();
     // Exact run-created remnants only. Never recursively remove the program or

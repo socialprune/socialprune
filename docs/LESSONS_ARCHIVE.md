@@ -444,3 +444,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-19 21:34 to 21:42Z, the pause above)
+
+### [LL-2026-10-017] 2026-10-21 ORCHESTRATION: A tripwire shortens the feedback loop; it never slows accepted work on its own
+
+**ID:** LL-2026-10-017
+**Severity:** HIGH
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). Round counts, run durations and job names below are dated evidence from 2026-10-21.
+
+**Feedback:** "Außerdem sagst du, warum limitierst du jetzt deine Arbeit? Ich verstehe nicht, was das Problem ist. Das will ich auch verstehen. Wir wollen das ja ideal haben, weil das ja unser Projekt ist, was wir dann veröffentlichen wollen. Wir sollten da nicht pausieren." The maintainer at 09:56Z, after I told him I was limiting the work on the desktop CI job.
+**Problem:** After twelve fix rounds on the desktop job (R14 to R25, each a different harness defect, the last release step still red on GitHub's Windows runner), I told him at 09:30Z that lane R would from then on take a round only when a CI run brought new evidence, and that the job gated "nothing you are waiting on". A green desktop job is part of the accepted release path he wants to publish. Each round tested one hypothesis per full CI run of about 40 minutes, so the slow part was the feedback loop, not the number of rounds, and I answered it by announcing fewer rounds instead of a faster loop.
+**5 Whys Analysis:**
+1. Why did I limit the work? -> The orchestrator's execution-budget tripwire (more than five launches on one invariant) had fired, and I read it as a signal to slow down.
+2. Why slow down? -> I judged the marginal value against what he was waiting on today, not against the accepted target end state, which includes a green desktop job before any release.
+3. Why did nothing push back? -> The tripwire asks for a topology reset and a marginal-value decision, and states that budget expiry never permits an unresolved defect to pass, but no check asked what a shorter loop could buy before rounds were cut.
+4. Why did I announce it instead of asking? -> It looked like an internal process choice, although it changed how fast an accepted target is reached, which is his call.
+5. Why? -> Root cause: no rule that a tripwire on an accepted invariant must first be answered by a shorter feedback loop, more evidence per round and independent probes in parallel, and that any slowdown of accepted work goes to him as a card.
+**Rule(s):**
+1. A budget or tripwire never lowers the effort on an accepted target by itself. Its first answer is a shorter feedback loop: more evidence per round, independent probes run in parallel, a faster dedicated check.
+2. Slowing, pausing or narrowing work on an accepted target goes to the maintainer as a card with the reason, the cost of going on and the faster route; it is never announced as a settled decision.
+3. When a defect is observable only in an external environment, here GitHub's Windows runner, build a short diagnostic run there that tests several hypotheses at once, instead of spending one full CI run per hypothesis.
+**Detection Pattern:** a status that says "begrenze", "pausiere", "nur noch", "nichts, worauf du wartest" about accepted work; the same CI job red for more than three successive rounds with one hypothesis tested per round; a tripwire answered by fewer rounds rather than a shorter loop.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: proposed one line for `.kilo/agents/workflow-orchestrator.md` (protected), Default Operating Posture: "A budget or tripwire never slows accepted work by itself: first shorten the feedback loop, and put any slowdown to the maintainer as a card (LL-2026-10-017)." Until he approves it, section 000 of the handoff file, read on every resume, and the live board's first lines carry the same line.
+**Related Lessons:** LL-2026-10-013 (a failed route proves only that route), LL-2026-10-014 (limits are hypotheses to measure), LL-2026-10-004 (a local gate proves only its platform), LL-2026-10-005 and LL-2026-10-009 (messages start from his goal).
+**Regression / Verification Note:** applied on 2026-10-21 10:00Z: no round was cut; a dedicated short diagnostic run on the Windows runner that tests several hypotheses in one pass was dispatched, and the slowdown was withdrawn in the reply to him.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-21 09:30Z, the limit on the desktop job above)

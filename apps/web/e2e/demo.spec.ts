@@ -9,6 +9,7 @@ import { observeImport, waitForApp } from './helpers.ts';
 import { reviewFixture } from './review-fixture.ts';
 import { startStaticServer } from './static-server.ts';
 import { menuLink, listView } from './navigation.ts';
+import { captureReviewAccount, traceReviewAccount } from './review-account.ts';
 
 async function fixture() {
   const root = join(FIXTURES_ROOT, 'demo');
@@ -40,226 +41,253 @@ async function backup(page: Page): Promise<WorkspaceV2> {
 test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lists and writes a backup with the network audit', async ({
   page,
   context,
-}) => {
-  const expected = await fixture();
-  await page.addInitScript(() =>
-    Object.defineProperty(window, 'showSaveFilePicker', {
-      value: undefined,
-      configurable: true,
-    }),
-  );
-  const audit = await observeImport(context, page);
-  const dataRequests: string[] = [];
-  page.on('request', (request) => {
-    if (
-      ['fetch', 'xhr'].includes(request.resourceType()) &&
-      new URL(request.url()).protocol !== 'blob:' &&
-      !new URL(request.url()).pathname.endsWith('.js')
-    )
-      dataRequests.push(request.url());
-  });
-  await page.goto('/socialprune/#/demo');
-  await expect(page.getByTestId('review-card')).toBeVisible();
-  await listView(page);
-  await expect(page.getByRole('grid')).toBeVisible();
-  await expect(page.locator('main[data-gate]')).toHaveAttribute(
-    'data-gate',
-    'ready',
-  );
-  const banner = page.getByTestId('demo-banner');
-  await expect(banner).toContainText(
-    'Made-up posts. Suggestions are examples, not classifier results.',
-  );
-  await expect(
-    page.getByRole('combobox', { name: 'Account', exact: true }),
-  ).toHaveValue(expected.manifest.exports[0]!.account.key);
-  const initial = await backup(page);
-  expect(initial.kind).toBe('demo');
-  expect(initial.id).toBe('demo');
-  expect(initial.items.sort((a, b) => a.id.localeCompare(b.id))).toEqual(
-    expected.items.sort((a, b) => a.id.localeCompare(b.id)),
-  );
-  expect(initial.assessments).toEqual(expected.assessments);
-  expect(initial.imports).toHaveLength(expected.manifest.exports.length);
-  expect(
-    [...new Set(initial.imports.flatMap(({ archives }) => archives))].sort(),
-  ).toEqual(expected.manifest.exports.map(({ archive }) => archive).sort());
-  expect(initial.imports.every(({ status }) => status === 'complete')).toBe(
-    true,
-  );
-  expect(initial.decisionEvents).toEqual([]);
-  const databases = await page.evaluate(async () =>
-    (await indexedDB.databases()).map(({ name }) => name),
-  );
-  expect(databases).toContain('sp-ws-demo');
-  const grid = page.getByRole('grid');
-  await expect(
-    grid.getByText('Example', { exact: true }).first(),
-  ).toBeVisible();
-  await grid.focus();
-  await page.keyboard.press('Enter');
-  const detail = page.getByRole('region', { name: 'Entry details' });
-  await expect(
-    detail.getByText('Example', { exact: true }).first(),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Back to list', exact: true }).click();
-  const xIds = new Set(
-    expected.items
-      .filter(({ platform }) => platform === 'x')
-      .map(({ id }) => id),
-  );
-  const suggested = new Set(
-    expected.assessments
-      .filter(({ risk, itemId }) => risk >= 2 && xIds.has(itemId))
-      .map(({ itemId }) => itemId),
-  );
-  await page
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
-    .click();
-  const dialog = page.getByRole('dialog');
-  await expect(
-    dialog.getByRole('button', {
-      name: `Mark for deletion: ${suggested.size} entries`,
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await dialog.locator('summary').click();
-  await expect(
-    dialog.getByText('Example', { exact: true }).first(),
-  ).toBeVisible();
-  await dialog
-    .getByRole('button', {
-      name: `Mark for deletion: ${suggested.size} entries`,
-      exact: true,
-    })
-    .click();
-  await expect(dialog).toHaveCount(0);
-  const marked = await backup(page);
-  expect(marked.decisionEvents.map(({ itemId }) => itemId).sort()).toEqual(
-    [...suggested].sort(),
-  );
-  expect(
-    marked.decisionEvents.every(
-      ({ value, source, action }) =>
-        value === 'delete' &&
-        source.via === 'web-review' &&
-        action.kind === 'bulk',
-    ),
-  ).toBe(true);
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(
-    page
-      .getByRole('status')
-      .filter({ hasText: `${suggested.size} entries changed.` })
-      .first(),
-  ).toBeVisible();
-  const undone = await backup(page);
-  expect(
-    undone.decisionEvents
-      .filter(({ action }) => action.kind === 'undo')
-      .map(({ itemId }) => itemId)
-      .sort(),
-  ).toEqual([...suggested].sort());
-  expect(
-    undone.decisionEvents
-      .filter(({ action }) => action.kind === 'undo')
-      .every(({ value }) => value === 'undecided'),
-  ).toBe(true);
-  await grid.focus();
-  await page.keyboard.press('m');
-  await expect(
-    page.getByRole('status').filter({ hasText: '1 decision saved.' }),
-  ).toBeVisible();
-  await page.evaluate(() => {
-    location.hash = '#/clicklist/x';
-  });
-  await expect(banner).toBeVisible();
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Start', exact: true })
-    .click();
-  await expect(page.locator('li[data-item-id]')).toHaveCount(1);
-  await page
-    .locator('li[data-item-id]')
-    .getByRole('button', { name: 'I did it', exact: true })
-    .click();
-  await expect(
-    page.getByRole('status').filter({ hasText: '1 deleted by you' }),
-  ).toBeVisible();
-  await page.getByRole('link', { name: 'Review', exact: true }).click();
-  await listView(page);
-  await page
-    .getByRole('combobox', { name: 'Account', exact: true })
-    .selectOption(expected.manifest.exports[1]!.account.key);
-  await expect(
-    grid.getByText('Example', { exact: true }).first(),
-  ).toBeVisible();
-  await grid.focus();
-  await page.keyboard.press('m');
-  await expect(
-    page.getByRole('status').filter({ hasText: '1 decision saved.' }),
-  ).toBeVisible();
-  await page.evaluate(() => {
-    location.hash = '#/clicklist/instagram';
-  });
-  await expect(banner).toBeVisible();
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Start', exact: true })
-    .click();
-  await expect(page.locator('li[data-item-id]')).toHaveCount(1);
-  await expect(
-    page.locator('li[data-item-id]').getByRole('heading'),
-  ).toBeVisible();
-  await (await menuLink(page, 'Backup and restore')).click();
-  await expect(banner).toBeVisible();
-  expect(await page.locator('input[type="file"]').count()).toBe(0);
-  const download = page.waitForEvent('download');
-  await page
-    .getByRole('button', { name: 'Download backup', exact: true })
-    .click();
-  const stream = await (await download).createReadStream();
-  if (!stream) throw new Error('Demo backup was not downloaded.');
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream)
-    chunks.push(Buffer.from(chunk as Uint8Array));
-  const saved = JSON.parse(
-    Buffer.concat(chunks).toString('utf8'),
-  ) as WorkspaceV2;
-  expect(saved.kind).toBe('demo');
-  expect(saved.assessments).toEqual(expected.assessments);
-  expect(saved.outcomeEvents).toHaveLength(1);
-  await (await menuLink(page, 'Settings')).click();
-  await expect(banner).toBeVisible();
-  await page
-    .getByRole('combobox', { name: 'Language', exact: true })
-    .selectOption('de');
-  await expect(banner).toContainText(
-    'Erfundene Beiträge. Vorschläge sind Beispiele, nicht von einem Klassifikator.',
-  );
-  await (await menuLink(page, 'Demo ausprobieren')).click();
-  await listView(page);
-  await expect(
-    grid.getByText('Beispiel', { exact: true }).first(),
-  ).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Demo zurücksetzen', exact: true })
-    .click();
-  await expect(
-    page.getByText(
-      'Die Demo wurde zurückgesetzt. Deine Demo-Entscheidungen und Ergebnisvermerke wurden entfernt.',
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(grid).toBeVisible();
-  const reset = await backup(page);
-  expect(reset.createdAt).not.toBe(initial.createdAt);
-  expect(reset.decisionEvents).toEqual([]);
-  expect(reset.outcomeEvents).toEqual([]);
-  expect(reset.assessments).toEqual(expected.assessments);
-  expect(reset.items).toHaveLength(expected.items.length);
-  expect(dataRequests).toEqual([]);
-  await audit.assert();
+}, info) => {
+  try {
+    const expected = await fixture();
+    await page.addInitScript(() =>
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        value: undefined,
+        configurable: true,
+      }),
+    );
+    const audit = await observeImport(context, page);
+    const dataRequests: string[] = [];
+    page.on('request', (request) => {
+      if (
+        ['fetch', 'xhr'].includes(request.resourceType()) &&
+        new URL(request.url()).protocol !== 'blob:' &&
+        !new URL(request.url()).pathname.endsWith('.js')
+      )
+        dataRequests.push(request.url());
+    });
+    await page.goto('/socialprune/#/demo');
+    await expect(page.getByTestId('review-card')).toBeVisible();
+    await listView(page);
+    await expect(page.getByRole('grid')).toBeVisible();
+    await expect(page.locator('main[data-gate]')).toHaveAttribute(
+      'data-gate',
+      'ready',
+    );
+    const banner = page.getByTestId('demo-banner');
+    await expect(banner).toContainText(
+      'Made-up posts. Suggestions are examples, not classifier results.',
+    );
+    await expect(
+      page.getByRole('combobox', { name: 'Account', exact: true }),
+    ).toHaveValue(expected.manifest.exports[0]!.account.key);
+    const initial = await backup(page);
+    expect(initial.kind).toBe('demo');
+    expect(initial.id).toBe('demo');
+    expect(initial.items.sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      expected.items.sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    expect(initial.assessments).toEqual(expected.assessments);
+    expect(initial.imports).toHaveLength(expected.manifest.exports.length);
+    expect(
+      [...new Set(initial.imports.flatMap(({ archives }) => archives))].sort(),
+    ).toEqual(expected.manifest.exports.map(({ archive }) => archive).sort());
+    expect(initial.imports.every(({ status }) => status === 'complete')).toBe(
+      true,
+    );
+    expect(initial.decisionEvents).toEqual([]);
+    const databases = await page.evaluate(async () =>
+      (await indexedDB.databases()).map(({ name }) => name),
+    );
+    expect(databases).toContain('sp-ws-demo');
+    const grid = page.getByRole('grid');
+    await expect(
+      grid.getByText('Example', { exact: true }).first(),
+    ).toBeVisible();
+    await grid.focus();
+    await page.keyboard.press('Enter');
+    const detail = page.getByRole('region', { name: 'Entry details' });
+    await expect(
+      detail.getByText('Example', { exact: true }).first(),
+    ).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Back to list', exact: true })
+      .click();
+    const xIds = new Set(
+      expected.items
+        .filter(({ platform }) => platform === 'x')
+        .map(({ id }) => id),
+    );
+    const suggested = new Set(
+      expected.assessments
+        .filter(({ risk, itemId }) => risk >= 2 && xIds.has(itemId))
+        .map(({ itemId }) => itemId),
+    );
+    await page
+      .getByRole('button', { name: 'Mark suggested entries', exact: true })
+      .click();
+    const dialog = page.getByRole('dialog');
+    await expect(
+      dialog.getByRole('button', {
+        name: `Mark for deletion: ${suggested.size} entries`,
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await dialog.locator('summary').click();
+    await expect(
+      dialog.getByText('Example', { exact: true }).first(),
+    ).toBeVisible();
+    await dialog
+      .getByRole('button', {
+        name: `Mark for deletion: ${suggested.size} entries`,
+        exact: true,
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const marked = await backup(page);
+    expect(marked.decisionEvents.map(({ itemId }) => itemId).sort()).toEqual(
+      [...suggested].sort(),
+    );
+    expect(
+      marked.decisionEvents.every(
+        ({ value, source, action }) =>
+          value === 'delete' &&
+          source.via === 'web-review' &&
+          action.kind === 'bulk',
+      ),
+    ).toBe(true);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: `${suggested.size} entries changed.` })
+        .first(),
+    ).toBeVisible();
+    const undone = await backup(page);
+    expect(
+      undone.decisionEvents
+        .filter(({ action }) => action.kind === 'undo')
+        .map(({ itemId }) => itemId)
+        .sort(),
+    ).toEqual([...suggested].sort());
+    expect(
+      undone.decisionEvents
+        .filter(({ action }) => action.kind === 'undo')
+        .every(({ value }) => value === 'undecided'),
+    ).toBe(true);
+    await grid.focus();
+    await page.keyboard.press('m');
+    await expect(
+      page.getByRole('status').filter({ hasText: '1 decision saved.' }),
+    ).toBeVisible();
+    await page.evaluate(() => {
+      location.hash = '#/clicklist/x';
+    });
+    await expect(banner).toBeVisible();
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: 'Start', exact: true })
+      .click();
+    await expect(page.locator('li[data-item-id]')).toHaveCount(1);
+    await page
+      .locator('li[data-item-id]')
+      .getByRole('button', { name: 'I did it', exact: true })
+      .click();
+    await expect(
+      page.getByRole('status').filter({ hasText: '1 deleted by you' }),
+    ).toBeVisible();
+    await traceReviewAccount(page);
+    await page.getByRole('link', { name: 'Review', exact: true }).click();
+    await expect(page.getByTestId('card-review')).toBeVisible();
+    await listView(page);
+    const listAccount = page
+      .getByTestId('review')
+      .getByRole('combobox', { name: 'Account', exact: true });
+    await listAccount.selectOption(expected.manifest.exports[1]!.account.key);
+    await expect(listAccount).toHaveValue(
+      expected.manifest.exports[1]!.account.key,
+    );
+    await expect(
+      grid.getByText('Example', { exact: true }).first(),
+    ).toBeVisible();
+    await grid.focus();
+    await page.keyboard.press('m');
+    await expect(
+      page.getByRole('status').filter({ hasText: '1 decision saved.' }),
+    ).toBeVisible();
+    const instagramMarked = await backup(page);
+    const instagramIds = new Set(
+      expected.items
+        .filter((item) => item.platform === 'instagram')
+        .map((item) => item.id),
+    );
+    const instagramDecisions = instagramMarked.decisionEvents.filter((event) =>
+      instagramIds.has(event.itemId),
+    );
+    expect(instagramDecisions).toHaveLength(1);
+    expect(instagramDecisions[0]).toMatchObject({
+      value: 'delete',
+      source: { via: 'web-review' },
+    });
+    await page.evaluate(() => {
+      location.hash = '#/clicklist/instagram';
+    });
+    await expect(banner).toBeVisible();
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: 'Start', exact: true })
+      .click();
+    await expect(page.locator('li[data-item-id]')).toHaveCount(1);
+    await expect(
+      page.locator('li[data-item-id]').getByRole('heading'),
+    ).toBeVisible();
+    await (await menuLink(page, 'Backup and restore')).click();
+    await expect(banner).toBeVisible();
+    expect(await page.locator('input[type="file"]').count()).toBe(0);
+    const download = page.waitForEvent('download');
+    await page
+      .getByRole('button', { name: 'Download backup', exact: true })
+      .click();
+    const stream = await (await download).createReadStream();
+    if (!stream) throw new Error('Demo backup was not downloaded.');
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream)
+      chunks.push(Buffer.from(chunk as Uint8Array));
+    const saved = JSON.parse(
+      Buffer.concat(chunks).toString('utf8'),
+    ) as WorkspaceV2;
+    expect(saved.kind).toBe('demo');
+    expect(saved.assessments).toEqual(expected.assessments);
+    expect(saved.outcomeEvents).toHaveLength(1);
+    await (await menuLink(page, 'Settings')).click();
+    await expect(banner).toBeVisible();
+    await page
+      .getByRole('combobox', { name: 'Language', exact: true })
+      .selectOption('de');
+    await expect(banner).toContainText(
+      'Erfundene Beiträge. Vorschläge sind Beispiele, nicht von einem Klassifikator.',
+    );
+    await (await menuLink(page, 'Demo ausprobieren')).click();
+    await listView(page);
+    await expect(
+      grid.getByText('Beispiel', { exact: true }).first(),
+    ).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Demo zurücksetzen', exact: true })
+      .click();
+    await expect(
+      page.getByText(
+        'Die Demo wurde zurückgesetzt. Deine Demo-Entscheidungen und Ergebnisvermerke wurden entfernt.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(grid).toBeVisible();
+    const reset = await backup(page);
+    expect(reset.createdAt).not.toBe(initial.createdAt);
+    expect(reset.decisionEvents).toEqual([]);
+    expect(reset.outcomeEvents).toEqual([]);
+    expect(reset.assessments).toEqual(expected.assessments);
+    expect(reset.items).toHaveLength(expected.items.length);
+    expect(dataRequests).toEqual([]);
+    await audit.assert();
+  } catch (error) {
+    await captureReviewAccount(page, info);
+    throw error;
+  }
 });
 
 test('W4 demo works with no service-worker control and cannot open personal data or restore files', async ({
@@ -423,7 +451,9 @@ test('W4 demo recreates from precached bytes after reload with its actual server
     };
   });
   const expected = await fixture();
-  const server = await startStaticServer(4182);
+  // eslint-disable-next-line no-restricted-properties -- Serial E2E test server port, never a credential.
+  const probePort = Number(process.env['SP_E2E_PROBE_PORT'] ?? '4182');
+  const server = await startStaticServer(probePort);
   try {
     await page.goto(`${server.origin}/socialprune/#/demo`);
     await expect(page.getByTestId('review-card')).toBeVisible();

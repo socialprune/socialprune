@@ -15,6 +15,9 @@ export async function listView(page: Page) {
   await page.evaluate(() => {
     location.hash = '#/review/list';
   });
+  // The hash changes before React replaces the card view. Both views have an
+  // Account combobox, so callers must not act on the old one during that gap.
+  await expect(page.getByTestId('review')).toBeVisible();
 }
 export async function german(page: Page) {
   await page.getByRole('button', { name: 'Menu', exact: true }).click();

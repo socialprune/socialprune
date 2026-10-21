@@ -71,7 +71,7 @@ export function listPage(
   const script =
     instrumentation +
     `
-const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)},handle=${json(handle)},other=${json(IG_FIXTURE.other)};let oldest=false,start=null,end=null,loads=0,applied=false,navReady=variant!=='list-other-names-nav-late';
+const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)},handle=${json(handle)},other=${json(IG_FIXTURE.other)};let oldest=false,start=null,end=null,loads=0,applied=false,navReady=!['list-other-names-nav-late','list-nav-after-deadline'].includes(variant);
 const list=document.getElementById('list');
 function accountVariant(){return variant.endsWith('-filtered')?(start||end?variant.replace('-filtered',''):'success'):variant};
 function navigation(){const mode=accountVariant(),nav=document.getElementById('navigation');nav.replaceChildren();document.getElementById('inside-profile')?.remove();if(!navReady||mode==='list-nav-missing')return;const link=document.createElement('a');link.href='/'+(mode==='list-nav-other'?other.username:handle)+'/';link.textContent='Profile';if(mode==='list-nav-inside-main'){link.id='inside-profile';document.querySelector('main').prepend(link)}else nav.append(link)};
@@ -80,6 +80,7 @@ function render(){mutate(()=>{navigation();list.replaceChildren();const empty=['
 list.addEventListener('wheel',()=>{if(oldest){loads++;render()}});render();
 list.addEventListener('click',event=>{const node=event.target.closest('[role=button]');if(!node)return;const row=rows.find(row=>(row.noticeStatus||row.noticeBody)&&node.textContent.includes(row.text));if(!row)return;event.preventDefault();event.stopImmediatePropagation();const entry=row.noticeBody,paths=entry?Array.from({length:entry.responses||1},(_,i)=>entry.path+'?generated_case='+entry.variant+'&request='+i):['/api/v1/generated/post-notice/'+row.noticeStatus+'/'];Promise.all(paths.map(path=>fetch(path).then(response=>response.text()).catch(()=>{}))).then(()=>mutate(()=>{document.querySelector('main').innerHTML='<p>Something went wrong</p>'}));},true);
 ${variant === 'list-other-names-nav-late' ? `setTimeout(()=>mutate(()=>{navReady=true;navigation()}),${IG_FIXTURE.expected.navigationDelayMs});` : ''}
+${variant === 'list-nav-after-deadline' ? `setTimeout(()=>mutate(()=>{navReady=true;navigation()}),${IG_FIXTURE.expected.accountDeadlineDelayMs});` : ''}
 document.querySelector('main>[role=button]').onclick=()=>mutate(()=>{
   if(applied)return;
   const outer=document.createElement('div'),dialog=document.createElement('div');outer.setAttribute('role','dialog');dialog.setAttribute('role','dialog');outer.append(dialog);

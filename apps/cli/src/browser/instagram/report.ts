@@ -133,11 +133,55 @@ export const CONTEXT_STOP_TOKENS = [
   'stopped',
 ] as const;
 export type ContextStopToken = (typeof CONTEXT_STOP_TOKENS)[number];
+export const AccountCheckSchema = z
+  .strictObject({
+    profileLinkFound: z.boolean(),
+    outsidePathCount: count,
+    rows: count,
+    ownRows: count,
+    elapsedMs: count,
+    reads: z.number().int().positive(),
+    lastReadAfterDeadline: z.boolean(),
+  })
+  .refine((value) => value.ownRows <= value.rows);
+export type AccountCheck = z.infer<typeof AccountCheckSchema>;
+export const ACCOUNT_CLASSES = ['expected', 'absent', 'other'] as const;
+export type AccountClass = (typeof ACCOUNT_CLASSES)[number];
+export const AccountReadbackSchema = z.strictObject({
+  accountBeforeClass: z.enum(ACCOUNT_CLASSES),
+  accountAfterClass: z.enum(ACCOUNT_CLASSES),
+});
+export function accountClass(
+  expected: string,
+  paths: readonly string[],
+): AccountClass {
+  const profiles = paths.filter((path) =>
+    /^\/[A-Za-z0-9_.]{1,30}\/$/.test(path),
+  );
+  if (
+    profiles.some(
+      (path) => path.toLowerCase() === `/${expected.toLowerCase()}/`,
+    )
+  )
+    return 'expected';
+  return profiles.length ? 'other' : 'absent';
+}
 export class ContextStop extends CliError {
   readonly token: ContextStopToken;
-  constructor(code: CliErrorCode, token: ContextStopToken) {
+  readonly accountCheck?: AccountCheck;
+  constructor(
+    code: CliErrorCode,
+    token: ContextStopToken,
+    accountCheck?: AccountCheck,
+  ) {
     super(code);
     this.token = token;
+    if (
+      accountCheck &&
+      code === 'ACCOUNT_MISMATCH' &&
+      token === 'account-changed'
+    )
+      this.accountCheck = Object.freeze(AccountCheckSchema.parse(accountCheck));
   }
 }
 export const CONTEXT_CAUSE_STAGES = [
@@ -274,16 +318,36 @@ function causeChain(error: unknown) {
       ) ?? chain[0]!;
   return { token, chain };
 }
-export function stopDetails(error: unknown): { code: string; token: string } {
+export function stopDetails(error: unknown): {
+  code: string;
+  token: string;
+  accountCheck?: AccountCheck;
+} {
   if (
     error instanceof ContextStop &&
     CONTEXT_STOP_TOKENS.some((token) => token === error.token)
   )
-    return { code: error.code, token: error.token };
+    return {
+      code: error.code,
+      token: error.token,
+      ...(error.accountCheck
+        ? { accountCheck: AccountCheckSchema.parse(error.accountCheck) }
+        : {}),
+    };
   if (error instanceof CliError && Object.hasOwn(CLI_ERRORS, error.code))
     return { code: error.code, token: error.code };
   const { token } = causeChain(error);
   return { code: token, token };
+}
+export function stopDetailText(error: unknown): string {
+  const detail = stopDetails(error),
+    account = detail.accountCheck;
+  return (
+    detail.token +
+    (account
+      ? `; link=${account.profileLinkFound}; outsidePathCount=${account.outsidePathCount}; rows=${account.rows}; own=${account.ownRows}; reads=${account.reads}; elapsedMs=${account.elapsedMs}; lastReadAfterDeadline=${account.lastReadAfterDeadline}`
+      : '')
+  );
 }
 const KEYS = new Set([
   'data',

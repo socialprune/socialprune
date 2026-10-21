@@ -40,6 +40,7 @@ export const IG_FIXTURE = {
     otherNameRows: 3,
     accountFillers: 8,
     navigationDelayMs: 800,
+    accountDeadlineDelayMs: 10000,
     framedDocuments: 5,
     framedCodeDocuments: 2,
     framedParameterObjects: 3,
@@ -187,6 +188,7 @@ export type Variant =
   | 'list-other-names-nav-late'
   | 'list-nav-other'
   | 'list-nav-missing'
+  | 'list-nav-after-deadline'
   | 'list-nav-inside-main'
   | 'list-half-other'
   | 'list-majority-other'

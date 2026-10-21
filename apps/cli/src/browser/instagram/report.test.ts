@@ -1,8 +1,105 @@
 import { expect, test } from 'vitest';
-import { contextCause, ContextCauseSchema, stopDetails } from './report.ts';
+import {
+  contextCause,
+  ContextCauseSchema,
+  stopDetails,
+  ContextStop,
+  AccountCheckSchema,
+  AccountReadbackSchema,
+  accountClass,
+  stopDetailText,
+} from './report.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 
 const runId = '00000000-0000-4000-8000-000000000016';
+test('C20 account-check evidence survives the stop and terminal formatter as closed fields only', () => {
+  const accountCheck = {
+    profileLinkFound: false,
+    outsidePathCount: 0,
+    rows: 5,
+    ownRows: 5,
+    elapsedMs: 17052,
+    reads: 9,
+    lastReadAfterDeadline: false,
+  };
+  const error = new ContextStop(
+    'ACCOUNT_MISMATCH',
+    'account-changed',
+    accountCheck,
+  );
+  expect(stopDetails(error)).toEqual({
+    code: 'ACCOUNT_MISMATCH',
+    token: 'account-changed',
+    accountCheck,
+  });
+  expect(stopDetailText(error)).toBe(
+    'account-changed; link=false; outsidePathCount=0; rows=5; own=5; reads=9; elapsedMs=17052; lastReadAfterDeadline=false',
+  );
+  for (const value of Object.values(IG_FIXTURE.other))
+    expect(
+      JSON.stringify(stopDetails(error)) + stopDetailText(error),
+    ).not.toContain(value);
+  expect(
+    stopDetailText(new ContextStop('PLATFORM_CHECK', 'notice-error')),
+  ).toBe('notice-error');
+});
+test('C20 account-check schema rejects private fields and inconsistent counts', () => {
+  const valid = {
+    profileLinkFound: true,
+    outsidePathCount: 1,
+    rows: 5,
+    ownRows: 2,
+    elapsedMs: 1,
+    reads: 1,
+    lastReadAfterDeadline: true,
+  };
+  expect(AccountCheckSchema.parse(valid)).toEqual(valid);
+  for (const value of [
+    { ...valid, username: IG_FIXTURE.other.username },
+    { ...valid, paths: [`/${IG_FIXTURE.other.username}/`] },
+    { ...valid, ownRows: 6 },
+    { ...valid, reads: 0 },
+    { ...valid, elapsedMs: -1 },
+    { ...valid, rows: 1.5 },
+    { ...valid, profileLinkFound: IG_FIXTURE.other.text },
+  ])
+    expect(() => AccountCheckSchema.parse(value)).toThrow();
+});
+test('C20 readback account classes distinguish expected absent and other without names', () => {
+  const expected = 'generated_c20_person';
+  expect(accountClass(expected, [`/${expected.toUpperCase()}/`])).toBe(
+    'expected',
+  );
+  expect(accountClass(expected, [])).toBe('absent');
+  expect(
+    accountClass(expected, [
+      '/your_activity/interactions/comments',
+      '/p/generated/',
+    ]),
+  ).toBe('absent');
+  expect(accountClass(expected, [`/${IG_FIXTURE.other.username}/`])).toBe(
+    'other',
+  );
+  expect(
+    AccountReadbackSchema.parse({
+      accountBeforeClass: 'expected',
+      accountAfterClass: 'absent',
+    }),
+  ).toEqual({ accountBeforeClass: 'expected', accountAfterClass: 'absent' });
+  for (const value of [
+    { accountBeforeClass: expected, accountAfterClass: 'absent' },
+    {
+      accountBeforeClass: 'other',
+      accountAfterClass: IG_FIXTURE.other.username,
+    },
+    {
+      accountBeforeClass: 'expected',
+      accountAfterClass: 'other',
+      username: expected,
+    },
+  ])
+    expect(() => AccountReadbackSchema.parse(value)).toThrow();
+});
 test('C16 unexpected error retains a correlated closed cause chain without its values', () => {
   const timeout = new Error(IG_FIXTURE.other.text);
   timeout.name = 'TimeoutError';

@@ -25,7 +25,8 @@ import {
 } from './selectors.ts';
 import type { PostProjection, ConfirmationResult } from './selectors.ts';
 import type { RowReadCounts } from './selectors.ts';
-import { ContextStop } from './report.ts';
+import { ContextStop, accountClass } from './report.ts';
+import type { AccountClass } from './report.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
@@ -47,6 +48,7 @@ export interface ContextDependencies {
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   capture?: typeof capturePost;
   navigated?(kind: ReadyKind, elapsedMs: number): void;
+  accountObserved?(this: void, value: AccountClass): void;
   close(context: BrowserContext, automatic: boolean): Promise<void>;
 }
 export const productionContext: ContextDependencies = {
@@ -141,8 +143,10 @@ async function navigateList(
     deadline,
     guard,
     rowCounts,
+    navigationStart,
+    deps.accountObserved,
   );
-  return accountRows;
+  return { entries: accountRows, navigationStart };
 }
 async function checkedAccountRows(
   page: Page,
@@ -150,18 +154,36 @@ async function checkedAccountRows(
   deadline: number,
   guard: () => void,
   counts: RowReadCounts,
+  navigationStart: number,
+  observed: ContextDependencies['accountObserved'],
 ) {
   let hadRows = false;
+  let reads = 0;
   for (;;) {
     guard();
     await checkPage(page);
+    const readStarted = performance.now();
+    reads++;
     const entries = await readAccountRows(page, expected, counts);
     hadRows ||= entries.length > 0;
-    if (accountMatches(expected, await outsideProfilePaths(page), entries))
-      return entries;
-    if (performance.now() >= deadline)
+    const paths = await outsideProfilePaths(page);
+    const classification = accountClass(expected, paths);
+    observed?.(classification);
+    if (accountMatches(expected, paths, entries)) return entries;
+    const checkedAt = performance.now();
+    if (checkedAt >= deadline)
       throw hadRows
-        ? new ContextStop('ACCOUNT_MISMATCH', 'account-changed')
+        ? new ContextStop('ACCOUNT_MISMATCH', 'account-changed', {
+            profileLinkFound: classification === 'expected',
+            outsidePathCount: paths.length,
+            rows: entries.length,
+            ownRows: entries.filter(
+              (row) => row.username.toLowerCase() === expected.toLowerCase(),
+            ).length,
+            elapsedMs: Math.max(0, Math.round(checkedAt - navigationStart)),
+            reads,
+            lastReadAfterDeadline: readStarted >= deadline,
+          })
         : new ContextStop('PLATFORM_CHECK', 'list-timeout');
     await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
   }
@@ -190,7 +212,8 @@ export async function loadList(
   now = new Date(),
   rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 },
 ) {
-  let accountRows = await navigateList(page, expected, deps, guard, rowCounts);
+  let navigation = await navigateList(page, expected, deps, guard, rowCounts);
+  let accountRows = navigation.entries;
   let oldestWithinWeek: boolean | null = null;
   if (oldest) {
     await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
@@ -209,11 +232,20 @@ export async function loadList(
         Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <= 604800000;
     // Applying the probe sort prevents another filter dialog until navigation.
     // This reload stays inside the same step; empty rows keep their maximum.
-    accountRows = await navigateList(page, expected, deps, guard, rowCounts);
+    navigation = await navigateList(page, expected, deps, guard, rowCounts);
+    accountRows = navigation.entries;
   }
   await filterList(page, item.createdAt, guard);
   const filteredDeadline = performance.now() + deps.responseMs;
-  await checkedAccountRows(page, expected, filteredDeadline, guard, rowCounts);
+  await checkedAccountRows(
+    page,
+    expected,
+    filteredDeadline,
+    guard,
+    rowCounts,
+    navigation.navigationStart,
+    deps.accountObserved,
+  );
   let previous = JSON.stringify(
       await readAccountRows(page, expected, rowCounts),
     ),
@@ -251,6 +283,8 @@ export async function loadList(
     filteredDeadline,
     guard,
     rowCounts,
+    navigation.navigationStart,
+    deps.accountObserved,
   );
   return {
     candidates: entries.filter(

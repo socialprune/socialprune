@@ -1362,6 +1362,167 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each([
+  'list-nav-missing',
+  'list-majority-other',
+  'list-nav-after-deadline',
+] as const)(
+  'C20 account-check %s preserves the failed conditions and never emits private values',
+  async (variant) => {
+    const h = await harness(variant, 5);
+    try {
+      expect(await h.start(true)).toMatchObject({
+        code: 'ACCOUNT_MISMATCH',
+        token: 'account-changed',
+      });
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        stop: {
+          accountCheck: {
+            profileLinkFound: boolean;
+            outsidePathCount: number;
+            rows: number;
+            ownRows: number;
+            reads: number;
+            elapsedMs: number;
+            lastReadAfterDeadline: boolean;
+          };
+        };
+        readback: { accountBeforeClass: string; accountAfterClass: string };
+      };
+      const detail = report.stop.accountCheck;
+      expect(detail).toMatchObject(
+        variant === 'list-majority-other'
+          ? {
+              profileLinkFound: true,
+              outsidePathCount: 1,
+              rows: 11,
+              ownRows: 5,
+            }
+          : {
+              profileLinkFound: false,
+              outsidePathCount: 0,
+              rows: 5,
+              ownRows: 5,
+            },
+      );
+      expect(detail.reads).toBeGreaterThan(0);
+      expect(detail.elapsedMs).toBeGreaterThanOrEqual(1500);
+      expect(typeof detail.lastReadAfterDeadline).toBe('boolean');
+      expect(h.notices.join('')).toContain(
+        `Stop detail: account-changed; link=${detail.profileLinkFound}; outsidePathCount=${detail.outsidePathCount}; rows=${detail.rows}; own=${detail.ownRows}; reads=${detail.reads}; elapsedMs=${detail.elapsedMs}; lastReadAfterDeadline=${detail.lastReadAfterDeadline}`,
+      );
+      if (variant === 'list-majority-other')
+        expect(detail.ownRows).toBeLessThan(detail.rows / 2);
+      if (variant === 'list-nav-after-deadline') {
+        expect(detail.elapsedMs).toBeLessThan(
+          IG_FIXTURE.expected.accountDeadlineDelayMs,
+        );
+        expect(report.readback.accountAfterClass).toBe('absent');
+      }
+      expect(journal.attempts.at(-1)).toMatchObject({
+        state: 'failed',
+        code: 'ACCOUNT_MISMATCH',
+      });
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      for (const value of [
+        h.plan.handle,
+        `/${h.plan.handle}/`,
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+        ...h.fixture.items.map((item) => item.text),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  60000,
+);
+test.each(['list-nav-missing', 'list-nav-other'] as const)(
+  'C20 readback %s classifies the last failed list separately from the completed list',
+  async (variant) => {
+    const h = await harness('success', 3);
+    await fullRunReady(h);
+    let loads = 0;
+    h.fake.beforeList(() => {
+      if (++loads === 2) h.fake.setVariant(variant);
+      return Promise.resolve();
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'ACCOUNT_MISMATCH',
+        token: 'account-changed',
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const accountAfterClass =
+        variant === 'list-nav-missing' ? 'absent' : 'other';
+      expect(JSON.parse(text)).toMatchObject({
+        readback: { accountBeforeClass: 'expected', accountAfterClass },
+      });
+      expect(h.notices.join('')).toContain(
+        `"accountAfterClass":"${accountAfterClass}"`,
+      );
+      for (const value of [
+        h.plan.handle,
+        `/${h.plan.handle}/`,
+        ...Object.values(IG_FIXTURE.other),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('C20 a normal account list never stops and both readback classes remain expected', async () => {
+  const h = await harness('success', 5);
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      endReason: 'canary',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      readback: {
+        accountBeforeClass: 'expected',
+        accountAfterClass: 'expected',
+      },
+    });
+    expect(h.notices.join('')).not.toContain('Stop detail:');
+    for (const value of [
+      h.plan.handle,
+      `/${h.plan.handle}/`,
+      ...Object.values(IG_FIXTURE.other),
+    ]) {
+      expect(text).not.toContain(value);
+      expect(h.notices.join('')).not.toContain(value);
+    }
+  } finally {
+    await h.close();
+  }
+}, 120000);
 test.each(POST_NOTICE_FIXTURE.cases)(
   'C19 $variant keeps only bounded closed body counts and still stops at the notice',
   async (entry) => {

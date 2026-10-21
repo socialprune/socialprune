@@ -33,12 +33,14 @@ import {
   ContextStop,
   ContextStepReportSchema,
   stopDetails,
+  stopDetailText,
+  AccountReadbackSchema,
   keyPaths,
   pairedCode,
   contextCause,
   ContextCauseSchema,
 } from './report.ts';
-import type { ContextCauseStage } from './report.ts';
+import type { AccountClass, ContextCauseStage } from './report.ts';
 import {
   productionContext,
   loadList,
@@ -99,10 +101,16 @@ export async function runContextWithDependencies(
     ...deps.pace,
   });
   const limitSignals = new LimitSignals();
+  let accountBeforeClass: AccountClass | undefined;
+  let accountAfterClass: AccountClass = 'absent';
   deps = {
     ...deps,
     navigated: (kind, elapsed) => {
       limitSignals.navigated(kind, elapsed);
+    },
+    accountObserved: (value) => {
+      accountBeforeClass ??= value;
+      accountAfterClass = value;
     },
   };
   if (
@@ -575,6 +583,7 @@ export async function runContextWithDependencies(
             report.rows.otherName += rowCounts.otherName;
           }
         })();
+        if (accountBefore === null) accountBeforeClass = 'expected';
         accountBefore ??= list.account;
         accountAfter = list.account;
         options.session?.before(before, accountBefore);
@@ -1008,6 +1017,10 @@ export async function runContextWithDependencies(
         groups.set(shape, (groups.get(shape) ?? 0) + 1);
       }
       report.readback = {
+        ...AccountReadbackSchema.parse({
+          accountBeforeClass: accountBeforeClass ?? 'absent',
+          accountAfterClass,
+        }),
         accountSame:
           accountBefore !== null &&
           accountBefore.toLowerCase() === accountAfter?.toLowerCase() &&
@@ -1121,7 +1134,7 @@ export async function runContextWithDependencies(
     if (error) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${report.stop.token}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}\n`,
+        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}\n`,
       );
       announcedCause = report.cause;
     }
@@ -1170,7 +1183,7 @@ export async function runContextWithDependencies(
     if (report.cause && announcedCause !== report.cause) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${report.stop.token}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}\n`,
+        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}\n`,
       );
     }
   }

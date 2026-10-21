@@ -30,6 +30,8 @@ import { runNativeQuery } from '../packaging/windows-powershell.ts';
 import { pathToFileURL } from 'node:url';
 import { windowsShortPath } from './short-path.ts';
 import { dist } from '../packaging/paths.ts';
+import { uninstallAccessDisposition } from './uninstall-access-precondition.ts';
+import type { UninstallAccessPrecondition } from './uninstall-access-precondition.ts';
 
 test('layout assertion receipts retain changed field names and both path classes without serializing either side', () => {
   const before = {
@@ -487,29 +489,84 @@ test.skipIf(process.platform !== 'win32')(
   async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'socialprune-query-denied-'));
     const image = join(scratch, 'Uninstall.exe');
+    const audit = join(scratch, 'access-audit.exe');
     const diagnostics = join(scratch, 'evidence');
     let child: ReturnType<typeof spawn> | undefined;
     setWindowsQueryDiagnosticDirectory(diagnostics);
     try {
-      await runPowerShell(
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Add-Type -Path '${join(directory, 'test/uninstall-access-fixture.cs').replaceAll("'", "''")}' -OutputAssembly '${image.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
-        ],
-        { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
-      );
+      for (const [source, output] of [
+        ['test/uninstall-access-fixture.cs', image],
+        ['test/uninstall-access-audit.cs', audit],
+      ])
+        await runPowerShell(
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `Add-Type -Path '${join(directory, source!).replaceAll("'", "''")}' -OutputAssembly '${output!.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
+          ],
+          { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
+        );
       child = spawn(image, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: false,
       });
       await once(child.stdout!, 'data');
+      const childPid = child.pid;
+      const precondition = JSON.parse(
+        (
+          await runNativeQuery(audit, [String(childPid), String(process.pid)], {
+            timeout: WINDOWS_QUERY_TIMEOUT_MS,
+            windowsHide: true,
+          })
+        ).stdout,
+      ) as UninstallAccessPrecondition;
+      const disposition = uninstallAccessDisposition(precondition);
       let failure: unknown;
+      let result:
+        { pid: number; born: string; imageClass: string }[] | undefined;
       try {
-        await windowsQuery('uninstall-processes', scratch + '|' + image);
+        result = JSON.parse(
+          await windowsQuery('uninstall-processes', scratch + '|' + image),
+        ) as typeof result;
       } catch (error) {
         failure = error;
+      }
+      const receipt = {
+        ...precondition,
+        disposition,
+        state: disposition === 'record-only' ? 'record-only' : 'mechanism-run',
+        reason:
+          disposition === 'record-only'
+            ? 'caller-open-not-denied'
+            : 'observed-access-denied',
+        mechanismRun: disposition === 'assert-denied',
+        queryReturned: failure === undefined,
+        queryAcceptedOwnedImage:
+          result?.some(
+            (row) =>
+              row.pid === childPid &&
+              row.imageClass === 'owned-installed-uninstaller',
+          ) ?? false,
+      };
+      process.stdout.write(
+        'UNINSTALL_ACCESS_PRECONDITION ' + JSON.stringify(receipt) + '\n',
+      );
+      await mkdir(dist, { recursive: true });
+      await writeFile(
+        join(dist, 'release-uninstall-access-precondition.json'),
+        JSON.stringify(receipt, null, 2),
+      );
+      if (disposition === 'record-only') {
+        expect(failure).toBeUndefined();
+        expect(result).toEqual([
+          {
+            pid: childPid,
+            born: precondition.born,
+            imageClass: 'owned-installed-uninstaller',
+          },
+        ]);
+        return;
       }
       expect(failure).toMatchObject({ code: 1 });
       expect(
@@ -524,7 +581,7 @@ test.skipIf(process.platform !== 'win32')(
       };
       expect(record.queries.at(-1)).toMatchObject({ state: 'failed' });
       const candidate: unknown = expect.objectContaining({
-        pid: child.pid,
+        pid: childPid,
         filter: 'process-open-failed',
         pathClass: 'unreadable',
         win32Error: 5,
@@ -544,5 +601,6 @@ test.skipIf(process.platform !== 'win32')(
       await rm(scratch, { recursive: true, force: true });
     }
   },
-  WINDOWS_QUERY_TIMEOUT_MS * 2 + 100,
+  // Two fixture compiles, token/open audit, cold native compile and native query.
+  WINDOWS_QUERY_TIMEOUT_MS * 5 + 100,
 );

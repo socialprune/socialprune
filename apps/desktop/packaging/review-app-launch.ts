@@ -4,10 +4,12 @@ import {
 } from './windows-powershell.ts';
 import { directory } from './paths.ts';
 import { testEnvironment } from '../test/process-environment.ts';
-import { readFile, writeFile, unlink } from 'node:fs/promises';
+import { readFile, writeFile, unlink, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { POWERSHELL_READY_TIMEOUT_MS } from './query-poll.ts';
+import { StartupLog } from './startup-log.ts';
+import { createReadStream } from 'node:fs';
 
 type NativeLaunch = {
   state: string;
@@ -19,6 +21,22 @@ type NativeLaunch = {
   desktopVerified: boolean | null;
   desktopVerifiedAtMs: number | null;
   failure: string | null;
+  processObservation: {
+    scope: 'owned-job-only';
+    pollIntervalMs: number;
+    shortLivedProcessesMayBeMissed: boolean;
+    failures: string[];
+    processes: {
+      pid: number;
+      born: string;
+      type: string;
+      alive: boolean;
+      exitCode: number | null;
+      observedExitedBeforeCleanup: boolean;
+      failure: string | null;
+      nativeError: number | null;
+    }[];
+  };
 };
 const startupCodes = (text: string) => [
   ...new Set(
@@ -44,6 +62,27 @@ export async function launchReviewApp(
       ? ['--enable-logging=file', `--log-file=${chromiumFile}`]
       : []),
   ];
+  const cacheAtLaunch: Record<string, boolean> = {};
+  if (options.dataDirectory)
+    for (const name of [
+      'GPUPersistentCache',
+      'GPUCache',
+      'DawnGraphiteCache',
+      'DawnWebGPUCache',
+    ]) {
+      try {
+        await lstat(join(options.dataDirectory, name));
+        cacheAtLaunch[name] = true;
+      } catch (error) {
+        if (!(
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        ))
+          throw error;
+        cacheAtLaunch[name] = false;
+      }
+    }
   await writeFile(argumentFile, JSON.stringify(launchArgs));
   // eslint-disable-next-line no-restricted-properties -- Closed harness desktop identity inherited only from the owned launcher.
   const desktopPath = process.env.SP_PROOF_DESKTOP;
@@ -71,6 +110,7 @@ export async function launchReviewApp(
       env: testEnvironment(),
     },
   );
+  const stderrLog = new StartupLog();
   let stderr = '',
     stdout = '',
     closed = false;
@@ -79,6 +119,7 @@ export async function launchReviewApp(
     stdout = (stdout + bytes.toString()).slice(-16_384);
   });
   child.stderr.on('data', (bytes: Buffer) => {
+    stderrLog.append(bytes);
     stderr = (stderr + bytes.toString()).slice(-16_384);
   });
   const finished = new Promise<number | null>((resolve, reject) => {
@@ -90,8 +131,28 @@ export async function launchReviewApp(
     });
   });
   let launch: NativeLaunch;
-  const readNative = async () =>
-    JSON.parse(await readFile(nativeFile, 'utf8')) as NativeLaunch;
+  let observationReadRetries = 0;
+  const readNative = async () => {
+    // File.Replace can briefly hold the same owned receipt during a read.
+    // Retry only that measured sharing conflict; retain its count and bound.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return JSON.parse(await readFile(nativeFile, 'utf8')) as NativeLaunch;
+      } catch (error) {
+        if (
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'EBUSY'
+          ) ||
+          attempt === 20
+        )
+          throw error;
+        observationReadRetries++;
+        await wait(25);
+      }
+    }
+  };
   const persist = async () => {
     const native = await readNative();
     const readOptional = async (path: string) =>
@@ -104,7 +165,21 @@ export async function launchReviewApp(
           return '';
         throw error;
       });
-    const chromium = (await readOptional(chromiumFile)).slice(-32_768);
+    const chromiumLog = new StartupLog(32_768);
+    try {
+      for await (const bytes of createReadStream(chromiumFile))
+        chromiumLog.append(bytes as Buffer);
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ))
+        throw error;
+    }
+    const chromiumEvidence = chromiumLog.snapshot();
+    const stderrEvidence = stderrLog.snapshot();
+    const chromium = chromiumEvidence.tail;
     const ownLog = options.dataDirectory
       ? await readOptional(join(options.dataDirectory, 'logs/desktop.ndjson'))
       : '';
@@ -119,12 +194,24 @@ export async function launchReviewApp(
       ...native,
       helperClosed: closed,
       helperExitCode,
+      observationReadRetries,
+      cacheAtLaunch,
       environmentClass: 'app-os-allowlist',
       log: {
         stdoutBytes: Buffer.byteLength(stdout),
-        stderrBytes: Buffer.byteLength(stderr),
-        chromiumBytes: Buffer.byteLength(chromium),
-        startupCodes: startupCodes(stderr + chromium),
+        stderrBytes: stderrEvidence.bytes,
+        chromiumBytes: chromiumEvidence.bytes,
+        stderrEvidence,
+        chromiumEvidence,
+        startupCodes: startupCodes(
+          stderrEvidence.lines.map((line) => line.message).join('\n') +
+            chromiumEvidence.lines.map((line) => line.message).join('\n'),
+        ),
+        productEvents: {
+          readyToShow: 'not-exposed-by-release',
+          firstShow: 'not-exposed-by-release',
+          sourceShowGate: 'loadURL-resolved',
+        },
         appRecords: ownCodes,
         stderr,
         chromium,

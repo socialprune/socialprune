@@ -35,6 +35,10 @@ test.skipIf(process.platform !== 'win32')(
         environmentClass: 'app-os-allowlist',
         killOnCloseJob: true,
         log: { startupCodes: ['DESKTOP_START_FAILED'] },
+        processObservation: {
+          scope: 'owned-job-only',
+          processes: [{ type: 'browser', alive: false, exitCode: 7 }],
+        },
       });
       await app.close();
     } finally {
@@ -60,6 +64,61 @@ test('readiness reports process, thread desktops, owned station windows and disp
   expect(controls).toContain('launchReviewApp(');
   expect(controls).not.toContain("{ stdio: 'ignore', env: installerEnv }");
 });
+
+test.skipIf(process.platform !== 'win32')(
+  'owned children retain process type, birth and exit after they disappear',
+  async () => {
+    const scratch = await mkdtemp(
+      join(tmpdir(), 'socialprune-owned-children-'),
+    );
+    try {
+      const order = join(scratch, 'settle-order');
+      const receipt = join(scratch, 'release-app-children.json');
+      const source = `const{spawn}=require('node:child_process'),fs=require('node:fs');let exits=0;for(const type of ['gpu-process','renderer','utility']){spawn(process.execPath,['-e',"const fs=require('node:fs');setInterval(()=>{if(fs.existsSync(process.argv[1]))process.exit(9)},25)",process.argv[1],'--type='+type],{stdio:'ignore'}).once('exit',()=>{if(++exits===3)process.exit(0)})}`;
+      const app = await launchReviewApp(
+        process.execPath,
+        ['-e', source, order],
+        receipt,
+      );
+      try {
+        const end = Date.now() + WINDOWS_QUERY_TIMEOUT_MS;
+        let types: string[] = [];
+        while (Date.now() < end) {
+          const value = await app.snapshot();
+          types = value.processObservation.processes.map((row) => row.type);
+          if (
+            ['gpu-process', 'renderer', 'utility'].every((type) =>
+              types.includes(type),
+            )
+          )
+            break;
+          await wait(25);
+        }
+        const expected: unknown = expect.arrayContaining([
+          'gpu-process',
+          'renderer',
+          'utility',
+        ]);
+        expect(types).toEqual(expected);
+        await writeFile(order, 'settle');
+        expect(await app.exited).toBe(0);
+        const final = await app.snapshot();
+        for (const row of final.processObservation.processes.filter(
+          (row) => row.type !== 'browser',
+        )) {
+          expect(row.born).toMatch(/^\d+$/);
+          expect(row.alive).toBe(false);
+          expect(row.exitCode).toBe(9);
+        }
+      } finally {
+        await app.close();
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  },
+  WINDOWS_QUERY_TIMEOUT_MS + 5_000,
+);
 
 test.skipIf(process.platform !== 'win32')(
   'an app that exits during readiness retains its exit code instead of a window timeout',

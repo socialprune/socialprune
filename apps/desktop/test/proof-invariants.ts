@@ -62,7 +62,8 @@ export const readinessHashes = {
   'packaging/window-readiness.cs':
     '177e81204e8e449fe05b3406ab783ae99d3e5498c10eb87cb35bb7732f537655',
   'packaging/window-readiness.ps1':
-    '18bf3d5fc70b2c10a677c1886b863577fcdf6452d59f5a601073b35fec012687',
+    // R32 refreshes only the terminal diagnostic sample, after readiness.
+    'c4f18f7d163cdb15eeb85b4f6658370abfcac16d7717224fab31cfc3250a6057',
   'packaging/window-readiness.ts':
     '62bdeeaa26ed9845ed4c64e7af277e262239f7d157a3aefcfe6a2cda8a5b0329',
 };

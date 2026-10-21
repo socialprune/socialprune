@@ -152,7 +152,23 @@ function Wait-AppWindow {
     $errorId = if ($_.Exception.Message -match 'WINDOW_READINESS_[A-Z_]+') { $Matches[0] } else { $_.Exception.GetType().Name }
     throw
   } finally {
-    try { if ($desktop) { $desktop.Dispose() } }
+    try {
+      # The periodic diagnostic sample can predate the HWND that just passed
+      # readiness. Refresh that same native handle before publishing success;
+      # keep the original deadline and every action/focus/visibility predicate.
+      try {
+        if ($state -eq 'ready') {
+          do {
+            $appObservation = $appWatch.ObserveApp()
+            if (-not $appObservation.alive) { throw 'REVIEW_APP_EXITED_BEFORE_READY' }
+            $observedHandle = @($appObservation.windows | Where-Object { $_.hwnd -eq $handle.ToInt64() })
+            if ($observedHandle.Count) { break }
+            if ($clock.ElapsedMilliseconds -ge $TimeoutMs) { throw 'WINDOW_READINESS_OBSERVATION_MISSING' }
+            Start-Sleep -Milliseconds 25
+          } while ($true)
+        }
+      } finally { if ($desktop) { $desktop.Dispose() } }
+    }
     catch {
       $cause = $_.Exception
       while ($cause.InnerException) { $cause = $cause.InnerException }

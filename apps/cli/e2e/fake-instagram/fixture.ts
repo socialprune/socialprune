@@ -192,6 +192,8 @@ export type Variant =
   | 'list-nav-inside-main'
   | 'list-half-other'
   | 'list-majority-other'
+  | 'list-no-own'
+  | 'list-no-own-filtered'
   | 'list-nav-other-filtered'
   | 'list-nav-missing-filtered'
   | 'list-half-other-filtered'

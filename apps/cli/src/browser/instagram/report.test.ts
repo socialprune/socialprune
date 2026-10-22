@@ -8,10 +8,78 @@ import {
   AccountReadbackSchema,
   accountClass,
   stopDetailText,
+  errorClass,
+  RuntimeReportSchema,
 } from './report.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 
 const runId = '00000000-0000-4000-8000-000000000016';
+test.each([
+  ['TargetClosedError', 'target-closed'],
+  ['TargetClosedError2', 'target-closed'],
+  ['PageCrashedError', 'page-crashed'],
+  ['TimeoutError', 'timeout'],
+  ['NavigationError', 'navigation'],
+  ['ProtocolError', 'protocol'],
+  ['Error', 'other'],
+] as const)(
+  'C21 exact error type or name %s maps to %s without inspecting private properties',
+  (name, expected) => {
+    const failure = new Error();
+    failure.name = name;
+    for (const key of ['message', 'stack'])
+      Object.defineProperty(failure, key, {
+        get() {
+          throw new Error('private property read');
+        },
+      });
+    expect(errorClass(failure)).toBe(expected);
+    class TargetClosedError extends Error {}
+    expect(errorClass(new TargetClosedError(IG_FIXTURE.other.text))).toBe(
+      'target-closed',
+    );
+  },
+);
+test('C21 unexpected errors retain a closed class in cause stop and terminal while tokens stay unchanged', () => {
+  const failure = new Error(IG_FIXTURE.other.text);
+  failure.name = 'PageCrashedError';
+  expect(contextCause(failure, runId, 'post-read', 4)).toMatchObject({
+    token: 'unexpected-error',
+    errorClass: 'page-crashed',
+  });
+  expect(stopDetails(failure)).toEqual({
+    code: 'unexpected-error',
+    token: 'unexpected-error',
+    errorClass: 'page-crashed',
+  });
+  expect(stopDetailText(failure)).toBe(
+    'unexpected-error; errorClass=page-crashed',
+  );
+  expect(stopDetails(new Error(IG_FIXTURE.other.text))).toMatchObject({
+    token: 'unexpected-error',
+    errorClass: 'other',
+  });
+  const zero = {
+    pageCrashes: 0,
+    browserDisconnects: 0,
+    unexpectedPageCloses: 0,
+    browserObserved: false,
+    observationFailed: false,
+    events: [],
+  };
+  expect(RuntimeReportSchema.parse(zero)).toEqual(zero);
+  for (const invalid of [
+    { ...zero, url: IG_FIXTURE.other.code },
+    { ...zero, pageCrashes: -1 },
+    {
+      ...zero,
+      events: [
+        { event: IG_FIXTURE.other.text, step: 1, stage: 'post-read', count: 1 },
+      ],
+    },
+  ])
+    expect(() => RuntimeReportSchema.parse(invalid)).toThrow();
+});
 test('C20 account-check evidence survives the stop and terminal formatter as closed fields only', () => {
   const accountCheck = {
     profileLinkFound: false,
@@ -152,7 +220,11 @@ test.each([
   'C16 cause classification is closed for generated error %j',
   (error, token) => {
     expect(contextCause(error, runId, 'capture', 1).token).toBe(token);
-    expect(stopDetails(error)).toEqual({ code: token, token });
+    expect(stopDetails(error)).toEqual({
+      code: token,
+      token,
+      ...(token === 'unexpected-error' ? { errorClass: 'other' } : {}),
+    });
   },
 );
 test('C16 cause gate refuses arbitrary fields tokens stages and correlators', () => {

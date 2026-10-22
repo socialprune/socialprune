@@ -119,9 +119,7 @@ export function accountMatches(
       (path) =>
         /^\/[A-Za-z0-9_.]{1,30}\/$/.test(path) &&
         path.toLowerCase() === `/${handle}/`,
-    ) &&
-    entries.filter((row) => row.username.toLowerCase() === handle).length >
-      entries.length / 2
+    ) && entries.some((row) => row.username.toLowerCase() === handle)
   );
 }
 export async function outsideProfilePaths(page: Page): Promise<string[]> {

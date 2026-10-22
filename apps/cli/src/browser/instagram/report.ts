@@ -217,6 +217,52 @@ export const CONTEXT_CAUSE_STAGES = [
   'projection',
 ] as const;
 export type ContextCauseStage = (typeof CONTEXT_CAUSE_STAGES)[number];
+export const ERROR_CLASSES = [
+  'target-closed',
+  'page-crashed',
+  'timeout',
+  'navigation',
+  'protocol',
+  'other',
+] as const;
+export type ErrorClass = (typeof ERROR_CLASSES)[number];
+/** Exact type/name only: generic Playwright errors retain the class other. */
+export function errorClass(error: unknown): ErrorClass {
+  if (!(error instanceof Error)) return 'other';
+  const names = [error.name, error.constructor.name];
+  for (const [name, value] of [
+    ['TargetClosedError', 'target-closed'],
+    // Playwright 1.63.0's packaged client preserves this constructor spelling.
+    ['TargetClosedError2', 'target-closed'],
+    ['PageCrashedError', 'page-crashed'],
+    ['TimeoutError', 'timeout'],
+    ['NavigationError', 'navigation'],
+    ['ProtocolError', 'protocol'],
+  ] as const)
+    if (names.includes(name)) return value;
+  return 'other';
+}
+const RUNTIME_EVENTS = [
+  'page-crash',
+  'browser-disconnected',
+  'page-close',
+] as const;
+export const RuntimeReportSchema = z.strictObject({
+  pageCrashes: count,
+  browserDisconnects: count,
+  unexpectedPageCloses: count,
+  browserObserved: z.boolean(),
+  observationFailed: z.boolean(),
+  events: z.array(
+    z.strictObject({
+      event: z.enum(RUNTIME_EVENTS),
+      step: count,
+      stage: z.enum(CONTEXT_CAUSE_STAGES),
+      count: z.number().int().positive(),
+    }),
+  ),
+});
+export type RuntimeReport = z.infer<typeof RuntimeReportSchema>;
 const CAUSE_TOKENS = [
   'browser-timeout',
   'browser-closed',
@@ -247,6 +293,7 @@ export const ContextCauseSchema = z.strictObject({
   step: z.number().int().nonnegative(),
   token: z.enum(CAUSE_TOKENS),
   chain: z.array(z.enum(CAUSE_TOKENS)).min(1).max(4),
+  errorClass: z.enum(ERROR_CLASSES).optional(),
 });
 function causeToken(error: unknown): CauseToken {
   if (error && typeof error === 'object') {
@@ -292,7 +339,16 @@ export function contextCause(
   stage: ContextCauseStage,
   step: number,
 ) {
-  return ContextCauseSchema.parse({ runId, stage, step, ...causeChain(error) });
+  const cause = causeChain(error);
+  return ContextCauseSchema.parse({
+    runId,
+    stage,
+    step,
+    ...cause,
+    ...(cause.token === 'unexpected-error'
+      ? { errorClass: errorClass(error) }
+      : {}),
+  });
 }
 function causeChain(error: unknown) {
   const seen = new Set<unknown>();
@@ -322,6 +378,7 @@ export function stopDetails(error: unknown): {
   code: string;
   token: string;
   accountCheck?: AccountCheck;
+  errorClass?: ErrorClass;
 } {
   if (
     error instanceof ContextStop &&
@@ -337,13 +394,18 @@ export function stopDetails(error: unknown): {
   if (error instanceof CliError && Object.hasOwn(CLI_ERRORS, error.code))
     return { code: error.code, token: error.code };
   const { token } = causeChain(error);
-  return { code: token, token };
+  return {
+    code: token,
+    token,
+    ...(token === 'unexpected-error' ? { errorClass: errorClass(error) } : {}),
+  };
 }
 export function stopDetailText(error: unknown): string {
   const detail = stopDetails(error),
     account = detail.accountCheck;
   return (
     detail.token +
+    (detail.errorClass ? `; errorClass=${detail.errorClass}` : '') +
     (account
       ? `; link=${account.profileLinkFound}; outsidePathCount=${account.outsidePathCount}; rows=${account.rows}; own=${account.ownRows}; reads=${account.reads}; elapsedMs=${account.elapsedMs}; lastReadAfterDeadline=${account.lastReadAfterDeadline}`
       : '')

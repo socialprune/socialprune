@@ -16,14 +16,15 @@ import {
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
 
-test('C12 IG-9 pure account check requires exact outside profile path and a strict row majority', () => {
+test('C21 IG-15 pure account check requires exact outside profile path and at least one own row', () => {
   const own = 'generated_person',
     other = IG_FIXTURE.other.username;
   for (const [names, expected] of [
     [[own, own, other], true],
     [[own.toUpperCase(), own, own, other], true],
-    [[own, other], false],
-    [[own, other, other], false],
+    [[own, other], true],
+    [[own, other, other], true],
+    [[other, other], false],
     [[], false],
   ] as const)
     expect(

@@ -51,7 +51,9 @@ export function listPage(
           )
         : null,
       username:
-        variant === 'account-mismatch' ? IG_FIXTURE.other.username : handle,
+        variant === 'account-mismatch' || variant === 'list-no-own'
+          ? IG_FIXTURE.other.username
+          : handle,
     })),
   );
   if (variant === 'second-candidate' || variant === 'four-candidates') {
@@ -68,10 +70,18 @@ export function listPage(
   }
   const body =
     '<nav id="navigation"></nav><main><div role="button" tabindex="0">Sort &amp; filter</div><button>Select</button><div id="list"></div></main>';
+  // This generated variant changes only row names after the existing date filter.
+  const shownRecords =
+    variant === 'list-no-own-filtered'
+      ? records.map((row) => ({
+          ...row,
+          filteredUsername: IG_FIXTURE.other.username,
+        }))
+      : records;
   const script =
     instrumentation +
     `
-const rows=${json(records)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)},handle=${json(handle)},other=${json(IG_FIXTURE.other)};let oldest=false,start=null,end=null,loads=0,applied=false,navReady=!['list-other-names-nav-late','list-nav-after-deadline'].includes(variant);
+const rows=${json(shownRecords)}, variant=${json(variant)}, zone=${zoneHours}, filter=${json(filter)},handle=${json(handle)},other=${json(IG_FIXTURE.other)};let oldest=false,start=null,end=null,loads=0,applied=false,navReady=!['list-other-names-nav-late','list-nav-after-deadline'].includes(variant);
 const list=document.getElementById('list');
 function accountVariant(){return variant.endsWith('-filtered')?(start||end?variant.replace('-filtered',''):'success'):variant};
 function navigation(){const mode=accountVariant(),nav=document.getElementById('navigation');nav.replaceChildren();document.getElementById('inside-profile')?.remove();if(!navReady||mode==='list-nav-missing')return;const link=document.createElement('a');link.href='/'+(mode==='list-nav-other'?other.username:handle)+'/';link.textContent='Profile';if(mode==='list-nav-inside-main'){link.id='inside-profile';document.querySelector('main').prepend(link)}else nav.append(link)};
@@ -114,7 +124,16 @@ ${variant === 'external' ? `fetch(${json(CONTEXT_ORIGINS.foreign + '/foreign')},
       '',
     );
   if (variant === 'never') return doc('<p>Loading</p>', '');
-  return doc(body, script, variant === 'de' ? 'de' : 'en');
+  return doc(
+    body,
+    variant === 'list-no-own-filtered'
+      ? script.replace(
+          'for(const [index,row]of chosen.entries())',
+          'chosen=chosen.map(row=>({...row,username:start||end?row.filteredUsername:row.username}));for(const [index,row]of chosen.entries())',
+        )
+      : script,
+    variant === 'de' ? 'de' : 'en',
+  );
 }
 export function postPage(
   item: Item,

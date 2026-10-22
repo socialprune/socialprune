@@ -66,6 +66,7 @@ import {
 } from '../src/browser/instagram/filter.ts';
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
 import { contextDiagnostics } from './context-diagnostics.ts';
+import { fakePageFailure } from './fake-instagram/failure.ts';
 
 test.each([
   {
@@ -1362,9 +1363,285 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test('C21 IG-15 an exact two-row list with one own row passes without changing the filter or opening another persons post', async () => {
+  const h = await filterHarness('list-half-other', 1);
+  try {
+    const result = await driverHelpers.loadList(
+      h.page,
+      h.fixture.items[0]!,
+      h.fixture.items[0]!.account.handle!,
+      {
+        ...productionContext,
+        origin: h.fake.origin,
+        responseMs: 1500,
+        sleep: () => Promise.resolve(),
+      },
+      () => {},
+    );
+    expect(result).toMatchObject({ rowCount: 2, otherName: 1 });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]!.username).toBe(
+      h.fixture.items[0]!.account.handle,
+    );
+    expect(
+      h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toEqual([]);
+  } finally {
+    await h.close();
+  }
+});
+test.each([
+  'list-half-other',
+  'list-majority-other',
+  'list-half-other-filtered',
+  'list-majority-other-filtered',
+] as const)(
+  'C21 IG-15 %s passes with a matching profile and at least one own row while other names stay diagnostic',
+  async (variant) => {
+    const h = await harness(variant, 5);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        completed: 5,
+        endReason: 'canary',
+      });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        steps: { rows: number; candidates: number }[];
+        rows: { otherName: number };
+        runtime: unknown;
+      };
+      expect(report.steps).toHaveLength(5);
+      expect(
+        report.steps.every((step) => step.rows >= 2 && step.candidates >= 1),
+      ).toBe(true);
+      expect(report.rows.otherName).toBeGreaterThan(0);
+      expect(report.runtime).toMatchObject({
+        pageCrashes: 0,
+        browserDisconnects: 0,
+        unexpectedPageCloses: 0,
+        events: [],
+      });
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(5);
+      for (const value of [h.plan.handle, ...Object.values(IG_FIXTURE.other)]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each(['list-no-own', 'list-nav-missing', 'list-nav-other'] as const)(
+  'C21 IG-15 %s still stops with its C20 evidence and readback class',
+  async (variant) => {
+    const h = await harness(variant, 2);
+    try {
+      expect(await h.start(true)).toMatchObject({
+        code: 'ACCOUNT_MISMATCH',
+        token: 'account-changed',
+      });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(JSON.parse(text)).toMatchObject({
+        stop: {
+          accountCheck: {
+            rows: 2,
+            ownRows: variant === 'list-no-own' ? 0 : 2,
+            profileLinkFound: variant === 'list-no-own',
+          },
+        },
+        readback: {
+          accountAfterClass:
+            variant === 'list-nav-other'
+              ? 'other'
+              : variant === 'list-nav-missing'
+                ? 'absent'
+                : 'expected',
+        },
+      });
+      for (const value of [h.plan.handle, ...Object.values(IG_FIXTURE.other)]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  60000,
+);
+test.each(['crash', 'closed', 'generic'] as const)(
+  'C21 unexpected %s at post-read retains a closed class and owned lifecycle counts',
+  async (kind) => {
+    const h = await harness('success', 5);
+    const read = vi
+      .spyOn(driverHelpers, 'confirmOnPost')
+      .mockImplementationOnce((page) =>
+        Promise.reject(fakePageFailure(page, kind)),
+      );
+    try {
+      expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const errorClass =
+        kind === 'crash'
+          ? 'page-crashed'
+          : kind === 'closed'
+            ? 'target-closed'
+            : 'other';
+      expect(JSON.parse(text)).toMatchObject({
+        stop: { token: 'unexpected-error', errorClass },
+        cause: { stage: 'post-read', step: 1, errorClass },
+        runtime: {
+          pageCrashes: kind === 'crash' ? 1 : 0,
+          browserDisconnects: 0,
+          unexpectedPageCloses: kind === 'closed' ? 1 : 0,
+          events:
+            kind === 'generic'
+              ? []
+              : [
+                  {
+                    event: kind === 'crash' ? 'page-crash' : 'page-close',
+                    step: 1,
+                    stage: 'post-read',
+                    count: 1,
+                  },
+                ],
+        },
+      });
+      expect(h.notices.join('')).toContain(
+        `Stop detail: unexpected-error; errorClass=${errorClass}`,
+      );
+      expect((await h.store.browserJournal()).attempts.at(-1)).toMatchObject({
+        state: 'failed',
+        code: 'CONTEXT_FAILED',
+      });
+      for (const value of [h.plan.handle, ...Object.values(IG_FIXTURE.other)]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      read.mockRestore();
+      await h.close();
+    }
+  },
+  60000,
+);
+test('C21 a real closed owned target keeps the actual Playwright class without message inspection', async () => {
+  const h = await harness('success', 5);
+  const read = vi
+    .spyOn(driverHelpers, 'confirmOnPost')
+    .mockImplementationOnce(async (page) => {
+      await page.close();
+      await page.title();
+      throw new Error('generated closed target unexpectedly responded');
+    });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      stop: { token: 'unexpected-error', errorClass: 'target-closed' },
+      runtime: {
+        pageCrashes: 0,
+        unexpectedPageCloses: 1,
+        events: [
+          { event: 'page-close', step: 1, stage: 'post-read', count: 1 },
+        ],
+      },
+    });
+    expect(h.notices.join('')).toContain(
+      'Stop detail: unexpected-error; errorClass=target-closed',
+    );
+    for (const value of [h.plan.handle, ...Object.values(IG_FIXTURE.other)]) {
+      expect(text).not.toContain(value);
+      expect(h.notices.join('')).not.toContain(value);
+    }
+  } finally {
+    read.mockRestore();
+    await h.close();
+  }
+}, 60000);
+test('C21 an earlier crash event is retained but does not relabel a later generic error as a page crash', async () => {
+  const h = await harness('success', 5);
+  const read = vi
+    .spyOn(driverHelpers, 'confirmOnPost')
+    .mockImplementationOnce((page) => {
+      fakePageFailure(page, 'crash');
+      return Promise.reject(new Error(IG_FIXTURE.other.text));
+    });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      stop: { token: 'unexpected-error', errorClass: 'other' },
+      runtime: { pageCrashes: 1 },
+    });
+  } finally {
+    read.mockRestore();
+    await h.close();
+  }
+}, 60000);
+test('C21 late finalization unexpected errors retain their class and stage after the first structure write', async () => {
+  const h = await harness('success', 5);
+  class ProtocolError extends Error {}
+  let restore: (() => void) | undefined;
+  h.afterLaunch(() => {
+    const close = vi.spyOn(h.context!, 'close').mockImplementationOnce(() => {
+      fakePageFailure(h.context!.pages().at(-1)!, 'crash');
+      return Promise.reject(new ProtocolError(IG_FIXTURE.other.text));
+    });
+    restore = () => close.mockRestore();
+    return Promise.resolve();
+  });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      stop: { token: 'unexpected-error', errorClass: 'protocol' },
+      cause: { stage: 'browser-close', step: 5, errorClass: 'protocol' },
+      runtime: {
+        pageCrashes: 1,
+        events: [
+          { event: 'page-crash', stage: 'browser-close', step: 5, count: 1 },
+        ],
+      },
+    });
+    expect(h.notices.join('')).toContain(
+      'Stop detail: unexpected-error; errorClass=protocol',
+    );
+    expect(text + h.notices.join('')).not.toContain(IG_FIXTURE.other.text);
+  } finally {
+    restore?.();
+    await h.close();
+  }
+}, 120000);
 test.each([
   'list-nav-missing',
-  'list-majority-other',
+  'list-no-own',
   'list-nav-after-deadline',
 ] as const)(
   'C20 account-check %s preserves the failed conditions and never emits private values',
@@ -1397,12 +1674,12 @@ test.each([
       };
       const detail = report.stop.accountCheck;
       expect(detail).toMatchObject(
-        variant === 'list-majority-other'
+        variant === 'list-no-own'
           ? {
               profileLinkFound: true,
               outsidePathCount: 1,
-              rows: 11,
-              ownRows: 5,
+              rows: 5,
+              ownRows: 0,
             }
           : {
               profileLinkFound: false,
@@ -1417,7 +1694,7 @@ test.each([
       expect(h.notices.join('')).toContain(
         `Stop detail: account-changed; link=${detail.profileLinkFound}; outsidePathCount=${detail.outsidePathCount}; rows=${detail.rows}; own=${detail.ownRows}; reads=${detail.reads}; elapsedMs=${detail.elapsedMs}; lastReadAfterDeadline=${detail.lastReadAfterDeadline}`,
       );
-      if (variant === 'list-majority-other')
+      if (variant === 'list-no-own')
         expect(detail.ownRows).toBeLessThan(detail.rows / 2);
       if (variant === 'list-nav-after-deadline') {
         expect(detail.elapsedMs).toBeLessThan(
@@ -2104,12 +2381,10 @@ test.each([
   'list-nav-other',
   'list-nav-missing',
   'list-nav-inside-main',
-  'list-half-other',
-  'list-majority-other',
+  'list-no-own',
   'list-nav-other-filtered',
   'list-nav-missing-filtered',
-  'list-half-other-filtered',
-  'list-majority-other-filtered',
+  'list-no-own-filtered',
 ] as const)(
   'C12 IG-9 %s stops account-changed before the first action beyond its account boundary',
   async (variant) => {

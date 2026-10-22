@@ -35,12 +35,17 @@ import {
   stopDetails,
   stopDetailText,
   AccountReadbackSchema,
+  RuntimeReportSchema,
   keyPaths,
   pairedCode,
   contextCause,
   ContextCauseSchema,
 } from './report.ts';
-import type { AccountClass, ContextCauseStage } from './report.ts';
+import type {
+  AccountClass,
+  ContextCauseStage,
+  RuntimeReport,
+} from './report.ts';
 import {
   productionContext,
   loadList,
@@ -49,7 +54,7 @@ import {
 } from './driver.ts';
 import type { ContextDependencies } from './driver.ts';
 import { pageAnswers, capturePost, writeStructure } from './capture.ts';
-import { guardInstagramNetwork } from './network.ts';
+import { guardInstagramNetwork, observeContextRuntime } from './network.ts';
 import {
   instagramDailyCount,
   CONTEXT_PACE,
@@ -178,11 +183,20 @@ export async function runContextWithDependencies(
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: { startupClosed: number; unexpectedOpened: number };
     rows: { emptySkipped: number; otherName: number };
+    runtime: RuntimeReport;
   } = {
     steps: [],
     confirmations: { post: 0, list: 0 },
     pace: paceSummary(pace),
     rows: { emptySkipped: 0, otherName: 0 },
+    runtime: {
+      pageCrashes: 0,
+      browserDisconnects: 0,
+      unexpectedPageCloses: 0,
+      browserObserved: false,
+      observationFailed: false,
+      events: [],
+    },
   };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
@@ -194,6 +208,7 @@ export async function runContextWithDependencies(
   let context: BrowserContext | undefined,
     network: Awaited<ReturnType<typeof guardInstagramNetwork>> | undefined;
   let pages: ReturnType<typeof contextPages> | undefined;
+  let runtime: ReturnType<typeof observeContextRuntime> | undefined;
   let began = false,
     stopped = false,
     closed = false,
@@ -371,7 +386,11 @@ export async function runContextWithDependencies(
     stage = 'browser-launch';
     context = await deps.launch(options.profile, options.executablePath);
     stage = 'browser-setup';
-    options.session?.browser(() => context!.close());
+    runtime = observeContextRuntime(context, () => ({ step: steps, stage }));
+    options.session?.browser(() => {
+      runtime?.closing();
+      return context!.close();
+    });
     network = await guardInstagramNetwork(
       context,
       options.session ? '' : new URL(confirmation.url).origin,
@@ -388,6 +407,7 @@ export async function runContextWithDependencies(
       cancel();
     });
     const local = await pages.startupPage();
+    runtime.own(local);
     await network.flush();
     guard();
     await context.setOffline(false);
@@ -415,6 +435,7 @@ export async function runContextWithDependencies(
     stage = 'checkpoint';
     await checkpoint();
     const page = options.session ? local : await pages.newPage();
+    runtime.own(page);
     answers = pageAnswers(page, deps.policy);
     const day = dateInZone(options.now(), options.plan.timeZone),
       prior = await instagramDailyCount(
@@ -861,6 +882,7 @@ export async function runContextWithDependencies(
       reportPath: string | undefined;
     let persistedCause: ReturnType<typeof contextCause> | undefined;
     let announcedCause: ReturnType<typeof contextCause> | undefined;
+    let persistedRuntime = -1;
     type FinalStage =
       | 'answers'
       | 'settlement'
@@ -891,21 +913,28 @@ export async function runContextWithDependencies(
               : 'error';
     };
     const finalize = async (
-      stage: FinalStage,
+      at: FinalStage,
       action: () => Promise<void> | void,
     ): Promise<boolean> => {
+      stage = at;
       try {
         await action();
         return true;
       } catch (caught) {
-        retain(caught, stage);
-        (report.finalization ??= []).push({ stage, stop: stopDetails(caught) });
+        retain(caught, at);
+        (report.finalization ??= []).push({
+          stage: at,
+          stop: stopDetails(caught),
+        });
         return false;
       }
     };
     const structure = async () => {
       if (error) report.stop = stopDetails(error);
       report.limits = limitSignals.summary();
+      report.runtime =
+        runtime?.summary() ?? RuntimeReportSchema.parse(report.runtime);
+      const runtimeVersion = runtime?.version ?? 0;
       reportPath = await writeStructure(
         options.workspace,
         runId,
@@ -921,6 +950,7 @@ export async function runContextWithDependencies(
         Boolean(reportPath),
       );
       persistedCause = report.cause;
+      persistedRuntime = runtimeVersion;
     };
     await finalize('answers', async () => {
       postRequests?.close();
@@ -1134,12 +1164,13 @@ export async function runContextWithDependencies(
     if (error) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}\n`,
+        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}\n`,
       );
       announcedCause = report.cause;
     }
     if (reportPath) options.notice(`Structure report: ${reportPath}\n`);
     const text = contextEnd(endReason, options.lang, Boolean(options.order));
+    stage = 'projection';
     try {
       confirmation.update({ phase: 'ended', completed, result: text });
       options.session?.instagram(limitSignals.summary());
@@ -1169,6 +1200,7 @@ export async function runContextWithDependencies(
     } finally {
       waits.abort();
       await finalize('browser-close', async () => {
+        if (options.order) runtime?.closing();
         if (context) await deps.close(context, Boolean(options.order));
       });
       network?.dispose();
@@ -1180,10 +1212,13 @@ export async function runContextWithDependencies(
     }
     if (report.cause && persistedCause !== report.cause)
       await finalize('structure-report', structure);
+    runtime?.dispose();
+    if (runtime && persistedRuntime !== runtime.version)
+      await finalize('structure-report', structure);
     if (report.cause && announcedCause !== report.cause) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}\n`,
+        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}\n`,
       );
     }
   }

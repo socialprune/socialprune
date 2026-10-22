@@ -9,6 +9,7 @@ import {
   INSTAGRAM_ORIGIN,
   COMMENTS_PATH,
   guardInstagramNetwork,
+  observeContextRuntime,
 } from './network.ts';
 import {
   keyPaths,
@@ -20,6 +21,87 @@ import {
   IG_FIXTURE,
   POST_NOTICE_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+test('C21 runtime observation counts only owned page events and unexpected disconnects at their actual step and stage', () => {
+  const browser = new EventEmitter(),
+    context = { browser: () => browser } as unknown as BrowserContext;
+  let step = 4;
+  const runtime = observeContextRuntime(context, () => ({
+    step,
+    stage: 'post-read',
+  }));
+  const own = new EventEmitter(),
+    foreign = new EventEmitter();
+  runtime.own(own as unknown as Page);
+  runtime.own(own as unknown as Page);
+  own.emit('crash');
+  foreign.emit('crash');
+  own.emit('close');
+  browser.emit('disconnected');
+  expect(runtime.summary()).toEqual({
+    pageCrashes: 1,
+    unexpectedPageCloses: 1,
+    browserDisconnects: 1,
+    browserObserved: true,
+    observationFailed: false,
+    events: [
+      { event: 'page-crash', step: 4, stage: 'post-read', count: 1 },
+      { event: 'page-close', step: 4, stage: 'post-read', count: 1 },
+      { event: 'browser-disconnected', step: 4, stage: 'post-read', count: 1 },
+    ],
+  });
+  step = 5;
+  runtime.closing();
+  own.emit('close');
+  browser.emit('disconnected');
+  expect(runtime.summary().unexpectedPageCloses).toBe(1);
+  expect(runtime.summary().browserDisconnects).toBe(1);
+  runtime.dispose();
+  own.emit('crash');
+  expect(runtime.summary().pageCrashes).toBe(1);
+  expect(
+    own.listenerCount('crash') +
+      own.listenerCount('close') +
+      browser.listenerCount('disconnected'),
+  ).toBe(0);
+});
+test('C21 runtime observation handles a persistent context without an exposed browser and keeps stage groups separate', () => {
+  let step = 1;
+  const context = { browser: () => null } as unknown as BrowserContext;
+  const runtime = observeContextRuntime(context, () => ({
+    step,
+    stage: step === 1 ? 'post-read' : 'browser-close',
+  }));
+  const page = new EventEmitter();
+  runtime.own(page as unknown as Page);
+  page.emit('crash');
+  page.emit('crash');
+  step = 2;
+  page.emit('crash');
+  expect(runtime.summary()).toEqual({
+    pageCrashes: 3,
+    browserDisconnects: 0,
+    unexpectedPageCloses: 0,
+    browserObserved: false,
+    observationFailed: false,
+    events: [
+      { event: 'page-crash', step: 1, stage: 'post-read', count: 2 },
+      { event: 'page-crash', step: 2, stage: 'browser-close', count: 1 },
+    ],
+  });
+  runtime.dispose();
+});
+test('C21 a failed diagnostic attachment records its closed failure instead of blocking run cleanup', () => {
+  const runtime = observeContextRuntime({} as BrowserContext, () => ({
+    step: 0,
+    stage: 'browser-setup',
+  }));
+  runtime.own({} as Page);
+  expect(runtime.summary()).toMatchObject({
+    observationFailed: true,
+    browserObserved: false,
+  });
+  expect(() => runtime.dispose()).not.toThrow();
+});
 
 async function responseHarness() {
   const context = Object.assign(new EventEmitter(), {

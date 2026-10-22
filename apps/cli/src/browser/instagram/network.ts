@@ -1,7 +1,18 @@
-import type { BrowserContext, Request, Response, Page } from 'playwright-core';
+import type {
+  Browser,
+  BrowserContext,
+  Request,
+  Response,
+  Page,
+} from 'playwright-core';
 import type { BrowserRequest } from '@socialprune/core';
-import { ContextStop } from './report.ts';
-import type { BodyClass, PostRequestStatus } from './report.ts';
+import { ContextStop, RuntimeReportSchema } from './report.ts';
+import type {
+  BodyClass,
+  PostRequestStatus,
+  ContextCauseStage,
+  RuntimeReport,
+} from './report.ts';
 import {
   LimitSignals,
   hostClass,
@@ -9,6 +20,99 @@ import {
   postPathClass,
   rateSignal,
 } from './signals.ts';
+
+/** Passive observation of the run's explicitly owned pages, never a new guard. */
+export function observeContextRuntime(
+  context: BrowserContext,
+  position: () => { step: number; stage: ContextCauseStage },
+) {
+  let browser: Browser | null = null;
+  const counts = {
+    pageCrashes: 0,
+    browserDisconnects: 0,
+    unexpectedPageCloses: 0,
+    browserObserved: false,
+    observationFailed: false,
+  };
+  const events = new Map<string, RuntimeReport['events'][number]>();
+  const owned = new Map<Page, { crash: () => void; close: () => void }>();
+  let closing = false,
+    disposed = false,
+    version = 0;
+  const observationFailed = () => {
+    if (!counts.observationFailed) {
+      counts.observationFailed = true;
+      version++;
+    }
+  };
+  const record = (event: RuntimeReport['events'][number]['event']) => {
+    if (disposed || (closing && event !== 'page-crash')) return;
+    const { step, stage } = position();
+    const key = `${event}|${step}|${stage}`;
+    const group = events.get(key) ?? { event, step, stage, count: 0 };
+    group.count++;
+    events.set(key, group);
+    version++;
+    if (event === 'page-crash') counts.pageCrashes++;
+    else if (event === 'page-close') counts.unexpectedPageCloses++;
+    else counts.browserDisconnects++;
+  };
+  const disconnected = () => record('browser-disconnected');
+  try {
+    browser = context.browser();
+    if (browser) {
+      browser.on('disconnected', disconnected);
+      counts.browserObserved = true;
+    }
+  } catch {
+    observationFailed();
+  }
+  return {
+    get version() {
+      return version;
+    },
+    own(page: Page) {
+      if (disposed || owned.has(page)) return;
+      const listeners = {
+        crash: () => record('page-crash'),
+        close: () => record('page-close'),
+      };
+      owned.set(page, listeners);
+      try {
+        page.on('crash', listeners.crash);
+        page.on('close', listeners.close);
+      } catch {
+        observationFailed();
+      }
+    },
+    closing() {
+      closing = true;
+    },
+    summary(): RuntimeReport {
+      return RuntimeReportSchema.parse({
+        ...counts,
+        events: [...events.values()],
+      });
+    },
+    dispose() {
+      disposed = true;
+      try {
+        browser?.off('disconnected', disconnected);
+      } catch {
+        observationFailed();
+      }
+      for (const [page, listeners] of owned) {
+        try {
+          page.off('crash', listeners.crash);
+          page.off('close', listeners.close);
+        } catch {
+          observationFailed();
+        }
+      }
+      owned.clear();
+    },
+  };
+}
 
 function bodyClass(bytes: Buffer): BodyClass {
   // The bare-not-found exception requires whole-body equality after trimming;

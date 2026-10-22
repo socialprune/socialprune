@@ -137,16 +137,13 @@ export function loadReview(options: {
     options.contents.removeListener('did-fail-load', didFail);
     options.contents.removeListener('render-process-gone', rendererGone);
   };
-  const fail = (trigger: Trigger) => {
+  const fail = (trigger: Trigger, elapsed = performance.now() - started) => {
     if (settled) return;
     settled = true;
     cleanup();
     const record: StartupRecord = {
       boundMs: STARTUP_BOUND_MS,
-      elapsedMs: Math.min(
-        2_147_483_647,
-        Math.max(0, Math.round(performance.now() - started)),
-      ),
+      elapsedMs: Math.min(2_147_483_647, Math.max(0, Math.ceil(elapsed))),
       trigger,
       events: [...observed],
       exit: 'QUIT',
@@ -194,7 +191,19 @@ export function loadReview(options: {
   options.contents.on('render-process-gone', rendererGone);
   // Start at the initial loadURL call, including a renderer that never emits
   // did-start-loading. Later subresource events cannot restart this deadline.
-  const timer = setTimeout(() => fail('TIMEOUT'), STARTUP_BOUND_MS);
+  const timeout = () => {
+    if (settled) return;
+    const elapsed = performance.now() - started;
+    if (elapsed < STARTUP_BOUND_MS) {
+      // Timers may arrive early relative to performance.now(). Recheck the
+      // same monotonic clock after a positive, whole-millisecond remainder.
+      timer = setTimeout(timeout, Math.ceil(STARTUP_BOUND_MS - elapsed));
+      return;
+    }
+    // Record this exact sample, rounded up, only after the raw bound holds.
+    fail('TIMEOUT', elapsed);
+  };
+  let timer = setTimeout(timeout, STARTUP_BOUND_MS);
   try {
     void options.load().then(
       () => {

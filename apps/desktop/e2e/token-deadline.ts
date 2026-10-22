@@ -64,10 +64,16 @@ export async function diagnosticPhase<T>(
     return await Promise.race([
       running,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
+        const expire = () => {
+          const remainder = deadline - Date.now();
+          if (remainder > 0) {
+            timer = setTimeout(expire, Math.ceil(remainder));
+            return;
+          }
           reject(new Error('DIAGNOSE_WORK_DEADLINE'));
-        }, remaining);
+          controller.abort();
+        };
+        timer = setTimeout(expire, Math.ceil(remaining));
       }),
     ]);
   } finally {

@@ -215,6 +215,46 @@ test('one 240 second deadline cuts a longer phase and returns its prior receipts
   }
 });
 
+test('a diagnostic timer firing before its deadline clock waits for the remainder before aborting', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  let now = 1000;
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  let aborted = false;
+  const result = diagnosticPhase(
+    now + 100,
+    (_remaining, signal) =>
+      new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted = true;
+            resolve();
+          },
+          { once: true },
+        );
+      }),
+    () => Promise.resolve(),
+  ).catch((error: unknown) =>
+    error instanceof Error ? error.message : 'unknown',
+  );
+  try {
+    now = 1099;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(1);
+    now = 1100;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await result).toBe('DIAGNOSE_WORK_DEADLINE');
+    expect(aborted).toBe(true);
+  } finally {
+    now = 1100;
+    await vi.runOnlyPendingTimersAsync();
+    await result;
+    clock.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 test('later phases receive only the original deadline remainder and expired work never starts', async () => {
   vi.useFakeTimers();
   const started = Date.now();

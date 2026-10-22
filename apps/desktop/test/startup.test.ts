@@ -21,6 +21,7 @@ async function fixture(locale = 'en') {
     getURL: () => APP_URL,
     isDestroyed: () => false,
   });
+
   const message = vi.fn(() => Promise.resolve({ response: 0 }));
   const quit = vi.fn();
   return {
@@ -69,6 +70,80 @@ test('the load-call deadline fires once at 20 seconds without renderer events or
     expect(f.message).toHaveBeenCalledOnce();
     expect(f.contents.eventNames()).toEqual([]);
   } finally {
+    await rm(f.data, { recursive: true, force: true });
+  }
+});
+
+for (const earlyElapsed of [19_999, 19_999.75])
+  test(`an early timer at ${earlyElapsed} ms waits for the monotonic remainder before timing out`, async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const f = await fixture();
+    let measured = 1234.5;
+    const clock = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => measured);
+    const loaded = loadReview({
+      ...f.options,
+      load: () => new Promise<void>(() => undefined),
+    });
+    try {
+      measured += earlyElapsed;
+      await vi.advanceTimersByTimeAsync(STARTUP_BOUND_MS);
+      expect(f.message).not.toHaveBeenCalled();
+      expect(f.quit).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+      // Repeated early delivery still waits; it cannot round its way across
+      // the bound or enter a synchronous retry loop.
+      measured = 1234.5 + 19_999.875;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(f.message).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+      measured = 1234.5 + 20_000.125;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await loaded).toBe(false);
+      expect(f.message).toHaveBeenCalledOnce();
+      expect(f.quit).toHaveBeenCalledOnce();
+      const row = JSON.parse(
+        (await readFile(join(f.data, 'logs/startup.ndjson'), 'utf8')).trim(),
+      ) as { elapsedMs: number; trigger: string };
+      expect(row).toMatchObject({ elapsedMs: 20_001, trigger: 'TIMEOUT' });
+      expect(vi.getTimerCount()).toBe(0);
+      console.log('STARTUP_EARLY_TIMER', JSON.stringify({ earlyElapsed, row }));
+    } finally {
+      measured = 1234.5 + STARTUP_BOUND_MS;
+      await vi.runOnlyPendingTimersAsync();
+      await loaded;
+      clock.mockRestore();
+      await rm(f.data, { recursive: true, force: true });
+    }
+  });
+
+test('a load settling during the early-fire remainder cancels the replacement timer', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const f = await fixture();
+  let now = 0;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+  let finish!: () => void;
+  try {
+    const loaded = loadReview({
+      ...f.options,
+      load: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    });
+    now = 19_999;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(vi.getTimerCount()).toBe(1);
+    finish();
+    expect(await loaded).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    now = 20_001;
+    await vi.advanceTimersByTimeAsync(2);
+    expect(f.message).not.toHaveBeenCalled();
+    expect(f.quit).not.toHaveBeenCalled();
+  } finally {
+    clock.mockRestore();
     await rm(f.data, { recursive: true, force: true });
   }
 });

@@ -167,7 +167,9 @@ export async function runDiagnostic(
       const output = await diagnosticPhase(
         phaseDeadline,
         async (ms, signal) => {
-          const nativeTimeout = Math.max(1, Math.floor(ms / 1000));
+          // Whole-second launcher bound encloses the exact phase remainder;
+          // diagnosticPhase still enforces the original shared deadline.
+          const nativeTimeout = Math.max(1, Math.ceil(ms / 1000));
           return await runPowerShell(
             [
               '-NoProfile',

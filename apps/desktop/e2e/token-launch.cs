@@ -41,6 +41,12 @@ public static class TokenLaunch {
     File.AppendAllText(receipt,"{\"version\":1,\"diagnosticOnly\":true,\"acceptance\":false,"+fields+"}\n",new UTF8Encoding(false));
   }
   static int Remaining(long deadline) { long value=deadline-DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();if(value<=0)throw new Exception("DIAGNOSE_WORK_DEADLINE");return (int)Math.Min(value,Int32.MaxValue); }
+  static uint WaitUntilExit(IntPtr process,long deadline) {
+    uint waited;
+    do { waited=WaitForSingleObject(process,(uint)Remaining(deadline)); }
+    while(waited==258 && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()<deadline);
+    return waited;
+  }
   static uint Start(IntPtr token,IntPtr job,string exe,string[] args,string desktop,long deadline,string receipt) {
     Info child=new Info();var command=new StringBuilder(Quote(exe));foreach(string arg in args)command.Append(' ').Append(Quote(arg));
     var startup=new Startup{cb=Marshal.SizeOf(typeof(Startup)),desktop=desktop,flags=0x100,input=GetStdHandle(-10),output=GetStdHandle(-11),error=GetStdHandle(-12)};
@@ -50,7 +56,7 @@ public static class TokenLaunch {
       Check(AssignProcessToJobObject(job,child.process),"AssignOwnedJob");
       Remaining(deadline);Check(ResumeThread(child.thread)!=0xffffffff,"ResumeChild");
       Record(receipt,"\"event\":\"child-start\",\"pid\":"+child.pid);
-      uint waited=WaitForSingleObject(child.process,(uint)Remaining(deadline));
+      uint waited=WaitUntilExit(child.process,deadline);
       if(waited!=0){Record(receipt,"\"event\":\"deadline\",\"state\":\"timeout\",\"pid\":"+child.pid);throw new Exception("DIAGNOSE_WORK_DEADLINE");}
       uint code;Check(GetExitCodeProcess(child.process,out code),"ChildExit");Record(receipt,"\"event\":\"child-return\",\"exitCode\":"+code);return code;
     } finally { if(WaitForSingleObject(child.process,0)!=0){TerminateProcess(child.process,75);WaitForSingleObject(child.process,5000);}CloseHandle(child.thread);CloseHandle(child.process); }

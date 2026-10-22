@@ -71,6 +71,9 @@ public static class UninstallerCapture {
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateFileW(string name,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
   [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr process,int info,out BasicInfo result,int size,out int returned);
   static string Now() { return DateTime.UtcNow.ToString("o"); }
+  public static double ElapsedSince(long startTicks,long nowTicks,long frequency) {
+    return (nowTicks-startTicks)*1000.0/frequency;
+  }
   static void Error(Receipt r,string code) {
     if(!Regex.IsMatch(code,@"^NSIS_(IMAGE|SCOPE|TEMP|BIRTH|PARENT|HANDLE|POLL|EXIT_TIME)_QUERY_FAILED$")) code="NSIS_CAPTURE_QUERY_FAILED";
     if(!r.queryErrors.Contains(code)) r.queryErrors.Add(code);
@@ -112,7 +115,7 @@ public static class UninstallerCapture {
     var r=new Receipt(); var clock=Stopwatch.StartNew(); var rows=new Dictionary<uint,Row>();
     var duplicates=new List<IntPtr>(); ProcessInfo launch=new ProcessInfo();
     string root=null; int active=0; bool pending=false; DebugEvent ev=new DebugEvent();long lastPoll=-5;
-    IntPtr environment=IntPtr.Zero;
+    IntPtr environment=IntPtr.Zero;long launchTicks=0;
     var breakpoints=new HashSet<string>();
     try {
       if(IntPtr.Size!=8) throw new Exception("NSIS_CAPTURE_ARCH_REQUIRED");
@@ -124,12 +127,13 @@ public static class UninstallerCapture {
       var command=new StringBuilder(Quote(executable)); foreach(string arg in args) command.Append(" ").Append(Quote(arg));
       var startup=new Startup { cb=Marshal.SizeOf(typeof(Startup)),flags=1,show=0 };
       r.launchedAt=Now();r.launchMs=clock.ElapsedMilliseconds;r.armedBeforeLaunch=true;
+      launchTicks=clock.ElapsedTicks;
       // No DEBUG_ONLY_THIS_PROCESS: every descendant stays in this debug chain.
       if(!CreateProcessW(executable,command,IntPtr.Zero,IntPtr.Zero,false,1|0x400,environment,null,ref startup,out launch)) throw new Exception("NSIS_OUTER_LAUNCH_FAILED");
       if(!DebugSetProcessKillOnExit(true)) throw new Exception("NSIS_DEBUG_LIFECYCLE_FAILED");
       r.state="capturing";save(r);
       do {
-        if(clock.ElapsedMilliseconds-r.launchMs>=67130) throw new Exception(active>0?"NSIS_COPY_EXIT_UNKNOWN":"NSIS_CAPTURE_TIMEOUT");
+        if(ElapsedSince(launchTicks,clock.ElapsedTicks,Stopwatch.Frequency)>=67130) throw new Exception(active>0?"NSIS_COPY_EXIT_UNKNOWN":"NSIS_CAPTURE_TIMEOUT");
         if(clock.ElapsedMilliseconds-lastPoll>=5) {
           // Secondary witness only. Only already captured PIDs are inspected.
           if(!r.firstPollMs.HasValue) r.firstPollMs=clock.ElapsedMilliseconds;

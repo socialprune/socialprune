@@ -24,6 +24,12 @@ test('a process that exits after three seconds passes bounded cleanup', async ()
   expect(performance.now() - started).toBeGreaterThanOrEqual(3000);
 });
 
+test('a planted browser that exits after sixteen seconds passes cleanup', async () => {
+  const started = performance.now();
+  await processExitControl(true, 16_000);
+  expect(performance.now() - started).toBeGreaterThanOrEqual(16_000);
+});
+
 test('a planted process that stays alive fails after the cleanup wait', async () => {
   const started = performance.now();
   await expect(processExitControl(false)).rejects.toThrow(

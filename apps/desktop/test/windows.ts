@@ -9,14 +9,18 @@ import {
   PROCESS_POLL_INTERVAL_MS,
 } from '../packaging/query-poll.ts';
 
-// Cleanup grace predates query calibration: browser exit in 0e32919 (15 s),
-// Electron exit in 309a153 (20 s). Query latency must not shorten either wait.
+// The three green runner jobs retained in runnerQueryCalibration passed with
+// 60,100 ms cleanup polls, but did not measure time from close to process exit.
+// Restore that proven allowance until per-close receipts can calibrate it.
+export const RUNNER_PROVEN_CLEANUP_TIMEOUT_MS = 60_100;
 export const BROWSER_CLEANUP_TIMEOUT_MS = Math.max(
   15_000,
+  RUNNER_PROVEN_CLEANUP_TIMEOUT_MS,
   PROCESS_POLL_TIMEOUT_MS,
 );
 export const ELECTRON_CLEANUP_TIMEOUT_MS = Math.max(
   20_000,
+  RUNNER_PROVEN_CLEANUP_TIMEOUT_MS,
   PROCESS_POLL_TIMEOUT_MS,
 );
 

@@ -416,8 +416,18 @@ test.skipIf(process.platform !== 'win32')(
         await read(temp.toUpperCase() + '|' + installed.toUpperCase()),
       ).toEqual(first);
       const files = await readdir(diagnostics);
-      expect(files).toHaveLength(1);
-      const retained = await readFile(join(diagnostics, files[0]!), 'utf8');
+      expect(files).toHaveLength(2);
+      expect(
+        files.filter((file) => file.startsWith('release-process-query-')),
+      ).toHaveLength(1);
+      const uninstallFiles = files.filter((file) =>
+        file.startsWith('release-uninstall-query-'),
+      );
+      expect(uninstallFiles).toHaveLength(1);
+      const retained = await readFile(
+        join(diagnostics, uninstallFiles[0]!),
+        'utf8',
+      );
       const record = JSON.parse(retained) as {
         queries: {
           candidates: {
@@ -574,8 +584,18 @@ test.skipIf(process.platform !== 'win32')(
       ).toContain('PROCESS_OPEN_FAILED');
       expect(child.exitCode).toBe(null);
       const files = await readdir(diagnostics);
-      expect(files).toHaveLength(1);
-      const retained = await readFile(join(diagnostics, files[0]!), 'utf8');
+      expect(files).toHaveLength(2);
+      expect(
+        files.filter((file) => file.startsWith('release-process-query-')),
+      ).toHaveLength(1);
+      const uninstallFiles = files.filter((file) =>
+        file.startsWith('release-uninstall-query-'),
+      );
+      expect(uninstallFiles).toHaveLength(1);
+      const retained = await readFile(
+        join(diagnostics, uninstallFiles[0]!),
+        'utf8',
+      );
       const record = JSON.parse(retained) as {
         queries: { state: string; candidates: unknown[] }[];
       };

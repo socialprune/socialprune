@@ -15,9 +15,61 @@ let compiled: Promise<string> | undefined;
 let diagnosticDirectory = dist;
 const diagnosticId = randomUUID();
 const uninstallQueries: unknown[] = [];
+const processQueries: unknown[] = [];
+export interface ProcessQueryReceipt {
+  sequence: number;
+  state: 'returned' | 'failed';
+  exitedDuringImageRead: number;
+  candidates: unknown[];
+}
+const receiptListeners = new Set<(receipt: ProcessQueryReceipt) => void>();
+export function observeProcessQueries(
+  listener: (receipt: ProcessQueryReceipt) => void,
+) {
+  receiptListeners.add(listener);
+  return () => {
+    receiptListeners.delete(listener);
+  };
+}
 export function setWindowsQueryDiagnosticDirectory(directory: string) {
   diagnosticDirectory = directory;
   uninstallQueries.length = 0;
+  processQueries.length = 0;
+}
+function recordProcessQuery(stderr: string, state: 'returned' | 'failed') {
+  const candidates: unknown[] = stderr
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('PROCESS_QUERY_FILTER '))
+    .map(
+      (line) =>
+        JSON.parse(line.slice('PROCESS_QUERY_FILTER '.length)) as unknown,
+    );
+  const receipt: ProcessQueryReceipt = {
+    sequence: processQueries.length + 1,
+    state,
+    candidates,
+    exitedDuringImageRead: candidates.filter(
+      (row) =>
+        typeof row === 'object' &&
+        row !== null &&
+        'code' in row &&
+        row.code === 'PROCESS_EXITED_DURING_IMAGE_READ',
+    ).length,
+  };
+  processQueries.push(receipt);
+  for (const listener of receiptListeners) listener(receipt);
+  process.stderr.write(
+    'PROCESS_QUERY_RECEIPT ' + JSON.stringify(receipt) + '\n',
+  );
+  mkdirSync(diagnosticDirectory, { recursive: true });
+  writeFileSync(
+    join(diagnosticDirectory, `release-process-query-${diagnosticId}.json`),
+    JSON.stringify({
+      version: 1,
+      queryClass: 'native-processes',
+      queries: processQueries,
+    }),
+  );
 }
 function recordUninstallQuery(stderr: string, state: 'returned' | 'failed') {
   try {
@@ -114,6 +166,15 @@ export async function windowsQuery(
       },
     );
   } catch (error) {
+    if (operation === 'processes' || operation === 'uninstall-processes')
+      recordProcessQuery(
+        error instanceof Error &&
+          'stderr' in error &&
+          typeof error.stderr === 'string'
+          ? error.stderr
+          : '',
+        'failed',
+      );
     if (operation === 'uninstall-processes')
       recordUninstallQuery(
         error instanceof Error &&
@@ -127,5 +188,7 @@ export async function windowsQuery(
   }
   if (operation === 'uninstall-processes')
     recordUninstallQuery(result.stderr, 'returned');
+  if (operation === 'processes' || operation === 'uninstall-processes')
+    recordProcessQuery(result.stderr, 'returned');
   return result.stdout;
 }

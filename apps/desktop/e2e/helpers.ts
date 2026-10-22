@@ -9,6 +9,7 @@ import type { DesktopRequest, DesktopReply } from '../src/protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
 import { prepareWindowsQuery } from '../packaging/windows-query.ts';
+import { recordCleanup } from './cleanup-receipt.ts';
 import {
   pollQuery,
   PROCESS_POLL_INTERVAL_MS,
@@ -97,18 +98,26 @@ export async function launch(
     requests,
     startupMs,
     async close() {
-      if (process.exitCode === null)
-        await test.step('close Electron and engine', () => application.close());
-      await test.step('wait for owned Electron processes to exit', () =>
-        pollQuery(
-          () => appProcesses(executable(variant)),
-          (rows) => rows.length === 0,
-          {
-            timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
-            intervalMs: PROCESS_POLL_INTERVAL_MS,
-            message: 'OWNED_ELECTRON_PROCESSES_REMAIN',
-          },
-        ));
+      await recordCleanup('electron', {
+        timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
+        close: async () => {
+          if (process.exitCode === null)
+            await test.step('close Electron and engine', () =>
+              application.close());
+        },
+        wait: async () => {
+          await test.step('wait for owned Electron processes to exit', () =>
+            pollQuery(
+              () => appProcesses(executable(variant)),
+              (rows) => rows.length === 0,
+              {
+                timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
+                intervalMs: PROCESS_POLL_INTERVAL_MS,
+                message: 'OWNED_ELECTRON_PROCESSES_REMAIN',
+              },
+            ));
+        },
+      });
       const queryFolder = join(data, 'query-measurements');
       for (const file of await readdir(queryFolder).catch((error: unknown) => {
         if (

@@ -115,6 +115,55 @@ test('desktop CI enforces runner budgets and publishes medians, using a digest-k
   );
 });
 
+test('Linux browser jobs bound the measured apt bottleneck separately from browser downloads and leave time for tests', async () => {
+  const source = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
+  const parsed = parseDocument(source);
+  expect(parsed.errors).toEqual([]);
+  const workflow = parsed.toJS() as {
+    jobs: Record<
+      string,
+      {
+        'timeout-minutes': number;
+        steps: {
+          name?: string;
+          run?: string;
+          uses?: string;
+          'timeout-minutes'?: number;
+        }[];
+      }
+    >;
+  };
+  for (const [name, filter, minutes] of [
+    ['e2e', '@socialprune/web', 60],
+    ['review-e2e', 'socialprune', 40],
+  ] as const) {
+    const job = workflow.jobs[name]!;
+    expect(job['timeout-minutes']).toBe(minutes);
+    const dependencies = job.steps.findIndex(
+      (step) => step.name === 'Install browser system dependencies',
+    );
+    const browsers = job.steps.findIndex(
+      (step) => step.name === 'Install pinned browsers',
+    );
+    expect(dependencies).toBeGreaterThan(0);
+    expect(browsers).toBe(dependencies + 1);
+    expect(job.steps[dependencies]).toMatchObject({
+      'timeout-minutes': 30,
+      run: `pnpm --filter ${filter} exec playwright install-deps chromium firefox webkit`,
+    });
+    expect(job.steps[browsers]).toMatchObject({
+      'timeout-minutes': 5,
+      run: `pnpm --filter ${filter} exec playwright install chromium firefox webkit`,
+    });
+    expect(job['timeout-minutes'] - 30 - 5).toBeGreaterThanOrEqual(5);
+    expect(job.steps.some((step) => step.run?.includes('--with-deps'))).toBe(
+      false,
+    );
+    for (const step of job.steps)
+      if (step.uses) expect(step.uses).toMatch(/^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);
+  }
+});
+
 test('German temp notice uses the second-person verb and the license asset names NSIS', async () => {
   const german = await readFile(
     join(directory, 'packaging/download-notice.de.md'),

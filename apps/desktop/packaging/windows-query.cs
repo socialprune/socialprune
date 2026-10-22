@@ -45,6 +45,16 @@ public static class DesktopQuery {
     if(!GetProcessTimes(handle,out a,out b,out c,out d)) throw new Win32Exception(Marshal.GetLastWin32Error(),"PROCESS_TIMES_FAILED");
     return a;
   }
+  static bool ImageReadExited(IntPtr handle,uint pid,int error) {
+    long created,exited,kernel,user;
+    bool read=GetProcessTimes(handle,out created,out exited,out kernel,out user);
+    int stateError=read?0:Marshal.GetLastWin32Error();
+    bool gone=read&&exited!=0;
+    // A failed image read alone never proves absence. The same opened process
+    // handle must have a kernel exit timestamp; live and unknown fail closed.
+    Console.Error.WriteLine("PROCESS_QUERY_FILTER {\"pid\":"+pid+",\"code\":"+Json(gone?"PROCESS_EXITED_DURING_IMAGE_READ":"PROCESS_IMAGE_FAILED")+",\"call\":\"QueryFullProcessImageNameW\",\"win32Error\":"+error+",\"processState\":"+Json(!read?"unknown":gone?"exited":"live")+",\"stateCall\":\"GetProcessTimes\",\"stateWin32Error\":"+stateError+"}");
+    return gone;
+  }
   static HashSet<uint> Pids(string input) {
     var ids=new HashSet<uint>();
     foreach(string value in input.Split(',')) { uint pid; if(!uint.TryParse(value,out pid)||pid==0) throw new Exception("INVALID_PID"); ids.Add(pid); }
@@ -71,8 +81,10 @@ public static class DesktopQuery {
           IntPtr handle=Open(entry.pid);
           if(handle!=IntPtr.Zero) try {
             var path=new StringBuilder(32768); uint size=32768;
-            if(!QueryFullProcessImageNameW(handle,0,path,ref size)) throw new Win32Exception(Marshal.GetLastWin32Error(),"PROCESS_IMAGE_FAILED");
-            if(string.Equals(path.ToString(),executable,StringComparison.OrdinalIgnoreCase)) rows.Add("{\"ProcessId\":"+entry.pid+",\"ParentProcessId\":"+entry.parent+",\"ExecutablePath\":"+Json(path.ToString())+",\"born\":"+Json(Born(handle).ToString())+"}");
+            if(!QueryFullProcessImageNameW(handle,0,path,ref size)) {
+              int imageError=Marshal.GetLastWin32Error();
+              if(!ImageReadExited(handle,entry.pid,imageError)) throw new Win32Exception(imageError,"PROCESS_IMAGE_FAILED");
+            } else if(string.Equals(path.ToString(),executable,StringComparison.OrdinalIgnoreCase)) rows.Add("{\"ProcessId\":"+entry.pid+",\"ParentProcessId\":"+entry.parent+",\"ExecutablePath\":"+Json(path.ToString())+",\"born\":"+Json(Born(handle).ToString())+"}");
           } finally { CloseHandle(handle); }
         }
         next=Process32NextW(snapshot,ref entry);
@@ -115,7 +127,8 @@ public static class DesktopQuery {
             var path=new StringBuilder(32768);uint size=32768;
             if(!QueryFullProcessImageNameW(handle,0,path,ref size)) {
               int error=Marshal.GetLastWin32Error();UninstallFilter(entry.pid,"image-read-failed","unreadable",false,false,error);
-              throw new Win32Exception(error,"UNINSTALL_IMAGE_FAILED");
+              if(!ImageReadExited(handle,entry.pid,error)) throw new Win32Exception(error,"UNINSTALL_IMAGE_FAILED");
+              next=Process32NextW(snapshot,ref entry);continue;
             }
             string raw=path.ToString(),image;
             try { image=LongPath(raw); }

@@ -28,12 +28,15 @@ export async function plantedProcess(): Promise<void> {
   await assertNoRemainingProcesses(await processIdentities([process.pid]));
 }
 
-export async function processExitControl(exits: boolean): Promise<void> {
+export async function processExitControl(
+  exits: boolean,
+  exitAfterMs = 3000,
+): Promise<void> {
   const child = spawn(
     process.execPath,
     [
       '-e',
-      `process.stdout.write('ready\\n'); ${exits ? 'setTimeout(() => process.exit(0), 3000)' : 'setInterval(() => {}, 1000)'}`,
+      `process.stdout.write('ready\\n'); ${exits ? `setTimeout(() => process.exit(0), ${exitAfterMs})` : 'setInterval(() => {}, 1000)'}`,
     ],
     {
       stdio: ['ignore', 'pipe', 'ignore'],

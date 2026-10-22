@@ -8,7 +8,11 @@ import { fixtureWorkspace, FIXTURE } from '../../cli/e2e/fake-x/fixture.ts';
 import { fakeInstagram } from '../../cli/e2e/fake-instagram/server.ts';
 import { instagramFixture } from '../../cli/e2e/fake-instagram/fixture.ts';
 import { launch, call } from './helpers.ts';
-import { assertNoRemainingProcesses } from '../test/windows.ts';
+import {
+  assertNoRemainingProcesses,
+  BROWSER_CLEANUP_TIMEOUT_MS,
+} from '../test/windows.ts';
+import { recordCleanup } from './cleanup-receipt.ts';
 import type { ProcessIdentity } from '../test/windows.ts';
 import { windowsShortPath } from '../test/short-path.ts';
 import type { RunView } from '../src/protocol.ts';
@@ -138,8 +142,11 @@ async function generated(
           browserProcesses = (
             (await control('runProbe')) as { processes: ProcessIdentity[] }
           ).processes;
-        await app.close();
-        await assertNoRemainingProcesses(browserProcesses);
+        await recordCleanup('browser', {
+          timeoutMs: BROWSER_CLEANUP_TIMEOUT_MS,
+          close: () => app.close(),
+          wait: () => assertNoRemainingProcesses(browserProcesses),
+        });
       } finally {
         await fake.close();
       }

@@ -60,7 +60,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # 30 min dependency bound + 5 min browser download + 25 min test allowance.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,14 +72,22 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @socialprune/web exec playwright install --with-deps chromium firefox webkit
+      # 2026-10-22: apt took 14m09s once and exceeded 20 min twice; browser
+      # downloads took 12-16 s. Bound dependency setup separately from tests.
+      - name: Install browser system dependencies
+        timeout-minutes: 30
+        run: pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit
+      - name: Install pinned browsers
+        timeout-minutes: 5
+        run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
       - run: pnpm test:e2e:all
 
   # ADR-016: the local-review build in a real browser against the real review
   # server, in its own job so the web e2e job keeps its time budget.
   review-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30 min dependency bound + 5 min browser download + 5 min review allowance.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,7 +98,14 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter socialprune exec playwright install --with-deps chromium firefox webkit
+      # Same measured apt/download split as e2e above; no browser-only cache
+      # can remove the observed apt bottleneck on a fresh runner.
+      - name: Install browser system dependencies
+        timeout-minutes: 30
+        run: pnpm --filter socialprune exec playwright install-deps chromium firefox webkit
+      - name: Install pinned browsers
+        timeout-minutes: 5
+        run: pnpm --filter socialprune exec playwright install chromium firefox webkit
       - run: pnpm --filter socialprune test:e2e
 
   cli-package:

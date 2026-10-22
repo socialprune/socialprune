@@ -60,8 +60,8 @@ test('packaged utility starts Playwright from asar, opens and closes only dispos
                 clean();
                 reject(new Error('BROWSER_PROBE_ENGINE_EXITED'));
               };
-              // Existing 30 s Chromium launch plus the runner-derived identity
-              // query budget (3 * 22375 + 100 ms; CI 39395902168).
+              // Existing 30 s Chromium allowance plus the current measured
+              // identity-query budget; cleanup has its own grace below.
               const timer = setTimeout(() => {
                 clean();
                 reject(new Error('BROWSER_PROBE_TIMEOUT'));

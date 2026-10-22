@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
-import { PROCESS_POLL_TIMEOUT_MS } from '../packaging/query-poll.ts';
+import { BROWSER_CLEANUP_TIMEOUT_MS } from '../test/windows.ts';
 import {
   plantedListener,
   plantedProcess,
@@ -8,8 +8,8 @@ import {
   processExitControl,
 } from './lifecycle-controls.ts';
 
-// Compiler setup, complete 3x runner query poll, last query settlement.
-test.setTimeout(WINDOWS_QUERY_TIMEOUT_MS * 2 + PROCESS_POLL_TIMEOUT_MS);
+// Compiler setup, complete cleanup grace, last query settlement.
+test.setTimeout(WINDOWS_QUERY_TIMEOUT_MS * 2 + BROWSER_CLEANUP_TIMEOUT_MS);
 
 test('positive control catches a live listener owned by the test', async () => {
   await expect(plantedListener(4668)).rejects.toThrow('APP_LISTENER');
@@ -29,7 +29,9 @@ test('a planted process that stays alive fails after the cleanup wait', async ()
   await expect(processExitControl(false)).rejects.toThrow(
     'BROWSER_PROCESS_REMAINS',
   );
-  expect(performance.now() - started).toBeGreaterThanOrEqual(15_000);
+  expect(performance.now() - started).toBeGreaterThanOrEqual(
+    BROWSER_CLEANUP_TIMEOUT_MS,
+  );
 });
 
 test('positive control catches an outbound connection to an owned local decoy', async () => {

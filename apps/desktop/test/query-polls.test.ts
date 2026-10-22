@@ -113,3 +113,19 @@ test('a query poll never overlaps its own queries or aborts a query to meet a pr
   ).resolves.toBe(3);
   expect(maximum).toBe(1);
 });
+
+test('query calibration cannot shorten the browser or Electron cleanup grace', async () => {
+  const { PROCESS_POLL_TIMEOUT_MS } =
+    await import('../packaging/query-poll.ts');
+  const { BROWSER_CLEANUP_TIMEOUT_MS, ELECTRON_CLEANUP_TIMEOUT_MS } =
+    await import('./windows.ts');
+  expect(PROCESS_POLL_TIMEOUT_MS).toBe(6355);
+  expect(BROWSER_CLEANUP_TIMEOUT_MS).toBe(15_000);
+  expect(ELECTRON_CLEANUP_TIMEOUT_MS).toBe(20_000);
+  expect(BROWSER_CLEANUP_TIMEOUT_MS).toBeGreaterThanOrEqual(
+    PROCESS_POLL_TIMEOUT_MS,
+  );
+  expect(ELECTRON_CLEANUP_TIMEOUT_MS).toBeGreaterThanOrEqual(
+    PROCESS_POLL_TIMEOUT_MS,
+  );
+});

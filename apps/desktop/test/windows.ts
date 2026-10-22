@@ -9,6 +9,17 @@ import {
   PROCESS_POLL_INTERVAL_MS,
 } from '../packaging/query-poll.ts';
 
+// Cleanup grace predates query calibration: browser exit in 0e32919 (15 s),
+// Electron exit in 309a153 (20 s). Query latency must not shorten either wait.
+export const BROWSER_CLEANUP_TIMEOUT_MS = Math.max(
+  15_000,
+  PROCESS_POLL_TIMEOUT_MS,
+);
+export const ELECTRON_CLEANUP_TIMEOUT_MS = Math.max(
+  20_000,
+  PROCESS_POLL_TIMEOUT_MS,
+);
+
 export interface ProcessRow {
   ProcessId: number;
   ParentProcessId: number;
@@ -74,7 +85,7 @@ export async function assertNoRemainingProcesses(
     },
     (value) => value.length === 0,
     {
-      timeoutMs: PROCESS_POLL_TIMEOUT_MS,
+      timeoutMs: BROWSER_CLEANUP_TIMEOUT_MS,
       intervalMs: PROCESS_POLL_INTERVAL_MS,
       message: 'BROWSER_PROCESS_REMAINS',
     },

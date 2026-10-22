@@ -1,11 +1,13 @@
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { spawn } from 'node:child_process';
+import assert from 'node:assert/strict';
 import {
   assertNoListeners,
   assertNoRemainingProcesses,
   assertNoConnections,
   processIdentities,
+  BROWSER_CLEANUP_TIMEOUT_MS,
 } from '../test/windows.ts';
 
 export async function plantedListener(port: number): Promise<void> {
@@ -48,7 +50,37 @@ export async function processExitControl(exits: boolean): Promise<void> {
       child.once('error', reject);
     });
     if (!child.pid) throw new Error('DECOY_PID_MISSING');
-    await assertNoRemainingProcesses(await processIdentities([child.pid]));
+    const identities = await processIdentities([child.pid]);
+    assert.equal(identities.length, 1, 'DECOY_IDENTITY_MISSING');
+    const started = performance.now();
+    try {
+      await assertNoRemainingProcesses(identities);
+    } catch (error) {
+      if (
+        !exits &&
+        error instanceof Error &&
+        error.message.includes('BROWSER_PROCESS_REMAINS:QUERY_POLL_TIMEOUT')
+      ) {
+        const waitedMs = performance.now() - started;
+        const surviving = await processIdentities([child.pid]);
+        assert.equal(child.exitCode, null, 'DECOY_EXITED_BEFORE_TIMEOUT');
+        assert.deepEqual(surviving, identities, 'DECOY_IDENTITY_CHANGED');
+        assert.ok(
+          waitedMs >= BROWSER_CLEANUP_TIMEOUT_MS,
+          'BROWSER_CLEANUP_REJECTED_EARLY',
+        );
+        console.log(
+          'PROCESS_CLEANUP_WAIT_PROOF',
+          JSON.stringify({
+            timeoutMs: BROWSER_CLEANUP_TIMEOUT_MS,
+            waitedMs,
+            surviving: surviving.length,
+            aliveBeforeOwnedCleanup: true,
+          }),
+        );
+      }
+      throw error;
+    }
   } finally {
     if (child.exitCode === null) child.kill();
     await ended;

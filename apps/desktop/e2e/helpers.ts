@@ -4,14 +4,13 @@ import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { dist, executable } from '../packaging/paths.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
-import { appProcesses } from '../test/windows.ts';
+import { appProcesses, ELECTRON_CLEANUP_TIMEOUT_MS } from '../test/windows.ts';
 import type { DesktopRequest, DesktopReply } from '../src/protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
 import { prepareWindowsQuery } from '../packaging/windows-query.ts';
 import {
   pollQuery,
-  PROCESS_POLL_TIMEOUT_MS,
   PROCESS_POLL_INTERVAL_MS,
 } from '../packaging/query-poll.ts';
 
@@ -42,11 +41,11 @@ export async function launch(
   prepare?: (data: string) => Promise<void>,
   selectDataPath?: (data: string) => Promise<string>,
 ) {
-  // Compiler setup, Chromium work, derived cleanup poll, last query settlement.
+  // Compiler setup, Chromium work, complete cleanup grace, last query settlement.
   test.setTimeout(
     Math.max(
       test.info().timeout,
-      WINDOWS_QUERY_TIMEOUT_MS * 3 + PROCESS_POLL_TIMEOUT_MS,
+      WINDOWS_QUERY_TIMEOUT_MS * 3 + ELECTRON_CLEANUP_TIMEOUT_MS,
     ),
   );
   const temporary = await mkdtemp(join(tmpdir(), 'socialprune-desktop-'));
@@ -105,7 +104,7 @@ export async function launch(
           () => appProcesses(executable(variant)),
           (rows) => rows.length === 0,
           {
-            timeoutMs: PROCESS_POLL_TIMEOUT_MS,
+            timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
             intervalMs: PROCESS_POLL_INTERVAL_MS,
             message: 'OWNED_ELECTRON_PROCESSES_REMAIN',
           },

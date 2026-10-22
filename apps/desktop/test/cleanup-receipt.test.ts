@@ -97,96 +97,99 @@ test('packaged browser and Electron closes write receipts retained by the existi
   expect(workflow).toContain('apps/desktop/dist/release-*.json');
 });
 
-test('cleanup retains counted native race evidence and a live read failure without adding process queries', async () => {
-  const scratch = await mkdtemp(join(tmpdir(), 'socialprune-query-receipt-'));
-  const diagnostic = {
-    pid: 123,
-    code: 'PROCESS_EXITED_DURING_IMAGE_READ',
-    call: 'QueryFullProcessImageNameW',
-    win32Error: 5,
-    processState: 'exited',
-    stateCall: 'GetProcessTimes',
-    stateWin32Error: 0,
-  };
-  const query = vi.spyOn(powershell, 'runNativeQuery');
-  setWindowsQueryDiagnosticDirectory(scratch);
-  try {
-    query.mockResolvedValueOnce({
-      stdout: '[]',
-      stderr: 'PROCESS_QUERY_FILTER ' + JSON.stringify(diagnostic) + '\n',
-    });
-    await recordCleanup('electron', {
-      directory: scratch,
-      timeoutMs: 60100,
-      close: () => Promise.resolve(),
-      wait: async () => {
-        await windowsQuery('processes', 'generated');
-      },
-    });
-    const failure = Object.assign(new Error('PROCESS_IMAGE_FAILED'), {
-      stderr:
-        'PROCESS_QUERY_FILTER ' +
-        JSON.stringify({
-          ...diagnostic,
-          code: 'PROCESS_IMAGE_FAILED',
-          win32Error: 122,
-          processState: 'live',
-        }) +
-        '\n',
-    });
-    query.mockRejectedValueOnce(failure);
-    await expect(
-      recordCleanup('electron', {
+test.skipIf(process.platform !== 'win32')(
+  'cleanup retains counted native race evidence and a live read failure without adding process queries',
+  async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-query-receipt-'));
+    const diagnostic = {
+      pid: 123,
+      code: 'PROCESS_EXITED_DURING_IMAGE_READ',
+      call: 'QueryFullProcessImageNameW',
+      win32Error: 5,
+      processState: 'exited',
+      stateCall: 'GetProcessTimes',
+      stateWin32Error: 0,
+    };
+    const query = vi.spyOn(powershell, 'runNativeQuery');
+    setWindowsQueryDiagnosticDirectory(scratch);
+    try {
+      query.mockResolvedValueOnce({
+        stdout: '[]',
+        stderr: 'PROCESS_QUERY_FILTER ' + JSON.stringify(diagnostic) + '\n',
+      });
+      await recordCleanup('electron', {
         directory: scratch,
         timeoutMs: 60100,
         close: () => Promise.resolve(),
         wait: async () => {
           await windowsQuery('processes', 'generated');
         },
-      }),
-    ).rejects.toBe(failure);
-    expect(query).toHaveBeenCalledTimes(2);
-    const files = (await readdir(scratch)).filter((file) =>
-      file.startsWith('release-process-cleanup-'),
-    );
-    const receipts: unknown[] = await Promise.all(
-      files.map(
-        async (file) =>
-          JSON.parse(await readFile(join(scratch, file), 'utf8')) as unknown,
-      ),
-    );
-    expect(receipts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          state: 'exited',
-          exitedDuringImageRead: 1,
-          processQueries: [
-            expect.objectContaining({
-              state: 'returned',
-              candidates: [diagnostic],
-            }),
-          ],
+      });
+      const failure = Object.assign(new Error('PROCESS_IMAGE_FAILED'), {
+        stderr:
+          'PROCESS_QUERY_FILTER ' +
+          JSON.stringify({
+            ...diagnostic,
+            code: 'PROCESS_IMAGE_FAILED',
+            win32Error: 122,
+            processState: 'live',
+          }) +
+          '\n',
+      });
+      query.mockRejectedValueOnce(failure);
+      await expect(
+        recordCleanup('electron', {
+          directory: scratch,
+          timeoutMs: 60100,
+          close: () => Promise.resolve(),
+          wait: async () => {
+            await windowsQuery('processes', 'generated');
+          },
         }),
-        expect.objectContaining({
-          state: 'failed',
-          exitedDuringImageRead: 0,
-          processQueries: [
-            expect.objectContaining({
-              state: 'failed',
-              candidates: [
-                expect.objectContaining({
-                  processState: 'live',
-                  win32Error: 122,
-                }),
-              ],
-            }),
-          ],
-        }),
-      ]),
-    );
-  } finally {
-    query.mockRestore();
-    setWindowsQueryDiagnosticDirectory(dist);
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
+      ).rejects.toBe(failure);
+      expect(query).toHaveBeenCalledTimes(2);
+      const files = (await readdir(scratch)).filter((file) =>
+        file.startsWith('release-process-cleanup-'),
+      );
+      const receipts: unknown[] = await Promise.all(
+        files.map(
+          async (file) =>
+            JSON.parse(await readFile(join(scratch, file), 'utf8')) as unknown,
+        ),
+      );
+      expect(receipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            state: 'exited',
+            exitedDuringImageRead: 1,
+            processQueries: [
+              expect.objectContaining({
+                state: 'returned',
+                candidates: [diagnostic],
+              }),
+            ],
+          }),
+          expect.objectContaining({
+            state: 'failed',
+            exitedDuringImageRead: 0,
+            processQueries: [
+              expect.objectContaining({
+                state: 'failed',
+                candidates: [
+                  expect.objectContaining({
+                    processState: 'live',
+                    win32Error: 122,
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ]),
+      );
+    } finally {
+      query.mockRestore();
+      setWindowsQueryDiagnosticDirectory(dist);
+      await rm(scratch, { recursive: true, force: true });
+    }
+  },
+);

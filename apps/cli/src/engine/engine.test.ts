@@ -30,6 +30,61 @@ test('engine opens a generated workspace, uses the review handlers and closes it
       requestId: 'generated-open',
       replies: [{ type: 'opened' }],
     });
+    const criteria = {
+      selected: ['political'],
+      custom: [],
+      nextCustom: 1,
+      level: 0 as const,
+    };
+    for (const input of [
+      { type: 'setCriteria', requestId: 'criteria', criteria },
+      { type: 'setKeepRules', requestId: 'rules', keepRules: [] },
+      { type: 'planCounts', requestId: 'counts', accountKey: 'x:generated' },
+      {
+        type: 'feedWindow',
+        requestId: 'cards',
+        accountKey: 'x:generated',
+        tab: 'all',
+        offset: 0,
+        limit: 50,
+      },
+      {
+        type: 'previewPlan',
+        requestId: 'preview',
+        accountKey: 'x:generated',
+        pageId: 'engine-page',
+        previewId: 'engine-plan',
+      },
+    ] satisfies import('@socialprune/core/workspace/protocol').HttpReviewRequest[]) {
+      expect(await engine.request(input)).toMatchObject({
+        type: 'reviewReply',
+        requestId: input.requestId,
+      });
+    }
+    expect(
+      await engine.request({
+        type: 'confirmBulk',
+        requestId: 'foreign',
+        commandId: 'foreign',
+        pageId: 'foreign',
+        previewId: 'engine-plan',
+      }),
+    ).toMatchObject({
+      type: 'reviewReply',
+      replies: [{ type: 'rejected', code: 'PREVIEW_EXPIRED' }],
+    });
+    expect(
+      await engine.request({
+        type: 'confirmBulk',
+        requestId: 'confirm',
+        commandId: 'confirm',
+        pageId: 'engine-page',
+        previewId: 'engine-plan',
+      }),
+    ).toMatchObject({
+      type: 'reviewReply',
+      replies: [{ type: 'committed', changed: 0 }],
+    });
     const folder = await engine.request({
       type: 'dataFolderInfo',
       requestId: 'generated-folder',
@@ -42,7 +97,8 @@ test('engine opens a generated workspace, uses the review handlers and closes it
     await engine.close();
     await rm(dataFolder, { recursive: true, force: true });
   }
-});
+  // The expanded case opens the real engine and now crosses seven review calls.
+}, 60_000);
 
 test('main-only methods and renderer paths are rejected at the engine boundary with closed failures', async () => {
   const dataFolder = await mkdtemp(join(tmpdir(), 'sp-engine-boundary-'));

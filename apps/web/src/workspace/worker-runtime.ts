@@ -142,6 +142,9 @@ async function summary(): Promise<WorkspaceSummary> {
       lastBackupAt: meta.lastBackupAt,
       timeZone: meta.settings.timeZone,
       review: storedReviewView(meta.settings.review),
+      categories: meta.settings.categories,
+      criteria: meta.settings.criteria,
+      keepRules: meta.settings.keepRules,
       revision: runtime.revision,
     };
   });
@@ -333,6 +336,43 @@ async function handle(input: WorkspaceRequest) {
   }
   if (!store || !query || !review) throw new Error('Workspace closed.');
   switch (input.type) {
+    case 'planCounts':
+      post({
+        type: 'planCounts',
+        requestId,
+        ...(await query.planCounts(input.accountKey)),
+      });
+      break;
+    case 'feedWindow':
+      post({
+        type: 'feedCards',
+        requestId,
+        ...(await query.feedWindow(input)),
+      });
+      break;
+    case 'previewPlan':
+      post({
+        type: 'bulkPreview',
+        requestId,
+        ...(await review.previewPlan({
+          pageId: input.pageId,
+          previewId: input.previewId,
+          accountKey: input.accountKey,
+        })),
+      });
+      break;
+    case 'setCriteria':
+    case 'setKeepRules': {
+      if (!settings) throw new Error('Workspace settings closed.');
+      const changed =
+        input.type === 'setCriteria'
+          ? await settings.setCriteria(input.criteria)
+          : await settings.setKeepRules(input.keepRules);
+      query.settingsChanged();
+      post({ type: 'settingsChanged', requestId, ...changed });
+      notify(changed.revision, []);
+      break;
+    }
     case 'query': {
       try {
         const result = await query.query(input);

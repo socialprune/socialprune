@@ -53,6 +53,7 @@ export function feedCounts(
     criteria.selected.map((id) => [id, 0]),
   );
   const membership = new Map<string, FeedTab>();
+  const baseMembership = new Map<string, FeedTab>();
   const holding = new Map<string, string[]>();
   const { timeZone } = resolveTimeZone(
     null,
@@ -82,6 +83,20 @@ export function feedCounts(
       : [];
     holding.set(item.id, held);
     const decision = states.get(item.id)!.decision;
+    baseMembership.set(
+      item.id,
+      hit
+        ? held.length
+          ? 'held'
+          : 'suggested'
+        : current.some(
+              (check) =>
+                check.status === 'unclear' ||
+                check.assessment?.category === 'unclear',
+            )
+          ? 'unclear'
+          : 'all',
+    );
     const tab: FeedTab =
       decision === 'delete'
         ? 'marked'
@@ -107,6 +122,7 @@ export function feedCounts(
     tabs,
     unchecked,
     membership,
+    baseMembership,
     holding,
     popularThreshold: accountKey ? (thresholds.get(accountKey) ?? null) : null,
   };

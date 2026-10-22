@@ -65,6 +65,7 @@ export class BridgeWorkspacePort extends EventTarget implements WorkspacePort {
     const transfer = Array.isArray(options) ? options : options.transfer;
     const bound =
       input.type === 'previewBulk' ||
+      input.type === 'previewPlan' ||
       input.type === 'confirmBulk' ||
       input.type === 'releasePreview'
         ? { ...input, pageId: this.pageId }

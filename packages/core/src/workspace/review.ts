@@ -15,6 +15,9 @@ import type { ReviewQuery, ReviewProjectionChange } from './query.ts';
 import type { BulkPreview } from './protocol.ts';
 import { PreviewBulkRequestSchema } from './protocol.ts';
 import { records } from './store.ts';
+import { projectFeed, planConfiguration, feedWorkspace } from './feed-query.ts';
+import { PreviewPlanRequestSchema } from './protocol.ts';
+import { currentAssessments } from '../criteria/suggestions.ts';
 import { popularIds } from './popular.ts';
 import type { ReadTransaction } from './store.ts';
 import type {
@@ -447,6 +450,93 @@ export class ReviewService {
     });
     return structuredClone(payload);
   }
+  async previewPlan(input: {
+    pageId: string;
+    previewId: string;
+    accountKey: string;
+  }): Promise<BulkPreview> {
+    if (
+      !PreviewPlanRequestSchema.safeParse({
+        ...input,
+        type: 'previewPlan',
+        requestId: 'service',
+      }).success
+    )
+      throw new WorkspaceError('INVALID_REQUEST');
+    const frozen = await this.store.read((tx) => this.buildPlan(tx, input));
+    this.registerPlan(frozen);
+    return structuredClone(frozen.payload);
+  }
+  private async buildPlan(
+    tx: ReadTransaction,
+    input: { pageId: string; previewId: string; accountKey: string },
+  ): Promise<FrozenPreview> {
+    const workspace = await feedWorkspace(tx);
+    const projected = projectFeed(workspace, input.accountKey);
+    const ids = projected.order.filter(
+      (id) => projected.membership.get(id) === 'suggested',
+    );
+    const expected = new Map<string, DecisionValue>(
+      ids.map((id) => [id, 'undecided']),
+    );
+    const assessments = currentAssessments(workspace);
+    const states = new Map<
+      string,
+      {
+        decision: DecisionValue;
+        outcome: OutcomeValue;
+        assessments: Assessment[];
+      }
+    >();
+    for (const id of ids) {
+      const state = await tx.state.get(id);
+      states.set(id, {
+        decision: state?.decision ?? 'undecided',
+        outcome: state?.outcome ?? 'unknown',
+        assessments: assessments.get(id) ?? [],
+      });
+    }
+    const payload: BulkPreview = {
+      pageId: input.pageId,
+      previewId: input.previewId,
+      queryId: input.accountKey,
+      generation: 0,
+      value: 'delete',
+      overwrite: ['undecided'],
+      total: ids.length,
+      willChange: ids.length,
+      unchanged: 0,
+      byCurrentValue: { keep: 0, delete: 0, later: 0, undecided: ids.length },
+      sample: ids.slice(0, 20).map((id) =>
+        reviewRow(
+          projectRow(
+            workspace.items.find((item) => item.id === id)!,
+            states.get(id)!,
+          ),
+        ),
+      ),
+      revision: (await tx.runtime.get()).revision,
+      expiresAt: new Date(this.now().getTime() + 10 * 60_000).toISOString(),
+      plan: {
+        accountKey: input.accountKey,
+        ...planConfiguration(workspace.settings),
+        counts: projected.tabs,
+        sources: projected.sources,
+      },
+    };
+    return { payload, expected, ids, popular: new Set<string>() };
+  }
+  private registerPlan(frozen: FrozenPreview) {
+    const input = frozen.payload;
+    this.expirePreviews();
+    for (const [id, preview] of this.previews)
+      if (preview.payload.pageId === input.pageId) this.previews.delete(id);
+    if (this.previews.has(input.previewId))
+      throw new WorkspaceError('INVALID_REQUEST');
+    if (this.previews.size >= 4)
+      this.previews.delete(this.previews.keys().next().value!);
+    this.previews.set(input.previewId, frozen);
+  }
   releasePreview(pageId: string, previewId: string): void {
     if (this.previews.get(previewId)?.payload.pageId === pageId)
       this.previews.delete(previewId);
@@ -465,6 +555,8 @@ export class ReviewService {
     previewId: string;
   }): Promise<ReviewCommandResult> {
     const preview = this.previews.get(input.previewId);
+    const replacementId = this.uuid();
+    let replacement: FrozenPreview | undefined;
     const result = await this.command(
       input.commandId,
       { type: 'confirmBulk', ...input },
@@ -476,6 +568,59 @@ export class ReviewService {
           Date.parse(preview.payload.expiresAt) <= this.now().getTime()
         )
           return this.rejected(input.commandId, 'PREVIEW_EXPIRED');
+        if (preview.payload.plan) {
+          const runtime = await tx.runtime.get();
+          const meta = await tx.meta.get();
+          if (
+            runtime.revision !== preview.payload.revision ||
+            planConfiguration(meta.settings).hash !== preview.payload.plan.hash
+          ) {
+            replacement = await this.buildPlan(tx, {
+              pageId: input.pageId,
+              previewId: replacementId,
+              accountKey: preview.payload.plan.accountKey,
+            });
+            return {
+              ...this.rejected(input.commandId, 'STALE_PREVIEW'),
+              preview: replacement.payload,
+            };
+          }
+          const states = new Map<string, StoredState>();
+          for (const id of preview.ids) {
+            const state = (await tx.state.get(id)) ?? {
+              itemId: id,
+              decision: 'undecided' as const,
+              outcome: 'unknown' as const,
+            };
+            if (state.decision !== 'undecided')
+              return this.rejected(input.commandId, 'STALE_PREVIEW');
+            states.set(id, state);
+          }
+          const committed = await this.append(
+            tx,
+            input.commandId,
+            preview.ids,
+            states,
+            'delete',
+            'decision',
+            'bulk',
+            null,
+            time,
+            actionId,
+            undefined,
+            projectionChange,
+          );
+          if (committed.type === 'committed' && committed.actionId) {
+            const { hash, ...snapshot } = preview.payload.plan;
+            void hash;
+            await tx.reviewPlans.add({
+              actionId: committed.actionId,
+              createdAt: time,
+              ...snapshot,
+            });
+          }
+          return committed;
+        }
         const states = new Map<string, StoredState>();
         let changedSince = 0;
         for (const id of preview.ids) {
@@ -522,6 +667,8 @@ export class ReviewService {
       this.previews.get(input.previewId) === preview
     )
       this.previews.delete(input.previewId);
+    if (replacement && result.type === 'rejected' && result.preview)
+      this.registerPlan(replacement);
     return result;
   }
   private async groups(tx: WriteTransaction): Promise<ActionGroup[]> {

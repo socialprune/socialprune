@@ -3,6 +3,10 @@ import type {
   WorkspaceSummary,
   WorkspaceReply,
 } from '@socialprune/core/workspace/protocol';
+import { HttpReviewRequestSchema } from '@socialprune/core/workspace/protocol';
+import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
+import { QueryEngine } from '@socialprune/core/workspace/query';
+import { ReviewService } from '@socialprune/core/workspace/review';
 import { WorkspaceClient } from '../workspace/client.ts';
 import { HttpWorkspacePort, parseHttpReplies } from './http-port.ts';
 import { ReviewSession } from './session.ts';
@@ -112,6 +116,11 @@ test('all preview operations bind the same page-load identity, not a component r
       value: 'keep' as const,
       overwrite: ['undecided' as const],
     },
+    {
+      type: 'previewPlan' as const,
+      previewId: 'plan',
+      accountKey: 'x:generated',
+    },
     { type: 'confirmBulk' as const, commandId: 'c', previewId: 'p' },
     { type: 'releasePreview' as const, previewId: 'p' },
   ])
@@ -127,9 +136,99 @@ test('all preview operations bind the same page-load identity, not a component r
     ]),
   ).toEqual([
     ['/api/previewBulk', 'load-page'],
+    ['/api/previewPlan', 'load-page'],
     ['/api/confirmBulk', 'load-page'],
     ['/api/releasePreview', 'load-page'],
   ]);
+});
+
+test('plan preview and confirmation share the HTTP page even after a component remount', async () => {
+  const { client, fetcher } = fixture();
+  const store = createMemoryStore();
+  const review = new ReviewService(store, {
+    query: new QueryEngine(store),
+    via: 'local-review',
+  });
+  fetcher.mockImplementation(async (_input, init) => {
+    const input = HttpReviewRequestSchema.parse(requestBody(init));
+    if (input.type === 'previewPlan')
+      return Response.json([
+        {
+          type: 'bulkPreview',
+          requestId: input.requestId,
+          ...(await review.previewPlan(input)),
+        },
+      ]);
+    if (input.type === 'confirmBulk')
+      return Response.json([
+        { requestId: input.requestId, ...(await review.confirmBulk(input)) },
+      ]);
+    throw new Error('Unexpected generated request.');
+  });
+  try {
+    const preview = await client.previewPlan({
+      accountKey: 'x:generated',
+      previewId: 'plan',
+      pageId: 'first-component',
+    });
+    expect(preview).toMatchObject({
+      type: 'bulkPreview',
+      pageId: 'load-page',
+      plan: { accountKey: 'x:generated' },
+    });
+    expect(
+      await client.request({
+        type: 'confirmBulk',
+        requestId: 'confirm-plan',
+        commandId: 'confirm-plan',
+        previewId: 'plan',
+        pageId: 'remounted-component',
+      }),
+    ).toMatchObject({ type: 'committed', changed: 0 });
+    expect(
+      fetcher.mock.calls.map((call) => requestBody(call[1]).pageId),
+    ).toEqual(['load-page', 'load-page']);
+  } finally {
+    client.dispose();
+    await store.close();
+  }
+});
+
+test('all non-preview feed requests forward unchanged through HTTP', async () => {
+  const { client, fetcher } = fixture();
+  fetcher.mockImplementation((_input, init) =>
+    Promise.resolve(
+      Response.json([{ type: 'done', requestId: requestBody(init).requestId }]),
+    ),
+  );
+  const requests = [
+    { type: 'planCounts', requestId: 'counts', accountKey: 'x:generated' },
+    {
+      type: 'feedWindow',
+      requestId: 'window',
+      accountKey: 'x:generated',
+      tab: 'all',
+      anchor: 'x:generated-post',
+      limit: 50,
+    },
+    {
+      type: 'setCriteria',
+      requestId: 'criteria',
+      criteria: {
+        selected: ['political'],
+        custom: [],
+        nextCustom: 1,
+        level: 1,
+      },
+    },
+    { type: 'setKeepRules', requestId: 'rules', keepRules: [] },
+  ] as const;
+  for (const input of requests)
+    await client.request(HttpReviewRequestSchema.parse(input));
+  expect(
+    fetcher.mock.calls.map((call) => [call[0], requestBody(call[1])]),
+  ).toEqual(requests.map((input) => [`/api/${input.type}`, input]));
+  expect(client.diagnostics).toEqual([]);
 });
 
 test.each(['backup', 'restore', 'attachImport', 'deleteWorkspace'])(

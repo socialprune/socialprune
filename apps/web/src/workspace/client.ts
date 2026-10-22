@@ -123,6 +123,9 @@ export class WorkspaceClient {
           ...this.summary,
           timeZone: reply.timeZone,
           revision: reply.revision,
+          ...(reply.criteria ? { criteria: reply.criteria } : {}),
+          ...(reply.keepRules ? { keepRules: reply.keepRules } : {}),
+          ...(reply.categories ? { categories: reply.categories } : {}),
         };
       if (reply.type === 'reviewViewChanged' && this.summary)
         this.summary = { ...this.summary, review: reply.review };
@@ -282,6 +285,8 @@ export class WorkspaceClient {
         'restore',
         'backup',
         'setTimeZone',
+        'setCriteria',
+        'setKeepRules',
         'setReviewView',
         'deleteWorkspace',
       ].includes(value.type)
@@ -327,6 +332,50 @@ export class WorkspaceClient {
     if (reply.type !== 'originals')
       throw new Error('Originals could not be read.');
     return reply.originals;
+  }
+  planCounts(accountKey: string) {
+    return this.request({
+      type: 'planCounts',
+      requestId: crypto.randomUUID(),
+      accountKey,
+    });
+  }
+  setCriteria(criteria: NonNullable<WorkspaceSummary['criteria']>) {
+    return this.request({
+      type: 'setCriteria',
+      requestId: crypto.randomUUID(),
+      criteria,
+    });
+  }
+  setKeepRules(keepRules: NonNullable<WorkspaceSummary['keepRules']>) {
+    return this.request({
+      type: 'setKeepRules',
+      requestId: crypto.randomUUID(),
+      keepRules,
+    });
+  }
+  feedWindow(
+    input: Omit<
+      Extract<WorkspaceRequest, { type: 'feedWindow' }>,
+      'requestId' | 'type'
+    >,
+  ) {
+    return this.request({
+      ...input,
+      type: 'feedWindow',
+      requestId: crypto.randomUUID(),
+    });
+  }
+  previewPlan(input: {
+    accountKey: string;
+    pageId: string;
+    previewId: string;
+  }) {
+    return this.request({
+      ...input,
+      type: 'previewPlan',
+      requestId: crypto.randomUUID(),
+    });
   }
   async getInstagramContext(itemIds: string[]): Promise<InstagramContext[]> {
     const reply = await this.request({

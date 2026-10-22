@@ -34,6 +34,15 @@ import {
   ClickListWindowSchema,
 } from './clicklist-schema.ts';
 import { TimeZoneSettingSchema } from './settings-schema.ts';
+import {
+  CriteriaSettingsSchema,
+  KeepRulesSchema,
+  CheckedCriteriaSchema,
+  CriterionHashSchema,
+  FeedTabSchema,
+  FeedTabCountsSchema,
+  ReviewPlanSchema,
+} from '../criteria/schema.ts';
 
 const id = z.string().min(1).max(512);
 const nonnegative = z.number().int().nonnegative();
@@ -65,6 +74,9 @@ export const WorkspaceSummarySchema = z.strictObject({
   lastBackupAt: UtcTimestampSchema.nullable(),
   timeZone: z.string().min(1).nullable(),
   review: ReviewViewSchema.optional(),
+  categories: z.array(CategoryIdSchema).max(32).optional(),
+  criteria: CriteriaSettingsSchema.optional(),
+  keepRules: KeepRulesSchema.optional(),
   revision: nonnegative,
 });
 export type WorkspaceSummary = z.infer<typeof WorkspaceSummarySchema>;
@@ -82,6 +94,39 @@ export const ReviewRowSchema = z.strictObject({
   mediaCount: nonnegative.nullable(),
 });
 export type ReviewRow = z.infer<typeof ReviewRowSchema>;
+export const PlanSnapshotSchema = z.strictObject({
+  accountKey: id,
+  hash: CriterionHashSchema,
+  criteria: CheckedCriteriaSchema,
+  level: CriteriaSettingsSchema.shape.level,
+  keepRules: KeepRulesSchema,
+  counts: FeedTabCountsSchema,
+  sources: z.array(
+    z.strictObject({
+      kind: AssessmentSourceSchema.shape.kind,
+      name: z.string().min(1),
+      count: nonnegative,
+    }),
+  ),
+});
+export const FeedCardSchema = z.strictObject({
+  item: ItemSchema,
+  suggestions: z.array(AssessmentSchema),
+  holdingRules: z.array(z.string().min(1)).max(16),
+  decision: DecisionValueSchema,
+  outcome: OutcomeValueSchema,
+  decisionEvent: DecisionEventSchema.nullable(),
+  plan: ReviewPlanSchema.nullable(),
+});
+export type FeedCard = z.infer<typeof FeedCardSchema>;
+export const PlanCountsSchema = z.strictObject({
+  tabs: FeedTabCountsSchema,
+  hits: z.record(z.string().min(1), nonnegative),
+  held: z.record(z.string().min(1), nonnegative),
+  unchecked: z.record(z.string().min(1), nonnegative),
+  popularThreshold: nonnegative.nullable(),
+});
+export type PlanCounts = z.infer<typeof PlanCountsSchema>;
 export const BulkPreviewSchema = z.strictObject({
   previewId: id,
   pageId: id,
@@ -98,6 +143,7 @@ export const BulkPreviewSchema = z.strictObject({
   sample: z.array(ReviewRowSchema).max(20),
   revision: nonnegative,
   expiresAt: UtcTimestampSchema,
+  plan: PlanSnapshotSchema.optional(),
   selection: z
     .strictObject({
       requested: nonnegative,
@@ -181,7 +227,44 @@ export const PreviewBulkRequestSchema = z.strictObject({
     })
     .optional(),
 });
+export const FeedWindowRequestSchema = z
+  .strictObject({
+    ...requestBase,
+    type: z.literal('feedWindow'),
+    accountKey: id,
+    tab: FeedTabSchema,
+    offset: nonnegative.optional(),
+    anchor: id.optional(),
+    limit: z.number().int().min(1).max(50),
+  })
+  .refine(
+    (value) => (value.offset !== undefined) !== (value.anchor !== undefined),
+  );
+export const PreviewPlanRequestSchema = z.strictObject({
+  ...requestBase,
+  type: z.literal('previewPlan'),
+  pageId: id,
+  previewId: id,
+  accountKey: id,
+});
 const requests = [
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('planCounts'),
+    accountKey: id,
+  }),
+  FeedWindowRequestSchema,
+  PreviewPlanRequestSchema,
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('setCriteria'),
+    criteria: CriteriaSettingsSchema,
+  }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal('setKeepRules'),
+    keepRules: KeepRulesSchema,
+  }),
   z.strictObject({ ...requestBase, type: z.literal('open'), workspaceId: id }),
   z.strictObject({
     ...requestBase,
@@ -331,6 +414,18 @@ export const WorkspaceRequestSchema = z.union([
 export type WorkspaceRequest = z.infer<typeof WorkspaceRequestSchema>;
 const replyBase = { requestId: id };
 export const WorkspaceReplySchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('planCounts'),
+    ...PlanCountsSchema.shape,
+  }),
+  z.strictObject({
+    ...replyBase,
+    type: z.literal('feedCards'),
+    total: nonnegative,
+    anchorIndex: nonnegative.nullable(),
+    cards: z.array(FeedCardSchema).max(50),
+  }),
   InstagramContextReplySchema,
   z.strictObject({
     ...replyBase,
@@ -392,6 +487,7 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     commandId: id,
     code: ProtocolErrorCodeSchema,
     changedSince: nonnegative.optional(),
+    preview: BulkPreviewSchema.optional(),
   }),
   z.strictObject({
     ...replyBase,
@@ -462,6 +558,9 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     type: z.literal('settingsChanged'),
     timeZone: TimeZoneSettingSchema,
     revision: nonnegative,
+    criteria: CriteriaSettingsSchema.optional(),
+    keepRules: KeepRulesSchema.optional(),
+    categories: z.array(CategoryIdSchema).max(32).optional(),
   }),
   z.strictObject({
     ...replyBase,

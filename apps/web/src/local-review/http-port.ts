@@ -118,6 +118,7 @@ export class HttpWorkspacePort extends EventTarget implements WorkspacePort {
     }
     const bound =
       input.type === 'previewBulk' ||
+      input.type === 'previewPlan' ||
       input.type === 'confirmBulk' ||
       input.type === 'releasePreview'
         ? { ...input, pageId: this.options.pageId }

@@ -46,6 +46,7 @@ export type ReviewCommandResult =
       commandId: string;
       code: WorkspaceErrorCode;
       changedSince?: number;
+      preview?: import('./protocol.ts').BulkPreview;
     };
 export interface CommandReceipt {
   commandId: string;

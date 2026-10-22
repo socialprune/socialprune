@@ -11,6 +11,8 @@ import type { CompactAssessment } from './projection.ts';
 import { currentRowSources } from './row-sources.ts';
 import { currentAssessments } from '../criteria/suggestions.ts';
 import { records } from './store.ts';
+import { FeedQuery } from './feed-query.ts';
+import type { FeedTab } from '../criteria/schema.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -83,6 +85,26 @@ export const DEFAULT_QUERY_SORT: QuerySort = [
   { by: 'id', direction: 'asc' },
 ];
 export class QueryEngine implements ReviewQuery {
+  private readonly feed: FeedQuery;
+  private settingsGeneration = 0;
+  settingsChanged(): void {
+    this.settingsGeneration++;
+    this.projection = undefined;
+    this.building = undefined;
+    this.results.clear();
+  }
+  planCounts(accountKey: string) {
+    return this.feed.counts(accountKey);
+  }
+  feedWindow(input: {
+    accountKey: string;
+    tab: FeedTab;
+    offset?: number;
+    anchor?: string;
+    limit: number;
+  }) {
+    return this.feed.window(input);
+  }
   private readonly store: WorkspaceStore;
   private readonly generations = new Map<string, number>();
   private readonly results = new Map<
@@ -105,6 +127,7 @@ export class QueryEngine implements ReviewQuery {
     options: { yieldChunk?: () => Promise<void>; now?: () => number } = {},
   ) {
     this.store = store;
+    this.feed = new FeedQuery(store);
     this.now = options.now ?? (() => Date.now());
     this.yieldChunk =
       options.yieldChunk ??
@@ -306,6 +329,7 @@ export class QueryEngine implements ReviewQuery {
       throw new WorkspaceError('CANCELLED');
   }
   private async atRevision(revision: number): Promise<QueryProjection> {
+    const settingsGeneration = this.settingsGeneration;
     if (this.projection?.revision === revision) return this.projection;
     if (this.building) {
       const built = await this.building;
@@ -384,6 +408,8 @@ export class QueryEngine implements ReviewQuery {
     this.building = build;
     try {
       const result = await build;
+      if (settingsGeneration !== this.settingsGeneration)
+        return this.atRevision(revision);
       this.projection = result;
       return result;
     } finally {
@@ -509,6 +535,11 @@ export class QueryEngine implements ReviewQuery {
   }
   /** ReviewService calls this only after an acknowledged transaction commit. */
   noteReviewCommitted(change: ReviewProjectionChange): void {
+    this.feed.noteCommitted(
+      change.previousRevision,
+      change.revision,
+      change.states,
+    );
     const projection = this.projection;
     if (
       !projection ||

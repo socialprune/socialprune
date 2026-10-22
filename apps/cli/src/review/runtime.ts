@@ -70,6 +70,9 @@ export class ReviewRuntime {
         lastBackupAt: meta.lastBackupAt,
         timeZone: meta.settings.timeZone,
         review: storedReviewView(meta.settings.review),
+        categories: meta.settings.categories,
+        criteria: meta.settings.criteria,
+        keepRules: meta.settings.keepRules,
         revision: summary.revision,
       };
     });
@@ -110,6 +113,41 @@ export class ReviewRuntime {
     this.scans.set(id, controller);
     try {
       switch (input.type) {
+        case 'planCounts':
+          post({
+            type: 'planCounts',
+            requestId,
+            ...(await this.query.planCounts(input.accountKey)),
+          });
+          break;
+        case 'feedWindow':
+          post({
+            type: 'feedCards',
+            requestId,
+            ...(await this.query.feedWindow(input)),
+          });
+          break;
+        case 'previewPlan':
+          post({
+            type: 'bulkPreview',
+            requestId,
+            ...(await this.review.previewPlan({
+              pageId: input.pageId,
+              previewId: input.previewId,
+              accountKey: input.accountKey,
+            })),
+          });
+          break;
+        case 'setCriteria':
+        case 'setKeepRules': {
+          const changed =
+            input.type === 'setCriteria'
+              ? await this.settings.setCriteria(input.criteria)
+              : await this.settings.setKeepRules(input.keepRules);
+          this.query.settingsChanged();
+          post({ type: 'settingsChanged', requestId, ...changed });
+          break;
+        }
         case 'open':
           await this.query.prepareProjection();
           post({ type: 'opened', requestId, summary: await this.summary() });

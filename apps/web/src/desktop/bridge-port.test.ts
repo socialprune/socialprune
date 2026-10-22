@@ -5,6 +5,10 @@ import type {
   RunView,
 } from '@socialprune/core/workspace/desktop-protocol';
 import { DesktopReplySchema } from '@socialprune/core/workspace/desktop-protocol';
+import { HttpReviewRequestSchema } from '@socialprune/core/workspace/protocol';
+import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
+import { QueryEngine } from '@socialprune/core/workspace/query';
+import { ReviewService } from '@socialprune/core/workspace/review';
 import { WorkspaceClient } from '../workspace/client.ts';
 import { BridgeWorkspacePort } from './bridge-port.ts';
 import { subscribeRunView } from './bridge.ts';
@@ -20,6 +24,105 @@ function fixture(reply: (requestId: string) => unknown) {
   const port = new BridgeWorkspacePort(bridge);
   return { port, client: new WorkspaceClient(port), send, bridge };
 }
+
+test('plan preview and confirmation share the bridge page even after a component remount', async () => {
+  const store = createMemoryStore();
+  const review = new ReviewService(store, {
+    query: new QueryEngine(store),
+    via: 'local-review',
+  });
+  const { client, send } = fixture(() => null);
+  send.mockImplementation(async (raw) => {
+    const input = HttpReviewRequestSchema.parse(raw);
+    if (input.type === 'previewPlan')
+      return {
+        type: 'reviewReply',
+        requestId: input.requestId,
+        replies: [
+          {
+            type: 'bulkPreview',
+            requestId: input.requestId,
+            ...(await review.previewPlan(input)),
+          },
+        ],
+      };
+    if (input.type === 'confirmBulk')
+      return {
+        type: 'reviewReply',
+        requestId: input.requestId,
+        replies: [
+          { requestId: input.requestId, ...(await review.confirmBulk(input)) },
+        ],
+      };
+    throw new Error('Unexpected generated request.');
+  });
+  try {
+    const preview = await client.previewPlan({
+      accountKey: 'x:generated',
+      previewId: 'plan',
+      pageId: 'first-component',
+    });
+    expect(preview.type).toBe('bulkPreview');
+    if (preview.type !== 'bulkPreview') throw new Error('Preview required.');
+    expect(preview.pageId).not.toBe('first-component');
+    expect(preview.plan?.accountKey).toBe('x:generated');
+    expect(
+      await client.request({
+        type: 'confirmBulk',
+        requestId: 'confirm-plan',
+        commandId: 'confirm-plan',
+        previewId: 'plan',
+        pageId: 'remounted-component',
+      }),
+    ).toMatchObject({ type: 'committed', changed: 0 });
+    expect(
+      send.mock.calls.map(([input]) =>
+        'pageId' in input ? input.pageId : null,
+      ),
+    ).toEqual([preview.pageId, preview.pageId]);
+  } finally {
+    client.dispose();
+    await store.close();
+  }
+});
+
+test('all non-preview feed requests forward unchanged through the bridge', async () => {
+  const { client, send } = fixture((requestId) => ({
+    type: 'reviewReply',
+    requestId,
+    replies: [{ type: 'done', requestId }],
+  }));
+  const requests = [
+    { type: 'planCounts', requestId: 'counts', accountKey: 'x:generated' },
+    {
+      type: 'feedWindow',
+      requestId: 'window',
+      accountKey: 'x:generated',
+      tab: 'all',
+      offset: 0,
+      limit: 50,
+    },
+    {
+      type: 'setCriteria',
+      requestId: 'criteria',
+      criteria: {
+        selected: ['political'],
+        custom: [],
+        nextCustom: 1,
+        level: 1,
+      },
+    },
+    { type: 'setKeepRules', requestId: 'rules', keepRules: [] },
+  ] as const;
+  try {
+    for (const input of requests)
+      await client.request(HttpReviewRequestSchema.parse(input));
+    expect(send.mock.calls.map(([input]) => input)).toEqual(requests);
+    expect(client.diagnostics).toEqual([]);
+  } finally {
+    client.dispose();
+  }
+});
 
 test('existing client receives progress and chunks before a validated terminal reply', async () => {
   const chunks = ['generated,', 'entry\n'];

@@ -102,6 +102,29 @@ test('C21 a failed diagnostic attachment records its closed failure instead of b
   });
   expect(() => runtime.dispose()).not.toThrow();
 });
+test('C22 runtime observation attaches and detaches synchronously without a timer or waiting for planned close events', () => {
+  vi.useFakeTimers();
+  try {
+    const browser = new EventEmitter();
+    const page = new EventEmitter();
+    const runtime = observeContextRuntime(
+      { browser: () => browser } as unknown as BrowserContext,
+      () => ({ step: 1, stage: 'post-read' }),
+    );
+    expect(runtime.own(page as unknown as Page)).toBeUndefined();
+    expect(runtime.closing()).toBeUndefined();
+    expect(runtime.dispose()).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(
+      browser.listenerCount('disconnected') +
+        page.listenerCount('close') +
+        page.listenerCount('crash'),
+    ).toBe(0);
+    expect(runtime.version).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 async function responseHarness() {
   const context = Object.assign(new EventEmitter(), {

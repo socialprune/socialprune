@@ -1363,6 +1363,31 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test('C22 a normal automatic run writes the existing two structure snapshots and no late-event rewrite', async () => {
+  const h = await harness('success', 5);
+  const write = vi.spyOn(captureHelpers, 'writeStructure');
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    expect(write).toHaveBeenCalledTimes(2);
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      runtime: {
+        pageCrashes: 0,
+        browserDisconnects: 0,
+        unexpectedPageCloses: 0,
+        observationFailed: false,
+        events: [],
+      },
+    });
+  } finally {
+    write.mockRestore();
+    await h.close();
+  }
+});
 test('C21 IG-15 an exact two-row list with one own row passes without changing the filter or opening another persons post', async () => {
   const h = await filterHarness('list-half-other', 1);
   try {
@@ -3294,6 +3319,7 @@ test.each([
   },
   120000,
 );
+// C22: 68.92 s censored full-run maximum on C20, plus 30 s, rounded up.
 test('C8 IG-6 manual limit below fifteen keeps its existing Continue and Matches boundary', async () => {
   const h = await harness('success', 17);
   h.setLimit(1);
@@ -3313,7 +3339,7 @@ test('C8 IG-6 manual limit below fifteen keeps its existing Continue and Matches
   } finally {
     await h.close();
   }
-});
+}, 100000);
 test('C8 cleanup 1 registers cleanup even when the test never enters a finally', async () => {
   cleanupLease = await harness();
   void cleanupLease.start();
@@ -3432,57 +3458,62 @@ test('C8 harness closes its fake even when browser cleanup rejects and a repeate
     close.mockRestore();
   }
 });
-test.each([
+for (const variant of [
   'year-rows',
   'year-word-rows',
   'empty-image-buttons',
   'year-empty-rows',
-] as const)(
-  'C4 %s keeps the real row index and reads the account from a nonempty row',
-  async (variant) => {
-    const h = await harness(variant, 5);
-    try {
-      const result = await h.start(true),
-        run = (await h.store.browserJournal()).runs[0]!;
-      expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
-      expect(run.profileReport).toMatchObject({
-        accountBefore: h.fixture.items[0]!.account.handle,
-        accountAfter: h.fixture.items[0]!.account.handle,
-      });
-      expect(run.canaryAcceptedAt).toBeTruthy();
-      const reportText = await readFile(
-        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
-        'utf8',
-      );
-      const empty =
-        variant === 'empty-image-buttons' || variant === 'year-empty-rows';
-      expect(JSON.parse(reportText)).toMatchObject({
-        rows: {
-          emptySkipped: empty ? IG_FIXTURE.expected.emptyImageButtons * 5 : 0,
-        },
-        readback: { accountSame: true },
-      });
-      if (variant !== 'empty-image-buttons') {
-        const report = JSON.parse(reportText) as {
-          steps: { oldestWithinWeek: boolean }[];
-        };
-        expect(report.steps[0]).toMatchObject({ oldestWithinWeek: true });
+] as const) {
+  // C22: only empty-image-buttons exhausted 60 s in the parent full gate;
+  // 60 s censored maximum plus 30 s margin, other variants keep the default.
+  test(
+    `C4 ${variant} keeps the real row index and reads the account from a nonempty row`,
+    async () => {
+      const h = await harness(variant, 5);
+      try {
+        const result = await h.start(true),
+          run = (await h.store.browserJournal()).runs[0]!;
+        expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
+        expect(run.profileReport).toMatchObject({
+          accountBefore: h.fixture.items[0]!.account.handle,
+          accountAfter: h.fixture.items[0]!.account.handle,
+        });
+        expect(run.canaryAcceptedAt).toBeTruthy();
+        const reportText = await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        );
+        const empty =
+          variant === 'empty-image-buttons' || variant === 'year-empty-rows';
+        expect(JSON.parse(reportText)).toMatchObject({
+          rows: {
+            emptySkipped: empty ? IG_FIXTURE.expected.emptyImageButtons * 5 : 0,
+          },
+          readback: { accountSame: true },
+        });
+        if (variant !== 'empty-image-buttons') {
+          const report = JSON.parse(reportText) as {
+            steps: { oldestWithinWeek: boolean }[];
+          };
+          expect(report.steps[0]).toMatchObject({ oldestWithinWeek: true });
+        }
+        expect(
+          h.fake.requests.filter(
+            (request) => request.path === `/p/${IG_FIXTURE.code}`,
+          ),
+        ).toHaveLength(1);
+        expect(h.fake.events.flatMap((value) => value.clicks)).not.toContain(
+          'Generated image decoration',
+        );
+        for (const value of Object.values(IG_FIXTURE.other))
+          expect(reportText).not.toContain(value);
+      } finally {
+        await h.close();
       }
-      expect(
-        h.fake.requests.filter(
-          (request) => request.path === `/p/${IG_FIXTURE.code}`,
-        ),
-      ).toHaveLength(1);
-      expect(h.fake.events.flatMap((value) => value.clicks)).not.toContain(
-        'Generated image decoration',
-      );
-      for (const value of Object.values(IG_FIXTURE.other))
-        expect(reportText).not.toContain(value);
-    } finally {
-      await h.close();
-    }
-  },
-);
+    },
+    variant === 'empty-image-buttons' ? 90000 : undefined,
+  );
+}
 test('C4 a nonempty row with unknown age suffix still stops at row-structure', async () => {
   const h = await harness('unknown-age');
   try {
@@ -4470,7 +4501,7 @@ test('foundation: Start gates navigation, sending commits first, four checks ato
     await h.close();
   }
 });
-test.each([
+for (const variant of [
   'success',
   'hidden',
   'reel',
@@ -4479,23 +4510,28 @@ test.each([
   'empty-caption',
   'not-shown',
   'other-author',
-] as const)(
-  'automatic canary %s compares every field with the page JSON, accepts once and never starts a full run',
-  async (variant) => {
-    const h = await harness(variant, 5);
-    try {
-      const result = await h.start(true);
-      expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
-      const runs = await h.store.browserJournal();
-      expect(runs.runs[0]).toMatchObject({ acceptedBy: 'automatic-check' });
-      expect(runs.runs[0]?.canaryAcceptedAt).toBeTruthy();
-      if (variant === 'hidden')
-        expect(h.waits.filter((value) => value === 3000)).toHaveLength(15);
-    } finally {
-      await h.close();
-    }
-  },
-);
+] as const) {
+  // C22: hidden exhausted 60 s in the parent gate; +30 s margin. The
+  // same-machine C20/C21 successes were 23.68/26.02 s, not a new fixed wait.
+  test(
+    `automatic canary ${variant} compares every field with the page JSON, accepts once and never starts a full run`,
+    async () => {
+      const h = await harness(variant, 5);
+      try {
+        const result = await h.start(true);
+        expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
+        const runs = await h.store.browserJournal();
+        expect(runs.runs[0]).toMatchObject({ acceptedBy: 'automatic-check' });
+        expect(runs.runs[0]?.canaryAcceptedAt).toBeTruthy();
+        if (variant === 'hidden')
+          expect(h.waits.filter((value) => value === 3000)).toHaveLength(15);
+      } finally {
+        await h.close();
+      }
+    },
+    variant === 'hidden' ? 90000 : undefined,
+  );
+}
 test.each([
   ['answer-ndjson', null, 'sequence', 'json', 2],
   ['answer-concatenated', null, 'sequence', 'json', 2],
@@ -5565,6 +5601,7 @@ test('disk-low has its closed stop token in report and terminal, and accepts not
     await h.close();
   }
 });
+// C22: 73.59 s censored full-run maximum on C20 plus 25 s, rounded up.
 test('first five canary comments are paced and a later full run needs a fresh plan', async () => {
   const h = await harness('success', 6);
   try {
@@ -5583,4 +5620,4 @@ test('first five canary comments are paced and a later full run needs a fresh pl
   } finally {
     await h.close();
   }
-});
+}, 100000);

@@ -152,13 +152,13 @@ jobs:
         with:
           path: apps/desktop/dist/nsis-3.13.zip
           key: nsis-${{ steps.nsis.outputs.sha256 }}
-      - name: Installed release measurement and system boundary
+      - name: Installed release budgets and system boundary
         run: |
           pnpm --filter @socialprune/desktop build:release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm --filter @socialprune/desktop test:release-controls
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm --filter @socialprune/desktop smoke:release
+          pnpm smoke:desktop:release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

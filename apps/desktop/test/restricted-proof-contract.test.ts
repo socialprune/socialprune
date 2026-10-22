@@ -2,21 +2,20 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { directory } from '../packaging/paths.ts';
-import { peImports } from './limited-proof-matrix.ts';
 import { assertRestrictedProofLauncher } from './proof-invariants.ts';
+import { peImports } from './pe-imports.ts';
 
-test('the diagnostic selector is opt-in and the default launcher retains the restricted proof invariants', async () => {
+test('the retired calibration matrix has no selector and the launcher retains the restricted proof invariants', async () => {
   const source = (
     await readFile(join(directory, 'e2e/limited-token.ps1'), 'utf8')
   ).replaceAll('\r\n', '\n');
   expect(source.split('\n')[0]).toBe(
-    "param([string]$Executable, [string]$ArgumentsFile, [string]$TokenReport, [int]$TimeoutSeconds = 1200, [string]$DiagnosticVariant = '')",
+    'param([string]$Executable, [string]$ArgumentsFile, [string]$TokenReport, [int]$TimeoutSeconds = 1200)',
   );
-  expect(source).toContain("if ($DiagnosticVariant -eq 'runner-matrix')");
+  expect(source).not.toMatch(
+    /DiagnosticVariant|runner-matrix|limited-proof-matrix/,
+  );
   expect(() => assertRestrictedProofLauncher(source)).not.toThrow();
-  expect(source).toContain(
-    "if ($DiagnosticVariant -ne '') { throw 'UNKNOWN_DIAGNOSTIC_VARIANT' }",
-  );
 });
 
 test('restricted proof callsites cannot opt into a diagnostic or lose their restricted launcher', async () => {
@@ -51,7 +50,7 @@ test('the DACL reproducer records the elevation precondition rather than asserti
   expect(fixture).toContain('ParentElevated()');
 });
 
-test('import inspection reads generated PE import and delay tables without claiming a user32-free runtime', () => {
+test('retained diagnostic import inspection reads generated PE tables without a transitive runtime claim', () => {
   const bytes = Buffer.alloc(2048);
   bytes.write('MZ');
   bytes.writeUInt32LE(128, 0x3c);

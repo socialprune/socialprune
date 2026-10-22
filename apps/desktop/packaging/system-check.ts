@@ -1,8 +1,6 @@
 import { join } from 'node:path';
-import {
-  runPowerShell,
-  WINDOWS_QUERY_TIMEOUT_MS,
-} from './windows-powershell.ts';
+import { runPowerShell } from './windows-powershell.ts';
+import { runnerQueryCalibration } from './runner-query-calibration.ts';
 import { z } from 'zod';
 import { directory } from './paths.ts';
 
@@ -120,13 +118,9 @@ export function compareSystemSnapshots(
   return result;
 }
 
-// R13, 2026-10-20: fresh-process cold/warm 9,203/5,890 ms; retain the
-// earlier restricted/concurrent maximum 44,131 ms (D-R4, 2026-10-19).
-// ceil(3 * 44,131 to seconds) = 133 s; next runner query receipts recalibrate.
-export const SYSTEM_SNAPSHOT_TIMEOUT_MS = Math.max(
-  133_000,
-  WINDOWS_QUERY_TIMEOUT_MS,
-);
+// Three times the highest runner observation, rounded up to one second.
+export const SYSTEM_SNAPSHOT_TIMEOUT_MS =
+  Math.ceil((runnerQueryCalibration.snapshot.maximumMs * 3) / 1000) * 1000;
 
 export async function systemSnapshot(): Promise<SystemSnapshot> {
   const { stdout } = await runPowerShell(

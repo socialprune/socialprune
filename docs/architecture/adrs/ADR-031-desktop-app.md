@@ -243,6 +243,8 @@ The German text names "Der Computer wurde durch Windows geschützt", "Weitere In
 | Accessibility | the IBM engine checks of ADR-008 on setup, monitor and settings; every path works from the keyboard; the status line is a polite live region; Stop never needs a pointer |
 | German and English | both catalogs under `pnpm i18n:check`, every new string under `pnpm copy:check`, screenshots in both languages from generated data |
 
+On 2026-10-22, the release budgets were set to the highest median from three green Windows runner jobs plus 20 percent, rounded up to one millisecond for startup and one byte for memory and installer size; `smoke:release` measures and reports against these reference-machine budgets, while `smoke:desktop:release` passes `--require-budgets` to enforce them, as CI's desktop job does.
+
 ### 9. Repository shape, CI and releases
 
 | Path | Contents |

@@ -57,7 +57,7 @@ export async function watchNetwork(
     child.once('exit', resolve);
   });
   try {
-    // Native table watch: use 3x runner predecessor max + 50 ms interval.
+    // Runner whole-helper lifetime bounds its readiness, including compilation.
     const deadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
     while (Date.now() < deadline && child.exitCode === null) {
       if (await pathExists(output + '.ready')) break;

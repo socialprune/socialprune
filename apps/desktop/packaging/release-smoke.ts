@@ -17,8 +17,14 @@ import { z } from 'zod';
 import { directory, dist, executable } from './paths.ts';
 import { artifacts, releaseVersion } from './release.ts';
 import { assertFuses } from './fuses.ts';
-import { assertBudgets, summarize, checkRelease } from './release-checks.ts';
-import { releaseBudgets } from './release-budgets.ts';
+import {
+  assertBudgets,
+  summarize,
+  checkRelease,
+  budgetCodes,
+  releaseBudgetReport,
+} from './release-checks.ts';
+import { releaseBudgets, releaseBudgetCalibration } from './release-budgets.ts';
 import type { Measurement } from './release-checks.ts';
 import { compareSystemSnapshots, systemSnapshot } from './system-check.ts';
 import type { SystemComparison } from './system-check.ts';
@@ -39,6 +45,7 @@ import {
 import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
 import { runWindowProbe } from './window-readiness.ts';
 import { launchReviewApp } from './review-app-launch.ts';
+import { runnerQueryCalibration } from './runner-query-calibration.ts';
 
 const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
@@ -81,8 +88,8 @@ const hash = (bytes: Uint8Array) =>
 
 if (process.platform !== 'win32')
   throw new Error('WINDOWS_RELEASE_SMOKE_REQUIRED');
-const calibration = releaseBudgets === null;
-const requireCalibration = process.argv.includes('--require-budgets');
+const requireBudgets = process.argv.includes('--require-budgets');
+const budgetMode = requireBudgets ? 'enforce' : 'report';
 if (process.argv.includes('--measure'))
   throw new Error('EXPLICIT_MEASURE_REFUSED');
 // Closed CI metadata keys only. Never read or enumerate credentials.
@@ -374,6 +381,7 @@ if (primaryFailure) throw primaryFailure;
 if (!networkObservation) throw new Error('NETWORK_OBSERVATION_MISSING');
 assertNoOwnedNetwork(networkObservation);
 const summary = summarize(samples);
+const budgetReport = releaseBudgetReport(summary, releaseBudgets);
 // These controls use this run's actual measurements, never an earlier file.
 for (const key of ['startupMs', 'workingSetBytes', 'installerBytes'] as const) {
   const budgets = {
@@ -388,7 +396,8 @@ for (const key of ['startupMs', 'workingSetBytes', 'installerBytes'] as const) {
   );
 }
 const report = {
-  proof: calibration ? 'release-budget-measurement' : 'installed-release-smoke',
+  proof: 'installed-release-smoke',
+  mode: budgetMode,
   measuredAt: new Date().toISOString(),
   platform: process.platform,
   arch: process.arch,
@@ -410,6 +419,13 @@ const report = {
   network: networkObservation,
   tempCopies,
   summary,
+  budgets: releaseBudgets,
+  budgetCalibration: releaseBudgetCalibration,
+  queryCalibration: runnerQueryCalibration,
+  budgetReport,
+  budgetFailures: budgetReport
+    .filter((row) => !row.within)
+    .map((row) => budgetCodes[row.metric]),
   systemInvariantPassed: differences.length === 0,
   programFolderRemoved: true,
   startMenuEntryRemoved: true,
@@ -431,7 +447,10 @@ await writeFile(
       runner: report.runner,
       summary,
       budgets: releaseBudgets,
-      mode: calibration ? 'measure' : 'enforce',
+      budgetFailures: report.budgetFailures,
+      budgetReport,
+      calibration: releaseBudgetCalibration,
+      mode: budgetMode,
     },
     null,
     2,
@@ -441,17 +460,19 @@ if (runnerEnvironment.summary) {
   const lines = [
     '## Installed desktop measurements',
     '',
-    `Mode: ${calibration ? 'measure only; no budget enforcement' : 'runner budget enforcement'}. Five installed launches on ${report.environment}.`,
+    `Mode: ${budgetMode}. Five installed launches on ${report.environment}.`,
     '',
-    '| Metric | Median | Maximum | Median + 20% |',
+    '| Metric | Median | Maximum | Runner budget |',
     '|---|---:|---:|---:|',
   ];
   for (const key of ['startupMs', 'workingSetBytes', 'installerBytes'] as const)
     lines.push(
-      `| ${key} | ${summary[key].median} | ${summary[key].maximum} | ${Math.ceil(summary[key].median * 1.2)} |`,
+      `| ${key} | ${summary[key].median} | ${summary[key].maximum} | ${releaseBudgets[key]} |`,
     );
   await appendFile(runnerEnvironment.summary, lines.join('\n') + '\n');
 }
-checkRelease(summary, releaseBudgets, requireCalibration);
+for (const row of budgetReport)
+  console.log('RELEASE_BUDGET_REPORT ' + JSON.stringify(row));
+checkRelease(summary, releaseBudgets, requireBudgets);
 if (differences.length) throw new Error(differences.join('\n'));
 console.log(JSON.stringify(report));

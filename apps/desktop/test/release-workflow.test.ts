@@ -74,11 +74,14 @@ test('release workflow parses offline, is manual only and pins every action', as
   expect(source).not.toMatch(/secrets\.|SIGNPATH_API|signtool sign|schedule:/);
 });
 
-test('desktop CI automatically selects budget mode and publishes medians, using a digest-keyed archive cache', async () => {
+test('desktop CI enforces runner budgets and publishes medians, using a digest-keyed archive cache', async () => {
   const source = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
   const desktop = source.slice(source.indexOf('  desktop:'));
   expect(desktop).not.toContain('--measure');
-  expect(desktop).toContain('smoke:release');
+  expect(desktop).toContain('pnpm smoke:desktop:release');
+  expect(desktop).not.toContain(
+    'pnpm --filter @socialprune/desktop smoke:release',
+  );
   expect(desktop).toContain('release-smoke.json');
   expect(desktop).toContain('release-medians.json');
   expect(desktop).toMatch(/actions\/cache@[a-f0-9]{40} # v4\.2\.4/);
@@ -100,6 +103,15 @@ test('desktop CI automatically selects budget mode and publishes medians, using 
   ) as { scripts: Record<string, string> };
   expect(manifest.scripts['smoke:desktop:release']).toContain(
     '--require-budgets',
+  );
+  expect(manifest.scripts['smoke:desktop:release']).toBe(
+    'pnpm --filter @socialprune/desktop run smoke:release --require-budgets',
+  );
+  const packageManifest = JSON.parse(
+    await readFile(join(directory, 'package.json'), 'utf8'),
+  ) as { scripts: Record<string, string> };
+  expect(packageManifest.scripts['smoke:release']).toBe(
+    'node e2e/installed-proof.ts smoke',
   );
 });
 

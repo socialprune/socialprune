@@ -87,6 +87,10 @@ test('runner-derived budgets include three complete query observations and the p
   expect(module.queryPollBudget(46_441, 100)).toBe(139_423);
   expect(module.queryPollBudget(23_570, 100)).toBe(70_810);
   expect(module.queryPollBudget(1, 100)).toBe(60_100);
+  expect(module.PROCESS_POLL_TIMEOUT_MS).toBe(6355);
+  expect(module.LAYOUT_POLL_TIMEOUT_MS).toBe(4994);
+  expect(module.WATCH_READY_TIMEOUT_MS).toBe(297239);
+  expect(module.POWERSHELL_READY_TIMEOUT_MS).toBe(297239);
 });
 
 test('a query poll never overlaps its own queries or aborts a query to meet a predicate deadline', async () => {

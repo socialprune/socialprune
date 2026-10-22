@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { runNativeQuery } from '../packaging/windows-powershell.ts';
 import { directory } from '../packaging/paths.ts';
-import { peImports } from '../test/limited-proof-matrix.ts';
+import { peImports } from '../test/pe-imports.ts';
 
 export async function buildTokenProbe(output: string) {
   await mkdir(output, { recursive: true });

@@ -5,6 +5,11 @@ export interface Measurement {
 }
 
 export type Budgets = Record<keyof Measurement, number>;
+export const budgetCodes = {
+  startupMs: 'RELEASE_STARTUP_BUDGET_EXCEEDED',
+  workingSetBytes: 'RELEASE_MEMORY_BUDGET_EXCEEDED',
+  installerBytes: 'RELEASE_SIZE_BUDGET_EXCEEDED',
+} as const;
 export type Summary = {
   runs: number;
 } & Record<keyof Measurement, { median: number; maximum: number }>;
@@ -12,14 +17,30 @@ export type Summary = {
 export function checkRelease(
   summary: Summary,
   budgets: Budgets | null,
-  requireCalibration = false,
-): 'measure' | 'enforce' {
-  if (budgets) {
+  requireBudgets = false,
+): 'report' | 'enforce' {
+  if (requireBudgets) {
+    if (!budgets) throw new Error('RUNNER_BUDGETS_NOT_CALIBRATED');
     assertBudgets(summary, budgets);
     return 'enforce';
   }
-  if (requireCalibration) throw new Error('RUNNER_BUDGETS_NOT_CALIBRATED');
-  return 'measure';
+  if (budgets) releaseBudgetReport(summary, budgets);
+  return 'report';
+}
+
+export function releaseBudgetReport(summary: Summary, budgets: Budgets) {
+  return (['startupMs', 'workingSetBytes', 'installerBytes'] as const).map(
+    (metric) => {
+      if (!Number.isFinite(budgets[metric]) || budgets[metric] <= 0)
+        throw new Error(`INVALID_BUDGET:${metric}`);
+      return {
+        metric,
+        median: summary[metric].median,
+        budget: budgets[metric],
+        within: summary[metric].median <= budgets[metric],
+      };
+    },
+  );
 }
 
 export function summarize(samples: readonly Measurement[]): Summary {
@@ -51,8 +72,11 @@ export function assertBudgets(summary: Summary, budgets: Budgets): void {
     if (!Number.isFinite(budgets[key]) || budgets[key] <= 0)
       throw new Error(`INVALID_BUDGET:${key}`);
     if (summary[key].median > budgets[key])
-      throw new Error(
-        `BUDGET_EXCEEDED:${key}:${summary[key].median}>${budgets[key]}`,
+      throw Object.assign(
+        new Error(
+          `BUDGET_EXCEEDED:${key}:${summary[key].median}>${budgets[key]}`,
+        ),
+        { code: budgetCodes[key] },
       );
   }
 }

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { setTimeout as wait } from 'node:timers/promises';
-import { WINDOWS_QUERY_TIMEOUT_MS } from './windows-powershell.ts';
+import { runnerQueryCalibration } from './runner-query-calibration.ts';
 
-// CI 39442592668, 2026-10-20: actual native replacements, not CIM
-// predecessors: processes 63, identities 106, TCP/UDP 79 ms maximum.
-export const RUNNER_PROCESS_QUERY_MAX_MS = 106;
-export const RUNNER_NETWORK_QUERY_MAX_MS = 79;
+export const RUNNER_PROCESS_QUERY_MAX_MS =
+  runnerQueryCalibration.processIdentity.maximumMs;
+export const RUNNER_NETWORK_QUERY_MAX_MS =
+  runnerQueryCalibration.networkConnection.maximumMs;
 export function queryPollBudget(
   measuredMaximumMs: number,
   intervalMs: number,
@@ -17,21 +17,28 @@ export const PROCESS_POLL_INTERVAL_MS = 100;
 export const PROCESS_POLL_TIMEOUT_MS = queryPollBudget(
   RUNNER_PROCESS_QUERY_MAX_MS,
   PROCESS_POLL_INTERVAL_MS,
+  0,
 );
-// No runner layout measurement yet: reserve three complete PS query windows.
 export const LAYOUT_POLL_TIMEOUT_MS = queryPollBudget(
-  WINDOWS_QUERY_TIMEOUT_MS,
+  runnerQueryCalibration.layout.maximumMs,
   500,
+  0,
 );
 export const WATCH_READY_TIMEOUT_MS = queryPollBudget(
-  RUNNER_NETWORK_QUERY_MAX_MS,
+  runnerQueryCalibration.networkWatchLifetime.maximumMs,
   50,
+  0,
 );
-// A spawned PowerShell service may compile its native reader before ready.
-// Reserve three complete query windows until its runner receipt is available.
+// Retained helper lifetimes conservatively bound readiness, including compile.
+// This is not an isolated startup measurement (see the calibration receipt).
 export const POWERSHELL_READY_TIMEOUT_MS = queryPollBudget(
-  WINDOWS_QUERY_TIMEOUT_MS,
+  Math.max(
+    runnerQueryCalibration.nativeCompile.maximumMs,
+    runnerQueryCalibration.appLaunchLifetime.maximumMs,
+    runnerQueryCalibration.networkWatchLifetime.maximumMs,
+  ),
   50,
+  0,
 );
 
 export async function pollQuery<T>(

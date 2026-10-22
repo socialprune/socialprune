@@ -220,48 +220,7 @@ Do **not** sound like:
     - Cut throat-clearing, collapse duplicated contrast pairs, replace vague abstractions with the real object, and keep the rhythm natural rather than mechanically balanced.
     - Delete a framing clause when the remaining sentence carries the same information.
 
-<!-- omitted: 1 baseline lines #add01f6a "Sections D and E held model-specific writing guidance until " | Local sections remain until the end-card decision | PLAN D24, 2026-10-21 -->
-<!-- local: adds | the template removed this on 2026-10-21 (53dca14); kept until the operator decides on the end card -->
-## Model Self-Identification
-
-This rule must work across all modes without hardcoding mode-to-model mappings.
-
-At runtime, determine which model-specific guidance to follow from the model identity available in the active Kilo Code environment, such as the injected `<model>` value or equivalent runtime metadata.
-
-Apply the model-specific sections like this:
-
-- If the active model identifies itself as a Claude-family model, apply Section D.
-- If the active model identifies itself as a GPT-family or OpenAI reasoning model, apply Section E.
-- If the model family is unclear, apply Sections A-C and F-I strictly, then only use model-specific guidance that clearly matches the observed writing behavior.
-
-Do not assume that a specific mode always uses a specific model. Model assignments can change outside the repository.
-
-## D. Claude-Specific Guidance
-
-Apply this section if you are a Claude model (`claude-opus`, `claude-sonnet`, etc.).
-
-- Be stricter on brevity.
-- Do not add conversational cushioning.
-- Do not add “worth noting”, “it is important to note”, or soft balancing paragraphs.
-- State uncertainty once, then move on.
-- Do not over-explain before answering.
-- Output only the final text unless the user explicitly asks for commentary.
-
-Claude usually writes more naturally than GPT by default, but it can become too gentle, too thorough, and too padded. Cut that early.
-
-## E. GPT-Specific Guidance
-
-Apply this section if you are a GPT model (`gpt-4`, `gpt-5`, `o1`, `o3`, etc.).
-
-- Do not default to bullets or heading-heavy structure.
-- Avoid neat template rhetoric like “It’s not X, it’s Y”.
-- Do not end with assistant-style follow-up offers.
-- Avoid generic professional phrasing and clean-but-empty symmetry.
-- If context is missing, ask and stop instead of filling gaps with plausible fluff.
-- If you claim value, name the mechanism, evidence, or trade-off.
-
-GPT usually follows instructions well, but it slips into generic professional scaffolding very quickly if the brief is vague.
-<!-- /local -->
+Sections D and E held model-specific writing guidance until 2026-10-21. They were removed because they named dated models and claimed family tendencies without evidence, and their one instruction not covered elsewhere moved to C6.
 
 ## F. German-Specific Rules
 

@@ -1,6 +1,6 @@
 # SocialPrune Workflow Bible
 
-> **Version:** 1.3.0 | **Last updated:** 2026-10-20
+> **Version:** 1.3.0 | **Last updated:** 2026-10-22
 > **Scope:** the live `.kilo` shell of this repository
 > **Owner:** the maintainer. Changes follow `.kilo/rules/governance-protection.md`.
 
@@ -163,6 +163,7 @@ The Workflow Lab owns the file and distributes it with each change. Do not edit 
 
 ## 9. Changelog
 
+- **2026-10-22.** Removed the model-specific sections from the writing rule, as the workflow template did on 2026-10-21, on the maintainer's decision; the template's dated note stands in their place
 - **2026-10-21.** Added the shared-database query guidance and aligned the writing rule with template `53dca14`, keeping local differences marked and the model-specific sections pending a decision
 - **2026-10-21.** Rule files aligned with the workflow template at `f23d895`, local differences marked, and `human-writing-style.md` held back
 - **2026-10-20, 1.3.0.** Added the retired-doctrine section and `.kilo/RETIRED_DOCTRINE.md`. The rule files lost the laws the Workflow Lab retired after measurement on Opus 5.5 and GPT-6.1 Sol; each Hard Laws section points to the registry instead.

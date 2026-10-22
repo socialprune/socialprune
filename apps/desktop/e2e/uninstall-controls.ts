@@ -543,7 +543,9 @@ try {
   assert.equal(quiet, `"${uninstall}" /S`);
   const quietHash = digest(await readFile(uninstall));
   const quietBefore = await tempSnapshot();
-  const childReady = join(scratch, 'child-watch.ready');
+  const childArguments = join(scratch, 'child-watch-arguments.json');
+  await writeFile(childArguments, JSON.stringify(['/S']));
+  const childReceipt = proofOutput('release-nsis-copy.json');
   const childWatcher = spawnPowerShell(
     [
       '-NoProfile',
@@ -552,15 +554,24 @@ try {
       join(directory, 'packaging/uninstaller-children.ps1'),
       '-TempRoot',
       installerTemp,
-      '-Ready',
-      childReady,
+      '-Executable',
+      uninstall,
+      '-ArgumentsFile',
+      childArguments,
+      '-Receipt',
+      childReceipt,
     ],
-    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      timeout: WINDOWS_QUERY_TIMEOUT_MS,
+    },
   );
   let childOutput = '',
     childErrors = '';
   childWatcher.stdout.on('data', (bytes: Buffer) => {
     childOutput += bytes.toString();
+    process.stdout.write(bytes);
   });
   childWatcher.stderr.on('data', (bytes: Buffer) => {
     childErrors += bytes.toString();
@@ -571,26 +582,42 @@ try {
     // the assertion and its causal diagnostic are persisted.
     childWatcher.once('close', resolve);
   });
-  const watchDeadline = Date.now() + POWERSHELL_READY_TIMEOUT_MS;
-  while (
-    !(await exists(childReady)) &&
-    Date.now() < watchDeadline &&
-    childWatcher.exitCode === null
-  )
-    await wait(20);
-  assert.equal(await exists(childReady), true, 'NSIS_COPY_WATCH_NOT_READY');
-  await refusal(uninstall, ['/S'], 0, 'uninstall-running-registered-outer');
-  // Wait for the actual ~nsu executable, not the already-exited outer launch.
+  // The capture owns this exact registered launch. DEBUG_PROCESS is bound by
+  // CreateProcess before either the outer or its copy can execute user code.
   const watcherCode = await watcherExited;
   if (watcherCode !== 0) console.error('NSIS_COPY_QUERY_FAILED', childErrors);
   assert.equal(watcherCode, 0, childErrors);
-  const childProof = JSON.parse(childOutput) as {
-    exitCodes: number[];
-    remaining: number;
+  assert.match(childOutput, /^NSIS_COPY_RECEIPT /m);
+  const childProof = JSON.parse(await readFile(childReceipt, 'utf8')) as {
+    state: string;
+    settled: boolean;
+    armedBeforeLaunch: boolean;
+    outer: { pid: number; exitCode: number };
+    children: {
+      parentPid: number;
+      imageNameClass: string;
+      imagePathClass: string;
+      exitCode: number | null;
+    }[];
+    queryErrors: string[];
   };
-  assert.equal(childProof.remaining, 0);
-  assert.deepEqual(childProof.exitCodes, [10]);
-  refusalExits['uninstall-running-registered-copy'] = childProof.exitCodes;
+  assert.equal(childProof.state, 'passed');
+  assert.equal(childProof.settled, true);
+  assert.equal(childProof.armedBeforeLaunch, true);
+  assert.equal(childProof.outer.exitCode, 0);
+  assert.deepEqual(childProof.queryErrors, []);
+  const copyExits = childProof.children
+    .filter(
+      (row) =>
+        row.parentPid === childProof.outer.pid &&
+        row.imageNameClass === 'un' &&
+        row.imagePathClass === 'run-owned-nsis-copy',
+    )
+    .map((row) => row.exitCode);
+  assert.deepEqual(copyExits, [10]);
+  refusalExits['uninstall-running-registered-outer'] =
+    childProof.outer.exitCode;
+  refusalExits['uninstall-running-registered-copy'] = copyExits;
   assert.deepEqual(await installedSnapshot(), runningBefore);
   const quietAfter = await tempSnapshot();
   assert.equal(

@@ -1,24 +1,25 @@
-param([string]$TempRoot, [string]$Ready)
+param([Parameter(Mandatory=$true)][string]$TempRoot,
+  [Parameter(Mandatory=$true)][string]$Executable,
+  [Parameter(Mandatory=$true)][string]$ArgumentsFile,
+  [Parameter(Mandatory=$true)][string]$Receipt)
 $ErrorActionPreference='Stop'
-$codes=@()
-# CI 39395902168 (2026-10-20): process query max 22375 ms.
-# 3 complete observations plus the 5 ms poll interval; native Process reads stay.
-$deadline=[DateTime]::UtcNow.AddMilliseconds(67130)
-[IO.File]::WriteAllText($Ready,'watching')
-$seen=$false
-while([DateTime]::UtcNow -lt $deadline) {
-  foreach($process in [Diagnostics.Process]::GetProcessesByName('Un')) {
-    try {
-      if($process.MainModule.FileName.StartsWith($TempRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) {
-        $seen=$true
-        $handle=$process.Handle
-        if(-not $process.WaitForExit(67130)) { throw 'NSIS_COPY_DID_NOT_EXIT' }
-        $codes += $process.ExitCode
-      }
-    } catch [InvalidOperationException] { } finally { $process.Dispose() }
-  }
-  if($seen) { break }
-  Start-Sleep -Milliseconds 5
+$save=[Action[object]] { param($value)
+  [IO.File]::WriteAllText($Receipt,($value | ConvertTo-Json -Depth 12 -Compress))
 }
-if(-not $seen) { throw 'NSIS_COPY_NOT_OBSERVED' }
-@{ exitCodes=@($codes); remaining=0 } | ConvertTo-Json -Compress
+try {
+  Add-Type -Path (Join-Path $PSScriptRoot 'uninstaller-capture.cs')
+  $arguments=[string[]](ConvertFrom-Json ([IO.File]::ReadAllText($ArgumentsFile)))
+  $result=[UninstallerCapture]::Run($Executable,$arguments,$TempRoot,$save)
+} catch {
+  if([IO.File]::Exists($Receipt)) {
+    $result=ConvertFrom-Json ([IO.File]::ReadAllText($Receipt))
+    $result.state='failed'
+    $result.failure='NSIS_CAPTURE_FAILED'
+  } else {
+    $result=@{version=1;mechanism='debug-process-events';state='failed';failure='NSIS_CAPTURE_INITIALIZATION_FAILED';queryErrors=@('NSIS_CAPTURE_INITIALIZATION_FAILED')}
+  }
+  $save.Invoke($result)
+}
+$json=[IO.File]::ReadAllText($Receipt)
+[Console]::WriteLine('NSIS_COPY_RECEIPT '+$json)
+if($result.state -ne 'passed') { throw $result.failure }

@@ -91,8 +91,23 @@ export const PostRequestsSchema = z
   )
   .max(POST_PATH_CLASSES.length * 500);
 export type PostRequestStatus = z.infer<typeof PostRequestsSchema>[number];
+const PostRetrySchema = z.strictObject({
+  step: z.number().int().positive(),
+  retryStep: z.number().int().positive().nullable(),
+  stage: z.literal('post-open'),
+  waitedMs: count,
+  outcome: z.enum(['ready', 'timeout']).nullable(),
+});
+export type PostRetry = z.infer<typeof PostRetrySchema>;
+export const PostRetriesSchema = z
+  .strictObject({
+    used: z.number().int().min(0).max(3),
+    entries: z.array(PostRetrySchema).max(3),
+  })
+  .refine((value) => value.used === value.entries.length);
 
 export const ContextStepReportSchema = z.looseObject({
+  ready: z.strictObject({ postMs: count }).optional(),
   postRequests: PostRequestsSchema.optional(),
   secondSource: SecondSourceReportSchema.optional(),
   otherName: z.number().int().nonnegative().optional(),

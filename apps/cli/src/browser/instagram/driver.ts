@@ -18,6 +18,7 @@ import {
   utcWindow,
   rowCandidate,
   postElement,
+  postAddress,
   readPost,
   confirmComment,
   currentImageSource,
@@ -315,6 +316,32 @@ export async function openCandidate(
 ): Promise<boolean> {
   const navigationStart = performance.now();
   await clickAllowed(page, { kind: 'row', index }, guard);
+  return postReady(page, navigationStart, deps, guard);
+}
+export async function reopenCandidate(
+  page: Page,
+  target: string,
+  deps: ContextDependencies,
+  guard: () => void,
+): Promise<boolean> {
+  guard();
+  await checkPage(page);
+  const address = postAddress(target, deps.origin);
+  if (!address || new URL(target).origin !== new URL(deps.origin).origin)
+    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+  const navigationStart = performance.now();
+  await page.goto(
+    new URL(`/${address.kind}/${address.code}`, deps.origin).href,
+    { waitUntil: 'domcontentloaded', timeout: deps.responseMs },
+  );
+  return postReady(page, navigationStart, deps, guard);
+}
+async function postReady(
+  page: Page,
+  navigationStart: number,
+  deps: ContextDependencies,
+  guard: () => void,
+): Promise<boolean> {
   try {
     await waitPage(
       page,

@@ -3,6 +3,7 @@ import type { Item } from '@socialprune/core';
 import { IG_FIXTURE, POST_NOTICE_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
 import { listPage, postPage, postAnswer, answerResponse } from './pages.ts';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
@@ -20,6 +21,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let beforeNavigation: (() => Promise<void>) | undefined;
   const postVariants = new Map<number, Variant>();
   const hiddenPosts = new Set<number>();
+  const slowPosts = new Map<number, number>();
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -176,6 +178,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         const index = items.findIndex(
           (_, index) => `${IG_FIXTURE.code}${index || ''}` === post[1],
         );
+        const slow = slowPosts.get(index) ?? 0;
+        if (slow > 0) {
+          slowPosts.set(index, slow - 1);
+          await delay(6500);
+        }
         response.writeHead(200, { 'Content-Type': 'text/html' });
         response.end(
           postPage(
@@ -286,6 +293,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(index) || !items[index])
         throw new Error('Invalid generated post index.');
       postVariants.set(index, value);
+    },
+    slowPostOpens(index: number, count: number) {
+      if (!items[index] || !Number.isInteger(count) || count < 0)
+        throw new Error('Invalid generated slow opens');
+      slowPosts.set(index, count);
     },
     setPostHidden(index: number) {
       if (!items[index])

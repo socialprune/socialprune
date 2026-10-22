@@ -1363,6 +1363,317 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each([1, 2])(
+  'C23 post slow %s times reopens once with a counted paced step and keeps the original timeout on repetition',
+  async (failures) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.slowPostOpens(0, failures);
+    try {
+      const result = await h.start('no-canary');
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        retries: {
+          used: number;
+          entries: {
+            step: number;
+            retryStep: number;
+            stage: string;
+            waitedMs: number;
+            outcome: string | null;
+          }[];
+        };
+        steps: { ready: { postMs: number } }[];
+      };
+      if (failures === 1)
+        expect(result, h.notices.join('')).toMatchObject({
+          completed: 1,
+          steps: 2,
+        });
+      else expect(result).toMatchObject({ code: 'CONTEXT_FAILED' });
+      expect(report.retries).toEqual({
+        used: 1,
+        entries: [
+          {
+            step: 1,
+            retryStep: 2,
+            stage: 'post-open',
+            waitedMs: 60000,
+            outcome: failures === 1 ? 'ready' : 'timeout',
+          },
+        ],
+      });
+      expect(run.pageOpens).toBe(2);
+      expect(
+        (
+          await instagramDailyCount(
+            h.store,
+            h.plan.accountKey,
+            new Date(IG_FIXTURE.now),
+            h.plan.timeZone,
+          )
+        ).used,
+      ).toBe(2);
+      expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(1);
+      expect(report.steps).toHaveLength(2);
+      expect(
+        report.steps.every(
+          (step) =>
+            Number.isFinite(step.ready.postMs) && step.ready.postMs >= 0,
+        ),
+      ).toBe(true);
+      if (failures === 2)
+        expect(h.notices.join('')).toContain('Stop detail: browser-timeout');
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('C23 four slow posts consume only three reopens and stop at the fourth first timeout', async () => {
+  const h = await harness('success', 5);
+  await fullRunReady(h);
+  h.setLimit(20);
+  for (let index = 0; index < 4; index++) h.fake.slowPostOpens(index, 1);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'CONTEXT_FAILED',
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: {
+        used: 3,
+        entries: [
+          { step: 1, retryStep: 2, outcome: 'ready' },
+          { step: 3, retryStep: 4, outcome: 'ready' },
+          { step: 5, retryStep: 6, outcome: 'ready' },
+        ],
+      },
+      stop: { token: 'browser-timeout' },
+    });
+    expect(run.pageOpens).toBe(7);
+    expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(3);
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).filter(
+        (record) => record.runId === run.runId,
+      ),
+    ).toHaveLength(3);
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test('C23 a notice during the reopen wait stops without starting a second counted step', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.slowPostOpens(0, 1);
+  h.afterWait(async (ms) => {
+    if (ms !== 60000) return;
+    h.fake.setVariant('error');
+    await h
+      .context!.pages()
+      .find((page) => new URL(page.url()).origin === h.fake.origin)!
+      .goto(`${h.fake.origin}/your_activity/interactions/comments`);
+  });
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'notice-error',
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: {
+        used: 1,
+        entries: [{ step: 1, retryStep: null, outcome: null }],
+      },
+      stop: { token: 'notice-error' },
+    });
+    expect(run.pageOpens).toBe(1);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test('C23 a normal main run records zero retries and finite per-step post readiness', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 1,
+      steps: 1,
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(text) as {
+      retries: unknown;
+      steps: { ready: { postMs: number } }[];
+    };
+    expect(report.retries).toEqual({ used: 0, entries: [] });
+    expect(report.steps[0]!.ready.postMs).toBeGreaterThanOrEqual(0);
+    expect(h.waits).not.toContain(60000);
+  } finally {
+    await h.close();
+  }
+});
+test('C23 a canary browser timeout still stops without a retry as in X fill', async () => {
+  const h = await harness('success', 5);
+  h.fake.slowPostOpens(0, 1);
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 0, entries: [] },
+      stop: { token: 'browser-timeout' },
+    });
+    expect(run.pageOpens).toBe(1);
+    expect(h.waits).not.toContain(60000);
+  } finally {
+    await h.close();
+  }
+}, 60000);
+test('C23 a reopen is pinned to the timed-out post even when the fresh list offers a different candidate address', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.slowPostOpens(0, 1);
+  h.afterWait((ms) => {
+    if (ms === 60000) h.fake.setCandidates(0, ['time']);
+    return Promise.resolve();
+  });
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 1,
+      steps: 2,
+    });
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === `/p/${IG_FIXTURE.code}`,
+      ),
+    ).toHaveLength(2);
+    expect(
+      h.fake.requests.some((request) =>
+        request.path.includes(IG_FIXTURE.candidateCodes[0]),
+      ),
+    ).toBe(false);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test.each(['cap', 'run-limit', 'pace'] as const)(
+  'C23 reopen obeys %s and never hides its extra step from the journal',
+  async (mode) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.slowPostOpens(0, 1);
+    if (mode === 'cap') h.setPace({ stepsPerDay: 1 });
+    if (mode === 'run-limit') h.setLimit(1);
+    if (mode === 'pace') h.setPace({ secondsPerStep: 10, batchPause: false });
+    const starts: number[] = [];
+    h.fake.beforeList(async () => {
+      starts.push(
+        Date.parse(
+          (await h.store.browserJournal()).runs.find(
+            (run) => run.runId !== 'generated-prior-canary',
+          )!.lastPageOpenedAt!,
+        ),
+      );
+    });
+    try {
+      const result = await h.start('no-canary');
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      if (mode === 'pace') {
+        expect(result).toMatchObject({ completed: 1, steps: 2 });
+        expect(starts).toHaveLength(2);
+        expect(starts[1]! - starts[0]!).toBeGreaterThanOrEqual(60000);
+        expect(run.pageOpens).toBe(2);
+      } else {
+        expect(result).toMatchObject({ code: 'CONTEXT_FAILED' });
+        expect(JSON.parse(text)).toMatchObject({ retries: { used: 0 } });
+        expect(run.pageOpens).toBe(1);
+        expect(h.waits).not.toContain(60000);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each(['429', 'account', 'crash'] as const)(
+  'C23 %s during retry wait stops before a second step or post open',
+  async (signal) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.slowPostOpens(0, 1);
+    h.afterWait(async (ms) => {
+      if (ms !== 60000) return;
+      const page = h
+        .context!.pages()
+        .find((page) => new URL(page.url()).origin === h.fake.origin)!;
+      if (signal === 'crash') {
+        fakePageFailure(page, 'crash');
+        return;
+      }
+      h.fake.setVariant(signal === '429' ? '429' : 'list-nav-other');
+      await page.goto(`${h.fake.origin}/your_activity/interactions/comments`);
+    });
+    try {
+      const result = await h.start('no-canary');
+      expect(result).toMatchObject({
+        code:
+          signal === 'crash'
+            ? 'CONTEXT_FAILED'
+            : signal === 'account'
+              ? 'ACCOUNT_MISMATCH'
+              : 'PLATFORM_CHECK',
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      expect(run.pageOpens).toBe(1);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test('C22 a normal automatic run writes the existing two structure snapshots and no late-event rewrite', async () => {
   const h = await harness('success', 5);
   const write = vi.spyOn(captureHelpers, 'writeStructure');
@@ -4089,7 +4400,7 @@ test('F2 later reporting failures cannot replace the first platform stop cause',
     });
     expect(run.endedAt).toBeTruthy();
     expect(h.notices.filter((line) => line.startsWith('Stop detail:'))).toEqual(
-      ['Stop detail: page-language\n'],
+      ['Stop detail: page-language; retriesUsed=0; retries=[]\n'],
     );
     expect(h.notices.join('')).not.toContain('Generated later');
   } finally {

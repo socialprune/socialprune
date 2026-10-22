@@ -62,6 +62,26 @@ test('C12 revision IG-2 B production Instagram files never execute page scripts'
   );
   expect(pageScriptFindings(sources)).toEqual([]);
 });
+test('C23 retry wait cannot be shortened by a production environment or fake entrypoint', async () => {
+  const policy = await readFile(new URL('./retry.ts', import.meta.url), 'utf8');
+  const runner = await readFile(new URL('./run.ts', import.meta.url), 'utf8');
+  const driver = await readFile(
+    new URL('./driver.ts', import.meta.url),
+    'utf8',
+  );
+  expect(policy).toContain('POST_REOPEN_WAIT_MS = 60000');
+  expect(runner).toContain('boundaryWait(POST_REOPEN_WAIT_MS)');
+  expect(driver).toContain('await sleep(ms, undefined, { signal })');
+  for (const source of [policy, runner, driver])
+    for (const forbidden of [
+      'fake-instagram',
+      'C23_TEST',
+      'SP_RETRY',
+      'retryWaitMs',
+      'process.env',
+    ])
+      expect(source).not.toContain(forbidden);
+});
 test('C12 revision IG-2 B detector rejects each planted page-script API in every production file', async () => {
   const sources = await productionSources();
   expect(sources.length).toBeGreaterThan(0);

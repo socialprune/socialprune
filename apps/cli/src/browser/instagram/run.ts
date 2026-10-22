@@ -1,4 +1,4 @@
-import type { BrowserContext } from 'playwright-core';
+import type { BrowserContext, Request } from 'playwright-core';
 import type {
   BrowserRun,
   BrowserProfileReport,
@@ -35,7 +35,10 @@ import {
   stopDetails,
   stopDetailText,
   AccountReadbackSchema,
+  accountClass,
   RuntimeReportSchema,
+  PostRetriesSchema,
+  errorClass,
   keyPaths,
   pairedCode,
   contextCause,
@@ -50,11 +53,16 @@ import {
   productionContext,
   loadList,
   openCandidate,
+  reopenCandidate,
   confirmOnPost,
 } from './driver.ts';
 import type { ContextDependencies } from './driver.ts';
 import { pageAnswers, capturePost, writeStructure } from './capture.ts';
-import { guardInstagramNetwork, observeContextRuntime } from './network.ts';
+import {
+  guardInstagramNetwork,
+  observeContextRuntime,
+  COMMENTS_PATH,
+} from './network.ts';
 import {
   instagramDailyCount,
   CONTEXT_PACE,
@@ -71,7 +79,15 @@ import {
   canaryAudit,
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
-import { CLICK_NAMES, POST_SCROLL_ACTION, postAddress } from './selectors.ts';
+import {
+  CLICK_NAMES,
+  POST_SCROLL_ACTION,
+  postAddress,
+  checkPage,
+  outsideProfilePaths,
+} from './selectors.ts';
+import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
+import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
@@ -106,12 +122,16 @@ export async function runContextWithDependencies(
     ...deps.pace,
   });
   const limitSignals = new LimitSignals();
+  const postRetries = new PostOpenRetries();
+  let activeReady: { postMs: number } | undefined;
   let accountBeforeClass: AccountClass | undefined;
   let accountAfterClass: AccountClass = 'absent';
   deps = {
     ...deps,
     navigated: (kind, elapsed) => {
       limitSignals.navigated(kind, elapsed);
+      if (kind === 'post' && activeReady)
+        activeReady.postMs = Math.max(0, Math.round(elapsed));
     },
     accountObserved: (value) => {
       accountBeforeClass ??= value;
@@ -184,9 +204,11 @@ export async function runContextWithDependencies(
     pages?: { startupClosed: number; unexpectedOpened: number };
     rows: { emptySkipped: number; otherName: number };
     runtime: RuntimeReport;
+    retries: ReturnType<PostOpenRetries['summary']>;
   } = {
     steps: [],
     confirmations: { post: 0, list: 0 },
+    retries: { used: 0, entries: [] },
     pace: paceSummary(pace),
     rows: { emptySkipped: 0, otherName: 0 },
     runtime: {
@@ -503,6 +525,8 @@ export async function runContextWithDependencies(
       });
       pendingAttempt = attemptId;
       let settled = false;
+      let reopening: ReturnType<PostOpenRetries['begin']> = null;
+      let reopenTarget: string | null = null;
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
@@ -571,11 +595,12 @@ export async function runContextWithDependencies(
         await controls?.checkpoint(resumeChecks, waits.signal);
         stage = 'attempt';
         await writer.step(runId, options.now().toISOString());
-        if (candidate === 0) commentsTried++;
+        if (candidate === 0 && !reopening) commentsTried++;
         steps++;
         used++;
         batch++;
         last = options.now().getTime();
+        if (reopening) reopening.retryStep = steps;
         options.session?.progress(
           used,
           completed,
@@ -612,6 +637,7 @@ export async function runContextWithDependencies(
         stage = 'answers';
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
+          ready: { postMs: 0 },
           filterByLists: true,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
@@ -658,20 +684,138 @@ export async function runContextWithDependencies(
           break;
         }
         stage = 'post-open';
+        activeReady = { postMs: 0 };
+        stepReport.ready = activeReady;
+        const openedAt = performance.now();
         postRequests = network.beginPostRequests(page);
         const postRequestsForStep = postRequests;
         Object.defineProperty(stepReport, 'postRequests', {
           enumerable: true,
           get: () => postRequestsForStep.summary(),
         });
-        if (
-          !(await openCandidate(
-            page,
-            list.candidates[candidate]!.index,
-            deps,
-            guard,
-          ))
-        ) {
+        let opened: boolean;
+        let target: string | null = reopenTarget;
+        const navigation = (request: Request) => {
+          if (
+            !request.isNavigationRequest() ||
+            request.frame() !== page.mainFrame()
+          )
+            return;
+          const address = postAddress(request.url(), deps.origin);
+          if (
+            address &&
+            new URL(request.url()).origin === new URL(deps.origin).origin
+          )
+            target = new URL(`/${address.kind}/${address.code}`, deps.origin)
+              .href;
+        };
+        page.on('request', navigation);
+        try {
+          opened =
+            reopening && reopenTarget
+              ? await reopenCandidate(page, reopenTarget, deps, guard)
+              : await openCandidate(
+                  page,
+                  list.candidates[candidate]!.index,
+                  deps,
+                  guard,
+                );
+          if (reopening) reopening.outcome = 'ready';
+          reopening = null;
+          reopenTarget = null;
+        } catch (caught) {
+          activeReady.postMs = Math.max(
+            0,
+            Math.round(performance.now() - openedAt),
+          );
+          if (reopening && errorClass(caught) === 'timeout')
+            reopening.outcome = 'timeout';
+          const retry = postRetries.begin(
+            caught,
+            [row.item.id, ...(target ? [target] : [])],
+            steps,
+            options.plan.canary,
+            target !== null &&
+              used < pace.perDay &&
+              steps < max &&
+              dateInZone(options.now(), options.plan.timeZone) === day,
+          );
+          if (!retry) throw caught;
+          guard();
+          await checkPage(page);
+          await checkpoint();
+          stage = 'post-open';
+          const startedWait = options.now().getTime();
+          const watcher = new AbortController();
+          const checkWaitingPage = async () => {
+            guard();
+            await checkPage(page);
+            if (
+              new URL(page.url()).pathname.replace(/\/$/, '') === COMMENTS_PATH
+            ) {
+              const value = accountClass(
+                options.plan.handle,
+                await outsideProfilePaths(page),
+              );
+              accountAfterClass = value;
+              if (value !== 'expected')
+                throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+            }
+          };
+          let crash!: () => void;
+          const crashed = new Promise<never>((_resolve, reject) => {
+            crash = () => {
+              const failure = new Error();
+              failure.name = 'PageCrashedError';
+              reject(failure);
+            };
+            page.once('crash', crash);
+          });
+          const watch = (async () => {
+            for (;;) {
+              await retryPoll(250, undefined, { signal: watcher.signal });
+              await checkWaitingPage();
+            }
+          })();
+          options.session?.update({
+            phase: 'running',
+            remainingMs: POST_REOPEN_WAIT_MS,
+            until: new Date(
+              options.now().getTime() + POST_REOPEN_WAIT_MS,
+            ).toISOString(),
+          });
+          try {
+            await Promise.race([
+              boundaryWait(POST_REOPEN_WAIT_MS),
+              watch,
+              crashed,
+            ]);
+            await checkWaitingPage();
+            await checkpoint();
+          } finally {
+            retry.waitedMs = Math.max(
+              0,
+              Math.round(options.now().getTime() - startedWait),
+            );
+            watcher.abort();
+            page.off('crash', crash);
+            // Its rejection is already observed by Promise.race; do not wait
+            // for a locator read after another stop has won the race.
+          }
+          reopening = retry;
+          reopenTarget = target;
+          candidate--;
+          continue;
+        } finally {
+          if (activeReady && activeReady.postMs === 0)
+            activeReady.postMs = Math.max(
+              0,
+              Math.round(performance.now() - openedAt),
+            );
+          activeReady = undefined;
+          page.off('request', navigation);
+        }
+        if (!opened) {
           stage = 'settlement';
           await writer.settle({
             attemptId,
@@ -932,6 +1076,7 @@ export async function runContextWithDependencies(
     const structure = async () => {
       if (error) report.stop = stopDetails(error);
       report.limits = limitSignals.summary();
+      report.retries = PostRetriesSchema.parse(postRetries.summary());
       report.runtime =
         runtime?.summary() ?? RuntimeReportSchema.parse(report.runtime);
       const runtimeVersion = runtime?.version ?? 0;
@@ -1164,7 +1309,7 @@ export async function runContextWithDependencies(
     if (error) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}\n`,
+        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
       );
       announcedCause = report.cause;
     }
@@ -1218,7 +1363,7 @@ export async function runContextWithDependencies(
     if (report.cause && announcedCause !== report.cause) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}\n`,
+        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
       );
     }
   }

@@ -49,13 +49,19 @@ const measurements = [
   { startupMs: 4200, workingSetBytes: 508000000, installerBytes: 160000000 },
 ];
 
-test('the same planted excess exits zero in report mode and fails with its closed code only with require-budgets', async () => {
-  const scratch = await mkdtemp(join(tmpdir(), 'socialprune-budget-mode-'));
-  try {
-    const entry = join(scratch, 'budget-mode.ts');
-    await writeFile(
-      entry,
-      `import { checkRelease, releaseBudgetReport, budgetCodes } from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/release-checks.ts')).href)};
+test.each([undefined, 'commonjs', 'module'] as const)(
+  'the same planted excess reports or enforces independently of ancestor package type %s',
+  async (type) => {
+    const parent = await mkdtemp(join(tmpdir(), 'socialprune-budget-mode-'));
+    try {
+      await writeFile(join(parent, 'package.json'), JSON.stringify({ type }));
+      const scratch = join(parent, 'temp');
+      await mkdir(scratch);
+      const entry = join(scratch, 'budget-mode.mjs');
+      await writeFile(
+        entry,
+        `import { checkRelease, releaseBudgetReport, budgetCodes } from ${JSON.stringify(pathToFileURL(join(directory, 'packaging/release-checks.ts')).href)};
+process.emitWarning('generated unrelated runtime warning',{code:'GENERATED_RUNTIME_WARNING'});
 const budgets={startupMs:2678,workingSetBytes:556307252,installerBytes:194314092};
 const summary={runs:5,startupMs:{median:6675,maximum:7591},workingSetBytes:{median:498393088,maximum:500776960},installerBytes:{median:161928414,maximum:161928414}};
 const budgetReport=releaseBudgetReport(summary,budgets);
@@ -65,57 +71,71 @@ for(const row of budgetReport)console.log('RELEASE_BUDGET_REPORT '+JSON.stringif
 console.log('MODE_RECEIPT '+JSON.stringify(receipt));
 try{checkRelease(summary,budgets,process.argv.includes('--require-budgets'));}catch(error){console.error(error.code);process.exitCode=1;}
 `,
-    );
-    // Even CI metadata cannot silently turn report into enforce or vice versa.
-    const options = {
-      timeout: 10_000,
-      windowsHide: true,
-      env: testEnvironment({ GITHUB_ACTIONS: 'true' }),
-    };
-    const reporting = await runNativeQuery(process.execPath, [entry], options);
-    expect(reporting.stdout.match(/^RELEASE_BUDGET_REPORT /gm)).toHaveLength(3);
-    expect(reporting.stdout).toContain(
-      '"metric":"startupMs","median":6675,"budget":2678,"within":false',
-    );
-    expect(reporting.stdout).toContain('"mode":"report"');
-    expect(reporting.stdout).toContain(
-      '"budgetFailures":["RELEASE_STARTUP_BUDGET_EXCEEDED"]',
-    );
-    await expect(
-      runNativeQuery(process.execPath, [entry, '--require-budgets'], options),
-    ).rejects.toMatchObject({
-      code: 1,
-      stderr: 'RELEASE_STARTUP_BUDGET_EXCEEDED\n',
-    });
-    const smoke = await readFile(
-      join(directory, 'packaging/release-smoke.ts'),
-      'utf8',
-    );
-    expect(smoke).toContain(
-      "const requireBudgets = process.argv.includes('--require-budgets')",
-    );
-    expect(smoke).toContain(
-      'checkRelease(summary, releaseBudgets, requireBudgets)',
-    );
-    expect(smoke).toContain(
-      'if (differences.length) throw new Error(differences.join',
-    );
-    expect(smoke).toContain('assertNoOwnedNetwork(networkObservation)');
-    expect(smoke).not.toMatch(
-      /requireBudgets\s*=.*(?:process\.env|runnerEnvironment)/,
-    );
-    console.log(
-      'RELEASE_MODE_PROOF',
-      JSON.stringify({
-        reportExit: 0,
-        enforceExit: 1,
-        report: reporting.stdout.trim().split('\n'),
-      }),
-    );
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
+      );
+      // Even CI metadata cannot silently turn report into enforce or vice versa.
+      const options = {
+        timeout: 10_000,
+        windowsHide: true,
+        env: testEnvironment({ GITHUB_ACTIONS: 'true' }),
+      };
+      const reporting = await runNativeQuery(
+        process.execPath,
+        [entry],
+        options,
+      );
+      expect(reporting.stdout.match(/^RELEASE_BUDGET_REPORT /gm)).toHaveLength(
+        3,
+      );
+      expect(reporting.stdout).toContain(
+        '"metric":"startupMs","median":6675,"budget":2678,"within":false',
+      );
+      expect(reporting.stdout).toContain('"mode":"report"');
+      expect(reporting.stdout).toContain(
+        '"budgetFailures":["RELEASE_STARTUP_BUDGET_EXCEEDED"]',
+      );
+      expect(reporting.stderr).toContain('[GENERATED_RUNTIME_WARNING]');
+      expect(reporting.stderr).not.toContain('MODULE_TYPELESS_PACKAGE_JSON');
+      const enforcing = runNativeQuery(
+        process.execPath,
+        [entry, '--require-budgets'],
+        options,
+      );
+      await expect(enforcing).rejects.toHaveProperty('code', 1);
+      await expect(enforcing).rejects.toHaveProperty(
+        'stderr',
+        expect.stringMatching(/^RELEASE_STARTUP_BUDGET_EXCEEDED\r?$/m),
+      );
+      const smoke = await readFile(
+        join(directory, 'packaging/release-smoke.ts'),
+        'utf8',
+      );
+      expect(smoke).toContain(
+        "const requireBudgets = process.argv.includes('--require-budgets')",
+      );
+      expect(smoke).toContain(
+        'checkRelease(summary, releaseBudgets, requireBudgets)',
+      );
+      expect(smoke).toContain(
+        'if (differences.length) throw new Error(differences.join',
+      );
+      expect(smoke).toContain('assertNoOwnedNetwork(networkObservation)');
+      expect(smoke).not.toMatch(
+        /requireBudgets\s*=.*(?:process\.env|runnerEnvironment)/,
+      );
+      console.log(
+        'RELEASE_MODE_PROOF',
+        JSON.stringify({
+          reportExit: 0,
+          enforceExit: 1,
+          ancestorType: type ?? 'omitted',
+          report: reporting.stdout.trim().split('\n'),
+        }),
+      );
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  },
+);
 
 test('five independent input samples determine median and maximum', () => {
   expect(summarize(measurements)).toEqual({

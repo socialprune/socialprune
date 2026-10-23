@@ -14,6 +14,8 @@ export type {
   DesktopEngine,
 } from './host.ts';
 export { guides } from './facade.ts';
+export { EngineMediaRequestSchema, EngineMediaReplySchema } from './media.ts';
+export type { EngineMediaRequest, EngineMediaReply } from './media.ts';
 
 export function openEngine(options: EngineOptions): Promise<DesktopEngine> {
   return createEngine(options, productionDependencies);

@@ -126,6 +126,8 @@ D3 leaves the source to a later record; what any source writes is decided here, 
 
 ADR-031 section 3 decided the route; slice 5 builds it. The `app://` handler forwards only `/originals/<id>/<file>` and `/context/instagram/<code>/<file>` to the engine, which applies the review server's record checks and byte ranges; the policy already allows `app:` media. A reply shows up to two posts above it with **Show whole conversation**; a quote sits in a box under the text, as on X. Own photos and videos stay a count until a record supersedes ADR-021 (Q5).
 
+Slice 5, 2026-10-23: the desktop review serves stored original media and confirmed Instagram post images and screenshots through the private main/engine channel, with generated path, type, range, fake-bridge and packaged tests; own export media stays out.
+
 ### 9. Keyboard and screen reader
 
 The feed follows the WAI-ARIA feed pattern: `role="feed"`, `aria-busy` while loading, each card an `article` with `aria-posinset` and `aria-setsize`, labelled by its byline, described by its suggestion. Keys obey the single-key setting: ↑ ↓ and Page Up / Down move between cards, Home / End jump to the ends, Ctrl+Home / Ctrl+End leave the feed, K keeps, L later, M marks (or marks anyway), U undecided, Ctrl+Z undoes, ? lists keys. J stays unbound: on X it is "next post", in the card review it marks (ADR-008). Tab names include counts; a polite live region says "Kept. 3,811 suggestions left."; decided cards stay in place, dimmed.

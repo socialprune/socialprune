@@ -4,8 +4,10 @@ import type { DesktopReply, RunView } from '../protocol.ts';
 import {
   EngineHostMessageSchema,
   EngineOptionsSchema,
+  EngineMediaRequestSchema,
 } from 'socialprune/engine';
 import type { EngineHostMessage, EngineOptions } from 'socialprune/engine';
+import type { EngineMediaRequest, EngineMediaReply } from 'socialprune/engine';
 import { HostCommandSchema, HostEventSchema } from '../host-protocol.ts';
 
 export function launchEngine(
@@ -31,6 +33,21 @@ export function launchEngine(
       timer: NodeJS.Timeout;
     }
   >();
+  const mediaPending = new Map<
+    string,
+    {
+      message: EngineMediaRequest;
+      finish(reply: EngineMediaReply): void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  const failMedia = () => {
+    for (const task of mediaPending.values()) {
+      clearTimeout(task.timer);
+      task.finish({ type: 'failed' });
+    }
+    mediaPending.clear();
+  };
   let ready = false;
   let exited = false;
   let closing = false;
@@ -52,6 +69,7 @@ export function launchEngine(
         task.finish(fail(requestId));
       }
       pending.clear();
+      failMedia();
       resolve();
     });
   });
@@ -65,6 +83,8 @@ export function launchEngine(
       ready = true;
       for (const task of pending.values())
         send({ type: 'request', message: task.message });
+      for (const [id, task] of mediaPending)
+        send({ type: 'media', id, message: task.message });
       return;
     }
     if (parsed.data.type === 'view') {
@@ -79,6 +99,29 @@ export function launchEngine(
         task.finish(fail(id));
       }
       pending.clear();
+      failMedia();
+      return;
+    }
+    if (parsed.data.type === 'media') {
+      const task = mediaPending.get(parsed.data.id);
+      if (task) {
+        clearTimeout(task.timer);
+        mediaPending.delete(parsed.data.id);
+        task.finish(parsed.data.reply);
+      } else if (
+        parsed.data.reply.type === 'opened' &&
+        parsed.data.reply.token &&
+        !closing &&
+        !exited
+      ) {
+        // An open can settle after its caller timed out. Reclaim that handle;
+        // abandoned engine stream IDs also have their own idle expiry.
+        send({
+          type: 'media',
+          id: crypto.randomUUID(),
+          message: { type: 'close', token: parsed.data.reply.token },
+        });
+      }
       return;
     }
     if (parsed.data.type !== 'reply') return;
@@ -99,6 +142,21 @@ export function launchEngine(
   send({ type: 'initialize', options: EngineOptionsSchema.parse(options) });
   return {
     child,
+    async media(raw: EngineMediaRequest): Promise<EngineMediaReply> {
+      const message = EngineMediaRequestSchema.parse(raw);
+      if (exited || closing || unavailable || mediaPending.size >= 32)
+        return { type: 'failed' };
+      const id = crypto.randomUUID();
+      return new Promise<EngineMediaReply>((finish) => {
+        const timer = setTimeout(() => {
+          mediaPending.delete(id);
+          record('ENGINE_MEDIA_TIMEOUT');
+          finish({ type: 'failed' });
+        }, 30_000);
+        mediaPending.set(id, { message, finish, timer });
+        if (ready) send({ type: 'media', id, message });
+      });
+    },
     onRunView(listener: (view: RunView) => void) {
       listeners.add(listener);
       return () => {
@@ -131,6 +189,7 @@ export function launchEngine(
     },
     async close(): Promise<void> {
       closing = true;
+      failMedia();
       if (!exited) send({ type: 'shutdown' });
       let timer: NodeJS.Timeout | undefined;
       await Promise.race([

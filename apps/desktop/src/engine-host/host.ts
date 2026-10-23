@@ -49,6 +49,15 @@ export function startEngine(
         return;
       }
       if (!engine || closing) return;
+      if (command.type === 'media') {
+        void engine
+          .media(command.message)
+          .then((reply) => send({ type: 'media', id: command.id, reply }))
+          .catch(() =>
+            send({ type: 'media', id: command.id, reply: { type: 'failed' } }),
+          );
+        return;
+      }
       const { request } = command.message;
       void engine
         .handleHost(command.message)

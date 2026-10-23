@@ -73,6 +73,7 @@ import { ContextStop } from '../browser/instagram/report.ts';
 import { EngineOptionsSchema, EngineHostMessageSchema } from './host.ts';
 import type { DesktopEngine, EngineOptions } from './host.ts';
 import type { EngineDependencies } from './dependencies.ts';
+import { EngineMedia } from './media.ts';
 
 export const guides = Object.freeze([xGuide, instagramGuide]);
 function code(error: unknown) {
@@ -965,6 +966,7 @@ export async function createEngine(
     });
   }
   let commands: Promise<unknown> = Promise.resolve();
+  const media = new EngineMedia(workspace, getStore);
   const queued = (raw: unknown): Promise<DesktopReply> => {
     const stop = EngineHostMessageSchema.safeParse(raw);
     if (
@@ -978,6 +980,13 @@ export async function createEngine(
     return result;
   };
   return {
+    media: (request) => {
+      if (closing) return Promise.resolve({ type: 'failed' as const });
+      // Share store initialization/release ordering with review and backups.
+      const result = commands.then(() => media.request(request));
+      commands = result.catch(() => undefined);
+      return result;
+    },
     request: (request) => queued({ request }),
     handleHost: queued,
     onRunView(listener) {
@@ -992,6 +1001,7 @@ export async function createEngine(
       await closeBrowser?.();
       await commands;
       await task;
+      await media.close();
       await release();
       listeners.clear();
     },

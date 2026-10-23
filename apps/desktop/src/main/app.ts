@@ -24,6 +24,7 @@ import {
 import { launchEngine } from './engine.ts';
 import { loadReview } from './startup.ts';
 import { mainMethods, splitWorkArea } from './methods.ts';
+import { mediaResponse } from './media.ts';
 import type { DesktopRequest, RunView } from '../protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 
@@ -125,6 +126,11 @@ export async function startDesktop(options: DesktopOptions) {
   await load();
   local.protocol.handle('app', (request) => {
     const url = new URL(request.url);
+    if (
+      url.pathname.startsWith('/originals/') ||
+      url.pathname.startsWith('/context/')
+    )
+      return mediaResponse(request, (message) => engine.media(message));
     const file =
       isAppUrl(request.url) && request.method === 'GET' && !url.search
         ? files.get(url.pathname)

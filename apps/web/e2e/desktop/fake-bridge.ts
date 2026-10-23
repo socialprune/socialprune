@@ -22,15 +22,25 @@ import {
   MemoryStoreBacking,
 } from '@socialprune/core/workspace/memory-store';
 import { LabelService } from '@socialprune/core/workspace/labels';
-import type { Item, ImportRecord, Assessment } from '@socialprune/core';
+import type {
+  Item,
+  ImportRecord,
+  Assessment,
+  WorkspaceV2,
+} from '@socialprune/core';
 import { ReviewRuntime } from '../../../cli/src/review/runtime.ts';
 import { runView } from './views.ts';
 
 // desktop-fake-bridge: this module is loaded only by Playwright in Node.
-export async function fakeBridge(page: Page, locale = 'en') {
+export async function fakeBridge(
+  page: Page,
+  locale = 'en',
+  seed?: WorkspaceV2,
+) {
   const root = new URL('../../../../fixtures/synthetic/demo/', import.meta.url);
-  const fixture = createWorkspace({ id: 'desktop-generated', kind: 'demo' });
-  for (const platform of ['x', 'instagram']) {
+  const fixture =
+    seed ?? createWorkspace({ id: 'desktop-generated', kind: 'demo' });
+  for (const platform of seed ? [] : ['x', 'instagram']) {
     const expected = JSON.parse(
       await readFile(new URL(`${platform}/expected.json`, root), 'utf8'),
     ) as {
@@ -56,14 +66,14 @@ export async function fakeBridge(page: Page, locale = 'en') {
   const assessments = JSON.parse(
     await readFile(new URL('assessments.json', root), 'utf8'),
   ) as Assessment[];
-  for (const assessment of assessments)
+  for (const assessment of seed ? [] : assessments)
     await labels.appendAssessment(assessment);
   const runtime = new ReviewRuntime(store);
   const requests: DesktopRequest[] = [];
   const failures = new Map<'planRun' | 'startRun' | 'stop', DesktopErrorCode>();
   let current: RunView = runView('idle', 0);
   let sequence = 0;
-  let firstOpen = true;
+  let firstOpen = !seed;
   const profiles = new Map<string, DesktopProfileStatus>(
     (['x', 'instagram'] as const).map((platform) => [
       platform,

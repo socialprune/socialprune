@@ -1,6 +1,6 @@
 import { webkit } from '@playwright/test';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 
@@ -22,11 +22,15 @@ const server = await webkit.launchServer({
 });
 try {
   await writeFile(
-    join(directory, 'ready.json'),
+    join(directory, 'ready.json.tmp'),
     JSON.stringify({
       endpoint: server.wsEndpoint(),
       pid: server.process().pid,
     }),
+  );
+  await rename(
+    join(directory, 'ready.json.tmp'),
+    join(directory, 'ready.json'),
   );
   while (!existsSync(join(directory, 'stop'))) await setTimeout(50);
 } finally {

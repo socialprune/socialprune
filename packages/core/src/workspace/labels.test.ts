@@ -8,7 +8,7 @@ import { contentHash } from './canonical.ts';
 import { validateWorkspace } from './validation.ts';
 import { addCustomCriterion, criterionHash } from '../criteria/presets.ts';
 import { currentChecks } from '../criteria/suggestions.ts';
-import type { LabelFile } from './payloads.ts';
+import type { LabelFile, SourceLabelFile } from './payloads.ts';
 
 function workspace() {
   const value = contractWorkspace();
@@ -597,4 +597,209 @@ test('batch permits one oversized item without truncation and requires an accoun
     await store.close();
   }
   expect(createWorkspace().schemaVersion).toBe(7);
+});
+async function sourceFile(
+  initial = withOwnCriteria(),
+  kind: 'model' | 'rules' = 'model',
+): Promise<SourceLabelFile> {
+  const agent = await v2File(initial);
+  return {
+    ...agent,
+    submissionId: `generated-${kind}`,
+    source: {
+      kind,
+      name: 'generated-source',
+      version: 'generated-model rubric 123456789abc',
+    },
+  };
+}
+test.each(['model', 'rules'] as const)(
+  '%s source persists suggestions atomically, replays after reopen and cannot enter agent submission',
+  async (kind) => {
+    const initial = withOwnCriteria();
+    const store = createMemoryStore(new MemoryStoreBacking(initial));
+    try {
+      const service = new LabelService(store);
+      const input = await sourceFile(initial, kind);
+      const before = await store.read(readWorkspace);
+      await expect(service.submitLabels(input)).rejects.toMatchObject({
+        code: 'INVALID_LABELS',
+      });
+      await expect(
+        service.submitSourceLabels(await v2File(initial)),
+      ).rejects.toMatchObject({ code: 'INVALID_LABELS' });
+      expect(
+        await service.submitSourceLabels(input, { dryRun: true }),
+      ).toMatchObject({ accepted: 3, dryRun: true });
+      expect(await store.read(readWorkspace)).toEqual(before);
+      expect(await service.submitSourceLabels(input)).toMatchObject({
+        accepted: 3,
+        duplicate: false,
+        revision: 1,
+      });
+      const saved = await store.read(readWorkspace);
+      expect(saved.assessments.every((a) => a.source.kind === kind)).toBe(true);
+      expect(saved.submissions[0]?.criteria).toEqual(input.criteria);
+      expect(saved.decisionEvents).toEqual([]);
+      expect(saved.outcomeEvents).toEqual([]);
+      expect(saved.reviewPlans).toEqual([]);
+      expect(validateWorkspace(saved)).toEqual(saved);
+      const reopened = createMemoryStore(new MemoryStoreBacking(saved));
+      try {
+        const again = new LabelService(reopened);
+        expect(await again.submitSourceLabels(input)).toMatchObject({
+          accepted: 3,
+          duplicate: true,
+          revision: 0,
+        });
+        await expect(
+          again.submitSourceLabels({
+            ...input,
+            labels: [
+              { ...input.labels[0], reason: 'Changed generated reason.' },
+            ],
+          }),
+        ).rejects.toMatchObject({ code: 'SUBMISSION_CONFLICT' });
+        expect(await reopened.read(readWorkspace)).toEqual(saved);
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await store.close();
+    }
+  },
+);
+test('source batch selection is scoped to kind, name, version and current selected criterion hashes; cursor cannot cross those identities', async () => {
+  const initial = withOwnCriteria();
+  initial.settings.criteria!.selected = ['political', 'custom-1'];
+  const store = createMemoryStore(new MemoryStoreBacking(initial));
+  const service = new LabelService(store);
+  const options = {
+    shareWithAgent: true,
+    sourceKind: 'model' as const,
+    sourceName: 'generated-source',
+    sourceVersion: 'generated-model rubric 123456789abc',
+  };
+  try {
+    const offered = await service.batchNext({ ...options, size: 1 });
+    expect(offered.criteria.map((c) => c.id)).toEqual([
+      'political',
+      'custom-1',
+    ]);
+    const input = await sourceFile(initial);
+    input.criteria = offered.criteria.map(({ id, hash }) => ({ id, hash }));
+    input.labels = input.labels.filter((l) => l.category !== 'racist');
+    await service.submitSourceLabels(input);
+    expect((await service.batchNext(options)).items).toEqual([]);
+    for (const changed of [
+      { sourceKind: 'rules' as const },
+      { sourceName: 'other' },
+      { sourceVersion: 'another-model rubric 123456789abc' },
+    ]) {
+      expect(
+        (await service.batchNext({ ...options, ...changed })).items,
+      ).toHaveLength(2);
+      await expect(
+        service.batchNext({
+          ...options,
+          ...changed,
+          cursor: offered.nextCursor!,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_CURSOR' });
+    }
+    expect(
+      (
+        await service.batchNext({
+          shareWithAgent: true,
+          sourceName: options.sourceName,
+        })
+      ).items,
+    ).toHaveLength(2);
+    await store.write(async (tx) => {
+      const meta = await tx.meta.get();
+      meta.settings.criteria!.custom[0]!.description =
+        'Changed generated definition.';
+      await tx.meta.set(meta);
+    });
+    expect((await service.batchNext(options)).items).toHaveLength(2);
+    const prior = await store.read(readWorkspace);
+    await expect(
+      service.submitSourceLabels({ ...input, submissionId: 'stale-source' }),
+    ).rejects.toMatchObject({
+      failures: [{ index: -1, code: 'CRITERION_CHANGED' }],
+    });
+    expect(await store.read(readWorkspace)).toEqual(prior);
+  } finally {
+    await store.close();
+  }
+});
+test('source submission rolls back on storage failure and rechecks criterion and content races', async () => {
+  for (const mode of ['storage', 'criterion', 'content'] as const) {
+    const initial = withOwnCriteria();
+    const store = createMemoryStore(new MemoryStoreBacking(initial));
+    const altered: WorkspaceStore = {
+      read: (fn) => store.read(fn),
+      close: () => store.close(),
+      write: async (fn) => {
+        if (mode !== 'storage')
+          await store.write(async (tx) => {
+            if (mode === 'criterion') {
+              const meta = await tx.meta.get();
+              meta.settings.criteria!.custom[0]!.description =
+                'Changed before source commit.';
+              await tx.meta.set(meta);
+            } else {
+              const stored = await tx.items.get('x:1');
+              await tx.items.put({
+                ...stored!,
+                item: {
+                  ...stored!.item,
+                  text: 'Changed before source commit.',
+                },
+              });
+            }
+          });
+        return store.write(async (tx) => {
+          const result = await fn(tx);
+          if (mode === 'storage') throw new Error('Generated rollback.');
+          return result;
+        });
+      },
+    };
+    try {
+      await expect(
+        new LabelService(altered).submitSourceLabels(await sourceFile(initial)),
+      ).rejects.toThrow();
+      const saved = await store.read(readWorkspace);
+      expect(saved.assessments).toEqual([]);
+      expect(saved.submissions).toEqual([]);
+      expect(saved.decisionEvents).toEqual([]);
+      expect((await store.read((tx) => tx.runtime.get())).revision).toBe(0);
+    } finally {
+      await store.close();
+    }
+  }
+});
+test('concurrent identical source submissions append exactly one receipt and assessment set', async () => {
+  const initial = withOwnCriteria();
+  const store = createMemoryStore(new MemoryStoreBacking(initial));
+  try {
+    const input = await sourceFile(initial);
+    const service = new LabelService(store);
+    const receipts = await Promise.all([
+      service.submitSourceLabels(input),
+      service.submitSourceLabels(input),
+    ]);
+    expect(receipts.map((receipt) => receipt.duplicate).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const saved = await store.read(readWorkspace);
+    expect(saved.submissions).toHaveLength(1);
+    expect(saved.assessments).toHaveLength(3);
+    expect((await store.read((tx) => tx.runtime.get())).revision).toBe(1);
+    expect(saved.decisionEvents).toEqual([]);
+  } finally {
+    await store.close();
+  }
 });

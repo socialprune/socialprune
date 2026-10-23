@@ -9,10 +9,17 @@ import {
   BATCH_NOTICE,
   BatchSchema,
   LabelFileSchema,
+  SourceLabelFileSchema,
   LabelSubmissionSchema,
   SummarySchema,
 } from './payloads.ts';
-import type { Batch, LabelSubmission, Summary } from './payloads.ts';
+import type {
+  Batch,
+  LabelFile,
+  SourceLabelFile,
+  LabelSubmission,
+  Summary,
+} from './payloads.ts';
 import { deriveState } from './state.ts';
 import { readWorkspace, records } from './store.ts';
 import type { WorkspaceStore } from './store.ts';
@@ -22,6 +29,8 @@ interface BatchCursor {
   after: [string, string];
   account: string;
   sourceName: string;
+  sourceKind?: 'agent' | 'model' | 'rules';
+  sourceVersion?: string | null;
 }
 function encodeCursor(value: BatchCursor): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -48,6 +57,12 @@ function decodeCursor(value: string): BatchCursor {
       typeof parsed.account !== 'string' ||
       !('sourceName' in parsed) ||
       typeof parsed.sourceName !== 'string' ||
+      ('sourceKind' in parsed &&
+        (typeof parsed.sourceKind !== 'string' ||
+          !['agent', 'model', 'rules'].includes(parsed.sourceKind))) ||
+      ('sourceVersion' in parsed &&
+        parsed.sourceVersion !== null &&
+        typeof parsed.sourceVersion !== 'string') ||
       !('after' in parsed) ||
       !Array.isArray(parsed.after) ||
       parsed.after.length !== 2 ||
@@ -94,6 +109,8 @@ export class LabelService {
     size?: number;
     cursor?: string;
     sourceName?: string;
+    sourceKind?: 'agent' | 'model' | 'rules';
+    sourceVersion?: string | null;
   }): Promise<Batch> {
     if (options.shareWithAgent !== true)
       throw new WorkspaceError('SHARING_NOT_CONFIRMED');
@@ -101,6 +118,16 @@ export class LabelService {
     if (!Number.isSafeInteger(size) || size < 1 || size > 200)
       throw new WorkspaceError('INVALID_REQUEST');
     const sourceName = options.sourceName ?? 'agent';
+    const sourceKind = options.sourceKind ?? 'agent';
+    if (
+      !['agent', 'model', 'rules'].includes(sourceKind) ||
+      (options.sourceVersion !== undefined &&
+        options.sourceVersion !== null &&
+        typeof options.sourceVersion !== 'string') ||
+      (sourceKind !== 'agent' &&
+        (!options.sourceName || !options.sourceVersion))
+    )
+      throw new WorkspaceError('INVALID_REQUEST');
     if (!sourceName) throw new WorkspaceError('INVALID_REQUEST');
     const cursor = options.cursor ? decodeCursor(options.cursor) : null;
     const snapshot = await this.store.read(async (tx) => ({
@@ -124,19 +151,31 @@ export class LabelService {
       throw new WorkspaceError('INVALID_REQUEST');
     if (
       cursor &&
-      (cursor.account !== account || cursor.sourceName !== sourceName)
+      (cursor.account !== account ||
+        cursor.sourceName !== sourceName ||
+        (cursor.sourceKind ?? 'agent') !== sourceKind ||
+        (cursor.sourceVersion ?? null) !== (options.sourceVersion ?? null))
     )
       throw new WorkspaceError('INVALID_CURSOR');
     const settings = snapshot.workspace.settings;
-    const offered = [
-      ...PRESETS.filter(
-        (value) =>
-          !exclusive(value.id) && settings.categories.includes(value.id),
-      ).map((value) => value.id),
-      ...(settings.criteria?.custom ?? [])
-        .filter((value) => settings.criteria?.selected.includes(value.id))
-        .map((value) => value.id),
-    ];
+    const offered =
+      sourceKind !== 'agent'
+        ? (settings.criteria?.selected ?? []).filter(
+            (id) =>
+              !exclusive(id) &&
+              settings.categories.includes(id) &&
+              (PRESETS.some((value) => value.id === id) ||
+                settings.criteria?.custom.some((value) => value.id === id)),
+          )
+        : [
+            ...PRESETS.filter(
+              (value) =>
+                !exclusive(value.id) && settings.categories.includes(value.id),
+            ).map((value) => value.id),
+            ...(settings.criteria?.custom ?? [])
+              .filter((value) => settings.criteria?.selected.includes(value.id))
+              .map((value) => value.id),
+          ];
     const criteria = offered.map((id) => {
       const preset = PRESETS.find((value) => value.id === id);
       const own = settings.criteria?.custom.find((value) => value.id === id);
@@ -158,8 +197,10 @@ export class LabelService {
               ?.some(
                 (check) =>
                   check.criterion === criterion.id &&
-                  check.source.kind === 'agent' &&
-                  check.source.name === sourceName,
+                  check.source.kind === sourceKind &&
+                  check.source.name === sourceName &&
+                  (options.sourceVersion === undefined ||
+                    check.source.version === options.sourceVersion),
               ),
           ),
       )
@@ -219,6 +260,9 @@ export class LabelService {
               after: [last.createdAt, last.id],
               account: account!,
               sourceName,
+              ...(sourceKind === 'agent' && options.sourceVersion === undefined
+                ? {}
+                : { sourceKind, sourceVersion: options.sourceVersion ?? null }),
             })
           : null,
       hasMore,
@@ -251,7 +295,28 @@ export class LabelService {
             : 'INVALID_LABEL',
         })),
       );
-    const file = parsed.data;
+    return this.submitValidated(parsed.data, options);
+  }
+  async submitSourceLabels(
+    input: unknown,
+    options: { dryRun?: boolean } = {},
+  ): Promise<LabelSubmission> {
+    const parsed = SourceLabelFileSchema.safeParse(input);
+    if (!parsed.success)
+      throw new LabelValidationError(
+        parsed.error.issues.map((issue) => ({
+          index: typeof issue.path[1] === 'number' ? issue.path[1] : -1,
+          code: issue.path.includes('reason')
+            ? 'INVALID_REASON'
+            : 'INVALID_LABEL',
+        })),
+      );
+    return this.submitValidated(parsed.data, options);
+  }
+  private async submitValidated(
+    file: LabelFile | SourceLabelFile,
+    options: { dryRun?: boolean },
+  ): Promise<LabelSubmission> {
     const hash = await contentHash(canonicalJson(file));
     const snapshot = await this.store.read(async (tx) => ({
       meta: await tx.meta.get(),

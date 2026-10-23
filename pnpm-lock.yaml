@@ -199,6 +199,12 @@ importers:
         specifier: workspace:*
         version: link:../../tools/fixture-gen
 
+  packages/classify:
+    dependencies:
+      '@socialprune/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core:
     dependencies:
       '@zip.js/zip.js':

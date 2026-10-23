@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import {
   BatchSchema,
   LabelFileSchema,
+  SourceLabelFileSchema,
   LabelSubmissionSchema,
   SummarySchema,
   ClickListSchema,
@@ -171,6 +172,7 @@ test('all neutral payload JSON files exist with the generated canonical content'
   for (const name of [
     'batch',
     'label-file',
+    'source-label-file',
     'label-submission',
     'summary',
     'click-list',
@@ -182,4 +184,63 @@ test('all neutral payload JSON files exist with the generated canonical content'
     );
     expect(content).toBe(files[`${name}.schema.json`]);
   }
+});
+test('source label schema admits only model and rules v2 with checked criteria, never an agent or a decision', () => {
+  const input = {
+    schemaVersion: 2,
+    submissionId: 'generated-source',
+    source: {
+      kind: 'model',
+      name: 'generated',
+      version: 'generated-model rubric 123456789abc',
+    },
+    criteria: [{ id: 'political', hash: `sha256:${'b'.repeat(64)}` }],
+    labels: [
+      {
+        itemId: 'x:1',
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        category: 'political',
+        risk: 2,
+        reason: 'A generated criterion matches.',
+        evidence: 'Generated',
+        confidence: null,
+      },
+    ],
+  };
+  expect(SourceLabelFileSchema.parse(input)).toEqual(input);
+  expect(
+    SourceLabelFileSchema.safeParse({
+      ...input,
+      labels: Array.from({ length: 1600 }, () => input.labels[0]),
+    }).success,
+  ).toBe(true);
+  expect(
+    LabelFileSchema.safeParse({
+      ...input,
+      source: { ...input.source, kind: 'agent' },
+      labels: Array.from({ length: 1001 }, () => input.labels[0]),
+    }).success,
+  ).toBe(false);
+  expect(
+    SourceLabelFileSchema.safeParse({
+      ...input,
+      source: { ...input.source, kind: 'rules' },
+    }).success,
+  ).toBe(true);
+  for (const bad of [
+    { ...input, source: { ...input.source, kind: 'agent' } },
+    { ...input, schemaVersion: 1 },
+    { ...input, criteria: [] },
+    { ...input, criteria: [input.criteria[0], input.criteria[0]] },
+    { ...input, criteria: [{ ...input.criteria[0], id: 'harmless' }] },
+    { ...input, criteria: [{ ...input.criteria[0], hash: 'wrong' }] },
+    { ...input, decisions: [] },
+    { ...input, labels: [{ ...input.labels[0], decision: 'delete' }] },
+  ])
+    expect(SourceLabelFileSchema.safeParse(bad).success).toBe(false);
+  for (const kind of ['model', 'rules'])
+    expect(
+      LabelFileSchema.safeParse({ ...input, source: { ...input.source, kind } })
+        .success,
+    ).toBe(false);
 });

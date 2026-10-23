@@ -90,6 +90,8 @@ We chose **Option 1: an OpenAI-compatible endpoint tier in `packages/classify`, 
 **Decision made by:** maintainer
 **Approved on:** 2026-10-21
 
+C1 candidate, 2026-10-23: `packages/classify` contains the endpoint source, per-entry normalizer, batch runner and generated-data measurement script tested against a local fake, with root lint restrictions and workspace registration; C1b adds the separate model/rules source-label schema and transactional submission with kind/version-aware selected-criterion coverage while preserving agent files, and no real endpoint measurement or default batch size is claimed.
+
 ### 1. The source contract
 
 ```ts

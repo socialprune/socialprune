@@ -47,7 +47,7 @@ These hold in every phase. Changing one takes an explicit decision by the mainta
 
 ## Planned layout
 
-Phase 1 has built `packages/core`, both adapters, `tools/`, `fixtures/synthetic/` (generated X and Instagram variants, plus the hand-written S2 evaluation set under `classify/`), the `structure` command in `apps/cli` and the worker import in `apps/web`. Phase 2 has added the review UI and `skills/socialprune/`. `packages/classify` and `packages/mcp` come later.
+Phase 1 has built `packages/core`, both adapters, `tools/`, `fixtures/synthetic/` (generated X and Instagram variants, plus the hand-written S2 evaluation set under `classify/`), the `structure` command in `apps/cli` and the worker import in `apps/web`. Phase 2 has added the review UI and `skills/socialprune/`. `packages/classify` exists since 2026-10-23 with ADR-033 slice C1: an output normalizer, endpoint profiles, a batch runner and a batch measurement script, which load an endpoint and its key only from a file the person names and submit model or rules labels as suggestions with their source; it is tested against a generated local endpoint only, no real endpoint has been measured and no default batch size is set. `packages/mcp` comes later.
 
 | Path | Purpose |
 |---|---|

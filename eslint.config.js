@@ -124,4 +124,61 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['packages/classify/src/**/*.{js,mjs,cjs,ts,tsx}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...restrictedProperties,
+        {
+          object: 'os',
+          property: 'homedir',
+          message:
+            'ADR-033: source configuration comes only from the named file.',
+        },
+        {
+          object: 'os',
+          property: 'userInfo',
+          message: 'ADR-033: sources do not discover user identity.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'node:os',
+              importNames: ['homedir', 'userInfo'],
+              message: 'ADR-033: no ambient home or user discovery.',
+            },
+            {
+              name: 'node:process',
+              importNames: ['env'],
+              message: 'ADR-033: no environment-based source or key.',
+            },
+          ],
+          patterns: [
+            {
+              regex: '(?:^|/)workspace/review(?:\\.[cm]?[jt]s)?(?:/|$)',
+              message:
+                'ADR-033: sources cannot import the review decision-writing capability.',
+            },
+            {
+              regex: '(?:^|/)test(?:/|$)|^vitest(?:/|$)',
+              message:
+                'ADR-033: production sources cannot import generated test endpoints.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            'ADR-033: network access uses the caller-provided transport.',
+        },
+      ],
+    },
+  },
 ]);

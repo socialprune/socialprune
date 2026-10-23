@@ -83,6 +83,19 @@ export const LabelFileSchema = z.discriminatedUnion('schemaVersion', [
   }),
 ]);
 export type LabelFile = z.infer<typeof LabelFileSchema>;
+export const SourceLabelFileSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  ...labelFileFields,
+  source: AssessmentSourceSchema.extend({ kind: z.enum(['model', 'rules']) }),
+  // Source requests can cover 50 * 32 labels before duplicate-text fan-out.
+  // Keep the portable agent-file cap unchanged; internal source submissions
+  // are bounded by the runner's selected entries rather than that file cap.
+  labels: z.array(AgentLabelSchema).min(1),
+  criteria: CheckedCriteriaSchema.min(1).refine((values) =>
+    values.every((value) => !['harmless', 'unclear'].includes(value.id)),
+  ),
+});
+export type SourceLabelFile = z.infer<typeof SourceLabelFileSchema>;
 export const LabelSubmissionSchema = z.strictObject({
   submissionId: id,
   accepted: count,

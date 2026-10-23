@@ -1,0 +1,17 @@
+{
+  "name": "@socialprune/classify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "measure:batches": "node scripts/measure-batches.ts"
+  },
+  "dependencies": {
+    "@socialprune/core": "workspace:*"
+  }
+}

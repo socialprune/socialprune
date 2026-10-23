@@ -17,6 +17,7 @@ import * as v1 from '../model/v1.ts';
 import {
   BatchSchema,
   LabelFileSchema,
+  SourceLabelFileSchema,
   LabelSubmissionSchema,
   SummarySchema,
   ClickListSchema,
@@ -40,6 +41,7 @@ export const SCHEMA_MODELS = {
   'v1/workspace': v1.WorkspaceSchema,
   batch: BatchSchema,
   'label-file': LabelFileSchema,
+  'source-label-file': SourceLabelFileSchema,
   'label-submission': LabelSubmissionSchema,
   summary: SummarySchema,
   'click-list': ClickListSchema,

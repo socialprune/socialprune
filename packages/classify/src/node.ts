@@ -1,0 +1,147 @@
+import { readFile, lstat, realpath } from 'node:fs/promises';
+import { dirname, resolve, isAbsolute, join } from 'node:path';
+import { Agent as HttpAgent, request as httpRequest } from 'node:http';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
+import { parseSource } from './config.ts';
+import { ScanError, stopped } from './source.ts';
+import type { Transport } from './endpoint.ts';
+
+async function inGitTree(path: string) {
+  let current = dirname(path);
+  while (true) {
+    try {
+      await lstat(join(current, '.git'));
+      return true;
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ))
+        throw new ScanError('KEY_FILE_INVALID');
+    }
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+export async function loadSource(sourceFile: string) {
+  let config;
+  try {
+    config = parseSource(JSON.parse(await readFile(sourceFile, 'utf8')));
+  } catch {
+    throw new ScanError('SOURCE_FILE_INVALID');
+  }
+  if (!config.keyFile) return { config, key: null, keyPath: null };
+  const keyPath = isAbsolute(config.keyFile)
+    ? config.keyFile
+    : resolve(dirname(sourceFile), config.keyFile);
+  try {
+    if (
+      (await inGitTree(keyPath)) ||
+      (await inGitTree(await realpath(keyPath)))
+    )
+      throw new ScanError('KEY_FILE_INVALID');
+    const stat = await lstat(keyPath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16_384)
+      throw new ScanError('KEY_FILE_INVALID');
+    const raw = await readFile(keyPath, 'utf8');
+    const key = raw.replace(/\r?\n$/, '');
+    if (!key || /\s|[{}[\]:=]/.test(key))
+      throw new ScanError('KEY_FILE_INVALID');
+    return { config, key, keyPath };
+  } catch {
+    throw new ScanError('KEY_FILE_INVALID');
+  }
+}
+export function nodeTransport(origin: string): {
+  transport: Transport;
+  close: () => void;
+} {
+  const permitted = new URL(origin).origin;
+  const httpAgent = new HttpAgent({ keepAlive: true, proxyEnv: undefined });
+  const httpsAgent = new HttpsAgent({ keepAlive: true, proxyEnv: undefined });
+  const transport: Transport = (input, signal) =>
+    new Promise((resolveReply, reject) => {
+      stopped(signal);
+      const url = new URL(input.url);
+      if (
+        url.origin !== permitted ||
+        !['http:', 'https:'].includes(url.protocol)
+      ) {
+        reject(new ScanError('REDIRECT_REFUSED'));
+        return;
+      }
+      let settled = false;
+      const finish = (error: ScanError) => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      };
+      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: input.method,
+          headers: input.headers,
+          agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+          signal,
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          response.on('data', (chunk: Buffer) => {
+            bytes += chunk.length;
+            if (bytes > 8_388_608) {
+              finish(new ScanError('ENDPOINT_RESPONSE_INVALID'));
+              response.destroy();
+            } else chunks.push(chunk);
+          });
+          response.on('error', () =>
+            finish(
+              new ScanError(signal.aborted ? 'RUN_STOPPED' : 'CONNECTION'),
+            ),
+          );
+          response.on('end', () => {
+            if (settled) return;
+            settled = true;
+            resolveReply({
+              status: response.statusCode ?? 0,
+              headers: {
+                'retry-after':
+                  typeof response.headers['retry-after'] === 'string'
+                    ? response.headers['retry-after']
+                    : undefined,
+              },
+              body: Buffer.concat(chunks).toString('utf8'),
+            });
+          });
+        },
+      );
+      const timer = setTimeout(() => {
+        finish(new ScanError('REQUEST_TIMEOUT'));
+        request.destroy();
+      }, input.timeoutSeconds * 1000);
+      request.on('close', () => clearTimeout(timer));
+      request.on('error', (error: NodeJS.ErrnoException) => {
+        const code = String(error.code);
+        finish(
+          new ScanError(
+            signal.aborted
+              ? 'RUN_STOPPED'
+              : /CERT|TLS|SSL|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)
+                ? 'TLS'
+                : 'CONNECTION',
+          ),
+        );
+      });
+      request.end(input.body);
+    });
+  return {
+    transport,
+    close() {
+      httpAgent.destroy();
+      httpsAgent.destroy();
+    },
+  };
+}

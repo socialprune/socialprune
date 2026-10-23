@@ -21,6 +21,7 @@ schemas/label-submission.schema.json
 schemas/original.schema.json
 schemas/outcome-event.schema.json
 schemas/review-readiness.schema.json
+schemas/source-label-file.schema.json
 schemas/submission.schema.json
 schemas/summary.schema.json
 schemas/v1/assessment.schema.json

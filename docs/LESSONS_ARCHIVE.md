@@ -470,4 +470,40 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-21 10:00Z: no round was cut; a dedicated short diagnostic run on the Windows runner that tests several hypotheses in one pass was dispatched, and the slowdown was withdrawn in the reply to him.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 1 time (2026-10-21 09:30Z, the limit on the desktop job above)
+- Violated: 2 times (2026-10-23 13:17Z: card NACHT-1 offered parallel lanes on already accepted work, the X deletion's rate windows of DEL-1, ADR-032 slices 5 and 6, ADR-033 C1 and the reviews of the four deletion records, as an option for him to choose, and those lanes stayed unstarted for three and a half hours while one lane ran; he wrote at 16:39Z "Ich sehe, du hast nur einen Sub-Agent laufen. Ist das wirklich optimal und effizient?". Application note: before a card goes out, strip from it every item that already has authority; a card asks only for what is new. 2026-10-21 09:30Z, the limit on the desktop job above)
+
+### [LL-2026-10-018] 2026-10-23 ORCHESTRATION: Measure and bound the memory your own runs hold on the person's machine
+
+**ID:** LL-2026-10-018
+**Severity:** HIGH
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). The sizes, growth rate and limit below are dated measurements from 2026-10-23 on one machine with 64 GB.
+
+**Feedback:** "Bedenke auch in dem Browser, den du hast, da sind jetzt extrem viele Tabs offen von den ganzen Sachen. Das füllt meinen PC und den RAM halt komplett auf. Das ist halt nicht wirklich nachhaltig, gell? Also das musst du in deiner Strategie auch bedenken." The maintainer at 16:13Z.
+
+**Problem:** For two days the parent started Instagram reading runs, test gates and lane browser suites back to back on his machine and checked before each one only that no other run or browser was active, by process counts. Nobody measured how much memory the parent's own processes held. At 16:16Z the dedicated Instagram Edge of main run 17, about nine minutes old, held 14,863 MB, one page process 12,931 MB, growing about 600 MB a minute, with 9.5 GB of 64 GB free. Stopping the run freed 15 GB. The run's structure report records network classes, timings and page counts, not memory, so no earlier run says whether it grew the same way.
+
+**5 Whys Analysis:**
+1. Why did the machine fill up? -> An owned browser grew to 15 GB while the parent waited for its next scheduled check.
+2. Why was that not seen? -> Every preflight and wakeup counted processes and locks; none read their size.
+3. Why only counts? -> The checks were written to keep runs from overlapping and to keep his own browsers untouched, so presence was the question, not cost.
+4. Why did no report carry it? -> The run instrumentation was designed against platform signals and failures, and memory is neither.
+5. Why? -> Root cause: no control treats the person's machine as a shared resource with a budget that the parent's own work must stay inside, measured while the work runs.
+
+**Rule(s):**
+1. Work the parent starts on the person's machine runs inside a resource budget that is measured while it runs, not only checked before it starts. A run that exceeds its budget is stopped or refreshed by the parent's own guard, and the measurement goes into the run's record.
+2. Every long or repeated run on his machine carries a guard that samples the memory of the processes it owns and ends them above a stated limit; the limit is a hypothesis with its measurement date (LL-2026-10-014).
+3. A preflight reads free memory and the parent's own footprint, not only process counts, and a status that names the browser sessions also names their size when it is large.
+4. Windows and tabs the parent opens in the person's own browser are listed in the status that opens them, so he can see what is the parent's.
+
+**Detection Pattern:** a preflight or wakeup that counts processes but reads no memory; a run report without a resource field; a dedicated browser that runs for many minutes between checks.
+
+**Affected Files:** docs/LESSONS_ARCHIVE.md; the parent's run launcher `kontext-auftrag.ps1` in the task's cleanup tools (outside Git). Retrieval anchor: that launcher, the action-adjacent surface the parent runs to start every Instagram run, now starts the memory guard itself and prints a `MEMORY` line with its sample count, peak and limit at the end of every run, so the budget runs without anyone remembering it.
+
+**Related Lessons:** LL-2026-10-016 (a stop signal every lane checks), LL-2026-10-014 (a limit is a hypothesis to measure), LL-2026-10-010 (shared resources and load), LL-2026-10-011 (look up your own record first).
+
+**Regression / Verification Note:** applied on 2026-10-23: run 17 stopped at 16:18Z, free memory 9.5 GB before and 24.6 GB after; the launcher's guard is set to 6,144 MB for the dedicated Edge; the cause of the growth is not known and is being measured.
+
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-23, run 17 above)

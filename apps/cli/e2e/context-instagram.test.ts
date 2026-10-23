@@ -67,6 +67,7 @@ import {
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
 import { contextDiagnostics } from './context-diagnostics.ts';
 import { fakePageFailure } from './fake-instagram/failure.ts';
+import { errorClass } from '../src/browser/instagram/report.ts';
 
 test.each([
   {
@@ -1363,6 +1364,140 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each([
+  { kind: 'p', canary: false },
+  { kind: 'reel', canary: false },
+  { kind: 'p', canary: true },
+] as const)(
+  'C26 same-document slow post kind=$kind canary=$canary retains a validated target without a navigation request',
+  async ({ kind, canary }) => {
+    const h = await harness(
+      kind === 'reel' ? 'reel' : 'success',
+      canary ? 5 : 2,
+    );
+    if (!canary) await fullRunReady(h);
+    h.fake.clientSidePostOpens();
+    h.fake.slowPostOpens(0, 1);
+    const postRequests: { navigation: boolean; type: string }[] = [];
+    const routeChanges: string[] = [];
+    h.afterLaunch(() => {
+      h.context!.on('page', (page) => {
+        page.on('request', (request) => {
+          if (new URL(request.url()).pathname === `/${kind}/${IG_FIXTURE.code}`)
+            postRequests.push({
+              navigation: request.isNavigationRequest(),
+              type: request.resourceType(),
+            });
+        });
+        page.on('framenavigated', (frame) => {
+          if (
+            frame === page.mainFrame() &&
+            frame.url().endsWith(`/${kind}/${IG_FIXTURE.code}`)
+          )
+            routeChanges.push(frame.url());
+        });
+      });
+      return Promise.resolve();
+    });
+    const failures: { name: string; class: string; url: string }[] = [];
+    const open = driverHelpers.openCandidate;
+    const observeOpen = vi
+      .spyOn(driverHelpers, 'openCandidate')
+      .mockImplementation(async (...args) => {
+        try {
+          return await open(...args);
+        } catch (error) {
+          failures.push({
+            name: error instanceof Error ? error.name : 'other',
+            class: errorClass(error),
+            url: args[0].url(),
+          });
+          throw error;
+        }
+      });
+    try {
+      const result = await h.start(canary ? true : 'no-canary');
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        retries: { used: number };
+        cause?: { token: string; stage: string };
+        steps: { ready: { postMs: number } }[];
+      };
+      expect(failures).toEqual([
+        {
+          name: 'TimeoutError',
+          class: 'timeout',
+          url: `${h.fake.origin}/${kind}/${IG_FIXTURE.code}`,
+        },
+      ]);
+      expect(postRequests[0]).toEqual({ navigation: false, type: 'xhr' });
+      expect(routeChanges[0]).toBe(
+        `${h.fake.origin}/${kind}/${IG_FIXTURE.code}`,
+      );
+      // The red control must name the actual pre-fix stop and unused allowance.
+      if (!canary && report.retries.used === 0) {
+        expect(report.cause).toMatchObject({
+          token: 'browser-timeout',
+          stage: 'post-open',
+        });
+        expect(h.notices.join('')).toContain('retriesUsed=0; retries=[]');
+        expect(run.pageOpens).toBe(1);
+      }
+      expect(report.retries.used, h.notices.join('')).toBe(canary ? 0 : 1);
+      if (canary) {
+        expect(result).toMatchObject({ code: 'CONTEXT_FAILED' });
+        expect(report.cause).toMatchObject({
+          token: 'browser-timeout',
+          stage: 'post-open',
+        });
+        expect(h.waits).not.toContain(60000);
+        expect(postRequests).toHaveLength(1);
+      } else {
+        expect(result).toMatchObject({ completed: 1, steps: 2 });
+        expect(JSON.parse(text)).toMatchObject({
+          retries: {
+            used: 1,
+            entries: [
+              {
+                step: 1,
+                retryStep: 2,
+                stage: 'post-open',
+                waitedMs: 60000,
+                outcome: 'ready',
+              },
+            ],
+          },
+        });
+        expect(postRequests).toEqual([
+          { navigation: false, type: 'xhr' },
+          { navigation: true, type: 'document' },
+        ]);
+        expect(run.pageOpens).toBe(2);
+        expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(1);
+      }
+      expect(report.steps[0]!.ready.postMs).toBeGreaterThanOrEqual(5000);
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      observeOpen.mockRestore();
+      await h.close();
+    }
+  },
+  120000,
+);
 test.each([1, 2])(
   'C25 filtered list empty %s times reopens once and journals both paced steps',
   async (emptyLoads) => {

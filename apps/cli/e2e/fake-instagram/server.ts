@@ -23,6 +23,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const hiddenPosts = new Set<number>();
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
+  let clientSidePosts = false;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -141,6 +142,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           { today, firstYear },
           candidates,
           postVariants,
+          clientSidePosts,
         );
         if (emptyFilteredLists > 0) {
           emptyFilteredLists--;
@@ -305,6 +307,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!items[index] || !Number.isInteger(count) || count < 0)
         throw new Error('Invalid generated slow opens');
       slowPosts.set(index, count);
+    },
+    clientSidePostOpens() {
+      clientSidePosts = true;
     },
     emptyFilteredLists(count: number) {
       if (!Number.isInteger(count) || count < 0)

@@ -302,6 +302,7 @@ const OWN_FUNCTION_MODULES = {
     'loadList',
     'openCandidate',
     'reopenCandidate',
+    'postReopenTarget',
     'postReady',
     'confirmOnPost',
     'blockCount',

@@ -332,15 +332,22 @@ export async function reopenCandidate(
 ): Promise<boolean> {
   guard();
   await checkPage(page);
-  const address = postAddress(target, deps.origin);
-  if (!address || new URL(target).origin !== new URL(deps.origin).origin)
+  const address = postReopenTarget(target, deps.origin);
+  if (!address)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   const navigationStart = performance.now();
-  await page.goto(
-    new URL(`/${address.kind}/${address.code}`, deps.origin).href,
-    { waitUntil: 'domcontentloaded', timeout: deps.responseMs },
-  );
+  await page.goto(address, {
+    waitUntil: 'domcontentloaded',
+    timeout: deps.responseMs,
+  });
   return postReady(page, navigationStart, deps, guard);
+}
+/** The observed main-frame address may change without a document request. */
+export function postReopenTarget(input: string, origin: string): string | null {
+  const address = postAddress(input, origin);
+  return address
+    ? new URL(`/${address.kind}/${address.code}`, origin).href
+    : null;
 }
 async function postReady(
   page: Page,

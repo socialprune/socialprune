@@ -6,6 +6,7 @@ import {
 } from './retry.ts';
 import {
   ContextStop,
+  errorClass,
   PostRetriesSchema,
   stopDetails,
   stopDetailText,
@@ -18,6 +19,19 @@ import { loadList, productionContext } from './driver.ts';
 import * as selectors from './selectors.ts';
 import * as filter from './filter.ts';
 import type { Page } from 'playwright-core';
+import { errors } from 'playwright-core';
+
+test('C26 real Playwright click TimeoutError is classified as timeout and is eligible for the unchanged post retry policy', () => {
+  const failure = new errors.TimeoutError(
+    'locator.click: Timeout 5000ms exceeded.',
+  );
+  expect(failure.name).toBe('TimeoutError');
+  expect(errorClass(failure)).toBe('timeout');
+  expect(stopDetails(failure)).toMatchObject({ token: 'browser-timeout' });
+  expect(
+    new PostOpenRetries().begin(failure, ['generated-comment'], 5, false, true),
+  ).toMatchObject({ step: 5, stage: 'post-open' });
+});
 
 test('C25 filtered-list reopen shares IG-16s three-reopen budget and the once-per-target set with posts', () => {
   const retries = new PostOpenRetries();

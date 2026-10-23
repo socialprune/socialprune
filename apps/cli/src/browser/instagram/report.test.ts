@@ -138,6 +138,7 @@ test.each([
   ['scrollPostComments', 'selectors.ts'],
   ['currentImageSource', 'selectors.ts'],
   ['confirmOnPost', 'driver.ts'],
+  ['postReopenTarget', 'driver.ts'],
   ['settledPost', 'driver.ts'],
   ['blockCount', 'driver.ts'],
   ['runContextWithDependencies', 'run.ts'],

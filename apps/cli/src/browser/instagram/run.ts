@@ -54,6 +54,7 @@ import {
   loadList,
   openCandidate,
   reopenCandidate,
+  postReopenTarget,
   confirmOnPost,
 } from './driver.ts';
 import type { ContextDependencies } from './driver.ts';
@@ -798,13 +799,8 @@ export async function runContextWithDependencies(
             request.frame() !== page.mainFrame()
           )
             return;
-          const address = postAddress(request.url(), deps.origin);
-          if (
-            address &&
-            new URL(request.url()).origin === new URL(deps.origin).origin
-          )
-            target = new URL(`/${address.kind}/${address.code}`, deps.origin)
-              .href;
+          const address = postReopenTarget(request.url(), deps.origin);
+          if (address) target = address;
         };
         page.on('request', navigation);
         try {
@@ -821,6 +817,7 @@ export async function runContextWithDependencies(
           reopening = null;
           reopenTarget = null;
         } catch (caught) {
+          target ??= postReopenTarget(page.url(), deps.origin);
           activeReady.postMs = Math.max(
             0,
             Math.round(performance.now() - openedAt),

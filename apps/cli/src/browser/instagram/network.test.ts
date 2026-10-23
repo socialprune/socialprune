@@ -10,6 +10,8 @@ import {
   COMMENTS_PATH,
   guardInstagramNetwork,
   observeContextRuntime,
+  memoryFromMetrics,
+  observePageMemory,
 } from './network.ts';
 import {
   keyPaths,
@@ -21,6 +23,148 @@ import {
   IG_FIXTURE,
   POST_NOTICE_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+const generatedMemoryMetrics = (used: number, nodes = 12) => [
+  { name: 'JSHeapUsedSize', value: used * 1024 ** 2 },
+  { name: 'JSHeapTotalSize', value: 8 * 1024 ** 2 },
+  { name: 'Nodes', value: nodes },
+  { name: 'Documents', value: 2 },
+  { name: 'JSEventListeners', value: 4 },
+  { name: 'Frames', value: 1 },
+  { name: IG_FIXTURE.other.text, value: 123 },
+];
+test('C28 memory metrics retain only rounded MB and closed counts and refuse incomplete or inconsistent data', () => {
+  expect(memoryFromMetrics(generatedMemoryMetrics(3.6))).toEqual({
+    observed: true,
+    observationFailed: false,
+    jsHeapUsedMB: 4,
+    jsHeapTotalMB: 8,
+    nodes: 12,
+    documents: 2,
+    jsEventListeners: 4,
+    frames: 1,
+  });
+  for (const metrics of [
+    generatedMemoryMetrics(9),
+    generatedMemoryMetrics(1, -1),
+    generatedMemoryMetrics(1, 1.5),
+    generatedMemoryMetrics(1).slice(1),
+    [...generatedMemoryMetrics(1), { name: 'Nodes', value: 12 }],
+  ])
+    expect(memoryFromMetrics(metrics)).toEqual({
+      observed: false,
+      observationFailed: true,
+      jsHeapUsedMB: null,
+      jsHeapTotalMB: null,
+      nodes: null,
+      documents: null,
+      jsEventListeners: null,
+      frames: null,
+    });
+  expect(
+    JSON.stringify(memoryFromMetrics(generatedMemoryMetrics(1))),
+  ).not.toContain(IG_FIXTURE.other.text);
+});
+test.each(['ok', 'attach', 'sample', 'detach'] as const)(
+  'C28 one reused CDP memory session %s keeps peaks and disposes without changing caller outcome',
+  async (mode) => {
+    let sample = 0;
+    const send = vi.fn((method: string) => {
+      if (method === 'Performance.enable')
+        return mode === 'attach'
+          ? Promise.reject(new Error(IG_FIXTURE.other.text))
+          : Promise.resolve({});
+      if (mode === 'sample')
+        return Promise.reject(new Error(IG_FIXTURE.other.text));
+      return Promise.resolve({
+        metrics: generatedMemoryMetrics(++sample, sample * 10),
+      });
+    });
+    const detach =
+      mode === 'detach'
+        ? vi.fn().mockRejectedValue(new Error(IG_FIXTURE.other.text))
+        : vi.fn().mockResolvedValue(undefined);
+    const newCDPSession = vi.fn().mockResolvedValue({ send, detach });
+    const memory = observePageMemory({
+      context: () => ({ newCDPSession }),
+    } as unknown as Page);
+    const first = await memory.sample(),
+      second = await memory.sample();
+    expect(first.observed).toBe(mode === 'ok' || mode === 'detach');
+    expect(second.observed).toBe(first.observed);
+    await memory.dispose();
+    await memory.dispose();
+    expect(newCDPSession).toHaveBeenCalledTimes(1);
+    expect(detach).toHaveBeenCalledTimes(1);
+    expect(memory.summary()).toMatchObject({
+      samples: 2,
+      failedSamples: mode === 'attach' || mode === 'sample' ? 2 : 0,
+      observationFailed: mode !== 'ok',
+      peak: first.observed ? { jsHeapUsedMB: 2, nodes: 20 } : null,
+    });
+    expect(JSON.stringify(memory.summary())).not.toContain(
+      IG_FIXTURE.other.text,
+    );
+  },
+);
+test('C28 a never-returning CDP setup expires and detaches a session that arrives late', async () => {
+  vi.useFakeTimers();
+  let deliver!: (value: unknown) => void;
+  const detach = vi.fn().mockResolvedValue(undefined),
+    send = vi.fn();
+  const memory = observePageMemory({
+    context: () => ({
+      newCDPSession: () =>
+        new Promise((resolve) => {
+          deliver = resolve;
+        }),
+    }),
+  } as unknown as Page);
+  try {
+    const sample = memory.sample();
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await sample).toMatchObject({
+      observed: false,
+      observationFailed: true,
+    });
+    deliver({ detach, send });
+    await vi.advanceTimersByTimeAsync(1);
+    await memory.dispose();
+    expect(detach).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+test('C28 a never-returning metrics request expires and leaves an explicit failed sample', async () => {
+  vi.useFakeTimers();
+  const detach = vi.fn().mockResolvedValue(undefined);
+  const send = vi.fn((method: string) =>
+    method === 'Performance.enable'
+      ? Promise.resolve({})
+      : new Promise(() => {}),
+  );
+  const memory = observePageMemory({
+    context: () => ({ newCDPSession: () => Promise.resolve({ send, detach }) }),
+  } as unknown as Page);
+  try {
+    const sampling = memory.sample();
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await sampling).toMatchObject({
+      observed: false,
+      observationFailed: true,
+    });
+    expect(memory.summary()).toMatchObject({
+      samples: 1,
+      failedSamples: 1,
+      observationFailed: true,
+      peak: null,
+    });
+    await memory.dispose();
+    expect(detach).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 test('C21 runtime observation counts only owned page events and unexpected disconnects at their actual step and stage', () => {
   const browser = new EventEmitter(),
     context = { browser: () => browser } as unknown as BrowserContext;

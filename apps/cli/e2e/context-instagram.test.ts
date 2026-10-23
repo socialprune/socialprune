@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, rm, readFile, readdir } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, vi, onTestFinished } from 'vitest';
@@ -68,6 +75,9 @@ import { assertRecordedEvents } from './fake-instagram/recorder.ts';
 import { contextDiagnostics } from './context-diagnostics.ts';
 import { fakePageFailure } from './fake-instagram/failure.ts';
 import { errorClass } from '../src/browser/instagram/report.ts';
+import type { MemorySample } from '../src/browser/instagram/report.ts';
+import { promisify } from 'node:util';
+import { execFile } from 'node:child_process';
 
 test.each([
   {
@@ -1364,6 +1374,362 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+// Opt-in measurement only, never part of the default context-suite duration.
+// eslint-disable-next-line no-restricted-properties -- Test-only generated benchmark selection, never credentials.
+const memoryBenchmark = process.env['SP_CONTEXT_MEMORY_BENCHMARK'] === '1';
+test.each(memoryBenchmark ? [60] : [3])(
+  'C28 %s generated steps record one reused-session memory sample per step and optional attributed browser working sets',
+  async (stepCount) => {
+    const h = await harness('success', stepCount + 1);
+    await fullRunReady(h);
+    h.setLimit(stepCount);
+    h.setMaxSteps(stepCount);
+    h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+    const execute = promisify(execFile);
+    const samples: {
+      step: number;
+      elapsedMs: number;
+      memory: MemorySample;
+      browserWorkingSetMB: number | null;
+      largestRendererMB: number | null;
+      processCount: number;
+      processesObserved: boolean;
+    }[] = [];
+    const startedAt = performance.now();
+    let garbageControl:
+      { before: MemorySample; after: MemorySample } | undefined;
+    const original = networkHelpers.observePageMemory;
+    const observer = vi
+      .spyOn(networkHelpers, 'observePageMemory')
+      .mockImplementation((page) => {
+        const memory = original(page);
+        return {
+          ...memory,
+          async sample() {
+            const value = await memory.sample();
+            let browserWorkingSetMB: number | null = null,
+              largestRendererMB: number | null = null,
+              processCount = 0,
+              processesObserved = false;
+            if (
+              process.platform === 'win32' &&
+              // eslint-disable-next-line no-restricted-properties -- Test-only OS-counter selection, never credentials.
+              process.env['SP_C28_SAMPLE_OS'] === '1'
+            ) {
+              const profile = h.profile.replaceAll("'", "''");
+              const command = `if(Test-Path -LiteralPath '${join(tmpdir(), 'kilo', 'phase2', 'STOP').replaceAll("'", "''")}'){exit 97};$all=@(Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='chrome-headless-shell.exe'");$root=@($all | Where-Object {$_.CommandLine -and $_.CommandLine.Contains('${profile}') -and $_.CommandLine -notmatch '--type='});if($root.Count -ne 1){throw 'Generated browser root not unique'};$ids=@([int]$root[0].ProcessId);for($depth=0;$depth -lt 8;$depth++){$next=@($all | Where-Object {$_.ParentProcessId -in $ids -and $_.ProcessId -notin $ids});if($next.Count -eq 0){break};$ids+=@($next.ProcessId)};$owned=@($all | Where-Object {$_.ProcessId -in $ids});$working=0L;$renderer=0L;foreach($p in $owned){$working+=[long]$p.WorkingSetSize;if($p.CommandLine -match '--type=renderer'){$renderer=[Math]::Max($renderer,[long]$p.WorkingSetSize)}};@{workingMB=[Math]::Round($working/1MB);rendererMB=[Math]::Round($renderer/1MB);count=$owned.Count}|ConvertTo-Json -Compress`;
+              try {
+                const result = JSON.parse(
+                  (
+                    await execute(
+                      'powershell.exe',
+                      ['-NoProfile', '-NonInteractive', '-Command', command],
+                      { encoding: 'utf8', windowsHide: true, timeout: 30000 },
+                    )
+                  ).stdout,
+                ) as { workingMB: number; rendererMB: number; count: number };
+                browserWorkingSetMB = result.workingMB;
+                largestRendererMB = result.rendererMB;
+                processCount = result.count;
+                processesObserved = true;
+              } catch {
+                console.info('C28_OS_OBSERVATION_FAILED');
+              }
+            }
+            samples.push({
+              step: samples.length + 1,
+              elapsedMs: Math.round(performance.now() - startedAt),
+              memory: value,
+              browserWorkingSetMB,
+              largestRendererMB,
+              processCount,
+              processesObserved,
+            });
+            console.info('C28_MEMORY', JSON.stringify(samples.at(-1)));
+            return value;
+          },
+          async dispose() {
+            // Test-only reachability control; never part of the production observer.
+            const client = await page.context().newCDPSession(page);
+            try {
+              await client.send('Performance.enable');
+              const before = networkHelpers.memoryFromMetrics(
+                (await client.send('Performance.getMetrics')).metrics,
+              );
+              await client.send('HeapProfiler.collectGarbage');
+              const after = networkHelpers.memoryFromMetrics(
+                (await client.send('Performance.getMetrics')).metrics,
+              );
+              garbageControl = { before, after };
+              console.info(
+                'C28_GARBAGE_CONTROL',
+                JSON.stringify(garbageControl),
+              );
+            } finally {
+              await client.detach();
+              await memory.dispose();
+            }
+          },
+        };
+      });
+    try {
+      expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+        completed: stepCount,
+        steps: stepCount,
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: { memory: MemorySample }[]; memory: unknown };
+      expect(samples).toHaveLength(stepCount);
+      expect(samples.every((sample) => sample.memory.observed)).toBe(true);
+      expect(report.steps.map((step) => step.memory)).toEqual(
+        samples.map((sample) => sample.memory),
+      );
+      expect(report.memory).toMatchObject({
+        samples: stepCount,
+        failedSamples: 0,
+        sessionAttached: true,
+        observationFailed: false,
+      });
+      // eslint-disable-next-line no-restricted-properties -- Test-only generated measurement output, never credentials.
+      const output = process.env['SP_C28_MEASUREMENT_OUT'];
+      if (output) {
+        expect(
+          output.startsWith(join(tmpdir(), 'kilo', 'phase2', 'c28') + '\\'),
+        ).toBe(true);
+        await writeFile(
+          output,
+          JSON.stringify(
+            {
+              generatedOnly: true,
+              kind: 'success',
+              maxWorkers: 1,
+              samples,
+              garbageControl,
+              peak: report.memory,
+              elapsedMs: Math.round(performance.now() - startedAt),
+            },
+            null,
+            2,
+          ),
+          { flag: 'wx' },
+        );
+      }
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      observer.mockRestore();
+      await h.close();
+    }
+  },
+  1200000,
+);
+test('C28 memory diagnostic covers the completed step and run peak without changing its result', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 1,
+      steps: 1,
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      steps: [
+        {
+          result: 'confirmed',
+          memory: { observed: true, observationFailed: false },
+        },
+      ],
+      memory: {
+        samples: 1,
+        failedSamples: 0,
+        sessionAttached: true,
+      },
+    });
+    const peak = (JSON.parse(text) as { memory: { peak: { frames: number } } })
+      .memory.peak;
+    expect(Number.isInteger(peak.frames)).toBe(true);
+    expect(peak.frames).toBeGreaterThan(0);
+    for (const value of [
+      h.plan.handle,
+      IG_FIXTURE.code,
+      ...Object.values(IG_FIXTURE.other),
+    ])
+      expect(text).not.toContain(value);
+  } finally {
+    await h.close();
+  }
+});
+test('C27 readable nonmatching rows reach no-row without list-timeout diagnostics or a reopen', async () => {
+  const h = await harness('no-row', 2);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      completed: 0,
+      steps: 1,
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(text) as { steps: { listTimeout?: unknown }[] };
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 0, entries: [] },
+      steps: [{ result: 'no-row', candidates: 0 }],
+    });
+    expect(report.steps.every((step) => step.listTimeout === undefined)).toBe(
+      true,
+    );
+    expect((await h.store.browserJournal()).attempts.at(-1)).toMatchObject({
+      state: 'not-listed',
+      code: 'no-row',
+    });
+    expect(h.waits).not.toContain(60000);
+  } finally {
+    await h.close();
+  }
+});
+test('C27 a CDP observer failure cannot turn a filtered timeout into another stop', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.filteredListPlaceholders(3, false);
+  const attach = vi
+    .spyOn(selectorHelpers, 'observeListDomChanges')
+    .mockImplementation(() =>
+      Promise.resolve({
+        applied() {},
+        summary: () => ({
+          observed: false,
+          changes: 0,
+          lastChangeAfterApplyMs: null,
+          observedForMs: 0,
+        }),
+        failed: true,
+        async dispose() {},
+      }),
+    );
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    const report = JSON.parse(text) as { steps: unknown[] };
+    for (const step of report.steps)
+      expect(step).toMatchObject({
+        listTimeout: { dom: { observed: false }, observationFailed: true },
+      });
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 1, entries: [{ outcome: 'timeout' }] },
+    });
+  } finally {
+    attach.mockRestore();
+    await h.close();
+  }
+});
+test.each([
+  { count: 1, status: false },
+  { count: 3, status: false },
+  { count: 3, status: true },
+] as const)(
+  'C27 filtered placeholder count=$count status=$status remains list-timeout with content-free evidence',
+  async ({ count, status }) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.filteredListPlaceholders(count, status);
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'list-timeout',
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      const report = JSON.parse(text) as {
+        steps: {
+          listTimeout: {
+            dom: {
+              observedForMs: number;
+              lastChangeAfterApplyMs: number | null;
+            };
+          };
+        }[];
+      };
+      expect(report.steps).toHaveLength(2);
+      for (const step of report.steps) {
+        expect(step).toMatchObject({
+          result: 'list-timeout',
+          emptySkipped: count,
+          listTimeout: {
+            rowContainers: count,
+            readableRows: 0,
+            imageOnlyRows: count,
+            statusElementPresent: status,
+            busyElementPresent: !status,
+            emptyStateClassKnown: false,
+            emptyStatePresent: false,
+            rowsObserved: true,
+            filter: {
+              applied: true,
+              readbackObserved: true,
+              startMatches: true,
+              endMatches: true,
+            },
+            observationFailed: false,
+            dom: { observed: true },
+          },
+        });
+        expect(step.listTimeout.dom.lastChangeAfterApplyMs).not.toBeNull();
+        expect(step.listTimeout.dom.lastChangeAfterApplyMs).toBeLessThanOrEqual(
+          step.listTimeout.dom.observedForMs,
+        );
+      }
+      expect(JSON.parse(text)).toMatchObject({
+        retries: { used: 1, entries: [{ stage: 'list', outcome: 'timeout' }] },
+        stop: { token: 'list-timeout' },
+      });
+      expect(run.pageOpens).toBe(2);
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toBe(false);
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        'No generated comments in this window',
+        ...Object.values(IG_FIXTURE.other),
+      ])
+        expect(text).not.toContain(value);
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test.each([
   { kind: 'p', canary: false },
   { kind: 'reel', canary: false },

@@ -108,7 +108,90 @@ export const PostRetriesSchema = z
   })
   .refine((value) => value.used === value.entries.length);
 
+export const ListTimeoutDiagnosticSchema = z
+  .strictObject({
+    rowContainers: count,
+    readableRows: count,
+    imageOnlyRows: count,
+    statusElementPresent: z.boolean(),
+    busyElementPresent: z.boolean(),
+    // No real empty-result class has been established for this reader.
+    emptyStateClassKnown: z.literal(false),
+    emptyStatePresent: z.literal(false),
+    rowsObserved: z.boolean(),
+    filter: z.strictObject({
+      applied: z.boolean(),
+      readbackObserved: z.boolean(),
+      startMatches: z.boolean(),
+      endMatches: z.boolean(),
+    }),
+    dom: z.strictObject({
+      observed: z.boolean(),
+      changes: count,
+      lastChangeAfterApplyMs: count.nullable(),
+      observedForMs: count,
+    }),
+    observationFailed: z.boolean(),
+  })
+  .refine(
+    (value) =>
+      value.readableRows + value.imageOnlyRows <= value.rowContainers &&
+      (value.dom.lastChangeAfterApplyMs === null ||
+        (value.dom.observed &&
+          value.dom.lastChangeAfterApplyMs <= value.dom.observedForMs)) &&
+      (value.filter.readbackObserved ||
+        (!value.filter.startMatches && !value.filter.endMatches)),
+  );
+export type ListTimeoutDiagnostic = z.infer<typeof ListTimeoutDiagnosticSchema>;
+const memoryFields = {
+  jsHeapUsedMB: count,
+  jsHeapTotalMB: count,
+  nodes: count,
+  documents: count,
+  jsEventListeners: count,
+  frames: count,
+};
+export const MemoryValuesSchema = z
+  .strictObject(memoryFields)
+  .refine((value) => value.jsHeapUsedMB <= value.jsHeapTotalMB);
+export type MemoryValues = z.infer<typeof MemoryValuesSchema>;
+export const MemorySampleSchema = z.union([
+  z
+    .strictObject({
+      observed: z.literal(true),
+      observationFailed: z.literal(false),
+      ...memoryFields,
+    })
+    .refine((value) => value.jsHeapUsedMB <= value.jsHeapTotalMB),
+  z.strictObject({
+    observed: z.literal(false),
+    observationFailed: z.literal(true),
+    jsHeapUsedMB: z.null(),
+    jsHeapTotalMB: z.null(),
+    nodes: z.null(),
+    documents: z.null(),
+    jsEventListeners: z.null(),
+    frames: z.null(),
+  }),
+]);
+export type MemorySample = z.infer<typeof MemorySampleSchema>;
+export const RunMemorySchema = z
+  .strictObject({
+    samples: count,
+    failedSamples: count,
+    sessionAttached: z.boolean(),
+    observationFailed: z.boolean(),
+    peak: MemoryValuesSchema.nullable(),
+  })
+  .refine(
+    (value) =>
+      value.failedSamples <= value.samples &&
+      (value.failedSamples === 0 || value.observationFailed) &&
+      (value.peak !== null) === value.samples > value.failedSamples,
+  );
 export const ContextStepReportSchema = z.looseObject({
+  memory: MemorySampleSchema.optional(),
+  listTimeout: ListTimeoutDiagnosticSchema.optional(),
   ready: z.strictObject({ postMs: count }).optional(),
   postRequests: PostRequestsSchema.optional(),
   secondSource: SecondSourceReportSchema.optional(),
@@ -296,6 +379,7 @@ const OWN_FUNCTION_MODULES = {
   'driver.ts': [
     'waitPage',
     'filterList',
+    'listTimeoutDiagnostic',
     'navigateList',
     'checkedAccountRows',
     'readAccountRows',
@@ -316,6 +400,10 @@ const OWN_FUNCTION_MODULES = {
     'accountMatches',
     'outsideProfilePaths',
     'readRows',
+    'listTimeoutRows',
+    'filterWindowMatches',
+    'observeListDomChanges',
+    'listDiagnosticRead',
     'rowCandidate',
     'utcWindow',
     'postAddress',
@@ -343,6 +431,7 @@ const OWN_FUNCTION_MODULES = {
     'rejectIncomplete',
     'assertAutomaticCanary',
     'waitToReopen',
+    'sampleMemory',
     'snapshot',
     'finalize',
     'structure',
@@ -356,6 +445,8 @@ const OWN_FUNCTION_MODULES = {
   ],
   'network.ts': [
     'observeContextRuntime',
+    'observePageMemory',
+    'memoryFromMetrics',
     'bodyClass',
     'allowedInstagramHost',
     'allowedInstagramURL',

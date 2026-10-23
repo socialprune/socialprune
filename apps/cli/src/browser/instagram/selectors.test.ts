@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { PostProjection } from './selectors.ts';
 import type { Page } from 'playwright-core';
 import {
@@ -10,11 +10,211 @@ import {
   relativeAgeMs,
   accountMatches,
   outsideProfilePaths,
+  listTimeoutRows,
+  filterWindowMatches,
+  observeListDomChanges,
 } from './selectors.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+
+test.each([false, true])(
+  'C27 generated row markup read failure=%s emits counts or an explicit failed observation without values',
+  async (failure) => {
+    const markup = [
+      `<div role="button" aria-label="${IG_FIXTURE.other.username}"><img src="/${IG_FIXTURE.other.code}"></div>`,
+      '<div role="button" aria-label="generated empty"> \n </div>',
+      `<div role="button" aria-label="generated text"><img>${IG_FIXTURE.other.text}</div>`,
+    ];
+    const texts = ['', ' \n ', IG_FIXTURE.other.text];
+    const containers = {
+      allInnerTexts: () => {
+        if (failure) throw new Error(IG_FIXTURE.other.text);
+        return Promise.resolve(texts);
+      },
+      nth: (index: number) => ({
+        locator: () => ({
+          count: () => Promise.resolve(markup[index]!.includes('<img') ? 1 : 0),
+        }),
+      }),
+    };
+    const page = {
+      locator: (selector: string) =>
+        selector === '[role="button"][aria-label]'
+          ? containers
+          : {
+              count: () => Promise.resolve(selector.includes('status') ? 1 : 0),
+            },
+    } as unknown as Page;
+    const result = await listTimeoutRows(page);
+    expect(result).toEqual(
+      failure
+        ? {
+            rowContainers: 0,
+            readableRows: 0,
+            imageOnlyRows: 0,
+            statusElementPresent: false,
+            busyElementPresent: false,
+            rowsObserved: false,
+          }
+        : {
+            rowContainers: 3,
+            readableRows: 1,
+            imageOnlyRows: 1,
+            statusElementPresent: true,
+            busyElementPresent: false,
+            rowsObserved: true,
+          },
+    );
+    for (const value of Object.values(IG_FIXTURE.other))
+      expect(JSON.stringify(result)).not.toContain(value);
+  },
+);
+
+test.each(['match', 'mismatch', 'missing', 'throw'] as const)(
+  'C27 final filter readback %s retains only per-side equality booleans',
+  async (mode) => {
+    const select = (labels: string[], checked: string) => ({
+      locator: (selector: string) => ({
+        allInnerTexts: () =>
+          Promise.resolve(selector === 'option:checked' ? [checked] : labels),
+      }),
+    });
+    const groups = [
+      [
+        select(['2024', '2025'], '2025'),
+        select(['July', 'August'], 'July'),
+        select(['29', '30'], mode === 'mismatch' ? '30' : '29'),
+      ],
+      [
+        select(['2024', '2025'], '2025'),
+        select(['July', 'August'], 'July'),
+        select(['30', '31'], '31'),
+      ],
+    ];
+    let group = 0;
+    const all = {
+      count: () => Promise.resolve(mode === 'missing' ? 5 : 6),
+      and: () => {
+        const index = group++;
+        const selected = {
+          and: () => selected,
+          count: () => Promise.resolve(3),
+          all: () => Promise.resolve(groups[index]!),
+        };
+        return selected;
+      },
+    };
+    const heading = { count: () => Promise.resolve(1), locator: () => ({}) };
+    const dialog = { getByText: () => heading, locator: () => all };
+    const page = {
+      getByRole: () => {
+        if (mode === 'throw') throw new Error(IG_FIXTURE.other.text);
+        return { locator: () => dialog };
+      },
+    } as unknown as Page;
+    const result = await filterWindowMatches(page, [
+      '2025-07-29',
+      '2025-07-31',
+    ]);
+    expect(result).toEqual(
+      mode === 'missing' || mode === 'throw'
+        ? { readbackObserved: false, startMatches: false, endMatches: false }
+        : {
+            readbackObserved: true,
+            startMatches: mode === 'match',
+            endMatches: true,
+          },
+    );
+    expect(JSON.stringify(result)).not.toContain('2025');
+  },
+);
+
+test.each(['ok', 'attach', 'detach'] as const)(
+  'C27 CDP DOM timing %s counts after Apply without retaining event values and disposes once',
+  async (mode) => {
+    let clock = 10;
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const handlers = new Map<string, () => void>();
+    const send = vi.fn().mockImplementation(() => {
+      if (mode === 'attach') throw new Error(IG_FIXTURE.other.text);
+      return Promise.resolve({ root: { nodeId: 1 } });
+    });
+    const detach = vi.fn().mockImplementation(() => {
+      if (mode === 'detach') throw new Error(IG_FIXTURE.other.text);
+      return Promise.resolve();
+    });
+    const client = {
+      on: (event: string, handler: () => void) => handlers.set(event, handler),
+      off: (event: string) => handlers.delete(event),
+      send,
+      detach,
+    };
+    const page = {
+      context: () => ({ newCDPSession: () => Promise.resolve(client) }),
+    } as unknown as Page;
+    try {
+      const observer = await observeListDomChanges(page);
+      handlers.get('DOM.attributeModified')?.();
+      observer.applied();
+      clock = 25;
+      if (mode !== 'attach') handlers.get('DOM.characterDataModified')?.();
+      clock = 40;
+      expect(observer.summary()).toEqual({
+        observed: mode !== 'attach',
+        changes: mode === 'attach' ? 0 : 1,
+        lastChangeAfterApplyMs: mode === 'attach' ? null : 15,
+        observedForMs: 30,
+      });
+      await observer.dispose();
+      await observer.dispose();
+      expect(observer.failed).toBe(mode !== 'ok');
+      expect(detach).toHaveBeenCalledTimes(1);
+      expect(handlers.size).toBe(0);
+      expect(JSON.stringify(observer.summary())).not.toContain(
+        IG_FIXTURE.other.text,
+      );
+    } finally {
+      now.mockRestore();
+    }
+  },
+);
+test('C27 a stalled diagnostic row read or CDP setup expires without blocking the original run or leaving a late observer', async () => {
+  vi.useFakeTimers();
+  let release!: () => void;
+  const handlers = new Map<string, () => void>();
+  const detach = vi.fn().mockResolvedValue(undefined);
+  const client = {
+    on: (event: string, handler: () => void) => handlers.set(event, handler),
+    off: (event: string) => handlers.delete(event),
+    send: () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    detach,
+  };
+  const page = {
+    context: () => ({ newCDPSession: () => Promise.resolve(client) }),
+    locator: () => ({ allInnerTexts: () => new Promise<string[]>(() => {}) }),
+  } as unknown as Page;
+  try {
+    const rows = listTimeoutRows(page);
+    const observer = observeListDomChanges(page);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await rows).toMatchObject({ rowsObserved: false });
+    const observation = await observer;
+    expect(observation.failed).toBe(true);
+    expect(observation.summary().observed).toBe(false);
+    release();
+    await vi.advanceTimersByTimeAsync(1);
+    await observation.dispose();
+    expect(handlers.size).toBe(0);
+    expect(detach).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 test('C21 IG-15 pure account check requires exact outside profile path and at least one own row', () => {
   const own = 'generated_person',

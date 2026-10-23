@@ -24,6 +24,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let clientSidePosts = false;
+  let filteredPlaceholders: { count: number; status: boolean } | undefined;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -150,6 +151,16 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           if (!html.includes(anchor))
             throw new Error('Generated filtered-list anchor missing');
           html = html.replace(anchor, 'if(start&&end)chosen=[];' + anchor);
+        }
+        if (filteredPlaceholders) {
+          const anchor = 'for(const [index,row]of chosen.entries())';
+          if (!html.includes(anchor))
+            throw new Error('Generated placeholder anchor missing');
+          html = html.replace(
+            anchor,
+            `if(start&&end){chosen=[];for(let i=0;i<${filteredPlaceholders.count};i++)emptyImageButton();${filteredPlaceholders.status ? "const status=document.createElement('div');status.setAttribute('role','status');status.textContent='No generated comments in this window';list.append(status);" : "list.setAttribute('aria-busy','true');"}}` +
+              anchor,
+          );
         }
         response.end(html);
         return;
@@ -315,6 +326,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(count) || count < 0)
         throw new Error('Invalid generated empty-filtered-list count');
       emptyFilteredLists = count;
+    },
+    filteredListPlaceholders(count: number, status: boolean) {
+      if (!Number.isInteger(count) || count < 0 || count > 20)
+        throw new Error('Invalid generated placeholder count');
+      filteredPlaceholders = { count, status };
     },
     setPostHidden(index: number) {
       if (!items[index])

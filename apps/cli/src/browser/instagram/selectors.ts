@@ -1,6 +1,7 @@
 import type { Locator, Page } from 'playwright-core';
 import type { Item } from '@socialprune/core';
 import { ContextStop } from './report.ts';
+import type { ListTimeoutDiagnostic } from './report.ts';
 import { normalize, ownerName } from './plan.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
@@ -31,6 +32,7 @@ export async function clickAllowed(
   page: Page,
   click: Click,
   before: () => void,
+  dispatched?: () => void,
 ): Promise<void> {
   before();
   await checkPage(page);
@@ -55,6 +57,7 @@ export async function clickAllowed(
   if ((await locator.count()) !== 1 || !(await locator.isVisible()))
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'filter-control');
   before();
+  dispatched?.();
   await locator.click({ timeout: 5000 });
 }
 export async function checkPage(page: Page): Promise<void> {
@@ -107,6 +110,7 @@ export interface RowReadCounts {
   emptySkipped: number;
   /** Maximum simultaneous other-name rows within one step's list loads. */
   otherName: number;
+  listTimeout?: ListTimeoutDiagnostic;
 }
 export function accountMatches(
   expected: string,
@@ -169,6 +173,222 @@ export async function readRows(
     });
   }
   return result;
+}
+/** Counts only; semantic status/loading roles are not empty-result proof. */
+export async function listTimeoutRows(page: Page) {
+  try {
+    return await listDiagnosticRead(async () => {
+      const containers = page.locator('[role="button"][aria-label]');
+      const texts = await containers.allInnerTexts();
+      let readableRows = 0,
+        imageOnlyRows = 0;
+      for (const [index, text] of texts.entries()) {
+        if (normalize(text)) readableRows++;
+        else if ((await containers.nth(index).locator('img').count()) > 0)
+          imageOnlyRows++;
+      }
+      return {
+        rowContainers: texts.length,
+        readableRows,
+        imageOnlyRows,
+        statusElementPresent:
+          (await page.locator('main [role="status"]').count()) > 0,
+        busyElementPresent:
+          (await page
+            .locator('main [aria-busy="true"],main [role="progressbar"]')
+            .count()) > 0,
+        rowsObserved: true,
+      };
+    });
+  } catch {
+    return {
+      rowContainers: 0,
+      readableRows: 0,
+      imageOnlyRows: 0,
+      statusElementPresent: false,
+      busyElementPresent: false,
+      rowsObserved: false,
+    };
+  }
+}
+/** Final selected labels are compared in memory; dates and labels never leave. */
+export async function filterWindowMatches(
+  page: Page,
+  planned: readonly [string, string],
+) {
+  try {
+    return await listDiagnosticRead(async () => {
+      const dialog = page
+        .getByRole('button', { name: 'Oldest to newest', exact: true })
+        .locator('xpath=ancestor::*[@role="dialog"][1]');
+      const start = dialog.getByText(/^start date$/i),
+        end = dialog.getByText(/^end date$/i),
+        all = dialog.locator('select');
+      if (
+        (await all.count()) !== 6 ||
+        (await start.count()) !== 1 ||
+        (await end.count()) !== 1
+      )
+        throw new Error('Filter readback unavailable');
+      const groups = [
+        all
+          .and(start.locator('xpath=following::select'))
+          .and(end.locator('xpath=preceding::select')),
+        all.and(end.locator('xpath=following::select')),
+      ];
+      const matches: boolean[] = [];
+      const months = [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+      for (const [index, group] of groups.entries()) {
+        if ((await group.count()) !== 3)
+          throw new Error('Filter group unavailable');
+        const values: Partial<Record<'year' | 'month' | 'day', number>> = {};
+        for (const select of await group.all()) {
+          const labels = await select.locator('option').allInnerTexts(),
+            selected = await select.locator('option:checked').allInnerTexts();
+          if (selected.length !== 1 || !labels.includes(selected[0]!))
+            throw new Error('Filter selection unavailable');
+          const kind = labels.every((label) => /^\d{4}$/.test(label))
+            ? 'year'
+            : labels.every((label) => /^\d{1,2}$/.test(label))
+              ? 'day'
+              : labels.every((label) => months.includes(label))
+                ? 'month'
+                : null;
+          if (!kind || values[kind] !== undefined)
+            throw new Error('Filter selection unknown');
+          values[kind] =
+            kind === 'month'
+              ? months.indexOf(selected[0]!) + 1
+              : Number(selected[0]);
+        }
+        const [year, month, day] = planned[index]!.split('-').map(Number);
+        matches.push(
+          values.year === year && values.month === month && values.day === day,
+        );
+      }
+      return {
+        readbackObserved: true,
+        startMatches: matches[0]!,
+        endMatches: matches[1]!,
+      };
+    });
+  } catch {
+    return { readbackObserved: false, startMatches: false, endMatches: false };
+  }
+}
+/** Diagnostics have a fixed one-second read budget, never a platform retry. */
+async function listDiagnosticRead<T>(read: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      read(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('List diagnostic read expired')),
+          1000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+/** CDP DOM events count changes without injecting a page observer or keeping values. */
+export async function observeListDomChanges(page: Page) {
+  let client:
+    | Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>
+    | undefined;
+  let observed = false,
+    failed = false,
+    disposed = false,
+    appliedAt: number | undefined,
+    last: number | null = null,
+    changes = 0;
+  const change = () => {
+    if (observed && appliedAt !== undefined) {
+      changes++;
+      last = performance.now();
+    }
+  };
+  const events = [
+    'DOM.childNodeInserted',
+    'DOM.childNodeRemoved',
+    'DOM.childNodeCountUpdated',
+    'DOM.attributeModified',
+    'DOM.attributeRemoved',
+    'DOM.characterDataModified',
+    'DOM.documentUpdated',
+  ] as const;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    if (!client) return;
+    for (const event of events) client.off(event, change);
+    try {
+      await listDiagnosticRead(() => client!.detach());
+    } catch {
+      failed = true;
+    }
+  };
+  try {
+    await listDiagnosticRead(async () => {
+      client = await page.context().newCDPSession(page);
+      if (disposed) {
+        try {
+          await listDiagnosticRead(() => client!.detach());
+        } catch {
+          failed = true;
+        }
+        return;
+      }
+      await client.send('DOM.enable');
+      if (disposed) return;
+      await client.send('DOM.getDocument', { depth: -1 });
+      if (disposed) return;
+      for (const event of events) client.on(event, change);
+      observed = true;
+    });
+  } catch {
+    failed = true;
+    await dispose();
+  }
+  return {
+    applied() {
+      appliedAt = performance.now();
+    },
+    summary() {
+      const now = performance.now();
+      return {
+        observed,
+        changes,
+        lastChangeAfterApplyMs:
+          last === null || appliedAt === undefined
+            ? null
+            : Math.max(0, Math.round(last - appliedAt)),
+        observedForMs:
+          appliedAt === undefined
+            ? 0
+            : Math.max(0, Math.round(now - appliedAt)),
+      };
+    },
+    get failed() {
+      return failed;
+    },
+    dispose,
+  };
 }
 export function rowCandidate(shown: string, expected: string): boolean {
   const value = normalize(shown),

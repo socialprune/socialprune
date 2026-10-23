@@ -37,6 +37,7 @@ import {
   AccountReadbackSchema,
   accountClass,
   RuntimeReportSchema,
+  RunMemorySchema,
   PostRetriesSchema,
   errorClass,
   keyPaths,
@@ -62,6 +63,7 @@ import { pageAnswers, capturePost, writeStructure } from './capture.ts';
 import {
   guardInstagramNetwork,
   observeContextRuntime,
+  observePageMemory,
   COMMENTS_PATH,
 } from './network.ts';
 import {
@@ -87,12 +89,9 @@ import {
   checkPage,
   outsideProfilePaths,
 } from './selectors.ts';
-import {
-  PostOpenRetries,
-  POST_REOPEN_WAIT_MS,
-  FilteredListTimeout,
-} from './retry.ts';
+import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
 import type { PostRetry } from './report.ts';
+import type { RowReadCounts } from './selectors.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -211,6 +210,7 @@ export async function runContextWithDependencies(
     rows: { emptySkipped: number; otherName: number };
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
+    memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
   } = {
     steps: [],
     confirmations: { post: 0, list: 0 },
@@ -237,6 +237,15 @@ export async function runContextWithDependencies(
     network: Awaited<ReturnType<typeof guardInstagramNetwork>> | undefined;
   let pages: ReturnType<typeof contextPages> | undefined;
   let runtime: ReturnType<typeof observeContextRuntime> | undefined;
+  let memory: ReturnType<typeof observePageMemory> | undefined;
+  let activeStep: Record<string, unknown> | undefined;
+  const sampleMemory = async () => {
+    if (!memory || !activeStep) return;
+    const step = activeStep;
+    activeStep = undefined;
+    step.memory = await memory.sample();
+    report.memory = memory.summary();
+  };
   let began = false,
     stopped = false,
     closed = false,
@@ -464,6 +473,7 @@ export async function runContextWithDependencies(
     await checkpoint();
     const page = options.session ? local : await pages.newPage();
     runtime.own(page);
+    memory = observePageMemory(page);
     answers = pageAnswers(page, deps.policy);
     const day = dateInZone(options.now(), options.plan.timeZone),
       prior = await instagramDailyCount(
@@ -592,6 +602,7 @@ export async function runContextWithDependencies(
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
+        await sampleMemory();
         postRequests?.close();
         stage = 'pace';
         const pausedBefore = controls?.pausedMs ?? 0;
@@ -672,7 +683,7 @@ export async function runContextWithDependencies(
         );
         answers.reset(options.plan.canary);
         answerReport = undefined;
-        const rowCounts = { emptySkipped: 0, otherName: 0 };
+        const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
         stage = 'list-read';
         const list = await (async () => {
           try {
@@ -692,17 +703,23 @@ export async function runContextWithDependencies(
             }
             return result;
           } catch (caught) {
-            if (caught instanceof FilteredListTimeout) {
-              report.steps.push({
+            if (
+              caught instanceof ContextStop &&
+              caught.token === 'list-timeout'
+            ) {
+              const timeoutStep = {
                 ready: { postMs: 0 },
-                filterByLists: true,
+                filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
+                listTimeout: rowCounts.listTimeout,
                 rows: 0,
                 emptySkipped: rowCounts.emptySkipped,
                 otherName: rowCounts.otherName,
                 candidates: 0,
                 confirmed: false,
                 result: 'list-timeout',
-              });
+              };
+              report.steps.push(timeoutStep);
+              activeStep = timeoutStep;
               if (reopening?.stage === 'list') reopening.outcome = 'timeout';
             }
             const retry = postRetries.beginList(
@@ -715,6 +732,7 @@ export async function runContextWithDependencies(
                 dateInZone(options.now(), options.plan.timeZone) === day,
             );
             if (!retry) throw caught;
+            await sampleMemory();
             await waitToReopen(retry);
             reopening = retry;
             return null;
@@ -758,6 +776,7 @@ export async function runContextWithDependencies(
           oldestWithinWeek: list.oldestWithinWeek,
         };
         report.steps.push(stepReport);
+        activeStep = stepReport;
         answers.reset(options.plan.canary);
         answerReport = options.plan.canary
           ? () => {
@@ -835,6 +854,7 @@ export async function runContextWithDependencies(
               dateInZone(options.now(), options.plan.timeZone) === day,
           );
           if (!retry) throw caught;
+          await sampleMemory();
           await waitToReopen(retry);
           reopening = retry;
           reopenTarget = target;
@@ -1001,6 +1021,7 @@ export async function runContextWithDependencies(
         report.confirmations[record.confirmedBy]++;
         break;
       }
+      await sampleMemory();
       if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
       stage = 'progress';
       options.session?.progress(
@@ -1037,6 +1058,7 @@ export async function runContextWithDependencies(
               : `${steps} steps read, ${completed} comments confirmed.`,
         });
     }
+    await sampleMemory();
     if (options.plan.canary && commentsTried === 15 && completed < 5)
       throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
     stage = 'canary-check';
@@ -1056,6 +1078,9 @@ export async function runContextWithDependencies(
             ? 'platform-check'
             : 'error';
   } finally {
+    await sampleMemory();
+    await memory?.dispose();
+    if (memory) report.memory = RunMemorySchema.parse(memory.summary());
     let matches = false,
       reportPath: string | undefined;
     let persistedCause: ReturnType<typeof contextCause> | undefined;

@@ -8,10 +8,85 @@ import {
 } from './driver.ts';
 import * as selectors from './selectors.ts';
 import { stopDetails } from './report.ts';
+import type { RowReadCounts } from './selectors.ts';
+import * as filterHelpers from './filter.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+
+test('C27 diagnostic attach and DOM read failures retain the original filtered timeout with explicit observation failure', async () => {
+  const fixture = await instagramFixture();
+  let clock = 0,
+    filtered = false;
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  const check = vi.spyOn(selectors, 'checkPage').mockResolvedValue();
+  const outside = vi
+    .spyOn(selectors, 'outsideProfilePaths')
+    .mockResolvedValue([`/${fixture.items[0]!.account.handle}/`]);
+  const choices = vi
+    .spyOn(filterHelpers, 'chooseFilterDate')
+    .mockResolvedValue();
+  const click = vi
+    .spyOn(selectors, 'clickAllowed')
+    .mockImplementation((_page, action, _guard, dispatched) => {
+      if (action.kind === 'named' && action.name === 'Apply') {
+        dispatched?.();
+        filtered = true;
+      }
+      return Promise.resolve();
+    });
+  const rows = vi.spyOn(selectors, 'readRows').mockImplementation(() => {
+    if (filtered) {
+      clock = 200;
+      return Promise.resolve([]);
+    }
+    return Promise.resolve([
+      {
+        index: 0,
+        username: fixture.items[0]!.account.handle!,
+        text: fixture.items[0]!.text,
+        age: '1w',
+      },
+    ]);
+  });
+  const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  try {
+    await expect(
+      loadList(
+        { goto: () => Promise.resolve() } as unknown as Page,
+        fixture.items[0]!,
+        fixture.items[0]!.account.handle!,
+        { ...productionContext, responseMs: 100 },
+        () => {},
+        false,
+        undefined,
+        counts,
+      ),
+    ).rejects.toMatchObject({ code: 'PLATFORM_CHECK', token: 'list-timeout' });
+    expect(counts.listTimeout).toMatchObject({
+      rowsObserved: false,
+      filter: {
+        applied: true,
+        readbackObserved: false,
+        startMatches: false,
+        endMatches: false,
+      },
+      dom: { observed: false, lastChangeAfterApplyMs: null },
+      observationFailed: true,
+    });
+    expect(JSON.stringify(counts.listTimeout)).not.toContain(
+      fixture.items[0]!.text,
+    );
+  } finally {
+    rows.mockRestore();
+    click.mockRestore();
+    choices.mockRestore();
+    outside.mockRestore();
+    check.mockRestore();
+    now.mockRestore();
+  }
+});
 
 test.each(['p', 'reel'] as const)(
   'C26 observed %s addresses retain only the exact same-origin post kind and code',

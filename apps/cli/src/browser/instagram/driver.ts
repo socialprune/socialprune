@@ -23,11 +23,18 @@ import {
   confirmComment,
   currentImageSource,
   scrollPostComments,
+  listTimeoutRows,
+  filterWindowMatches,
+  observeListDomChanges,
 } from './selectors.ts';
 import type { PostProjection, ConfirmationResult } from './selectors.ts';
 import type { RowReadCounts } from './selectors.ts';
-import { ContextStop, accountClass } from './report.ts';
-import type { AccountClass } from './report.ts';
+import {
+  ContextStop,
+  accountClass,
+  ListTimeoutDiagnosticSchema,
+} from './report.ts';
+import type { AccountClass, ListTimeoutDiagnostic } from './report.ts';
 import { FilteredListTimeout } from './retry.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
@@ -104,13 +111,48 @@ export async function filterList(
   page: Page,
   at: string,
   guard: () => void,
+  evidence?: {
+    readback(value: Awaited<ReturnType<typeof filterWindowMatches>>): void;
+    beforeApply(): Promise<void>;
+    applied(): void;
+  },
 ): Promise<void> {
   await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
   await clickAllowed(page, { kind: 'named', name: 'Oldest to newest' }, guard);
   const dates = utcWindow(at);
   await chooseFilterDate(page, 'start', dates[0], guard);
   await chooseFilterDate(page, 'end', dates[1], guard);
-  await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+  if (evidence) {
+    evidence.readback(await filterWindowMatches(page, dates));
+    await evidence.beforeApply();
+  }
+  await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard, () =>
+    evidence?.applied(),
+  );
+}
+async function listTimeoutDiagnostic(
+  page: Page,
+  filter: ListTimeoutDiagnostic['filter'],
+  dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined,
+): Promise<ListTimeoutDiagnostic> {
+  const rows = await listTimeoutRows(page);
+  await dom?.dispose();
+  return ListTimeoutDiagnosticSchema.parse({
+    ...rows,
+    emptyStateClassKnown: false,
+    emptyStatePresent: false,
+    filter,
+    dom: dom?.summary() ?? {
+      observed: false,
+      changes: 0,
+      lastChangeAfterApplyMs: null,
+      observedForMs: 0,
+    },
+    observationFailed:
+      !rows.rowsObserved ||
+      (!!dom && dom.failed) ||
+      (filter.applied && !filter.readbackObserved),
+  });
 }
 async function navigateList(
   page: Page,
@@ -217,102 +259,129 @@ export async function loadList(
   now = new Date(),
   rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 },
 ) {
-  let navigation = await navigateList(page, expected, deps, guard, rowCounts);
-  let accountRows = navigation.entries;
-  let oldestWithinWeek: boolean | null = null;
-  if (oldest) {
-    await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
-    await clickAllowed(
-      page,
-      { kind: 'named', name: 'Oldest to newest' },
-      guard,
-    );
-    await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
-    const first = (await readAccountRows(page, expected, rowCounts)).find(
-        (row) => row.username.toLowerCase() === expected.toLowerCase(),
-      ),
-      age = first ? relativeAgeMs(first.age) : null;
-    if (age !== null)
-      oldestWithinWeek =
-        Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <= 604800000;
-    // Applying the probe sort prevents another filter dialog until navigation.
-    // This reload stays inside the same step; empty rows keep their maximum.
-    navigation = await navigateList(page, expected, deps, guard, rowCounts);
-    accountRows = navigation.entries;
-  }
-  await filterList(page, item.createdAt, guard);
-  const filteredDeadline = performance.now() + deps.responseMs;
-  await checkedAccountRows(
-    page,
-    expected,
-    filteredDeadline,
-    guard,
-    rowCounts,
-    navigation.navigationStart,
-    deps.accountObserved,
-    true,
-  );
-  let previous = JSON.stringify(
-      await readAccountRows(page, expected, rowCounts),
-    ),
-    scrollLoads = 0,
-    full = false;
-  for (let index = 0; index < 10; index++) {
-    guard();
-    const first = (await readAccountRows(page, expected, rowCounts))[0];
-    const box = first
-      ? await rows(page).nth(first.index).locator('xpath=..').boundingBox()
-      : null;
-    if (box)
-      await page.mouse.move(
-        Math.max(0, box.x + box.width / 2),
-        Math.max(0, box.y + Math.min(box.height, 400) / 2),
-      );
-    await page.mouse.wheel(0, 700);
-    await deps.sleep(deps.pace.scrollMs);
-    guard();
-    await checkPage(page);
-    const current = JSON.stringify(
-      await readAccountRows(page, expected, rowCounts),
-    );
-    if (current === previous) {
-      full = false;
-      break;
-    }
-    scrollLoads++;
-    full = index === 9;
-    previous = current;
-  }
-  const entries = await checkedAccountRows(
-    page,
-    expected,
-    filteredDeadline,
-    guard,
-    rowCounts,
-    navigation.navigationStart,
-    deps.accountObserved,
-    true,
-  );
-  return {
-    candidates: entries.filter(
-      (row) =>
-        row.username.toLowerCase() === expected.toLowerCase() &&
-        rowCandidate(row.text, item.text),
-    ),
-    account:
-      entries.find(
-        (row) => row.username.toLowerCase() === expected.toLowerCase(),
-      )?.username ??
-      accountRows.find(
-        (row) => row.username.toLowerCase() === expected.toLowerCase(),
-      )!.username,
-    rowCount: entries.length,
-    emptySkipped: rowCounts.emptySkipped,
-    otherName: rowCounts.otherName,
-    scrollLoads,
-    full,
-    oldestWithinWeek,
+  const filter = {
+    applied: false,
+    readbackObserved: false,
+    startMatches: false,
+    endMatches: false,
   };
+  let dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined;
+  try {
+    let navigation = await navigateList(page, expected, deps, guard, rowCounts);
+    let accountRows = navigation.entries;
+    let oldestWithinWeek: boolean | null = null;
+    if (oldest) {
+      await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
+      await clickAllowed(
+        page,
+        { kind: 'named', name: 'Oldest to newest' },
+        guard,
+      );
+      await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+      const first = (await readAccountRows(page, expected, rowCounts)).find(
+          (row) => row.username.toLowerCase() === expected.toLowerCase(),
+        ),
+        age = first ? relativeAgeMs(first.age) : null;
+      if (age !== null)
+        oldestWithinWeek =
+          Math.abs(now.getTime() - age - Date.parse(item.createdAt)) <=
+          604800000;
+      // Applying the probe sort prevents another filter dialog until navigation.
+      // This reload stays inside the same step; empty rows keep their maximum.
+      navigation = await navigateList(page, expected, deps, guard, rowCounts);
+      accountRows = navigation.entries;
+    }
+    await filterList(page, item.createdAt, guard, {
+      readback(value) {
+        Object.assign(filter, value);
+      },
+      async beforeApply() {
+        dom = await observeListDomChanges(page);
+      },
+      applied() {
+        filter.applied = true;
+        dom?.applied();
+      },
+    });
+    const filteredDeadline = performance.now() + deps.responseMs;
+    await checkedAccountRows(
+      page,
+      expected,
+      filteredDeadline,
+      guard,
+      rowCounts,
+      navigation.navigationStart,
+      deps.accountObserved,
+      true,
+    );
+    let previous = JSON.stringify(
+        await readAccountRows(page, expected, rowCounts),
+      ),
+      scrollLoads = 0,
+      full = false;
+    for (let index = 0; index < 10; index++) {
+      guard();
+      const first = (await readAccountRows(page, expected, rowCounts))[0];
+      const box = first
+        ? await rows(page).nth(first.index).locator('xpath=..').boundingBox()
+        : null;
+      if (box)
+        await page.mouse.move(
+          Math.max(0, box.x + box.width / 2),
+          Math.max(0, box.y + Math.min(box.height, 400) / 2),
+        );
+      await page.mouse.wheel(0, 700);
+      await deps.sleep(deps.pace.scrollMs);
+      guard();
+      await checkPage(page);
+      const current = JSON.stringify(
+        await readAccountRows(page, expected, rowCounts),
+      );
+      if (current === previous) {
+        full = false;
+        break;
+      }
+      scrollLoads++;
+      full = index === 9;
+      previous = current;
+    }
+    const entries = await checkedAccountRows(
+      page,
+      expected,
+      filteredDeadline,
+      guard,
+      rowCounts,
+      navigation.navigationStart,
+      deps.accountObserved,
+      true,
+    );
+    return {
+      candidates: entries.filter(
+        (row) =>
+          row.username.toLowerCase() === expected.toLowerCase() &&
+          rowCandidate(row.text, item.text),
+      ),
+      account:
+        entries.find(
+          (row) => row.username.toLowerCase() === expected.toLowerCase(),
+        )?.username ??
+        accountRows.find(
+          (row) => row.username.toLowerCase() === expected.toLowerCase(),
+        )!.username,
+      rowCount: entries.length,
+      emptySkipped: rowCounts.emptySkipped,
+      otherName: rowCounts.otherName,
+      scrollLoads,
+      full,
+      oldestWithinWeek,
+    };
+  } catch (error) {
+    if (error instanceof ContextStop && error.token === 'list-timeout')
+      rowCounts.listTimeout = await listTimeoutDiagnostic(page, filter, dom);
+    throw error;
+  } finally {
+    await dom?.dispose();
+  }
 }
 export async function openCandidate(
   page: Page,

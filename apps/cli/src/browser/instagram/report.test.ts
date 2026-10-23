@@ -11,6 +11,8 @@ import {
   errorClass,
   RuntimeReportSchema,
   ownFunction,
+  ContextStepReportSchema,
+  RunMemorySchema,
 } from './report.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 import { readFile } from 'node:fs/promises';
@@ -19,6 +21,101 @@ import { z } from 'zod';
 const runId = '00000000-0000-4000-8000-000000000016';
 const plantedUrl = `https://www.instagram.com/${IG_FIXTURE.other.username}/p/${IG_FIXTURE.other.code}/`;
 const ownSelectors = new URL('./selectors.ts', import.meta.url).href;
+test('C28 per-step memory is strict numeric data rather than arbitrary fields in the loose step', () => {
+  const memory = {
+    observed: true,
+    observationFailed: false,
+    jsHeapUsedMB: 4,
+    jsHeapTotalMB: 8,
+    nodes: 100,
+    documents: 2,
+    jsEventListeners: 10,
+    frames: 1,
+  };
+  expect(ContextStepReportSchema.parse({ memory })).toEqual({ memory });
+  for (const invalid of [
+    { ...memory, url: plantedUrl },
+    { ...memory, text: IG_FIXTURE.other.text },
+    { ...memory, nodes: -1 },
+    { ...memory, documents: 1.5 },
+    { ...memory, jsHeapUsedMB: 9 },
+    { ...memory, frames: Infinity },
+    { ...memory, observed: false },
+    { ...memory, nodes: null },
+  ])
+    expect(ContextStepReportSchema.safeParse({ memory: invalid }).success).toBe(
+      false,
+    );
+});
+test('C28 memory peak schema is strict and never accepts page values or a missing failure count', () => {
+  const peak = {
+    jsHeapUsedMB: 4,
+    jsHeapTotalMB: 8,
+    nodes: 100,
+    documents: 2,
+    jsEventListeners: 10,
+    frames: 1,
+  };
+  const value = {
+    samples: 4,
+    failedSamples: 1,
+    sessionAttached: true,
+    observationFailed: true,
+    peak,
+  };
+  expect(RunMemorySchema.parse(value)).toEqual(value);
+  for (const invalid of [
+    { ...value, text: IG_FIXTURE.other.text },
+    { ...value, failedSamples: 5 },
+    { ...value, peak: { ...peak, url: plantedUrl } },
+    { ...value, peak: { ...peak, jsHeapUsedMB: 9 } },
+  ])
+    expect(RunMemorySchema.safeParse(invalid).success).toBe(false);
+});
+test('C27 list-timeout diagnostic rejects raw values and malformed counts rather than relying on the loose outer step', () => {
+  const diagnostic = {
+    rowContainers: 3,
+    readableRows: 0,
+    imageOnlyRows: 3,
+    statusElementPresent: true,
+    busyElementPresent: false,
+    emptyStateClassKnown: false,
+    emptyStatePresent: false,
+    rowsObserved: true,
+    filter: {
+      applied: true,
+      readbackObserved: true,
+      startMatches: true,
+      endMatches: true,
+    },
+    dom: {
+      observed: true,
+      changes: 1,
+      lastChangeAfterApplyMs: 12,
+      observedForMs: 1500,
+    },
+    observationFailed: false,
+  };
+  expect(ContextStepReportSchema.parse({ listTimeout: diagnostic })).toEqual({
+    listTimeout: diagnostic,
+  });
+  for (const invalid of [
+    { ...diagnostic, text: IG_FIXTURE.other.text },
+    { ...diagnostic, url: plantedUrl },
+    { ...diagnostic, rowContainers: -1 },
+    { ...diagnostic, readableRows: 4 },
+    { ...diagnostic, imageOnlyRows: 1.5 },
+    { ...diagnostic, emptyStateClassKnown: false, emptyStatePresent: true },
+    {
+      ...diagnostic,
+      filter: { ...diagnostic.filter, start: IG_FIXTURE.other.time },
+    },
+    { ...diagnostic, dom: { ...diagnostic.dom, lastChangeAfterApplyMs: 1501 } },
+  ])
+    expect(
+      ContextStepReportSchema.safeParse({ listTimeout: invalid }).success,
+    ).toBe(false);
+});
 function generatedUnexpected(
   message: string,
   name = 'Error',
@@ -139,6 +236,11 @@ test.each([
   ['currentImageSource', 'selectors.ts'],
   ['confirmOnPost', 'driver.ts'],
   ['postReopenTarget', 'driver.ts'],
+  ['listTimeoutDiagnostic', 'driver.ts'],
+  ['listTimeoutRows', 'selectors.ts'],
+  ['filterWindowMatches', 'selectors.ts'],
+  ['observeListDomChanges', 'selectors.ts'],
+  ['listDiagnosticRead', 'selectors.ts'],
   ['settledPost', 'driver.ts'],
   ['blockCount', 'driver.ts'],
   ['runContextWithDependencies', 'run.ts'],

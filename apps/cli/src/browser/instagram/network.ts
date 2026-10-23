@@ -4,14 +4,23 @@ import type {
   Request,
   Response,
   Page,
+  CDPSession,
 } from 'playwright-core';
 import type { BrowserRequest } from '@socialprune/core';
-import { ContextStop, RuntimeReportSchema } from './report.ts';
+import {
+  ContextStop,
+  RuntimeReportSchema,
+  MemorySampleSchema,
+  MemoryValuesSchema,
+  RunMemorySchema,
+} from './report.ts';
 import type {
   BodyClass,
   PostRequestStatus,
   ContextCauseStage,
   RuntimeReport,
+  MemorySample,
+  MemoryValues,
 } from './report.ts';
 import {
   LimitSignals,
@@ -20,6 +29,152 @@ import {
   postPathClass,
   rateSignal,
 } from './signals.ts';
+
+/** Closed Performance metrics only; never inspect page state or remote objects. */
+export function memoryFromMetrics(
+  metrics: readonly { name: string; value: number }[],
+): MemorySample {
+  try {
+    const value = (name: string) => {
+      const matches = metrics.filter((metric) => metric.name === name);
+      if (
+        matches.length !== 1 ||
+        !Number.isFinite(matches[0]!.value) ||
+        matches[0]!.value < 0
+      )
+        throw new Error('Invalid memory metric');
+      return matches[0]!.value;
+    };
+    return MemorySampleSchema.parse({
+      observed: true,
+      observationFailed: false,
+      jsHeapUsedMB: Math.round(value('JSHeapUsedSize') / 1024 ** 2),
+      jsHeapTotalMB: Math.round(value('JSHeapTotalSize') / 1024 ** 2),
+      nodes: value('Nodes'),
+      documents: value('Documents'),
+      jsEventListeners: value('JSEventListeners'),
+      frames: value('Frames'),
+    });
+  } catch {
+    return {
+      observed: false,
+      observationFailed: true,
+      jsHeapUsedMB: null,
+      jsHeapTotalMB: null,
+      nodes: null,
+      documents: null,
+      jsEventListeners: null,
+      frames: null,
+    };
+  }
+}
+
+/** One persistent CDP session per owned reading page, reused and detached once. */
+export function observePageMemory(page: Page) {
+  let client: CDPSession | undefined,
+    disposed = false,
+    failed = false,
+    attached = false;
+  let samples = 0,
+    failedSamples = 0,
+    peak: MemoryValues | null = null;
+  const bounded = async <T>(action: () => Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        action(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Memory observation expired')),
+            1000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const detach = async (session: CDPSession) => {
+    try {
+      await bounded(() => session.detach());
+    } catch {
+      failed = true;
+    }
+  };
+  const ready = bounded(async () => {
+    const session = await page.context().newCDPSession(page);
+    if (disposed) {
+      await detach(session);
+      return;
+    }
+    client = session;
+    await session.send('Performance.enable');
+    if (!disposed) attached = true;
+  }).catch(async () => {
+    failed = true;
+    const session = client;
+    client = undefined;
+    disposed = true;
+    if (session) await detach(session);
+  });
+  return {
+    async sample(): Promise<MemorySample> {
+      samples++;
+      let result = memoryFromMetrics([]);
+      try {
+        await ready;
+        if (disposed || !client || !attached)
+          throw new Error('Memory observation unavailable');
+        result = memoryFromMetrics(
+          (await bounded(() => client!.send('Performance.getMetrics'))).metrics,
+        );
+      } catch {
+        failed = true;
+      }
+      if (result.observed) {
+        const values = MemoryValuesSchema.parse({
+          jsHeapUsedMB: result.jsHeapUsedMB,
+          jsHeapTotalMB: result.jsHeapTotalMB,
+          nodes: result.nodes,
+          documents: result.documents,
+          jsEventListeners: result.jsEventListeners,
+          frames: result.frames,
+        });
+        peak = peak
+          ? MemoryValuesSchema.parse(
+              Object.fromEntries(
+                Object.entries(values).map(([key, value]) => [
+                  key,
+                  Math.max(value, peak![key as keyof MemoryValues]),
+                ]),
+              ),
+            )
+          : values;
+      } else {
+        failedSamples++;
+        failed = true;
+      }
+      return result;
+    },
+    summary() {
+      return RunMemorySchema.parse({
+        samples,
+        failedSamples,
+        sessionAttached: attached,
+        observationFailed: failed,
+        peak,
+      });
+    },
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      await ready;
+      const session = client;
+      client = undefined;
+      if (session) await detach(session);
+    },
+  };
+}
 
 /** Passive observation of the run's explicitly owned pages, never a new guard. */
 export function observeContextRuntime(

@@ -86,7 +86,12 @@ export const FIXTURE = {
 export function fixtureWorkspace(
   ids: readonly string[] = FIXTURE.rows.map((row) => row.id),
 ): WorkspaceV2 {
-  const chosen = FIXTURE.rows.filter((row) => ids.includes(row.id));
+  const chosen = [
+    ...FIXTURE.rows.filter((row) => ids.includes(row.id)),
+    ...ids
+      .filter((id) => !FIXTURE.rows.some((row) => row.id === id))
+      .map((id) => ({ ...FIXTURE.rows[0], id, text: `Generated post ${id}` })),
+  ];
   const base = createWorkspace({
     id: 'fixture-workspace',
     timeZone: 'Europe/Berlin',
@@ -98,7 +103,7 @@ export function fixtureWorkspace(
     account: { ...FIXTURE.account },
     kind: row.kind,
     text: row.text,
-    createdAt: `2020-01-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`,
+    createdAt: new Date(Date.UTC(2020, 0, index + 1, 12)).toISOString(),
     engagement: { likes: 0, reposts: 0 },
     reference: {
       replyToId: null,

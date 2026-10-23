@@ -434,13 +434,17 @@ export const RunViewSchema = z
     if (view.phase === 'idle') return;
     const { mode, pace, today } = view;
     const boundedOrder = mode === 'fill' || mode === 'context';
-    const minSeconds = mode === 'delete' ? 30 : 10;
+    const minSeconds = mode === 'delete' ? 8 : 10;
     const maxBatch = mode === 'verify' ? 100 : 20;
     const maxCap =
       mode === 'verify'
         ? 100
         : mode === 'delete'
-          ? 200
+          ? pace.secondsPerStep >= 30
+            ? 200
+            : pace.secondsPerStep >= 15
+              ? 300
+              : 500
           : mode === 'fill'
             ? 300
             : 600;
@@ -457,7 +461,8 @@ export const RunViewSchema = z
       today.cap > maxCap ||
       (view.phase === 'batch-pause' && view.remainingMs > pace.batchPauseMs) ||
       (view.phase === 'reload-wait' && view.canary) ||
-      (mode !== 'fill' && ['rate-wait', 'reload-wait'].includes(view.phase))
+      (view.phase === 'rate-wait' && mode !== 'fill' && mode !== 'delete') ||
+      (view.phase === 'reload-wait' && mode !== 'fill')
     )
       ctx.addIssue({
         code: 'custom',

@@ -518,6 +518,63 @@ test('all monitor phases parse with their required phase-specific evidence', () 
   }
 });
 
+test('DEL-1 deletion views carry the three pace bounds and rate waits, not reload waits', () => {
+  const base = running();
+  for (const [seconds, cap] of [
+    [30, 200],
+    [15, 300],
+    [8, 500],
+  ]) {
+    const view = {
+      ...base,
+      mode: 'delete',
+      canary: false,
+      journal: [],
+      currentEntry: { ...base.currentEntry, action: 'delete-post' },
+      pace: { ...base.pace, secondsPerStep: seconds },
+      today: { ...base.today, cap },
+    };
+    expect(RunViewSchema.safeParse(view).success).toBe(true);
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        phase: 'rate-wait',
+        remainingMs: 965000,
+        resetAt: time,
+      }).success,
+    ).toBe(true);
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        phase: 'reload-wait',
+        remainingMs: 60000,
+        until: time,
+        reload: 1,
+      }).success,
+    ).toBe(false);
+  }
+  const deletion = {
+    ...base,
+    mode: 'delete',
+    canary: false,
+    journal: [],
+    currentEntry: { ...base.currentEntry, action: 'delete-post' },
+  };
+  for (const [seconds, cap] of [
+    [7.999, 500],
+    [8, 501],
+    [15, 301],
+    [30, 201],
+  ])
+    expect(
+      RunViewSchema.safeParse({
+        ...deletion,
+        pace: { ...base.pace, secondsPerStep: seconds },
+        today: { ...base.today, cap },
+      }).success,
+    ).toBe(false);
+});
+
 test('monitor bounds reject malformed nested data and keep counts, headers and profile read-back explicit', () => {
   const base = running();
   const instagram = {

@@ -1,4 +1,6 @@
 import { setTimeout as wait } from 'node:timers/promises';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { CliError } from '../cli/errors.ts';
 import type { SQLiteStore } from '../workspace/sqlite-store.ts';
 import type {
@@ -31,6 +33,11 @@ import type { Pace } from './pace.ts';
 import type { WindowPlacement } from './launch.ts';
 import { entryView } from './run-session.ts';
 import type { RunSession } from './run-session.ts';
+import { cleanDeletions, deletionPace } from './x/delete-pace.ts';
+import { XResponseWindows } from './x/rate-windows.ts';
+import { errorStop } from './x/fill/report.ts';
+import { rateWindow } from './confirmation-state.ts';
+import type { XRateWindow } from '@socialprune/core/workspace/desktop-protocol';
 
 export interface RunOptions {
   session?: RunSession;
@@ -155,6 +162,16 @@ export async function runWithDependencies(
   let began = false;
   let error: unknown;
   let completed = 0;
+  let rateLimited = false;
+  let longWindow = false;
+  const rateController = new AbortController();
+  const waitSignal = AbortSignal.any([options.signal, rateController.signal]);
+  let rejectRateLimit: (error: CliError) => void = () => {};
+  const rateStop = new Promise<never>((_resolve, reject) => {
+    rejectRateLimit = reject;
+  });
+  void rateStop.catch(() => undefined);
+  const desktopWindows = new Map<string, XRateWindow>();
   const controller = new AbortController();
   const abort = () => controller.abort();
   options.signal.addEventListener('abort', abort, { once: true });
@@ -163,6 +180,8 @@ export async function runWithDependencies(
   process.on('SIGINT', signalHandler);
   process.on('SIGTERM', signalHandler);
   const checkStop = () => {
+    if (rateLimited)
+      throw new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
     if (
       options.signal.aborted ||
       controller.signal.aborted ||
@@ -195,6 +214,38 @@ export async function runWithDependencies(
       record: (request) => writer.request(run.runId, request),
       windowPlacement: options.windowPlacement,
       desktop: Boolean(options.session),
+      now: () => options.now(),
+      onRateLimit() {
+        rateLimited = true;
+        rejectRateLimit(
+          new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429'),
+        );
+        rateController.abort();
+      },
+      onWindow(url, headers) {
+        if (!options.session) return;
+        const limit = Number(headers['x-rate-limit-limit']),
+          remaining = Number(headers['x-rate-limit-remaining']),
+          reset = Number(headers['x-rate-limit-reset']);
+        if (
+          [limit, remaining, reset].every(Number.isSafeInteger) &&
+          limit > 0 &&
+          remaining >= 0 &&
+          reset * 1000 >= options.now().getTime() - 86400000 &&
+          reset * 1000 <= options.now().getTime() + 366 * 86400000
+        ) {
+          const operation =
+            new URL(url).pathname.match(
+              /^\/i\/api\/graphql\/[^/]+\/([A-Za-z0-9_]{1,64})\/?$/,
+            )?.[1] ?? 'other';
+          const window = rateWindow(operation, limit, remaining, reset * 1000);
+          desktopWindows.set(
+            `${window.operation}|${window.operationName ?? ''}`,
+            window,
+          );
+          options.session.update({ xWindows: [...desktopWindows.values()] });
+        }
+      },
     });
     if (!options.session)
       await browser.showConfirmation(confirmation.launchUrl);
@@ -250,10 +301,14 @@ export async function runWithDependencies(
           ms,
           (duration, signal) => dependencies.sleep(duration, signal),
           resumeChecks,
-          controller.signal,
+          AbortSignal.any([controller.signal, waitSignal]),
           (remaining, next) => options.session?.waiting(remaining, next),
         );
-      else await dependencies.sleep(ms, controller.signal);
+      else
+        await dependencies.sleep(
+          ms,
+          AbortSignal.any([controller.signal, waitSignal]),
+        );
     };
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
       throw new CliError('PLATFORM_CHECK');
@@ -292,7 +347,80 @@ export async function runWithDependencies(
       ? Math.max(...priorStarts)
       : null;
     let batch = 0;
-    const pace = dependencies.pace;
+    let lastPace = '';
+    const windows = browser.rateWindows ?? new XResponseWindows();
+    const effectivePace = async () => {
+      if (options.verify) return dependencies.pace;
+      const stage = deletionPace(
+        cleanDeletions(
+          await options.store.browserJournal(),
+          options.plan.accountKey,
+        ),
+        windows,
+        options.now().getTime(),
+      );
+      const pace = {
+        ...dependencies.pace,
+        // Scale injected clocks with the same production stage ratios.
+        intervalMs: Math.ceil(
+          (dependencies.pace.intervalMs * stage.intervalMs) / 30000,
+        ),
+        perDay: Math.min(
+          stage.perDay,
+          options.perDay ??
+            (dependencies.pace.perDay === 200
+              ? stage.perDay
+              : dependencies.pace.perDay),
+        ),
+      };
+      const paceKey = `${pace.intervalMs}|${pace.perDay}`;
+      if (paceKey !== lastPace) {
+        options.notice(
+          options.lang === 'de'
+            ? `Löschtempo: mindestens ${pace.intervalMs / 1000} Sekunden zwischen Einträgen, höchstens ${pace.perDay} pro Kalendertag (${options.plan.timeZone}).\n`
+            : `Deletion pace: at least ${pace.intervalMs / 1000} seconds between entries, at most ${pace.perDay} per calendar day (${options.plan.timeZone}).\n`,
+        );
+        lastPace = paceKey;
+      }
+      options.session?.update({
+        pace: {
+          secondsPerStep: pace.intervalMs / 1000,
+          batchSize: pace.batchSize,
+          batchPauseMs: pace.pauseMs,
+        },
+        today: {
+          date: day,
+          timeZone: options.plan.timeZone,
+          used,
+          cap: pace.perDay,
+          unit: 'pages',
+          sharedWithXDeleteAndFill: true,
+        },
+      });
+      return pace;
+    };
+    const windowReady = async () => {
+      if (options.verify) return true;
+      for (;;) {
+        checkStop();
+        const window = windows.beforeDeletion(options.now().getTime());
+        if (window.kind === 'ready') return true;
+        if (window.kind === 'long') {
+          longWindow = true;
+          run.endReason = 'daily-cap';
+          return false;
+        }
+        options.session?.update({
+          phase: 'rate-wait',
+          remainingMs: window.ms,
+          resetAt: new Date(
+            options.now().getTime() + window.ms - 5000,
+          ).toISOString(),
+        });
+        await Promise.race([boundaryWait(window.ms), rateStop]);
+        options.session?.update({ phase: 'running' });
+      }
+    };
     const ready = async () => {
       checkStop();
       const pausedBefore = controls?.pausedMs ?? 0;
@@ -301,6 +429,8 @@ export async function runWithDependencies(
         previousStart += (controls?.pausedMs ?? 0) - pausedBefore;
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError('PLATFORM_CHECK');
+      if (!(await windowReady())) return false;
+      let pace = await effectivePace();
       if (
         dateInZone(options.now(), options.plan.timeZone) !== day ||
         used >= pace.perDay
@@ -318,18 +448,22 @@ export async function runWithDependencies(
         options.session?.update({ phase: 'running' });
         batch = 0;
       }
-      const delay =
-        previousStart === null
-          ? 0
-          : Math.max(
-              0,
-              previousStart + pace.intervalMs - options.now().getTime(),
-            );
-      if (delay) {
+      for (;;) {
+        if (!(await windowReady())) return false;
+        pace = await effectivePace();
+        const delay =
+          previousStart === null
+            ? 0
+            : Math.max(
+                0,
+                previousStart + pace.intervalMs - options.now().getTime(),
+              );
+        if (!delay) break;
         options.session?.update({
           nextStepAt: new Date(options.now().getTime() + delay).toISOString(),
         });
         await boundaryWait(delay);
+        checkStop();
       }
       checkStop();
       if (dateInZone(options.now(), options.plan.timeZone) !== day) {
@@ -338,6 +472,8 @@ export async function runWithDependencies(
       }
       if (extensionsChanged(before, await profileSnapshot(options.profile)))
         throw new CliError('PLATFORM_CHECK');
+      // The page can have delivered another window while the pace timer ran.
+      if (!(await windowReady())) return false;
       await controls?.checkpoint(resumeChecks, controller.signal);
       previousStart = options.now().getTime();
       return true;
@@ -460,6 +596,11 @@ export async function runWithDependencies(
         used++;
         batch++;
         checkStop();
+        if (!(await windowReady())) break;
+        if (dateInZone(options.now(), options.plan.timeZone) !== day) {
+          run.endReason = 'daily-cap';
+          break;
+        }
         if (state === 'gone') {
           await writer.record({
             attemptId: crypto.randomUUID(),
@@ -485,6 +626,7 @@ export async function runWithDependencies(
         await deleteOne(writer, browser, row, sending, run, () =>
           options.now(),
         );
+        checkStop();
         completed++;
         options.session?.progress(
           used,
@@ -515,7 +657,11 @@ export async function runWithDependencies(
                 : `First ${row.action} completed. Check the platform tab before Continue. Post: https://x.com/i/web/status/${row.item.id.slice(2)}`,
           });
           if (
-            !(await Promise.race([confirmation.wait('continue'), cancelWait]))
+            !(await Promise.race([
+              confirmation.wait('continue'),
+              cancelWait,
+              rateStop,
+            ]))
           )
             throw new CliError('CANCELLED');
         }
@@ -523,19 +669,21 @@ export async function runWithDependencies(
     }
     run.endReason ??= 'done';
   } catch (caught) {
-    error = caught;
+    error = rateLimited
+      ? new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429')
+      : caught;
     run.endReason =
       controller.signal.aborted ||
       options.signal.aborted ||
       (caught instanceof CliError && caught.code === 'CANCELLED')
         ? 'stopped-by-person'
-        : caught instanceof CliError &&
+        : error instanceof CliError &&
             [
               'PLATFORM_CHECK',
               'ACCOUNT_MISMATCH',
               'PROFILE_INVALID',
               'PAGE_LANGUAGE',
-            ].includes(caught.code)
+            ].includes(error.code)
           ? 'platform-check'
           : 'error';
   } finally {
@@ -577,6 +725,15 @@ export async function runWithDependencies(
           run.endReason = 'platform-check';
           error ??= new CliError('PLATFORM_CHECK');
         }
+        if (rateLimited) {
+          error = new CliError(
+            'PLATFORM_CHECK',
+            undefined,
+            undefined,
+            'http-429',
+          );
+          run.endReason = 'platform-check';
+        }
         run.endedAt = options.now().toISOString();
         await writer.finish(run);
         const report = await writeExtensionReport(
@@ -587,6 +744,26 @@ export async function runWithDependencies(
           run.profileReport,
           browser?.abortedHosts,
         );
+        if (!options.verify) {
+          const detail = error ? errorStop(error) : null;
+          const path = join(
+            options.profile,
+            `socialprune-delete-${run.runId}.json`,
+          );
+          await writeFile(
+            path,
+            JSON.stringify({
+              xWindows: browser?.rateWindows?.summary() ?? [],
+              stop:
+                detail ??
+                (longWindow
+                  ? { code: 'daily-cap', reason: 'x-window-long' }
+                  : null),
+            }),
+            { flag: 'wx' },
+          );
+          options.notice(`Structure report: ${path}\n`);
+        }
         options.notice(
           `Extensions disabled for this run. Before: ${JSON.stringify(before.extensionIds)}; after: ${JSON.stringify(after.extensionIds)}. Profile report: ${report}\n`,
         );
@@ -608,6 +785,14 @@ export async function runWithDependencies(
       );
     } finally {
       try {
+        if (error) {
+          const detail = errorStop(error);
+          options.notice(`Stop detail: ${detail.reason ?? detail.code}\n`);
+        } else if (longWindow) options.notice('Stop detail: x-window-long\n');
+        if (browser?.rateWindows)
+          options.notice(
+            `X windows: ${JSON.stringify(browser.rateWindows.summary())}\n`,
+          );
         confirmation.update({
           phase: 'ended',
           completed,
@@ -636,6 +821,7 @@ export async function runWithDependencies(
             began
               ? await profileSnapshot(options.profile).catch(() => undefined)
               : undefined,
+            longWindow ? 'x-window-long' : undefined,
           );
         }
         options.notice(
@@ -720,7 +906,10 @@ async function deleteOne(
     },
     answer.state === 'deleted' ? 'deleted-via-browser' : undefined,
   );
-  if (answer.state !== 'deleted') throw new CliError('RUN_STOPPED');
+  if (answer.state !== 'deleted')
+    throw new CliError(
+      answer.code === 'CONFIRMATION_MISSING' ? 'DELETE_FAILED' : 'RUN_STOPPED',
+    );
 }
 export async function runBrowser(options: RunOptions) {
   const pace = productionPace(

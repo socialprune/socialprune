@@ -10,6 +10,7 @@ import {
   waitForBrowserClose,
 } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
+import { XResponseWindows } from './rate-windows.ts';
 
 export const X_ORIGIN = 'https://x.com';
 export const X_ALLOWED_HOSTS = Object.freeze([
@@ -51,6 +52,7 @@ export interface BrowserDriver {
   flush(): Promise<void>;
   close(): Promise<void>;
   abortedHosts?: Record<string, number>;
+  rateWindows?: XResponseWindows;
   language?(): Promise<string>;
 }
 export async function pageDriver(options: {
@@ -62,6 +64,9 @@ export async function pageDriver(options: {
   signal?: AbortSignal;
   record(request: BrowserRequest): Promise<void>;
   desktop?: boolean;
+  now?: () => Date;
+  onRateLimit?: () => void;
+  onWindow?: (url: string, headers: Record<string, string>) => void;
 }): Promise<BrowserDriver> {
   const context = options.context;
   // Keep the CLI confirmation page selection unchanged. Desktop launch tabs
@@ -76,6 +81,18 @@ export async function pageDriver(options: {
   const pending = new Set<Promise<void>>();
   const requestIds = new WeakMap<object, BrowserRequest>();
   const abortedHosts: Record<string, number> = {};
+  const rateWindows = new XResponseWindows(
+    options.origin === X_ORIGIN ? undefined : options.origin,
+  );
+  let rateLimited = false;
+  let projectionError: Error | undefined;
+  let rejectRateLimit: (error: CliError) => void = () => {};
+  const rateStop = new Promise<never>((_resolve, reject) => {
+    rejectRateLimit = reject;
+  });
+  void rateStop.catch(() => undefined);
+  const rateError = () =>
+    new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
   await restrictOrigins(
     context,
     [
@@ -98,7 +115,7 @@ export async function pageDriver(options: {
     const request = route.request();
     const url = new URL(request.url());
     if (
-      options.signal?.aborted &&
+      (options.signal?.aborted || rateLimited) &&
       url.origin !== options.confirmationOrigin &&
       request.method() !== 'GET'
     ) {
@@ -143,12 +160,32 @@ export async function pageDriver(options: {
     await route.fallback();
   });
   context.on('response', (response) => {
+    if (rateWindows.accepts(response.url())) {
+      if (response.status() === 429) {
+        rateLimited = true;
+        rejectRateLimit(rateError());
+        options.onRateLimit?.();
+      }
+      rateWindows.observe(
+        response.url(),
+        response.headers(),
+        options.now?.().getTime() ?? Date.now(),
+      );
+      try {
+        options.onWindow?.(response.url(), response.headers());
+      } catch (error) {
+        projectionError =
+          error instanceof Error ? error : new CliError('RUN_STOPPED');
+      }
+    }
     const record = requestIds.get(response.request());
     if (record)
       observe(options.record({ ...record, status: response.status() }));
   });
   if (options.desktop) platform = local = await freshPlatformPage(context);
   const guard = (checkStop = true) => {
+    if (rateLimited) throw rateError();
+    if (projectionError) throw projectionError;
     if (checkStop && options.signal?.aborted) throw new CliError('CANCELLED');
     if (mutation) throw new CliError('UNEXPECTED_ACTION');
     if (prohibited || platform?.isClosed())
@@ -161,6 +198,7 @@ export async function pageDriver(options: {
   };
   return {
     abortedHosts,
+    rateWindows,
     async language() {
       return (await page(false))
         .locator('html')
@@ -178,10 +216,13 @@ export async function pageDriver(options: {
           timeout: 30_000,
         });
       guard(false);
-      return xSelectors.account(
-        current,
-        Math.min(20_000, options.responseTimeoutMs),
-      );
+      return Promise.race([
+        xSelectors.account(
+          current,
+          Math.min(20_000, options.responseTimeoutMs),
+        ),
+        rateStop,
+      ]);
     },
     async inspect(id) {
       const current = await page();
@@ -199,11 +240,14 @@ export async function pageDriver(options: {
         !new URL(current.url()).pathname.endsWith(`/status/${id}`)
       )
         throw new CliError('PLATFORM_CHECK');
-      return xSelectors.state(
-        current,
-        id,
-        Math.min(20_000, options.responseTimeoutMs),
-      );
+      return Promise.race([
+        xSelectors.state(
+          current,
+          id,
+          Math.min(20_000, options.responseTimeoutMs),
+        ),
+        rateStop,
+      ]);
     },
     async delete(id, action) {
       guard();
@@ -243,15 +287,28 @@ export async function pageDriver(options: {
         .catch(() => null);
       const startingUrl = current.url();
       guard();
+      if (
+        rateWindows.beforeDeletion(options.now?.().getTime() ?? Date.now())
+          .kind !== 'ready'
+      )
+        throw new CliError(
+          'PLATFORM_CHECK',
+          undefined,
+          undefined,
+          'marker-rate-limit',
+        );
       expectedMutation = operation;
       try {
-        await final.click({ timeout: options.responseTimeoutMs });
+        await Promise.race([
+          final.click({ timeout: options.responseTimeoutMs }),
+          rateStop,
+        ]);
       } catch {
-        await response;
+        await Promise.race([response, rateStop]);
         expectedMutation = null;
         return { state: 'ambiguous', code: 'CLICK_INTERRUPTED' };
       }
-      const answer = await response;
+      const answer = await Promise.race([response, rateStop]);
       expectedMutation = null;
       if (!answer || current.isClosed() || current.url() !== startingUrl)
         return { state: 'ambiguous', code: 'RESPONSE_UNKNOWN' };
@@ -263,8 +320,9 @@ export async function pageDriver(options: {
       };
       let body: unknown;
       try {
-        body = await answer.json();
+        body = await Promise.race([answer.json(), rateStop]);
       } catch {
+        guard();
         return { state: 'failed', code: 'INVALID_RESPONSE', receipt };
       }
       receipt.shape = bodyShape(body);
@@ -278,9 +336,12 @@ export async function pageDriver(options: {
       )
         return { state: 'failed', code: 'PLATFORM_RESPONSE', receipt };
       try {
-        await current
-          .getByTestId('toast')
-          .waitFor({ state: 'visible', timeout: options.responseTimeoutMs });
+        await Promise.race([
+          current
+            .getByTestId('toast')
+            .waitFor({ state: 'visible', timeout: options.responseTimeoutMs }),
+          rateStop,
+        ]);
         guard();
         if (!(await xSelectors.confirmation(current, action)))
           return { state: 'failed', code: 'CONFIRMATION_MISSING', receipt };
@@ -310,6 +371,9 @@ export async function productionDriver(options: {
   record(request: BrowserRequest): Promise<void>;
   windowPlacement?: WindowPlacement;
   desktop?: boolean;
+  now?: () => Date;
+  onRateLimit?: () => void;
+  onWindow?: (url: string, headers: Record<string, string>) => void;
 }): Promise<BrowserDriver> {
   const context = await launchRunBrowser(
     options.profile,
@@ -327,6 +391,9 @@ export async function productionDriver(options: {
     signal: options.signal,
     record: (request) => options.record(request),
     desktop: options.desktop,
+    now: options.now,
+    onRateLimit: options.onRateLimit,
+    onWindow: options.onWindow,
   });
   return {
     ...driver,

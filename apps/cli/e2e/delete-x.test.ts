@@ -102,12 +102,14 @@ async function harness(
   fake.variants.clear();
   fake.gone.clear();
   fake.requests.length = 0;
+  fake.rateHeaders.clear();
   fake.setHandle(FIXTURE.account.handle);
   fake.setLanguage(false);
   fake.setAccessibleOnly(false);
   fake.renderOptions({});
   const plan = await planDeletion(store, workspace.items[0]!.account.key);
   let started!: () => void;
+  let virtualWaits = false;
   let shown = new Promise<void>((resolve) => {
     started = resolve;
   });
@@ -141,7 +143,9 @@ async function harness(
         async sleep(ms, signal) {
           waits.push(ms);
           if (signal.aborted) throw new Error('Aborted');
-          await new Promise((resolve) => setTimeout(resolve, ms));
+          await new Promise((resolve) =>
+            setTimeout(resolve, virtualWaits ? 1 : ms),
+          );
           now += ms;
         },
         async driver(options) {
@@ -180,6 +184,9 @@ async function harness(
             responseTimeoutMs: 5_000,
             signal: options.signal,
             record: (request) => options.record(request),
+            now: options.now,
+            onRateLimit: options.onRateLimit,
+            onWindow: options.onWindow,
           });
           return {
             ...driver,
@@ -269,6 +276,9 @@ async function harness(
     store,
     plan,
     waits,
+    virtualWaits() {
+      virtualWaits = true;
+    },
     notices,
     network,
     launchUrls,
@@ -375,7 +385,7 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     });
     expect(
       fake.requests.filter((r) => r.method === 'POST').map((r) => r.path),
-    ).toEqual(['/graphql/generated/DeleteTweet']);
+    ).toEqual(['/i/api/graphql/generated/DeleteTweet']);
     expect(
       h.network.every((url) =>
         [TEST_ORIGINS.x, TEST_ORIGINS.confirmation].includes(
@@ -389,6 +399,185 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     await h.close();
   }
 });
+
+test.each([
+  [26, 120, null],
+  [25, 120, 125000],
+  [24, 960, 965000],
+  [24, 961, 'long'],
+] as const)(
+  'DEL-1 deletion windows reserve half (%s remaining, reset %s seconds)',
+  async (remaining, seconds, expectedWait) => {
+    const h = await harness(['1001', '1002']);
+    h.virtualWaits();
+    fake.rateHeaders.set('1001', {
+      'x-rate-limit-limit': '50',
+      'x-rate-limit-remaining': String(remaining),
+      'x-rate-limit-reset': String(Date.parse(FIXTURE.now) / 1000 + seconds),
+    });
+    try {
+      const running = h.launch(false, {
+        intervalMs: 0,
+        perDay: 200,
+        pauseMs: 0,
+        batchSize: 20,
+      });
+      await h.click('Start');
+      await h.click('Continue');
+      expect(await running).toMatchObject({
+        completed: expectedWait === 'long' ? 1 : 2,
+        endReason: expectedWait === 'long' ? 'daily-cap' : 'done',
+      });
+      expect(
+        fake.requests.filter((r) => r.method === 'POST').map((r) => r.id),
+      ).toEqual(expectedWait === 'long' ? ['1001'] : ['1001', '1002']);
+      if (typeof expectedWait === 'number')
+        expect(h.waits).toContain(expectedWait);
+      else expect(h.waits).toEqual([]);
+      if (expectedWait === 'long')
+        expect(h.notices).toContain('Stop detail: x-window-long\n');
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'profile', `socialprune-delete-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { xWindows: unknown[]; stop: unknown };
+      expect(report.xWindows).toContainEqual({
+        operation: 'DeleteTweet',
+        limit: 50,
+        lowestRemaining: remaining,
+        responses: 1,
+        longestResetSeconds: seconds,
+      });
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test.each(['429', 'side-429', 'unconfirmed'] as const)(
+  'DEL-1 first %s stops with a closed detail and no second request',
+  async (variant) => {
+    const h = await harness(['1001', '1002']);
+    fake.variants.set('1001', variant);
+    try {
+      const running = h.launch().catch((error: unknown) => error);
+      await h.click('Start');
+      expect(await running).toMatchObject(
+        variant === 'unconfirmed'
+          ? { code: 'DELETE_FAILED' }
+          : { code: 'PLATFORM_CHECK', reason: 'http-429' },
+      );
+      const journal = await h.store.browserJournal();
+      expect(fake.requests.some((r) => r.id === '1002')).toBe(false);
+      expect(journal.attempts.map((a) => a.state)).toEqual(
+        variant === 'side-429' ? [] : ['sending', 'failed'],
+      );
+      expect(journal.runs[0]!.endReason).toBe(
+        variant === 'unconfirmed' ? 'error' : 'platform-check',
+      );
+      expect(h.notices).toContain(
+        `Stop detail: ${variant === 'unconfirmed' ? 'DELETE_FAILED' : 'http-429'}\n`,
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test.each([false, true])(
+  'DEL-1 clean hundred promotes the next page to 15/300 or live-window 8/500, fast=%s',
+  async (fast) => {
+    const ids = Array.from({ length: 102 }, (_, index) => String(2000 + index));
+    const h = await harness(ids);
+    h.virtualWaits();
+    try {
+      const writer = h.store.browserOutcomeWriter();
+      const run = {
+        runId: 'generated-clean-99',
+        platform: 'x' as const,
+        accountKey: FIXTURE.account.key,
+        mode: 'delete' as const,
+        planHash: h.plan.hash,
+        startedAt: FIXTURE.now,
+        endedAt: null,
+        endReason: null,
+        bodyShapes: {},
+        profileReport: null,
+      };
+      await writer.begin(run);
+      for (const row of h.plan.rows.slice(0, 99)) {
+        const sending = (await writer.check(
+          row,
+          run.runId,
+          FIXTURE.now,
+          true,
+        ))!;
+        await writer.settle(
+          {
+            attemptId: `confirmed-${row.item.id}`,
+            runId: run.runId,
+            itemId: row.item.id,
+            action: row.action,
+            state: 'deleted',
+            settles: sending.attemptId,
+            at: FIXTURE.now,
+            code: null,
+            receipt: {
+              method: 'POST',
+              path: '/i/api/graphql/generated/DeleteTweet',
+              status: 200,
+              shape: ['data'],
+            },
+          },
+          'deleted-via-browser',
+        );
+      }
+      if (fast)
+        fake.rateHeaders.set(ids[99]!, {
+          'x-rate-limit-limit': '1000',
+          'x-rate-limit-remaining': '900',
+          'x-rate-limit-reset': String(Date.parse(FIXTURE.now) / 1000 + 900),
+        });
+      // Earlier signed-in page reads consume the shared day budget as well.
+      for (let page = 0; page < 199; page++)
+        await writer.pageOpen(run.runId, FIXTURE.now);
+      await writer.finish({ ...run, endedAt: FIXTURE.now, endReason: 'done' });
+      const plan = await planDeletion(h.store, FIXTURE.account.key);
+      h.plan.rows = plan.rows;
+      h.plan.hash = plan.hash;
+      const running = h.launch(false, {
+        intervalMs: 30000,
+        perDay: 200,
+        pauseMs: 900000,
+        batchSize: 20,
+      });
+      await h.click('Start');
+      await h.click('Continue');
+      expect(await running).toMatchObject({ completed: 3, endReason: 'done' });
+      expect(h.waits).toEqual(
+        fast ? [30000, 8000, 8000] : [30000, 15000, 15000],
+      );
+      expect(
+        h.notices.some((text) =>
+          text.includes(
+            fast
+              ? 'at most 500 per calendar day'
+              : 'at most 300 per calendar day',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        (await h.store.browserJournal()).attempts.filter(
+          (a) => a.state === 'deleted',
+        ),
+      ).toHaveLength(102);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test('a disabled browser can remove two preinstalled extension IDs and the run still reaches X', async () => {
   const h = await harness(['1001']);

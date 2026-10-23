@@ -62,8 +62,9 @@ export const readinessHashes = {
   'packaging/window-readiness.cs':
     '177e81204e8e449fe05b3406ab783ae99d3e5498c10eb87cb35bb7732f537655',
   'packaging/window-readiness.ps1':
-    // R32 refreshes only the terminal diagnostic sample, after readiness.
-    'c4f18f7d163cdb15eeb85b4f6658370abfcac16d7717224fab31cfc3250a6057',
+    // R43 targets feed criteria without invoking it; focus/on-screen remain
+    // required, and invoke/keyboard capability are now required explicitly.
+    '4d89dd38436753a1a9984ca6390036ad493d682d89d1eb40bd312185e5f5ec95',
   'packaging/window-readiness.ts':
     '62bdeeaa26ed9845ed4c64e7af277e262239f7d157a3aefcfe6a2cda8a5b0329',
 };

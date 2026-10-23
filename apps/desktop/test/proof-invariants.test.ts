@@ -29,14 +29,16 @@ test('planted focus and visibility predicate changes fail the independent frozen
   const file = 'packaging/window-readiness.ps1';
   const source = await readFile(join(directory, file), 'utf8');
   expect(() => assertReadinessPredicate(file, source)).not.toThrow();
-  const mutation = source.replace(
+  for (const predicate of [
     '$last.focusResult -and -not $last.offscreen',
-    '$true',
-  );
-  expect(mutation).not.toBe(source);
-  expect(() => assertReadinessPredicate(file, mutation)).toThrow(
-    'READINESS_PREDICATE_CHANGED',
-  );
+    '$last.invokeAvailable -and $last.keyboardFocusable',
+  ]) {
+    const mutation = source.replace(predicate, '$true');
+    expect(mutation).not.toBe(source);
+    expect(() => assertReadinessPredicate(file, mutation)).toThrow(
+      'READINESS_PREDICATE_CHANGED',
+    );
+  }
 });
 
 test('restricted launch semantics reject weakened groups, token flags and unowned children without a whole-file pin', async () => {

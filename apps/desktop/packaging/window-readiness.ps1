@@ -16,7 +16,7 @@ function Wait-AppWindow {
   $clock = [Diagnostics.Stopwatch]::StartNew()
   $iterations = 0
   $firstWindowMs = $null
-  $firstKeepMs = $null
+  $firstActionMs = $null
   $maximumWalkMs = 0
   $last = $null
   $state = 'observing'
@@ -38,7 +38,7 @@ function Wait-AppWindow {
   $condition = New-Object System.Windows.Automation.AndCondition($pidCondition, $nameCondition)
   $saveReceipt = {
     $selection = if ($desktop) { @{ source = $desktop.Source; requestedAccess = 65; probeDesktopMatches = $desktop.ProbeDesktopMatches } } else { $null }
-    $value = [ordered]@{ version = 1; state = $state; mode = $Mode; branch = $branch; appProcessId = $AppProcessId; sessionId = $sessionId; windowStationVisible = $stationVisible; desktopSelection = $selection; nativeFailure = $nativeFailure; firstAppObservation = $firstAppObservation; appObservation = $appObservation; maximumEnumeratedWindows = $maximumEnumeratedWindows; firstOwnedWindowMs = $firstOwnedWindowMs; emptyEnumerations = $emptyEnumerations; timeoutMs = $TimeoutMs; elapsedMs = $clock.ElapsedMilliseconds; iterations = $iterations; firstWindowMs = $firstWindowMs; firstKeepMs = $firstKeepMs; maximumWalkMs = $maximumWalkMs; errorId = $errorId; last = $last }
+    $value = [ordered]@{ version = 1; state = $state; mode = $Mode; branch = $branch; appProcessId = $AppProcessId; sessionId = $sessionId; windowStationVisible = $stationVisible; desktopSelection = $selection; nativeFailure = $nativeFailure; firstAppObservation = $firstAppObservation; appObservation = $appObservation; maximumEnumeratedWindows = $maximumEnumeratedWindows; firstOwnedWindowMs = $firstOwnedWindowMs; emptyEnumerations = $emptyEnumerations; timeoutMs = $TimeoutMs; elapsedMs = $clock.ElapsedMilliseconds; iterations = $iterations; firstWindowMs = $firstWindowMs; firstActionMs = $firstActionMs; maximumWalkMs = $maximumWalkMs; errorId = $errorId; last = $last }
     $text = $value | ConvertTo-Json -Depth 9 -Compress
     [IO.File]::WriteAllText($Receipt, $text, [Text.UTF8Encoding]::new($false))
     if ($state -ne 'observing') { [Console]::Error.WriteLine('WINDOW_READINESS_RECEIPT ' + $text) }
@@ -51,7 +51,7 @@ function Wait-AppWindow {
     $desktop = [ReadinessWindows]::OpenOwned($AppProcessId, $DesktopPath)
     do {
       $iterations++
-      $last = [ordered]@{ stage = 'window-lookup'; windowFound = $false; rootWindowFound = $null; nativeWindowCount = 0; windowProcessMatched = $null; windowNameMatched = $null; keepCount = 0; enabledKeepCount = 0; enabled = $null; focusAttempted = $false; focusResult = $null; focusError = $null; offscreen = $null; keyboardFocusable = $null; invokeAvailable = $null; navigationFound = $false; walkMs = $null }
+      $last = [ordered]@{ stage = 'window-lookup'; windowFound = $false; rootWindowFound = $null; nativeWindowCount = 0; windowProcessMatched = $null; windowNameMatched = $null; actionKind = 'review-criteria'; actionCount = 0; enabledActionCount = 0; enabled = $null; focusAttempted = $false; focusResult = $null; focusError = $null; offscreen = $null; keyboardFocusable = $null; invokeAvailable = $null; navigationFound = $false; walkMs = $null }
       & $saveReceipt
       if ($OnPoll) { $null = & $OnPoll }
       if ($clock.ElapsedMilliseconds -ge $nextAppObservationMs) {
@@ -88,13 +88,20 @@ function Wait-AppWindow {
         $walk.Stop()
         $last.walkMs = $walk.ElapsedMilliseconds
         $maximumWalkMs = [Math]::Max($maximumWalkMs, $walk.ElapsedMilliseconds)
-        $keep = @($nodes | Where-Object { $_.Current.Name -match '^Keep(\s|$)' -and $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button })
-        $last.keepCount = $keep.Count
-        $enabledKeep = @($keep | Where-Object { $_.Current.IsEnabled })
-        $last.enabledKeepCount = $enabledKeep.Count
-        if ($keep.Count) {
-          if ($null -eq $firstKeepMs) { $firstKeepMs = $clock.ElapsedMilliseconds }
-          $action = if ($enabledKeep.Count) { $enabledKeep[0] } else { $keep[0] }
+        # The criteria button exists on the empty first start and becomes
+        # Change when criteria are selected. Unlike the options menu trigger,
+        # these ordinary buttons expose InvokePattern on the shipped renderer.
+        # Focus proves an interactive frame without invoking a decision or menu.
+        # WinPS 5.1 reads a BOM-less script in its legacy code page. Construct
+        # the two German labels as Unicode so the shipped UI names match there.
+        $actionNames = @('Choose criteria', ('Kriterien w' + [char]0x00E4 + 'hlen'), 'Change', ([string][char]0x00C4 + 'ndern'))
+        $actions = @($nodes | Where-Object { $_.Current.Name -in $actionNames -and $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button })
+        $last.actionCount = $actions.Count
+        $enabledActions = @($actions | Where-Object { $_.Current.IsEnabled })
+        $last.enabledActionCount = $enabledActions.Count
+        if ($actions.Count) {
+          if ($null -eq $firstActionMs) { $firstActionMs = $clock.ElapsedMilliseconds }
+          $action = if ($enabledActions.Count) { $enabledActions[0] } else { $actions[0] }
           $last.enabled = $action.Current.IsEnabled
           $last.offscreen = $action.Current.IsOffscreen
           $bounds = $action.Current.BoundingRectangle
@@ -110,13 +117,13 @@ function Wait-AppWindow {
             try { $action.SetFocus(); $last.focusResult = $action.Current.HasKeyboardFocus }
             catch [System.InvalidOperationException] { $last.focusResult = $false; $last.focusError = 'InvalidOperationException' }
           } else { $last.focusResult = $action.Current.HasKeyboardFocus }
-          if ($last.enabled -and $Mode -eq 'ObserveAction') {
+          if ($last.enabled -and $last.invokeAvailable -and $last.keyboardFocusable -and $Mode -eq 'ObserveAction') {
             $state = 'ready'; $branch = 'observe-action'
             return @{ window = $candidate; action = $action; interactiveAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); branch = $branch }
           }
           # HWND discovery fixes the demonstrated station mismatch. Focus and
           # on-screen readback remain mandatory; capability alone is not a pass.
-          if ($Mode -eq 'ReviewAction' -and $last.enabled -and $last.focusResult -and -not $last.offscreen) {
+          if ($Mode -eq 'ReviewAction' -and $last.enabled -and $last.focusResult -and -not $last.offscreen -and $last.invokeAvailable -and $last.keyboardFocusable) {
             $state = 'ready'; $branch = 'focus-readback'
             return @{ window = $candidate; interactiveAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); branch = $branch }
           }

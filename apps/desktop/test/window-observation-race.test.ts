@@ -46,7 +46,7 @@ $window=[System.Windows.Window]::new()
 $window.Title='SocialPrune'
 [System.Windows.Automation.AutomationProperties]::SetName($window,'SocialPrune')
 $window.Width=600;$window.Height=400
-$button=[System.Windows.Controls.Button]::new();$button.Content='Keep K';$window.Content=$button
+$button=[System.Windows.Controls.Button]::new();$button.Content='Choose criteria';$window.Content=$button
 $null=$window.ShowDialog()
 `,
       );

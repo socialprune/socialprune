@@ -102,8 +102,9 @@ test('N1 overwrite selection and N2 page binding are mandatory for preview comma
   };
   expect(WorkspaceRequestSchema.parse(preview)).toEqual(preview);
   expect(
-    HttpReviewRequestSchema.parse({ ...preview, skipPopular: true }),
-  ).toEqual({ ...preview, skipPopular: true });
+    HttpReviewRequestSchema.safeParse({ ...preview, skipPopular: true })
+      .success,
+  ).toBe(false);
   expect(
     WorkspaceRequestSchema.safeParse({ ...preview, skipPopular: false })
       .success,

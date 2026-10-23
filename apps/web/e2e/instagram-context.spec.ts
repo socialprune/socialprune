@@ -237,6 +237,7 @@ test('Pages retains backed-up Instagram context but shows only each existing fal
     ).toEqual([]);
     await page.goto('/socialprune/#/review');
     const card = page.getByTestId('review-card');
+    await page.getByRole('tab', { name: /^All,/ }).click();
     await expect(card).toContainText('Instagram does not include the post.');
     await expect(page.getByTestId('instagram-post')).toHaveCount(0);
     await page.getByRole('button', { name: 'Menu', exact: true }).click();

@@ -377,6 +377,7 @@ test('setup imports the generated demo and review decisions travel through the b
     page.getByRole('heading', { name: en['review.title'], exact: true }),
   ).toBeVisible();
   await expect(page.getByTestId('review-card')).toBeVisible();
+  await page.getByRole('tab', { name: /^All,/ }).click();
   const before = (await bridge.snapshot()).decisionEvents.length;
   await page.getByRole('button', { name: /^Keep/ }).first().click();
   await expect
@@ -389,7 +390,12 @@ test('setup imports the generated demo and review decisions travel through the b
     true,
   );
   const beforeUndo = (await bridge.snapshot()).decisionEvents.length;
-  await page.getByRole('button', { name: /^Undo/ }).first().click();
+  await page
+    .getByRole('button', { name: en['reviewFeed.options'], exact: true })
+    .click();
+  await page
+    .getByRole('menuitem', { name: en['review.undo'], exact: true })
+    .click();
   await expect
     .poll(async () => (await bridge.snapshot()).decisionEvents.length)
     .toBe(beforeUndo + 1);
@@ -468,8 +474,9 @@ test('review and click-list post links share the same desktop interceptor', asyn
     .getByRole('button', { name: en['review.title'], exact: true })
     .click();
   await expect(page.getByTestId('review-card')).toBeVisible();
+  await page.getByRole('tab', { name: /^All,/ }).click();
   await page
-    .getByRole('button', { name: /^Delete/ })
+    .getByRole('button', { name: /^Mark M/ })
     .first()
     .click();
   await expect

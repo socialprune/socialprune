@@ -1,306 +1,276 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
-import { observeImport, waitForApp } from './helpers.ts';
 import {
-  feedFixture,
-  feedExpected,
-  largeFeedFixture,
-} from '../test/feed-fixture.ts';
+  restoreLiveFeed,
+  liveExpected,
+  liveFeedFixture,
+} from './feed-fixture.ts';
+import { observeImport } from './helpers.ts';
 import { checkAccessibility } from './accessibility.ts';
 
-async function restoreFeed(page: Page, data = feedFixture(), total = 6) {
-  await waitForApp(page);
-  const result = await page.evaluate(
-    (text) =>
-      window.workspace.request({
-        type: 'restore',
-        requestId: crypto.randomUUID(),
-        file: new File([text], 'generated-feed.json'),
-      }),
-    JSON.stringify(data),
-  );
-  expect(result.type).toBe('opened');
-  await page.goto('/socialprune/#/review');
-  await expect(
-    page.getByTestId('review-card').locator('article'),
-  ).toBeVisible();
-  await page
-    .getByTestId('card-review')
-    .getByRole('button', { name: 'All', exact: true })
-    .click();
-  await expect(page.getByTestId('feed-count')).toHaveText(
-    `0 of ${total} decided`,
-  );
-}
-
-test('overview orders current suggestions, badges own popular entries, preserves dimmed decisions and warns in frozen preview under network audit', async ({
+test('all six real-service tabs, local decision states and counted human plan under network audit', async ({
   page,
   context,
 }) => {
   const audit = await observeImport(context, page);
-  await restoreFeed(page);
-  const feed = page.getByTestId('review-overview');
-  const cards = feed.getByTestId('feed-card');
-  expect(
-    await cards.evaluateAll((entries) =>
-      entries.map((entry) => entry.getAttribute('data-item-id')),
-    ),
-  ).toEqual(feedExpected.order);
-  await expect(feed).toContainText('from 8 likes');
-  const popular = feed.locator(`li[data-item-id="${feedExpected.popular[0]}"]`);
-  await expect(popular.getByTestId('popular-badge')).toHaveText(
-    'popular with you · 13',
+  await restoreLiveFeed(page);
+  const feed = page.getByRole('feed');
+  await expect(page.locator('main h1')).toHaveCount(1);
+  for (const [name, ids] of [
+    ['Suggested for deletion', liveExpected.suggested],
+    ['Held back by your rules', liveExpected.held],
+    ['Kept', liveExpected.kept],
+    ['Unclear', liveExpected.unclear],
+    ['Marked', liveExpected.marked],
+  ] as const) {
+    await page.getByRole('tab', { name: new RegExp(`^${name},`) }).click();
+    await expect(feed).toHaveAttribute('aria-busy', 'false');
+    await expect
+      .poll(() =>
+        feed
+          .locator('article')
+          .evaluateAll((rows) =>
+            rows.map((row) => row.getAttribute('data-item-id')),
+          ),
+      )
+      .toEqual([...ids]);
+  }
+  await page.getByRole('tab', { name: /^Held back by your rules,/ }).click();
+  await expect(feed).toContainText('14 likes');
+  await expect(feed.getByRole('button', { name: /Mark anyway/ })).toBeVisible();
+  await page.getByRole('tab', { name: /^All,/ }).click();
+  const heldInAll = feed.locator(
+    `article[data-item-id="${liveExpected.held[0]}"]`,
   );
-  await expect(feed.getByTestId('popular-badge')).toHaveCount(2);
-  await expect(popular.locator('blockquote')).toHaveText(feedExpected.quote);
-  await expect(popular).toContainText('Generated suggestion for feed 19.');
-  const first = cards.first();
-  await first.getByRole('button', { name: 'Keep K', exact: true }).click();
-  await expect(first).toHaveAttribute('data-decided', 'true');
-  await expect(feed.getByTestId('feed-count')).toHaveText('1 of 6 decided');
-  await expect(cards).toHaveCount(6);
-  const kept = await page.evaluate(
-    (itemId) =>
-      window.workspace.request({
-        type: 'detail',
-        requestId: crypto.randomUUID(),
-        itemId,
-      }),
-    feedExpected.order[0],
-  );
-  expect(kept.type).toBe('itemDetail');
-  if (kept.type !== 'itemDetail') throw new Error('No fixture detail');
-  expect(kept.events.at(-1)).toMatchObject({
-    value: 'keep',
-    source: { kind: 'human', via: 'web-review' },
-  });
-  await cards.nth(1).focus();
-  await page.keyboard.press('j');
-  await expect(cards.nth(1)).toHaveAttribute('data-decided', 'true');
-  await expect(feed.getByTestId('feed-count')).toHaveText('2 of 6 decided');
-  await cards.nth(2).focus();
-  await page.keyboard.press('l');
-  await expect(feed.getByTestId('feed-count')).toHaveText('3 of 6 decided');
-  await cards.nth(2).focus();
+  await expect(
+    heldInAll.getByRole('button', { name: /Mark anyway/ }),
+  ).toBeVisible();
+  await heldInAll.getByRole('button', { name: /Mark anyway/ }).click();
+  await expect(heldInAll).toHaveAttribute('data-decision', 'delete');
+  await heldInAll.focus();
   await page.keyboard.press('u');
-  await expect(feed.getByTestId('feed-count')).toHaveText('2 of 6 decided');
-  await expect(cards.nth(2)).toHaveAttribute('data-decided', 'false');
-  await feed
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
+  await expect(heldInAll).toHaveAttribute('data-decision', 'undecided');
+  await page.getByRole('tab', { name: /^Suggested for deletion,/ }).click();
+  const first = feed.locator('article').first();
+  await first.focus();
+  await page.keyboard.press('j');
+  await expect(first).toHaveAttribute('data-decision', 'undecided');
+  await page.keyboard.press('k');
+  await expect(first).toHaveAttribute('data-decision', 'keep');
+  await expect(first).toBeFocused();
+  await expect(
+    page.getByRole('tab', { name: /^Suggested for deletion,/ }),
+  ).toHaveAccessibleName('Suggested for deletion, 2 entries');
+  await feed.locator('article').nth(1).focus();
+  await page.keyboard.press('l');
+  await expect(feed.locator('article').nth(1)).toHaveAttribute(
+    'data-decision',
+    'later',
+  );
+  await page
+    .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
     .click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByTestId('bulk-popular-count')).toHaveText(
-    '2 popular entries are left out. Decide on them one by one.',
-  );
-  expect(
-    await dialog.getByRole('heading').evaluate((heading) => {
-      const box = heading.getBoundingClientRect();
-      return !!document
-        .elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
-        ?.closest('[role="dialog"]');
-    }),
-  ).toBe(true);
-  await expect(
-    dialog.getByRole('button', {
-      name: 'Mark for deletion: 2 entries',
-      exact: true,
-    }),
-  ).toBeEnabled();
+  await expect(dialog).toContainText('The 3 under Unclear stay as they are.');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(first).toHaveAttribute('data-decided', 'true');
-  await popular.getByRole('button', { name: 'Keep K', exact: true }).click();
-  await feed
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
+  await page
+    .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
     .click();
-  await expect(dialog.getByTestId('bulk-popular-count')).toHaveText(
-    '1 popular entry is left out. Decide on them one by one.',
+  await dialog
+    .getByRole('button', { name: 'Mark 1 entry', exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    'Marked, 2 entries',
   );
-  await dialog.getByRole('checkbox').check();
-  await expect(dialog.getByTestId('bulk-popular-count')).toHaveText(
-    '2 popular entries are left out. Decide on them one by one.',
-  );
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const plans = await page.evaluate(async () => {
+    let text = '';
+    await window.workspace.backup(async (file) => {
+      text = await file.text();
+    });
+    return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
+  });
+  expect(plans.reviewPlans).toHaveLength(1);
+  expect(
+    plans.decisionEvents
+      .filter((event) => event.action.id === plans.reviewPlans![0]!.actionId)
+      .map((event) => event.itemId),
+  ).toEqual(['x:feed-3']);
   await checkAccessibility(page, context);
   await audit.assert();
 });
 
-test('large overview virtualizes and counts popular preview entries beyond its sample under network audit', async ({
+test('bounded card windows, full-query keyboard jumps and persisted tab anchor', async ({
   page,
-  context,
 }) => {
-  const audit = await observeImport(context, page);
-  await restoreFeed(page, largeFeedFixture(), 100);
-  const feed = page.getByTestId('review-overview');
-  await expect(feed.getByTestId('feed-card').first()).toHaveAttribute(
-    'data-item-id',
-    'x:large-feed-0099',
-  );
-  expect(await feed.getByTestId('feed-card').count()).toBeLessThan(30);
-  await expect(feed).toContainText('from 90 likes');
+  await restoreLiveFeed(page, liveFeedFixture(650));
+  const feed = page.getByRole('feed');
+  await expect(feed.locator('article').first()).toBeVisible();
+  expect(await feed.locator('article').count()).toBeLessThanOrEqual(30);
+  await feed.locator('article').first().focus();
+  await page.keyboard.press('End');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('648');
+  expect(await feed.locator('article').count()).toBeLessThanOrEqual(300);
+  await page.keyboard.press('Home');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('1');
+  await page.getByRole('tab', { name: /^All,/ }).click();
+  await expect(feed).toHaveAttribute('aria-busy', 'false');
   await feed
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
-    .click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByTestId('bulk-popular-count')).toHaveText(
-    '10 popular entries are left out. Decide on them one by one.',
+    .locator('article')
+    .nth(10)
+    .evaluate((article) => article.scrollIntoView({ block: 'start' }));
+  let savedAnchor: string | undefined;
+  await expect
+    .poll(async () => {
+      const result = await page.evaluate(() => window.workspace.open());
+      savedAnchor =
+        result.type === 'opened'
+          ? result.summary.review?.feed?.anchors.all
+          : undefined;
+      return savedAnchor;
+    })
+    .toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    'All, 650 entries',
   );
+  await expect(feed.locator('article').first()).toHaveAttribute(
+    'data-item-id',
+    savedAnchor!,
+  );
+  await feed.locator('article').first().focus();
+  await page.keyboard.press('Control+End');
+  await expect(page.getByRole('tabpanel')).toBeFocused();
+  await feed.locator('article').first().focus();
+  await page.keyboard.press('Control+Home');
   await expect(
-    dialog.getByRole('button', {
-      name: 'Mark for deletion: 90 entries',
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await feed.locator('ul').evaluate((list) => {
-    list.parentElement!.scrollTop = list.parentElement!.scrollHeight;
-  });
-  await expect(
-    feed.locator('li[data-item-id="x:large-feed-0000"]'),
-  ).toBeVisible();
-  expect(await feed.getByTestId('feed-card').count()).toBeLessThan(30);
-  await feed.locator('li[data-item-id="x:large-feed-0000"]').focus();
-  await page.keyboard.press('k');
-  await expect(feed.getByTestId('feed-count')).toHaveText('1 of 100 decided');
-  await expect(
-    feed.locator('li[data-item-id="x:large-feed-0000"]'),
-  ).toHaveAttribute('data-decided', 'true');
-  await audit.assert();
+    page.getByRole('heading', { name: 'Review', exact: true }).last(),
+  ).toBeFocused();
 });
 
-test('overview consumes and writes account filter search sort, mode stays local and Instagram is not popular', async ({
+test('a second page makes the plan stale; the changed preview requires another human confirmation', async ({
   page,
   context,
 }) => {
-  const audit = await observeImport(context, page);
-  const data = feedFixture();
-  data.settings.review!.search = 'Generated feed';
-  await restoreFeed(page, data);
-  const feed = page.getByTestId('review-overview');
-  const search = feed.getByRole('searchbox', {
-    name: 'Search the text',
+  await restoreLiveFeed(page);
+  await page.locator('footer button').click();
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('button', { name: 'Mark 3 entries', exact: true }),
+  ).toBeEnabled();
+  const second = await context.newPage();
+  await second.goto('/socialprune/#/review');
+  await expect(
+    second.getByRole('feed').locator('article').first(),
+  ).toBeVisible();
+  await second.getByRole('feed').locator('article').first().focus();
+  await second.keyboard.press('k');
+  await expect(
+    second.getByRole('feed').locator('article').first(),
+  ).toHaveAttribute('data-decision', 'keep');
+  await dialog
+    .getByRole('button', { name: 'Mark 3 entries', exact: true })
+    .click();
+  await expect(dialog.getByRole('status')).toContainText(
+    'New suggestions or changes arrived',
+  );
+  await expect(
+    dialog.getByRole('button', { name: 'Mark 2 entries', exact: true }),
+  ).toBeEnabled();
+  const before = await page.evaluate(async () => {
+    let text = '';
+    await window.workspace.backup(async (file) => {
+      text = await file.text();
+    });
+    return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
+  });
+  expect(before.reviewPlans).toHaveLength(0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await second.close();
+});
+
+test('new workspace first start and Instagram plan use the real shared settings and platform path', async ({
+  page,
+}) => {
+  const data = liveFeedFixture();
+  data.settings.criteria!.selected = [];
+  await restoreLiveFeed(page, data);
+  await expect(
+    page.getByRole('heading', { name: 'Choose first what should go.' }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Choose criteria', exact: true })
+    .click();
+  await page
+    .getByRole('checkbox', { name: /Political/ })
+    .first()
+    .check();
+  await page
+    .getByRole('button', { name: 'Use these criteria', exact: true })
+    .click();
+  await expect(page.getByRole('tab', { selected: true })).toBeFocused();
+  await expect(page.getByRole('feed').locator('article').first()).toBeVisible();
+  await page
+    .getByRole('combobox', { name: 'Account', exact: true })
+    .selectOption(liveExpected.instagram);
+  await expect(page.getByRole('feed')).toContainText('Invented comment');
+  await page
+    .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'You delete them afterwards with the click list.',
+  );
+});
+
+test('feed undo and keyboard-only final mark retain human decisions in German dark at 320 px', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem('sp-locale', 'de');
+    localStorage.setItem('sp-theme', 'dark');
+  });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await restoreLiveFeed(page);
+  const card = page.getByRole('feed').locator('article').first();
+  await expect(card).toBeVisible();
+  await checkAccessibility(page, context);
+  await card.focus();
+  await page.keyboard.press('k');
+  await expect(card).toHaveAttribute('data-decision', 'keep');
+  await page.keyboard.press('Control+z');
+  const restored = page.getByRole('feed').locator('article').first();
+  await expect(restored).toHaveAttribute('data-decision', 'undecided');
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    'Löschvorschläge, 3 Einträge',
+  );
+  await restored.focus();
+  await page.keyboard.press('Control+End');
+  const mark = page.locator('footer button');
+  await expect(mark).toBeFocused();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await checkAccessibility(page, context);
+  const confirm = dialog.getByRole('button', {
+    name: '3 Einträge vormerken',
     exact: true,
   });
-  await expect(search).toHaveValue('Generated feed');
-  await feed
-    .getByRole('combobox', { name: 'Sort by', exact: true })
-    .selectOption('createdAt');
-  await expect(feed.getByTestId('feed-card').first()).toHaveAttribute(
-    'data-item-id',
-    feedExpected.newest,
+  for (
+    let n = 0;
+    n < 12 &&
+    !(await confirm.evaluate((element) => element === document.activeElement));
+    n++
+  )
+    await page.keyboard.press('Tab');
+  await expect(confirm).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    'Vorgemerkt, 4 Einträge',
   );
-  await search.fill('feed 19:');
-  await expect(feed.getByTestId('feed-card')).toHaveCount(1);
-  await expect
-    .poll(async () => {
-      const result = await page.evaluate(() => window.workspace.open());
-      return result.type === 'opened' ? result.summary.review?.search : null;
-    })
-    .toBe('feed 19:');
-  await page.reload();
-  await expect(page.getByTestId('review-card')).toBeVisible();
-  await expect(feed).toHaveCount(0);
-  await page
-    .getByTestId('card-review')
-    .getByRole('button', { name: 'All', exact: true })
-    .click();
-  await expect(search).toHaveValue('feed 19:');
-  await expect(
-    feed.getByRole('combobox', { name: 'Sort by', exact: true }),
-  ).toHaveValue('createdAt');
-  await expect(feed.getByTestId('feed-card')).toHaveCount(1);
-  await search.fill('');
-  await feed
-    .getByRole('combobox', { name: 'Account', exact: true })
-    .selectOption('synthetic-comment');
-  await expect(feed.getByTestId('feed-card')).toHaveCount(1);
-  await expect(feed.getByTestId('feed-card')).toContainText(
-    'Invented Instagram comment.',
-  );
-  await expect(feed.getByTestId('popular-badge')).toHaveCount(0);
-  await expect(feed).not.toContainText('from 8 likes');
-  await expect
-    .poll(async () => {
-      const result = await page.evaluate(() => window.workspace.open());
-      return result.type === 'opened'
-        ? result.summary.review?.accountKey
-        : null;
-    })
-    .toBe('synthetic-comment');
-  await audit.assert();
-});
-
-test('list bulk preview retains existing query and human confirmation while adding the popular count', async ({
-  page,
-  context,
-}) => {
-  const audit = await observeImport(context, page);
-  await restoreFeed(page);
-  await page.goto('/socialprune/#/review/list');
-  await expect(page.getByRole('grid')).toBeVisible();
-  await expect(page.getByRole('row').first()).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
-    .click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByTestId('bulk-popular-count')).toHaveText(
-    '2 popular entries are left out. Decide on them one by one.',
-  );
-  await expect(
-    dialog.getByRole('button', {
-      name: 'Mark for deletion: 4 entries',
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await dialog
-    .getByRole('button', { name: 'Mark for deletion: 4 entries', exact: true })
-    .click();
-  await expect(dialog).toHaveCount(0);
-  await expect
-    .poll(async () => {
-      const reply = await page.evaluate(() => window.workspace.open());
-      return reply.type === 'opened' ? reply.summary.decisions.delete : -1;
-    })
-    .toBe(4);
-  for (const itemId of feedExpected.popular) {
-    const detail = await page.evaluate(
-      (id) =>
-        window.workspace.request({
-          type: 'detail',
-          requestId: crypto.randomUUID(),
-          itemId: id,
-        }),
-      itemId,
-    );
-    expect(detail.type).toBe('itemDetail');
-    if (detail.type !== 'itemDetail')
-      throw new Error('Missing popular fixture');
-    expect(detail.events).toEqual([]);
-  }
-  await page.goto('/socialprune/#/review');
-  await expect(page.getByTestId('review-card')).toBeVisible();
-  await page
-    .getByTestId('card-review')
-    .getByRole('button', { name: 'All', exact: true })
-    .click();
-  const feed = page.getByTestId('review-overview');
-  await expect(feed.getByTestId('popular-waiting-count')).toHaveText(
-    '2 popular entries still wait',
-  );
-  await feed
-    .getByRole('checkbox', {
-      name: 'Only popular undecided entries',
-      exact: true,
-    })
-    .check();
-  await expect(feed.getByTestId('feed-card')).toHaveCount(2);
-  await feed
-    .getByTestId('feed-card')
-    .first()
-    .getByRole('button', { name: 'Keep K', exact: true })
-    .click();
-  await expect(feed.getByTestId('popular-waiting-count')).toHaveText(
-    '1 popular entry still waits',
-  );
-  await expect(feed.getByTestId('feed-card')).toHaveCount(1);
-  await audit.assert();
 });

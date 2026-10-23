@@ -24,7 +24,7 @@ The review combines local export content, a reason and source for every suggesti
 
 The person has an export and reviews one account at a time. They choose content criteria, set numerical or date rules, obtain suggestions, read the feed, keep exceptions and confirm a counted preview. A separately authorized platform run follows later. The browser works offline after the shell has loaded. The local review and desktop read the person's local workspace.
 
-This design phase uses invented entries only. Its sheet has no workspace, worker, network client or platform action. Screenshots are the maintainer's review material, not evidence of a completed data flow.
+The design sheet uses invented entries only and has no workspace, worker, network client or platform action. Slice 3 also connects the feed to the real workspace client and captures generated workspaces for review. Neither harness uses a real export or acts on a platform.
 
 ## Capabilities and Constraints
 
@@ -34,7 +34,7 @@ This design phase uses invented entries only. Its sheet has no workspace, worker
 - The tab order is suggestions, held back, kept, unclear, marked and all. The final mark includes only undecided eligible suggestions, never unclear entries or held-back entries.
 - Own media remains a count under ADR-021. Stored reply context precedes the person's post; quoted context sits below its text. No remote avatar, font or media is fetched.
 - The incumbent design authority is [the design specification](README.md), with CSS Modules, system fonts, checked contrast pairs, German and English catalogs, dark mode and forced colors.
-- The source choice, real dataset integration, migrations, virtualized data windows and platform deletion are outside this phase.
+- The source choice, real-export integration and platform deletion stay outside slice 3. Its bounded virtualized windows consume the existing schema and service; migrations were built in slice 1.
 
 The private plan's first two sections describe the original product. Its early prohibition on platform actions has since been superseded by the dated maintainer decisions recorded in AGENTS.md. This document follows those newer decisions and does not copy private details.
 
@@ -44,7 +44,7 @@ SocialPrune speaks directly, without judging the person or making promises about
 
 ## Evidence on Hand
 
-The repository has generated export fixtures in `fixtures/synthetic/demo/`, example suggestions, a working card review, an All view and an archive. None establishes classifier quality. This task adds screenshots of invented states for visual review. No real-user study, measured classifier result or usability claim is supplied.
+The repository has generated export fixtures in `fixtures/synthetic/demo/`, example suggestions and an archive. Slice 3 connects the six feed tabs, human decisions and frozen plan preview to the real workspace client. None establishes classifier quality. Its screenshots show generated states for visual review; no real-user study, measured classifier result or usability claim is supplied.
 
 ## Product Principles
 
@@ -58,11 +58,11 @@ The repository has generated export fixtures in `fixtures/synthetic/demo/`, exam
 
 WCAG 2.2 AA is the target. The feed uses labelled articles and scoped, switchable keys. Buttons remain visible without shortcuts. Labels, icons and text accompany every state. Layout reflows at 320 px; post text stays at least 16 px, consequential targets at least 44 px. Dialogs trap and return focus. Reduced motion, forced colors and German text expansion are part of visual verification. NVDA and VoiceOver remain manual acceptance gates, not claims made by screenshots.
 
-## Assumptions awaiting the maintainer's confirmation
+## Design A, accepted by the maintainer
 
 - A1: The preferred desktop review is one continuous reading column with a small contextual side summary, not a dense moderation table. Recommended because his task is reading and keeping exceptions.
 - A2: Keep is the visually leading per-entry action; the counted final mark is the leading page action. Recommended because exceptions, rather than thousands of individual marks, drive his flow.
 - A3: Criteria and rules open as an ordinary full-width editing surface rather than a narrow modal. Recommended so descriptions, own criteria and numerical controls stay readable on a phone.
 - A4: A quiet in-place decided state is preferable to removing the card immediately. Recommended to preserve position and focus.
 
-These are design recommendations, not newly accepted product decisions. The requested task replaces the skill's interview step with explicit assumptions; no interview or standing workflow preference was inferred.
+The maintainer accepted A1 to A4 as Design A and ordered slice 3 on 2026-10-22. The feed now connects these choices to the existing workspace contract; full rule and own-criterion editing remain slice 4. No Impeccable launcher or live mode is part of the implementation.

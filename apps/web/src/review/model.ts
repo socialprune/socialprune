@@ -39,6 +39,10 @@ export const categoryMessage = {
   empty: 'review.categoryEmpty',
   harmless: 'review.categoryHarmless',
   unclear: 'review.categoryUnclear',
+  racist: 'reviewFeed.categoryRacist',
+  misogynistic: 'reviewFeed.categoryMisogynistic',
+  'group-hostility': 'reviewFeed.categoryGroupHostility',
+  'politically-incorrect': 'reviewFeed.categoryIncorrect',
 } as const;
 export function letterDecision(
   key: string,

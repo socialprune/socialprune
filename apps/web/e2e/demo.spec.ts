@@ -95,6 +95,9 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
     );
     expect(databases).toContain('sp-ws-demo');
     const grid = page.getByRole('grid');
+    await page
+      .getByRole('combobox', { name: 'Sort by', exact: true })
+      .selectOption('risk');
     await expect(
       grid.getByText('Example', { exact: true }).first(),
     ).toBeVisible();
@@ -113,12 +116,13 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
         .map(({ id }) => id),
     );
     const suggested = new Set(
-      expected.assessments
-        .filter(({ risk, itemId }) => risk >= 2 && xIds.has(itemId))
-        .map(({ itemId }) => itemId),
+      expected.items.filter((item) => xIds.has(item.id)).map((item) => item.id),
     );
     await page
-      .getByRole('button', { name: 'Mark suggested entries', exact: true })
+      .getByRole('button', {
+        name: 'Mark for deletion for all in this view',
+        exact: true,
+      })
       .click();
     const dialog = page.getByRole('dialog');
     await expect(
@@ -194,6 +198,9 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
     await page.getByRole('link', { name: 'Review', exact: true }).click();
     await expect(page.getByTestId('card-review')).toBeVisible();
     await listView(page);
+    await page
+      .getByRole('combobox', { name: 'Sort by', exact: true })
+      .selectOption('risk');
     const listAccount = page
       .getByTestId('review')
       .getByRole('combobox', { name: 'Account', exact: true });

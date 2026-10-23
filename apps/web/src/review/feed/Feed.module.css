@@ -1,10 +1,11 @@
 @layer components {
   .review {
-    max-width: 680px;
+    max-width: none;
     margin-inline: auto;
     min-width: 0;
     background: var(--color-surface);
-    border-inline: var(--border-width) solid var(--color-social-divider);
+    border: var(--border-width) solid var(--color-social-divider);
+    border-radius: var(--radius-social);
     height: 100%;
     width: 100%;
     display: flex;
@@ -17,6 +18,14 @@
     flex: 1;
     scroll-padding-block: var(--space-3);
     scrollbar-color: var(--color-boundary) var(--color-surface);
+  }
+  .ruleSummary {
+    font-size: var(--type-sm);
+    padding-left: var(--space-4);
+  }
+  .windowButton {
+    margin: var(--space-3);
+    color: var(--color-action);
   }
   .feedHeader {
     padding: var(--space-2) var(--space-4);
@@ -37,10 +46,9 @@
     gap: var(--space-2);
   }
   .titleRow {
-    justify-content: space-between;
-    flex-wrap: wrap;
+    display: none;
   }
-  .titleRow h1 {
+  .titleRow h2 {
     margin: 0;
     font-size: var(--type-md);
     line-height: var(--line-md);
@@ -57,12 +65,17 @@
   }
   .criteriaSummary {
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     margin-top: 0;
     font-size: var(--type-xs);
   }
   .criteriaSummary > span {
-    overflow-wrap: anywhere;
+    min-width: 0;
+    overflow-wrap: normal;
+    flex: 1;
+  }
+  .criteriaSummary > button {
+    white-space: nowrap;
   }
   .textButton {
     color: var(--color-action);
@@ -75,24 +88,53 @@
     text-decoration: underline;
     text-underline-offset: var(--space-1);
   }
+  .tabNavigation {
+    display: flex;
+    align-items: stretch;
+    border-block: 1px solid var(--color-social-divider);
+    background: var(--color-surface);
+  }
+  .tabScroll {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    min-width: 44px;
+    min-height: 52px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+  .tabScroll:disabled {
+    opacity: 0.35;
+  }
+  .tabScroll:hover:not(:disabled) {
+    background: var(--color-social-hint);
+  }
   .tabs {
     position: relative;
     display: flex;
-    flex: none;
+    flex: 1;
+    min-width: 0;
     overflow-x: auto;
     scrollbar-width: thin;
-    border-block: var(--border-width) solid var(--color-social-divider);
-    padding: var(--space-1) var(--space-2);
-    gap: var(--space-1);
+    border: 0;
+    padding: 0;
+    gap: 0;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
   }
   .tabs button {
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: var(--space-2);
-    padding: var(--space-2);
+    min-width: 44px;
+    min-height: 52px;
+    padding: 12px;
     border-color: transparent;
-    border-radius: var(--radius-control);
+    border-radius: 0;
     font-size: var(--type-xs);
     flex: 0 0 auto;
     white-space: nowrap;
@@ -102,9 +144,14 @@
     text-align: start;
   }
   .tabs button[aria-selected='true'] {
-    background: var(--color-selected-bg);
-    color: var(--color-action);
+    background: var(--color-social-hint);
+    color: var(--color-text);
     font-weight: var(--weight-heading);
+    box-shadow: inset 0 -3px var(--color-action);
+  }
+  .tabs button {
+    border: 0;
+    outline-offset: -3px;
   }
   .tabs button:hover {
     border-color: var(--color-boundary);
@@ -129,14 +176,15 @@
     background: var(--color-social-hint);
     font-size: var(--type-xs);
     line-height: var(--line-xs);
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    padding-block: var(--space-2);
   }
   .unchecked > span {
     flex: 1;
     min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: normal;
+    flex-basis: 160px;
   }
   .tabHelp {
     padding: var(--space-4) var(--space-5);
@@ -149,7 +197,7 @@
     padding: var(--space-5);
     border-bottom: var(--border-width) solid var(--color-social-divider);
     scroll-margin-block: var(--space-2);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
   .card:focus-visible {
     outline-offset: calc(-1 * var(--focus-width));
@@ -332,11 +380,13 @@
   }
   .actions .keepButton {
     border-color: var(--color-action);
-    color: var(--color-action);
+    background: var(--color-action);
+    color: var(--color-on-action);
   }
   .actions .markButton {
     color: var(--color-danger);
-    border-color: transparent;
+    border-color: var(--color-danger);
+    background: var(--color-surface);
     margin-left: auto;
   }
   .actions .markButton:hover {
@@ -345,6 +395,15 @@
   }
   .actions button:hover {
     background: var(--color-social-hint);
+  }
+  .actions .keepButton:hover {
+    background: var(--color-action);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .actions .keepButton kbd {
+    color: inherit;
+    opacity: 0.8;
   }
   .actions button:disabled,
   .finalButton:disabled {
@@ -376,13 +435,14 @@
     flex-wrap: wrap;
   }
   .footerHelp {
-    flex: 1;
+    flex: 1 0 100%;
     min-width: 180px;
     color: var(--color-text-secondary);
+    overflow-wrap: normal;
   }
-  .finalFooter .finalButton,
-  .finalFooter .primary {
+  .finalFooter > button {
     font-size: var(--type-sm);
+    width: 100%;
   }
   .finalFooter strong {
     font-size: var(--type-sm);
@@ -399,11 +459,16 @@
     justify-content: center;
     gap: var(--space-2);
     font-weight: var(--weight-heading);
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 999px;
+    word-break: normal;
+    overflow-wrap: normal;
   }
   .finalButton {
-    color: var(--color-danger);
+    color: var(--color-on-action);
     border-color: var(--color-danger);
-    background: var(--color-danger-bg);
+    background: var(--color-danger);
   }
   .finalButton:hover:not(:disabled) {
     text-decoration: underline;
@@ -461,6 +526,7 @@
     border: var(--border-width) solid var(--color-boundary);
     border-radius: var(--radius-panel);
     z-index: 11;
+    overflow-wrap: normal;
   }
   .dialogHeading {
     align-items: flex-start;
@@ -595,9 +661,28 @@
     .actions button {
       padding-inline: var(--space-2);
       gap: var(--space-1);
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: 999px;
+      overflow-wrap: normal;
     }
     .actions .markButton {
       margin-left: 0;
+      padding-inline: 8px;
+    }
+    .actions [data-keep-action],
+    .actions [data-later-action],
+    .actions [data-mark-action] {
+      flex: 1 1 auto;
+      padding-inline: 8px;
+      font-size: var(--type-xs);
+      gap: 4px;
+    }
+    .actions [data-later-action] {
+      padding-inline: 6px;
+    }
+    .actions kbd {
+      display: none;
     }
     .unchecked {
       padding: 0 var(--space-3);
@@ -620,12 +705,9 @@
       min-width: 0;
       flex: none;
       width: 100%;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
     }
-    .finalFooter .finalButton,
-    .finalFooter .primary {
+    .finalFooter > button {
       width: 100%;
     }
     .finalFooter .finalButton svg {
@@ -634,7 +716,7 @@
     .finalFooter .finalButton {
       padding-inline: var(--space-1);
       font-size: var(--type-xs);
-      white-space: nowrap;
+      white-space: normal;
     }
     .finalFooter p {
       margin: 0;

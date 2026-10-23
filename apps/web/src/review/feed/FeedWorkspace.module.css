@@ -1,0 +1,179 @@
+@layer components {
+  .workspace {
+    min-width: 0;
+    max-width: 1004px;
+    margin-inline: auto;
+    overflow-wrap: normal;
+  }
+  .layout {
+    height: calc(100dvh - 150px);
+    min-height: 440px;
+    max-width: 1004px;
+    margin-inline: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 680px) minmax(0, 276px);
+    gap: var(--space-6);
+  }
+  .layout > section {
+    min-height: 0;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    padding: 7px var(--space-4);
+    border-bottom: var(--border-width) solid var(--color-social-divider);
+    font-size: var(--type-sm);
+    justify-content: space-between;
+    min-height: 60px;
+  }
+  .accountField {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+    max-width: 240px;
+  }
+  .toolbar select {
+    min-width: 0;
+    flex: 1;
+    min-height: var(--target-size);
+    width: 100%;
+    background: var(--color-social-hint);
+    color: var(--color-text);
+    border: 1px solid var(--color-divider);
+    border-radius: 999px;
+    padding: 8px 36px 8px 14px;
+    appearance: none;
+    font: inherit;
+  }
+  .accountField > svg {
+    position: absolute;
+    right: 14px;
+    pointer-events: none;
+  }
+  .singleNavigation {
+    display: flex;
+    flex: none;
+    gap: 0;
+  }
+  .menuPositioner {
+    z-index: 30;
+  }
+  .menu {
+    padding: 6px;
+    min-width: 220px;
+    max-width: calc(100vw - 24px);
+    border: 1px solid var(--color-divider);
+    border-radius: 12px;
+    background: var(--color-surface);
+  }
+  .menu [role='menuitem'] {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text);
+    text-decoration: none;
+    font-size: var(--type-sm);
+  }
+  .menu [data-highlighted] {
+    background: var(--color-selected-bg);
+  }
+  .srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .side {
+    align-self: start;
+    padding: var(--space-5);
+    font-size: var(--type-sm);
+    line-height: 1.6;
+    background: var(--color-social-hint);
+    border: 1px solid var(--color-social-divider);
+    border-radius: var(--radius-social);
+  }
+  .side h2 {
+    margin-top: 0;
+    margin-bottom: var(--space-4);
+    font-size: var(--type-md);
+  }
+  .side p {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+  .side p + p {
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-social-divider);
+  }
+  .editor {
+    min-height: 0;
+    overflow: auto;
+    background: var(--color-surface);
+  }
+  .editor h2 {
+    padding-inline: var(--space-5);
+  }
+  .editorFooter {
+    padding: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .editorFooter button:first-child {
+    background: var(--color-action);
+    color: var(--color-on-action);
+  }
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--color-text);
+    opacity: 0.5;
+    z-index: 10;
+  }
+  .help {
+    position: fixed;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    max-height: 90dvh;
+    overflow: auto;
+    width: min(600px, 95vw);
+    padding: var(--space-5);
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    z-index: 11;
+  }
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+      max-width: 680px;
+    }
+    .side {
+      display: none;
+    }
+  }
+  @media (max-width: 540px) {
+    .layout {
+      height: calc(100dvh - 120px);
+      min-height: 440px;
+    }
+    .toolbar {
+      padding-inline: var(--space-3);
+    }
+  }
+}

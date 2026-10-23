@@ -147,7 +147,7 @@ function Sheet() {
       footer = editorFooterRef.current;
     if (!scroll || !footer) return;
     const update = () => {
-      scroll.style.paddingBottom = `${footer.getBoundingClientRect().height}px`;
+      scroll.style.paddingBottom = `${Math.ceil(footer.getBoundingClientRect().height)}px`;
     };
     update();
     const observer = new ResizeObserver(update);

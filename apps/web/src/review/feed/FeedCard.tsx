@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { evidenceSegments } from '../model.ts';
 import { useIntl } from 'react-intl';
 import {
   Bookmark,
@@ -24,6 +25,7 @@ import type {
   FeedSuggestion,
 } from './types.ts';
 import styles from './Feed.module.css';
+import controls from './Controls.module.css';
 
 const levels = [
   'review.riskNone',
@@ -117,6 +119,9 @@ export function FeedCard({
   platform = 'x',
   onDecision,
   onConversation,
+  context,
+  measure,
+  virtualIndex,
 }: {
   card: FeedCardModel;
   position: number;
@@ -127,6 +132,9 @@ export function FeedCard({
   platform?: FeedPlatform;
   onDecision: (id: string, value: FeedDecision) => void;
   onConversation?: (id: string) => void;
+  context?: React.ReactNode;
+  measure?: (element: HTMLElement | null) => void;
+  virtualIndex?: number;
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -164,11 +172,15 @@ export function FeedCard({
         : t('review.later');
   return (
     <article
+      ref={measure}
+      data-index={virtualIndex}
       className={styles.card}
       data-decided={decided}
       data-decision={card.decision}
       data-deleted={!!card.deleted}
       data-card-id={card.id}
+      data-item-id={card.id}
+      data-testid="feed-card"
       tabIndex={0}
       aria-labelledby={`${id}-byline`}
       aria-describedby={
@@ -229,6 +241,7 @@ export function FeedCard({
           </div>
         </details>
       )}
+      {card.kind === 'reply' && context}
       <div className={styles.post}>
         <span className={styles.avatar} aria-hidden="true">
           {avatarInitials(card.name, card.handle)}
@@ -250,18 +263,15 @@ export function FeedCard({
             </p>
           )}
           <p className={styles.postText} dir="auto">
-            <EvidenceText
-              text={
-                card.text ||
-                t(card.mediaCount ? 'review.mediaOnly' : 'review.noText')
-              }
-              evidence={
-                card.suggestions.find(
-                  (s) => s.evidence && card.text.includes(s.evidence),
-                )?.evidence
-              }
-            />
+            {evidenceSegments(
+              card.text ||
+                t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
+              card.suggestions.map((suggestion) => suggestion.evidence ?? null),
+            ).map((part, index) =>
+              part.highlight ? <mark key={index}>{part.text}</mark> : part.text,
+            )}
           </p>
+          {card.kind !== 'reply' && context}
           {card.quote && (
             <section
               className={styles.quote}
@@ -321,7 +331,9 @@ export function FeedCard({
                   {t(
                     suggestion.unclear
                       ? 'review.categoryUnclear'
-                      : 'reviewFeed.suggestDelete',
+                      : suggestion.harmless
+                        ? 'review.categoryHarmless'
+                        : 'reviewFeed.suggestDelete',
                   )}
                 </strong>
                 <span>{suggestion.category}</span>
@@ -365,6 +377,7 @@ export function FeedCard({
           <div className={styles.actions}>
             {decided && card.decision !== 'later' ? (
               <button
+                className={controls.button}
                 disabled={card.busy}
                 onClick={() => onDecision(card.id, 'undecided')}
               >
@@ -375,7 +388,8 @@ export function FeedCard({
             ) : (
               <>
                 <button
-                  className={styles.keepButton}
+                  data-keep-action
+                  className={`${controls.primary} ${styles.keepButton}`}
                   disabled={card.busy}
                   onClick={() => onDecision(card.id, 'keep')}
                 >
@@ -387,6 +401,8 @@ export function FeedCard({
                   card.decision !== 'later' &&
                   !card.heldBy.length && (
                     <button
+                      data-later-action
+                      className={controls.quiet}
                       disabled={card.busy}
                       onClick={() => onDecision(card.id, 'later')}
                     >
@@ -399,7 +415,8 @@ export function FeedCard({
             )}
             {canMark && (
               <button
-                className={styles.markButton}
+                data-mark-action
+                className={`${controls.quiet} ${styles.markButton}`}
                 disabled={card.busy}
                 aria-describedby={`${id}-mark-help`}
                 onClick={() => onDecision(card.id, 'delete')}

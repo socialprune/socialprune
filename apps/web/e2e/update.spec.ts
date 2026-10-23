@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { startStaticServer } from './static-server.ts';
 
+// eslint-disable-next-line no-restricted-properties -- Test-only local server port, never a credential.
+const offlinePort = Number(process.env['SP_E2E_PROBE_PORT'] ?? 4182);
+
 const digest = (bytes: string) =>
   createHash('sha256').update(bytes).digest('hex');
 async function nextBuild() {
@@ -40,7 +43,7 @@ test('W0 two-tab update waits for consent, Later keeps v1 and reload flushes all
   context,
 }) => {
   test.setTimeout(90_000);
-  const server = await startStaticServer(4182);
+  const server = await startStaticServer(offlinePort);
   const version = await nextBuild();
   const second = await context.newPage();
   const errors: string[] = [];
@@ -168,7 +171,7 @@ test('W0 failed update install leaves the old controlled shell available', async
   page,
 }) => {
   test.setTimeout(60_000);
-  const server = await startStaticServer(4182);
+  const server = await startStaticServer(offlinePort);
   const version = await nextBuild();
   try {
     await page.goto(`${server.origin}/socialprune/#/settings`);

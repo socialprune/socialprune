@@ -62,7 +62,7 @@ function popularWorkspace() {
   return data;
 }
 
-test('suggestion bulk preview and apply skip exact popular fixture IDs but a single human decision can mark one', async () => {
+test('ordinary explicit bulk includes popular rows and a person can reverse one', async () => {
   const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
   const query = new QueryEngine(store);
   const service = new ReviewService(store, { query, via: 'web-review' });
@@ -79,34 +79,31 @@ test('suggestion bulk preview and apply skip exact popular fixture IDs but a sin
       generation: 1,
       value: 'delete',
       overwrite: ['undecided'],
-      skipPopular: true,
     });
     expect(preview).toMatchObject({
       total: 20,
-      willChange: 18,
-      unchanged: 2,
-      skippedPopular: 2,
-      skipPopular: true,
+      willChange: 20,
+      unchanged: 0,
     });
     const result = await service.confirmBulk({
       commandId: 'skip-confirm',
       pageId: 'page',
       previewId: 'popular-preview',
     });
-    expect(result).toMatchObject({ type: 'committed', changed: 18 });
+    expect(result).toMatchObject({ type: 'committed', changed: 20 });
     expect(
       await store.read((tx) => tx.state.get('x:popular-18')),
-    ).toMatchObject({ decision: 'undecided' });
+    ).toMatchObject({ decision: 'delete' });
     expect(
       await store.read((tx) => tx.state.get('x:popular-19')),
-    ).toMatchObject({ decision: 'undecided' });
+    ).toMatchObject({ decision: 'delete' });
     const events = (await store.read(readWorkspace)).decisionEvents;
-    expect(events).toHaveLength(18);
+    expect(events).toHaveLength(20);
     expect(
       events.some((event) =>
         ['x:popular-18', 'x:popular-19'].includes(event.itemId),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       await service.confirmBulk({
         commandId: 'skip-confirm',
@@ -118,8 +115,8 @@ test('suggestion bulk preview and apply skip exact popular fixture IDs but a sin
       await service.decide({
         commandId: 'person-popular',
         itemIds: ['x:popular-19'],
-        value: 'delete',
-        expected: { 'x:popular-19': 'undecided' },
+        value: 'keep',
+        expected: { 'x:popular-19': 'delete' },
       }),
     ).toMatchObject({ type: 'committed', changed: 1 });
     expect(
@@ -133,7 +130,7 @@ test('suggestion bulk preview and apply skip exact popular fixture IDs but a sin
   }
 });
 
-test('ordinary bulk remains an explicit human action; overwrite cannot opt suggestion apply into popularity', async () => {
+test('ordinary bulk selection remains an explicit human action without an implicit popularity exclusion', async () => {
   const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
   const query = new QueryEngine(store);
   const service = new ReviewService(store, { query, via: 'local-review' });
@@ -151,12 +148,10 @@ test('ordinary bulk remains an explicit human action; overwrite cannot opt sugge
       value: 'delete',
       overwrite: ['undecided', 'later', 'keep', 'delete'],
       itemIds: ['x:popular-18', 'x:popular-19'],
-      skipPopular: true,
     });
     expect(skip).toMatchObject({
-      willChange: 0,
-      skippedPopular: 2,
-      unchanged: 2,
+      willChange: 2,
+      unchanged: 0,
     });
     expect(
       await service.confirmBulk({
@@ -164,19 +159,23 @@ test('ordinary bulk remains an explicit human action; overwrite cannot opt sugge
         pageId: 'page',
         previewId: 'overwrite-popular',
       }),
-    ).toMatchObject({ type: 'committed', changed: 0, actionId: null });
-    expect((await store.read(readWorkspace)).decisionEvents).toEqual([]);
+    ).toMatchObject({ type: 'committed', changed: 2 });
+    expect((await store.read(readWorkspace)).decisionEvents).toHaveLength(2);
+    await query.query({
+      queryId: 'popular-query',
+      generation: 2,
+      accountKey: 'x:popular',
+    });
     const direct = await service.previewBulk({
       pageId: 'page',
       previewId: 'direct',
       queryId: 'popular-query',
-      generation: 1,
-      value: 'delete',
-      overwrite: ['undecided'],
+      generation: 2,
+      value: 'keep',
+      overwrite: ['delete'],
       itemIds: ['x:popular-18', 'x:popular-19'],
     });
     expect(direct).toMatchObject({ willChange: 2 });
-    expect(direct.skippedPopular).toBeUndefined();
     expect(
       await service.confirmBulk({
         commandId: 'direct-confirm',
@@ -189,7 +188,7 @@ test('ordinary bulk remains an explicit human action; overwrite cannot opt sugge
   }
 });
 
-test('confirm refuses changed cutoff rather than applying a stale popularity preview', async () => {
+test('confirm refuses a changed decision instead of applying a stale ordinary preview', async () => {
   const store = createMemoryStore(new MemoryStoreBacking(popularWorkspace()));
   const query = new QueryEngine(store);
   const service = new ReviewService(store, { query, via: 'web-review' });
@@ -202,12 +201,12 @@ test('confirm refuses changed cutoff rather than applying a stale popularity pre
       generation: 1,
       value: 'delete',
       overwrite: ['undecided'],
-      skipPopular: true,
     });
-    await store.write(async (tx) => {
-      const item = (await tx.items.get('x:popular-17'))!;
-      item.item.engagement.likes = 20;
-      await tx.items.put(item);
+    await service.decide({
+      commandId: 'person-keeps',
+      itemIds: ['x:popular-17'],
+      value: 'keep',
+      expected: { 'x:popular-17': 'undecided' },
     });
     expect(
       await service.confirmBulk({
@@ -216,7 +215,7 @@ test('confirm refuses changed cutoff rather than applying a stale popularity pre
         previewId: 'p',
       }),
     ).toMatchObject({ type: 'rejected', code: 'STALE_PREVIEW' });
-    expect((await store.read(readWorkspace)).decisionEvents).toEqual([]);
+    expect((await store.read(readWorkspace)).decisionEvents).toHaveLength(1);
   } finally {
     await store.close();
   }

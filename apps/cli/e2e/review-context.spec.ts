@@ -29,7 +29,10 @@ test('C10 list-confirmed review states what the list checked and has no comment 
       .getByRole('navigation', { name: 'Primary navigation', exact: true })
       .getByRole('link', { name: 'Review', exact: true })
       .click();
-    const post = page.getByTestId('instagram-post');
+    await page.getByRole('tab', { name: /^All,/ }).click();
+    const post = page
+      .locator(`article[data-item-id="${own.id}"]`)
+      .getByTestId('instagram-post');
     await expect(post).toContainText('comments list');
     await expect(post).toContainText(
       'The post itself did not show the comment.',
@@ -99,7 +102,10 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
       .getByRole('navigation', { name: 'Primary navigation', exact: true })
       .getByRole('link', { name: 'Review', exact: true })
       .click();
-    const post = page.getByTestId('instagram-post');
+    await page.getByRole('tab', { name: /^All,/ }).click();
+    const post = page.getByTestId('instagram-post').filter({
+      hasText: fixture.records[0]!.post.caption!,
+    });
     await expect(post).toHaveCount(1);
     await expect(post).toContainText('@' + fixture.records[0]!.post.owner);
     await expect(post.locator('time')).toHaveAttribute(
@@ -329,7 +335,12 @@ test('a context reply for a different item or account cannot replace the focused
     await page.evaluate(() => {
       location.hash = '#/review';
     });
-    await expect(page.getByTestId('instagram-post')).toContainText(own.text);
+    await page.getByRole('tab', { name: /^All,/ }).click();
+    await expect(
+      page
+        .locator(`article[data-item-id="${own.id}"]`)
+        .getByTestId('instagram-post'),
+    ).toContainText(own.text);
     // Test-only injected dependency: a mismatched record from an already valid
     // fixture. No environment flag or production fault route exists.
     await page.evaluate((record) => {
@@ -339,15 +350,21 @@ test('a context reply for a different item or account cannot replace the focused
     await page
       .getByRole('combobox', { name: 'Account', exact: true })
       .selectOption(contextInputs.foreign.account.key);
+    await page.getByRole('tab', { name: /^All,/ }).click();
     await expect(
-      page.getByTestId('review-card').locator('article'),
-    ).toHaveAttribute('data-item-id', contextInputs.foreign.id);
+      page
+        .getByTestId('review-card')
+        .locator(`article[data-item-id="${contextInputs.foreign.id}"]`),
+    ).toContainText(contextInputs.foreign.text);
     await page
       .getByRole('combobox', { name: 'Account', exact: true })
       .selectOption(own.account.key);
+    await page.getByRole('tab', { name: /^All,/ }).click();
     await expect(
-      page.getByTestId('review-card').locator('article'),
-    ).toHaveAttribute('data-item-id', own.id);
+      page
+        .getByTestId('review-card')
+        .locator(`article[data-item-id="${own.id}"]`),
+    ).toContainText(own.text);
     await expect(page.getByTestId('instagram-post')).toHaveCount(0);
     await expect(page.getByTestId('review-card')).toContainText(
       'Instagram does not include the post.',

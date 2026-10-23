@@ -1,8 +1,8 @@
 # SocialPrune design specification
 
-This document specifies how the web app looks, behaves and speaks. The existing records in [docs/architecture/](../architecture/README.md) were accepted on 9 October 2026. The card review and archive described here are a person-facing redesign candidate, reviewed as a prototype and awaiting a second screenshot review before acceptance. They use the existing primitives, routes, tokens and catalogs; this document does not supersede a protected decision record.
+This document specifies how the web app looks, behaves and speaks. The records in [docs/architecture/](../architecture/README.md) govern its behaviour. The maintainer accepted Design A for the review feed on 22 October 2026; slice 3 connects it to the workspace and still needs his screenshot acceptance. The feed and archive use the existing primitives, routes, tokens and catalogs; this document does not supersede a protected decision record.
 
-The review puts one readable post and its suggestion in front of the person. The archive is a private timeline with profile spacing, threads and engagement counts. Blue opens or navigates, red marks an entry through the card's Delete action, amber remains the stored "marked for deletion" state, and green means "deleted by you". No platform action happens in this app.
+The review puts readable posts and their suggestions in one continuous feed. The archive is a private timeline with profile spacing, threads and engagement counts. Blue opens or navigates, red marks an entry through the card's Mark action, amber remains the stored "marked for deletion" state, and green means "deleted by you". Review decisions do not act on a platform; an explicitly ordered platform run is separate.
 
 ## Visual system
 
@@ -129,7 +129,7 @@ People find the keys in four places: each decision button shows its key ("Keep K
 4. The confirm button names the exact number: **Mark 3,962 entries**. Cancel is always next to it.
 5. If anything in the frozen set changed in the meantime (another tab, an agent's labels changing the order), confirm fails and the dialog shows a fresh preview with a line saying what changed.
 
-**Mark suggested entries** is the same flow with a preset filter: the current account, entries whose strongest current suggestion has risk 2 or higher, undecided or Later. It appears only when suggestions exist. The preview names the sources of the suggestions it uses ("from Agent: agent", "Examples"), and after confirming, the person goes through the list and takes exceptions out with K or U.
+The former **Mark suggested entries** shortcut is removed from both review surfaces. In the feed, the person keeps exceptions first, then the counted final mark previews only Suggested. It excludes Keep, Marked, held-back and Later entries, has no overwrite checkbox, names its criteria, rules and sources, and requires explicit human confirmation. The list's ordinary filtered or selected bulk actions above remain.
 
 Filter templates only fill the filter. They never mark anything:
 
@@ -148,17 +148,17 @@ After every decision action a notification appears at the bottom of the list reg
 
 The detail region shows every current suggestion for the entry, strongest risk first. Each one shows:
 
-- the source as a badge: **Agent: <name>**, **Example** in the demo, and later **Rules** or **Model: <name>**. Agent suggestions always carry their badge, in the row as well as in the detail region, so the person can tell which suggestions came from an agent that received their text;
+- the source as a badge: **Agent: <name>**, **Example** in the demo, **Word lists** or **Model: <name>**. Agent suggestions always carry their badge, in the row as well as in the detail region, so the person can tell which suggestions came from an agent that received their text;
 - the category and the risk as a word (None, Low, Medium, High), never as a color alone;
 - the reason, one sentence, as written by the source;
 - the evidence: if the source quoted text that appears verbatim in the post, that passage is highlighted in the full text with `--color-evidence-bg`, built from React text nodes and `<mark>`. If the quote does not appear verbatim, nothing is highlighted and no quote is shown.
 
-No confidence number is shown in Phase 2: agent confidence is self-reported and uncalibrated. A suggestion never says what will happen to the person; it describes the post. For replies, the detail says "Replying to @handle. SocialPrune does not have the post this replies to." For Instagram comments the list view's detail says "The post this comment is on is not part of your export." The card review with its "All" mode, the archive and deletion mode say "Instagram does not include the post." Each surface keeps its own sentence. In the local review, a comment that SocialPrune confirmed on its post shows that post instead, on each of these surfaces (see Card review).
+No confidence number is shown in Phase 2: agent confidence is self-reported and uncalibrated. A suggestion never says what will happen to the person; it describes the post. Own criteria say "not measured". For replies, the list detail says "Replying to @handle. SocialPrune does not have the post this replies to." The feed shows stored original text before a reply, or below a quote, and expands the longer conversation on request. For Instagram comments the list view's detail says "The post this comment is on is not part of your export." The feed, archive and deletion mode say "Instagram does not include the post." Each surface keeps its own sentence. In the local review, a confirmed comment shows its stored post instead (see Card review).
 
 ### Honest progress and time
 
 - **Import** shows the stage and a count, with an indeterminate bar, because the importer does not know the total in advance: "Reading your export… 42,000 entries so far." When the import finishes, the count is final.
-- **Review progress** shows decided entries out of all entries in the account, per tab.
+- **Review counts** show each complete service tab, including entries outside the loaded card window. They do not claim a suggestion run has finished.
 - **Click list time:** SocialPrune has not measured how long deleting takes on X or Instagram, so it never states a duration as fact. Before the click list starts, it shows the count and a conditional estimate with an editable assumption: "If one entry takes you 10 seconds, 600 entries take about 1 hour 40 minutes." The seconds field can be changed. After 20 recorded outcomes the app uses the person's measured pace instead and says so: "At your pace so far, about 9 seconds per entry, the remaining 180 take about 27 minutes." The estimate can be hidden.
 - **Export waiting time** comes from the platform's own statement, attributed to the platform ([ADR-022](../architecture/adrs/ADR-022-export-guide-content.md)).
 
@@ -194,15 +194,15 @@ Shown when an import contains more than one account. One card per account with p
 
 ### Card review (`#/review`)
 
-One undecided entry at a time, strongest current suggested risk first and newest date second. The card shows account handle, timestamp in workspace time zone, full text, known likes/reposts, reply/repost/quote context and media count. The strongest current source's category, risk word and one-sentence reason are visible without opening a dialog. J marks for deletion, K keeps, L postpones and U undoes the latest decision. These keys work only on the focused card, ignore held repeats and obey the existing single-key setting. Each saved decision brings the next undecided entry forward. Buttons remain available without keys.
+ADR-032 slice 3 replaces the former single-card default with the connected feed below. It reads six tab counts and full cards from the workspace client. Newest entries come first. A person can switch to One at a time to walk the first tab without changing eligibility. K keeps, L postpones, M marks and U returns to undecided; J has no action. Decisions stay in place and retain focus. The existing single-key setting still applies.
 
-Progress is decided entries out of the account total, not out of the visible risk filter. **Mark suggested entries** uses the existing frozen preview and explicit confirmation; no extra protocol or automatic decision is introduced. A link in the menu opens the list for filters, history, postponed entries and selection.
+The counts describe complete service tabs, not a count extrapolated from loaded cards. The final-mark button names the complete Suggested count, opens a frozen plan preview and requires a second human click. A link opens the list for filters, history and ordinary explicit bulk selection.
 
-**One at a time / All** switches to a scrolling feed of the account's undecided current Medium or High suggestions. The default order is risk, likes, then date, descending; a stored non-default sort and the existing filter/search state are respected and changes use `setReviewView`. Decisions use the same human review service. Cards stay dimmed in place until the feed is rebuilt so scroll position and focus do not jump; its sticky header counts decisions within that feed session. Large feeds virtualize card rendering. View mode itself stays in component state because the current stored review schema has no mode field. This incumbent mode is replaced by ADR-032 slice 3 when the new feed is connected. The presentational candidate below does not change the running review yet.
+The retired Overview and its popularity-only navigation are removed. The selected feed tab and one item anchor per tab travel through setReviewView. Window requests contain at most 50 cards; the client retains at most 300. TanStack Virtual renders the visible range plus ten cards each side. Full-query Home/End request the destination page before focusing the real article. Loaded-window trimming restores the first visible card's screen offset.
 
 In the local review, an Instagram comment that the reading pass of [ADR-028](../architecture/adrs/ADR-028-instagram-signed-in-session.md) confirmed on its post shows that post under the comment, in the card review, the list view's detail, the archive and deletion mode: the post's account with initials instead of a profile image, its date, the caption as text with a note when Instagram showed only its beginning, the first image, **Show screenshot**, which reveals the small screenshot, **Open on Instagram**, which opens a new tab only on the person's click, and one line saying where and when SocialPrune found the comment and what matched. A file missing from a copied workspace says "Not in this copy". Every other Instagram comment keeps the sentence its surface shows today, as "Suggestions: reason, evidence, source" names them, and the Pages app always shows those sentences. The card never says why a comment was not confirmed.
 
-Core owns the popularity rule for own X entries without reposts and with known likes: the lowest like count in the highest `ceil(n / 10)` entries, at least three. Ties are included; other accounts, unknown likes and Instagram do not qualify. The web uses the same core functions for its star badge and threshold. **Mark suggested entries** freezes the popular IDs and skips them in preview and confirmation, including when the overwrite checkbox is selected. The dialog states the exact skipped count, not a count derived from its twenty samples. An explicit single-entry decision or an ordinary bulk decision still belongs to the person and is not silently blocked. The overview offers **Only popular undecided entries** and shows how many still wait. Confirmation rejects a changed popularity set rather than applying a stale cutoff.
+Core owns the deterministic keep rules, including the most-liked tenth. Holding rules and their exact count come from planCounts and each returned card. Every held hit names its matching rules and uses Mark anyway, including in Kept, Unclear and All. skipPopular and its implicit legacy preview path are removed. The plan freezes the settings hash and revision; a rejected stale confirmation opens a replacement preview and never confirms it automatically. Ordinary list bulk decisions remain explicit human actions without a hidden popularity exclusion.
 
 ### List review (`#/review/list`)
 
@@ -288,9 +288,9 @@ The target is WCAG 2.2 AA. Acceptance checks per [ADR-008](../architecture/adrs/
 - **Language:** every string comes from the catalogs, including ARIA labels, live announcements, empty states and errors.
 - **Manual release gate:** NVDA with Firefox and VoiceOver with Safari on the review list, bulk preview, undo and click lists.
 
-## Review feed design candidate (ADR-032 slices 3 and 4)
+## Review feed (ADR-032 slice 3) and editor design (slice 4)
 
-This is the presentation boundary, not a connected review. `src/review/feed/` owns a UI view-model, labelled articles, counted tabs, a controlled feed, sticky final-mark footer and confirmation dialog. `src/review/criteria/` owns the criteria picker and deterministic rules editor. They receive data and callbacks through props and import neither the workspace client nor a worker or store. The incumbent card, All view, archive and PostCard remain unchanged.
+`src/review/feed/` separates controlled presentation from the FeedSession real-client consumer and its service-to-view adapter. No production transport fake is introduced. `src/review/criteria/` remains the presentational full editor; slice 3 connects only preset selection and level so a first-time empty-criteria workspace can enter review. Own-criterion and rule editing belong to slice 4. Archive and PostCard remain unchanged; the feed composes their existing authenticated context readers for mounted cards. Each visible window's X originals are requested together, while conversations expand on demand.
 
 ### Reading rhythm and states
 
@@ -302,7 +302,7 @@ Keep is the leading outlined action. Later is available for open suggestions. Ma
 
 The footer occupies its own layout row below the scroll viewport rather than overlaying it. A ResizeObserver keeps bottom clearance inside the scrolling content at least as tall as that row. The criteria editor uses the same separate-row structure and clearance. Non-scrolling ancestors use clipping instead of hidden scroll containers, so focusing an offscreen card cannot move the footer or chrome. The compact footer retains the complete eligible count and the local-only sentence; longer explanation and exclusions remain in its accessible description and the preview. In the marked tab a separate Delete on X or Instagram click-list callback is shown, with no implementation in this phase. Loading, read error, empty, first-start, busy, unclear, later, held, kept, individually marked, final-marked and deleted states are presentational inputs. The parent owns membership, counts and announcements; the component never computes eligibility from a partial page of cards. `laterExcluded` keeps the open Q7 policy at the owner boundary. A held hit retains its reason and Mark anyway in every applicable tab, including Kept, Unclear and All.
 
-Feed articles are focusable and labelled by byline and date. Arrow keys, Page Up, Page Down, Home and End move within the rendered window. K keeps, L postpones, M marks and U returns to undecided only on the focused article, never in a field, on a child button or while a key repeats. `singleKeys={false}` disables these bindings. J has no action. Live notice text comes from the parent. Windowed loading, full-query navigation and focus recovery across a store update belong to slice 3, not this design sheet.
+Feed articles are focusable and labelled by byline and date. Arrow keys and Page Up/Down move between cards; Home/End request the complete query's endpoints. Ctrl+Home/End leave the feed. K keeps, L postpones, M marks and U returns to undecided only on the focused article, never in a field, on a child button or while a key repeats. `singleKeys={false}` disables letter bindings. Ctrl+Z undoes and ? opens the keyboard help. J has no action. A polite notice reports saved decisions and remaining suggestion counts. The separate design sheet remains presentation-only.
 
 ### Criteria picker and rules editor
 

@@ -14,6 +14,7 @@ export function CriteriaPicker({
   onAdd,
   onRemove,
   onOfferRule,
+  presetsOnly = false,
 }: {
   model: CriteriaModel;
   onToggle: (id: string, selected: boolean) => void;
@@ -23,6 +24,7 @@ export function CriteriaPicker({
   onAdd: () => void;
   onRemove: (id: string) => void;
   onOfferRule: () => void;
+  presetsOnly?: boolean;
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -90,67 +92,69 @@ export function CriteriaPicker({
           </div>
         ))}
       </fieldset>
-      <section className={styles.own} aria-labelledby={`${id}-own-title`}>
-        <h3 id={`${id}-own-title`}>{t('criteriaPicker.own')}</h3>
-        <p className={styles.help} id={`${id}-own-hint`}>
-          {t('criteriaPicker.ownHint')}
-        </p>
-        <label className={styles.field}>
-          {t('criteriaPicker.label')}
-          <input
-            value={model.ownLabel}
-            maxLength={60}
-            disabled={model.busy || customCount >= 8}
-            placeholder={t('criteriaPicker.placeholder')}
-            aria-describedby={`${id}-own-hint${model.ownError ? ` ${id}-error` : ''}`}
-            aria-invalid={!!model.ownError}
-            onChange={(event) => onOwnLabel(event.target.value)}
-          />
-        </label>
-        <label className={styles.field}>
-          {t('criteriaPicker.description')}
-          <textarea
-            value={model.ownDescription}
-            maxLength={300}
-            rows={2}
-            disabled={model.busy || customCount >= 8}
-            onChange={(event) => onOwnDescription(event.target.value)}
-          />
-        </label>
-        {model.ownError && (
-          <p id={`${id}-error`} role="alert" className={styles.error}>
-            {model.ownError}
+      {!presetsOnly && (
+        <section className={styles.own} aria-labelledby={`${id}-own-title`}>
+          <h3 id={`${id}-own-title`}>{t('criteriaPicker.own')}</h3>
+          <p className={styles.help} id={`${id}-own-hint`}>
+            {t('criteriaPicker.ownHint')}
           </p>
-        )}
-        {model.limitOffer && (
-          <div className={styles.ruleOffer}>
-            <p>{t('criteriaPicker.limit')}</p>
-            <button onClick={onOfferRule}>
-              {model.limitOffer}
-              <ArrowRight size={18} aria-hidden="true" />
+          <label className={styles.field}>
+            {t('criteriaPicker.label')}
+            <input
+              value={model.ownLabel}
+              maxLength={60}
+              disabled={model.busy || customCount >= 8}
+              placeholder={t('criteriaPicker.placeholder')}
+              aria-describedby={`${id}-own-hint${model.ownError ? ` ${id}-error` : ''}`}
+              aria-invalid={!!model.ownError}
+              onChange={(event) => onOwnLabel(event.target.value)}
+            />
+          </label>
+          <label className={styles.field}>
+            {t('criteriaPicker.description')}
+            <textarea
+              value={model.ownDescription}
+              maxLength={300}
+              rows={2}
+              disabled={model.busy || customCount >= 8}
+              onChange={(event) => onOwnDescription(event.target.value)}
+            />
+          </label>
+          {model.ownError && (
+            <p id={`${id}-error`} role="alert" className={styles.error}>
+              {model.ownError}
+            </p>
+          )}
+          {model.limitOffer && (
+            <div className={styles.ruleOffer}>
+              <p>{t('criteriaPicker.limit')}</p>
+              <button onClick={onOfferRule}>
+                {model.limitOffer}
+                <ArrowRight size={18} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <div className={styles.ownActions}>
+            <button
+              disabled={
+                model.busy ||
+                customCount >= 8 ||
+                !model.ownLabel.trim() ||
+                !model.ownDescription.trim() ||
+                !!model.limitOffer ||
+                !!model.ownError
+              }
+              onClick={onAdd}
+            >
+              <Plus size={18} aria-hidden="true" />
+              {t('criteriaPicker.add')}
             </button>
+            <span className={styles.help}>
+              {t('criteriaPicker.customCount', { count: customCount })}
+            </span>
           </div>
-        )}
-        <div className={styles.ownActions}>
-          <button
-            disabled={
-              model.busy ||
-              customCount >= 8 ||
-              !model.ownLabel.trim() ||
-              !model.ownDescription.trim() ||
-              !!model.limitOffer ||
-              !!model.ownError
-            }
-            onClick={onAdd}
-          >
-            <Plus size={18} aria-hidden="true" />
-            {t('criteriaPicker.add')}
-          </button>
-          <span className={styles.help}>
-            {t('criteriaPicker.customCount', { count: customCount })}
-          </span>
-        </div>
-      </section>
+        </section>
+      )}
       <fieldset className={styles.level} disabled={model.busy}>
         <legend>{t('criteriaPicker.level')}</legend>
         {(

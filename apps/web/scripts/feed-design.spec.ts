@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const directory =
   // eslint-disable-next-line no-restricted-properties -- Test-only output directory explicitly chosen by the operator, never a credential.
   process.env['SP_FEED_DESIGN_DIR'] ??
-  join(tmpdir(), 'socialprune-feed-design');
+  join(tmpdir(), 'socialprune-feed-w3b', 'design');
 const folder = join(directory, 'screens', 'revision');
 const tabs = [
   ['suggested', 'Löschvorschläge', 'Suggested for deletion'],
@@ -212,7 +212,7 @@ test('revision final ADR states and Instagram surface', async ({ page }) => {
 
 for (const locale of ['de', 'en'] as const)
   for (const theme of ['light', 'dark'] as const)
-    for (const width of [320, 1280]) {
+    for (const width of [320, 390, 1280]) {
       test(`${locale} ${theme} ${width}: every tab, picker, rules, preview and states`, async ({
         page,
         context,

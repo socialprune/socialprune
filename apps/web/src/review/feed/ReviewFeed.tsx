@@ -1,5 +1,5 @@
-import { useId, useLayoutEffect, useRef } from 'react';
-import { useIntl } from 'react-intl';
+import { useEffect, useId, useLayoutEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Bookmark,
   Check,
@@ -18,6 +18,8 @@ import type {
   FeedTab,
 } from './types.ts';
 import styles from './Feed.module.css';
+import { FeedTabs as ScrollableFeedTabs } from './FeedTabs.tsx';
+import controls from './Controls.module.css';
 
 const tabs = [
   ['suggested', 'reviewFeed.tab.suggested', ListFilter],
@@ -39,69 +41,13 @@ export function FeedTabs({
   onTab: (tab: FeedTab) => void;
   panelId: string;
 }) {
-  const t = useT(),
-    intl = useIntl();
-  const tabList = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const list = tabList.current,
-      selected = list?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!list || !selected) return;
-    const offset = selected.offsetLeft;
-    if (
-      offset < list.scrollLeft ||
-      offset + selected.offsetWidth > list.scrollLeft + list.clientWidth
-    )
-      list.scrollLeft = offset;
-  }, [tab]);
   return (
-    <div
-      ref={tabList}
-      role="tablist"
-      aria-label={t('reviewFeed.tabs')}
-      className={styles.tabs}
-      onKeyDown={(event) => {
-        const index = tabs.findIndex(([key]) => key === tab);
-        const next =
-          event.key === 'ArrowRight'
-            ? (index + 1) % tabs.length
-            : event.key === 'ArrowLeft'
-              ? (index + tabs.length - 1) % tabs.length
-              : event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? tabs.length - 1
-                  : -1;
-        if (next < 0) return;
-        event.preventDefault();
-        onTab(tabs[next]![0]);
-        const buttons =
-          event.currentTarget.querySelectorAll<HTMLButtonElement>(
-            '[role="tab"]',
-          );
-        buttons[next]?.focus();
-      }}
-    >
-      {tabs.map(([key, message, Icon]) => (
-        <button
-          type="button"
-          key={key}
-          role="tab"
-          id={`${panelId}-${key}`}
-          aria-controls={panelId}
-          aria-selected={tab === key}
-          tabIndex={tab === key ? 0 : -1}
-          aria-label={t('reviewFeed.tabCount', {
-            tab: t(message),
-            count: counts[key],
-          })}
-          onClick={() => onTab(key)}
-        >
-          <Icon size={16} aria-hidden="true" />
-          <span>{t(message)}</span>
-          <span className={styles.count}>{intl.formatNumber(counts[key])}</span>
-        </button>
-      ))}
-    </div>
+    <ScrollableFeedTabs
+      tab={tab}
+      counts={counts}
+      onTab={onTab}
+      panelId={panelId}
+    />
   );
 }
 
@@ -126,19 +72,26 @@ export function FinalMarkFooter({
   return (
     <footer ref={footerRef} className={styles.finalFooter}>
       <p className={styles.footerHelp}>
-        {marked
-          ? t(
-              platform === 'x'
-                ? 'reviewFeed.waitingX'
-                : 'reviewFeed.waitingInstagram',
-              { count },
-            )
-          : t('reviewFeed.localOnly', {
+        {marked ? (
+          t(
+            platform === 'x'
+              ? 'reviewFeed.waitingX'
+              : 'reviewFeed.waitingInstagram',
+            { count },
+          )
+        ) : (
+          <>
+            {t('reviewFeed.rest', { count })}.{' '}
+            {t('reviewFeed.finalHelp', {
               platform: platform === 'x' ? 'X' : 'Instagram',
             })}
+          </>
+        )}
       </p>
       <button
-        className={marked ? styles.primary : styles.finalButton}
+        className={
+          marked ? controls.primary : `${controls.danger} ${styles.finalButton}`
+        }
         disabled={disabled || count === 0}
         onClick={onPreview}
         aria-describedby="feed-final-detail"
@@ -189,19 +142,77 @@ export interface ReviewFeedProps {
   onConversation?: (id: string) => void;
   onUndo?: () => void;
   onKeyboardHelp?: () => void;
+  header?: React.ReactNode;
+  context?: (card: FeedCardModel) => React.ReactNode;
+  start?: number;
+  total?: number;
+  onMove?: (index: number) => void;
+  onAnchor?: (id: string) => void;
+  onNextWindow?: () => void;
+  onPreviousWindow?: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  virtualized?: boolean;
+  onVisible?: (ids: readonly string[]) => void | (() => void);
+  focusTarget?: { id: string; sequence: number } | null;
 }
 export function ReviewFeed(props: ReviewFeedProps) {
   const t = useT(),
     id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLElement>(null);
+  const virtualizer = useVirtualizer({
+    count: props.cards.length,
+    getScrollElement: () => panelRef.current,
+    estimateSize: () => 480,
+    getItemKey: (index) => props.cards[index]!.id,
+    overscan: 10,
+    enabled: !!props.virtualized,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const completedFocus = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (
+      !props.focusTarget ||
+      props.focusTarget.sequence === completedFocus.current
+    )
+      return;
+    const index = props.cards.findIndex(
+      (card) => card.id === props.focusTarget!.id,
+    );
+    if (index >= 0 && props.virtualized)
+      virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
+  }, [props.focusTarget, props.cards, props.virtualized, virtualizer]);
+  useEffect(() => {
+    if (props.focusTarget?.sequence === completedFocus.current) return;
+    const target =
+      props.focusTarget &&
+      [
+        ...(panelRef.current?.querySelectorAll<HTMLElement>(
+          'article[data-card-id]',
+        ) ?? []),
+      ].find((article) => article.dataset['cardId'] === props.focusTarget!.id);
+    if (target) {
+      target.focus({ preventScroll: true });
+      completedFocus.current = props.focusTarget!.sequence;
+    }
+  }, [props.focusTarget, visibleKeyForFocus(virtualItems), props.cards]);
+  const visibleKey = (
+    props.virtualized
+      ? virtualItems.map((item) => props.cards[item.index]!.id)
+      : props.cards.map((card) => card.id)
+  ).join('\n');
+  useEffect(
+    () => props.onVisible?.(visibleKey ? visibleKey.split('\n') : []),
+    [visibleKey, props.onVisible],
+  );
   const hasCriteria = props.hasCriteria ?? true;
   useLayoutEffect(() => {
     const panel = panelRef.current,
       footer = footerRef.current;
     if (!panel || !footer) return;
     const update = () => {
-      panel.style.paddingBottom = `${footer.getBoundingClientRect().height}px`;
+      panel.style.paddingBottom = `${Math.ceil(footer.getBoundingClientRect().height)}px`;
     };
     update();
     const observer = new ResizeObserver(update);
@@ -214,20 +225,21 @@ export function ReviewFeed(props: ReviewFeedProps) {
   const active = tabs.find(([key]) => key === props.tab)!;
   return (
     <section className={styles.review}>
-      <header className={styles.feedHeader}>
-        <div className={styles.titleRow}>
-          <h1>{t('review.title')}</h1>
-          <span className={styles.account} dir="ltr">
-            @{props.account}
-          </span>
-        </div>
-        <div className={styles.criteriaSummary}>
-          <span>{t('reviewFeed.looking', { criteria: props.criteria })}</span>
-          <button className={styles.textButton} onClick={props.onCriteria}>
-            {t('reviewFeed.changeShort')}
-          </button>
-        </div>
-      </header>
+      {props.header}
+      {hasCriteria && (
+        <header className={styles.feedHeader}>
+          <div className={styles.criteriaSummary}>
+            <span>
+              {hasCriteria
+                ? t('reviewFeed.looking', { criteria: props.criteria })
+                : t('reviewFeed.noCriteria')}
+            </span>
+            <button className={controls.quiet} onClick={props.onCriteria}>
+              {t('reviewFeed.changeShort')}
+            </button>
+          </div>
+        </header>
+      )}
       <FeedTabs
         tab={props.tab}
         counts={props.counts}
@@ -238,8 +250,25 @@ export function ReviewFeed(props: ReviewFeedProps) {
         ref={panelRef}
         className={styles.scrollPanel}
         role="tabpanel"
+        tabIndex={-1}
         id={id}
         aria-labelledby={`${id}-${props.tab}`}
+        onScroll={(event) => {
+          const panel = event.currentTarget;
+          const top = panel.getBoundingClientRect().top;
+          const first = [
+            ...panel.querySelectorAll<HTMLElement>('article[data-card-id]'),
+          ].find((card) => card.getBoundingClientRect().bottom > top);
+          if (first?.dataset['cardId'])
+            props.onAnchor?.(first.dataset['cardId']);
+          if (
+            props.hasNext &&
+            !props.busy &&
+            !props.error &&
+            panel.scrollHeight - panel.scrollTop - panel.clientHeight < 250
+          )
+            props.onNextWindow?.();
+        }}
       >
         {props.unchecked && hasCriteria && (
           <div className={styles.unchecked}>
@@ -247,7 +276,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
             <span title={t('reviewFeed.notChecked', props.unchecked)}>
               {t('reviewFeed.notChecked', props.unchecked)}
             </span>
-            <button className={styles.textButton} onClick={props.onCheck}>
+            <button className={controls.quiet} onClick={props.onCheck}>
               {t('reviewFeed.checkNow')}
             </button>
           </div>
@@ -275,6 +304,34 @@ export function ReviewFeed(props: ReviewFeedProps) {
             )
               return;
             if (
+              event.ctrlKey &&
+              (event.key === 'Home' || event.key === 'End')
+            ) {
+              event.preventDefault();
+              if (event.key === 'Home')
+                (
+                  panelRef.current
+                    ?.closest('main')
+                    ?.querySelector<HTMLElement>('h1') ??
+                  panelRef.current
+                    ?.closest('section')
+                    ?.querySelector<HTMLElement>(
+                      '[role="tab"][aria-selected="true"]',
+                    )
+                )?.focus();
+              else {
+                const footerButton =
+                  footerRef.current?.querySelector<HTMLButtonElement>('button');
+                if (footerButton) footerButton.focus();
+                else {
+                  panelRef.current?.focus({ preventScroll: true });
+                  if (panelRef.current)
+                    panelRef.current.scrollTop = panelRef.current.scrollHeight;
+                }
+              }
+              return;
+            }
+            if (
               (event.ctrlKey || event.metaKey) &&
               event.key.toLowerCase() === 'z' &&
               !event.repeat &&
@@ -298,10 +355,33 @@ export function ReviewFeed(props: ReviewFeedProps) {
               return;
             const articles = [
               ...event.currentTarget.querySelectorAll<HTMLElement>(
-                ':scope > article',
+                'article[data-card-id]',
               ),
             ];
             const current = articles.indexOf(event.target);
+            if (props.onMove) {
+              const absolute =
+                (props.start ?? 0) +
+                props.cards.findIndex(
+                  (card) =>
+                    card.id === (event.target as HTMLElement).dataset['cardId'],
+                );
+              const target =
+                event.key === 'End'
+                  ? Math.max(0, (props.total ?? props.cards.length) - 1)
+                  : event.key === 'Home'
+                    ? 0
+                    : event.key === 'ArrowDown' || event.key === 'PageDown'
+                      ? absolute + 1
+                      : event.key === 'ArrowUp' || event.key === 'PageUp'
+                        ? absolute - 1
+                        : -1;
+              if (target >= 0) {
+                event.preventDefault();
+                props.onMove(target);
+                return;
+              }
+            }
             const next =
               event.key === 'ArrowDown' || event.key === 'PageDown'
                 ? Math.min(articles.length - 1, current + 1)
@@ -318,14 +398,14 @@ export function ReviewFeed(props: ReviewFeedProps) {
             }
           }}
         >
-          {!hasCriteria ? (
+          {!hasCriteria && props.tab === 'suggested' ? (
             <div className={styles.empty}>
               <h2>{t('reviewFeed.noCriteria')}</h2>
-              <button onClick={props.onCriteria}>
+              <button className={controls.primary} onClick={props.onCriteria}>
                 {t('reviewFeed.chooseCriteria')}
               </button>
             </div>
-          ) : props.busy ? (
+          ) : props.busy && !props.cards.length ? (
             <div className={styles.loading} role="status">
               <span className={styles.skeleton} />
               <span className={styles.skeleton} />
@@ -334,34 +414,83 @@ export function ReviewFeed(props: ReviewFeedProps) {
           ) : props.error ? (
             <div className={styles.empty} role="alert">
               <h2>{t('reviewFeed.error')}</h2>
-              <button onClick={props.onRetry}>{t('reviewFeed.retry')}</button>
+              <button className={controls.button} onClick={props.onRetry}>
+                {t('reviewFeed.retry')}
+              </button>
             </div>
           ) : !props.cards.length ? (
             <div className={styles.empty}>
               <Check size={24} aria-hidden="true" />
               <h2>{t('reviewFeed.empty')}</h2>
               <p>{t('reviewFeed.emptyHelp')}</p>
-              <button onClick={props.onCriteria}>
+              <button className={controls.button} onClick={props.onCriteria}>
                 {t('reviewFeed.change')}
               </button>
             </div>
           ) : (
-            props.cards.map((card, index) => (
-              <FeedCard
-                key={card.id}
-                card={card}
-                position={index + 1}
-                total={props.counts[props.tab]}
-                zone={props.zone}
-                singleKeys={props.singleKeys}
-                showLater={props.tab === 'suggested'}
-                onDecision={props.onDecision}
-                onConversation={props.onConversation}
-                platform={props.platform}
-              />
-            ))
+            <>
+              {props.virtualized && !!virtualItems.length && (
+                <div
+                  aria-hidden="true"
+                  style={{ height: virtualItems[0]!.start }}
+                />
+              )}
+              {(props.virtualized
+                ? virtualItems.map((item) => ({
+                    card: props.cards[item.index]!,
+                    index: item.index,
+                  }))
+                : props.cards.map((card, index) => ({ card, index }))
+              ).map(({ card, index }) => (
+                <FeedCard
+                  key={card.id}
+                  card={{ ...card, busy: props.busy || card.busy }}
+                  position={(props.start ?? 0) + index + 1}
+                  total={props.total ?? props.counts[props.tab]}
+                  zone={props.zone}
+                  singleKeys={props.singleKeys}
+                  showLater={props.tab === 'suggested'}
+                  onDecision={props.onDecision}
+                  onConversation={props.onConversation}
+                  platform={props.platform}
+                  context={props.context?.(card)}
+                  measure={
+                    props.virtualized ? virtualizer.measureElement : undefined
+                  }
+                  virtualIndex={props.virtualized ? index : undefined}
+                />
+              ))}
+              {props.virtualized && !!virtualItems.length && (
+                <div
+                  aria-hidden="true"
+                  style={{
+                    height: Math.max(
+                      0,
+                      virtualizer.getTotalSize() - virtualItems.at(-1)!.end,
+                    ),
+                  }}
+                />
+              )}
+            </>
           )}
         </div>
+        {props.hasPrevious && (
+          <button
+            className={styles.windowButton}
+            onClick={props.onPreviousWindow}
+          >
+            {t('reviewFeed.previousWindow')}
+          </button>
+        )}
+        {props.hasNext && (
+          <button
+            className={styles.windowButton}
+            disabled={props.busy}
+            onClick={props.onNextWindow}
+          >
+            {t('reviewFeed.nextWindow')}
+          </button>
+        )}
         <p
           role="status"
           aria-live="polite"
@@ -383,4 +512,8 @@ export function ReviewFeed(props: ReviewFeedProps) {
       )}
     </section>
   );
+}
+
+function visibleKeyForFocus(items: readonly { index: number }[]) {
+  return items.map((item) => item.index).join(',');
 }

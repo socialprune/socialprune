@@ -155,8 +155,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const bulkQueryId = useRef(nextId());
   const bulkGeneration = useRef(0);
   const bulkSelected = useRef<string[] | null>(null);
-  const bulkFilter = useRef<QueryFilter | null>(null);
-  const [bulkSuggested, setBulkSuggested] = useState(false);
   const allViewSelected = useRef(false);
   const [selectionAll, setSelectionAll] = useState(false);
   const generation = useRef(0);
@@ -512,19 +510,10 @@ export function Review({ client }: { client: WorkspaceClient }) {
     overwrite = bulkOverwrite,
     replacement: 'stale' | 'expired' | null = null,
     selectedIds: string[] | null = null,
-    suggested = false,
   ) {
     if (!generation.current || pendingCommands.current.size) return;
     if (replacement === null) {
       bulkSelected.current = selectedIds;
-      bulkFilter.current = suggested
-        ? {
-            ...filter,
-            risk: { min: 2, max: 3, unknown: 'exclude' },
-            decisions: ['undecided', 'later'],
-          }
-        : null;
-      setBulkSuggested(suggested);
     }
     const version = ++bulkVersion.current;
     setBulkValue(value);
@@ -550,7 +539,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
         queryId: bulkQueryId.current,
         generation: queryGeneration,
         accountKey,
-        filter: bulkFilter.current ?? filter,
+        filter,
         sort,
         search,
       });
@@ -567,9 +556,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
         queryId: bulkQueryId.current,
         generation: queryGeneration,
         value,
-        ...(suggested || (replacement !== null && bulkSuggested)
-          ? { skipPopular: true as const }
-          : {}),
         overwrite: overwrite
           ? ['undecided', 'later', 'keep', 'delete']
           : ['undecided', 'later'],
@@ -1011,6 +997,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     >
       <div className={styles.review}>
         <div className={styles.toolbar}>
+          <a href="#/review">{t('feed.title')}</a>
           <label className={styles.field}>
             {t('review.account')}
             <select
@@ -1128,16 +1115,6 @@ export function Review({ client }: { client: WorkspaceClient }) {
             onTemplate={setTemplate}
           />
           <div className={styles.actions} aria-label={t('bulk.actions')}>
-            {summary && summary.counts.assessments > 0 && (
-              <button
-                disabled={activeCommand || searching}
-                onClick={() => {
-                  void prepareBulk('delete', false, null, null, true);
-                }}
-              >
-                {t('bulk.markSuggested')}
-              </button>
-            )}
             {(['delete', 'keep', 'later', 'undecided'] as const).map(
               (value) => (
                 <button
@@ -1612,23 +1589,13 @@ export function Review({ client }: { client: WorkspaceClient }) {
           summary?.accounts.find(({ key }) => key === accountKey)?.handle ??
           accountKey
         }
-        filterDescription={
-          bulkSuggested
-            ? `${t('bulk.suggestedFilter')}. ${filterLabels}`
-            : filterLabels
-        }
+        filterDescription={filterLabels}
         overwrite={bulkOverwrite}
         loading={bulkLoading}
         replacement={bulkReplacement}
         error={error}
         onOverwrite={(value) => {
-          void prepareBulk(
-            bulkValue,
-            value,
-            null,
-            bulkSelected.current,
-            bulkSuggested,
-          );
+          void prepareBulk(bulkValue, value, null, bulkSelected.current);
         }}
         onConfirm={() => {
           void confirmBulk();

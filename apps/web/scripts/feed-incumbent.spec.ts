@@ -8,7 +8,7 @@ const directory =
   join(tmpdir(), 'socialprune-feed-design');
 const folder = join(directory, 'screens');
 
-test('capture incumbent review, All and archive from the generated demo', async ({
+test('capture current connected feed, All and archive from the generated demo', async ({
   page,
 }) => {
   page.on('pageerror', (error) => console.log('PAGEERROR', error.message));
@@ -21,20 +21,21 @@ test('capture incumbent review, All and archive from the generated demo', async 
   });
   await page.goto('/socialprune/#/demo');
   await expect(
-    page.getByTestId('review-card').locator('article'),
+    page.getByTestId('review-card').locator('article').first(),
   ).toBeVisible();
   await page.screenshot({
-    path: `${folder}/before-card-de-light-1280.png`,
-    fullPage: true,
+    path: `${folder}/current-feed-de-light-1280.png`,
   });
-  await page.getByRole('button', { name: 'Alle', exact: true }).click();
+  await page.getByRole('tab', { name: /^Alle,/ }).click();
   await expect(page.getByTestId('feed-card').first()).toBeVisible();
-  await page.screenshot({ path: `${folder}/before-all-de-light-1280.png` });
+  await page.screenshot({ path: `${folder}/current-all-de-light-1280.png` });
   await page.setViewportSize({ width: 320, height: 900 });
-  await page.screenshot({ path: `${folder}/before-all-de-light-320.png` });
+  await page.screenshot({ path: `${folder}/current-all-de-light-320.png` });
   await page.setViewportSize({ width: 1280, height: 960 });
   await page.goto('/socialprune/#/archive');
   await expect(page.getByTestId('recap')).toBeVisible();
   await expect(page.locator('article').first()).toBeVisible();
-  await page.screenshot({ path: `${folder}/before-archive-de-light-1280.png` });
+  await page.screenshot({
+    path: `${folder}/current-archive-de-light-1280.png`,
+  });
 });

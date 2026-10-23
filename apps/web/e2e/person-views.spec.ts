@@ -7,6 +7,8 @@ import { postContextFixture } from '../test/post-context-fixture.ts';
 
 export async function restorePerson(page: Page) {
   await waitForApp(page);
+  const fixture = personFixture();
+  fixture.assessments[0]!.category = 'political';
   const reply = await page.evaluate(
     (text) =>
       window.workspace.request({
@@ -14,7 +16,7 @@ export async function restorePerson(page: Page) {
         requestId: crypto.randomUUID(),
         file: new File([text], 'generated-person-views.json'),
       }),
-    JSON.stringify(personFixture()),
+    JSON.stringify(fixture),
   );
   expect(reply.type).toBe('opened');
   await page.goto('/socialprune/#/review');
@@ -22,8 +24,8 @@ export async function restorePerson(page: Page) {
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption(personExpected.accountKey);
   await expect(
-    page.getByTestId('review-card').locator('article'),
-  ).toHaveAttribute('data-item-id', personExpected.suggestionIds[0]);
+    page.getByTestId('review-card').locator('article').first(),
+  ).toHaveAttribute('data-item-id', personExpected.suggestionIds[1]);
 }
 async function snapshot(page: Page) {
   return page.evaluate(async () => {
@@ -36,12 +38,12 @@ async function snapshot(page: Page) {
 }
 async function markSuggestions(page: Page) {
   await page
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
+    .getByRole('button', { name: 'Mark 2 entries for deletion', exact: true })
     .click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Synthetic reviewer');
   const confirm = dialog.getByRole('button', {
-    name: 'Mark for deletion: 2 entries',
+    name: 'Mark 2 entries',
     exact: true,
   });
   await expect(confirm).toBeEnabled();
@@ -49,32 +51,25 @@ async function markSuggestions(page: Page) {
   await expect(dialog).toHaveCount(0);
 }
 
-test('card J K L U preserve human decisions, advance, ignore repeats and update progress under network audit', async ({
+test('feed K L M U preserve in-place human decisions, ignore J and repeat events under network audit', async ({
   page,
   context,
 }) => {
   const audit = await observeImport(context, page);
   await restorePerson(page);
-  const region = page.getByTestId('review-card'),
-    progress = page.getByRole('progressbar', { name: 'Review', exact: true });
-  await expect(progress).toHaveAttribute('value', '0');
-  await expect(progress).toHaveAttribute('max', '7');
-  await region.focus();
+  const region = page.getByRole('feed');
+  const first = region.locator('article').first(),
+    second = region.locator('article').nth(1);
+  await first.focus();
   await page.keyboard.press('j');
-  await expect(progress).toHaveAttribute('value', '1');
-  await expect(region.locator('article')).toHaveAttribute(
-    'data-item-id',
-    personExpected.suggestionIds[1],
-  );
-  await region.focus();
+  expect((await snapshot(page)).decisionEvents).toEqual([]);
   await page.keyboard.press('k');
-  await expect(progress).toHaveAttribute('value', '2');
-  await region.focus();
+  await expect(first).toHaveAttribute('data-decision', 'keep');
+  await second.focus();
   await page.keyboard.press('l');
-  await expect(progress).toHaveAttribute('value', '3');
+  await expect(second).toHaveAttribute('data-decision', 'later');
   const before = await snapshot(page);
   expect(before.decisionEvents.map(({ value }) => value)).toEqual([
-    'delete',
     'keep',
     'later',
   ]);
@@ -83,26 +78,26 @@ test('card J K L U preserve human decisions, advance, ignore repeats and update 
       ({ source }) => source.kind === 'human' && source.via === 'web-review',
     ),
   ).toBe(true);
-  await region.focus();
+  await second.focus();
   await page.keyboard.press('u');
-  await expect(progress).toHaveAttribute('value', '2');
+  await expect(second).toHaveAttribute('data-decision', 'undecided');
   const undone = await snapshot(page);
   expect(undone.decisionEvents.at(-1)).toMatchObject({
     value: 'undecided',
     source: { kind: 'human', via: 'web-review' },
-    action: { kind: 'undo' },
+    action: { kind: 'single' },
   });
-  await region.evaluate((element) =>
+  await second.evaluate((element) =>
     element.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'j', repeat: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 'm', repeat: true, bubbles: true }),
     ),
   );
   await page.evaluate(() => localStorage.setItem('sp-single-keys', 'off'));
-  await region.focus();
+  await second.focus();
   await page.keyboard.press('j');
   expect((await snapshot(page)).decisionEvents).toEqual(undone.decisionEvents);
   await page.evaluate(() => localStorage.setItem('sp-single-keys', 'on'));
-  await page.getByRole('combobox', { name: 'What to review' }).focus();
+  await page.getByRole('combobox', { name: 'Account', exact: true }).focus();
   await page.keyboard.press('k');
   expect((await snapshot(page)).decisionEvents).toEqual(undone.decisionEvents);
   await checkAccessibility(page, context);
@@ -116,12 +111,12 @@ test('card bulk preview cancels without mutation and human confirm marks exact f
   const audit = await observeImport(context, page);
   await restorePerson(page);
   await page
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
+    .getByRole('button', { name: 'Mark 2 entries for deletion', exact: true })
     .click();
   const dialog = page.getByRole('dialog');
   await expect(
     dialog.getByRole('button', {
-      name: 'Mark for deletion: 2 entries',
+      name: 'Mark 2 entries',
       exact: true,
     }),
   ).toBeEnabled();
@@ -141,9 +136,9 @@ test('card bulk preview cancels without mutation and human confirm marks exact f
         action.kind === 'bulk',
     ),
   ).toBe(true);
-  await expect(
-    page.getByRole('progressbar', { name: 'Review', exact: true }),
-  ).toHaveAttribute('value', '2');
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    'Marked, 2 entries',
+  );
   await audit.assert();
 });
 
@@ -367,7 +362,8 @@ test('three primary destinations and one keyboard-operable menu reflow at 320px 
       document.documentElement.dataset.theme = value;
     }, theme);
     const colors = await page
-      .getByRole('button', { name: 'Delete J', exact: true })
+      .getByRole('button', { name: 'Mark M', exact: true })
+      .first()
       .evaluate((button) => {
         const css = getComputedStyle(button);
         return [css.color, css.backgroundColor, css.borderColor];
@@ -426,20 +422,15 @@ test('shared cards expose fixture parent links and missing Instagram context wit
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption(personExpected.accountKey);
   const card = page.getByTestId('review-card');
-  const next = page.getByRole('button', { name: 'Next post', exact: true });
-  await expect(card.locator('article')).toHaveAttribute(
-    'data-item-id',
-    personExpected.suggestionIds[0],
+  await page.getByRole('tab', { name: /^All,/ }).click();
+  const ownFirst = card.locator(
+    `article[data-item-id="${personExpected.suggestionIds[0]}"]`,
   );
   await expect(
-    card.getByRole('link', { name: 'View original on X', exact: true }),
+    ownFirst.getByRole('link', { name: 'View original on X', exact: true }),
   ).toHaveCount(0);
-  await next.click();
-  await expect(card.locator('article')).toHaveAttribute(
-    'data-item-id',
-    reply.id,
-  );
-  const original = card.getByRole('link', {
+  const replyCard = card.locator(`article[data-item-id="${reply.id}"]`);
+  const original = replyCard.getByRole('link', {
     name: 'View original on X',
     exact: true,
   });
@@ -450,22 +441,17 @@ test('shared cards expose fixture parent links and missing Instagram context wit
   );
   await expect(original).toHaveAttribute('target', '_blank');
   await expect(original).toHaveAttribute('rel', 'noopener noreferrer');
-  await next.click();
-  await expect(card.locator('article')).toHaveAttribute(
-    'data-item-id',
-    'x:review-0006',
-  );
-  await next.click();
-  await expect(card.locator('article')).toHaveAttribute(
-    'data-item-id',
-    quote.id,
-  );
-  await expect(original).toHaveAttribute(
+  const quoteCard = card.locator(`article[data-item-id="${quote.id}"]`);
+  const quoteLink = quoteCard.getByRole('link', {
+    name: 'View original on X',
+    exact: true,
+  });
+  await expect(quoteLink).toHaveAttribute(
     'href',
     `https://x.com/i/web/status/${quote.reference.quotedId}`,
   );
-  await expect(original).toHaveAttribute('target', '_blank');
-  await expect(original).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(quoteLink).toHaveAttribute('target', '_blank');
+  await expect(quoteLink).toHaveAttribute('rel', 'noopener noreferrer');
 
   await page.goto('/socialprune/#/archive');
   await page
@@ -509,13 +495,14 @@ test('shared cards expose fixture parent links and missing Instagram context wit
     .getByTestId('card-review')
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption('synthetic-comment');
+  await page.getByRole('tab', { name: /^All,/ }).click();
   await expect(card.locator('article')).toContainText(
     'Comment on @generated_owner',
   );
   await expect(card.locator('article')).toContainText(
     'Instagram does not include the post.',
   );
-  await expect(card.getByRole('link')).toHaveCount(0);
+  await expect(card.locator('article').getByRole('link')).toHaveCount(0);
   await audit.assert();
 });
 
@@ -544,6 +531,7 @@ test('missing-owner Instagram comments state missing post context in both shared
   await page
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption('synthetic-comment');
+  await page.getByRole('tab', { name: /^All,/ }).click();
   await expect(card.locator('article')).toContainText(
     'Instagram does not include the post.',
   );

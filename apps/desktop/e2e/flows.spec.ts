@@ -10,6 +10,7 @@ test('demo review decision crosses the real bridge, portable backup, CLI and res
   const app = await launch('probe');
   try {
     await expect(app.page.getByTestId('review-card')).toBeVisible();
+    await app.page.getByRole('tab', { name: /^All,/ }).click();
     await app.page.getByRole('button', { name: /^Keep/ }).first().click();
     const opened = await call(app, {
       type: 'open',

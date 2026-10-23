@@ -3,6 +3,7 @@
   .rules {
     padding: var(--space-5);
     min-width: 0;
+    overflow-wrap: normal;
   }
   .picker h2,
   .rules h2 {
@@ -71,7 +72,7 @@
     align-items: baseline;
     font-size: var(--type-sm);
     font-weight: var(--weight-heading);
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
   }
   .hitCount {
     font-variant-numeric: tabular-nums;

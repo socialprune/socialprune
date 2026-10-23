@@ -3,6 +3,9 @@ import { waitForApp } from './helpers.ts';
 import { startStaticServer } from './static-server.ts';
 import { menuLink } from './navigation.ts';
 
+// eslint-disable-next-line no-restricted-properties -- Test-only local server port, never a credential.
+const offlinePort = Number(process.env['SP_E2E_PROBE_PORT'] ?? 4182);
+
 test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motion', async ({
   page,
 }) => {
@@ -64,7 +67,7 @@ test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motio
 test('W0 every shell route reloads from the cache with its actual server stopped', async ({
   page,
 }) => {
-  const server = await startStaticServer(4182);
+  const server = await startStaticServer(offlinePort);
   try {
     await page.goto(`${server.origin}/socialprune/`);
     await expect(page.locator('main[data-gate]')).toHaveAttribute(
@@ -90,7 +93,7 @@ test('W0 first-visit frame blocks privileged UI and controlled HTML cannot be fr
   page,
   context,
 }) => {
-  const server = await startStaticServer(4182);
+  const server = await startStaticServer(offlinePort);
   const frame = await context.newPage();
   try {
     await frame.goto(`${server.origin}/socialprune/test-parent`);

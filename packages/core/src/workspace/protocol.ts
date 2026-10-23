@@ -137,8 +137,6 @@ export const BulkPreviewSchema = z.strictObject({
   total: nonnegative,
   willChange: nonnegative,
   unchanged: nonnegative,
-  skippedPopular: nonnegative.optional(),
-  skipPopular: z.literal(true).optional(),
   byCurrentValue: DecisionCountsSchema,
   sample: z.array(ReviewRowSchema).max(20),
   revision: nonnegative,
@@ -217,7 +215,6 @@ export const PreviewBulkRequestSchema = z.strictObject({
   generation,
   value: DecisionValueSchema,
   overwrite: z.array(DecisionValueSchema).min(1).max(4),
-  skipPopular: z.literal(true).optional(),
   itemIds: z
     .array(id)
     .min(1)

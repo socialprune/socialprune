@@ -91,6 +91,8 @@ function Content({
   const workspace = useRef<WorkspaceClient | null>(null);
   const updates = useRef<AppUpdates | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
+  const focusPage = useRef({ route, locale });
+  const navigationIntent = useRef(false);
   useEffect(() => {
     const changed = () => {
       const next = parseRoute(location.hash);
@@ -240,7 +242,21 @@ function Content({
     }
   }
   useEffect(() => {
-    heading.current?.focus();
+    const clicked = (event: MouseEvent) => {
+      if (event.isTrusted && (event.target as Element).closest('a[href^="#/"]'))
+        navigationIntent.current = true;
+    };
+    document.addEventListener('click', clicked, true);
+    return () => document.removeEventListener('click', clicked, true);
+  }, []);
+  useEffect(() => {
+    if (
+      navigationIntent.current &&
+      (focusPage.current.route !== route || focusPage.current.locale !== locale)
+    )
+      heading.current?.focus();
+    navigationIntent.current = false;
+    focusPage.current = { route, locale };
     document.title = `${t('app.name')} · ${route}`;
   }, [route, locale]);
   const busy = state?.phase === 'importing' || state?.phase === 'aborting';
@@ -559,7 +575,7 @@ function Content({
           {route === '/review/list' && dataReady && activeClient && (
             <Suspense fallback={<p role="status">{t('gate.preparing')}</p>}>
               <p>
-                <a href="#/review">{t('proto.cardView')}</a>
+                <a href="#/review">{t('feed.title')}</a>
               </p>
               <Review client={activeClient} />
             </Suspense>

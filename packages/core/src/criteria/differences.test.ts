@@ -11,7 +11,7 @@ import { QueryEngine } from '../workspace/query.ts';
 import { ReviewService } from '../workspace/review.ts';
 import { PRESETS } from './presets.ts';
 
-test('v6 first-tab membership differs from the actual legacy preview in exactly section 6 four classes', async () => {
+test('v6 first-tab membership retains the four recorded legacy difference classes after retiring the old popularity flag', async () => {
   const legacy = createWorkspace({ kind: 'demo' });
   legacy.schemaVersion = 6;
   legacy.settings = {
@@ -74,11 +74,11 @@ test('v6 first-tab membership differs from the actual legacy preview in exactly 
       previewId: 'legacy-preview',
       value: 'delete',
       overwrite: ['undecided', 'later', 'keep', 'delete'],
-      skipPopular: true,
     });
     expect(old.total).toBe(7);
-    expect(old.willChange).toBe(5);
-    expect(old.skippedPopular).toBe(1);
+    expect(old.willChange).toBe(6);
+    // The retired legacy popularity exclusion is input metadata in cases above.
+    // Its historical eligible set below is not a live protocol capability.
     const allOld = await query.selection('legacy', 1);
     expect([...allOld.ids].sort()).toEqual([
       'x:harmless',

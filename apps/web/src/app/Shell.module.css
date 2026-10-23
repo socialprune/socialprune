@@ -235,7 +235,9 @@
       display: none;
     }
     .brand {
-      min-width: 24px;
+      min-width: var(--target-size);
+      min-height: var(--target-size);
+      justify-content: center;
     }
     .main {
       padding-top: var(--space-2);

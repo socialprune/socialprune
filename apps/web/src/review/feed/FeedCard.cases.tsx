@@ -180,7 +180,7 @@ describe('presentational feed', () => {
       />,
     );
     expect(html).toContain('aria-busy="true"');
-    expect(html).not.toContain('<article');
+    expect(html).toContain('<article');
     expect(html).toContain('disabled=""');
   });
   it('uses display-name initials and falls back only when the name is empty', () => {
@@ -222,6 +222,14 @@ describe('presentational feed', () => {
     expect(html).toContain('2 marked entries wait for you on Instagram.');
     expect(html).toContain('Open the click list');
     expect(html).not.toContain('Delete on X');
+  });
+  it('keeps the first final-mark explanation visible rather than only in screen-reader text', () => {
+    const html = render(
+      <FinalMarkFooter count={3} held={1} onPreview={noop} />,
+    );
+    const paragraph = html.match(/<p[^>]*>([\s\S]*?)<\/p>/)?.[1];
+    expect(paragraph).toContain('Only the suggestions you did not keep.');
+    expect(paragraph).toContain('Nothing is deleted on X yet.');
   });
   it('shows first-start guidance without an actionable final mark', () => {
     const html = render(

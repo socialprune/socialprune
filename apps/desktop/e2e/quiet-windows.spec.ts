@@ -48,6 +48,7 @@ for (const variant of ['test', 'probe'] as const)
         window.focus();
       });
       expect(await state()).toEqual(before);
+      await app.page.getByRole('tab', { name: /^All,/ }).click();
       await app.page.getByRole('button', { name: /^Keep/ }).first().click();
       expect(
         await call(app, {

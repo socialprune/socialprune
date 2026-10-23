@@ -75,6 +75,7 @@ base(
         .getByRole('navigation', { name: 'Primary navigation', exact: true })
         .getByRole('link', { name: 'Review', exact: true })
         .click();
+      await page.getByRole('tab', { name: /^All,/ }).click();
       const original = page.getByTestId('stored-original');
       await expect(original).toContainText(originalsFixture.fetched.text);
       await expect(original).toContainText(originalsFixture.fetched.user.name);
@@ -545,11 +546,15 @@ test('real session imports fixture rows, commits a UI decision, opens a click li
     .getByRole('link', { name: 'Review', exact: true })
     .click();
   await expect(
-    page.getByTestId('review-card').locator('article'),
-  ).toContainText(first.text);
-  await expect(
-    page.getByRole('progressbar', { name: 'Review', exact: true }),
-  ).toHaveAttribute('max', String(x.itemCount));
+    page.getByRole('heading', { name: 'Choose first what should go.' }),
+  ).toBeVisible();
+  await page.getByRole('tab', { name: /^All,/ }).click();
+  await expect(page.getByRole('feed').locator('article').first()).toContainText(
+    first.text,
+  );
+  await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(
+    `All, ${new Intl.NumberFormat('en').format(x.itemCount)} entries`,
+  );
   // The real HTTP build must serve the same fixed route inventory. Keep the
   // grid's existing decision assertions on its explicit list route.
   await page.getByRole('button', { name: 'Menu', exact: true }).click();

@@ -20,6 +20,7 @@ export interface FeedSuggestion {
   evidence?: string;
   ownCriterion?: boolean;
   unclear?: boolean;
+  harmless?: boolean;
 }
 export interface FeedCardModel extends FeedPost {
   kind: 'post' | 'reply' | 'quote' | 'repost' | 'comment';
@@ -60,4 +61,5 @@ export interface MarkPreviewModel {
   sources: readonly { name: string; count: number }[];
   sample: readonly FeedPost[];
   state: 'ready' | 'loading' | 'changed' | 'error';
+  rules?: readonly string[];
 }

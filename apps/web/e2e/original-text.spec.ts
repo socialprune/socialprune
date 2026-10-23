@@ -53,11 +53,18 @@ for (const row of originalTextCases()) {
     );
     for (const route of ['review', 'archive']) {
       await page.goto(`/socialprune/#/${route}`);
+      if (route === 'review')
+        await page.getByRole('tab', { name: /^All,/ }).click();
       const card = page.locator(`article[data-item-id="${reply.id}"]`);
       await expect(card).toBeVisible();
-      await expect(card.locator('p[dir="auto"]').first()).toHaveText(
-        originalTextInput.ownText,
-      );
+      await expect(
+        card
+          .locator('p[dir="auto"]')
+          .filter({
+            hasText: originalTextInput.ownText,
+          })
+          .first(),
+      ).toHaveText(originalTextInput.ownText);
       const original = card.getByTestId('stored-original');
       const text = original.locator(':scope > p[dir="auto"]').first();
       await expect(text).toHaveText(row.expected);

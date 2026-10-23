@@ -84,11 +84,18 @@
   }
   .side {
     overflow: auto;
-    padding: var(--space-4) 0;
+    padding: var(--space-5);
     font-size: var(--type-sm);
+    background: var(--color-social-hint);
+    border: 1px solid var(--color-social-divider);
+    border-radius: var(--radius-social);
+    align-self: start;
+    margin-top: var(--space-4);
+    max-height: calc(100dvh - 80px);
   }
   .side h2 {
     margin: 0 0 var(--space-4);
+    font-size: var(--type-md);
   }
   .side h3 {
     font-size: var(--type-sm);

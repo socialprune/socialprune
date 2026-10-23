@@ -2,28 +2,13 @@ import { test, expect } from '@playwright/test';
 import { observeImport } from './helpers.ts';
 import { restoreReview, reviewFixture } from './review-fixture.ts';
 
-test('mark suggested entries only prepares the Medium-or-High current suggestions with default decisions', async ({
+test('list review no longer offers the retired suggestion-specific bulk shortcut', async ({
   page,
 }) => {
   const workspace = await restoreReview(page);
-  await page
-    .getByRole('button', { name: 'Mark suggested entries', exact: true })
-    .click();
   await expect(
-    page.getByRole('dialog').getByRole('button', {
-      name: 'Mark for deletion: 1 entry',
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await expect(page.getByRole('dialog')).toContainText(
-    'Current suggestions with risk Medium or High',
-  );
-  await page
-    .getByText('First 1 entry in this preview', { exact: true })
-    .click();
-  await expect(page.getByRole('dialog')).toContainText(
-    'Agent: Synthetic reviewer',
-  );
+    page.getByRole('button', { name: 'Mark suggested entries', exact: true }),
+  ).toHaveCount(0);
   const detail = await page.evaluate(
     (itemId) =>
       window.workspace.request({
@@ -34,10 +19,6 @@ test('mark suggested entries only prepares the Medium-or-High current suggestion
     workspace.items[0]!.id,
   );
   expect(detail).toMatchObject({ type: 'itemDetail', events: [] });
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Cancel', exact: true })
-    .click();
 });
 
 test('bulk preview names exact changes, keeps existing decisions and replaces stale and expired previews', async ({

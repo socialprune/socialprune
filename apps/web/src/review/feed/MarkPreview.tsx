@@ -4,6 +4,7 @@ import { useIntl } from 'react-intl';
 import { useT } from '../../i18n/index.ts';
 import type { MarkPreviewModel } from './types.ts';
 import styles from './Feed.module.css';
+import controls from './Controls.module.css';
 
 export function MarkPreview({
   open,
@@ -11,16 +12,19 @@ export function MarkPreview({
   zone = 'Europe/Berlin',
   onConfirm,
   onCancel,
+  busy = false,
 }: {
   open: boolean;
   preview: MarkPreviewModel;
   zone?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  busy?: boolean;
 }) {
   const t = useT(),
     intl = useIntl();
-  const pending = preview.state === 'loading' || preview.state === 'error';
+  const pending =
+    busy || preview.state === 'loading' || preview.state === 'error';
   return (
     <Dialog.Root
       open={open}
@@ -57,6 +61,13 @@ export function MarkPreview({
               level: preview.level,
             })}
           </p>
+          {!!preview.rules?.length && (
+            <ul className={styles.ruleSummary}>
+              {preview.rules.map((rule, index) => (
+                <li key={index}>{rule}</li>
+              ))}
+            </ul>
+          )}
           <div className={styles.exclusions}>
             <ShieldCheck size={20} aria-hidden="true" />
             <div>
@@ -114,12 +125,14 @@ export function MarkPreview({
           <div className={styles.dialogActions}>
             <button
               disabled={pending || !preview.count}
-              className={styles.finalButton}
+              className={controls.danger}
               onClick={onConfirm}
             >
               {t('markPreview.confirm', { count: preview.count })}
             </button>
-            <button onClick={onCancel}>{t('bulk.cancel')}</button>
+            <button className={controls.button} onClick={onCancel}>
+              {t('bulk.cancel')}
+            </button>
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

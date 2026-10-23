@@ -43,7 +43,7 @@ function setup() {
   return { store, query, review };
 }
 
-test('suggestion skip uses the entire own account rather than a selected low-like window', async () => {
+test('ordinary selected bulk does not infer a popularity exclusion from account engagement', async () => {
   const data = selectionWorkspace();
   data.items.slice(0, 10).forEach((item, index) => {
     item.engagement = {
@@ -68,9 +68,8 @@ test('suggestion skip uses the entire own account rather than a selected low-lik
       value: 'delete',
       overwrite: ['undecided'],
       itemIds: ['x:1'],
-      skipPopular: true,
     });
-    expect(low).toMatchObject({ willChange: 1, skippedPopular: 0 });
+    expect(low).toMatchObject({ willChange: 1 });
     const high = await review.previewBulk({
       pageId: 'page',
       previewId: 'high',
@@ -79,20 +78,19 @@ test('suggestion skip uses the entire own account rather than a selected low-lik
       value: 'delete',
       overwrite: ['undecided'],
       itemIds: ['x:10', 'x:1'],
-      skipPopular: true,
     });
-    expect(high).toMatchObject({ willChange: 1, skippedPopular: 1 });
+    expect(high).toMatchObject({ willChange: 2 });
     expect(
       await review.confirmBulk({
         commandId: 'selected-popular',
         pageId: 'page',
         previewId: 'high',
       }),
-    ).toMatchObject({ type: 'committed', changed: 1 });
+    ).toMatchObject({ type: 'committed', changed: 2 });
     const workspace = await store.read(readWorkspace);
-    expect(workspace.decisionEvents.map((event) => event.itemId)).toEqual([
-      'x:1',
-    ]);
+    expect(
+      workspace.decisionEvents.map((event) => event.itemId).sort(),
+    ).toEqual(['x:1', 'x:10']);
   } finally {
     await store.close();
   }

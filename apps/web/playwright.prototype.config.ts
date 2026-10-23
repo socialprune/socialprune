@@ -7,7 +7,7 @@ export default defineConfig({
   ...existing,
   testDir: './scripts',
   testMatch: 'prototype-screens.spec.ts',
-  outputDir: join(tmpdir(), 'socialprune-screens-results'),
+  outputDir: join(tmpdir(), 'socialprune-feed-w3', 'prototype-results'),
   timeout: 120_000,
   use: {
     ...existing.use,

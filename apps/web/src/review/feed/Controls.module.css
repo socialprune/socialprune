@@ -1,0 +1,82 @@
+@layer components {
+  .button,
+  .primary,
+  .danger,
+  .quiet {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 10px 16px;
+    border: 1px solid var(--color-divider);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: var(--type-sm);
+    line-height: 1.35;
+    font-weight: var(--weight-heading);
+    text-decoration: none;
+    word-break: normal;
+    overflow-wrap: normal;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .primary {
+    background: var(--color-action);
+    border-color: var(--color-action);
+    color: var(--color-on-action);
+  }
+  .danger {
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+    color: var(--color-on-action);
+  }
+  .quiet {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-secondary);
+    padding-inline: 12px;
+  }
+  .button:hover,
+  .quiet:hover {
+    background: var(--color-social-cover);
+    color: var(--color-text);
+  }
+  .primary:hover,
+  .danger:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .button:active,
+  .quiet:active {
+    background: var(--color-selected-bg);
+  }
+  .button:disabled,
+  .primary:disabled,
+  .danger:disabled,
+  .quiet:disabled {
+    background: var(--color-social-hint);
+    border-color: var(--color-divider);
+    color: var(--color-text-secondary);
+    cursor: default;
+  }
+  .button svg,
+  .primary svg,
+  .danger svg,
+  .quiet svg {
+    flex: none;
+  }
+  @media (forced-colors: active) {
+    .button,
+    .primary,
+    .danger,
+    .quiet {
+      border-color: ButtonText;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+  }
+}

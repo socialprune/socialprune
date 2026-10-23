@@ -86,7 +86,12 @@ import {
   checkPage,
   outsideProfilePaths,
 } from './selectors.ts';
-import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
+import {
+  PostOpenRetries,
+  POST_REOPEN_WAIT_MS,
+  FilteredListTimeout,
+} from './retry.ts';
+import type { PostRetry } from './report.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -497,6 +502,62 @@ export async function runContextWithDependencies(
       options.order?.value.maxSteps ?? 600,
       Math.max(0, pace.perDay - prior.used),
     );
+    const waitToReopen = async (retry: PostRetry) => {
+      guard();
+      await checkPage(page);
+      await checkpoint();
+      stage = retry.stage === 'list' ? 'list-read' : 'post-open';
+      const startedWait = options.now().getTime();
+      const watcher = new AbortController();
+      const checkWaitingPage = async () => {
+        guard();
+        await checkPage(page);
+        if (new URL(page.url()).pathname.replace(/\/$/, '') === COMMENTS_PATH) {
+          const value = accountClass(
+            options.plan.handle,
+            await outsideProfilePaths(page),
+          );
+          accountAfterClass = value;
+          if (value !== 'expected')
+            throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+        }
+      };
+      let crash!: () => void;
+      const crashed = new Promise<never>((_resolve, reject) => {
+        crash = () => {
+          const failure = new Error();
+          failure.name = 'PageCrashedError';
+          reject(failure);
+        };
+        page.once('crash', crash);
+      });
+      const watch = (async () => {
+        for (;;) {
+          await retryPoll(250, undefined, { signal: watcher.signal });
+          await checkWaitingPage();
+        }
+      })();
+      options.session?.update({
+        phase: 'running',
+        remainingMs: POST_REOPEN_WAIT_MS,
+        until: new Date(
+          options.now().getTime() + POST_REOPEN_WAIT_MS,
+        ).toISOString(),
+      });
+      try {
+        await Promise.race([boundaryWait(POST_REOPEN_WAIT_MS), watch, crashed]);
+        await checkWaitingPage();
+        await checkpoint();
+      } finally {
+        retry.waitedMs = Math.max(
+          0,
+          Math.round(options.now().getTime() - startedWait),
+        );
+        watcher.abort();
+        page.off('crash', crash);
+        // Promise.race already observes a later rejection from the watcher.
+      }
+    };
     outer: for (const row of chosen) {
       if (options.plan.canary && completed === 5) break;
       if (steps >= max) {
@@ -614,7 +675,7 @@ export async function runContextWithDependencies(
         stage = 'list-read';
         const list = await (async () => {
           try {
-            return await loadList(
+            const result = await loadList(
               page,
               row.item,
               options.plan.handle,
@@ -624,11 +685,47 @@ export async function runContextWithDependencies(
               options.now(),
               rowCounts,
             );
+            if (reopening?.stage === 'list') {
+              reopening.outcome = 'ready';
+              reopening = null;
+            }
+            return result;
+          } catch (caught) {
+            if (caught instanceof FilteredListTimeout) {
+              report.steps.push({
+                ready: { postMs: 0 },
+                filterByLists: true,
+                rows: 0,
+                emptySkipped: rowCounts.emptySkipped,
+                otherName: rowCounts.otherName,
+                candidates: 0,
+                confirmed: false,
+                result: 'list-timeout',
+              });
+              if (reopening?.stage === 'list') reopening.outcome = 'timeout';
+            }
+            const retry = postRetries.beginList(
+              caught,
+              [row.item.id],
+              steps,
+              options.plan.canary,
+              used < pace.perDay &&
+                steps < max &&
+                dateInZone(options.now(), options.plan.timeZone) === day,
+            );
+            if (!retry) throw caught;
+            await waitToReopen(retry);
+            reopening = retry;
+            return null;
           } finally {
             report.rows.emptySkipped += rowCounts.emptySkipped;
             report.rows.otherName += rowCounts.otherName;
           }
         })();
+        if (!list) {
+          candidate--;
+          continue;
+        }
         if (accountBefore === null) accountBeforeClass = 'expected';
         accountBefore ??= list.account;
         accountAfter = list.account;
@@ -741,67 +838,7 @@ export async function runContextWithDependencies(
               dateInZone(options.now(), options.plan.timeZone) === day,
           );
           if (!retry) throw caught;
-          guard();
-          await checkPage(page);
-          await checkpoint();
-          stage = 'post-open';
-          const startedWait = options.now().getTime();
-          const watcher = new AbortController();
-          const checkWaitingPage = async () => {
-            guard();
-            await checkPage(page);
-            if (
-              new URL(page.url()).pathname.replace(/\/$/, '') === COMMENTS_PATH
-            ) {
-              const value = accountClass(
-                options.plan.handle,
-                await outsideProfilePaths(page),
-              );
-              accountAfterClass = value;
-              if (value !== 'expected')
-                throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
-            }
-          };
-          let crash!: () => void;
-          const crashed = new Promise<never>((_resolve, reject) => {
-            crash = () => {
-              const failure = new Error();
-              failure.name = 'PageCrashedError';
-              reject(failure);
-            };
-            page.once('crash', crash);
-          });
-          const watch = (async () => {
-            for (;;) {
-              await retryPoll(250, undefined, { signal: watcher.signal });
-              await checkWaitingPage();
-            }
-          })();
-          options.session?.update({
-            phase: 'running',
-            remainingMs: POST_REOPEN_WAIT_MS,
-            until: new Date(
-              options.now().getTime() + POST_REOPEN_WAIT_MS,
-            ).toISOString(),
-          });
-          try {
-            await Promise.race([
-              boundaryWait(POST_REOPEN_WAIT_MS),
-              watch,
-              crashed,
-            ]);
-            await checkWaitingPage();
-            await checkpoint();
-          } finally {
-            retry.waitedMs = Math.max(
-              0,
-              Math.round(options.now().getTime() - startedWait),
-            );
-            watcher.abort();
-            page.off('crash', crash);
-            // Its rejection is already observed by Promise.race; do not wait
-            // for a locator read after another stop has won the race.
-          }
+          await waitToReopen(retry);
           reopening = retry;
           reopenTarget = target;
           candidate--;

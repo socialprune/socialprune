@@ -2,6 +2,8 @@ import { CLI_ERRORS, CliError } from '../../cli/errors.ts';
 import type { CliErrorCode } from '../../cli/errors.ts';
 import { z } from 'zod';
 import { POST_PATH_CLASSES } from './signals.ts';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
 const count = z.number().int().nonnegative();
 const sourceCountSchema = z.strictObject({
@@ -94,7 +96,7 @@ export type PostRequestStatus = z.infer<typeof PostRequestsSchema>[number];
 const PostRetrySchema = z.strictObject({
   step: z.number().int().positive(),
   retryStep: z.number().int().positive().nullable(),
-  stage: z.literal('post-open'),
+  stage: z.enum(['post-open', 'list']),
   waitedMs: count,
   outcome: z.enum(['ready', 'timeout']).nullable(),
 });
@@ -257,6 +259,292 @@ export function errorClass(error: unknown): ErrorClass {
     if (names.includes(name)) return value;
   return 'other';
 }
+export const ERROR_NAMES = [
+  'Error',
+  'ZodError',
+  'AbortError',
+  'AggregateError',
+  'EvalError',
+  'URIError',
+  'TypeError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'TimeoutError',
+  'TargetClosedError',
+  'TargetClosedError2',
+  'PageCrashedError',
+  'NavigationError',
+  'ProtocolError',
+  'NonRecoverableDOMError',
+  'JavaScriptErrorInEvaluate',
+  'other-name',
+] as const;
+export const PLAYWRIGHT_MESSAGE_CLASSES = [
+  'execution-context-destroyed',
+  'element-detached',
+  'strict-mode-violation',
+  'target-closed',
+  'not-attached',
+  'frame-detached',
+  'protocol-error',
+  'unmatched',
+] as const;
+// Declaration names in the production Instagram modules, not names from a
+// stack or page. Unknown/minified names must not acquire a guessed identity.
+const OWN_FUNCTION_MODULES = {
+  'driver.ts': [
+    'waitPage',
+    'filterList',
+    'navigateList',
+    'checkedAccountRows',
+    'readAccountRows',
+    'loadList',
+    'openCandidate',
+    'reopenCandidate',
+    'postReady',
+    'confirmOnPost',
+    'blockCount',
+    'settledPost',
+  ],
+  'selectors.ts': [
+    'rows',
+    'clickAllowed',
+    'checkPage',
+    'relativeAgeMs',
+    'accountMatches',
+    'outsideProfilePaths',
+    'readRows',
+    'rowCandidate',
+    'utcWindow',
+    'postAddress',
+    'timestamp',
+    'readPost',
+    'profileLinks',
+    'textBlock',
+    'captionText',
+    'postLinks',
+    'postElement',
+    'scrollPostComments',
+    'pathTo',
+    'confirmComment',
+    'currentImageSource',
+  ],
+  'run.ts': [
+    'runContextWithDependencies',
+    'runContext',
+    'recordCause',
+    'stop',
+    'guard',
+    'pause',
+    'checkpoint',
+    'platformStop',
+    'rejectIncomplete',
+    'assertAutomaticCanary',
+    'waitToReopen',
+    'snapshot',
+    'finalize',
+    'structure',
+  ],
+  'capture.ts': ['pageAnswers', 'writeOnce', 'capturePost', 'writeStructure'],
+  'canary.ts': [
+    'compareSources',
+    'automaticCanaryCheck',
+    'automaticReadbackCheck',
+    'canaryAudit',
+  ],
+  'network.ts': [
+    'observeContextRuntime',
+    'bodyClass',
+    'allowedInstagramHost',
+    'allowedInstagramURL',
+    'imageHost',
+    'mutation',
+    'guardInstagramNetwork',
+  ],
+  'plan.ts': [
+    'normalize',
+    'ownerName',
+    'instagramHandle',
+    'planContext',
+    'contextSummary',
+    'contextList',
+    'canaryRows',
+  ],
+  'answers.ts': [
+    'parseAnswer',
+    'object',
+    'mediaObject',
+    'postObjects',
+    'walk',
+    'answerSummary',
+    'containsCode',
+  ],
+  'filter.ts': [
+    'refuse',
+    'values',
+    'controls',
+    'chooseFilterOption',
+    'chooseFilterDate',
+  ],
+  'order.ts': ['readContextOrder', 'validateContextOrder'],
+  'pace.ts': [
+    'contextPace',
+    'paceSummary',
+    'paceText',
+    'contextEstimate',
+    'instagramDailyCount',
+  ],
+  'pages.ts': ['contextPages', 'fail', 'reject', 'classify', 'opened'],
+  'signals.ts': ['hostClass', 'pathClass', 'postPathClass', 'rateSignal'],
+  'report.ts': [
+    'accountClass',
+    'errorClass',
+    'diagnosticString',
+    'playwrightMessageClass',
+    'ownFunction',
+    'unexpectedErrorDetails',
+    'causeToken',
+    'contextCause',
+    'causeChain',
+    'stopDetails',
+    'stopDetailText',
+    'reportKey',
+    'keyPaths',
+    'pairedCode',
+  ],
+} as const;
+const OWN_FUNCTIONS = [
+  ...Object.values(OWN_FUNCTION_MODULES).flat(),
+  'outside-own-code',
+] as const;
+export const UnexpectedErrorSchema = z.strictObject({
+  errorClass: z.enum(ERROR_CLASSES),
+  errorName: z.enum(ERROR_NAMES),
+  playwrightMessageClass: z.enum(PLAYWRIGHT_MESSAGE_CLASSES),
+  ownFunction: z.enum(OWN_FUNCTIONS),
+});
+type UnexpectedError = z.infer<typeof UnexpectedErrorSchema>;
+const MESSAGE_PREFIXES = [
+  ['Execution context was destroyed', 'execution-context-destroyed'],
+  ['Cannot find context with specified id', 'execution-context-destroyed'],
+  ['Element is detached from the DOM', 'element-detached'],
+  ['Element was detached from the DOM', 'element-detached'],
+  ['strict mode violation:', 'strict-mode-violation'],
+  ['Target page, context or browser has been closed', 'target-closed'],
+  ['Target closed', 'target-closed'],
+  ['Element is not attached to the DOM', 'not-attached'],
+  ['Frame was detached', 'frame-detached'],
+  ['Frame has been detached', 'frame-detached'],
+  ['Navigating frame was detached', 'frame-detached'],
+  ['Protocol error (', 'protocol-error'],
+] as const;
+const API_PREFIXES = [
+  'locator.innerText: ',
+  'locator.textContent: ',
+  'locator.getAttribute: ',
+  'locator.count: ',
+  'locator.all: ',
+  'locator.click: ',
+  'locator.waitFor: ',
+  'locator.boundingBox: ',
+  'locator.scrollIntoViewIfNeeded: ',
+  'elementHandle.innerText: ',
+  'elementHandle.getAttribute: ',
+  'page.goto: ',
+  'frame.goto: ',
+  'page.title: ',
+  'page.waitForURL: ',
+  'browserContext.newCDPSession: ',
+  'cdpSession.send: ',
+  'cdpSession.detach: ',
+  'mouse.move: ',
+  'mouse.wheel: ',
+] as const;
+function diagnosticString(
+  error: Error,
+  key: 'name' | 'message' | 'stack',
+  limit: number,
+): string {
+  try {
+    const value: unknown = error[key];
+    return typeof value === 'string' ? value.slice(0, limit) : '';
+  } catch {
+    return '';
+  }
+}
+function playwrightMessageClass(
+  message: string,
+): UnexpectedError['playwrightMessageClass'] {
+  const api = API_PREFIXES.find((prefix) => message.startsWith(prefix));
+  const wrapped = api ? message.slice(api.length) : message;
+  const body = wrapped.startsWith('Error: ') ? wrapped.slice(7) : wrapped;
+  return (
+    MESSAGE_PREFIXES.find(([prefix]) => body.startsWith(prefix))?.[1] ??
+    'unmatched'
+  );
+}
+export function ownFunction(
+  stack: string,
+  moduleUrl = import.meta.url,
+): UnexpectedError['ownFunction'] {
+  const self = fileURLToPath(moduleUrl)
+    .replaceAll('\\', '/')
+    .replace(/^\/([A-Za-z]:\/)/, '$1');
+  const sourceDirectory = dirname(self).replaceAll('\\', '/') + '/';
+  const isBundle = /\/(?:socialprune\.mjs|engine\.cjs)$/.test(self);
+  for (const line of stack.split(/\r?\n/).slice(1, 65)) {
+    // Match complete V8 frame syntax; never extract a token from message text.
+    const frame = /^\s+at (?:async )?(?:(.*?) \((.+)\)|(.+))$/.exec(line);
+    if (!frame) continue;
+    const location = /^(.*):\d+:\d+$/.exec(frame[2] ?? frame[3] ?? '');
+    if (!location) continue;
+    let path = location[1]!;
+    try {
+      if (path.startsWith('file:')) path = fileURLToPath(path);
+      else if (!/^(?:[A-Za-z]:[\\/]|\/)/.test(path)) continue;
+    } catch {
+      continue;
+    }
+    path = path.replaceAll('\\', '/').replace(/^\/([A-Za-z]:\/)/, '$1');
+    if (path.includes('/node_modules/') && !(isBundle && path === self))
+      continue;
+    const sourceModule = path.startsWith(sourceDirectory)
+      ? /^([^/]+\.ts)$/.exec(path.slice(sourceDirectory.length))?.[1]
+      : isBundle
+        ? /\/apps\/cli\/src\/browser\/instagram\/([^/]+\.ts)$/.exec(path)?.[1]
+        : undefined;
+    const module = Object.keys(OWN_FUNCTION_MODULES).find(
+      (file) => sourceModule === file,
+    );
+    if (sourceModule && !module) return 'outside-own-code';
+    if (!module && !(isBundle && path === self)) continue;
+    const name = /^(?:Module\.|Object\.)?([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(
+      frame[1] ?? '',
+    )?.[1];
+    const allowed: readonly string[] = module
+      ? OWN_FUNCTION_MODULES[module as keyof typeof OWN_FUNCTION_MODULES]
+      : OWN_FUNCTIONS;
+    if (name && allowed.includes(name))
+      return name as UnexpectedError['ownFunction'];
+    return 'outside-own-code';
+  }
+  return 'outside-own-code';
+}
+function unexpectedErrorDetails(error: unknown): UnexpectedError {
+  const name =
+    error instanceof Error ? diagnosticString(error, 'name', 128) : '';
+  const message =
+    error instanceof Error ? diagnosticString(error, 'message', 2048) : '';
+  const stack =
+    error instanceof Error ? diagnosticString(error, 'stack', 32768) : '';
+  return UnexpectedErrorSchema.parse({
+    errorClass: errorClass(error),
+    errorName: ERROR_NAMES.find((value) => value === name) ?? 'other-name',
+    playwrightMessageClass: playwrightMessageClass(message),
+    ownFunction: ownFunction(stack),
+  });
+}
 const RUNTIME_EVENTS = [
   'page-crash',
   'browser-disconnected',
@@ -309,6 +597,9 @@ export const ContextCauseSchema = z.strictObject({
   token: z.enum(CAUSE_TOKENS),
   chain: z.array(z.enum(CAUSE_TOKENS)).min(1).max(4),
   errorClass: z.enum(ERROR_CLASSES).optional(),
+  errorName: z.enum(ERROR_NAMES).optional(),
+  playwrightMessageClass: z.enum(PLAYWRIGHT_MESSAGE_CLASSES).optional(),
+  ownFunction: z.enum(OWN_FUNCTIONS).optional(),
 });
 function causeToken(error: unknown): CauseToken {
   if (error && typeof error === 'object') {
@@ -361,7 +652,7 @@ export function contextCause(
     step,
     ...cause,
     ...(cause.token === 'unexpected-error'
-      ? { errorClass: errorClass(error) }
+      ? unexpectedErrorDetails(error)
       : {}),
   });
 }
@@ -394,6 +685,9 @@ export function stopDetails(error: unknown): {
   token: string;
   accountCheck?: AccountCheck;
   errorClass?: ErrorClass;
+  errorName?: UnexpectedError['errorName'];
+  playwrightMessageClass?: UnexpectedError['playwrightMessageClass'];
+  ownFunction?: UnexpectedError['ownFunction'];
 } {
   if (
     error instanceof ContextStop &&
@@ -412,7 +706,7 @@ export function stopDetails(error: unknown): {
   return {
     code: token,
     token,
-    ...(token === 'unexpected-error' ? { errorClass: errorClass(error) } : {}),
+    ...(token === 'unexpected-error' ? unexpectedErrorDetails(error) : {}),
   };
 }
 export function stopDetailText(error: unknown): string {
@@ -421,6 +715,9 @@ export function stopDetailText(error: unknown): string {
   return (
     detail.token +
     (detail.errorClass ? `; errorClass=${detail.errorClass}` : '') +
+    (detail.errorName
+      ? `; errorName=${detail.errorName}; playwrightMessageClass=${detail.playwrightMessageClass}; ownFunction=${detail.ownFunction}`
+      : '') +
     (account
       ? `; link=${account.profileLinkFound}; outsidePathCount=${account.outsidePathCount}; rows=${account.rows}; own=${account.ownRows}; reads=${account.reads}; elapsedMs=${account.elapsedMs}; lastReadAfterDeadline=${account.lastReadAfterDeadline}`
       : '')

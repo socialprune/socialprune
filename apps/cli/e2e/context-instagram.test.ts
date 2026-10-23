@@ -1364,6 +1364,275 @@ async function harness(
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
 test.each([1, 2])(
+  'C25 filtered list empty %s times reopens once and journals both paced steps',
+  async (emptyLoads) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.emptyFilteredLists(emptyLoads);
+    try {
+      const result = await h.start('no-canary');
+      if (emptyLoads === 1)
+        expect(result, h.notices.join('')).toMatchObject({
+          completed: 1,
+          steps: 2,
+        });
+      else
+        expect(result).toMatchObject({
+          code: 'PLATFORM_CHECK',
+          token: 'list-timeout',
+        });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(JSON.parse(text)).toMatchObject({
+        retries: {
+          used: 1,
+          entries: [
+            {
+              step: 1,
+              retryStep: 2,
+              stage: 'list',
+              waitedMs: 60000,
+              outcome: emptyLoads === 1 ? 'ready' : 'timeout',
+            },
+          ],
+        },
+      });
+      expect(run.pageOpens).toBe(2);
+      expect(
+        (
+          await instagramDailyCount(
+            h.store,
+            h.plan.accountKey,
+            new Date(IG_FIXTURE.now),
+            h.plan.timeZone,
+          )
+        ).used,
+      ).toBe(2);
+      expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(1);
+      expect(
+        h.fake.requests.filter(
+          (request) => request.path === '/your_activity/interactions/comments',
+        ),
+      ).toHaveLength(2);
+      expect(
+        h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toHaveLength(emptyLoads === 1 ? 1 : 0);
+      if (emptyLoads === 2)
+        expect(h.notices.join('')).toContain('Stop detail: list-timeout');
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each([false, true])(
+  'C25 shared reopen budget mixed-post=%s stops on the fourth eligible empty filtered list',
+  async (mixedPost) => {
+    const h = await harness('success', 5);
+    await fullRunReady(h);
+    h.setLimit(20);
+    if (mixedPost) h.fake.slowPostOpens(0, 1);
+    let loads = 0;
+    h.fake.beforeList(() => {
+      loads++;
+      if ((!mixedPost && loads === 1) || [3, 5, 7].includes(loads))
+        h.fake.emptyFilteredLists(1);
+      return Promise.resolve();
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'list-timeout',
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(JSON.parse(text)).toMatchObject({
+        retries: {
+          used: 3,
+          entries: [
+            {
+              step: 1,
+              retryStep: 2,
+              stage: mixedPost ? 'post-open' : 'list',
+              outcome: 'ready',
+            },
+            { step: 3, retryStep: 4, stage: 'list', outcome: 'ready' },
+            { step: 5, retryStep: 6, stage: 'list', outcome: 'ready' },
+          ],
+        },
+        stop: { token: 'list-timeout' },
+      });
+      expect(run.pageOpens).toBe(7);
+      expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(3);
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).filter(
+          (record) => record.runId === run.runId,
+        ),
+      ).toHaveLength(3);
+      assertRecordedEvents(h.fake.events);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test('C25 a canary empty filtered list still stops immediately without reopen or post requests', async () => {
+  const h = await harness('success', 5);
+  // The oldest-first canary probe navigates twice before it applies the filter.
+  h.fake.emptyFilteredLists(2);
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 0, entries: [] },
+    });
+    expect(run.pageOpens).toBe(1);
+    expect(h.waits).not.toContain(60000);
+    expect(
+      h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toEqual([]);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 60000);
+test.each(['cap', 'run-limit', 'pace'] as const)(
+  'C25 filtered-list reopen respects %s accounting before any new list open',
+  async (mode) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.emptyFilteredLists(1);
+    if (mode === 'cap') h.setPace({ stepsPerDay: 1 });
+    if (mode === 'run-limit') h.setLimit(1);
+    if (mode === 'pace') h.setPace({ secondsPerStep: 10, batchPause: false });
+    const starts: number[] = [];
+    h.fake.beforeList(async () => {
+      starts.push(
+        Date.parse(
+          (await h.store.browserJournal()).runs.find(
+            (run) => run.runId !== 'generated-prior-canary',
+          )!.lastPageOpenedAt!,
+        ),
+      );
+    });
+    try {
+      const result = await h.start('no-canary');
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      if (mode === 'pace') {
+        expect(result).toMatchObject({ completed: 1, steps: 2 });
+        expect(starts).toHaveLength(2);
+        expect(starts[1]! - starts[0]!).toBeGreaterThanOrEqual(60000);
+        expect(run.pageOpens).toBe(2);
+      } else {
+        expect(result).toMatchObject({
+          code: 'PLATFORM_CHECK',
+          token: 'list-timeout',
+        });
+        expect(starts).toHaveLength(1);
+        expect(run.pageOpens).toBe(1);
+        expect(h.waits).not.toContain(60000);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('C25 an initial empty list cannot acquire a filtered-list reopen', async () => {
+  const h = await harness('never', 2);
+  await fullRunReady(h);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 0, entries: [] },
+    });
+    expect(h.waits).not.toContain(60000);
+    expect(run.pageOpens).toBe(1);
+  } finally {
+    await h.close();
+  }
+}, 60000);
+test.each(['error', 'login', 'challenge', '429', 'list-nav-other'] as const)(
+  'C25 %s during list retry wait remains an immediate stop',
+  async (variant) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.emptyFilteredLists(1);
+    h.afterWait(async (ms) => {
+      if (ms !== 60000) return;
+      h.fake.setVariant(variant);
+      await h
+        .context!.pages()
+        .find((page) => new URL(page.url()).origin === h.fake.origin)!
+        .goto(`${h.fake.origin}/your_activity/interactions/comments`);
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code:
+          variant === 'list-nav-other' ? 'ACCOUNT_MISMATCH' : 'PLATFORM_CHECK',
+      });
+      const run = (await h.store.browserJournal()).runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      const text = await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      );
+      expect(JSON.parse(text)).toMatchObject({
+        retries: {
+          used: 1,
+          entries: [{ stage: 'list', retryStep: null, outcome: null }],
+        },
+      });
+      expect(run.pageOpens).toBe(1);
+      expect(
+        h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each([1, 2])(
   'C23 post slow %s times reopens once with a counted paced step and keeps the original timeout on repetition',
   async (failures) => {
     const h = await harness('success', 2);

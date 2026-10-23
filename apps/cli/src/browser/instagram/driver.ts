@@ -28,6 +28,7 @@ import type { PostProjection, ConfirmationResult } from './selectors.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { ContextStop, accountClass } from './report.ts';
 import type { AccountClass } from './report.ts';
+import { FilteredListTimeout } from './retry.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
@@ -157,6 +158,7 @@ async function checkedAccountRows(
   counts: RowReadCounts,
   navigationStart: number,
   observed: ContextDependencies['accountObserved'],
+  filtered = false,
 ) {
   let hadRows = false;
   let reads = 0;
@@ -185,7 +187,9 @@ async function checkedAccountRows(
             reads,
             lastReadAfterDeadline: readStarted >= deadline,
           })
-        : new ContextStop('PLATFORM_CHECK', 'list-timeout');
+        : filtered
+          ? new FilteredListTimeout()
+          : new ContextStop('PLATFORM_CHECK', 'list-timeout');
     await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
   }
 }
@@ -246,6 +250,7 @@ export async function loadList(
     rowCounts,
     navigation.navigationStart,
     deps.accountObserved,
+    true,
   );
   let previous = JSON.stringify(
       await readAccountRows(page, expected, rowCounts),
@@ -286,6 +291,7 @@ export async function loadList(
     rowCounts,
     navigation.navigationStart,
     deps.accountObserved,
+    true,
   );
   return {
     candidates: entries.filter(

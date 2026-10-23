@@ -82,6 +82,31 @@ test('C23 retry wait cannot be shortened by a production environment or fake ent
     ])
       expect(source).not.toContain(forbidden);
 });
+test('C25 list and post retries share one fixed wait and one policy while initial-list timeouts cannot opt in', async () => {
+  const policy = await readFile(new URL('./retry.ts', import.meta.url), 'utf8');
+  const runner = await readFile(new URL('./run.ts', import.meta.url), 'utf8');
+  const driver = await readFile(
+    new URL('./driver.ts', import.meta.url),
+    'utf8',
+  );
+  expect(policy).toContain('beginList(');
+  expect(policy).toContain('instanceof FilteredListTimeout');
+  expect(runner.match(/new PostOpenRetries\(/g)).toHaveLength(1);
+  expect(runner).toContain('postRetries.beginList(');
+  expect(runner.match(/boundaryWait\(POST_REOPEN_WAIT_MS\)/g)).toHaveLength(1);
+  expect(runner).toContain('await waitToReopen(retry)');
+  expect(driver).toMatch(/filtered\s*\?\s*new FilteredListTimeout\(\)/);
+  expect(driver.match(/true,\s*\);/g)?.length).toBeGreaterThanOrEqual(2);
+  for (const source of [policy, runner, driver])
+    for (const forbidden of [
+      'fake-instagram',
+      'C25_TEST',
+      'SP_RETRY',
+      'listRetryWaitMs',
+      'process.env',
+    ])
+      expect(source).not.toContain(forbidden);
+});
 test('C12 revision IG-2 B detector rejects each planted page-script API in every production file', async () => {
   const sources = await productionSources();
   expect(sources.length).toBeGreaterThan(0);

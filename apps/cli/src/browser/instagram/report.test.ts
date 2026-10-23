@@ -10,10 +10,313 @@ import {
   stopDetailText,
   errorClass,
   RuntimeReportSchema,
+  ownFunction,
 } from './report.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
+import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
 
 const runId = '00000000-0000-4000-8000-000000000016';
+const plantedUrl = `https://www.instagram.com/${IG_FIXTURE.other.username}/p/${IG_FIXTURE.other.code}/`;
+const ownSelectors = new URL('./selectors.ts', import.meta.url).href;
+function generatedUnexpected(
+  message: string,
+  name = 'Error',
+  stack?: string,
+): Error {
+  const error = new Error(message);
+  error.name = name;
+  error.stack =
+    stack ??
+    `${name}: ${message}\n    at async readPost (${ownSelectors}:250:4)\n    at async confirmOnPost (${new URL('./driver.ts', import.meta.url).href}:382:14)`;
+  return error;
+}
+test.each([
+  [
+    'Execution context was destroyed, most likely because of a navigation',
+    'execution-context-destroyed',
+  ],
+  ['Cannot find context with specified id', 'execution-context-destroyed'],
+  ['Element is detached from the DOM', 'element-detached'],
+  ['Element was detached from the DOM', 'element-detached'],
+  [
+    'strict mode violation: locator resolved to two elements',
+    'strict-mode-violation',
+  ],
+  ['Target page, context or browser has been closed', 'target-closed'],
+  [
+    'Error: strict mode violation: locator resolved to two elements',
+    'strict-mode-violation',
+  ],
+  ['Target closed', 'target-closed'],
+  ['Element is not attached to the DOM', 'not-attached'],
+  ['Frame was detached', 'frame-detached'],
+  ['Navigating frame was detached', 'frame-detached'],
+  ['Protocol error (DOM.getDocument): generated error', 'protocol-error'],
+  [IG_FIXTURE.other.text, 'unmatched'],
+] as const)(
+  'C24 generated unexpected message fixture %# retains only a closed class',
+  (prefix, expected) => {
+    const failure = generatedUnexpected(
+      `locator.innerText: ${prefix} ${IG_FIXTURE.other.text} ${plantedUrl}`,
+    );
+    const diagnostic = {
+      errorName: 'Error',
+      playwrightMessageClass: expected,
+      ownFunction: 'readPost',
+    };
+    const cause = contextCause(failure, runId, 'post-read', 38);
+    expect(cause).toMatchObject({
+      token: 'unexpected-error',
+      errorClass: 'other',
+      ...diagnostic,
+    });
+    expect(stopDetails(failure)).toMatchObject({
+      token: 'unexpected-error',
+      errorClass: 'other',
+      ...diagnostic,
+    });
+    expect(stopDetailText(failure)).toBe(
+      `unexpected-error; errorClass=other; errorName=Error; playwrightMessageClass=${expected}; ownFunction=readPost`,
+    );
+    expect(ContextCauseSchema.parse(cause)).toEqual(cause);
+    const emitted = JSON.stringify({
+      cause,
+      stop: stopDetails(failure),
+      text: stopDetailText(failure),
+    });
+    for (const value of [
+      plantedUrl,
+      ownSelectors,
+      ...Object.values(IG_FIXTURE.other),
+      ':250:4',
+    ])
+      expect(emitted).not.toContain(value);
+  },
+);
+test.each([
+  'Error',
+  'ZodError',
+  'AggregateError',
+  'EvalError',
+  'URIError',
+  'PageCrashedError',
+  'NavigationError',
+  'ProtocolError',
+  'NonRecoverableDOMError',
+  'JavaScriptErrorInEvaluate',
+])(
+  'C24 unexpected own name %s remains a closed name rather than a constructor guess',
+  (name) => {
+    const failure = generatedUnexpected(IG_FIXTURE.other.text, name);
+    expect(contextCause(failure, runId, 'post-read', 38)).toMatchObject({
+      token: 'unexpected-error',
+      errorName: name,
+    });
+  },
+);
+test('C24 an arbitrary name or a phrase inside contents never becomes a diagnostic class', () => {
+  const failure = generatedUnexpected(
+    `${IG_FIXTURE.other.text} locator.innerText: Execution context was destroyed ${plantedUrl}`,
+    IG_FIXTURE.other.username,
+  );
+  expect(stopDetails(failure)).toMatchObject({
+    errorName: 'other-name',
+    playwrightMessageClass: 'unmatched',
+  });
+  expect(
+    JSON.stringify(stopDetails(failure)) + stopDetailText(failure),
+  ).not.toContain(IG_FIXTURE.other.username);
+});
+test.each([
+  ['readPost', 'selectors.ts'],
+  ['profileLinks', 'selectors.ts'],
+  ['textBlock', 'selectors.ts'],
+  ['captionText', 'selectors.ts'],
+  ['postLinks', 'selectors.ts'],
+  ['postElement', 'selectors.ts'],
+  ['scrollPostComments', 'selectors.ts'],
+  ['currentImageSource', 'selectors.ts'],
+  ['confirmOnPost', 'driver.ts'],
+  ['settledPost', 'driver.ts'],
+  ['blockCount', 'driver.ts'],
+  ['runContextWithDependencies', 'run.ts'],
+] as const)(
+  'C24 only the known own source frame %s is retained',
+  (name, file) => {
+    const location = new URL(`./${file}`, import.meta.url).href;
+    const failure = generatedUnexpected(
+      IG_FIXTURE.other.text,
+      'Error',
+      `Error: ${IG_FIXTURE.other.text}\n    at Locator.innerText (file:///generated/node_modules/playwright-core/client.js:1:2)\n    at async Module.${name} (${location}:250:4)`,
+    );
+    expect(contextCause(failure, runId, 'post-read', 38)).toMatchObject({
+      ownFunction: name,
+    });
+  },
+);
+test.each([
+  '    at readPost (file:///generated/third-party/selectors.ts:3:9)',
+  `    at ${IG_FIXTURE.other.username} (${ownSelectors}:3:9)\n    at readPost (${ownSelectors}:7:2)`,
+  `    at confirmOnPost (${ownSelectors}:3:9)`,
+  `    at ${ownSelectors}:3:9`,
+  `    at readPost (https://www.instagram.com/${IG_FIXTURE.other.username}/selectors.ts:3:9)`,
+] as const)(
+  'C24 outside or unknown top own frame fixture %# falls back without a path',
+  (stack) => {
+    const failure = generatedUnexpected(
+      IG_FIXTURE.other.text,
+      'Error',
+      `Error: ${IG_FIXTURE.other.text}\n${stack}`,
+    );
+    expect(stopDetails(failure)).toMatchObject({
+      ownFunction: 'outside-own-code',
+    });
+    expect(stopDetailText(failure)).not.toContain(IG_FIXTURE.other.username);
+  },
+);
+test('C24 enriched cause schema allows closed fields but rejects raw diagnostic values', () => {
+  const value = {
+    runId,
+    stage: 'post-read',
+    step: 38,
+    token: 'unexpected-error',
+    chain: ['unexpected-error'],
+    errorClass: 'other',
+    errorName: 'AbortError',
+    playwrightMessageClass: 'unmatched',
+    ownFunction: 'outside-own-code',
+  };
+  expect(ContextCauseSchema.parse(value)).toEqual(value);
+  for (const bad of [
+    { ...value, errorName: IG_FIXTURE.other.username },
+    { ...value, playwrightMessageClass: plantedUrl },
+    { ...value, ownFunction: IG_FIXTURE.other.code },
+    { ...value, message: IG_FIXTURE.other.text },
+    { ...value, stack: ownSelectors },
+  ])
+    expect(() => ContextCauseSchema.parse(bad)).toThrow();
+});
+test('C24 a generated real ZodError has the closed name while its issues never reach diagnostics', () => {
+  const parsed = z
+    .string()
+    .safeParse({ username: IG_FIXTURE.other.username, url: plantedUrl });
+  expect(parsed.success).toBe(false);
+  if (parsed.success) throw new Error('Generated schema unexpectedly accepted');
+  expect(stopDetails(parsed.error)).toMatchObject({
+    token: 'unexpected-error',
+    errorName: 'ZodError',
+    playwrightMessageClass: 'unmatched',
+  });
+  for (const value of [plantedUrl, ...Object.values(IG_FIXTURE.other)])
+    expect(JSON.stringify(stopDetails(parsed.error))).not.toContain(value);
+});
+test('C24 optional diagnostic getters cannot replace an unexpected stop with a diagnostic exception', () => {
+  const failure = new Error();
+  for (const key of ['message', 'stack'])
+    Object.defineProperty(failure, key, {
+      get() {
+        throw new Error(IG_FIXTURE.other.text);
+      },
+    });
+  expect(stopDetails(failure)).toMatchObject({
+    token: 'unexpected-error',
+    errorName: 'Error',
+    playwrightMessageClass: 'unmatched',
+    ownFunction: 'outside-own-code',
+  });
+});
+test('C24 known abort and timeout tokens are unchanged and do not receive unexpected-only fields', () => {
+  for (const [name, token] of [
+    ['AbortError', 'aborted'],
+    ['TimeoutError', 'browser-timeout'],
+    ['TargetClosedError', 'browser-closed'],
+  ] as const) {
+    const error = generatedUnexpected(
+      `Execution context was destroyed ${plantedUrl}`,
+      name,
+    );
+    expect(stopDetails(error)).toEqual({ code: token, token });
+    expect(stopDetailText(error)).toBe(token);
+    expect(contextCause(error, runId, 'post-read', 38)).not.toHaveProperty(
+      'errorName',
+    );
+  }
+});
+test('C24 both run stop-detail paths consume the shared closed formatter and correlated cause helper', async () => {
+  const source = await readFile(new URL('./run.ts', import.meta.url), 'utf8');
+  expect(
+    source.match(/Stop detail: \$\{stopDetailText\(error\)\}/g),
+  ).toHaveLength(2);
+  expect(source).toContain(
+    'report.cause = contextCause(caught, runId, at, steps)',
+  );
+});
+test('C24 bundle and Windows stack locations retain known tokens but never infer a minified or foreign function', () => {
+  const bundle = 'file:///C:/generated/package/bin/socialprune.mjs';
+  expect(
+    ownFunction(
+      'Error: generated\n    at async currentImageSource (C:\\generated\\package\\bin\\socialprune.mjs:1:928)',
+      bundle,
+    ),
+  ).toBe('currentImageSource');
+  expect(
+    ownFunction(
+      'Error: generated\n    at async confirmOnPost (file:///C:/generated/package/bin/socialprune.mjs:1:928)',
+      bundle,
+    ),
+  ).toBe('confirmOnPost');
+  expect(
+    ownFunction(
+      'Error: generated\n    at a (file:///C:/generated/package/bin/socialprune.mjs:1:928)\n    at readPost (file:///C:/generated/package/bin/socialprune.mjs:1:929)',
+      bundle,
+    ),
+  ).toBe('outside-own-code');
+  expect(
+    ownFunction(
+      'Error: generated\n    at readPost (file:///C:/generated/other/socialprune.mjs:1:928)',
+      bundle,
+    ),
+  ).toBe('outside-own-code');
+  expect(
+    ownFunction(
+      'Error: generated\n    at async readPost (file:///C:/generated/apps/cli/src/browser/instagram/selectors.ts:250:4)',
+      bundle,
+    ),
+  ).toBe('readPost');
+  expect(
+    ownFunction(
+      'Error: generated\n    at async currentImageSource (file:///C:/generated/resources/app.asar/engine.cjs:1:928)',
+      'file:///C:/generated/resources/app.asar/engine.cjs',
+    ),
+  ).toBe('currentImageSource');
+});
+test('C24 an unlisted own-source function blocks a deeper known frame', () => {
+  const failure = generatedUnexpected(
+    IG_FIXTURE.other.text,
+    'Error',
+    `Error: generated\n    at unlisted (${new URL('./retry.ts', import.meta.url).href}:1:2)\n    at readPost (${ownSelectors}:7:2)`,
+  );
+  expect(stopDetails(failure)).toMatchObject({
+    ownFunction: 'outside-own-code',
+  });
+});
+test('C24 the exact installed CLI bundle is own code even below node_modules but another package is not', () => {
+  const bundle =
+    'file:///C:/generated/node_modules/socialprune/bin/socialprune.mjs';
+  expect(
+    ownFunction(
+      'Error: generated\n    at readPost (C:\\generated\\node_modules\\socialprune\\bin\\socialprune.mjs:1:928)',
+      bundle,
+    ),
+  ).toBe('readPost');
+  expect(
+    ownFunction(
+      'Error: generated\n    at readPost (C:\\generated\\node_modules\\other\\bin\\socialprune.mjs:1:928)',
+      bundle,
+    ),
+  ).toBe('outside-own-code');
+});
 test.each([
   ['TargetClosedError', 'target-closed'],
   ['TargetClosedError2', 'target-closed'],
@@ -51,9 +354,12 @@ test('C21 unexpected errors retain a closed class in cause stop and terminal whi
     code: 'unexpected-error',
     token: 'unexpected-error',
     errorClass: 'page-crashed',
+    errorName: 'PageCrashedError',
+    playwrightMessageClass: 'unmatched',
+    ownFunction: 'outside-own-code',
   });
   expect(stopDetailText(failure)).toBe(
-    'unexpected-error; errorClass=page-crashed',
+    'unexpected-error; errorClass=page-crashed; errorName=PageCrashedError; playwrightMessageClass=unmatched; ownFunction=outside-own-code',
   );
   expect(stopDetails(new Error(IG_FIXTURE.other.text))).toMatchObject({
     token: 'unexpected-error',
@@ -223,7 +529,14 @@ test.each([
     expect(stopDetails(error)).toEqual({
       code: token,
       token,
-      ...(token === 'unexpected-error' ? { errorClass: 'other' } : {}),
+      ...(token === 'unexpected-error'
+        ? {
+            errorClass: 'other',
+            errorName: 'Error',
+            playwrightMessageClass: 'unmatched',
+            ownFunction: 'outside-own-code',
+          }
+        : {}),
     });
   },
 );

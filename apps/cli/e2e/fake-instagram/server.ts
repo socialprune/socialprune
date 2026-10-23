@@ -22,6 +22,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const postVariants = new Map<number, Variant>();
   const hiddenPosts = new Set<number>();
   const slowPosts = new Map<number, number>();
+  let emptyFilteredLists = 0;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -133,16 +134,22 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         response.writeHead(variant === '429' ? 429 : 200, {
           'Content-Type': 'text/html',
         });
-        response.end(
-          listPage(
-            items,
-            variant,
-            zone,
-            { today, firstYear },
-            candidates,
-            postVariants,
-          ),
+        let html = listPage(
+          items,
+          variant,
+          zone,
+          { today, firstYear },
+          candidates,
+          postVariants,
         );
+        if (emptyFilteredLists > 0) {
+          emptyFilteredLists--;
+          const anchor = 'for(const [index,row]of chosen.entries())';
+          if (!html.includes(anchor))
+            throw new Error('Generated filtered-list anchor missing');
+          html = html.replace(anchor, 'if(start&&end)chosen=[];' + anchor);
+        }
+        response.end(html);
         return;
       }
       if (path.startsWith('/accounts/')) {
@@ -298,6 +305,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!items[index] || !Number.isInteger(count) || count < 0)
         throw new Error('Invalid generated slow opens');
       slowPosts.set(index, count);
+    },
+    emptyFilteredLists(count: number) {
+      if (!Number.isInteger(count) || count < 0)
+        throw new Error('Invalid generated empty-filtered-list count');
+      emptyFilteredLists = count;
     },
     setPostHidden(index: number) {
       if (!items[index])

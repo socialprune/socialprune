@@ -4,13 +4,13 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { openLabelStore } from './label-store.mjs';
 import { loadDataset } from './dataset.mjs';
-import { DEFAULT_CATEGORIES, categoryNames, descriptions } from './contract.mjs';
+import { DEFAULT_CATEGORIES, categoryNames, descriptions, readRubric } from './contract.mjs';
 
 const assets = { '/': ['label.html', 'text/html'], '/app.mjs': ['label-page.mjs', 'text/javascript'], '/style.css': ['label.css', 'text/css'] };
 export async function createLabelServer({ port = 4761, dataset, rubric, directory } = {}) {
   if (!Number.isInteger(port) || port < 4761 || port > 4765) throw new Error('Use a port from 4761 to 4765');
   dataset ??= await loadDataset();
-  rubric ??= await readFile(new URL('../../fixtures/synthetic/classify/RUBRIC.md', import.meta.url), 'utf8');
+  rubric ??= (await readRubric()).text;
   directory ??= fileURLToPath(new URL('local/', import.meta.url));
   const store = await openLabelStore({ ...dataset, rubric, directory });
   const origin = `http://127.0.0.1:${port}`, token = randomBytes(32).toString('hex');

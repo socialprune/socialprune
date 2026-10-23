@@ -361,6 +361,7 @@ The [design specification](../../design/README.md) is not a decision record. Sli
 
 ## Evidence
 
+- Slice 7 candidate, 2026-10-23: the integrated 560-item unlabelled set retains the 160 additions and slur placeholders, the rubric and later scoring bind canonical criterion hashes, and socket-free spike tests pass; Testset A stays off until the maintainer says "Testset starten", with his reading, labels and all model measurements still pending.
 - Slice 6 candidate on 2026-10-23: generated-data CLI and core tests cover the criteria block, hash-bound version-2 agent suggestions, version-1 compatibility and unchanged human decisions; the maintainer's look at the criteria output is still pending.
 - Code: read at `42f433f` on 2026-10-20 in the files the Context names, unchanged at `d5863dd`.
 - Measurements: `docs/evidence/phase2-measurements.md`, sections 2 and 4, taken on 2026-10-07 at `dc699cb`.

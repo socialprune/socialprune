@@ -1,4 +1,4 @@
-import { DEFAULT_CATEGORIES, validateLabels, validateSelections, AssessmentSchema } from './contract.mjs';
+import { DEFAULT_CATEGORIES, validateLabels, validateSelections, AssessmentSchema, validateCriteriaSnapshot, criteriaHash } from './contract.mjs';
 
 export function wilson(successes, trials) {
   if (!Number.isInteger(successes) || !Number.isInteger(trials) || successes < 0 || trials < successes) throw new Error('Invalid binomial counts');
@@ -11,6 +11,8 @@ export function wilson(successes, trials) {
 
 export function metrics(results, items, labels) {
   if (results.set !== 'eval') throw new Error('Smoke proves wiring only; quality metrics require an eval result');
+  validateCriteriaSnapshot(results.criteria);
+  if (results.criteriaHash !== criteriaHash) throw new Error('EVAL_LOCKED: result criteria hash changed');
   validateLabels(items, labels);
   if (results.rows.length !== items.length || new Set(results.rows.map(row => row.itemId)).size !== items.length) throw new Error('Incomplete or duplicate result rows');
   const expected = new Map(labels.map(row => [row.itemId, row]));
@@ -33,7 +35,7 @@ export function metrics(results, items, labels) {
   }
   const n = results.rows.length;
   const rates = summary(results.rows);
-  return { tier: results.tier, model: results.modelIdentity, count: n,
+  return { tier: results.tier, model: results.modelIdentity, count: n, criteria: results.criteria, criteriaHash,
     perCategory: Object.fromEntries(Object.entries(counts).map(([category, count]) => [category, { ...count,
       precision: count.tp + count.fp ? count.tp / (count.tp + count.fp) : null,
        recall: count.tp + count.fn ? count.tp / (count.tp + count.fn) : null,

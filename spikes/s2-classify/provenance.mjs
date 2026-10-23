@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto';
 const buildInputs = ['index.html', 'src/page.mjs', 'src/worker.mjs', 'models.mjs', 'vite.config.mjs', 'package.json', 'pnpm-lock.yaml'];
 const runtimeInputs = [...buildInputs, 'provenance.mjs', 'run.mjs', 'browser-tier.mjs', 'contract.mjs', 'http-tiers.mjs',
   'rules.mjs', 'metrics.mjs', 'dataset.mjs', '../../fixtures/synthetic/classify/additions-v2.mjs',
-  '../../packages/core/src/model/index.ts', '../../packages/core/package.json'];
+  '../../packages/core/src/model/index.ts', '../../packages/core/src/model/v1.ts',
+  '../../packages/core/src/criteria/presets.ts', '../../packages/core/src/criteria/hash.ts',
+  '../../packages/core/package.json'];
 async function identity(files) {
   const records = Object.fromEntries(await Promise.all([...new Set(files)].sort().map(async file => [file,
     createHash('sha256').update(await readFile(new URL(file, import.meta.url))).digest('hex')])));

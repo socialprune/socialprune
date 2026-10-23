@@ -27,11 +27,11 @@ async function main() {
   }
   if (!['rules', 'ollama', 'webllm', 'mdeberta', 'prompt-api', 'reference'].includes(options.tier)) throw new Error('--tier is required');
   // This gate deliberately precedes all tier imports and browser/model initialization.
-  const { items, labels, datasetHash, labelsHash } = await loadSet(options.set);
+  const { items, labels, datasetHash, labelsHash, criteria, criteriaHash } = await loadSet(options.set);
   if (options['key-file'] && options.tier !== 'reference') throw new Error('--key-file is only allowed for the reference tier');
   const rubric = await readRubric();
   const startedAt = new Date().toISOString();
-  const result = { version: 1, tier: options.tier, set: options.set, startedAt, datasetHash, labelsHash,
+  const result = { version: 2, tier: options.tier, set: options.set, startedAt, datasetHash, labelsHash, criteria, criteriaHash,
     contractVersion, contractHash: digest(policyText), rubricHash: rubric.hash,
     modelIdentity: null, rows: [], initializationMs: null, runtimeError: null };
   result.sourceIdentity = await sourceIdentity();

@@ -1,12 +1,12 @@
 import { readFile, open, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { digest, readJsonl, validateLabel, validateLabels, validateSelections } from './contract.mjs';
+import { digest, readJsonl, validateLabel, validateLabels, validateSelections, checkedCriteria } from './contract.mjs';
 
 export async function openLabelStore({ items, newIds, rubric, directory }) {
   await mkdir(directory, { recursive: true });
   const lock = await open(path.join(directory, 'session.lock'), 'wx');
   await lock.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + '\n');
-  const identity = { version: 2, itemsHash: digest(JSON.stringify(items)), rubricHash: digest(rubric) };
+  const identity = { version: 2, itemsHash: digest(JSON.stringify(items)), rubricHash: digest(rubric), criteria: checkedCriteria };
   const historyFile = path.join(directory, 'labels.history.jsonl');
   let events;
   try { events = await readJsonl(historyFile); }

@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { readJsonl, validateItems, fixtureDirectory, validateLabels, normalize, assessment, outputSchema, policyText,
-  validateLabelSnapshot, readRubric, digest } from '../contract.mjs';
+  validateLabelSnapshot, readRubric, digest, checkedCriteria, criteriaHash, evaluationCriteria, descriptions, prompt, validateRubricDefinitions } from '../contract.mjs';
+import { PRESETS } from '@socialprune/core/criteria';
 import { metrics } from '../metrics.mjs';
 import { assertLocalModel, ollamaTier, referenceTier } from '../http-tiers.mjs';
 import { tempRoot } from '../machine.mjs';
@@ -42,6 +43,10 @@ test('both sets satisfy the real core ItemSchema and are disjoint', async () => 
   assert.equal(items.length, 560); assert.equal(smoke.length, 8); assert.equal(new Set(newIds).size, 160);
   assert.equal(new Set([...items, ...smoke].map(item => item.id)).size, 568);
   assert.equal(new Set([...items, ...smoke].map(item => item.text)).size, 568);
+  const extra = items.filter(item => newIds.includes(item.id));
+  assert.deepEqual(extra.map(item => item.id),Array.from({length:160},(_,i) => `s2-${401+i}`));
+  assert.equal(extra.flatMap(item => item.text.match(/\[Schimpfwort\]|\[slur\]/g) ?? []).length,12);
+  for (const item of extra) assert.doesNotMatch(item.text,/@[A-Za-z0-9_]/u);
   for (const focus of ['racist','misogynistic','group-hostility','politically-incorrect']) {
     const extra = design.filter(row => row.focus === focus);
     assert.equal(extra.length,40);
@@ -92,15 +97,23 @@ test('invalid output is unclear and non-verbatim evidence is dropped separately'
 });
 test('accepted rubric snapshot rejects any item, label, rubric or chronology mismatch', async () => {
   const labels = smoke.map(item => label(item));
-  const manifest = { version: 2, itemsHash: 'items', labelsHash: 'labels', rubricHash: 'rubric',
+  const manifest = { version: 2, itemsHash: 'items', labelsHash: 'labels', rubricHash: 'rubric', criteria: checkedCriteria,
     labeler: 'maintainer', finalizedAt: '2026-10-06T17:01:00Z' };
   validateLabelSnapshot(manifest, labels, 'items', 'labels', 'rubric');
-  for (const delta of [{ itemsHash: 'changed' }, { labelsHash: 'changed' }, { rubricHash: 'changed' },
+  for (const delta of [{ itemsHash: 'changed' }, { labelsHash: 'changed' }, { rubricHash: 'changed' }, {criteria: []}, {criteria: undefined},
     { finalizedAt: '2026-10-06T16:59:00Z' }, { finalizedAt: '2099-01-01T00:00:00Z' }, { labeler: 'agent' }]) {
     assert.throws(() => validateLabelSnapshot({ ...manifest, ...delta }, labels, 'items', 'labels', 'rubric'), /EVAL_LOCKED/);
   }
   const rubric = await readRubric(); assert.equal(rubric.riskDescriptions.length, 4);
   assert.equal(Object.keys(rubric.categoryDescriptions).length, 14); assert.equal(rubric.hash, digest(rubric.text));
+  assert.deepEqual(rubric.criteria, PRESETS.filter(value => !['harmless','unclear'].includes(value.id)));
+  assert.deepEqual(descriptions,Object.fromEntries(PRESETS.map(value => [value.id,value.definition])));
+  assert.equal(rubric.criteriaHash,criteriaHash);
+  for (const preset of PRESETS) {
+    assert.equal(rubric.categoryDescriptions[preset.id],preset.definition);
+    assert.throws(() => validateRubricDefinitions({...rubric.categoryDescriptions,[preset.id]:'A changed definition.'}),/RUBRIC_DRIFT/);
+  }
+  assert.ok(prompt(smoke[0],source,createdAt,rubric.text)[0].content.includes(JSON.stringify(evaluationCriteria)));
 });
 test('cloud and remote Ollama paths fail before any chat request; missing reference key makes no call', async () => {
   assert.throws(() => assertLocalModel('small-cloud', {}), /REMOTE_REFUSED/);
@@ -119,7 +132,7 @@ test('metric arithmetic is exercised only with test-only predictions on smoke-de
   const labels = [label(items[0]), label(items[1], 'toxic', 2), label(items[2], 'toxic', 2)];
   const rows = [prediction(items[0]), prediction(items[1], 'toxic', 2), prediction(items[2], 'harmless', 1)].map((value, i) =>
      ({ itemId: items[i].id, assessments: [value], invalid: false, nonVerbatim: false, latencyMs: i + 1 }));
-  const result = metrics({ set: 'eval', tier: 'test-only', rows }, items, labels);
+  const result = metrics({ set: 'eval', tier: 'test-only', rows, criteria:checkedCriteria, criteriaHash }, items, labels);
   assert.equal(result.perCategory.toxic.precision, 1); assert.equal(result.perCategory.toxic.recall, .5);
   assert.equal(result.perCategory.harmless.precision, .5); assert.equal(result.perCategory.harmless.recall, 1);
   assert.equal(result.riskAgreement, 1); assert.equal(result.riskAgreementDenominator,2); assert.equal(result.exactCategorySetAgreement,2/3); assert.equal(result.latencyMs.mean, 2);

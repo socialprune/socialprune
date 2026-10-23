@@ -1,25 +1,25 @@
 # S2 labelling rubric v2
 
-Draft for the maintainer to accept or change before labelling. No expected classifications have been assigned to the evaluation items. Edit this draft first, then keep it unchanged throughout the labelling session and evaluation. The tool records its hash with the item-file hash.
+Draft for the maintainer to accept before labelling. No expected classifications have been assigned to the evaluation items. Definitions come from `packages/core/src/criteria/presets.ts`; the harness rejects a different definition instead of measuring another criterion under the same name. Examples and guidance can be reviewed before labelling, then kept unchanged. The tool records the rubric, item and criterion hashes. Own criteria are not measured by this set.
 
 Read each item as a public post someone is reviewing before a job application. Label what is visible, not the invented author's character. Category and risk are separate judgments. A political opinion can have risk 0; a post about daily life can expose contact details.
 
 | Key | Category | German tool label | Definition |
 |---|---|---|---|
-| Q | toxic | Toxisch | Hostility aimed at neither an identifiable person nor a group of people. |
-| W | personal-attack | Persönlicher Angriff | An insult, humiliation or unsupported hostile accusation aimed at an identifiable individual. |
-| E | political | Politisch | A position on parties, elections, government, civic policy or contested public decisions. |
-| R | sexual | Sexuell / anzüglich | Sexual content or adult innuendo that is more than ordinary affection or neutral dating talk. |
-| T | drugs-illegal | Drogen / illegale Handlung | Drug use, procurement, illegal conduct or an account of such conduct; neutral policy discussion does not automatically belong here. |
-| Y | personal-info | Persönliche Daten | A phone number, email, home address or other identifying contact detail exposed by the item, even though the set uses invented details. |
-| I | embarrassing | Peinlich / überholt | Self-presentation, oversharing or dated behaviour the owner may no longer want associated with an application. |
-| O | empty | Ohne Inhalt | No useful standalone content, such as a lone link, repeated punctuation, emoji-only text or a first-comment marker. |
-| H | harmless | Alltäglich / unauffällig | Understandable everyday content with no stronger category supported by the visible item. |
-| ? | unclear | Unklar | The visible text and references do not support a defensible category without missing context. |
-| A | racist | Rassistisch | Puts people down for their origin or skin colour. |
-| S | misogynistic | Frauenfeindlich | Puts women down for being women. |
-| D | group-hostility | Feindselig gegen Gruppen | Puts people down for religion, sexuality, gender identity, disability or age. |
-| F | politically-incorrect | Politisch unkorrekt | Jokes or remarks about groups that many find demeaning today, without open hostility. |
+| Q | toxic | Toxisch | Hostile language aimed at neither a person nor a group. Reporting, condemning or quoting hostility to criticise it does not apply. |
+| W | personal-attack | Persönlicher Angriff | Insults, belittles or threatens a particular person. Reporting or condemning an attack and disagreement with an idea alone do not apply. |
+| E | political | Politisch | Expresses a political position or partisan argument that could draw conflict. Neutral reporting and criticism quoted only to reject it do not apply. |
+| R | sexual | Sexuell / anzüglich | Contains explicit sexual content or sexual remarks. Neutral health information and reporting or condemning harassment do not apply. |
+| T | drugs-illegal | Drogen / illegale Handlung | Promotes or describes personal involvement with illegal activity or recreational drugs. Neutral reporting, prevention and condemnation do not apply. |
+| Y | personal-info | Persönliche Daten | Reveals private contact, identity, location or other sensitive personal information. Public institutional contacts and invented examples do not apply. |
+| I | embarrassing | Peinlich / überholt | Contains a personal disclosure or remark likely to embarrass its author later. Ordinary self-description and neutral reporting alone do not apply. |
+| O | empty | Ohne Inhalt | Has no meaningful content beyond filler or a contextless reaction. A short but meaningful answer does not apply. |
+| H | harmless | Alltäglich / unauffällig | None of the checked content criteria applies. |
+| ? | unclear | Unklar | The available text or context does not support judging the checked criteria. |
+| A | racist | Rassistisch | Puts people down for their origin or skin colour. Reporting, condemning or quoting racism to criticise it, reclaimed self-description and neutral mention of origin do not apply. Criticism of a government, party or religious institution alone does not apply. |
+| S | misogynistic | Frauenfeindlich | Puts women down for being women. Reporting, condemning or quoting misogyny to criticise it, reclaimed self-description and neutral mention of gender do not apply. |
+| D | group-hostility | Feindselig gegen Gruppen | Puts people down for religion, sexuality, gender identity, disability or age. Reporting, condemning or quoting hostility to criticise it, reclaimed self-description and neutral mention do not apply. Criticism of a government, party or religious institution alone does not apply. |
+| F | politically-incorrect | Politisch unkorrekt | Jokes or remarks about groups that many find demeaning today, without open hostility. Reporting, condemning or quoting to criticise, reclaimed self-description, neutral mention and criticism of a government, party or religious institution alone do not apply. |
 
 ## Invented examples, not labels for the evaluation set
 
@@ -32,7 +32,7 @@ Every example below is fictional. A positive example illustrates the category, n
 | political | I want the invented Moonleaf Party to lower bus fares. | I took the bus to the lake. |
 | sexual | My adult date and I are planning a night with handcuffs. | My date and I held hands. |
 | drugs-illegal | I stole a locked bicycle last night. | I support changing the drug law. |
-| personal-info | My invented contact address is zava@example.org. | Send me a message through the club's public form. |
+| personal-info | My home address is 14 Moss Lane, Kelmau. | Send me a message through the club's public form. |
 | embarrassing | I bragged about insulting the interviewer and filmed myself doing it. | My old interview jacket still fits. |
 | empty | !!!!!! | The library closes at six today. |
 | harmless | Die Minze auf meinem Balkon wächst wieder. | Frauen taugen nicht für leitende Aufgaben. |

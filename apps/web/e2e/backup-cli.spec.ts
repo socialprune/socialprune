@@ -77,6 +77,43 @@ function ordered(value: unknown): string {
       .join(',')}}`;
   return JSON.stringify(value);
 }
+// ADR-032's ADR-014 amendment: v1 checks eight legacy defaults, not the four
+// new presets or the exclusive harmless/unclear results. Hash the frozen
+// definitions with Node crypto, independently of the production hash helper.
+const version1Criteria = [
+  [
+    'toxic',
+    'Hostile language aimed at neither a person nor a group. Reporting, condemning or quoting hostility to criticise it does not apply.',
+  ],
+  [
+    'personal-attack',
+    'Insults, belittles or threatens a particular person. Reporting or condemning an attack and disagreement with an idea alone do not apply.',
+  ],
+  [
+    'political',
+    'Expresses a political position or partisan argument that could draw conflict. Neutral reporting and criticism quoted only to reject it do not apply.',
+  ],
+  [
+    'sexual',
+    'Contains explicit sexual content or sexual remarks. Neutral health information and reporting or condemning harassment do not apply.',
+  ],
+  [
+    'drugs-illegal',
+    'Promotes or describes personal involvement with illegal activity or recreational drugs. Neutral reporting, prevention and condemnation do not apply.',
+  ],
+  [
+    'personal-info',
+    'Reveals private contact, identity, location or other sensitive personal information. Public institutional contacts and invented examples do not apply.',
+  ],
+  [
+    'embarrassing',
+    'Contains a personal disclosure or remark likely to embarrass its author later. Ordinary self-description and neutral reporting alone do not apply.',
+  ],
+  [
+    'empty',
+    'Has no meaningful content beyond filler or a contextless reaction. A short but meaningful answer does not apply.',
+  ],
+].map(([id, definition]) => ({ id: id!, hash: hash(definition!) }));
 function labels(items: Item[]): LabelFile {
   return {
     schemaVersion: 1,
@@ -181,6 +218,7 @@ function assertLabels(
   records: Awaited<ReturnType<typeof sqliteRecords>>,
   input: LabelFile,
 ) {
+  expect(input.schemaVersion).toBe(1);
   expect(records.assessments).toHaveLength(input.labels.length);
   expect(
     records.assessments
@@ -223,25 +261,7 @@ function assertLabels(
   expect(
     records.submissions.map(({ receivedAt: _at, criteria, ...value }) => {
       void _at;
-      expect(criteria).toHaveLength(14);
-      expect(criteria!.map((value) => value.id)).toEqual([
-        'toxic',
-        'personal-attack',
-        'political',
-        'sexual',
-        'drugs-illegal',
-        'personal-info',
-        'embarrassing',
-        'empty',
-        'harmless',
-        'unclear',
-        'racist',
-        'misogynistic',
-        'group-hostility',
-        'politically-incorrect',
-      ]);
-      for (const value of criteria!)
-        expect(value.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(criteria).toEqual(version1Criteria);
       return value;
     }),
   ).toEqual([

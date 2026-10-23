@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useT } from '../../i18n/index.ts';
 import { FeedCard } from './FeedCard.tsx';
+import { focusWhenReady } from './focus.ts';
 import type {
   FeedCardModel,
   FeedCounts,
@@ -171,7 +172,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
   });
   const virtualItems = virtualizer.getVirtualItems();
   const completedFocus = useRef<number | null>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (
       !props.focusTarget ||
       props.focusTarget.sequence === completedFocus.current
@@ -180,23 +181,58 @@ export function ReviewFeed(props: ReviewFeedProps) {
     const index = props.cards.findIndex(
       (card) => card.id === props.focusTarget!.id,
     );
-    if (index >= 0 && props.virtualized)
-      virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
-  }, [props.focusTarget, props.cards, props.virtualized, virtualizer]);
-  useEffect(() => {
-    if (props.focusTarget?.sequence === completedFocus.current) return;
-    const target =
-      props.focusTarget &&
-      [
-        ...(panelRef.current?.querySelectorAll<HTMLElement>(
-          'article[data-card-id]',
-        ) ?? []),
-      ].find((article) => article.dataset['cardId'] === props.focusTarget!.id);
-    if (target) {
-      target.focus({ preventScroll: true });
-      completedFocus.current = props.focusTarget!.sequence;
-    }
-  }, [props.focusTarget, visibleKeyForFocus(virtualItems), props.cards]);
+    if (index < 0) return;
+    const sequence = props.focusTarget.sequence;
+    const panel = panelRef.current;
+    const cancel = focusWhenReady({
+      find: () =>
+        [
+          ...(panelRef.current?.querySelectorAll<HTMLElement>(
+            'article[data-card-id]',
+          ) ?? []),
+        ].find(
+          (article) => article.dataset['cardId'] === props.focusTarget!.id,
+        ),
+      scroll: () => {
+        if (props.virtualized)
+          virtualizer.scrollToIndex(index, {
+            align: 'start',
+            behavior: 'instant',
+          });
+      },
+      active: () => panel?.ownerDocument.activeElement ?? null,
+      frame: requestAnimationFrame,
+      cancelFrame: cancelAnimationFrame,
+      complete: () => {
+        completedFocus.current = sequence;
+      },
+    });
+    // A person's newer input supersedes a pending automatic focus operation.
+    const supersede = () => {
+      cancel();
+      completedFocus.current = sequence;
+    };
+    const document = panel?.ownerDocument;
+    document?.addEventListener('pointerdown', supersede, {
+      once: true,
+      capture: true,
+    });
+    document?.addEventListener('keydown', supersede, {
+      once: true,
+      capture: true,
+    });
+    return () => {
+      cancel();
+      document?.removeEventListener('pointerdown', supersede, true);
+      document?.removeEventListener('keydown', supersede, true);
+    };
+  }, [
+    props.focusTarget,
+    visibleKeyForFocus(virtualItems),
+    props.cards,
+    props.virtualized,
+    virtualizer,
+  ]);
   const visibleKey = (
     props.virtualized
       ? virtualItems.map((item) => props.cards[item.index]!.id)

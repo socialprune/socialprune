@@ -185,6 +185,42 @@ test('bounded card windows, full-query keyboard jumps and persisted tab anchor',
   ).toBeFocused();
 });
 
+test('a virtual keyboard destination is acknowledged only after focus survives its layout frame', async ({
+  page,
+}) => {
+  await restoreLiveFeed(page, liveFeedFixture(650));
+  await page.getByRole('feed').locator('article').first().focus();
+  await page.keyboard.press('End');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('648');
+  await page.evaluate(() => {
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'focus',
+    )!;
+    const focus = Reflect.apply.bind(
+      null,
+      original.value as (this: HTMLElement, options?: FocusOptions) => void,
+    );
+    HTMLElement.prototype.focus = function (...args) {
+      if (this.getAttribute('data-card-id') === 'x:feed-1') {
+        Object.defineProperty(HTMLElement.prototype, 'focus', original);
+        // One transient non-focusable layout frame, injected by this test only.
+        this.style.display = 'none';
+        focus(this, args);
+        this.style.removeProperty('display');
+        return;
+      }
+      focus(this, args);
+    };
+  });
+  await page.keyboard.press('Home');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('1');
+});
+
 test('a second page makes the plan stale; the changed preview requires another human confirmation', async ({
   page,
   context,

@@ -25,15 +25,25 @@ The locations below were observed on 2026-10-06 in ADR-014. Hosts can change the
 
 ## What you agree to share
 
-Your export stays on your computer during import. Before the first `batch next`, the skill tells the agent to ask whether the full text of your entries may go to the agent's model provider. If you agree, the agent passes `--share-with-agent` on every batch. The CLI prints a notice to stderr with the real number of entries and the fields it shares. SocialPrune cannot see or limit what the provider does with the text.
+Your export stays on your computer during import. Before the first `batch next`, the skill tells the agent to ask whether the full text of your entries and the criteria descriptions may go to the agent's model provider. If you agree, the agent passes `--share-with-agent` on every batch. The CLI prints a notice to stderr with the real number of entries and the fields it shares. SocialPrune cannot see or limit what the provider does with them.
 
-A batch contains the entry ID, kind, date, a hash of the text and the full text marked as untrusted data. It omits parsed account and reference handles, account keys, engagement, archive names and file names. Names and handles written in the text remain in that text. Your export and workspace paths also appear in the commands your host runs.
+A batch contains the entry ID, kind, date, a hash of the text and the full text marked as untrusted data. It also contains criterion labels, definitions and hashes, including descriptions of your selected own criteria. It omits parsed account and reference handles, account keys, engagement, originals, keep rules, archive names and file names. Names and handles written in the text remain in that text. Your export and workspace paths also appear in the commands your host runs.
 
 Keep your host's command approval on. The flag records the agent's assertion that you agreed; it cannot verify your conversation, and a skill cannot force a host to follow it. You can decline sharing and review without agent suggestions. The agent must not read API keys or other tools' configuration, search for your exports, read private chats or act on platform pages.
+
+## The criteria block the agent reads
+
+Choose your own criteria and keep rules in review. The agent does not choose them for you. `batch next` returns every available content preset even when unticked, so ticking a preset later does not require another run. It adds only the own criteria you selected. The `criteria` array gives each `id`, `label`, `definition` and `hash`; the definition includes exclusions such as reporting or quoting a hostile statement to criticise it. Earlier restored categories stay available for their old results but are not sent for a new check. Keep rules never go to the agent.
+
+The agent uses a version-2 label file with `criteria: [{ id, hash }]` copied from that block. It lists only what it actually checked. Each entry gets a separate suggestion for every applying criterion, each with its own risk and reason, or one exclusive `harmless` or `unclear` result. The submission records the agent source and checked hashes, never a decision. A run for one own criterion leaves other results standing. If you edit its description, the old checks stop counting; the agent must reread affected entries against the new definition, not replace a hash on old labels. Own criteria have not been measured on the S2 evaluation set.
+
+Version-1 files remain readable but check only the eight legacy defaults other than `harmless` and `unclear`. They cannot claim checks for the four new presets or your own criteria. The current skill writes version 2. A dry-run validates the same contract without changing the workspace, and an unchanged submission retry keeps the same ID.
 
 ## Review is your handoff
 
 The agent previews import, submits only labels and shows `summary` counts. No CLI label command makes a decision. Suggestions appear in review with their agent source name. Label files reject human sources, decision fields and outcome fields. Submission IDs let the agent retry an unchanged file without recording it twice.
+
+The skill requires the agent to read every entry it rates at risk 2 or 3 and quote a verbatim passage as evidence. It forbids producing those suggestions with keyword rules, scripts or bulk templates. If a submitted label at risk 2 or 3 has no quote, `labels submit` warns with a count; the file is still accepted. The skill tells the agent to reread those entries and add quotes or lower the risk when the text does not support the suggestion. That is a requirement on the agent, not a check of whether it actually read the text. You still judge the suggestions in review.
 
 The agent first runs `review --dry-run` through the chosen command to check the workspace without starting a server or opening a browser. In tarball mode, real review uses `node node_modules/socialprune/bin/socialprune.mjs review --workspace "<dir>" --json`; no build is needed. From the repository, build the review files once with `pnpm --filter @socialprune/web build:review`, then run `pnpm -s socialprune review --workspace "<dir>" --json`. The CLI opens your browser. The readiness output gives a token-free loopback URL. The session token goes to the browser opener, not stdout. Keep the process running while you review, then stop it with Ctrl+C or the page's shutdown action.
 

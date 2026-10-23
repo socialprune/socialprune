@@ -1,5 +1,8 @@
 import { AssessmentSchema } from '../model/index.ts';
 import type { Assessment, Item } from '../model/index.ts';
+import { DEFAULT_CATEGORIES as LEGACY_CATEGORIES } from '../model/v1.ts';
+import { criterionHash, PRESETS } from '../criteria/presets.ts';
+import { currentChecks } from '../criteria/suggestions.ts';
 import { canonicalJson, contentHash } from './canonical.ts';
 import { WorkspaceError } from './errors.ts';
 import {
@@ -60,6 +63,11 @@ function itemOrder(a: Item, b: Item): number {
   const date = Date.parse(a.createdAt) - Date.parse(b.createdAt);
   return date || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
+const legacyChecked = LEGACY_CATEGORIES.filter(
+  (id) => id !== 'harmless' && id !== 'unclear',
+);
+const exclusive = (category: string) =>
+  category === 'harmless' || category === 'unclear';
 export class LabelValidationError extends WorkspaceError {
   readonly failures: { index: number; code: string }[];
   constructor(failures: { index: number; code: string }[]) {
@@ -119,18 +127,41 @@ export class LabelService {
       (cursor.account !== account || cursor.sourceName !== sourceName)
     )
       throw new WorkspaceError('INVALID_CURSOR');
-    const state = deriveState(snapshot.workspace);
+    const settings = snapshot.workspace.settings;
+    const offered = [
+      ...PRESETS.filter(
+        (value) =>
+          !exclusive(value.id) && settings.categories.includes(value.id),
+      ).map((value) => value.id),
+      ...(settings.criteria?.custom ?? [])
+        .filter((value) => settings.criteria?.selected.includes(value.id))
+        .map((value) => value.id),
+    ];
+    const criteria = offered.map((id) => {
+      const preset = PRESETS.find((value) => value.id === id);
+      const own = settings.criteria?.custom.find((value) => value.id === id);
+      return {
+        id,
+        label: own?.label ?? preset?.label ?? id,
+        definition: own?.description ?? preset!.definition,
+        hash: criterionHash(id, settings),
+      };
+    });
+    const checks = currentChecks(snapshot.workspace);
     const items = visible
       .filter(
         (item) =>
           item.account.key === account &&
-          !state
-            .get(item.id)!
-            .assessments.some(
-              (assessment) =>
-                assessment.source.kind === 'agent' &&
-                assessment.source.name === sourceName,
-            ),
+          !criteria.every((criterion) =>
+            checks
+              .get(item.id)
+              ?.some(
+                (check) =>
+                  check.criterion === criterion.id &&
+                  check.source.kind === 'agent' &&
+                  check.source.name === sourceName,
+              ),
+          ),
       )
       .sort(itemOrder)
       .filter(
@@ -174,10 +205,12 @@ export class LabelService {
         canonicalJson([
           options.cursor ?? null,
           size,
+          criteria.map(({ id, hash }) => ({ id, hash })),
           selected.map((item) => item.id),
         ]),
       ),
       categories: snapshot.workspace.settings.categories,
+      criteria,
       items: batchItems,
       nextCursor:
         hasMore && last
@@ -193,7 +226,14 @@ export class LabelService {
       notice: BATCH_NOTICE,
       shared: {
         count: selected.length,
-        fields: ['itemId', 'kind', 'createdAt', 'contentHash', 'text'],
+        fields: [
+          'itemId',
+          'kind',
+          'createdAt',
+          'contentHash',
+          'text',
+          'criteria',
+        ],
       },
     });
   }
@@ -237,13 +277,39 @@ export class LabelService {
         revision: snapshot.runtime.revision,
       });
     }
+    const checked =
+      file.schemaVersion === 2
+        ? file.criteria
+        : legacyChecked
+            .filter((id) => snapshot.meta.settings.categories.includes(id))
+            .map((id) => ({
+              id,
+              hash: criterionHash(id, snapshot.meta.settings),
+            }));
+    const checkedIds = new Set(checked.map((value) => value.id));
     const hashes = await Promise.all(
       snapshot.items.map((stored) =>
         stored ? contentHash(stored.item.text) : Promise.resolve(null),
       ),
     );
     const failures: { index: number; code: string }[] = [];
+    for (const criterion of checked) {
+      if (!snapshot.meta.settings.categories.includes(criterion.id))
+        failures.push({ index: -1, code: 'UNKNOWN_CATEGORY' });
+      else if (
+        !PRESETS.some((value) => value.id === criterion.id) &&
+        !snapshot.meta.settings.criteria?.custom.some(
+          (value) => value.id === criterion.id,
+        )
+      )
+        failures.push({ index: -1, code: 'CATEGORY_NOT_CHECKED' });
+      else if (
+        criterion.hash !== criterionHash(criterion.id, snapshot.meta.settings)
+      )
+        failures.push({ index: -1, code: 'CRITERION_CHANGED' });
+    }
     const seen = new Set<string>();
+    const itemCategories = new Map<string, Set<string>>();
     let droppedEvidence = 0;
     const time = this.now().toISOString();
     const assessments: Assessment[] = [];
@@ -257,9 +323,22 @@ export class LabelService {
         failures.push({ index, code: 'CONTENT_CHANGED' });
       if (!snapshot.meta.settings.categories.includes(label.category))
         failures.push({ index, code: 'UNKNOWN_CATEGORY' });
-      if (seen.has(label.itemId))
+      else if (!exclusive(label.category) && !checkedIds.has(label.category))
+        failures.push({ index, code: 'CATEGORY_NOT_CHECKED' });
+      const labelKey =
+        file.schemaVersion === 1
+          ? label.itemId
+          : canonicalJson([label.itemId, label.category]);
+      const categories = itemCategories.get(label.itemId) ?? new Set<string>();
+      if (
+        seen.has(labelKey) ||
+        (categories.size > 0 &&
+          (exclusive(label.category) || [...categories].some(exclusive)))
+      )
         failures.push({ index, code: 'INVALID_LABEL' });
-      seen.add(label.itemId);
+      seen.add(labelKey);
+      categories.add(label.category);
+      itemCategories.set(label.itemId, categories);
       const evidence =
         label.evidence === null || stored.item.text.includes(label.evidence)
           ? label.evidence
@@ -305,6 +384,14 @@ export class LabelService {
         };
       }
       const meta = await tx.meta.get();
+      for (const criterion of checked)
+        if (
+          !meta.settings.categories.includes(criterion.id) ||
+          criterion.hash !== criterionHash(criterion.id, meta.settings)
+        )
+          throw new LabelValidationError([
+            { index: -1, code: 'CRITERION_CHANGED' },
+          ]);
       if (
         canonicalJson(meta.settings.categories) !==
         canonicalJson(snapshot.meta.settings.categories)
@@ -321,6 +408,7 @@ export class LabelService {
         source: file.source,
         receivedAt: time,
         labelCount: assessments.length,
+        criteria: checked,
       });
       await tx.assessments.append(assessments);
       const runtime = await tx.runtime.get();

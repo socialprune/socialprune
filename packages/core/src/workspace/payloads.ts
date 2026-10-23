@@ -8,6 +8,10 @@ import {
   WorkspaceCountsSchema,
 } from '../model/index.ts';
 import { DecisionCountsSchema, OutcomeCountsSchema } from './protocol.ts';
+import {
+  CheckedCriterionSchema,
+  CheckedCriteriaSchema,
+} from '../criteria/schema.ts';
 
 const id = z.string().min(1);
 const count = z.number().int().nonnegative();
@@ -28,6 +32,14 @@ export const BatchItemSchema = z.strictObject({
 export const BatchSchema = z.strictObject({
   batchId: hash,
   categories: z.array(CategoryIdSchema),
+  criteria: z
+    .array(
+      CheckedCriterionSchema.extend({
+        label: z.string().min(1),
+        definition: z.string().min(1),
+      }),
+    )
+    .max(32),
   items: z.array(BatchItemSchema).max(200),
   nextCursor: z.string().nullable(),
   hasMore: z.boolean(),
@@ -41,6 +53,7 @@ export const BatchSchema = z.strictObject({
       z.literal('createdAt'),
       z.literal('contentHash'),
       z.literal('text'),
+      z.literal('criteria'),
     ]),
   }),
 });
@@ -54,12 +67,21 @@ export const AgentLabelSchema = z.strictObject({
   evidence: AssessmentSchema.shape.evidence,
   confidence: AssessmentSchema.shape.confidence,
 });
-export const LabelFileSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+const labelFileFields = {
   submissionId: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
   source: AssessmentSourceSchema.extend({ kind: z.literal('agent') }),
   labels: z.array(AgentLabelSchema).min(1).max(1000),
-});
+};
+export const LabelFileSchema = z.discriminatedUnion('schemaVersion', [
+  z.strictObject({ schemaVersion: z.literal(1), ...labelFileFields }),
+  z.strictObject({
+    schemaVersion: z.literal(2),
+    ...labelFileFields,
+    criteria: CheckedCriteriaSchema.refine((values) =>
+      values.every((value) => !['harmless', 'unclear'].includes(value.id)),
+    ),
+  }),
+]);
 export type LabelFile = z.infer<typeof LabelFileSchema>;
 export const LabelSubmissionSchema = z.strictObject({
   submissionId: id,

@@ -80,6 +80,7 @@ test('neutral payload schemas preserve their exact shapes and reject decision fi
     BatchSchema.parse({
       batchId: `sha256:${'b'.repeat(64)}`,
       categories: ['unclear'],
+      criteria: [],
       items: [],
       nextCursor: null,
       hasMore: false,
@@ -87,7 +88,14 @@ test('neutral payload schemas preserve their exact shapes and reject decision fi
       notice: BATCH_NOTICE,
       shared: {
         count: 0,
-        fields: ['itemId', 'kind', 'createdAt', 'contentHash', 'text'],
+        fields: [
+          'itemId',
+          'kind',
+          'createdAt',
+          'contentHash',
+          'text',
+          'criteria',
+        ],
       },
     }).items,
   ).toEqual([]);
@@ -122,6 +130,41 @@ test('neutral payload schemas preserve their exact shapes and reject decision fi
   expect(SummarySchema.safeParse({ itemText: 'PLANTED_TEXT' }).success).toBe(
     false,
   );
+});
+test('v2 checked criteria are hash-bound and agent-only while v1 stays strict', () => {
+  const file = {
+    schemaVersion: 2,
+    submissionId: 'generated-v2',
+    source: { kind: 'agent', name: 'generated', version: null },
+    criteria: [{ id: 'racist', hash: `sha256:${'b'.repeat(64)}` }],
+    labels: [
+      {
+        itemId: 'x:1',
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        category: 'racist',
+        risk: 2,
+        reason: 'A generated suggestion for this criterion.',
+        evidence: null,
+        confidence: null,
+      },
+    ],
+  };
+  expect(LabelFileSchema.parse(file)).toEqual(file);
+  for (const invalid of [
+    { ...file, schemaVersion: 1 },
+    { ...file, criteria: [{ id: 'racist', hash: 'wrong' }] },
+    { ...file, criteria: [file.criteria[0], file.criteria[0]] },
+    { ...file, criteria: [{ ...file.criteria[0], id: 'harmless' }] },
+    { ...file, criteria: [{ ...file.criteria[0], id: 'unclear' }] },
+    {
+      ...file,
+      criteria: [{ ...file.criteria[0], definition: 'not a hash reference' }],
+    },
+    { ...file, source: { ...file.source, kind: 'model' } },
+    { ...file, source: { ...file.source, kind: 'rules' } },
+    { ...file, decisions: [] },
+  ])
+    expect(LabelFileSchema.safeParse(invalid).success).toBe(false);
 });
 test('all neutral payload JSON files exist with the generated canonical content', async () => {
   const files = await generateJsonSchemas();

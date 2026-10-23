@@ -359,6 +359,7 @@ The [design specification](../../design/README.md) is not a decision record. Sli
 
 ## Evidence
 
+- Slice 6 candidate on 2026-10-23: generated-data CLI and core tests cover the criteria block, hash-bound version-2 agent suggestions, version-1 compatibility and unchanged human decisions; the maintainer's look at the criteria output is still pending.
 - Code: read at `42f433f` on 2026-10-20 in the files the Context names, unchanged at `d5863dd`.
 - Measurements: `docs/evidence/phase2-measurements.md`, sections 2 and 4, taken on 2026-10-07 at `dc699cb`.
 - W3C Web Accessibility Initiative, ARIA Authoring Practices Guide, [Feed Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/feed/), observed 2026-10-20: the roles, properties and keys of section 9.

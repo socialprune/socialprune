@@ -450,6 +450,8 @@
                       "UNKNOWN_ITEM",
                       "CONTENT_CHANGED",
                       "UNKNOWN_CATEGORY",
+                      "CATEGORY_NOT_CHECKED",
+                      "CRITERION_CHANGED",
                       "INVALID_REASON",
                       "INVALID_LABEL"
                     ]

@@ -7,6 +7,21 @@
       "type": "array",
       "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" }
     },
+    "criteria": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "label": { "type": "string", "minLength": 1 },
+          "definition": { "type": "string", "minLength": 1 }
+        },
+        "required": ["id", "hash", "label", "definition"],
+        "additionalProperties": false
+      }
+    },
     "items": {
       "maxItems": 200,
       "type": "array",
@@ -68,11 +83,12 @@
             { "type": "string", "const": "kind" },
             { "type": "string", "const": "createdAt" },
             { "type": "string", "const": "contentHash" },
-            { "type": "string", "const": "text" }
+            { "type": "string", "const": "text" },
+            { "type": "string", "const": "criteria" }
           ],
           "items": false,
-          "minItems": 5,
-          "maxItems": 5
+          "minItems": 6,
+          "maxItems": 6
         }
       },
       "required": ["count", "fields"],
@@ -82,6 +98,7 @@
   "required": [
     "batchId",
     "categories",
+    "criteria",
     "items",
     "nextCursor",
     "hasMore",

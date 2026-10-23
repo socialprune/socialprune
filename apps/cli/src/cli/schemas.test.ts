@@ -152,6 +152,17 @@ test('result schema rejects stale shape, unknown status and extra workspace data
 test('only INVALID_LABELS permits strict fixed-code details with whole-file -1 or label indexes', () => {
   const error = errorObject('INVALID_LABELS');
   const details = { failures: [{ index: 0, code: 'CONTENT_CHANGED' }] };
+  for (const code of ['CATEGORY_NOT_CHECKED', 'CRITERION_CHANGED'] as const) {
+    const details = { failures: [{ index: -1, code }] };
+    expect(errorObject('INVALID_LABELS', undefined, details)).toEqual({
+      ...error,
+      details,
+    });
+    expect(CliErrorSchema.parse({ ...error, details })).toEqual({
+      ...error,
+      details,
+    });
+  }
   for (const index of [-1, 0, 3]) {
     const details = { failures: [{ index, code: 'INVALID_LABEL' }] };
     expect(CliErrorSchema.parse({ ...error, details })).toEqual({
@@ -298,6 +309,15 @@ test('the product skill has one canonical copy, its required frontmatter and liv
     'To label your entries, I need to give their full text to the model provider used by this agent. Is that all right?',
   );
   expect(skill).toContain('Wait for an explicit yes');
+  for (const phrase of [
+    'criterion labels, definitions and hashes',
+    'schema version 2',
+    'checked `{ id, hash }` pairs',
+    'every available content preset, ticked or not',
+    'Own criteria have not been measured on S2',
+    'never swap the hash alone',
+  ])
+    expect(skill).toContain(phrase);
   const labelReference = await readFile(
     new URL('skills/socialprune/references/labels.md', repo),
     'utf8',
@@ -329,6 +349,14 @@ test('the product skill has one canonical copy, its required frontmatter and liv
     ).toBeGreaterThan(100);
   }
   const docs = await readFile(new URL('docs/agent-setup.md', repo), 'utf8');
+  expect(docs).toContain(
+    'Version-1 files remain readable but check only the eight legacy defaults',
+  );
+  expect(labelReference).toContain(
+    'They never count as checking the four new presets',
+  );
+  for (const text of [skill, labelReference, docs])
+    expect(text).not.toMatch(/[\u2013\u2014]/u);
   for (const text of [skill, docs]) {
     expect(text).toContain('The npm package is not published yet.');
     expect(text).toContain('pnpm -s socialprune');

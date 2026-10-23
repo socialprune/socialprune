@@ -31,7 +31,9 @@ Indexes 0 to `n-1` name labels in the file's array; `-1` means a whole-file fail
 | `UNKNOWN_ITEM` | Copy an existing `itemId` from a fresh batch. |
 | `CONTENT_CHANGED` | Read the current text and hash, then reconsider the suggestion. Do not replace only the hash. |
 | `UNKNOWN_CATEGORY` | Choose from the batch's category list. |
+| `CATEGORY_NOT_CHECKED` | Name an applying category only if it is in the file's checked criteria; use a fresh batch rather than adding a criterion you did not assess. Earlier restored categories are not rechecked. |
+| `CRITERION_CHANGED` | Fetch the current definition and hash, reread the affected entries and reconsider the labels. Do not replace only the hash. Restart batching without the old cursor. |
 | `INVALID_REASON` | Use one nonblank sentence, at most 300 characters and no newline. |
-| `INVALID_LABEL` | Check the shipped schema, including field types, source, file version, ID syntax, extra fields, duplicate items and label count. |
+| `INVALID_LABEL` | Check the shipped schema, including field types, agent source, file version, ID syntax, extra fields, duplicate item/category pairs, mixed exclusive outcomes and assessment count. Version 1 still permits only one label per item. |
 
 On success, `data.duplicate: true` means the same submission was already accepted. Treat it as success without another write. If a call was interrupted after committing, resend the identical file with the same ID. If evidence was dropped, read the warning and use a verbatim quote in a later, deliberate new submission rather than silently changing a retry.

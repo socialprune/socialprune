@@ -24,10 +24,22 @@ export async function batchNextHandler(
   return {
     ...result,
     notices: [
-      `Sharing ${count} entries with the agent that runs this command: for each, the entry ID, kind, date, a hash of the text and the full text. The agent sends them to the model provider it uses. SocialPrune cannot see or limit what happens to them there.`,
+      `Sharing ${count} entries with the agent that runs this command: for each, the entry ID, kind, date, a hash of the text and the full text, plus criterion labels, definitions and hashes. The agent sends them to the model provider it uses. SocialPrune cannot see or limit what happens to them there.`,
     ],
     human: [
       result.data.notice,
+      'Criteria to check:',
+      ...result.data.criteria.map((criterion) =>
+        [
+          criterion.id,
+          criterion.label,
+          criterion.definition,
+          criterion.hash,
+        ].join('\n'),
+      ),
+      ...(result.data.criteria.length
+        ? []
+        : ['No criteria available for this batch.']),
       ...result.data.items.map((item) =>
         [
           item.itemId,

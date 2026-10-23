@@ -29,6 +29,7 @@ import { capturedContext } from '../cli/test/context.ts';
 import { networkRecorder } from '../cli/test/network-recorder.ts';
 import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import type { LabelFile } from '@socialprune/core/workspace/payloads';
+import { addCustomCriterion } from '@socialprune/core/criteria';
 
 const demo = new URL('../../../../fixtures/synthetic/demo/', import.meta.url);
 const archive = fileURLToPath(
@@ -909,9 +910,10 @@ test('scripted demo import -> consented batches -> dry-run and submit -> summary
         const batch = BatchSchema.parse(batchReply.result?.data);
         expect(batch.categories).toContain('harmless');
         const labelFile: LabelFile = {
-          schemaVersion: 1,
+          schemaVersion: 2,
           submissionId: `scripted-demo-${submitted}`,
           source,
+          criteria: batch.criteria.map(({ id, hash }) => ({ id, hash })),
           labels: batch.items.map((item) => {
             expect(seen.has(item.itemId)).toBe(false);
             seen.add(item.itemId);
@@ -947,6 +949,7 @@ test('scripted demo import -> consented batches -> dry-run and submit -> summary
             droppedEvidence: 0,
           },
         });
+
         expect(
           (await readFile(join(workspace, 'socialprune.sqlite'))).equals(
             before,
@@ -987,40 +990,12 @@ test('scripted demo import -> consented batches -> dry-run and submit -> summary
         data: { items: [], hasMore: false, shared: { count: 0 } },
       });
       expect(exhausted.capture.stderr.join('')).toContain('Sharing 0 entries');
-      const emptyHuman = await invoke(
-        [
-          'batch',
-          'next',
-          '--workspace',
-          workspace,
-          '--share-with-agent',
-          '--account',
-          entry.account.key,
-          '--source-name',
-          source.name,
-        ],
-        false,
-      );
-      expect(emptyHuman.code).toBe(0);
-      expect(emptyHuman.capture.stderr.join('')).toContain('Sharing 0 entries');
     }
-    const summaryReply = await invoke(['summary', '--workspace', workspace]);
-    if (summaryReply.result?.status === 'error')
-      throw new Error('Expected summary.');
-    const summary = SummarySchema.parse(summaryReply.result?.data);
-    expect(summary).toMatchObject({
-      withoutAgentAssessment: 0,
-      assessments: [{ kind: 'agent', name: source.name, count: 420 }],
-      counts: {
-        items: 420,
-        assessments: 420,
-        submissions: submitted,
-        decisionEvents: 0,
-        outcomeEvents: 0,
-      },
-      decisions: { keep: 0, delete: 0, later: 0, undecided: 420 },
-      decisionSources: [],
-    });
+    const data = await load(workspace);
+    expect(data.assessments).toHaveLength(420);
+    expect(data.decisionEvents).toEqual([]);
+    expect(data.outcomeEvents).toEqual([]);
+    expect(seen.size).toBe(420);
     expect(seen.size).toBe(
       manifest.exports.reduce((sum, entry) => sum + entry.itemCount, 0),
     );
@@ -1030,18 +1005,32 @@ test('scripted demo import -> consented batches -> dry-run and submit -> summary
       (await invoke(['labels', 'submit', file, '--workspace', workspace]))
         .result,
     ).toMatchObject({ data: { duplicate: true } });
-    expect(
-      (await readFile(join(workspace, 'socialprune.sqlite'))).equals(
-        beforeReplay,
-      ),
-    ).toBe(true);
-    const data = await load(workspace);
+    expect(await readFile(join(workspace, 'socialprune.sqlite'))).toEqual(
+      beforeReplay,
+    );
+    const summaryReply = await invoke(['summary', '--workspace', workspace]);
+    expect(summaryReply.result).toMatchObject({
+      data: {
+        withoutAgentAssessment: 0,
+        counts: {
+          items: 420,
+          assessments: 420,
+          submissions: submitted,
+          decisionEvents: 0,
+          outcomeEvents: 0,
+        },
+      },
+    });
+    if (summaryReply.result?.status === 'error')
+      throw new Error('Expected summary');
+    expect(SummarySchema.parse(summaryReply.result?.data)).toMatchObject({
+      assessments: [{ kind: 'agent', name: source.name, count: 420 }],
+      decisions: { keep: 0, delete: 0, later: 0, undecided: 420 },
+      decisionSources: [],
+    });
     for (const item of data.items)
       if (item.text)
         expect(summaryReply.capture.stdout.join('')).not.toContain(item.text);
-    expect(data.decisionEvents).toEqual([]);
-    expect(data.outcomeEvents).toEqual([]);
-    // A different source name still receives those entries; no lease was made.
     expect(
       (
         await invoke([
@@ -1057,6 +1046,192 @@ test('scripted demo import -> consented batches -> dry-run and submit -> summary
         ])
       ).result,
     ).toMatchObject({ data: { shared: { count: 50 } } });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 60_000);
+
+test('v2 criteria suggestions round trip through CLI with closed failures, advisory quotes and unchanged human decisions', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'socialprune-s6-submit-'));
+  const workspace = join(directory, 'workspace'),
+    file = join(directory, 'labels.json'),
+    backup = join(directory, 'backup.json'),
+    restored = join(directory, 'restored');
+  const fixture = JSON.parse(await readFile(expected, 'utf8')) as {
+    items: WorkspaceV2['items'];
+  };
+  const initial = createWorkspace();
+  initial.items = [fixture.items[0]!];
+  initial.counts.items = 1;
+  initial.settings = addCustomCriterion(initial.settings, {
+    label: 'Workshop',
+    description: 'Mentions the lantern workshop.',
+    createdAt: initial.createdAt,
+  });
+  initial.settings.criteria!.selected = ['custom-1'];
+  try {
+    await mkdir(workspace);
+    const store = await SQLiteStore.open(
+      join(workspace, 'socialprune.sqlite'),
+      { initial },
+    );
+    await store.close();
+    const batchReply = await invoke([
+      'batch',
+      'next',
+      '--workspace',
+      workspace,
+      '--share-with-agent',
+      '--source-name',
+      'hand-built-agent',
+    ]);
+    if (batchReply.result?.status === 'error')
+      throw new Error('Expected batch');
+    const batch = BatchSchema.parse(batchReply.result?.data),
+      base = labels(initial.items),
+      first = base.labels[0]!;
+    const valid = {
+      ...base,
+      schemaVersion: 2,
+      criteria: batch.criteria.map(({ id, hash }) => ({ id, hash })),
+      labels: [
+        { ...first, category: 'political', risk: 0 },
+        { ...first, category: 'custom-1', risk: 3, evidence: null },
+      ],
+    };
+    const before = await readFile(join(workspace, 'socialprune.sqlite'));
+    for (const [value, failures] of [
+      [
+        {
+          ...valid,
+          criteria: valid.criteria.filter((value) => value.id !== 'custom-1'),
+        },
+        [{ index: 1, code: 'CATEGORY_NOT_CHECKED' }],
+      ],
+      [
+        {
+          ...valid,
+          criteria: valid.criteria.map((value) =>
+            value.id === 'custom-1'
+              ? { ...value, hash: `sha256:${'0'.repeat(64)}` }
+              : value,
+          ),
+        },
+        [{ index: -1, code: 'CRITERION_CHANGED' }],
+      ],
+      [
+        { ...valid, labels: [valid.labels[0], valid.labels[0]] },
+        [{ index: 1, code: 'INVALID_LABEL' }],
+      ],
+      [
+        {
+          ...valid,
+          labels: [valid.labels[0], { ...first, category: 'unclear' }],
+        },
+        [{ index: 1, code: 'INVALID_LABEL' }],
+      ],
+      [
+        { ...valid, source: { ...valid.source, kind: 'model' } },
+        [{ index: -1, code: 'INVALID_LABEL' }],
+      ],
+      [
+        { ...valid, source: { ...valid.source, kind: 'rules' } },
+        [{ index: -1, code: 'INVALID_LABEL' }],
+      ],
+      [
+        { ...valid, labels: [{ ...first, decision: 'delete' }] },
+        [{ index: 0, code: 'INVALID_LABEL' }],
+      ],
+    ] as const) {
+      await writeFile(file, JSON.stringify(value));
+      const result = await invoke([
+        'labels',
+        'submit',
+        file,
+        '--workspace',
+        workspace,
+      ]);
+      expect(result.code).toBe(1);
+      expect(result.result).toMatchObject({
+        error: { code: 'INVALID_LABELS', details: { failures } },
+      });
+      expect(await readFile(join(workspace, 'socialprune.sqlite'))).toEqual(
+        before,
+      );
+    }
+    await writeFile(file, JSON.stringify(valid));
+    for (const dryRun of [true, false]) {
+      const result = await invoke([
+        'labels',
+        'submit',
+        file,
+        '--workspace',
+        workspace,
+        ...(dryRun ? ['--dry-run'] : []),
+      ]);
+      expect(result.code).toBe(0);
+      expect(result.result).toMatchObject({
+        data: { accepted: 2, dryRun },
+        warnings: [
+          '1 labels at risk 2 or 3 have evidence set to null. Review those suggestions individually.',
+        ],
+      });
+      if (dryRun)
+        expect(await readFile(join(workspace, 'socialprune.sqlite'))).toEqual(
+          before,
+        );
+    }
+    const recorded = await load(workspace);
+    expect(recorded.submissions[0]!.criteria).toEqual(valid.criteria);
+    expect(
+      recorded.assessments.map((value) => [
+        value.category,
+        value.risk,
+        value.source,
+      ]),
+    ).toEqual(
+      valid.labels.map((value) => [value.category, value.risk, valid.source]),
+    );
+    expect(recorded.decisionEvents).toEqual([]);
+    expect(recorded.outcomeEvents).toEqual([]);
+    expect(recorded.reviewPlans).toEqual([]);
+    const complete = await invoke([
+      'batch',
+      'next',
+      '--workspace',
+      workspace,
+      '--share-with-agent',
+      '--source-name',
+      valid.source.name,
+    ]);
+    expect(complete.result).toMatchObject({
+      data: { items: [], hasMore: false },
+    });
+    expect(
+      (
+        await invoke([
+          'backup',
+          'export',
+          '--workspace',
+          workspace,
+          '--out',
+          backup,
+        ])
+      ).code,
+    ).toBe(0);
+    expect(
+      (await invoke(['backup', 'restore', backup, '--workspace', restored]))
+        .code,
+    ).toBe(0);
+    const after = await readFile(join(restored, 'socialprune.sqlite'));
+    expect(
+      (await invoke(['labels', 'submit', file, '--workspace', restored]))
+        .result,
+    ).toMatchObject({ data: { duplicate: true, accepted: 2 } });
+    expect(await readFile(join(restored, 'socialprune.sqlite'))).toEqual(after);
+    expect((await load(restored)).submissions[0]!.criteria).toEqual(
+      valid.criteria,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

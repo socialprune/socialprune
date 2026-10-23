@@ -1,6 +1,6 @@
 # Privacy boundary
 
-Import and label submission stay on the person's computer. SocialPrune calls no model provider or platform API in this flow. `batch next` prints the full text of selected entries to the agent that runs it. That agent sends the text to the model provider it uses. SocialPrune cannot see or limit what happens to it there.
+Import and label submission stay on the person's computer. SocialPrune calls no model provider or platform API in this flow. `batch next` prints the full text of selected entries and criterion labels, definitions and hashes to the agent that runs it, including descriptions of selected own criteria. That agent sends these to the model provider it uses. SocialPrune cannot see or limit what happens to them there. Keep rules and originals are not part of the batch.
 
 Ask the person before the first batch and wait for their explicit yes. The `--share-with-agent` flag records the agent's assertion of consent in the command the host shows. It does not check the conversation. A host can ignore a skill, and a process with the person's file access can edit the workspace. Keep command approval enabled and read the sharing notice. The person can decline labelling and review without agent suggestions.
 

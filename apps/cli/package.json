@@ -22,6 +22,7 @@
   "dependencies": {
     "@socialprune/adapter-instagram": "workspace:*",
     "@socialprune/adapter-x": "workspace:*",
+    "@socialprune/classify": "workspace:*",
     "@socialprune/core": "workspace:*",
     "@stricli/core": "1.3.0",
     "playwright-core": "1.63.0",

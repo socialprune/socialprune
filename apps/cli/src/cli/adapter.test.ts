@@ -99,7 +99,9 @@ test('machine help uses the command registry and includes no decision capability
     ['guide'],
     ['structure'],
     ['schemas'],
-    ['scan'],
+    ['scan', 'source'],
+    ['scan', 'check'],
+    ['scan', 'run'],
     ['mcp'],
     ['batch', 'next'],
     ['labels', 'submit'],
@@ -141,7 +143,7 @@ test('help on a command targets its registry entry without reading an archive', 
   });
 });
 
-test('review help is available while scan and mcp remain reserved', async () => {
+test('review help is available while mcp remains reserved', async () => {
   for (const args of [
     ['review', '--help'],
     ['review', '--help', '--json'],
@@ -158,7 +160,7 @@ test('review help is available while scan and mcp remain reserved', async () => 
     commandRegistry()
       .filter((entry) => !entry.available)
       .map((entry) => entry.path),
-  ).toEqual([['guide'], ['scan'], ['mcp']]);
+  ).toEqual([['guide'], ['mcp']]);
 });
 
 test('structure emits one envelope without workspace, warnings or stderr notice', async () => {

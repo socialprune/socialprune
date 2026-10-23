@@ -4,6 +4,216 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "SOURCE_FILE_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "Name a valid source file with --source; choose its endpoint, model and entries per request explicitly."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "SOURCE_PATH_REFUSED" },
+        "message": {
+          "type": "string",
+          "const": "Use a new source file outside every Git working tree."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "KEY_FILE_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "The named key file must hold one non-empty line outside a Git working tree, not another tool configuration."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ENDPOINT_NOT_CONFIRMED" },
+        "message": {
+          "type": "string",
+          "const": "Confirm the source origin and answering model from scan check before starting the run."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ENDPOINT_UNREACHABLE" },
+        "message": {
+          "type": "string",
+          "const": "The named endpoint could not be reached or its TLS certificate was rejected."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ENDPOINT_UNAUTHORIZED" },
+        "message": {
+          "type": "string",
+          "const": "The named endpoint refused authorization. Check the key file yourself."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "MODEL_NOT_FOUND" },
+        "message": {
+          "type": "string",
+          "const": "The named endpoint did not find the requested model."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "MODEL_CHANGED" },
+        "message": {
+          "type": "string",
+          "const": "The answering model name changed. The run stopped without switching models."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "REMOTE_MODEL" },
+        "message": {
+          "type": "string",
+          "const": "The Ollama answer did not prove a local model. No chat request was sent."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "STRUCTURED_OUTPUT_REFUSED" },
+        "message": {
+          "type": "string",
+          "const": "The endpoint refused the configured output format. No fallback mode was selected."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "REDIRECT_REFUSED" },
+        "message": {
+          "type": "string",
+          "const": "The endpoint redirected a request. No other origin was contacted."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ANSWERS_INVALID" },
+        "message": {
+          "type": "string",
+          "const": "Five responses in a row contained no valid entry. The run stopped."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ENDPOINT_RETRY_EXHAUSTED" },
+        "message": {
+          "type": "string",
+          "const": "The endpoint request still failed after its two retries. Stored suggestions remain; resume the same plan later."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": true }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "ENDPOINT_RATE_LIMITED" },
+        "message": {
+          "type": "string",
+          "const": "The endpoint requested a wait longer than 300 seconds. The run stopped for a later resume."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": true }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "SCAN_FAILED" },
+        "message": {
+          "type": "string",
+          "const": "The suggestion scan could not finish. Stored suggestions remain unchanged by failed batches."
+        },
+        "exitCode": { "type": "number", "const": 1 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "CONTEXT_ORDER_INVALID" },
         "message": {
           "type": "string",

@@ -6,6 +6,7 @@ import { executeCli } from './adapter.ts';
 import { createNodeContext } from './node-context.ts';
 import { capturedContext } from './test/context.ts';
 import { networkRecorder } from './test/network-recorder.ts';
+import { scanFixture } from '../commands/scan-fixture.test-support.ts';
 
 const archive = fileURLToPath(
   new URL(
@@ -84,6 +85,12 @@ test('all C1 routes, help, review dry-run and bad arguments make no network or o
       [['schemas', '--bad'], 2],
       [['scan'], 2],
       [['scan', '--json'], 2],
+      [['scan', 'source', '--help'], 0],
+      [['scan', 'check', '--help', '--json'], 0],
+      [['scan', 'run', '--help'], 0],
+      [['scan', 'check'], 2],
+      [['scan', 'check', '--bad'], 2],
+      [['scan', 'run', '--dry-run'], 2],
       [['mcp', '--json'], 2],
       [['review', '--dry-run'], 2],
       [['review', '--workspace', archive, '--dry-run'], 2],
@@ -160,3 +167,32 @@ test('all C1 routes, help, review dry-run and bad arguments make no network or o
     recorder.restore();
   }
 }, 60_000);
+test('scan source and dry-run are network-free; a missing named source or confirmations never authorizes a connection', async () => {
+  const h = await scanFixture();
+  const recorder = networkRecorder();
+  try {
+    for (const [args, expected] of [
+      [
+        [
+          'scan',
+          'run',
+          '--workspace',
+          h.workspace,
+          '--source',
+          h.source,
+          '--dry-run',
+        ],
+        0,
+      ],
+      [['scan', 'check'], 2],
+      [['scan', 'check', '--source', h.source + '-missing'], 2],
+      [['scan', 'run', '--workspace', h.workspace, '--source', h.source], 2],
+    ] as const) {
+      expect((await h.invoke([...args])).code).toBe(expected);
+      expect(recorder.calls).toEqual([]);
+    }
+  } finally {
+    recorder.restore();
+    await h.close();
+  }
+});

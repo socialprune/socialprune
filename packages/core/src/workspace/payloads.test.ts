@@ -173,6 +173,7 @@ test('all neutral payload JSON files exist with the generated canonical content'
     'batch',
     'label-file',
     'source-label-file',
+    'suggestion-source',
     'label-submission',
     'summary',
     'click-list',

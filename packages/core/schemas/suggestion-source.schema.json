@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "number", "const": 1 },
+    "name": { "type": "string", "pattern": "^[a-z0-9._-]{1,32}$" },
+    "baseUrl": { "type": "string", "format": "uri" },
+    "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "keyFile": { "type": "string", "minLength": 1 },
+    "profile": {
+      "type": "string",
+      "enum": ["openai-compatible", "llama-server", "ollama", "openrouter"]
+    },
+    "structuredOutput": {
+      "type": "string",
+      "enum": ["json_schema", "json_object", "none"]
+    },
+    "cacheControl": { "type": "boolean" },
+    "entriesPerRequest": { "type": "integer", "minimum": 1, "maximum": 50 },
+    "parallelRequests": { "type": "integer", "minimum": 1, "maximum": 4 },
+    "requestTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 600
+    },
+    "allowPaid": { "type": "boolean" }
+  },
+  "required": [
+    "schemaVersion",
+    "name",
+    "baseUrl",
+    "model",
+    "entriesPerRequest"
+  ],
+  "additionalProperties": false,
+  "$id": "https://socialprune.github.io/socialprune/schemas/suggestion-source.schema.json"
+}

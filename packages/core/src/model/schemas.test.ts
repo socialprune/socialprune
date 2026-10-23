@@ -31,6 +31,7 @@ test('schema catalogue keeps the canonical v2 and retained v1 JSON files', async
       'batch.schema.json',
       'label-file.schema.json',
       'source-label-file.schema.json',
+      'suggestion-source.schema.json',
       'label-submission.schema.json',
       'summary.schema.json',
       'click-list.schema.json',

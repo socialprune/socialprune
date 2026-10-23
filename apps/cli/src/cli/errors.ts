@@ -9,6 +9,94 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  SOURCE_FILE_INVALID: {
+    message:
+      'Name a valid source file with --source; choose its endpoint, model and entries per request explicitly.',
+    exitCode: 2,
+    retryable: false,
+  },
+  SOURCE_PATH_REFUSED: {
+    message: 'Use a new source file outside every Git working tree.',
+    exitCode: 2,
+    retryable: false,
+  },
+  KEY_FILE_INVALID: {
+    message:
+      'The named key file must hold one non-empty line outside a Git working tree, not another tool configuration.',
+    exitCode: 2,
+    retryable: false,
+  },
+  ENDPOINT_NOT_CONFIRMED: {
+    message:
+      'Confirm the source origin and answering model from scan check before starting the run.',
+    exitCode: 2,
+    retryable: false,
+  },
+  ENDPOINT_UNREACHABLE: {
+    message:
+      'The named endpoint could not be reached or its TLS certificate was rejected.',
+    exitCode: 1,
+    retryable: false,
+  },
+  ENDPOINT_UNAUTHORIZED: {
+    message:
+      'The named endpoint refused authorization. Check the key file yourself.',
+    exitCode: 1,
+    retryable: false,
+  },
+  MODEL_NOT_FOUND: {
+    message: 'The named endpoint did not find the requested model.',
+    exitCode: 1,
+    retryable: false,
+  },
+  MODEL_CHANGED: {
+    message:
+      'The answering model name changed. The run stopped without switching models.',
+    exitCode: 1,
+    retryable: false,
+  },
+  REMOTE_MODEL: {
+    message:
+      'The Ollama answer did not prove a local model. No chat request was sent.',
+    exitCode: 1,
+    retryable: false,
+  },
+  STRUCTURED_OUTPUT_REFUSED: {
+    message:
+      'The endpoint refused the configured output format. No fallback mode was selected.',
+    exitCode: 1,
+    retryable: false,
+  },
+  REDIRECT_REFUSED: {
+    message:
+      'The endpoint redirected a request. No other origin was contacted.',
+    exitCode: 1,
+    retryable: false,
+  },
+  ANSWERS_INVALID: {
+    message:
+      'Five responses in a row contained no valid entry. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
+  ENDPOINT_RETRY_EXHAUSTED: {
+    message:
+      'The endpoint request still failed after its two retries. Stored suggestions remain; resume the same plan later.',
+    exitCode: 1,
+    retryable: true,
+  },
+  ENDPOINT_RATE_LIMITED: {
+    message:
+      'The endpoint requested a wait longer than 300 seconds. The run stopped for a later resume.',
+    exitCode: 1,
+    retryable: true,
+  },
+  SCAN_FAILED: {
+    message:
+      'The suggestion scan could not finish. Stored suggestions remain unchanged by failed batches.',
+    exitCode: 1,
+    retryable: false,
+  },
   CONTEXT_ORDER_INVALID: {
     message:
       "The written order must name context-instagram and the expected Instagram account, with a valid date and the person's words.",

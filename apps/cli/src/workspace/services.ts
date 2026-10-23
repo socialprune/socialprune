@@ -1,5 +1,33 @@
 import { lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import {
+  EndpointSource,
+  ScanError,
+  normalize,
+  runBatches,
+  sourceVersion,
+  loopback,
+  RUBRIC_VERSION,
+} from '@socialprune/classify';
+import type {
+  RunEntry,
+  RunCriterion,
+  SourceConfig,
+  SourceLabelFile,
+  RunProgress,
+} from '@socialprune/classify';
+import {
+  loadSourceConfig,
+  loadSourceKey,
+  nodeTransport,
+  sourceKeyPath,
+} from '@socialprune/classify/node';
+import {
+  PRESETS,
+  criterionHash,
+  currentChecks,
+} from '@socialprune/core/criteria';
 import { importArchive, stableId, UtcTimestampSchema } from '@socialprune/core';
 import type {
   ArchiveReader,
@@ -25,13 +53,14 @@ import {
   LabelValidationError,
 } from '@socialprune/core/workspace/labels';
 import { LabelFileSchema } from '@socialprune/core/workspace/payloads';
+import { deriveState } from '@socialprune/core/workspace/state';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
 import {
   createBackup,
   restoreBackup,
   RestoreFailure,
 } from '@socialprune/core/workspace/backup';
-import { CliError, LABEL_FAILURE_CODES } from '../cli/errors.ts';
+import { CliError, LABEL_FAILURE_CODES, CLI_ERRORS } from '../cli/errors.ts';
 import { SQLiteStore } from './sqlite-store.ts';
 import { fetchOriginals } from '../originals/fetch.ts';
 import {
@@ -602,7 +631,416 @@ export async function exportClickList(input: ClickListCall) {
   }
 }
 
+export interface ScanCheckCall {
+  source: string;
+  signal: AbortSignal;
+  progress: (text: string) => void;
+}
+export interface ScanRunCall extends WorkspaceCall {
+  source: string;
+  account?: string;
+  limit?: number;
+  plan?: string;
+  confirmEndpoint?: string;
+  confirmModel?: string;
+  progress: (text: string) => void;
+}
+function scanFailure(error: unknown): never {
+  if (error instanceof ScanError) {
+    if (Object.hasOwn(CLI_ERRORS, error.code))
+      throw new CliError(error.code as keyof typeof CLI_ERRORS);
+    if (error.code === 'CONNECTION' || error.code === 'TLS')
+      throw new CliError('ENDPOINT_UNREACHABLE');
+    if (error.code === 'REQUEST_TIMEOUT' || error.code === 'RETRYABLE_STATUS')
+      throw new CliError('ENDPOINT_RETRY_EXHAUSTED');
+    throw new CliError('SCAN_FAILED');
+  }
+  labelServiceError(error);
+}
+function shareScan(
+  config: SourceConfig,
+  file: string,
+  count: number,
+  progress: (text: string) => void,
+  terms: boolean,
+) {
+  const origin = new URL(config.baseUrl).origin;
+  progress(
+    `${count} entries: platform, kind and full text, with criterion definitions. No originals, engagement or keep rules.`,
+  );
+  progress(
+    loopback(new URL(origin).hostname)
+      ? `Your entries' text and your criteria go to ${origin}, a program on this computer, for the model ${config.model}. SocialPrune cannot see where that program sends them. If it passes them to a service on the internet, they leave your computer and can count against your plan or cost money there.`
+      : `Your entries' text and your criteria leave your computer for ${origin}, for the model ${config.model}. That service handles them under its own terms and can charge your account. SocialPrune cannot see or limit what happens to them there.`,
+  );
+  const keyPath = sourceKeyPath(config, file);
+  progress(
+    keyPath
+      ? `Key file: ${keyPath}. SocialPrune reads a key only from this file.`
+      : 'Without a key.',
+  );
+  if (config.allowPaid)
+    progress('This source allows requests that can cost money.');
+  if (terms)
+    progress(
+      `The terms of the service behind ${origin} apply to what you send there, and so do the terms of X and Instagram. SocialPrune does not check them for you.`,
+    );
+}
+export async function checkScanSource(input: ScanCheckCall) {
+  try {
+    input.signal.throwIfAborted();
+    const config = await loadSourceConfig(input.source);
+    shareScan(config, input.source, 1, input.progress, true);
+    const { key, keyPath } = await loadSourceKey(config, input.source);
+    const origin = new URL(config.baseUrl).origin;
+    const network = nodeTransport(origin);
+    try {
+      const source = new EndpointSource(config, network.transport, key);
+      const listed = await source.exchange(
+        config.baseUrl + '/models',
+        null,
+        input.signal,
+      );
+      const models =
+        listed !== null &&
+        typeof listed === 'object' &&
+        'data' in listed &&
+        Array.isArray(listed.data)
+          ? (listed.data as unknown[])
+          : [];
+      const modelListed = models.some(
+        (model) =>
+          model !== null &&
+          typeof model === 'object' &&
+          'id' in model &&
+          model.id === config.model,
+      );
+      const request = {
+        criteria: PRESETS.filter(
+          (c) => !['harmless', 'unclear'].includes(c.id),
+        ),
+        entries: [
+          {
+            id: 'e1',
+            platform: 'x' as const,
+            kind: 'post' as const,
+            text: 'An invented museum note for the endpoint check.',
+          },
+        ],
+      };
+      const answer = await source.check(request, input.signal);
+      const valid = normalize(request, answer);
+      if (
+        !answer.answeredBy ||
+        answer.answeredBy.length > 200 ||
+        /[\r\n]/.test(answer.answeredBy)
+      )
+        throw new ScanError('MODEL_CHANGED');
+      return {
+        data: {
+          origin,
+          model: config.model,
+          keyFile: keyPath,
+          modelListed,
+          answeringModel: answer.answeredBy,
+          structuredOutput: valid.valid.size === 1,
+          usageReported: answer.usage.promptTokens !== null,
+          cachedTokensReported: answer.usage.cachedPromptTokens !== null,
+          rubricVersion: RUBRIC_VERSION,
+        },
+      };
+    } finally {
+      network.close();
+    }
+  } catch (error) {
+    scanFailure(error);
+  }
+}
+export async function runScan(input: ScanRunCall) {
+  let store: WorkspaceStore | undefined;
+  try {
+    input.signal.throwIfAborted();
+    const config = await loadSourceConfig(input.source);
+    const origin = new URL(config.baseUrl).origin;
+    if (
+      !input.dryRun &&
+      (!input.plan || input.confirmEndpoint !== origin || !input.confirmModel)
+    )
+      throw new CliError('ENDPOINT_NOT_CONFIRMED');
+    store = await readOnlyWorkspace(input);
+    const snapshot = await store.read(async (tx) => ({
+      workspace: await readWorkspace(tx),
+      items: await records(tx.items),
+      revision: (await tx.runtime.get()).revision,
+    }));
+    await store.close();
+    store = undefined;
+    const workspace = snapshot.workspace;
+    const complete = new Set(
+      workspace.imports.filter((i) => i.status === 'complete').map((i) => i.id),
+    );
+    const visible = snapshot.items
+      .filter((item) => !item.importId || complete.has(item.importId))
+      .map((item) => item.item);
+    const accounts = [...new Set(visible.map((item) => item.account.key))];
+    const account =
+      input.account ?? (accounts.length === 1 ? accounts[0] : undefined);
+    if (!account && accounts.length > 1) throw new CliError('ACCOUNT_REQUIRED');
+    if (input.account && !accounts.includes(input.account))
+      throw new CliError('INVALID_ARGUMENTS');
+    const criteria: RunCriterion[] = (
+      workspace.settings.criteria?.selected ?? []
+    ).map((id) => {
+      const preset = PRESETS.find((c) => c.id === id);
+      const own = workspace.settings.criteria?.custom.find((c) => c.id === id);
+      if (!preset && !own) throw new CliError('INVALID_ARGUMENTS');
+      return {
+        id,
+        label: own?.label ?? preset!.label,
+        definition: own?.description ?? preset!.definition,
+        hash: criterionHash(id, workspace.settings),
+      };
+    });
+    if (!criteria.length) throw new CliError('INVALID_ARGUMENTS');
+    const model = input.confirmModel ?? config.model;
+    if (model.length > 200 || /[\r\n]/.test(model))
+      throw new CliError('ENDPOINT_NOT_CONFIRMED');
+    const version = sourceVersion(model);
+    const checks = currentChecks(workspace);
+    const entries: RunEntry[] = [];
+    let skipped = 0;
+    const sorted = visible
+      .filter((item) => item.account.key === account)
+      .sort(
+        (a, b) =>
+          a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      );
+    for (const item of sorted) {
+      const current = checks.get(item.id) ?? [];
+      const covered = criteria.filter((c) =>
+        current.some(
+          (check) =>
+            check.criterion === c.id &&
+            check.source.kind === 'model' &&
+            check.source.name === config.name &&
+            check.source.version === version,
+        ),
+      );
+      if (covered.length === criteria.length) {
+        skipped++;
+        continue;
+      }
+      if (entries.length >= (input.limit ?? Infinity)) continue;
+      entries.push({
+        itemId: item.id,
+        contentHash:
+          'sha256:' + createHash('sha256').update(item.text).digest('hex'),
+        platform: item.platform === 'instagram' ? 'instagram' : 'x',
+        kind: item.kind,
+        text: item.text,
+        checked: [
+          {
+            sourceKind: 'model',
+            sourceName: config.name,
+            version,
+            criteria: covered.map(({ id, hash }) => ({ id, hash })),
+          },
+        ],
+      });
+    }
+    const plan =
+      'sha256:' +
+      createHash('sha256')
+        .update(
+          JSON.stringify([
+            config,
+            RUBRIC_VERSION,
+            account ?? null,
+            criteria.map(({ id, hash }) => ({ id, hash })),
+            workspace.id,
+          ]),
+        )
+        .digest('hex');
+    const groups = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      const missing = criteria.filter(
+        (c) => !entry.checked![0]!.criteria.some((value) => value.id === c.id),
+      );
+      const group = JSON.stringify(missing.map((c) => [c.id, c.hash]));
+      const texts = groups.get(group) ?? new Set<string>();
+      texts.add(JSON.stringify([entry.platform, entry.kind, entry.text]));
+      groups.set(group, texts);
+    }
+    const plannedRequests = [...groups.values()].reduce(
+      (sum, texts) => sum + Math.ceil(texts.size / config.entriesPerRequest),
+      0,
+    );
+    const states = deriveState(workspace);
+    const alreadyDecided = entries.filter(
+      (entry) => states.get(entry.itemId)?.decision !== 'undecided',
+    ).length;
+    const checkedElsewhere = entries.filter((entry) =>
+      (checks.get(entry.itemId) ?? []).some(
+        (check) =>
+          check.source.kind !== 'model' ||
+          check.source.name !== config.name ||
+          check.source.version !== version,
+      ),
+    ).length;
+    const perCriterion = Object.fromEntries(
+      criteria.map((criterion) => [
+        criterion.id,
+        entries.filter(
+          (entry) =>
+            !entry.checked![0]!.criteria.some(
+              (value) => value.id === criterion.id,
+            ),
+        ).length,
+      ]),
+    );
+    shareScan(config, input.source, entries.length, input.progress, false);
+    if (!input.dryRun && plan !== input.plan) throw new CliError('STALE_PLAN');
+    const sourceSummary = {
+      name: config.name,
+      origin,
+      model: config.model,
+      answeringModel: model,
+      rubricVersion: RUBRIC_VERSION,
+      keyFile: sourceKeyPath(config, input.source),
+    };
+    if (input.dryRun)
+      return {
+        workspace: { id: workspace.id, revision: snapshot.revision },
+        data: {
+          dryRun: true,
+          plan,
+          source: sourceSummary,
+          entries: {
+            planned: entries.length,
+            skipped: { currentSource: skipped },
+            alreadyDecided,
+            checkedElsewhere,
+            uniqueTexts: [...groups.values()].reduce((n, g) => n + g.size, 0),
+          },
+          requests: { planned: plannedRequests },
+          criteria: perCriterion,
+          batchSize: config.entriesPerRequest,
+        },
+      };
+    const { key } = await loadSourceKey(config, input.source);
+    const started = Date.now();
+    let progress: RunProgress | undefined;
+    const hits: Record<string, number> = {};
+    const risks: Record<string, number> = {};
+    const unclear: Record<string, number> = {};
+    let stopDetail: string | null = null;
+    let errorCode: keyof typeof CLI_ERRORS | null = null;
+    const target = await workspacePath(input.workspace, false);
+    store = await SQLiteStore.open(target.path);
+    const writer = new LabelService(store, { now: input.now });
+    const network = nodeTransport(origin);
+    try {
+      const source = new EndpointSource(config, network.transport, key);
+      progress = await runBatches({
+        source,
+        answeringModel: model,
+        confirmedOrigin: origin,
+        entries,
+        criteria,
+        entriesPerRequest: config.entriesPerRequest,
+        parallelRequests: config.parallelRequests,
+        signal: input.signal,
+        progress: (value) => {
+          progress = value;
+          input.progress(JSON.stringify(value));
+        },
+        submit: async (file: SourceLabelFile) => {
+          const result = await writer.submitSourceLabels(file);
+          if (!result.duplicate)
+            for (const label of file.labels) {
+              risks[label.risk] = (risks[label.risk] ?? 0) + 1;
+              if (label.category === 'unclear') {
+                const kind = entries.find(
+                  (entry) => entry.itemId === label.itemId,
+                )!.kind;
+                const cause = label.reason.includes('exact quote')
+                  ? 'quote'
+                  : 'answer';
+                unclear[`${kind}:${cause}`] =
+                  (unclear[`${kind}:${cause}`] ?? 0) + 1;
+              } else if (label.category !== 'harmless')
+                hits[label.category] = (hits[label.category] ?? 0) + 1;
+            }
+        },
+      });
+    } catch (error) {
+      if (error instanceof ScanError) {
+        stopDetail = error.code;
+        input.progress(
+          JSON.stringify({ stopDetail, waitSeconds: error.waitSeconds }),
+        );
+      }
+      try {
+        scanFailure(error);
+      } catch (failure) {
+        if (!(failure instanceof CliError)) throw failure;
+        errorCode = failure.code;
+        stopDetail ??= failure.code;
+      }
+    } finally {
+      network.close();
+    }
+    const final = await identity(store);
+    return {
+      workspace: final,
+      ...(errorCode
+        ? {
+            status: 'partial' as const,
+            exitCode: CLI_ERRORS[errorCode].exitCode,
+            warnings: [`${errorCode}: ${CLI_ERRORS[errorCode].message}`],
+          }
+        : {}),
+      data: {
+        dryRun: false,
+        plan,
+        source: sourceSummary,
+        entries: {
+          planned: entries.length,
+          skipped: { currentSource: skipped },
+          checked: progress?.stored ?? 0,
+          alreadyDecided,
+          checkedElsewhere,
+          remaining: progress?.remaining ?? entries.length,
+          uniqueTexts: [...groups.values()].reduce((n, g) => n + g.size, 0),
+        },
+        requests: {
+          planned: plannedRequests,
+          sent: progress?.requests ?? 0,
+          retried: progress?.retries ?? 0,
+          split: progress?.split ?? 0,
+          secondPass: progress?.secondPassRequests ?? 0,
+          failed: errorCode ? 1 : 0,
+        },
+        tokens: progress?.tokens ?? null,
+        batchSize: progress?.batchSize ?? config.entriesPerRequest,
+        hits,
+        criteria: perCriterion,
+        labelsPerRisk: risks,
+        unclear,
+        durationMs: Date.now() - started,
+        stopDetail,
+      },
+    };
+  } catch (error) {
+    scanFailure(error);
+  } finally {
+    await store?.close();
+  }
+}
+
 export const workspaceServices = {
+  checkScanSource,
+  runScan,
   fetchOriginals,
   importWorkspace,
   summarizeWorkspace,

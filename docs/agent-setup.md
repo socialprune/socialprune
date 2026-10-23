@@ -39,6 +39,21 @@ The agent uses a version-2 label file with `criteria: [{ id, hash }]` copied fro
 
 Version-1 files remain readable but check only the eight legacy defaults other than `harmless` and `unclear`. They cannot claim checks for the four new presets or your own criteria. The current skill writes version 2. A dry-run validates the same contract without changing the workspace, and an unchanged submission retry keeps the same ID.
 
+## Use an endpoint you named
+
+The optional endpoint route uses your own source file, not the agent's model credentials. Name the endpoint, the model for this run and a new source-file path outside repositories. If the endpoint requires a key, put it in a separate file outside repositories containing one non-empty line. The agent must not open it. SocialPrune reads only the named file and never environment keys or another tool's configuration.
+
+```text
+socialprune scan source --out "<source.json>" --base-url "<base-url>" --model "<model>" --entries-per-request <1..50> [--key-file "<key-file>"] --json
+socialprune scan check --source "<source.json>" --json
+socialprune scan run --workspace "<workspace>" --source "<source.json>" --dry-run --json
+socialprune scan run --workspace "<workspace>" --source "<source.json>" --plan "<hash>" --confirm-endpoint "<origin>" --confirm-model "<answering-model>" --limit 50 --json
+```
+
+No batch-size default has been measured for your model, so setup requires an explicit size. Check sends one invented entry with preset criteria; the dry run sends nothing. Before sending workspace entries, the agent shows the check's origin and answering model and waits for your agreement. The CLI says before every check and run how many entries leave, what they carry, the origin and the key-file path. A local endpoint may forward them to the internet, count them against your plan or cost money there. The endpoint's and platforms' terms apply; SocialPrune cannot inspect or limit that service.
+
+Choose criteria in review. The run sends their definitions with each entry's platform, kind and full text, but no originals, keep rules or engagement. It records model suggestions only. Look at the first 50 in review before asking the agent to remove the limit. An interrupted run resumes with the same plan and confirmations; written current checks are skipped. Output stays aggregate, with requests and tokens where the endpoint reports them.
+
 ## Review is your handoff
 
 The agent previews import, submits only labels and shows `summary` counts. No CLI label command makes a decision. Suggestions appear in review with their agent source name. Label files reject human sources, decision fields and outcome fields. Submission IDs let the agent retry an unchanged file without recording it twice.

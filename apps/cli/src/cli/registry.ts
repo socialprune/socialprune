@@ -11,6 +11,9 @@ import { clickListCommand } from '../commands/export-clicklist.ts';
 import { reviewCommand } from '../commands/review.ts';
 import { batchNextCommand } from '../commands/batch-next.ts';
 import { labelsSubmitCommand } from '../commands/labels-submit.ts';
+import { scanSourceCommand } from '../commands/scan-source.ts';
+import { scanCheckCommand } from '../commands/scan-check.ts';
+import { scanRunCommand } from '../commands/scan-run.ts';
 import { originalsFetchCommand } from '../commands/originals-fetch.ts';
 import { originalsFillCommand } from '../commands/originals-fill.ts';
 import { contextInstagramCommand } from '../commands/context-instagram.ts';
@@ -132,7 +135,33 @@ export function commandRegistry(): readonly RegistryEntry[] {
       outputSchemaIds: [CLI_SCHEMA_IDS.result],
       failureCode: 'SCHEMAS_FAILED',
     },
-    ...['scan', 'mcp'].map((name) => ({
+    ...[
+      {
+        path: ['scan', 'source'],
+        command: scanSourceCommand,
+        writes: true,
+        dryRun: false,
+      },
+      {
+        path: ['scan', 'check'],
+        command: scanCheckCommand,
+        writes: false,
+        dryRun: false,
+      },
+      {
+        path: ['scan', 'run'],
+        command: scanRunCommand,
+        writes: true,
+        dryRun: true,
+      },
+    ].map((entry) => ({
+      ...entry,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'SCAN_FAILED' as const,
+    })),
+    ...['mcp'].map((name) => ({
       path: [name],
       command: unavailableCommand(),
       writes: false,

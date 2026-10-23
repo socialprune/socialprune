@@ -12,7 +12,7 @@ import { generateJsonSchemas } from '../../../packages/core/src/node/schemas.ts'
 
 export async function workspaceAliases(): Promise<Record<string, string>> {
   const aliases: Record<string, string> = {};
-  for (const name of ['core', 'adapter-x', 'adapter-instagram']) {
+  for (const name of ['core', 'adapter-x', 'adapter-instagram', 'classify']) {
     const directory = resolve(root, `packages/${name}`);
     const metadata = JSON.parse(
       await readFile(resolve(directory, 'package.json'), 'utf8'),

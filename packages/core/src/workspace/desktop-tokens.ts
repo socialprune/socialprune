@@ -10,6 +10,21 @@ import { WORKSPACE_ERROR_CODES } from './errors.ts';
 // CLI into the renderer's graph. Update this vocabulary and its catalog consumers
 // together when a producer gains a token.
 export const DesktopCliErrorCodeSchema = z.enum([
+  'SOURCE_FILE_INVALID',
+  'SOURCE_PATH_REFUSED',
+  'KEY_FILE_INVALID',
+  'ENDPOINT_NOT_CONFIRMED',
+  'ENDPOINT_UNREACHABLE',
+  'ENDPOINT_UNAUTHORIZED',
+  'MODEL_NOT_FOUND',
+  'MODEL_CHANGED',
+  'REMOTE_MODEL',
+  'STRUCTURED_OUTPUT_REFUSED',
+  'REDIRECT_REFUSED',
+  'ANSWERS_INVALID',
+  'ENDPOINT_RETRY_EXHAUSTED',
+  'ENDPOINT_RATE_LIMITED',
+  'SCAN_FAILED',
   'CONTEXT_ORDER_INVALID',
   'CANARY_REQUIRED',
   'CANARY_NO_SECOND_SOURCE',

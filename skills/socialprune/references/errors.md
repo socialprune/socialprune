@@ -2,8 +2,15 @@
 
 Read the exit code and symbolic `error.code`. Error messages come from a fixed table; do not expect raw parser or storage exceptions. `error.retryable` says whether an unchanged retry might succeed. A retry never grants consent to share text.
 
+`scan run` can finish with `status: "partial"`, a nonzero exit and a count-only final report carrying `data.stopDetail`; its fixed warning names the cause. Stored suggestions remain. Do not turn that into a success claim or switch endpoints, models or output modes. Resume the same plan only when the person has resolved the cause and still agrees to share there.
+
 | Code | Exit | Action |
 |---|---:|---|
+| `SOURCE_FILE_INVALID`, `SOURCE_PATH_REFUSED`, `KEY_FILE_INVALID` | 2 | Use the person's explicit source and separate one-line key files outside repositories. Never search for a replacement or open another tool's configuration. |
+| `ENDPOINT_NOT_CONFIRMED`, `STALE_PLAN` | 2 or 1 | Show a fresh check and dry-run to the person; use their origin/model agreement and the unchanged plan. |
+| `ENDPOINT_UNREACHABLE`, `ENDPOINT_UNAUTHORIZED`, `MODEL_NOT_FOUND` | 1 | Let the person correct their endpoint, selected model or key file. Never select another service. |
+| `MODEL_CHANGED`, `REMOTE_MODEL`, `STRUCTURED_OUTPUT_REFUSED`, `REDIRECT_REFUSED` | 1 | Stop. No silent provider, model, remote-model or output-mode fallback is permitted. |
+| `ANSWERS_INVALID`, `ENDPOINT_RETRY_EXHAUSTED`, `ENDPOINT_RATE_LIMITED`, `SCAN_FAILED` | 1 | Read aggregate stop counts, retain the plan and resume later only after resolving the cause. |
 | `SHARING_NOT_CONFIRMED` | 2 | Ask the person whether their full entry text may go to your model provider. Pass `--share-with-agent` only after their yes. |
 | `ACCOUNT_REQUIRED` | 2 | Use `summary` and select the account the person named. |
 | `INVALID_CURSOR` | 2 | Keep the same account and source name, or start without a cursor. Previously submitted suggestions are skipped. |

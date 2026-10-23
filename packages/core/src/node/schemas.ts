@@ -25,6 +25,22 @@ import {
 } from '../workspace/payloads.ts';
 
 export const SCHEMA_MODELS = {
+  'suggestion-source': z.strictObject({
+    schemaVersion: z.literal(1),
+    name: z.string().regex(/^[a-z0-9._-]{1,32}$/),
+    baseUrl: z.url(),
+    model: z.string().min(1).max(200),
+    keyFile: z.string().min(1).optional(),
+    profile: z
+      .enum(['openai-compatible', 'llama-server', 'ollama', 'openrouter'])
+      .optional(),
+    structuredOutput: z.enum(['json_schema', 'json_object', 'none']).optional(),
+    cacheControl: z.boolean().optional(),
+    entriesPerRequest: z.int().min(1).max(50),
+    parallelRequests: z.int().min(1).max(4).optional(),
+    requestTimeoutSeconds: z.int().min(10).max(600).optional(),
+    allowPaid: z.boolean().optional(),
+  }),
   item: ItemSchema,
   assessment: AssessmentSchema,
   'decision-event': DecisionEventSchema,

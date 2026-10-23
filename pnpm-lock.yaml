@@ -52,6 +52,9 @@ importers:
       '@socialprune/adapter-x':
         specifier: workspace:*
         version: link:../../packages/adapter-x
+      '@socialprune/classify':
+        specifier: workspace:*
+        version: link:../../packages/classify
       '@socialprune/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -6,7 +6,7 @@ import { parseSource } from './config.ts';
 import { ScanError, stopped } from './source.ts';
 import type { Transport } from './endpoint.ts';
 
-async function inGitTree(path: string) {
+export async function inGitTree(path: string) {
   let current = dirname(path);
   while (true) {
     try {
@@ -26,16 +26,35 @@ async function inGitTree(path: string) {
   }
 }
 export async function loadSource(sourceFile: string) {
-  let config;
+  const config = await loadSourceConfig(sourceFile);
+  return loadSourceKey(config, sourceFile);
+}
+export async function loadSourceConfig(sourceFile: string) {
   try {
-    config = parseSource(JSON.parse(await readFile(sourceFile, 'utf8')));
+    const stat = await lstat(sourceFile);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536)
+      throw new ScanError('SOURCE_FILE_INVALID');
+    return parseSource(JSON.parse(await readFile(sourceFile, 'utf8')));
   } catch {
     throw new ScanError('SOURCE_FILE_INVALID');
   }
+}
+export function sourceKeyPath(
+  config: import('./config.ts').SourceConfig,
+  sourceFile: string,
+) {
+  return config.keyFile
+    ? isAbsolute(config.keyFile)
+      ? config.keyFile
+      : resolve(dirname(sourceFile), config.keyFile)
+    : null;
+}
+export async function loadSourceKey(
+  config: import('./config.ts').SourceConfig,
+  sourceFile: string,
+) {
   if (!config.keyFile) return { config, key: null, keyPath: null };
-  const keyPath = isAbsolute(config.keyFile)
-    ? config.keyFile
-    : resolve(dirname(sourceFile), config.keyFile);
+  const keyPath = sourceKeyPath(config, sourceFile)!;
   try {
     if (
       (await inGitTree(keyPath)) ||

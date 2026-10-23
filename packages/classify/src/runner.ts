@@ -37,6 +37,7 @@ export interface RunProgress {
   requests: number;
   retries: number;
   secondPassEntries: number;
+  secondPassRequests: number;
   split: number;
   unknownIds: number;
   missingIds: number;
@@ -154,6 +155,7 @@ export async function runBatches(options: RunOptions) {
     requests: 0,
     retries: 0,
     secondPassEntries: 0,
+    secondPassRequests: 0,
     split: 0,
     unknownIds: 0,
     missingIds: 0,
@@ -164,11 +166,13 @@ export async function runBatches(options: RunOptions) {
   let invalidStreak = 0;
   let truncatedStreak = 0;
   const wait = options.wait ?? waitSeconds;
-  async function check(request: CheckRequest) {
+  async function check(request: CheckRequest, second: boolean) {
     for (let attempt = 0; ; attempt++) {
       stopped(requestSignal);
       const first = progress.requests === 0;
       progress.requests++;
+      if (second) progress.secondPassRequests++;
+      options.progress?.(structuredClone(progress));
       try {
         const answer = await source.check(request, requestSignal);
         stopped(requestSignal);
@@ -199,6 +203,7 @@ export async function runBatches(options: RunOptions) {
           throw new ScanError('ENDPOINT_RETRY_EXHAUSTED');
         }
         progress.retries++;
+        options.progress?.(structuredClone(progress));
         await wait(
           error.waitSeconds ?? (attempt === 0 ? 10 : 60),
           requestSignal,
@@ -293,7 +298,7 @@ export async function runBatches(options: RunOptions) {
     };
     let answer: CheckAnswer;
     try {
-      answer = await check(request);
+      answer = await check(request, second);
     } catch (error) {
       if (!(error instanceof ScanError && error.code === 'REQUEST_SIZE'))
         throw error;

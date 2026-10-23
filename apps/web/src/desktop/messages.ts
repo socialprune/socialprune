@@ -11,6 +11,21 @@ import type {
 // Explicit IDs let the catalog checker prove use without evaluating templates.
 // The schema enumeration test independently proves this list is complete.
 const tokenIds = [
+  'desktop.token.SOURCE_FILE_INVALID',
+  'desktop.token.SOURCE_PATH_REFUSED',
+  'desktop.token.KEY_FILE_INVALID',
+  'desktop.token.ENDPOINT_NOT_CONFIRMED',
+  'desktop.token.ENDPOINT_UNREACHABLE',
+  'desktop.token.ENDPOINT_UNAUTHORIZED',
+  'desktop.token.MODEL_NOT_FOUND',
+  'desktop.token.MODEL_CHANGED',
+  'desktop.token.REMOTE_MODEL',
+  'desktop.token.STRUCTURED_OUTPUT_REFUSED',
+  'desktop.token.REDIRECT_REFUSED',
+  'desktop.token.ANSWERS_INVALID',
+  'desktop.token.ENDPOINT_RETRY_EXHAUSTED',
+  'desktop.token.ENDPOINT_RATE_LIMITED',
+  'desktop.token.SCAN_FAILED',
   'desktop.token.CONTEXT_ORDER_INVALID',
   'desktop.token.CANARY_REQUIRED',
   'desktop.token.CANARY_NO_SECOND_SOURCE',

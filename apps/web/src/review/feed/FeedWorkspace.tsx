@@ -75,6 +75,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const activeAnchor = useRef<string | undefined>(anchors.current[tab]);
   const persistence = useRef<Promise<unknown>>(Promise.resolve());
   const pendingFocus = useRef<string | null>(null);
+  const focusSequence = useRef(0);
   const scrollAnchor = useRef<{ id: string; top: number } | null>(null);
   const localCommand = useRef(false);
   const lifecycle = useRef(0);
@@ -257,37 +258,22 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }
 
   async function move(index: number) {
-    const destination = Math.min(
-      Math.max(0, index),
-      Math.max(0, state.total - 1),
-    );
-    const card = state.cards[destination - state.start];
-    if (card) {
-      if (oneAtATime) setSingleIndex(destination - state.start);
-      setFocusTarget({ id: card.item.id, sequence: Date.now() });
-      const target = [
-        ...(root.current?.querySelectorAll<HTMLElement>(
-          'article[data-card-id]',
-        ) ?? []),
-      ].find((article) => article.dataset['cardId'] === card.item.id);
-      target?.focus();
+    const sequence = ++focusSequence.current;
+    pendingFocus.current = null;
+    const { accountKey, tab } = current.current;
+    const id = await session.seek(index);
+    if (
+      !id ||
+      sequence !== focusSequence.current ||
+      accountKey !== current.current.accountKey ||
+      tab !== current.current.tab
+    )
       return;
-    }
-    await session.load(Math.floor(destination / 50) * 50);
-    const next = session.snapshot.cards[destination - session.snapshot.start];
-    if (next) {
-      if (oneAtATime) setSingleIndex(destination - session.snapshot.start);
-      setFocusTarget({ id: next.item.id, sequence: Date.now() });
-      pendingFocus.current = next.item.id;
-      requestAnimationFrame(() => {
-        const target = [
-          ...(root.current?.querySelectorAll<HTMLElement>(
-            'article[data-card-id]',
-          ) ?? []),
-        ].find((article) => article.dataset['cardId'] === next.item.id);
-        target?.focus();
-      });
-    }
+    if (oneAtATime)
+      setSingleIndex(
+        session.snapshot.cards.findIndex((card) => card.item.id === id),
+      );
+    setFocusTarget({ id, sequence });
   }
   async function decide(id: string, value: DecisionValue) {
     localCommand.current = true;

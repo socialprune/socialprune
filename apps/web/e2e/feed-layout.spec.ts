@@ -159,14 +159,16 @@ for (const lang of ['de', 'en'] as const)
             'utf8',
           ),
         ) as Record<string, string>;
-        await page.goto('/socialprune/');
-        if (
-          await page
-            .locator('main h1')
-            .evaluate((element) => element === document.activeElement)
-        )
-          findings.push('initial load moves focus to page heading');
-        await restoreLiveFeed(page);
+        // Inspect initial focus on the same cold navigation the helper owns.
+        // A second early hash navigation races the shell's startup effects.
+        await restoreLiveFeed(page, undefined, async () => {
+          if (
+            await page
+              .locator('main h1')
+              .evaluate((element) => element === document.activeElement)
+          )
+            findings.push('initial load moves focus to page heading');
+        });
         async function inspect(state: string) {
           findings.push(
             ...(await layoutFindings(page, width)).map(
@@ -244,7 +246,6 @@ for (const lang of ['de', 'en'] as const)
         await page.getByRole('dialog').getByRole('button').last().click();
         const empty = liveFeedFixture();
         empty.settings.criteria!.selected = [];
-        await page.goto('/socialprune/');
         await restoreLiveFeed(page, empty);
         await expect(
           page.getByRole('heading', {

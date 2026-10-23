@@ -219,14 +219,24 @@
       gap: var(--space-1);
     }
     .navigation {
-      flex-wrap: nowrap;
+      flex: 1 1 0;
+      min-width: 0;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 0;
     }
     .navigation a {
-      white-space: nowrap;
-      flex-shrink: 0;
+      min-width: var(--target-size);
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      justify-content: center;
       padding-inline: var(--space-1);
       font-size: var(--type-xs);
+    }
+    .brand,
+    .menuArea {
+      flex: none;
     }
     .navigation a svg {
       display: none;

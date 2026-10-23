@@ -116,6 +116,40 @@ test('bounded card windows, full-query keyboard jumps and persisted tab anchor',
   await expect
     .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
     .toBe('1');
+  // Delay the next service window, then send Home while that read is pending.
+  // This is an injected test dependency, not a production delay control.
+  await page.evaluate(() => {
+    const original = window.workspace.feedWindow.bind(window.workspace);
+    let release: (() => void) | undefined;
+    const deferred = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Reflect.set(window, '__releaseFeedRead', release);
+    window.workspace.feedWindow = async (input) => {
+      if (input.offset && input.offset > 0) {
+        Reflect.set(window, '__feedReadPending', true);
+        await deferred;
+      }
+      return original(input);
+    };
+  });
+  await page.keyboard.press('End');
+  await expect
+    .poll(() =>
+      page.evaluate(() => Reflect.get(window, '__feedReadPending') === true),
+    )
+    .toBe(true);
+  await page.keyboard.press('Home');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('1');
+  await page.evaluate(() =>
+    (Reflect.get(window, '__releaseFeedRead') as () => void)(),
+  );
+  await expect(feed).toHaveAttribute('aria-busy', 'false');
+  await expect
+    .poll(() => page.locator('article:focus').getAttribute('aria-posinset'))
+    .toBe('1');
   await page.getByRole('tab', { name: /^All,/ }).click();
   await expect(feed).toHaveAttribute('aria-busy', 'false');
   await feed

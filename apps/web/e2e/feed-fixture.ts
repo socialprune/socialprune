@@ -122,8 +122,13 @@ export function liveFeedFixture(count = 8): WorkspaceV2 {
   };
   return data;
 }
-export async function restoreLiveFeed(page: Page, data = liveFeedFixture()) {
+export async function restoreLiveFeed(
+  page: Page,
+  data = liveFeedFixture(),
+  inspectInitial?: () => Promise<void>,
+) {
   await waitForApp(page);
+  await inspectInitial?.();
   const reply = await page.evaluate(
     (text) =>
       window.workspace.request({

@@ -213,3 +213,83 @@ test('switching tabs during decision count readback clears busy and ignores the 
   expect(session.snapshot.tab).toBe('all');
   expect(session.snapshot.cards[0]?.decision).toBe('undecided');
 });
+
+test('an explicit first-card navigation supersedes a pending scroll window instead of being dropped', async () => {
+  const port = client(),
+    session = new FeedSession(port as unknown as WorkspaceClient);
+  await session.open('x:contract', 'suggested');
+  await session.load(350);
+  let release!: (value: Awaited<ReturnType<typeof port.feedWindow>>) => void;
+  port.feedWindow.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const scrollRead = session.load(300);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(await session.seek(0)).toBe('x:0');
+  expect(session.snapshot.cards[0]?.item.id).toBe('x:0');
+  release({
+    type: 'feedCards',
+    requestId: 'late-scroll',
+    total: 400,
+    anchorIndex: null,
+    cards: Array.from({ length: 50 }, (_, n) => card(300 + n)),
+  });
+  await scrollRead;
+  expect(session.snapshot.start).toBe(0);
+});
+
+test('a navigation read from a previous account cannot focus a same-ID card in the next account', async () => {
+  const port = client(),
+    session = new FeedSession(port as unknown as WorkspaceClient);
+  await session.open('x:old', 'all');
+  let release!: (value: Awaited<ReturnType<typeof port.feedWindow>>) => void;
+  port.feedWindow.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const navigation = session.seek(350);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  await session.open('x:new', 'all');
+  release({
+    type: 'feedCards',
+    requestId: 'old-navigation',
+    total: 400,
+    anchorIndex: null,
+    cards: [card(350)],
+  });
+  expect(await navigation).toBeNull();
+  expect(session.snapshot.accountKey).toBe('x:new');
+  expect(session.snapshot.cards[0]?.item.id).toBe('x:0');
+});
+
+test('late explicit navigation cannot overwrite the newer first window or its loading state', async () => {
+  const port = client(),
+    session = new FeedSession(port as unknown as WorkspaceClient);
+  await session.open('x:contract', 'all');
+  let release!: (value: Awaited<ReturnType<typeof port.feedWindow>>) => void;
+  port.feedWindow.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const end = session.seek(399);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(await session.seek(0)).toBe('x:0');
+  release({
+    type: 'feedCards',
+    requestId: 'late-end',
+    total: 400,
+    anchorIndex: null,
+    cards: Array.from({ length: 50 }, (_, n) => card(350 + n)),
+  });
+  expect(await end).toBeNull();
+  expect(session.snapshot.start).toBe(0);
+  expect(session.snapshot.loading).toBe(false);
+  expect(session.snapshot.cards[0]?.item.id).toBe('x:0');
+});

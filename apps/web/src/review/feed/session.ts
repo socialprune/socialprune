@@ -38,6 +38,7 @@ export class FeedSession {
     previewState: 'ready',
   };
   private epoch = 0;
+  private windowEpoch = 0;
   private page = id();
   private previewEpoch = 0;
   private membershipChanged = false;
@@ -59,6 +60,7 @@ export class FeedSession {
   }
   async open(accountKey: string, tab: FeedTab, anchor?: string) {
     const epoch = ++this.epoch;
+    ++this.windowEpoch;
     this.cancelPreview();
     this.membershipChanged = false;
     this.update({
@@ -96,9 +98,9 @@ export class FeedSession {
       if (epoch === this.epoch) this.update({ loading: false });
     }
   }
-  async load(offset: number) {
-    if (this.snapshot.loading || this.snapshot.busy) return;
-    if (this.membershipChanged) {
+  async load(offset: number, replace = false) {
+    if (this.snapshot.busy || (this.snapshot.loading && !replace)) return;
+    if (this.membershipChanged && !replace) {
       const { accountKey, tab, cards } = this.snapshot;
       const anchor = (offset >= this.snapshot.start ? cards.at(-1) : cards[0])
         ?.item.id;
@@ -106,6 +108,7 @@ export class FeedSession {
       return;
     }
     const epoch = this.epoch,
+      windowEpoch = ++this.windowEpoch,
       { accountKey, tab, start, cards } = this.snapshot;
     this.update({ loading: true, error: false });
     try {
@@ -115,15 +118,15 @@ export class FeedSession {
         offset: Math.max(0, offset),
         limit: 50,
       });
-      if (epoch !== this.epoch) return;
+      if (epoch !== this.epoch || windowEpoch !== this.windowEpoch) return;
       if (result.type !== 'feedCards') throw new Error('Feed window rejected');
       let next = result.cards,
         first = Math.max(0, offset);
-      if (offset === start + cards.length) {
+      if (!replace && offset === start + cards.length) {
         next = [...cards, ...result.cards];
         first = start;
       }
-      if (offset + result.cards.length === start) {
+      if (!replace && offset + result.cards.length === start) {
         next = [...result.cards, ...cards];
         first = offset;
       }
@@ -134,11 +137,32 @@ export class FeedSession {
         } else next = next.slice(0, 300);
       }
       this.update({ cards: next, start: first, total: result.total });
+      if (replace) this.membershipChanged = false;
     } catch {
-      if (epoch === this.epoch) this.update({ error: true });
+      if (epoch === this.epoch && windowEpoch === this.windowEpoch)
+        this.update({ error: true });
     } finally {
-      if (epoch === this.epoch) this.update({ loading: false });
+      if (epoch === this.epoch && windowEpoch === this.windowEpoch)
+        this.update({ loading: false });
     }
+  }
+  /** Explicit navigation supersedes background paging; a person's key is not dropped. */
+  async seek(index: number): Promise<string | null> {
+    if (this.snapshot.busy) return null;
+    const epoch = this.epoch;
+    const destination = Math.min(
+      Math.max(0, index),
+      Math.max(0, this.snapshot.total - 1),
+    );
+    if (
+      this.snapshot.loading ||
+      !this.snapshot.cards[destination - this.snapshot.start]
+    )
+      await this.load(Math.floor(destination / 50) * 50, true);
+    if (epoch !== this.epoch || this.snapshot.error) return null;
+    return (
+      this.snapshot.cards[destination - this.snapshot.start]?.item.id ?? null
+    );
   }
   async refreshCounts() {
     const epoch = this.epoch;
@@ -294,6 +318,7 @@ export class FeedSession {
   }
   dispose() {
     ++this.epoch;
+    ++this.windowEpoch;
     this.cancelPreview();
     this.listeners.clear();
   }

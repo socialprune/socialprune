@@ -48,6 +48,7 @@ export interface BrowserDriver {
     state: 'deleted' | 'failed' | 'ambiguous';
     code: string | null;
     receipt?: { method: string; path: string; status: number; shape: string[] };
+    stop?: CliError;
   }>;
   flush(): Promise<void>;
   close(): Promise<void>;
@@ -240,14 +241,32 @@ export async function pageDriver(options: {
         !new URL(current.url()).pathname.endsWith(`/status/${id}`)
       )
         throw new CliError('PLATFORM_CHECK');
-      return Promise.race([
-        xSelectors.state(
-          current,
-          id,
-          Math.min(20_000, options.responseTimeoutMs),
-        ),
-        rateStop,
-      ]);
+      try {
+        return await Promise.race([
+          xSelectors.state(
+            current,
+            id,
+            Math.min(20_000, options.responseTimeoutMs),
+          ),
+          rateStop,
+        ]);
+      } catch (error) {
+        if (
+          error instanceof CliError &&
+          error.code === 'PLATFORM_CHECK' &&
+          error.reason === 'render-timeout' &&
+          (await current
+            .locator('article[data-testid="tweet"] a[href*="/status/"] time')
+            .count())
+        )
+          throw new CliError(
+            'PLATFORM_CHECK',
+            undefined,
+            undefined,
+            'focal-count',
+          );
+        throw error;
+      }
     },
     async delete(id, action) {
       guard();
@@ -298,58 +317,78 @@ export async function pageDriver(options: {
           'marker-rate-limit',
         );
       expectedMutation = operation;
+      let receipt:
+        | { method: string; path: string; status: number; shape: string[] }
+        | undefined;
       try {
-        await Promise.race([
-          final.click({ timeout: options.responseTimeoutMs }),
-          rateStop,
-        ]);
-      } catch {
-        await Promise.race([response, rateStop]);
-        expectedMutation = null;
-        return { state: 'ambiguous', code: 'CLICK_INTERRUPTED' };
-      }
-      const answer = await Promise.race([response, rateStop]);
-      expectedMutation = null;
-      if (!answer || current.isClosed() || current.url() !== startingUrl)
-        return { state: 'ambiguous', code: 'RESPONSE_UNKNOWN' };
-      const receipt = {
-        method: answer.request().method(),
-        path: new URL(answer.url()).pathname,
-        status: answer.status(),
-        shape: [] as string[],
-      };
-      let body: unknown;
-      try {
-        body = await Promise.race([answer.json(), rateStop]);
-      } catch {
-        guard();
-        return { state: 'failed', code: 'INVALID_RESPONSE', receipt };
-      }
-      receipt.shape = bodyShape(body);
-      if (
-        answer.status() !== 200 ||
-        !body ||
-        typeof body !== 'object' ||
-        Array.isArray(body) ||
-        !('data' in body) ||
-        'errors' in body
-      )
-        return { state: 'failed', code: 'PLATFORM_RESPONSE', receipt };
-      try {
-        await Promise.race([
-          current
-            .getByTestId('toast')
-            .waitFor({ state: 'visible', timeout: options.responseTimeoutMs }),
-          rateStop,
-        ]);
-        guard();
-        if (!(await xSelectors.confirmation(current, action)))
-          return { state: 'failed', code: 'CONFIRMATION_MISSING', receipt };
+        try {
+          await Promise.race([
+            final.click({ timeout: options.responseTimeoutMs }),
+            rateStop,
+          ]);
+        } catch (error) {
+          if (error instanceof CliError) throw error;
+          await Promise.race([response, rateStop]);
+          return { state: 'ambiguous', code: 'CLICK_INTERRUPTED' };
+        }
+        const answer = await Promise.race([response, rateStop]);
+        if (!answer || current.isClosed() || current.url() !== startingUrl)
+          return { state: 'ambiguous', code: 'RESPONSE_UNKNOWN' };
+        receipt = {
+          method: answer.request().method(),
+          path: new URL(answer.url()).pathname,
+          status: answer.status(),
+          shape: [] as string[],
+        };
+        let body: unknown;
+        try {
+          body = await Promise.race([answer.json(), rateStop]);
+        } catch {
+          guard();
+          return { state: 'ambiguous', code: 'INVALID_RESPONSE', receipt };
+        }
+        receipt.shape = bodyShape(body);
+        if (
+          answer.status() !== 200 ||
+          !body ||
+          typeof body !== 'object' ||
+          Array.isArray(body) ||
+          !('data' in body) ||
+          'errors' in body
+        )
+          return { state: 'ambiguous', code: 'PLATFORM_RESPONSE', receipt };
+        try {
+          await Promise.race([
+            current.getByTestId('toast').waitFor({
+              state: 'visible',
+              timeout: options.responseTimeoutMs,
+            }),
+            rateStop,
+          ]);
+          guard();
+          if (!(await xSelectors.confirmation(current, action)))
+            return {
+              state: 'ambiguous',
+              code: 'CONFIRMATION_MISSING',
+              receipt,
+            };
+        } catch (error) {
+          if (error instanceof CliError) throw error;
+          return { state: 'ambiguous', code: 'CONFIRMATION_MISSING', receipt };
+        }
+        return { state: 'deleted', code: null, receipt };
       } catch (error) {
-        if (error instanceof CliError) throw error;
-        return { state: 'failed', code: 'CONFIRMATION_MISSING', receipt };
+        const stop =
+          error instanceof CliError ? error : new CliError('RUN_STOPPED');
+        return {
+          state: 'ambiguous',
+          code: stop.code,
+          ...(receipt ? { receipt } : {}),
+          stop,
+        };
+      } finally {
+        expectedMutation = null;
       }
-      return { state: 'deleted', code: null, receipt };
     },
     async flush() {
       await Promise.all([...pending]);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { OriginalIdSchema, migrateOriginal } from '@socialprune/core';
 import type { Original } from '@socialprune/core';
+import { CliError } from '../cli/errors.ts';
 
 const productionOrigin = 'https://cdn.syndication.twimg.com';
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
@@ -128,6 +129,8 @@ export class SyndicationClient {
     }
     if (!response.ok) {
       await response.body?.cancel();
+      if (response.status === 429)
+        throw new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
       throw new Error('SYNDICATION_HTTP');
     }
     if (!response.headers.get('content-type')?.includes('application/json')) {

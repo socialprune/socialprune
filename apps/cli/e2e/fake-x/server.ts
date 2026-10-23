@@ -16,6 +16,8 @@ export type Variant =
   | '429'
   | 'side-429'
   | 'unconfirmed'
+  | 'after-click-limit'
+  | 'repost-original-time'
   | 'ambiguous'
   | 'shape'
   | 'wrong-id'
@@ -124,7 +126,10 @@ export async function fakeX(port = TEST_PORTS.x) {
         ? `<div id="nav"></div><script>setTimeout(()=>document.getElementById('nav').innerHTML=${JSON.stringify(nav)},${navDelay})</script>`
         : nav;
     const variant = id ? (variants.get(id) ?? 'success') : 'success';
-    const pageId = variant === 'wrong-id' ? '9999' : id;
+    const pageId =
+      variant === 'wrong-id' || variant === 'repost-original-time'
+        ? '9999'
+        : id;
     if (['login', 'challenge', 'lock', 'limit', 'unknown'].includes(variant)) {
       const decoys = {
         login: '<button data-testid="loginButton">Log in to X</button>',
@@ -160,7 +165,7 @@ export async function fakeX(port = TEST_PORTS.x) {
     ).join('');
     response.end(`<!doctype html><html><body>${account}${other}<article data-testid="tweet"><a href="/fixture/status/${pageId}"><time>2020-01-01</time></a><p data-testid="tweetText">Generated post ${id}</p>${buttons}</article><div id="menu" hidden><button role="menuitem" ${attr(repost ? 'unretweetConfirm' : 'delete')} id="delete">${repost ? name.undo : name.delete}</button></div><div role="dialog" id="dialog" hidden><button ${attr('confirmationSheetConfirm')} id="confirm">${name.delete}</button></div><div data-testid="toast" hidden id="toast"></div><script>
     const menu=document.getElementById('menu'), dialog=document.getElementById('dialog'), toast=document.getElementById('toast');
-    async function send(){ const r=await fetch('/i/api/graphql/generated/${repost ? 'DeleteRetweet' : 'DeleteTweet'}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${id}'})}); const b=await r.json(); if(r.status===200&&b.data&&!b.errors){menu.hidden=true;dialog.hidden=true;toast.textContent='${variant === 'unconfirmed' ? 'Generated result not confirmed' : repost ? name.undone : name.deleted}';toast.hidden=false;} }
+    async function send(){ const r=await fetch('/i/api/graphql/generated/${repost ? 'DeleteRetweet' : 'DeleteTweet'}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${id}'})}); const b=await r.json(); if(r.status===200&&b.data&&!b.errors){menu.hidden=true;dialog.hidden=true;toast.textContent='${variant === 'unconfirmed' ? 'Generated result not confirmed' : repost ? name.undone : name.deleted}';toast.hidden=false;${variant === 'after-click-limit' ? "const marker=document.createElement('p');marker.dataset.testid='rateLimit';marker.textContent='Rate limit exceeded';document.body.appendChild(marker);" : ''}} }
     document.getElementById('${repost ? 'repost' : 'more'}').onclick=()=>menu.hidden=false;
     document.getElementById('delete').onclick=${repost ? 'send' : '()=>{menu.hidden=true;dialog.hidden=false;}'};
     document.getElementById('confirm').onclick=send;

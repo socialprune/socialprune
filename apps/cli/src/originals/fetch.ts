@@ -175,8 +175,16 @@ export async function fetchOriginals(
             input.now().toISOString(),
             input.signal,
           );
-        } catch {
+        } catch (error) {
           input.signal.throwIfAborted();
+          if (
+            error instanceof CliError &&
+            error.code === 'PLATFORM_CHECK' &&
+            error.reason === 'http-429'
+          ) {
+            input.progress?.('Stop detail: http-429');
+            throw error;
+          }
           original = migrateOriginal({
             id: node.id,
             status: 'failed',

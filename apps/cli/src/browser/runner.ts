@@ -346,7 +346,30 @@ export async function runWithDependencies(
     let previousStart: number | null = priorStarts.length
       ? Math.max(...priorStarts)
       : null;
-    let batch = 0;
+    const recent: number[] = [];
+    const earlier = priorJournal.attempts
+      .filter(
+        (attempt) =>
+          priorRuns.has(attempt.runId) &&
+          (attempt.state === 'sending' ||
+            (attempt.state === 'not-found' && attempt.settles === null) ||
+            attempt.action === 'verify') &&
+          dateInZone(attempt.at, options.plan.timeZone) === day,
+      )
+      .map((attempt) => Date.parse(attempt.at))
+      .sort((a, b) => a - b);
+    for (const start of earlier) {
+      if (recent.length && start - recent.at(-1)! >= dependencies.pace.pauseMs)
+        recent.length = 0;
+      recent.push(start);
+      if (recent.length > dependencies.pace.batchSize) recent.shift();
+    }
+    if (
+      recent.length &&
+      options.now().getTime() - recent.at(-1)! >= dependencies.pace.pauseMs
+    )
+      recent.length = 0;
+    let batch = recent.length;
     let lastPace = '';
     const windows = browser.rateWindows ?? new XResponseWindows();
     const effectivePace = async () => {
@@ -744,11 +767,11 @@ export async function runWithDependencies(
           run.profileReport,
           browser?.abortedHosts,
         );
-        if (!options.verify) {
+        {
           const detail = error ? errorStop(error) : null;
           const path = join(
             options.profile,
-            `socialprune-delete-${run.runId}.json`,
+            `socialprune-${mode}-${run.runId}.json`,
           );
           await writeFile(
             path,
@@ -799,6 +822,8 @@ export async function runWithDependencies(
           result: endText(
             endReason(run.endReason ?? 'stopped-by-person', error),
             options.lang,
+            errorStop(error).reason,
+            longWindow ? { fillStop: 'x-window-long' } : {},
           ),
         });
         if (options.session) {
@@ -828,6 +853,8 @@ export async function runWithDependencies(
           endText(
             endReason(run.endReason ?? 'stopped-by-person', error),
             options.lang,
+            errorStop(error).reason,
+            longWindow ? { fillStop: 'x-window-long' } : {},
           ) + '\n',
         );
       } catch (projectionError) {
@@ -876,10 +903,7 @@ async function deleteOne(
       runId: run.runId,
       itemId: row.item.id,
       action: row.action,
-      state:
-        error instanceof CliError && error.code === 'PLATFORM_CHECK'
-          ? 'failed'
-          : 'ambiguous',
+      state: 'ambiguous',
       settles: sending.attemptId,
       at: now().toISOString(),
       code: error instanceof CliError ? error.code : 'BROWSER_INTERRUPTED',
@@ -889,7 +913,7 @@ async function deleteOne(
   if (answer.state === 'deleted' && answer.receipt) {
     const first = run.bodyShapes[row.action];
     if (first && JSON.stringify(first) !== JSON.stringify(answer.receipt.shape))
-      answer = { ...answer, state: 'failed', code: 'SHAPE_CHANGED' };
+      answer = { ...answer, state: 'ambiguous', code: 'SHAPE_CHANGED' };
     else run.bodyShapes[row.action] ??= answer.receipt.shape;
   }
   await writer.settle(
@@ -906,6 +930,7 @@ async function deleteOne(
     },
     answer.state === 'deleted' ? 'deleted-via-browser' : undefined,
   );
+  if (answer.stop) throw answer.stop;
   if (answer.state !== 'deleted')
     throw new CliError(
       answer.code === 'CONFIRMATION_MISSING' ? 'DELETE_FAILED' : 'RUN_STOPPED',

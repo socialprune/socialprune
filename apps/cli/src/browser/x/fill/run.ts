@@ -501,24 +501,9 @@ export async function runFillWithDependencies(
         .hash !== options.plan.hash
     )
       throw new CliError('STALE_PLAN');
-    const active = await options.store.browserJournal();
-    for (const prior of active.runs)
-      if (prior.accountKey === options.plan.accountKey && !prior.endedAt) {
-        if (!prior.ownerPid) throw new CliError('WORKSPACE_BUSY');
-        let alive = true;
-        try {
-          process.kill(prior.ownerPid, 0);
-        } catch (error) {
-          if (
-            error &&
-            typeof error === 'object' &&
-            'code' in error &&
-            error.code === 'ESRCH'
-          )
-            alive = false;
-        }
-        if (alive) throw new CliError('WORKSPACE_BUSY');
-      }
+    await options.store
+      .browserOutcomeWriter()
+      .recover(options.plan.accountKey, run.startedAt);
     await writer.startRun({
       runId,
       accountKey: options.plan.accountKey,

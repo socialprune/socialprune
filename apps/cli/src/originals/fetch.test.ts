@@ -217,6 +217,32 @@ test('five consecutive failures stop without retries; each failed attempt stays 
     await data.dispose();
   }
 }, 15_000);
+test('D2 embed HTTP 429 stops at the first response without fetching another original', async () => {
+  const fake = await fakeSyndication('429');
+  const data = await workspace(['900001', '900002']);
+  const notices: string[] = [];
+  try {
+    await expect(
+      fetchOriginals(
+        { ...data.input, progress: (text) => notices.push(text) },
+        { baseUrl: fake.origin },
+      ),
+    ).rejects.toMatchObject({ code: 'PLATFORM_CHECK', reason: 'http-429' });
+    expect(fake.requests.map(({ url }) => url.searchParams.get('id'))).toEqual([
+      '900001',
+    ]);
+    expect(notices).toContain('Stop detail: http-429');
+    const store = await SQLiteStore.open(data.file, { readOnly: true });
+    try {
+      expect(await store.read((tx) => records(tx.originals))).toEqual([]);
+    } finally {
+      await store.close();
+    }
+  } finally {
+    await fake.stop();
+    await data.dispose();
+  }
+});
 test('a not-found response resets the failure streak', async () => {
   const fake = await fakeSyndication('reset');
   const data = await workspace(

@@ -34,6 +34,7 @@ export async function fakeSyndication(
   mode:
     | 'normal'
     | 'fail'
+    | '429'
     | 'reset'
     | 'redirect'
     | 'foreign-photo'
@@ -62,6 +63,11 @@ export async function fakeSyndication(
       return;
     }
     const id = url.searchParams.get('id');
+    if (mode === '429') {
+      response.writeHead(429);
+      response.end('Generated limit response');
+      return;
+    }
     if (
       mode === 'fail' ||
       (mode === 'reset' && !['900003', '900009'].includes(id!))

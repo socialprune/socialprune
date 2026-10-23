@@ -472,7 +472,7 @@ test.each(['429', 'side-429', 'unconfirmed'] as const)(
       const journal = await h.store.browserJournal();
       expect(fake.requests.some((r) => r.id === '1002')).toBe(false);
       expect(journal.attempts.map((a) => a.state)).toEqual(
-        variant === 'side-429' ? [] : ['sending', 'failed'],
+        variant === 'side-429' ? [] : ['sending', 'ambiguous'],
       );
       expect(journal.runs[0]!.endReason).toBe(
         variant === 'unconfirmed' ? 'error' : 'platform-check',
@@ -485,6 +485,202 @@ test.each(['429', 'side-429', 'unconfirmed'] as const)(
     }
   },
 );
+
+test.each(['unconfirmed', 'after-click-limit'] as const)(
+  'D2 after final click %s is ambiguous, blocks resend and is settled only by verify',
+  async (variant) => {
+    const h = await harness(['1001', '1002']);
+    fake.variants.set('1001', variant);
+    try {
+      const running = h.launch().catch((error: unknown) => error);
+      await h.click('Start');
+      expect(await running).toMatchObject(
+        variant === 'unconfirmed'
+          ? { code: 'DELETE_FAILED' }
+          : { code: 'PLATFORM_CHECK', reason: 'marker-rate-limit' },
+      );
+      expect(
+        (await h.store.browserJournal()).attempts.map(
+          (attempt) => attempt.state,
+        ),
+      ).toEqual(['sending', 'ambiguous']);
+      expect(
+        (
+          await planDeletion(h.store, FIXTURE.account.key, new Set(['x:1001']))
+        ).rows.map((row) => row.item.id),
+      ).toEqual(['x:1002']);
+      expect(
+        fake.requests.filter((request) => request.method === 'POST'),
+      ).toHaveLength(1);
+      fake.variants.clear();
+      const verify = h.launch(true);
+      await h.click('Start');
+      expect(await verify).toMatchObject({ completed: 1, endReason: 'done' });
+      expect(
+        (await h.store.browserJournal()).attempts
+          .slice(-2)
+          .map((attempt) => attempt.state),
+      ).toEqual(
+        variant === 'unconfirmed'
+          ? ['not-deleted', 'not-deleted']
+          : ['still-gone', 'deleted'],
+      );
+      expect(
+        fake.requests.filter((request) => request.method === 'POST'),
+      ).toHaveLength(1);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test('D2 a repost status page bearing only the original timestamp stops with focal-count before any click', async () => {
+  const h = await harness(['1004']);
+  fake.variants.set('1004', 'repost-original-time');
+  try {
+    const running = h.launch().catch((error: unknown) => error);
+    await h.click('Start');
+    expect(await running).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      reason: 'focal-count',
+    });
+    expect((await h.store.browserJournal()).attempts).toEqual([]);
+    expect(
+      fake.requests.filter((request) => request.method === 'POST'),
+    ).toEqual([]);
+    expect(h.notices).toContain('Stop detail: focal-count\n');
+  } finally {
+    await h.close();
+  }
+});
+
+test.each([false, true])(
+  'D2 delete/verify closed stop detail and final text preserve the marker category, verify=%s',
+  async (verify) => {
+    const h = await harness(['1001']);
+    try {
+      h.holdWindowOpen();
+      if (verify) {
+        const writer = h.store.browserOutcomeWriter();
+        const run = {
+          runId: 'verify-detail-prior',
+          platform: 'x' as const,
+          accountKey: FIXTURE.account.key,
+          mode: 'delete' as const,
+          planHash: h.plan.hash,
+          startedAt: FIXTURE.now,
+          endedAt: null,
+          endReason: null,
+          bodyShapes: {},
+          profileReport: null,
+        };
+        await writer.begin(run);
+        const sending = (await writer.check(
+          h.plan.rows[0]!,
+          run.runId,
+          FIXTURE.now,
+          true,
+        ))!;
+        await writer.settle({
+          attemptId: 'verify-detail-ambiguous',
+          runId: run.runId,
+          itemId: 'x:1001',
+          action: 'delete-post',
+          state: 'ambiguous',
+          settles: sending.attemptId,
+          at: FIXTURE.now,
+          code: 'RESPONSE_UNKNOWN',
+        });
+        await writer.finish({
+          ...run,
+          endedAt: FIXTURE.now,
+          endReason: 'error',
+        });
+      }
+      fake.variants.set('1001', 'login');
+      const running = h.launch(verify).catch((error: unknown) => error);
+      await h.click('Start');
+      await expect.poll(() => h.waitingForClose, { timeout: 10000 }).toBe(true);
+      expect(h.notices).toContain('Stop detail: marker-login\n');
+      expect(h.notices.join('')).toContain(
+        'X shows a sign-in, account check, lock or limit page.',
+      );
+      await expect
+        .poll(() =>
+          h.local().then((page) => page.locator('#result').innerText()),
+        )
+        .toContain('X shows a sign-in, account check, lock or limit page.');
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(
+            h.directory,
+            'profile',
+            `socialprune-${verify ? 'verify' : 'delete'}-${run.runId}.json`,
+          ),
+          'utf8',
+        ),
+      ) as { stop: unknown };
+      expect(report.stop).toEqual({
+        code: 'PLATFORM_CHECK',
+        reason: 'marker-login',
+      });
+      h.finishWindow();
+      expect(await running).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        reason: 'marker-login',
+      });
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test('D2 the twentieth entry in a restarted run pauses before another deletion', async () => {
+  const h = await harness(['1001', '1002']);
+  h.virtualWaits();
+  try {
+    const writer = h.store.browserOutcomeWriter();
+    const oldAt = new Date(Date.parse(FIXTURE.now) - 1000).toISOString();
+    const prior = {
+      runId: 'prior-batch',
+      platform: 'x' as const,
+      accountKey: FIXTURE.account.key,
+      mode: 'delete' as const,
+      planHash: h.plan.hash,
+      startedAt: oldAt,
+      endedAt: null,
+      endReason: null,
+      bodyShapes: {},
+      profileReport: null,
+    };
+    await writer.begin(prior);
+    for (let index = 0; index < 19; index++)
+      await writer.record({
+        attemptId: `batch-${index}`,
+        runId: prior.runId,
+        itemId: 'x:1005',
+        action: 'delete-post',
+        state: 'not-found',
+        settles: null,
+        at: oldAt,
+        code: null,
+      });
+    await writer.finish({ ...prior, endedAt: oldAt, endReason: 'done' });
+    const running = h.launch(false, {
+      intervalMs: 30000,
+      batchSize: 20,
+      pauseMs: 900000,
+      perDay: 200,
+    });
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await running).toMatchObject({ completed: 2, endReason: 'done' });
+    expect(h.waits).toEqual([29000, 900000]);
+  } finally {
+    await h.close();
+  }
+});
 
 test.each([false, true])(
   'DEL-1 clean hundred promotes the next page to 15/300 or live-window 8/500, fast=%s',
@@ -538,7 +734,7 @@ test.each([false, true])(
         fake.rateHeaders.set(ids[99]!, {
           'x-rate-limit-limit': '1000',
           'x-rate-limit-remaining': '900',
-          'x-rate-limit-reset': String(Date.parse(FIXTURE.now) / 1000 + 900),
+          'x-rate-limit-reset': String(Date.parse(FIXTURE.now) / 1000 + 1800),
         });
       // Earlier signed-in page reads consume the shared day budget as well.
       for (let page = 0; page < 199; page++)
@@ -557,7 +753,7 @@ test.each([false, true])(
       await h.click('Continue');
       expect(await running).toMatchObject({ completed: 3, endReason: 'done' });
       expect(h.waits).toEqual(
-        fast ? [30000, 8000, 8000] : [30000, 15000, 15000],
+        fast ? [900000, 8000, 8000] : [900000, 15000, 15000],
       );
       expect(
         h.notices.some((text) =>
@@ -651,7 +847,7 @@ test('German stop state remains served and terminal explains the end before wait
     await page.locator('#start').click();
     await expect.poll(() => h.waitingForClose, { timeout: 10000 }).toBe(true);
     expect(returned).toBe(false);
-    expect(h.notices.join('')).toContain('Die Seite wurde nicht erkannt');
+    expect(h.notices.join('')).toContain('X zeigt eine Seite zum Anmelden');
     expect(h.notices.join('')).toContain('Schließe das X-Fenster');
     await expect
       .poll(() => page.locator('#result').innerText())
@@ -693,7 +889,7 @@ test('English final state and stderr survive a platform stop until the person cl
     const page = await h.local();
     await expect
       .poll(() => page.locator('#result').innerText())
-      .toContain('The page was not recognized');
+      .toContain('X shows a sign-in, account check, lock or limit page.');
     expect((await page.request.get(page.url())).status()).toBe(200);
     h.finishWindow();
     expect(await result).toMatchObject({ code: 'PLATFORM_CHECK' });
@@ -849,9 +1045,7 @@ test.each(['errors', '500', 'ambiguous'] as const)(
       expect(await running).toMatchObject({ code: 'RUN_STOPPED' });
       const journal = await h.store.browserJournal();
       expect(journal.attempts.map((a) => a.state)).toEqual(
-        variant === 'ambiguous'
-          ? FIXTURE.expected.ambiguousStates
-          : FIXTURE.expected.failureStates,
+        FIXTURE.expected.ambiguousStates,
       );
       expect(fake.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
       expect(fake.requests.some((r) => r.id === '1002')).toBe(false);
@@ -884,7 +1078,7 @@ test('shape lock stops a later success body with different keys', async () => {
       'sending',
       'deleted',
       'sending',
-      'failed',
+      'ambiguous',
     ]);
     expect(journal.attempts.at(-1)!.code).toBe('SHAPE_CHANGED');
     expect(journal.runs[0]!.bodyShapes['delete-post']).toEqual([

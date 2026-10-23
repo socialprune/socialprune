@@ -191,59 +191,7 @@ export class BrowserOutcomeWriter {
       this.db.exec(BROWSER_JOURNAL_LAYOUT);
       const meta = await tx.meta.get();
       await tx.meta.set({ ...meta, schemaVersion: WORKSPACE_SCHEMA_VERSION });
-      const active = decode<BrowserRun>(
-        this.db
-          .prepare(
-            'SELECT data FROM browser_runs WHERE account_key=? AND ended_at IS NULL',
-          )
-          .all(run.accountKey),
-      )[0];
-      if (active) {
-        let alive = false;
-        if (active.ownerPid) {
-          try {
-            process.kill(active.ownerPid, 0);
-            alive = true;
-          } catch (error) {
-            if (!(
-              error &&
-              typeof error === 'object' &&
-              'code' in error &&
-              error.code === 'ESRCH'
-            ))
-              alive = true;
-          }
-        }
-        // Only a positively dead prior process permits recovery. Old records
-        // without ownership metadata fail closed rather than invent ownership.
-        if (alive || !active.ownerPid) throw new CliError('WORKSPACE_BUSY');
-        for (const attempt of readJournal(this.db).attempts)
-          if (
-            attempt.runId === active.runId &&
-            attempt.state === 'sending' &&
-            !this.db
-              .prepare('SELECT seq FROM browser_attempts WHERE settles=?')
-              .get(attempt.attemptId)
-          )
-            this.append({
-              attemptId: crypto.randomUUID(),
-              runId: active.runId,
-              itemId: attempt.itemId,
-              action: attempt.action,
-              state: 'ambiguous',
-              settles: attempt.attemptId,
-              at: run.startedAt,
-              code: 'PROCESS_LOST',
-            });
-        const recovered = {
-          ...active,
-          endedAt: run.startedAt,
-          endReason: 'error',
-        };
-        this.db
-          .prepare('UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?')
-          .run(run.startedAt, JSON.stringify(recovered), active.runId);
-      }
+      await this.recoverDead(tx, run.accountKey, run.startedAt);
       this.db
         .prepare('INSERT INTO browser_runs VALUES(?,?,NULL,?)')
         .run(run.runId, run.accountKey, JSON.stringify(run));
@@ -251,6 +199,89 @@ export class BrowserOutcomeWriter {
       await tx.runtime.set({ revision: runtime.revision + 1 });
       await Promise.resolve();
     });
+  }
+  /** End only a positively dead owner, using that run mode's settlement. */
+  async recover(accountKey: string, at: string): Promise<void> {
+    await this.transact(async (tx) => {
+      if (await this.recoverDead(tx, accountKey, at)) {
+        const runtime = await tx.runtime.get();
+        await tx.runtime.set({ revision: runtime.revision + 1 });
+      }
+    });
+  }
+  private async recoverDead(
+    tx: WriteTransaction,
+    accountKey: string,
+    at: string,
+  ): Promise<boolean> {
+    const active = decode<import('@socialprune/core').BrowserRun>(
+      this.db
+        .prepare(
+          'SELECT data FROM browser_runs WHERE account_key=? AND ended_at IS NULL',
+        )
+        .all(accountKey),
+    )[0];
+    if (active) {
+      let alive = false;
+      if (active.ownerPid) {
+        try {
+          process.kill(active.ownerPid, 0);
+          alive = true;
+        } catch (error) {
+          if (!(
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            error.code === 'ESRCH'
+          ))
+            alive = true;
+        }
+      }
+      // Only a positively dead prior process permits recovery. Old records
+      // without ownership metadata fail closed rather than invent ownership.
+      if (alive || !active.ownerPid) throw new CliError('WORKSPACE_BUSY');
+      const attempts = [];
+      for await (const attempt of tx.browserAttempts.iterate())
+        attempts.push(attempt);
+      for (const attempt of attempts)
+        if (
+          attempt.runId === active.runId &&
+          attempt.state === 'sending' &&
+          !this.db
+            .prepare('SELECT seq FROM browser_attempts WHERE settles=?')
+            .get(attempt.attemptId)
+        )
+          await tx.browserAttempts.add({
+            ...attempt,
+            seq: Number(
+              this.db
+                .prepare(
+                  'SELECT coalesce(max(seq),0)+1 AS seq FROM browser_attempts',
+                )
+                .get()!.seq,
+            ),
+            attemptId: crypto.randomUUID(),
+            state:
+              active.mode === 'delete' || active.mode === 'verify'
+                ? 'ambiguous'
+                : 'failed',
+            settles: attempt.attemptId,
+            at,
+            code:
+              active.mode === 'delete' || active.mode === 'verify'
+                ? 'PROCESS_LOST'
+                : 'INTERRUPTED',
+          });
+      const recovered = {
+        ...active,
+        endedAt: at,
+        endReason: 'error',
+      };
+      this.db
+        .prepare('UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?')
+        .run(at, JSON.stringify(recovered), active.runId);
+    }
+    return Boolean(active);
   }
   async finish(run: BrowserRun): Promise<void> {
     if (!run.endedAt || !run.endReason) throw new CliError('WORKSPACE_INVALID');

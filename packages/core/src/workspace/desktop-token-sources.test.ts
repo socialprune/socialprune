@@ -116,10 +116,15 @@ function numericObject(
     ts.isObjectLiteralExpression,
   )[0];
   if (!object) throw new Error(`Missing pace object: ${name}`);
+  return numericProperties(object);
+}
+function numericProperties(
+  object: ts.ObjectLiteralExpression,
+): Record<string, number> {
   return Object.fromEntries(
     object.properties.map((entry) => {
       if (!ts.isPropertyAssignment(entry) || !ts.isIdentifier(entry.name))
-        throw new Error(`Changed pace object: ${name}`);
+        throw new Error('Changed pace object property');
       return [entry.name.text, numberValue(entry.initializer)];
     }),
   );
@@ -157,6 +162,76 @@ function functionSource(
   );
   if (!found) throw new Error(`Missing producer function: ${name}`);
   return found;
+}
+function methodSource(file: ts.SourceFile, name: string): ts.MethodDeclaration {
+  const found = nodes(file, ts.isMethodDeclaration).find(
+    (node) => node.name.getText(file) === name,
+  );
+  if (!found) throw new Error(`Missing producer method: ${name}`);
+  return found;
+}
+
+function rateWaitBound(file: ts.SourceFile): number {
+  expect(compact(methodSource(file, 'beforePage'))).toContain(
+    'returnthis.before(now,0);',
+  );
+  expect(compact(methodSource(file, 'beforeDeletion'))).toContain(
+    'returnthis.before(now,1);',
+  );
+  const before = methodSource(file, 'before');
+  expect(compact(before)).toContain(
+    'window.latestRemaining-reserve<window.limit/2&&window.latestReset>now',
+  );
+  const ceiling = nodes(before, ts.isBinaryExpression).find(
+    (node) =>
+      node.operatorToken.kind === ts.SyntaxKind.GreaterThanToken &&
+      compact(node.left) === 'window.latestReset-now',
+  );
+  const buffer = declaration(file, 'ms');
+  if (
+    !ceiling ||
+    !ts.isBinaryExpression(buffer) ||
+    buffer.operatorToken.kind !== ts.SyntaxKind.PlusToken
+  )
+    throw new Error('Changed rate-window wait shape');
+  return numberValue(ceiling.right) + numberValue(buffer.right);
+}
+
+// Only result arms emit a code. Condition operands such as run modes are inputs,
+// not journal tokens; every literal result still goes through closed coverage.
+function emittedStrings(node: ts.Node): string[] {
+  if (ts.isConditionalExpression(node))
+    return [
+      ...emittedStrings(node.whenTrue),
+      ...emittedStrings(node.whenFalse),
+    ];
+  if (ts.isParenthesizedExpression(node))
+    return emittedStrings(node.expression);
+  return strings(node);
+}
+function journalCodes(file: ts.SourceFile): string[] {
+  const codes: string[] = [];
+  for (const entry of nodes(file, ts.isPropertyAssignment)) {
+    if (entry.name.getText(file) !== 'code') continue;
+    let container: ts.Node | undefined = entry.parent;
+    while (
+      container &&
+      !ts.isStatement(container) &&
+      !(
+        ts.isPropertyAssignment(container) &&
+        container.name.getText(file) === 'stop'
+      )
+    )
+      container = container.parent;
+    const tokens = emittedStrings(entry.initializer);
+    if (container && ts.isPropertyAssignment(container))
+      assertCovered(tokens, [
+        ...RunEndReasonSchema.options,
+        ...RunStopDetailSchema.options,
+      ]);
+    else codes.push(...tokens);
+  }
+  return codes;
 }
 
 function compact(node: ts.Node): string {
@@ -256,25 +331,27 @@ async function paceInputs() {
     'run.accountKey===account&&run.pageOpens!==undefined',
   );
   expect(dailyCount).not.toContain('run.mode');
-  const report = await source('apps/cli/src/browser/x/fill/report.ts');
-  const beforePage = nodes(report, ts.isMethodDeclaration).find(
-    (node) => node.name.getText(report) === 'beforePage',
+  const windows = await source('apps/cli/src/browser/x/rate-windows.ts');
+  const rateWait = rateWaitBound(windows);
+  expect(compact(runner)).toContain('windows.beforeDeletion(');
+  const deletion = await source('apps/cli/src/browser/x/delete-pace.ts');
+  const stages = nodes(
+    functionSource(deletion, 'deletionPace'),
+    ts.isObjectLiteralExpression,
+  ).map(numericProperties);
+  expect(stages).toHaveLength(3);
+  expect(compact(functionSource(deletion, 'deletionPace'))).toContain(
+    'windows.permitsFastDeletion(now)',
   );
-  if (!beforePage) throw new Error('Missing rate-window producer');
-  const ceiling = nodes(beforePage, ts.isBinaryExpression).find(
-    (node) =>
-      node.operatorToken.kind === ts.SyntaxKind.GreaterThanToken &&
-      node.left.getText(report).replace(/\s+/g, '') ===
-        'window.latestReset-now',
+  expect(compact(declaration(runner, 'effectivePace'))).toContain(
+    'deletionPace(cleanDeletions(',
   );
-  const buffer = declaration(report, 'ms');
-  if (
-    !ceiling ||
-    !ts.isBinaryExpression(buffer) ||
-    buffer.operatorToken.kind !== ts.SyntaxKind.PlusToken
-  )
-    throw new Error('Changed rate-window wait shape');
-  const rateWait = numberValue(ceiling.right) + numberValue(buffer.right);
+  expect(compact(declaration(runner, 'effectivePace'))).toContain(
+    'dependencies.pace.intervalMs*stage.intervalMs',
+  );
+  expect(compact(declaration(runner, 'effectivePace'))).toContain(
+    'perDay:Math.min(stage.perDay,',
+  );
   const fillRun = await source('apps/cli/src/browser/x/fill/run.ts');
   expect(declaration(fillRun, 'FILL_PACE').getText(fillRun)).toBe(
     'DEFAULT_FILL_PACE',
@@ -286,6 +363,7 @@ async function paceInputs() {
   expect(compact(fillRun)).toContain(
     'run.accountKey===options.plan.accountKey&&run.pageOpens!==undefined',
   );
+  expect(compact(fillRun)).toContain('windows.beforePage(');
   const reload = nodes(fillRun, ts.isPropertyAssignment).find(
     (node) => node.name.getText(fillRun) === 'waitMs',
   );
@@ -315,6 +393,7 @@ async function paceInputs() {
     },
     rateWait,
     reloadWait,
+    deletionStages: stages,
   };
 }
 
@@ -330,6 +409,41 @@ test.each([
     expect(() => assertReloadBoundaryWait(parse(changed), 60000)).toThrow();
   },
 );
+
+test.each([
+  ['reading reserve', 'this.before(now, 0)', 'this.before(now, 1)'],
+  ['deletion reserve', 'this.before(now, 1)', 'this.before(now, 0)'],
+] as const)(
+  'shared rate-window producer tie rejects a changed %s',
+  async (_name, oldText, newText) => {
+    const windows = await source('apps/cli/src/browser/x/rate-windows.ts');
+    const changed = windows.text.replace(oldText, newText);
+    expect(changed).not.toBe(windows.text);
+    expect(() => rateWaitBound(parse(changed))).toThrow();
+  },
+);
+
+test('shared rate-window producer wait bounds remain tied to the desktop ceiling', async () => {
+  const windows = await source('apps/cli/src/browser/x/rate-windows.ts');
+  const inputs = await paceInputs();
+  for (const [oldText, newText] of [
+    ['16 * 60000', '17 * 60000'],
+    ['+ 5000', '+ 5001'],
+  ]) {
+    const changed = windows.text.replace(oldText!, newText!);
+    expect(changed).not.toBe(windows.text);
+    const maximum = rateWaitBound(parse(changed));
+    expect(maximum).toBeGreaterThan(inputs.rateWait);
+    expect(
+      RunViewSchema.safeParse({
+        ...projection('fill', inputs.fill),
+        phase: 'rate-wait',
+        remainingMs: maximum,
+        resetAt: '2026-10-16T12:00:00.000Z',
+      }).success,
+    ).toBe(false);
+  }
+});
 
 function projection(
   mode: DesktopRunMode,
@@ -412,7 +526,7 @@ test.each(['delete', 'verify', 'fill', 'context'] as const)(
         until: '2026-10-16T12:00:00.000Z',
       }),
     ).toMatchObject({ success: true });
-    if (mode === 'fill') {
+    if (mode === 'fill' || mode === 'delete') {
       expect(
         RunViewSchema.safeParse({
           ...view,
@@ -421,6 +535,8 @@ test.each(['delete', 'verify', 'fill', 'context'] as const)(
           resetAt: '2026-10-16T12:00:00.000Z',
         }),
       ).toMatchObject({ success: true });
+    }
+    if (mode === 'fill') {
       expect(
         RunViewSchema.safeParse({
           ...view,
@@ -434,6 +550,22 @@ test.each(['delete', 'verify', 'fill', 'context'] as const)(
   },
 );
 
+test('all deletion stage projections and cap boundaries come from the staged pace producer', async () => {
+  const inputs = await paceInputs();
+  for (const stage of inputs.deletionStages) {
+    const view = projection('delete', {
+      pace: { ...inputs.delete.pace, ...stage },
+    });
+    expect(RunViewSchema.safeParse(view).success).toBe(true);
+    expect(
+      RunViewSchema.safeParse({
+        ...view,
+        today: { ...view.today, cap: stage.perDay! + 1 },
+      }).success,
+    ).toBe(false);
+  }
+});
+
 test.each(['delete', 'verify', 'fill', 'context'] as const)(
   'pace producer bounds: %s admits endpoints and rejects outside values',
   async (mode) => {
@@ -441,7 +573,12 @@ test.each(['delete', 'verify', 'fill', 'context'] as const)(
     const input = inputs[mode];
     const view = projection(mode, input);
     const fixed = input.seconds !== null;
-    const min = input.seconds?.min ?? input.pace.intervalMs! / 1000;
+    const min =
+      input.seconds?.min ??
+      (mode === 'delete'
+        ? Math.min(...inputs.deletionStages.map((stage) => stage.intervalMs!)) /
+          1000
+        : input.pace.intervalMs! / 1000);
     const max = input.seconds?.max ?? Number.MAX_SAFE_INTEGER / 1000;
     const batch = view.pace.batchSize;
     const cap = input.cap?.max ?? input.pace.perDay!;
@@ -548,7 +685,10 @@ test.each(['delete', 'verify', 'fill', 'context'] as const)(
               : { until, reload: 3 }),
           }).success,
           `${mode}/${phase}/${remainingMs}`,
-        ).toBe(mode === 'fill' && remainingMs <= maximum);
+        ).toBe(
+          (mode === 'fill' || (mode === 'delete' && phase === 'rate-wait')) &&
+            remainingMs <= maximum,
+        );
     }
     if (mode === 'fill')
       expect(
@@ -700,19 +840,7 @@ test('journal producer codes and model action/state enums are all admitted, neve
   const codes: string[] = [];
   for (const path of paths) {
     const file = await source(path);
-    for (const entry of nodes(file, ts.isPropertyAssignment)) {
-      if (entry.name.getText(file) !== 'code') continue;
-      const container = entry.parent.parent;
-      if (
-        ts.isPropertyAssignment(container) &&
-        container.name.getText(file) === 'stop'
-      )
-        assertCovered(strings(entry.initializer), [
-          ...RunEndReasonSchema.options,
-          ...RunStopDetailSchema.options,
-        ]);
-      else codes.push(...strings(entry.initializer));
-    }
+    codes.push(...journalCodes(file));
   }
   const selectors = await source('apps/cli/src/browser/instagram/selectors.ts');
   const result = declaration(selectors, 'ConfirmationResult');
@@ -742,6 +870,26 @@ test('journal producer codes and model action/state enums are all admitted, neve
   );
 });
 
+test('conditional journal-code arms stay closed without treating input discriminants as emitted codes', () => {
+  const file = parse(`
+    writer.record({ code: active.mode === 'delete' || active.mode === 'verify'
+      ? 'PROCESS_LOST' : 'INTERRUPTED' });
+    JSON.stringify({ stop: detail ?? (longWindow
+      ? { code: 'daily-cap', reason: 'x-window-long' } : null) });
+  `);
+  expect(journalCodes(file)).toEqual(['PROCESS_LOST', 'INTERRUPTED']);
+  assertCovered(journalCodes(file), RunJournalCodeSchema.options);
+  expect(() =>
+    assertCovered(
+      journalCodes(parse(file.text.replace("'INTERRUPTED'", "'NEW_CODE'"))),
+      RunJournalCodeSchema.options,
+    ),
+  ).toThrow('Producer tokens missing');
+  expect(() =>
+    journalCodes(parse(file.text.replace("'daily-cap'", "'new-stop-code'"))),
+  ).toThrow('Producer tokens missing');
+});
+
 test('X operation identities have a closed display projection for the open producer input', async () => {
   const read = await source('apps/cli/src/browser/x/fill/read.ts');
   const patterns = nodes(read, ts.isRegularExpressionLiteral).map(
@@ -757,8 +905,8 @@ test('X operation identities have a closed display projection for the open produ
         : [],
   );
   assertCovered(operations, XRateOperationSchema.options);
-  const report = await source('apps/cli/src/browser/x/fill/report.ts');
-  const groups = strings(declaration(report, 'operation')).filter((token) =>
+  const windows = await source('apps/cli/src/browser/x/rate-windows.ts');
+  const groups = strings(declaration(windows, 'operation')).filter((token) =>
     /^[a-z][a-z-]*$/.test(token),
   );
   assertCovered(groups, XRateOperationSchema.options);

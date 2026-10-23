@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launch } from './helpers.ts';
-import { mediaFixture } from '../../cli/src/engine/media-fixture.test-helper.ts';
+import { mediaFixture } from '../../cli/src/engine/test/media-fixture.ts';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { instagramContextDirectory } from '../../cli/src/workspace/context-files.ts';

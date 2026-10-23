@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, test } from 'vitest';
-import { mediaFixture } from './media-fixture.test-helper.ts';
+import { mediaFixture } from './test/media-fixture.ts';
 import { openEngine } from './index.ts';
 import type { EngineMediaRequest } from './media.ts';
 import { MEDIA_CHUNK_BYTES } from './media.ts';

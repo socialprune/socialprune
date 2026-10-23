@@ -5,9 +5,9 @@ import type { Item } from '@socialprune/core';
 import {
   writeContextFixture,
   contextInputs,
-} from '../review/test/context-fixture.ts';
-import { SQLiteStore } from '../workspace/sqlite-store.ts';
-import { originalDirectory } from '../originals/media.ts';
+} from '../../review/test/context-fixture.ts';
+import { SQLiteStore } from '../../workspace/sqlite-store.ts';
+import { originalDirectory } from '../../originals/media.ts';
 
 /** Generated setup shared by focused engine and packaged-media proof only. */
 export async function mediaFixture(data: string, jpeg?: Uint8Array) {
@@ -17,7 +17,7 @@ export async function mediaFixture(data: string, jpeg?: Uint8Array) {
   const expected = JSON.parse(
     await readFile(
       new URL(
-        '../../../../fixtures/synthetic/demo/x/expected.json',
+        '../../../../../fixtures/synthetic/demo/x/expected.json',
         import.meta.url,
       ),
       'utf8',

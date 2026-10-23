@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mediaFixture } from '../../../cli/src/engine/media-fixture.test-helper.ts';
+import { mediaFixture } from '../../../cli/src/engine/test/media-fixture.ts';
 import { SQLiteStore } from '../../../cli/src/workspace/sqlite-store.ts';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { fakeBridge } from './fake-bridge.ts';

@@ -340,11 +340,15 @@ export class WorkspaceClient {
       accountKey,
     });
   }
-  setCriteria(criteria: NonNullable<WorkspaceSummary['criteria']>) {
+  setCriteria(
+    criteria: NonNullable<WorkspaceSummary['criteria']>,
+    removeCategories?: string[],
+  ) {
     return this.request({
       type: 'setCriteria',
       requestId: crypto.randomUUID(),
       criteria,
+      ...(removeCategories?.length ? { removeCategories } : {}),
     });
   }
   setKeepRules(keepRules: NonNullable<WorkspaceSummary['keepRules']>) {

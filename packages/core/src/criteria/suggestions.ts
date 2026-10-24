@@ -39,7 +39,12 @@ export function currentChecks(
     const first = labels[0]!;
     const item = result.get(first.itemId) ?? new Map<string, CriterionCheck>();
     for (const criterion of checked) {
-      if (criterion.hash !== criterionHash(criterion.id, workspace.settings))
+      // A removed active slot may still be named by historical submissions.
+      // Its recorded hash remains provenance; it is never selected for new work.
+      if (
+        workspace.settings.categories.includes(criterion.id) &&
+        criterion.hash !== criterionHash(criterion.id, workspace.settings)
+      )
         continue;
       const hit = labels.findLast((label) => label.category === criterion.id);
       const unclear = labels.find((label) => label.category === 'unclear');

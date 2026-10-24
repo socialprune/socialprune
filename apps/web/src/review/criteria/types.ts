@@ -8,6 +8,7 @@ export interface CriterionOption {
   custom?: boolean;
   earlier?: boolean;
   noRoom?: boolean;
+  selectionBlocked?: boolean;
 }
 export interface CriteriaModel {
   options: readonly CriterionOption[];
@@ -19,6 +20,9 @@ export interface CriteriaModel {
   suggested: number;
   held: number;
   busy?: boolean;
+  ownRoom?: boolean;
+  editingId?: string;
+  selectionLimit?: string;
 }
 export interface KeepRuleModel {
   id: string;

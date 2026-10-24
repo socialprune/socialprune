@@ -6,6 +6,7 @@ import type { ReviewView } from '../model/index.ts';
 import { CriteriaSettingsSchema, KeepRulesSchema } from '../criteria/schema.ts';
 import type { CriteriaSettings, KeepRule } from '../criteria/schema.ts';
 import { assertReviewSettings } from '../criteria/admission.ts';
+import { criterionRoom, PRESET_IDS } from '../criteria/presets.ts';
 export { storedReviewView } from './settings-schema.ts';
 
 export interface SettingsChangeResult {
@@ -15,10 +16,13 @@ export interface SettingsChangeResult {
 
 /** Neutral metadata writes only. A setting never appends a human or label event. */
 export class SettingsService {
-  async setCriteria(criteria: CriteriaSettings) {
+  async setCriteria(
+    criteria: CriteriaSettings,
+    removeCategories: readonly string[] = [],
+  ) {
     const parsed = CriteriaSettingsSchema.safeParse(criteria);
     if (!parsed.success) throw new WorkspaceError('INVALID_REQUEST');
-    return this.setFeedSetting('criteria', parsed.data);
+    return this.setFeedSetting('criteria', parsed.data, removeCategories);
   }
   async setKeepRules(keepRules: KeepRule[]) {
     const parsed = KeepRulesSchema.safeParse(keepRules);
@@ -28,6 +32,7 @@ export class SettingsService {
   private async setFeedSetting(
     key: 'criteria' | 'keepRules',
     value: CriteriaSettings | KeepRule[],
+    removeCategories: readonly string[] = [],
   ) {
     return this.store.write(async (tx) => {
       const meta = await tx.meta.get();
@@ -44,13 +49,30 @@ export class SettingsService {
       )
         throw new WorkspaceError('INVALID_REQUEST');
       if (key === 'criteria') {
-        // Historical assessments still name removed IDs; keep their category room.
-        settings.categories = [...meta.settings.categories];
+        if (
+          removeCategories.length > 32 ||
+          new Set(removeCategories).size !== removeCategories.length ||
+          removeCategories.some(
+            (id) =>
+              !meta.settings.categories.includes(id) ||
+              PRESET_IDS.includes(id) ||
+              next.selected.includes(id) ||
+              next.custom.some((own) => own.id === id),
+          )
+        )
+          throw new WorkspaceError('INVALID_REQUEST');
+        // Categories are active projection slots, not a registry for append-only history.
+        // Removing a slot never edits an assessment, submission, plan or decision.
+        settings.categories = meta.settings.categories.filter(
+          (id) => !removeCategories.includes(id),
+        );
         for (const own of next.custom)
           if (!settings.categories.includes(own.id))
             settings.categories.push(own.id);
         if (settings.categories.length > 32)
           throw new WorkspaceError('INVALID_REQUEST');
+        if (removeCategories.length)
+          settings.categories = criterionRoom(settings.categories).categories;
       }
       assertReviewSettings(settings);
       await tx.meta.set({

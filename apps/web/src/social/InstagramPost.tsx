@@ -10,9 +10,11 @@ import styles from './InstagramPost.module.css';
 export function InstagramPost({
   record,
   zone,
+  variant = 'full',
 }: {
   record: InstagramContext;
   zone?: string;
+  variant?: 'full' | 'feed';
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -30,6 +32,153 @@ export function InstagramPost({
     },
   ).format(new Date(record.confirmedAt));
   const base = `/context/instagram/${record.post.code}/`;
+  const evidenceKey =
+    record.ownerCheck === 'not-in-export'
+      ? 'instagramContext.foundWithoutOwner'
+      : record.confirmedBy === 'list'
+        ? 'instagramContext.foundInList'
+        : 'instagramContext.found';
+  const hasImage = record.image.status === 'stored' && !!record.image.file;
+  const hasScreenshot =
+    record.screenshot.status === 'stored' && !!record.screenshot.file;
+  const screenshotPreview = (!hasImage || missingImage) && hasScreenshot;
+  if (variant === 'feed')
+    return (
+      <section
+        className={styles.feedPost}
+        data-testid="instagram-post"
+        aria-label={t('review.post')}
+      >
+        <div className={styles.feedHeader} data-instagram-post-header>
+          <span
+            className={styles.feedAvatar}
+            aria-hidden="true"
+            data-instagram-post-avatar
+          >
+            {record.post.owner.slice(0, 2).toUpperCase()}
+          </span>
+          <strong dir="ltr">{record.post.owner}</strong>
+          {record.post.createdAt && (
+            <time dateTime={record.post.createdAt}>
+              {intl.formatDate(record.post.createdAt, {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                timeZone: zone,
+              })}
+            </time>
+          )}
+        </div>
+        <div className={styles.feedPreview}>
+          {record.image.status === 'stored' &&
+          record.image.file &&
+          !missingImage ? (
+            <img
+              className={styles.feedImage}
+              src={base + record.image.file}
+              alt={t('review.post')}
+              loading="lazy"
+              onError={() => setMissingImage(true)}
+            />
+          ) : screenshotPreview ? (
+            <div>
+              <button
+                type="button"
+                aria-expanded={showScreenshot}
+                aria-controls={screenshotId}
+                onClick={() => setShowScreenshot((value) => !value)}
+              >
+                {t(
+                  showScreenshot
+                    ? 'instagramContext.hideScreenshot'
+                    : 'instagramContext.showScreenshot',
+                )}
+              </button>
+              <div id={screenshotId}>
+                {showScreenshot &&
+                  (missingScreenshot ? (
+                    <p className={styles.note}>{t('originals.notInCopy')}</p>
+                  ) : (
+                    <img
+                      className={styles.feedImage}
+                      src={base + record.screenshot.file!}
+                      alt={t('instagramContext.screenshot', { date })}
+                      onError={() => setMissingScreenshot(true)}
+                    />
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <p className={styles.note}>
+              {t(
+                missingImage || missingScreenshot
+                  ? 'originals.notInCopy'
+                  : 'instagramContext.imageNotKept',
+              )}
+            </p>
+          )}
+          <div data-instagram-caption>
+            {record.post.caption && (
+              <p className={styles.feedCaption} dir="auto">
+                <strong>{record.post.owner}</strong> {record.post.caption}
+              </p>
+            )}
+            {!record.post.captionComplete && (
+              <p className={styles.note}>{t('instagramContext.captionCut')}</p>
+            )}
+          </div>
+        </div>
+        {record.confirmedBy === 'list' && (
+          <p className={styles.note}>{t('instagramContext.listNoComment')}</p>
+        )}
+        <details className={styles.feedEvidence}>
+          <summary>{t('instagramContext.evidence')}</summary>
+          <p>{t(evidenceKey, { date })}</p>
+        </details>
+        <div className={styles.actions}>
+          <a
+            href={`https://www.instagram.com/${record.post.kind}/${record.post.code}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink size={16} aria-hidden="true" />
+            {t('instagramContext.open')}
+          </a>
+          {!screenshotPreview &&
+            record.screenshot.status === 'stored' &&
+            record.screenshot.file && (
+              <button
+                type="button"
+                aria-expanded={showScreenshot}
+                aria-controls={screenshotId}
+                onClick={() => setShowScreenshot((value) => !value)}
+              >
+                {t(
+                  showScreenshot
+                    ? 'instagramContext.hideScreenshot'
+                    : 'instagramContext.showScreenshot',
+                )}
+              </button>
+            )}
+        </div>
+        {!screenshotPreview && (
+          <div id={screenshotId}>
+            {showScreenshot &&
+              record.screenshot.file &&
+              (missingScreenshot ? (
+                <p className={styles.note}>{t('originals.notInCopy')}</p>
+              ) : (
+                <img
+                  className={styles.image}
+                  src={base + record.screenshot.file}
+                  alt={t('instagramContext.screenshot', { date })}
+                  onError={() => setMissingScreenshot(true)}
+                />
+              ))}
+          </div>
+        )}
+      </section>
+    );
   return (
     <section
       className={styles.post}
@@ -83,7 +232,11 @@ export function InstagramPost({
             aria-controls={screenshotId}
             onClick={() => setShowScreenshot((value) => !value)}
           >
-            {t('instagramContext.showScreenshot')}
+            {t(
+              showScreenshot
+                ? 'instagramContext.hideScreenshot'
+                : 'instagramContext.showScreenshot',
+            )}
           </button>
         )}
         <a
@@ -128,11 +281,13 @@ export function InstagramPostContext({
   client,
   zone,
   fallback,
+  variant,
 }: {
   item: Item;
   client?: WorkspaceClient;
   zone?: string;
   fallback: ReactNode;
+  variant?: 'full' | 'feed';
 }) {
   const [stored, setStored] = useState<{
     client: WorkspaceClient;
@@ -164,7 +319,12 @@ export function InstagramPostContext({
       ? stored.record
       : null;
   return record ? (
-    <InstagramPost key={record.itemId} record={record} zone={zone} />
+    <InstagramPost
+      key={record.itemId}
+      record={record}
+      zone={zone}
+      variant={variant}
+    />
   ) : (
     fallback
   );

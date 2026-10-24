@@ -30,6 +30,7 @@ export function FeedContext({
   if (item.platform === 'instagram' && item.kind === 'comment')
     return (
       <InstagramPostContext
+        variant="feed"
         item={item}
         client={client}
         zone={zone}

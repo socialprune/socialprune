@@ -142,6 +142,29 @@ test('all preview operations bind the same page-load identity, not a component r
   ]);
 });
 
+test('category removal stays intact through the authenticated HTTP port', async () => {
+  const { client, fetcher } = fixture();
+  fetcher.mockImplementation((_input, init) => {
+    const request = requestBody(init);
+    return Promise.resolve(
+      Response.json([{ type: 'released', requestId: request.requestId }]),
+    );
+  });
+  const criteria = {
+    selected: [],
+    custom: [],
+    nextCustom: 1,
+    level: 0 as const,
+  };
+  await client.setCriteria(criteria, ['earlier-generated']);
+  expect(requestBody(fetcher.mock.calls[0]![1])).toMatchObject({
+    type: 'setCriteria',
+    criteria,
+    removeCategories: ['earlier-generated'],
+  });
+  client.dispose();
+});
+
 test('plan preview and confirmation share the HTTP page even after a component remount', async () => {
   const { client, fetcher } = fixture();
   const store = createMemoryStore();

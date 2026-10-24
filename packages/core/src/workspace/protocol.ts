@@ -256,6 +256,11 @@ const requests = [
     ...requestBase,
     type: z.literal('setCriteria'),
     criteria: CriteriaSettingsSchema,
+    removeCategories: z
+      .array(id)
+      .max(32)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
   }),
   z.strictObject({
     ...requestBase,

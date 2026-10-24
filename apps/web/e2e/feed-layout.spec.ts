@@ -22,6 +22,18 @@ async function layoutFindings(page: Page, width: number) {
     if (document.documentElement.scrollWidth > viewport + 1)
       issues.push('document horizontally overflows');
     const elements = [...document.querySelectorAll<HTMLElement>('body *')];
+    const navigation = document.querySelector('header > nav');
+    const links = navigation?.querySelectorAll('a') ?? [];
+    for (let index = 1; index < links.length; index++) {
+      const previous = links[index - 1]!.getBoundingClientRect();
+      const next = links[index]!.getBoundingClientRect();
+      const sameRow = Math.abs(next.top - previous.top) < 1;
+      if (
+        (sameRow && next.left - previous.right < 3.5) ||
+        (!sameRow && next.top - previous.bottom < 3.5)
+      )
+        issues.push('primary navigation links have no visible gap');
+    }
     function visible(element: HTMLElement) {
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -261,6 +273,21 @@ for (const lang of ['de', 'en'] as const)
           })
           .click();
         await inspect('criteria');
+        async function inspectSectionHeading(name: string) {
+          const heading = page.getByRole('heading', { name, exact: true });
+          await heading.scrollIntoViewIfNeeded();
+          const difference = await heading.evaluate((element) => {
+            const body = element.parentElement!.querySelector('p')!;
+            const icon = element.querySelector('svg');
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const left = (icon ?? range).getBoundingClientRect().left;
+            return Math.abs(left - body.getBoundingClientRect().left);
+          });
+          if (difference > 1)
+            findings.push(`section heading inset: ${name} (${difference}px)`);
+        }
+        await inspectSectionHeading(messages['criteriaPicker.title']!);
         const editor = page
           .locator('section')
           .filter({
@@ -269,7 +296,15 @@ for (const lang of ['de', 'en'] as const)
               exact: true,
             }),
           })
-          .last();
+          .first();
+        await page
+          .getByRole('heading', {
+            name: messages['keepRules.title'],
+            exact: true,
+          })
+          .scrollIntoViewIfNeeded();
+        await inspectSectionHeading(messages['keepRules.title']!);
+        await inspect('criteria-rules');
         await editor.evaluate((element) => {
           element.scrollTop = element.scrollHeight;
         });

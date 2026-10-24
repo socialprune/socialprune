@@ -223,7 +223,7 @@
       min-width: 0;
       flex-wrap: wrap;
       justify-content: center;
-      gap: 0;
+      gap: var(--space-1);
     }
     .navigation a {
       min-width: var(--target-size);

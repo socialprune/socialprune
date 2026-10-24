@@ -1,4 +1,35 @@
 @layer components {
+  .examples {
+    padding: var(--space-5);
+    color: var(--color-text-secondary);
+  }
+  .editButton {
+    min-width: var(--target-size);
+    min-height: var(--target-size);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    border: var(--border-width) solid var(--color-boundary);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: var(--space-2);
+  }
+  .saveStatus {
+    margin-block: var(--space-4);
+    color: var(--color-text-secondary);
+    font-size: var(--type-sm);
+  }
+  .done {
+    min-height: var(--target-size);
+    max-width: 100%;
+    padding: var(--space-2) var(--space-4);
+    border: var(--border-width) solid var(--color-action);
+    border-radius: var(--radius-control);
+    background: var(--color-action);
+    color: var(--color-on-action);
+    font: inherit;
+    font-weight: var(--weight-heading);
+  }
   .picker,
   .rules {
     padding: var(--space-5);
@@ -34,6 +65,7 @@
   }
   .option {
     display: flex;
+    flex-wrap: wrap;
     border: var(--border-width) solid var(--color-boundary);
     border-radius: var(--radius-control);
   }
@@ -41,6 +73,7 @@
     background: var(--color-selected-bg);
   }
   .option > label {
+    flex: 1 1 160px;
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
@@ -238,9 +271,6 @@
     gap: var(--space-2);
     font-size: var(--type-sm);
     flex: 1;
-  }
-  .addRule > svg {
-    margin-bottom: var(--space-3);
   }
   .ruleOffer {
     margin-top: var(--space-3);

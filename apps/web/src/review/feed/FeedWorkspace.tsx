@@ -9,10 +9,11 @@ import {
 } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { useIntl } from 'react-intl';
-import { PRESETS, defaultCriteria } from '@socialprune/core/criteria';
+import { defaultCriteria } from '@socialprune/core/criteria';
 import type { FeedTab } from '@socialprune/core/criteria';
 import type { DecisionValue, Original } from '@socialprune/core';
 import type { WorkspaceClient } from '../../workspace/client.ts';
+import type { PlanCounts } from '@socialprune/core/workspace/protocol';
 import { useWorkspace, requestId } from '../../social/workspace.ts';
 import { useT } from '../../i18n/index.ts';
 import { FeedSession } from './session.ts';
@@ -20,27 +21,11 @@ import { adaptCard, adaptPreview, criterionLabel } from './adapt.ts';
 import { ReviewFeed } from './ReviewFeed.tsx';
 import { MarkPreview } from './MarkPreview.tsx';
 import { FeedContext } from './FeedContext.tsx';
-import { CriteriaPicker } from '../criteria/CriteriaPicker.tsx';
+import { ReviewSettings } from '../criteria/ReviewSettings.tsx';
 import { FeedToolbar } from './FeedToolbar.tsx';
 import controls from './Controls.module.css';
-import type { CriteriaModel } from '../criteria/types.ts';
 import type { FeedCardModel } from './types.ts';
 import styles from './FeedWorkspace.module.css';
-
-const definitions = {
-  toxic: 'reviewFeed.definition.toxic',
-  'personal-attack': 'reviewFeed.definition.personal-attack',
-  political: 'reviewFeed.definition.political',
-  sexual: 'reviewFeed.definition.sexual',
-  'drugs-illegal': 'reviewFeed.definition.drugs-illegal',
-  'personal-info': 'reviewFeed.definition.personal-info',
-  embarrassing: 'reviewFeed.definition.embarrassing',
-  empty: 'reviewFeed.definition.empty',
-  racist: 'reviewFeed.definition.racist',
-  misogynistic: 'reviewFeed.definition.misogynistic',
-  'group-hostility': 'reviewFeed.definition.group-hostility',
-  'politically-incorrect': 'reviewFeed.definition.politically-incorrect',
-} as const;
 
 export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const t = useT();
@@ -61,8 +46,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const [dialog, setDialog] = useState(false);
   const [help, setHelp] = useState(false);
   const [editor, setEditor] = useState(false);
-  const [editorBusy, setEditorBusy] = useState(false);
-  const [draft, setDraft] = useState<CriteriaModel | null>(null);
+  const [editorCounts, setEditorCounts] = useState<PlanCounts | null>(null);
   const [originals, setOriginals] = useState<ReadonlyMap<string, Original>>(
     new Map(),
   );
@@ -94,7 +78,9 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   );
   const zone =
     summary?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const criteria = summary?.criteria ?? defaultCriteria();
+  const criteria =
+    (editor ? client.summary?.criteria : summary?.criteria) ??
+    defaultCriteria();
   const platform =
     (state.cards[0]?.item.platform ?? accountKey.split(':')[0]) === 'instagram'
       ? 'instagram'
@@ -357,51 +343,13 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     }
   }
   function editCriteria() {
-    if (!summary) return;
-    const selected = new Set(criteria.selected);
-    setDraft({
-      options: PRESETS.filter(
-        (option) => !['harmless', 'unclear'].includes(option.id),
-      ).map((option) => ({
-        id: option.id,
-        label: criterionLabel(option.id, summary, t),
-        description: t(definitions[option.id as keyof typeof definitions]),
-        selected: selected.has(option.id),
-        hits: state.counts?.hits[option.id] ?? 0,
-        unchecked: state.counts?.unchecked[option.id] ?? 0,
-        noRoom:
-          !(summary.categories ?? []).includes(option.id) &&
-          (summary.categories?.length ?? 0) >= 32,
-      })),
-      level: criteria.level,
-      ownLabel: '',
-      ownDescription: '',
-      suggested: state.counts?.tabs.suggested ?? 0,
-      held: state.counts?.tabs.held ?? 0,
-    });
+    setEditorCounts(state.counts);
     setEditor(true);
   }
   async function saveCriteria() {
-    if (!draft) return;
     localCommand.current = true;
-    setEditorBusy(true);
     try {
-      const reply = await client.setCriteria({
-        ...criteria,
-        selected: [
-          ...new Set([
-            ...draft.options
-              .filter((option) => option.selected)
-              .map((option) => option.id),
-            ...criteria.selected.filter(
-              (id) => !PRESETS.some((preset) => preset.id === id),
-            ),
-          ]),
-        ],
-        level: draft.level,
-      });
-      if (reply.type !== 'settingsChanged')
-        throw new Error('Criteria rejected');
+      await client.open();
       setEditor(false);
       await session.open(accountKey, tab, activeAnchor.current);
       requestAnimationFrame(() => {
@@ -412,7 +360,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     } catch {
       setNotice(t('review.storageError'));
     } finally {
-      setEditorBusy(false);
       localCommand.current = false;
     }
   }
@@ -439,50 +386,19 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   return (
     <div ref={root} className={styles.workspace} data-testid="card-review">
       <div className={styles.layout} data-testid="review-card">
-        {editor && draft ? (
+        {editor ? (
           <section className={styles.editor}>
             <h2>{t('reviewFeed.change')}</h2>
-            <CriteriaPicker
-              model={{ ...draft, busy: editorBusy }}
-              onToggle={(id, selected) =>
-                setDraft(
-                  (value) =>
-                    value && {
-                      ...value,
-                      options: value.options.map((option) =>
-                        option.id === id ? { ...option, selected } : option,
-                      ),
-                    },
-                )
-              }
-              onLevel={(level) =>
-                setDraft((value) => value && { ...value, level })
-              }
-              onOwnLabel={() => undefined}
-              onOwnDescription={() => undefined}
-              onAdd={() => undefined}
-              onRemove={() => undefined}
-              onOfferRule={() => undefined}
-              presetsOnly
-            />
-            <div className={styles.editorFooter}>
-              <button
-                className={controls.primary}
-                disabled={editorBusy}
-                onClick={() => {
-                  void saveCriteria();
-                }}
-              >
-                {t('reviewFeed.applyCriteria')}
-              </button>
-              <button
-                className={controls.button}
-                disabled={editorBusy}
-                onClick={() => setEditor(false)}
-              >
-                {t('bulk.cancel')}
-              </button>
-            </div>
+            {state.counts && (
+              <ReviewSettings
+                client={client}
+                summary={summary}
+                counts={state.counts}
+                accountKey={accountKey}
+                onDone={() => void saveCriteria()}
+                onChanged={setEditorCounts}
+              />
+            )}
           </section>
         ) : (
           <ReviewFeed
@@ -606,7 +522,9 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               .join(', ') || t('reviewFeed.emptyStart')}
           </p>
           <p>
-            {t('reviewFeed.heldCount', { count: state.counts?.tabs.held ?? 0 })}
+            {t('reviewFeed.heldCount', {
+              count: (editor ? editorCounts : state.counts)?.tabs.held ?? 0,
+            })}
           </p>
           <p>{t('reviewFeed.keys')}</p>
         </aside>

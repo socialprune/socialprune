@@ -356,6 +356,7 @@ test('a second page makes the plan stale; the changed preview requires another h
 
 test('new workspace first start and Instagram plan use the real shared settings and platform path', async ({
   page,
+  context,
 }) => {
   const data = liveFeedFixture();
   data.settings.criteria!.selected = [];
@@ -379,8 +380,14 @@ test('new workspace first start and Instagram plan use the real shared settings 
     .getByRole('combobox', { name: 'Account', exact: true })
     .selectOption(liveExpected.instagram);
   await expect(page.getByRole('feed')).toContainText('Invented comment');
+  await expect(page.getByRole('feed')).toContainText(
+    'Instagram does not include the post.',
+  );
+  await expect(page.getByRole('feed')).not.toContainText('reposts');
+  await expect(page.getByRole('feed')).not.toContainText('Likes:');
+  await checkAccessibility(page, context);
   await page
-    .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
+    .getByRole('button', { name: 'Mark 2 entries for deletion', exact: true })
     .click();
   await expect(page.getByRole('dialog')).toContainText(
     'You delete them afterwards with the click list.',

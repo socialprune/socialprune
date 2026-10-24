@@ -26,6 +26,7 @@ import type {
 } from './types.ts';
 import styles from './Feed.module.css';
 import controls from './Controls.module.css';
+import { InstagramComment } from './InstagramComment.tsx';
 
 const levels = [
   'review.riskNone',
@@ -217,110 +218,129 @@ export function FeedCard({
         }
       }}
     >
-      {!!card.replyContext?.length && (
-        <details className={styles.thread}>
-          <summary className={styles.contextLabel}>
-            <MessageCircle size={16} aria-hidden="true" />
-            <span>{t('reviewFeed.conversation')}</span>
-            <span className={styles.contextTeaser} dir="auto">
-              {card.replyContext.at(-1)!.text}
-            </span>
-          </summary>
-          <div className={styles.threadContent}>
-            {card.replyContext.slice(-2).map((post) => (
-              <ContextPost key={post.id} post={post} zone={zone} />
-            ))}
-            {!!onConversation && (card.conversationCount ?? 0) > 2 && (
-              <button
-                className={styles.textButton}
-                onClick={() => onConversation(card.id)}
-              >
-                {t('reviewFeed.thread', { count: card.conversationCount! })}
-              </button>
-            )}
-          </div>
-        </details>
-      )}
-      {card.kind === 'reply' && context}
-      <div className={styles.post}>
-        <span className={styles.avatar} aria-hidden="true">
-          {avatarInitials(card.name, card.handle)}
-        </span>
-        <div className={styles.postBody}>
-          <Byline post={card} id={`${id}-byline`} zone={zone} />
-          {card.replyTo && (
-            <p className={styles.reply}>
-              {t(
-                card.kind === 'comment' ? 'proto.commentAt' : 'proto.replyTo',
-                { handle: card.replyTo },
-              )}
-            </p>
-          )}
-          {card.kind === 'repost' && (
-            <p className={styles.contextLabel}>
-              <Repeat2 size={16} aria-hidden="true" />
-              {t('review.repost')}
-            </p>
-          )}
-          <p className={styles.postText} dir="auto">
-            {evidenceSegments(
-              card.text ||
-                t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
-              card.suggestions.map((suggestion) => suggestion.evidence ?? null),
-            ).map((part, index) =>
-              part.highlight ? <mark key={index}>{part.text}</mark> : part.text,
-            )}
-          </p>
-          {card.kind !== 'reply' && context}
-          {card.quote && (
-            <section
-              className={styles.quote}
-              aria-label={t('reviewFeed.quoted')}
-            >
-              <div className={styles.contextLabel}>
-                <Quote size={16} aria-hidden="true" />
-                {t('reviewFeed.quoted')}
+      {platform === 'instagram' && card.kind === 'comment' ? (
+        <InstagramComment
+          card={card}
+          bylineId={`${id}-byline`}
+          zone={zone}
+          context={context}
+        />
+      ) : (
+        <>
+          {!!card.replyContext?.length && (
+            <details className={styles.thread}>
+              <summary className={styles.contextLabel}>
+                <MessageCircle size={16} aria-hidden="true" />
+                <span>{t('reviewFeed.conversation')}</span>
+                <span className={styles.contextTeaser} dir="auto">
+                  {card.replyContext.at(-1)!.text}
+                </span>
+              </summary>
+              <div className={styles.threadContent}>
+                {card.replyContext.slice(-2).map((post) => (
+                  <ContextPost key={post.id} post={post} zone={zone} />
+                ))}
+                {!!onConversation && (card.conversationCount ?? 0) > 2 && (
+                  <button
+                    className={styles.textButton}
+                    onClick={() => onConversation(card.id)}
+                  >
+                    {t('reviewFeed.thread', { count: card.conversationCount! })}
+                  </button>
+                )}
               </div>
-              <ContextPost post={card.quote} zone={zone} />
-            </section>
+            </details>
           )}
-          {card.contextMissing && (
-            <p className={styles.meta}>
-              {t(
-                card.kind === 'comment'
-                  ? 'proto.instagramMissingPost'
-                  : 'reviewFeed.missingContext',
+          {card.kind === 'reply' && context}
+          <div className={styles.post}>
+            <span className={styles.avatar} aria-hidden="true">
+              {avatarInitials(card.name, card.handle)}
+            </span>
+            <div className={styles.postBody}>
+              <Byline post={card} id={`${id}-byline`} zone={zone} />
+              {card.replyTo && (
+                <p className={styles.reply}>
+                  {t(
+                    card.kind === 'comment'
+                      ? 'proto.commentAt'
+                      : 'proto.replyTo',
+                    { handle: card.replyTo },
+                  )}
+                </p>
               )}
-            </p>
-          )}
-          {!!card.mediaCount && (
-            <p className={styles.media}>
-              <Image size={20} aria-hidden="true" />
-              {t('review.mediaCount', { count: card.mediaCount })}
-            </p>
-          )}
-          <div className={styles.engagement}>
-            <span>
-              <MessageCircle size={16} aria-hidden="true" />
-              {t(
-                card.kind === 'reply'
-                  ? 'review.reply'
-                  : card.kind === 'comment'
-                    ? 'review.comment'
-                    : 'review.post',
+              {card.kind === 'repost' && (
+                <p className={styles.contextLabel}>
+                  <Repeat2 size={16} aria-hidden="true" />
+                  {t('review.repost')}
+                </p>
               )}
-            </span>
-            <span>
-              <Repeat2 size={16} aria-hidden="true" />
-              {t('proto.reposts', { count: card.reposts ?? -1 })}
-            </span>
-            <span>
-              <Heart size={16} aria-hidden="true" />
-              {t('review.likesValue', { count: card.likes ?? -1 })}
-            </span>
+              <p className={styles.postText} dir="auto">
+                {evidenceSegments(
+                  card.text ||
+                    t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
+                  card.suggestions.map(
+                    (suggestion) => suggestion.evidence ?? null,
+                  ),
+                ).map((part, index) =>
+                  part.highlight ? (
+                    <mark key={index}>{part.text}</mark>
+                  ) : (
+                    part.text
+                  ),
+                )}
+              </p>
+              {card.kind !== 'reply' && context}
+              {card.quote && (
+                <section
+                  className={styles.quote}
+                  aria-label={t('reviewFeed.quoted')}
+                >
+                  <div className={styles.contextLabel}>
+                    <Quote size={16} aria-hidden="true" />
+                    {t('reviewFeed.quoted')}
+                  </div>
+                  <ContextPost post={card.quote} zone={zone} />
+                </section>
+              )}
+              {card.contextMissing && (
+                <p className={styles.meta}>
+                  {t(
+                    card.kind === 'comment'
+                      ? 'proto.instagramMissingPost'
+                      : 'reviewFeed.missingContext',
+                  )}
+                </p>
+              )}
+              {!!card.mediaCount && (
+                <p className={styles.media}>
+                  <Image size={20} aria-hidden="true" />
+                  {t('review.mediaCount', { count: card.mediaCount })}
+                </p>
+              )}
+              <div className={styles.engagement}>
+                <span>
+                  <MessageCircle size={16} aria-hidden="true" />
+                  {t(
+                    card.kind === 'reply'
+                      ? 'review.reply'
+                      : card.kind === 'comment'
+                        ? 'review.comment'
+                        : 'review.post',
+                  )}
+                </span>
+                <span>
+                  <Repeat2 size={16} aria-hidden="true" />
+                  {t('proto.reposts', { count: card.reposts ?? -1 })}
+                </span>
+                <span>
+                  <Heart size={16} aria-hidden="true" />
+                  {t('review.likesValue', { count: card.likes ?? -1 })}
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
       <div className={styles.reviewBody}>
         <div id={`${id}-suggestion`} className={styles.suggestions}>
           {card.suggestions.map((suggestion) => (

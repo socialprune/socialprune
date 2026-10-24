@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, expect, test } from 'vitest';
 import { build } from 'vite';
 import { LOCAL_REVIEW_POLICY } from '../src/local-review/policy.ts';
+import { DESKTOP_POLICY } from '../src/desktop/policy.ts';
+import { assertDesktopOutput } from './desktop-build-output.ts';
 import { REVIEW_ROUTES, parseReviewRoute } from '../src/app/router.ts';
 import {
   assertPagesIsolation,
@@ -88,10 +90,26 @@ test('actual review output excludes every worker/storage path, and Pages output 
   );
 });
 
+test('the real Pages service worker planted at the review build root is rejected', async () => {
+  const files = await outputFiles(
+    fileURLToPath(new URL('../dist-review/', import.meta.url)),
+  );
+  files.set(
+    'sw.js',
+    await readFile(new URL('../dist/sw.js', import.meta.url), 'utf8'),
+  );
+  expect(() => assertReviewOutput(files)).toThrow(
+    'Worker, manifest or test file in local-review build.',
+  );
+});
+
 // LL-2026-10-002: defects are independently planted, not inferred from the
 // output scanner. Every forbidden branch must make the assertion fail.
 test.each([
   'sw.js',
+  'assets/sw.js',
+  'manifest.json',
+  'assets/manifest.json',
   'manifest.webmanifest',
   'assets/workspace-worker-input.js',
   'test/entry.js',
@@ -104,6 +122,60 @@ test.each([
     [path, 'input'],
   ]);
   expect(() => assertReviewOutput(files)).toThrow();
+});
+test.each([
+  'assets/X-abcdsw.js',
+  'assets/DeleteMode-kRsF95sw.js',
+  'assets/X-abcdmanifest.json',
+])(
+  'review accepts ordinary hashed asset %s, not a fixed shell filename',
+  (path) => {
+    expect(() =>
+      assertReviewOutput(
+        new Map([
+          [
+            'index.html',
+            `<meta http-equiv="Content-Security-Policy" content="${LOCAL_REVIEW_POLICY}" />`,
+          ],
+          [path, 'input'],
+        ]),
+      ),
+    ).not.toThrow();
+  },
+);
+test.each(['assets/X-abcdsw.js', 'assets/DeleteMode-kRsF95sw.js'])(
+  'desktop accepts ordinary hashed asset %s, not a service worker filename',
+  (path) => {
+    expect(() =>
+      assertDesktopOutput(
+        new Map([
+          [
+            'desktop.html',
+            `<meta http-equiv="Content-Security-Policy" content="${DESKTOP_POLICY}" />`,
+          ],
+          [path, 'input'],
+        ]),
+      ),
+    ).not.toThrow();
+  },
+);
+test.each([
+  'sw.js',
+  'assets/sw.js',
+  'manifest.webmanifest',
+  'assets/workspace-worker-input.js',
+])('desktop output still rejects planted shell or worker file %s', (path) => {
+  expect(() =>
+    assertDesktopOutput(
+      new Map([
+        [
+          'desktop.html',
+          `<meta http-equiv="Content-Security-Policy" content="${DESKTOP_POLICY}" />`,
+        ],
+        [path, 'input'],
+      ]),
+    ),
+  ).toThrow();
 });
 test.each([
   'new Worker("/input.js")',

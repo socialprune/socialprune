@@ -1,0 +1,29 @@
+@layer components {
+  :global(html):has(.gallery),
+  :global(body):has(.gallery),
+  :global(#root):has(.gallery) {
+    height: auto;
+    overflow: visible;
+  }
+  .gallery {
+    min-height: 100dvh;
+    padding: var(--space-3);
+    background: var(--color-canvas);
+    color: var(--color-text);
+  }
+  .gallery > h1 {
+    margin: 0 auto var(--space-2);
+    max-width: 680px;
+    font-size: var(--type-lg);
+  }
+  .gallery > p {
+    margin: 0 auto var(--space-3);
+    max-width: 680px;
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+  }
+  .gallery > div {
+    max-width: 680px;
+    margin-inline: auto;
+  }
+}

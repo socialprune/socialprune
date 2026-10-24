@@ -125,7 +125,7 @@
     overflow: auto;
     background: var(--color-surface);
   }
-  .editor h2 {
+  .editor > h2 {
     padding-inline: var(--space-5);
   }
   .editorFooter {

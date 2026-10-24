@@ -86,10 +86,13 @@ declare global {
     'clicklist.zoneBrowser': { zone: string };
     'clicklist.zoneChosen': { zone: string };
     'criteriaPicker.add': Record<never, never>;
+    'criteriaPicker.cancelEdit': Record<never, never>;
     'criteriaPicker.customCount': { count: number };
     'criteriaPicker.description': Record<never, never>;
     'criteriaPicker.earlier': Record<never, never>;
+    'criteriaPicker.edit': { label: string };
     'criteriaPicker.every': Record<never, never>;
+    'criteriaPicker.examples': Record<never, never>;
     'criteriaPicker.intro': Record<never, never>;
     'criteriaPicker.label': Record<never, never>;
     'criteriaPicker.level': Record<never, never>;
@@ -101,6 +104,10 @@ declare global {
     'criteriaPicker.ownHint': Record<never, never>;
     'criteriaPicker.placeholder': Record<never, never>;
     'criteriaPicker.remove': { label: string };
+    'criteriaPicker.saveEdit': Record<never, never>;
+    'criteriaPicker.saved': Record<never, never>;
+    'criteriaPicker.saving': Record<never, never>;
+    'criteriaPicker.selectionLimit': { count: number };
     'criteriaPicker.title': Record<never, never>;
     'criteriaPicker.total': { count: number; held: number };
     'criteriaPicker.unchecked': { count: number };
@@ -546,10 +553,13 @@ declare global {
     'import.start': Record<never, never>;
     'import.unknown': Record<never, never>;
     'instagramContext.captionCut': Record<never, never>;
+    'instagramContext.evidence': Record<never, never>;
     'instagramContext.found': { date: string };
     'instagramContext.foundInList': { date: string };
     'instagramContext.foundWithoutOwner': { date: string };
+    'instagramContext.hideScreenshot': Record<never, never>;
     'instagramContext.imageNotKept': Record<never, never>;
+    'instagramContext.listNoComment': Record<never, never>;
     'instagramContext.open': Record<never, never>;
     'instagramContext.screenshot': { date: string };
     'instagramContext.showScreenshot': Record<never, never>;
@@ -561,6 +571,7 @@ declare global {
     'keepRules.held': { count: number };
     'keepRules.instagram': Record<never, never>;
     'keepRules.intro': Record<never, never>;
+    'keepRules.invalid': Record<never, never>;
     'keepRules.likes': Record<never, never>;
     'keepRules.likesValue': Record<never, never>;
     'keepRules.remove': { rule: string };

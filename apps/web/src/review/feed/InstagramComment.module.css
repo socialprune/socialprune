@@ -1,0 +1,62 @@
+@layer components {
+  .content {
+    min-width: 0;
+  }
+  .context {
+    margin-bottom: var(--space-4);
+  }
+  .missing {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+    margin: 0;
+  }
+  .comment {
+    display: grid;
+    grid-template-columns: var(--target-size) minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+  }
+  .avatar {
+    width: var(--space-6);
+    height: var(--space-6);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--color-canvas);
+    color: var(--color-text-secondary);
+    border: var(--border-width) solid var(--color-social-divider);
+    font-size: var(--type-xs);
+    font-weight: var(--weight-heading);
+  }
+  .body {
+    min-width: 0;
+  }
+  .content:has([data-testid='instagram-post']) [data-instagram-owner] {
+    display: none;
+  }
+  .text {
+    margin: 0;
+    font-size: var(--type-md);
+    line-height: var(--line-md);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .text strong {
+    font-weight: var(--weight-heading);
+    margin-right: var(--space-1);
+  }
+  .text mark {
+    background: var(--color-evidence-bg);
+    color: var(--color-text);
+  }
+  .metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin-top: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+}

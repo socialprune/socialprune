@@ -1,12 +1,52 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 import { z } from 'zod';
-import { platformPostUrl } from '@socialprune/core/workspace/desktop-links';
+import {
+  platformPostUrl,
+  releasePageUrl,
+} from '@socialprune/core/workspace/desktop-links';
 import { DesktopLinkSchema, DesktopRequestSchema } from './desktop-protocol.ts';
 
 const fixtureRoot = new URL('../../../../fixtures/synthetic/', import.meta.url);
 const expectedSchema = z.object({
   items: z.array(z.object({ url: z.string().nullable() })),
+});
+
+test('release resolver admits only the exact releases page, never another URL or normalized variant', () => {
+  const exact = 'https://github.com/socialprune/socialprune/releases';
+  expect(releasePageUrl(exact)).toBe(exact);
+  expect(DesktopLinkSchema.parse({ kind: 'app-releases', url: exact })).toEqual(
+    { kind: 'app-releases', url: exact },
+  );
+  for (const url of [
+    exact + '/',
+    exact + '/latest',
+    exact + '?',
+    exact + '#',
+    exact + '?page=2',
+    exact + '/tag/v1',
+    exact.replace('https:', 'http:'),
+    exact.replace('github.com', 'github.com:443'),
+    exact.replace('github.com', 'github.com.evil.invalid'),
+    exact.replace('socialprune/releases', 'other/releases'),
+    exact.replace('/releases', '/issues/new'),
+    ' ' + exact,
+    exact + '\n',
+    exact.replace('/releases', '/other/../releases'),
+  ]) {
+    expect(releasePageUrl(url), url).toBeNull();
+    expect(
+      DesktopLinkSchema.safeParse({ kind: 'app-releases', url }).success,
+      url,
+    ).toBe(false);
+  }
+  expect(
+    DesktopLinkSchema.safeParse({
+      kind: 'app-releases',
+      url: exact,
+      extra: true,
+    }).success,
+  ).toBe(false);
 });
 
 test('post URLs from every X expected fixture and the demo pass the bridge unchanged', async () => {

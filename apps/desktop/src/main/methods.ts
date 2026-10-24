@@ -1,11 +1,17 @@
 import { resolveGuideLink } from '@socialprune/core/guide/link';
-import { platformPostUrl } from '@socialprune/core/workspace/desktop-links';
+import {
+  platformPostUrl,
+  releasePageUrl,
+} from '@socialprune/core/workspace/desktop-links';
+import { DesktopAppInfoSchema } from '../protocol.ts';
+import type { DesktopAppInfo } from '../protocol.ts';
 import type { PlatformGuide } from '@socialprune/core/guide/types';
 import type { DesktopRequest, DesktopReply } from '../protocol.ts';
 
 export function mainMethods(options: {
   dataDirectory: string;
   guides: readonly PlatformGuide[];
+  appInfo(): DesktopAppInfo;
   external(url: string): Promise<void>;
   folder(path: string): Promise<string>;
 }) {
@@ -16,11 +22,22 @@ export function mainMethods(options: {
       code,
     });
     try {
+      if (request.type === 'appInfo') {
+        const info = DesktopAppInfoSchema.parse(options.appInfo());
+        return { type: 'appInfo', requestId: request.requestId, ...info };
+      }
       if (request.type === 'openLink') {
+        if (
+          request.link.kind === 'app-releases' &&
+          options.appInfo().build !== 'direct'
+        )
+          return failed('NOT_AVAILABLE');
         const url =
-          request.link.kind === 'platform-post'
-            ? platformPostUrl(request.link.url)
-            : resolveGuideLink(options.guides, request.link);
+          request.link.kind === 'app-releases'
+            ? releasePageUrl(request.link.url)
+            : request.link.kind === 'platform-post'
+              ? platformPostUrl(request.link.url)
+              : resolveGuideLink(options.guides, request.link);
         if (!url) return failed('LINK_UNKNOWN');
         await options.external(url);
         return { type: 'linkOpened', requestId: request.requestId };

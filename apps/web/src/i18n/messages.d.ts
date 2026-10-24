@@ -483,6 +483,11 @@ declare global {
     'desktop.unit.pages': Record<never, never>;
     'desktop.unit.steps': Record<never, never>;
     'desktop.unknown': Record<never, never>;
+    'desktop.updates.check': Record<never, never>;
+    'desktop.updates.direct': Record<never, never>;
+    'desktop.updates.store': Record<never, never>;
+    'desktop.updates.title': Record<never, never>;
+    'desktop.updates.version': { version: string };
     'desktop.warning.full': Record<never, never>;
     'desktop.warning.short': Record<never, never>;
     'desktop.warningStop': Record<never, never>;

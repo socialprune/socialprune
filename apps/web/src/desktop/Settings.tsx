@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type {
   DesktopBridge,
   DesktopDataFolder,
+  DesktopAppInfo,
 } from '@socialprune/core/workspace/desktop-protocol';
 import { useT } from '../i18n/index.ts';
 import { command } from './bridge.ts';
@@ -20,10 +21,16 @@ export function DesktopSettings({
 }) {
   const t = useT();
   const [folder, setFolder] = useState<DesktopDataFolder | null>(null);
+  const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   useEffect(() => {
     let active = true;
+    void command(bridge, { type: 'appInfo' })
+      .then((reply) => {
+        if (active && reply.type === 'appInfo') setAppInfo(reply);
+      })
+      .catch(failed);
     void command(bridge, { type: 'dataFolderInfo' })
       .then((reply) => {
         if (active && reply.type === 'dataFolderInfo') setFolder(reply.folder);
@@ -63,12 +70,49 @@ export function DesktopSettings({
   }
   return (
     <section className={styles.panel} data-testid="desktop-settings">
+      <section
+        aria-label={t('desktop.updates.title')}
+        data-testid="desktop-updates"
+      >
+        <h2>{t('desktop.updates.title')}</h2>
+        {appInfo ? (
+          <>
+            <p>{t('desktop.updates.version', { version: appInfo.version })}</p>
+            {appInfo.build === 'store' ? (
+              <p>{t('desktop.updates.store')}</p>
+            ) : (
+              <>
+                <p>{t('desktop.updates.direct')}</p>
+                <button
+                  onClick={() => {
+                    void command(bridge, {
+                      type: 'openLink',
+                      link: {
+                        kind: 'app-releases',
+                        url: 'https://github.com/socialprune/socialprune/releases',
+                      },
+                    }).catch(failed);
+                  }}
+                >
+                  {t('desktop.updates.check')}
+                </button>
+              </>
+            )}
+          </>
+        ) : (
+          <p>{t('gate.preparing')}</p>
+        )}
+      </section>
       <h2>{t('desktop.folder')}</h2>
       {folder ? (
         <>
           <p data-testid="data-folder">{folder.path}</p>
           <p>
-            {t(folder.storeBuild ? 'desktop.storeNote' : 'desktop.directNote')}
+            {t(
+              (appInfo ? appInfo.build === 'store' : folder.storeBuild)
+                ? 'desktop.storeNote'
+                : 'desktop.directNote',
+            )}
           </p>
           <dl>
             {folder.folders.map(({ kind, bytes }) => (

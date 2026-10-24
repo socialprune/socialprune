@@ -157,3 +157,43 @@ Raw JSON reports, the six generated screenshots and command outputs are retained
 | `chromium-2026-10-23T22-51-05-986Z.json` | `888f54bef9824c725236b9c3037e980204e55ce6f6b7a6b375053c2fd011bec0` |
 | `firefox-2026-10-23T22-59-27-750Z.json` | `586580309e2a6f5f1e992f9f638cabfe98d270899cee5e7aeb1780abcf991e61` |
 | `webkit-2026-10-23T23-08-40-982Z.json` | `d31d4b0f8c0af2829bfc76d59a6d92230a74aac4e674ab1bf364c658edddf332` |
+
+### Feed-owner repair measurement, 2026-10-24
+
+The table above remains the 2026-10-23 baseline. This follow-up uses base `2676f150808986f111bf1c84ffe79e582e296b44` plus the feed-owner candidate, measurement source hash `7f05eb3d9e195eb0abbce62777dc2c88cb023db7ab16e14997c57a9040384b76`. All four scale harness files are byte-identical to that base, with common harness hash `969ac27576f6cad73cb26ca036e86db8170a14fbee73b1c06a5ef07caeca0ad2`. Exactly one final run per engine used the same host, Node, browser versions, viewport, strict port 4781, one worker and unchanged targets. Free physical RAM passed the 12 GiB admission check before each command and inside each test. Two earlier command starts below that limit were rejected without starting a browser. CPU load differed from the baseline, so these are separate loaded-desktop samples, not a controlled speedup estimate.
+
+A smaller generated case failed at card 301 when the first 300-card retention trim changed local virtual indices: focus fell to the page and the mounted range moved to positions 317 through 338. Checking focused-target visibility alone did not repair it. A window rebase now invalidates the earlier focus acknowledgement and restores the retained keyboard destination; pointer or newer key input releases that ownership. A 600-key regression covers repeated trims in all three engines. A separate generated browser probe measured 40 date-format calls for one ArrowDown before stable card models, callbacks and memoized mounted cards, then two calls in each engine. Empty original lookups no longer publish an equivalent empty map on each visible-range change. These probes establish specific repeated rendering work, not the cause of every frame outlier.
+
+Configuration changes formerly rebuilt the feed from all stored items, assessments and events and computed the current checks repeatedly. The shared core query now retains one data-revision-bound source and one account/definition-bound basis for checks, event state, popularity and order. Changing the level, selected criteria or rules recomputes membership and counters without rereading entry bodies. Changed definitions rebuild the checked-hash basis; a committed data revision invalidates the source. Generated tests cover those invalidations, thresholds, rules and a decision followed by configuration. The SQLite consumer uses the same query; whole core, CLI and web unit projects passed. This trades retained worker memory for configuration-cold latency. The incremental projection-memory target of eight bytes per entry in ADR-032 section 7 is not established by these process-tree samples; the source and basis retain more than the compact membership columns. A compact-memory redesign is not part of the measured candidate, and this result must not be read as acceptance of that memory bound.
+
+| Observation, 2026-10-24 | Chromium 153.0.8010.12 | Firefox 155.0 | WebKit 26.6 |
+|---|---:|---:|---:|
+| Run start, UTC | 08:38:41.012 | 08:45:40.455 | 08:55:09.014 |
+| Run end, UTC | 08:45:08.824 | 08:54:21.885 | 09:05:39.614 |
+| CPU load at admission, percent | 50 | 60 | 14 |
+| Free physical bytes at in-test admission | 15,480,524,800 | 15,435,677,696 | 14,194,020,352 |
+| Configuration-cold counts at 100,000 entries, p95, ms | 100.1, met | 184, met | 213, met |
+| Configuration-cold counts, maximum, ms | 2,425.5 | 3,303 | 1,707 |
+| Warm counts, p95, ms | 0.9 | 2 | 12 |
+| Tab switch first card, maximum of ten, ms | 113.8, met | 142, met | 152, met |
+| Scroll frame interval, p95, ms | 16.8 | 16.34 | 17 |
+| Scroll frame interval, maximum, ms | 16.8, met | 56.74, miss | 53, miss |
+| Frame intervals above 50 ms | 0 of 13,469 | 1 of 16,587 | 1 of 18,764 |
+| Largest observed feed response, cards | 50, met | 50, met | 50, met |
+| Largest observed mounted card count | 23, below 300 | 23, below 300 | 23, below 300 |
+| Consecutive focused and visible cards | 6,000 of 6,000 | 6,000 of 6,000 | 6,000 of 6,000 |
+| Distinct cards intersecting the viewport | 6,000 | 6,000 | 6,000 |
+| Owned browser tree private bytes after 100,000-entry restore | 1,175,056,384 | 1,438,871,552 | 3,133,779,968 |
+| Owned browser tree working-set bytes at that point | 1,287,311,360 | 1,465,597,952 | 2,226,036,736 |
+
+M1 traversal and M3 configuration-cold p95 meet their targets in these three runs. M2 remains open: Firefox and WebKit each have one interval above 50 ms, and no causal trace attributes those final two outliers. Chromium alone meets all measured targets. The first count after the restored data revision remains a multi-second maximum in each run, although the nineteenth sorted sample meets p95; a fresh-worker or decision-revision p95 is not measured here. Responses stay at most 50, and the unchanged session tests enforce the 300-card retained UI window while observed mounted DOM cards peak at 23. Each run reports zero page errors, zero off-origin requests and no traversal stop. No threshold, ADR target or harness setting changed, and no run was repeated to replace an outlier.
+
+The generator, seed, item counts and serialized sizes match the earlier procedure. This run's generated 6,000-entry JSON hash is `4991f02480060bf0c394dca07633f58ee77903d73b0a29e6d01b00c4a4c3aa82`; the 100,000-entry JSON hash is `652abba5831fad8ec60103cf846dd6d5f68b29540880656b411ba6c37cf3997e`. All three new reports use the same new hashes, but these differ from the baseline's hashes; the fixture outputs are not byte-identical across the two source identities, and that difference has not been attributed. The complete raw reports, six screenshots, failing-first traces and verification logs are retained outside Git under `socialprune-handoff/phase2/w-s8/`. The original reports remain under `s8-scale-evidence/` unchanged.
+
+| New raw file | SHA-256 from file readback |
+|---|---|
+| `chromium-2026-10-24T08-38-41-012Z.json` | `148c00245889042dfaef779e33d01911913b5df8ca501c9eabb60a083387dd78` |
+| `firefox-2026-10-24T08-45-40-455Z.json` | `97bc6a297d2e59381c0b6acc18da22c6124effdd048fd8113fad092198a2224e` |
+| `webkit-2026-10-24T08-55-09-014Z.json` | `d788996ff935658b035e9ff7654062dc1644fc9c0ccdce1c2a22aad1166472e8` |
+
+Wheel, touch and scrollbar traversal, Instagram, media, originals, small screens, isolated-host performance, repeated-run variance, the eight-byte incremental projection budget and fresh-data-revision count distributions remain outside this evidence. The two remaining frame misses keep the feed from full slice 8 performance acceptance.

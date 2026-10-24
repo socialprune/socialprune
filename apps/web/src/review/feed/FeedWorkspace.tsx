@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { useIntl } from 'react-intl';
 import { PRESETS, defaultCriteria } from '@socialprune/core/criteria';
 import type { FeedTab } from '@socialprune/core/criteria';
 import type { DecisionValue, Original } from '@socialprune/core';
@@ -23,6 +24,7 @@ import { CriteriaPicker } from '../criteria/CriteriaPicker.tsx';
 import { FeedToolbar } from './FeedToolbar.tsx';
 import controls from './Controls.module.css';
 import type { CriteriaModel } from '../criteria/types.ts';
+import type { FeedCardModel } from './types.ts';
 import styles from './FeedWorkspace.module.css';
 
 const definitions = {
@@ -42,6 +44,8 @@ const definitions = {
 
 export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const t = useT();
+  const intl = useIntl();
+  const translate = useMemo(() => t, [intl]);
   const { summary, error: openError } = useWorkspace(client);
   const session = useMemo(() => new FeedSession(client), [client]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
@@ -119,7 +123,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       ];
       let active = true;
       if (!references.length) {
-        setOriginals(new Map());
+        setOriginals((value) => (value.size ? new Map() : value));
         return;
       }
       void client
@@ -275,23 +279,64 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       );
     setFocusTarget({ id, sequence });
   }
-  async function decide(id: string, value: DecisionValue) {
-    localCommand.current = true;
-    pendingFocus.current = id;
-    try {
-      const saved = await session.decide(id, value);
-      if (saved)
-        setNotice(
-          value === 'keep'
-            ? t('reviewFeed.keptNotice', {
-                count: session.snapshot.counts?.tabs.suggested ?? 0,
-              })
-            : t('review.markNotice', { count: 1 }),
-        );
-    } finally {
-      localCommand.current = false;
-    }
-  }
+  const decide = useCallback(
+    async (id: string, value: DecisionValue) => {
+      localCommand.current = true;
+      pendingFocus.current = id;
+      try {
+        const saved = await session.decide(id, value);
+        if (saved)
+          setNotice(
+            value === 'keep'
+              ? translate('reviewFeed.keptNotice', {
+                  count: session.snapshot.counts?.tabs.suggested ?? 0,
+                })
+              : translate('review.markNotice', { count: 1 }),
+          );
+      } finally {
+        localCommand.current = false;
+      }
+    },
+    [session, translate],
+  );
+  const onDecision = useCallback(
+    (id: string, value: DecisionValue) => {
+      void decide(id, value);
+    },
+    [decide],
+  );
+  const allModels = useMemo(
+    () =>
+      summary
+        ? state.cards.map((card) =>
+            adaptCard(
+              card,
+              summary,
+              translate,
+              state.counts?.popularThreshold ?? null,
+            ),
+          )
+        : [],
+    [state.cards, summary, translate, state.counts?.popularThreshold],
+  );
+  const renderContext = useCallback(
+    (model: FeedCardModel) => {
+      const card = state.cards.find((card) => card.item.id === model.id);
+      return card ? (
+        <FeedContext
+          item={card.item}
+          client={client}
+          zone={zone}
+          original={originals.get(
+            card.item.kind === 'quote'
+              ? (card.item.reference.quotedId ?? '')
+              : (card.item.reference.replyToId ?? ''),
+          )}
+        />
+      ) : null;
+    },
+    [state.cards, client, zone, originals],
+  );
   async function undo() {
     if (state.busy || state.loading) return;
     localCommand.current = true;
@@ -388,10 +433,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const unchecked = Object.entries(state.counts?.unchecked ?? {}).filter(
     ([id, count]) => criteria.selected.includes(id) && count > 0,
   );
-  const allModels = state.cards.map((card) => ({
-    ...adaptCard(card, summary, t, state.counts?.popularThreshold ?? null),
-    busy: state.busy,
-  }));
   const models = oneAtATime
     ? allModels.slice(singleIndex, singleIndex + 1)
     : allModels;
@@ -480,9 +521,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               setTab(next);
               persist(next);
             }}
-            onDecision={(id, value) => {
-              void decide(id, value);
-            }}
+            onDecision={onDecision}
             onPreview={() => {
               setDialog(true);
               void session.preview();
@@ -515,23 +554,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             onPreviousWindow={() => {
               void loadWindow(Math.max(0, state.start - 50));
             }}
-            context={(model) => {
-              const card = state.cards.find(
-                (card) => card.item.id === model.id,
-              );
-              return card ? (
-                <FeedContext
-                  item={card.item}
-                  client={client}
-                  zone={zone}
-                  original={originals.get(
-                    card.item.kind === 'quote'
-                      ? (card.item.reference.quotedId ?? '')
-                      : (card.item.reference.replyToId ?? ''),
-                  )}
-                />
-              ) : null;
-            }}
+            context={renderContext}
             unchecked={
               unchecked.length
                 ? {

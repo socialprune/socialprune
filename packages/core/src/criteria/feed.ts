@@ -9,16 +9,16 @@ import { migrateReviewContract } from './migration.ts';
 import { FeedTabCountsSchema } from './schema.ts';
 import type { FeedTab } from './schema.ts';
 
-export function feedCounts(
-  input: WorkspaceV2,
-  accountKey?: string,
-  systemTimeZone = 'UTC',
-) {
+/** Definition/data-bound work shared by configurations of one account. */
+export function prepareFeedCounts(input: WorkspaceV2, accountKey?: string) {
   const workspace = migrateReviewContract(input);
-  const criteria = workspace.settings.criteria!;
-  const rules = workspace.settings.keepRules ?? [];
   const checks = currentChecks(workspace);
-  const states = deriveState(workspace);
+  // Count membership needs event state, not another assessment projection.
+  const states = deriveState({
+    ...workspace,
+    assessments: [],
+    submissions: [],
+  });
   const complete = workspace.imports.filter(
     (value) => value.status === 'complete',
   );
@@ -41,6 +41,26 @@ export function feedCounts(
       popularityThreshold(items, key),
     ]),
   );
+  const order = [...items]
+    .sort(
+      (a, b) =>
+        b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
+    )
+    .map((item) => item.id);
+  return { checks, states, items, thresholds, order };
+}
+
+export function feedCounts(
+  input: WorkspaceV2,
+  accountKey?: string,
+  systemTimeZone = 'UTC',
+  prepared = prepareFeedCounts(input, accountKey),
+) {
+  const workspace = migrateReviewContract(input);
+  const criteria = workspace.settings.criteria!;
+  const rules = workspace.settings.keepRules ?? [];
+  const hasRules = rules.some((rule) => rule.enabled);
+  const { checks, states, items, thresholds } = prepared;
   const tabs = FeedTabCountsSchema.parse({
     suggested: 0,
     held: 0,
@@ -73,14 +93,15 @@ export function feedCounts(
         check.status === 'hit' &&
         check.assessment!.risk >= criteria.level,
     );
-    const held = hit
-      ? evaluateKeepRules(
-          item,
-          rules,
-          timeZone,
-          thresholds.get(item.account.key) ?? null,
-        )
-      : [];
+    const held =
+      hit && hasRules
+        ? evaluateKeepRules(
+            item,
+            rules,
+            timeZone,
+            thresholds.get(item.account.key) ?? null,
+          )
+        : [];
     holding.set(item.id, held);
     const decision = states.get(item.id)!.decision;
     baseMembership.set(

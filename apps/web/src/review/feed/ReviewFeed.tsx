@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Bookmark,
@@ -157,6 +157,23 @@ export interface ReviewFeedProps {
   onVisible?: (ids: readonly string[]) => void | (() => void);
   focusTarget?: { id: string; sequence: number } | null;
 }
+const MountedFeedCard = memo(function MountedFeedCard({
+  card,
+  busy,
+  context,
+  ...props
+}: Omit<React.ComponentProps<typeof FeedCard>, 'context'> & {
+  busy?: boolean;
+  context?: ReviewFeedProps['context'];
+}) {
+  return (
+    <FeedCard
+      {...props}
+      card={busy ? { ...card, busy: true } : card}
+      context={context?.(card)}
+    />
+  );
+});
 export function ReviewFeed(props: ReviewFeedProps) {
   const t = useT(),
     id = useId();
@@ -172,6 +189,39 @@ export function ReviewFeed(props: ReviewFeedProps) {
   });
   const virtualItems = virtualizer.getVirtualItems();
   const completedFocus = useRef<number | null>(null);
+  const keyboardOwnsFocus = useRef(false);
+  useEffect(() => {
+    const document = panelRef.current?.ownerDocument;
+    const release = () => {
+      keyboardOwnsFocus.current = false;
+    };
+    document?.addEventListener('pointerdown', release, true);
+    document?.addEventListener('keydown', release, true);
+    return () => {
+      document?.removeEventListener('pointerdown', release, true);
+      document?.removeEventListener('keydown', release, true);
+    };
+  }, []);
+  const windowStart = useRef(props.start);
+  useLayoutEffect(() => {
+    if (windowStart.current === props.start) return;
+    windowStart.current = props.start;
+    if (!keyboardOwnsFocus.current) return;
+    // Retention rebases local virtual indices without changing the person's
+    // destination. Its previous focus acknowledgement no longer covers layout.
+    completedFocus.current = null;
+    const index = props.cards.findIndex(
+      (card) => card.id === props.focusTarget?.id,
+    );
+    if (props.virtualized && index >= 0)
+      virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
+  }, [
+    props.start,
+    props.cards,
+    props.focusTarget,
+    props.virtualized,
+    virtualizer,
+  ]);
   useEffect(() => {
     if (
       !props.focusTarget ||
@@ -182,6 +232,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
       (card) => card.id === props.focusTarget!.id,
     );
     if (index < 0) return;
+    keyboardOwnsFocus.current = true;
     const sequence = props.focusTarget.sequence;
     const panel = panelRef.current;
     const cancel = focusWhenReady({
@@ -201,6 +252,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
           });
       },
       active: () => panel?.ownerDocument.activeElement ?? null,
+      panel: () => panelRef.current,
       frame: requestAnimationFrame,
       cancelFrame: cancelAnimationFrame,
       complete: () => {
@@ -210,6 +262,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
     // A person's newer input supersedes a pending automatic focus operation.
     const supersede = () => {
       cancel();
+      keyboardOwnsFocus.current = false;
       completedFocus.current = sequence;
     };
     const document = panel?.ownerDocument;
@@ -478,9 +531,10 @@ export function ReviewFeed(props: ReviewFeedProps) {
                   }))
                 : props.cards.map((card, index) => ({ card, index }))
               ).map(({ card, index }) => (
-                <FeedCard
+                <MountedFeedCard
                   key={card.id}
-                  card={{ ...card, busy: props.busy || card.busy }}
+                  card={card}
+                  busy={props.busy}
                   position={(props.start ?? 0) + index + 1}
                   total={props.total ?? props.counts[props.tab]}
                   zone={props.zone}
@@ -489,7 +543,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
                   onDecision={props.onDecision}
                   onConversation={props.onConversation}
                   platform={props.platform}
-                  context={props.context?.(card)}
+                  context={props.context}
                   measure={
                     props.virtualized ? virtualizer.measureElement : undefined
                   }

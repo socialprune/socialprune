@@ -80,3 +80,38 @@ test('a detached node never acknowledges completion and a newer request cancels 
   expect(h.frames.size).toBe(0);
   expect(h.complete).not.toHaveBeenCalled();
 });
+
+test('focus is not complete while a layout shift leaves its target outside the panel', () => {
+  const frames: (() => void)[] = [];
+  const complete = vi.fn();
+  let visible = false;
+  const target = {
+    isConnected: true,
+    focus: vi.fn(),
+    getBoundingClientRect: () => ({
+      top: visible ? 10 : 1000,
+      bottom: visible ? 100 : 1100,
+    }),
+  } as unknown as HTMLElement;
+  const panel = {
+    getBoundingClientRect: () => ({ top: 0, bottom: 500 }),
+  } as HTMLElement;
+  const cancel = focusWhenReady({
+    find: () => target,
+    active: () => target,
+    scroll: () => {},
+    frame: (callback) => {
+      frames.push(callback);
+      return frames.length;
+    },
+    cancelFrame: () => {},
+    complete,
+    panel: () => panel,
+  });
+  frames.shift()!();
+  expect(complete).not.toHaveBeenCalled();
+  visible = true;
+  frames.shift()!();
+  expect(complete).toHaveBeenCalledOnce();
+  cancel();
+});

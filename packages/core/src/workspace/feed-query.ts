@@ -3,7 +3,7 @@ import type {
   WorkspaceMeta,
   DecisionEvent,
 } from '../model/index.ts';
-import { feedCounts } from '../criteria/feed.ts';
+import { feedCounts, prepareFeedCounts } from '../criteria/feed.ts';
 import { currentChecks } from '../criteria/suggestions.ts';
 import { criterionHash, definitionHash } from '../criteria/presets.ts';
 import { canonicalJson } from './canonical.ts';
@@ -84,9 +84,13 @@ function feedKey(accountKey: string, settings: WorkspaceMeta['settings']) {
   });
 }
 
-export function projectFeed(workspace: WorkspaceV2, accountKey: string) {
-  const result = feedCounts(workspace, accountKey);
-  const checks = currentChecks(workspace);
+export function projectFeed(
+  workspace: WorkspaceV2,
+  accountKey: string,
+  prepared = prepareFeedCounts(workspace, accountKey),
+) {
+  const result = feedCounts(workspace, accountKey, 'UTC', prepared);
+  const checks = prepared.checks;
   const hits: Record<string, number> = Object.fromEntries(
     workspace.settings.categories.map((id) => [id, 0]),
   );
@@ -141,16 +145,10 @@ export function projectFeed(workspace: WorkspaceV2, accountKey: string) {
         if (tab === 'suggested') source.count++;
         sources.set(key, source);
       }
-      itemSources.set(id, [...seenSources]);
+      if (seenSources.size) itemSources.set(id, [...seenSources]);
     }
   }
-  const order = workspace.items
-    .filter((item) => result.membership.has(item.id))
-    .sort(
-      (a, b) =>
-        b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
-    )
-    .map((item) => item.id);
+  const order = prepared.order;
   return {
     ...result,
     hits,
@@ -164,6 +162,14 @@ export function projectFeed(workspace: WorkspaceV2, accountKey: string) {
 
 /** One account projection per revision/configuration. Card bodies are read only in range. */
 export class FeedQuery {
+  // Settings do not advance the data revision. Keep one source snapshot and
+  // definition-bound basis, but always recompute the changed configuration.
+  private source?: { revision: number; workspace: WorkspaceV2 };
+  private basis?: {
+    revision: number;
+    key: string;
+    value: ReturnType<typeof prepareFeedCounts>;
+  };
   private cache?: {
     key: string;
     revision: number;
@@ -180,8 +186,29 @@ export class FeedQuery {
       const key = feedKey(accountKey, meta.settings);
       if (this.cache?.key === key && this.cache.revision === runtime.revision)
         return this.cache;
-      const workspace = await feedWorkspace(tx);
-      const value = projectFeed(workspace, accountKey);
+      if (this.source?.revision !== runtime.revision) {
+        this.source = {
+          revision: runtime.revision,
+          workspace: await feedWorkspace(tx),
+        };
+        this.basis = undefined;
+      }
+      const workspace = { ...this.source.workspace, ...meta };
+      const basisKey = canonicalJson({
+        accountKey,
+        categories: meta.settings.categories,
+        custom: meta.settings.criteria?.custom,
+      });
+      if (
+        this.basis?.revision !== runtime.revision ||
+        this.basis.key !== basisKey
+      )
+        this.basis = {
+          revision: runtime.revision,
+          key: basisKey,
+          value: prepareFeedCounts(workspace, accountKey),
+        };
+      const value = projectFeed(workspace, accountKey, this.basis.value);
       this.cache = { key, revision: runtime.revision, value };
       return this.cache;
     });
@@ -295,6 +322,10 @@ export class FeedQuery {
     states: readonly StoredState[],
   ) {
     const cache = this.cache;
+    // The delta below advances only the final projection. A later settings
+    // change must not rebuild from events captured before this commit.
+    this.source = undefined;
+    this.basis = undefined;
     if (!cache || cache.revision !== previousRevision) return;
     // Decision-only updates preserve hit/rule counters; tab counters move once.
     for (const state of states) {

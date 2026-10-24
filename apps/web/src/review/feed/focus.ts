@@ -6,6 +6,7 @@ export function focusWhenReady({
   frame,
   cancelFrame,
   complete,
+  panel,
 }: {
   find: () => HTMLElement | undefined;
   scroll: () => void;
@@ -13,6 +14,7 @@ export function focusWhenReady({
   frame: (callback: () => void) => number;
   cancelFrame: (id: number) => void;
   complete: () => void;
+  panel?: () => HTMLElement | null;
 }) {
   let cancelled = false;
   let scheduled: number | undefined;
@@ -20,11 +22,21 @@ export function focusWhenReady({
   const attempt = () => {
     if (cancelled) return;
     const target = find();
-    if (target?.isConnected && target === attempted && active() === target) {
+    const bounds = panel?.()?.getBoundingClientRect();
+    const box = bounds ? target?.getBoundingClientRect() : undefined;
+    const visible =
+      !bounds || (!!box && box.bottom > bounds.top && box.top < bounds.bottom);
+    if (
+      target?.isConnected &&
+      target === attempted &&
+      active() === target &&
+      visible
+    ) {
       complete();
       return;
     }
     if (target?.isConnected) {
+      if (!visible) scroll();
       target.focus({ preventScroll: true });
       attempted = target;
     } else {

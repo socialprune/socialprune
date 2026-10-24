@@ -221,6 +221,98 @@ test('a virtual keyboard destination is acknowledged only after focus survives i
     .toBe('1');
 });
 
+test('sequential keyboard traversal crosses generated fifty-card window boundaries without losing visibility', async ({
+  page,
+}) => {
+  // 600 real keys and two paint opportunities per key need more than the default30s.
+  test.setTimeout(120_000);
+  const data = liveFeedFixture(650);
+  data.settings.keepRules = [];
+  const expected = data.items
+    .filter((item) => item.platform === 'x' && item.id !== 'x:feed-6')
+    .map((item) => item.id);
+  await restoreLiveFeed(page, data);
+  await page.getByRole('feed').locator('article').first().focus();
+  for (const [index, id] of expected.slice(0, 600).entries()) {
+    if (index) await page.keyboard.press('ArrowDown');
+    await page.waitForFunction(
+      (id) => {
+        const article = document.activeElement;
+        const panel = document.querySelector('[role="tabpanel"]');
+        if (!(article instanceof HTMLElement) || !panel) return false;
+        const box = article.getBoundingClientRect(),
+          bounds = panel.getBoundingClientRect();
+        return (
+          article.dataset['cardId'] === id &&
+          box.bottom > bounds.top &&
+          box.top < bounds.bottom &&
+          document.querySelector('[role="feed"]')?.getAttribute('aria-busy') ===
+            'false'
+        );
+      },
+      id,
+      { timeout: 5000 },
+    );
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  }
+});
+
+test('keyboard movement does not reformat dates of every retained mounted card', async ({
+  page,
+}) => {
+  await restoreLiveFeed(page, liveFeedFixture(400));
+  await page.getByRole('feed').locator('article').first().focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('article:focus')).toHaveAttribute(
+    'aria-posinset',
+    '2',
+  );
+  await page.evaluate(() => {
+    const original = Object.getOwnPropertyDescriptor(
+      Intl.DateTimeFormat.prototype,
+      'format',
+    )!;
+    Reflect.set(window, '__feedDateFormats', 0);
+    Object.defineProperty(Intl.DateTimeFormat.prototype, 'format', {
+      ...original,
+      get() {
+        const format = original.get!.call(this) as (
+          ...args: unknown[]
+        ) => string;
+        return (...args: unknown[]) => {
+          Reflect.set(
+            window,
+            '__feedDateFormats',
+            (Reflect.get(window, '__feedDateFormats') as number) + 1,
+          );
+          return format(...args);
+        };
+      },
+    });
+  });
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('article:focus')).toHaveAttribute(
+    'aria-posinset',
+    '3',
+  );
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const formats = await page.evaluate(
+    () => Reflect.get(window, '__feedDateFormats') as number,
+  );
+  console.log('M2_DATE_FORMAT_CALLS', formats);
+  expect(formats).toBeLessThanOrEqual(4);
+});
+
 test('a second page makes the plan stale; the changed preview requires another human confirmation', async ({
   page,
   context,

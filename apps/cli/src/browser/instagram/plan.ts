@@ -73,9 +73,14 @@ export async function planContext(
         items.push(stored.item);
     const twins = new Set<string>();
     const groups = new Map<string, Item[]>();
+    const byText = new Map<string, Item[]>();
     for (const item of items) {
+      const text = normalize(item.text);
+      const sameText = byText.get(text) ?? [];
+      sameText.push(item);
+      byText.set(text, sameText);
       const key = JSON.stringify([
-        normalize(item.text),
+        text,
         ownerName(item.reference.ownerHandle ?? ''),
       ]);
       const group = groups.get(key) ?? [];
@@ -93,6 +98,36 @@ export async function planContext(
           twins.add(group[index]!.id);
           twins.add(group[index - 1]!.id);
         }
+    }
+    // Missing owners cannot disambiguate the same text near an owned comment.
+    for (const group of byText.values()) {
+      group.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      const counts = [0];
+      for (const item of group)
+        counts.push(
+          counts.at(-1)! + Number(!ownerName(item.reference.ownerHandle ?? '')),
+        );
+      let left = 0,
+        right = 0;
+      for (const [index, item] of group.entries()) {
+        const at = Date.parse(item.createdAt);
+        while (
+          left < index &&
+          Date.parse(group[left]!.createdAt) < at - 120_000
+        )
+          left++;
+        while (
+          right < group.length &&
+          Date.parse(group[right]!.createdAt) <= at + 120_000
+        )
+          right++;
+        if (
+          !ownerName(item.reference.ownerHandle ?? '')
+            ? right - left > 1
+            : counts[right]! > counts[left]!
+        )
+          twins.add(item.id);
+      }
     }
     const last = new Map<string, string>();
     const runs = [];
@@ -128,10 +163,6 @@ export async function planContext(
     for (const item of items) {
       if (!normalize(item.text)) {
         if (!personExcludes(item.id)) manual.emptyText++;
-        continue;
-      }
-      if (!ownerName(item.reference.ownerHandle ?? '')) {
-        if (!personExcludes(item.id)) manual.noOwner++;
         continue;
       }
       if (twins.has(item.id)) {

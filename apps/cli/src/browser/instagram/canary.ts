@@ -1,6 +1,7 @@
 import type { InstagramContext } from '@socialprune/core';
 import { normalize, ownerName } from './plan.ts';
-import { ContextStop, keyPaths } from './report.ts';
+import { ContextStop, keyPaths, ImageDiagnosticSchema } from './report.ts';
+import type { ImageDiagnostic } from './report.ts';
 import { postObjects } from './answers.ts';
 
 type Field = 'owner' | 'time' | 'caption' | 'image';
@@ -15,6 +16,39 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+export function imageDiagnostic(
+  code: string | null,
+  source: string | null,
+  bodies: readonly unknown[],
+): ImageDiagnostic {
+  const candidates = postObjects(bodies, code).objects;
+  const lists: string[][] = [];
+  for (const { value } of candidates) {
+    const first = Array.isArray(value.carousel_media)
+      ? object(value.carousel_media[0])
+      : value;
+    const candidateList =
+      object(first.image_versions2).candidates ??
+      object(value.image_versions2).candidates;
+    if (Array.isArray(candidateList))
+      lists.push(
+        candidateList
+          .map((candidate) => object(candidate).url)
+          .filter((url): url is string => typeof url === 'string'),
+      );
+  }
+  return ImageDiagnosticSchema.parse({
+    qualifyingObjects: candidates.length,
+    matchingLists:
+      source === null
+        ? 0
+        : lists.filter((list) => list.includes(source)).length,
+    distinctListLengths: [...new Set(lists.map((list) => list.length))].sort(
+      (a, b) => a - b,
+    ),
+    source: source === null ? 'none' : 'img-current-src',
+  });
 }
 export function compareSources(
   record: InstagramContext,

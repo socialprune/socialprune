@@ -81,7 +81,7 @@ test.each([
               : await readBackup(createBackup(store).chunks);
             await memory?.close();
             expect(workspace.schemaVersion).toBe(
-              consumer === 'read-only backup reader' ? 7 : 6,
+              consumer === 'read-only backup reader' ? 8 : 6,
             );
             expect(workspace.instagramContext).toHaveLength(1);
             expect(workspace.instagramContext![0]).toHaveProperty(
@@ -160,7 +160,7 @@ test('C10 layout 5 to 6 copies first, rewrites existing records as post and rest
     await store.close();
     const raw = new DatabaseSync(path);
     raw.exec(
-      "DROP TRIGGER instagram_context_no_update; UPDATE instagram_context SET data=json_remove(data,'$.confirmedBy'); CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END; PRAGMA user_version=5; UPDATE meta SET data=json_set(data,'$.schemaVersion',5);",
+      "DROP TRIGGER instagram_context_no_update; UPDATE instagram_context SET data=json_remove(data,'$.confirmedBy','$.ownerCheck'); CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END; PRAGMA user_version=5; UPDATE meta SET data=json_set(data,'$.schemaVersion',5);",
     );
     const old = raw.prepare('SELECT data FROM instagram_context').get()!.data;
     raw.close();
@@ -179,7 +179,7 @@ test('C10 layout 5 to 6 copies first, rewrites existing records as post and rest
       expect(
         (await upgraded.read(readWorkspace)).instagramContext![0],
       ).toHaveProperty('confirmedBy', 'post');
-      expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(7);
+      expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(8);
     } finally {
       await upgraded.close();
     }
@@ -195,8 +195,9 @@ test('C10 layout 5 to 6 copies first, rewrites existing records as post and rest
       ) as Record<string, unknown>;
       expect(record.confirmedBy).toBe('post');
       delete record.confirmedBy;
+      delete record.ownerCheck;
       expect(record).toEqual(JSON.parse(String(old)));
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(7);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(8);
       expect(() =>
         db.exec(
           "UPDATE instagram_context SET data=json_set(data,'$.post.caption','changed')",
@@ -310,7 +311,7 @@ test('layout 4 -> 6 preserves X originals and journal JSON byte for byte and cop
     await readonly.close();
     expect(await readFile(path)).toEqual(bytes);
     const upgraded = await SQLiteStore.open(path);
-    expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(7);
+    expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(8);
     expect(
       (await upgraded.read(readWorkspace)).instagramContext,
     ).toBeUndefined();
@@ -443,7 +444,7 @@ test('v2 SQLite additive migration preserves original bytes, copies first and re
     expect(await readFile(join(directory, copy))).toEqual(bytes);
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(7);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(8);
       expect(
         db
           .prepare("SELECT name FROM sqlite_schema WHERE name='originals'")

@@ -82,7 +82,7 @@ export class IndexedDBStore implements WorkspaceStore {
           db.createObjectStore('reviewPlans', { keyPath: 'actionId' });
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 7) {
+        if (oldVersion >= 1 && oldVersion < 8) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
@@ -91,31 +91,39 @@ export class IndexedDBStore implements WorkspaceStore {
                 cursor = await cursor.continue();
               }
             }
-            if (oldVersion === 5) {
+            if (oldVersion >= 5 && oldVersion < 8) {
               let cursor = await tx
                 .objectStore('instagramContext')
                 .openCursor();
               while (cursor) {
-                await cursor.update(migrateInstagramContext(cursor.value));
+                await cursor.update(
+                  migrateInstagramContext(
+                    cursor.value,
+                    oldVersion === 5 ? 5 : 7,
+                  ),
+                );
                 cursor = await cursor.continue();
               }
             }
             const meta: unknown = await tx.objectStore('meta').get('workspace');
             if (meta && typeof meta === 'object') {
               const oldSettings = WorkspaceMetaSchema.parse(meta).settings;
-              const assessments = (
-                await tx.objectStore('assessments').getAll()
-              ).map((value: unknown) => AssessmentSchema.parse(value));
-              const settings = migrateReviewSettings(oldSettings, assessments);
-              let cursor = await tx.objectStore('submissions').openCursor();
-              while (cursor) {
-                await cursor.update(
-                  migrateSubmission(
-                    SubmissionSchema.parse(cursor.value),
-                    oldSettings,
-                  ),
-                );
-                cursor = await cursor.continue();
+              let settings = oldSettings;
+              if (oldVersion < 7) {
+                const assessments = (
+                  await tx.objectStore('assessments').getAll()
+                ).map((value: unknown) => AssessmentSchema.parse(value));
+                settings = migrateReviewSettings(oldSettings, assessments);
+                let cursor = await tx.objectStore('submissions').openCursor();
+                while (cursor) {
+                  await cursor.update(
+                    migrateSubmission(
+                      SubmissionSchema.parse(cursor.value),
+                      oldSettings,
+                    ),
+                  );
+                  cursor = await cursor.continue();
+                }
               }
               await tx.objectStore('meta').put(
                 {
@@ -439,9 +447,17 @@ export class IndexedDBStore implements WorkspaceStore {
       browserRuns: table('browserRuns', (value) =>
         BrowserRunSchema.parse(value),
       ),
-      instagramContext: table('instagramContext', (value) =>
-        InstagramContextSchema.parse(value),
-      ),
+      instagramContext: (() => {
+        const context = table<import('@socialprune/core').InstagramContext>(
+          'instagramContext',
+          (value) => InstagramContextSchema.parse(value),
+        );
+        return {
+          get: (id) => context.get(id),
+          iterate: (options) => context.iterate(options),
+          add: (value) => context.add(value),
+        };
+      })(),
       browserAttempts: table('browserAttempts', (value) =>
         BrowserAttemptSchema.parse(value),
       ),

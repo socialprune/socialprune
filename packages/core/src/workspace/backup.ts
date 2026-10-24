@@ -15,6 +15,8 @@ import {
   BrowserAttemptSchema,
   InstagramContextSchema,
   LegacyInstagramContextSchema,
+  PreviousInstagramContextSchema,
+  migrateInstagramContext,
   WORKSPACE_SCHEMA_VERSION,
   ReviewPlanSchema,
 } from '../model/index.ts';
@@ -228,7 +230,12 @@ export function createBackup(
                   SubmissionSchema.parse(value),
                   sourceMeta.settings,
                 )
-              : value,
+              : key === 'instagramContext' && sourceMeta.schemaVersion < 8
+                ? migrateInstagramContext(
+                    value,
+                    sourceMeta.schemaVersion === 5 ? 5 : 7,
+                  )
+                : value,
           );
           if (new TextEncoder().encode(text).length > maxElementBytes)
             throw new ArchiveLimitError('maxElementBytes', maxElementBytes);
@@ -403,6 +410,7 @@ const v2Records: Record<ArrayKey, z.ZodType> = {
   instagramContext: z.union([
     InstagramContextSchema,
     LegacyInstagramContextSchema,
+    PreviousInstagramContextSchema,
   ]),
 };
 const v1Records: Record<string, z.ZodType> = {
@@ -698,7 +706,10 @@ export async function applyBackup(
   options: BackupApplyOptions = {},
 ): Promise<WorkspaceV2> {
   throwIfAborted(options.signal);
-  const workspace = migrateReviewContract(validateWorkspace(input));
+  const workspace = {
+    ...migrateReviewContract(validateWorkspace(input)),
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+  };
   const state = deriveState(workspace);
   const batchSize = positive(options.batchSize ?? 1000, 1000);
   const {

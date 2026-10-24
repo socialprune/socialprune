@@ -21,6 +21,36 @@ import { z } from 'zod';
 const runId = '00000000-0000-4000-8000-000000000016';
 const plantedUrl = `https://www.instagram.com/${IG_FIXTURE.other.username}/p/${IG_FIXTURE.other.code}/`;
 const ownSelectors = new URL('./selectors.ts', import.meta.url).href;
+test('IG-IMAGE diagnostic accepts closed numeric image data only and enforces count and source consistency', () => {
+  const image = {
+    status: 'stored',
+    bytes: 69,
+    qualifyingObjects: 2,
+    matchingLists: 2,
+    distinctListLengths: [1, 2],
+    source: 'img-current-src',
+  };
+  expect(ContextStepReportSchema.parse({ image })).toEqual({ image });
+  for (const invalid of [
+    { ...image, url: plantedUrl },
+    { ...image, id: IG_FIXTURE.code },
+    { ...image, qualifyingObjects: -1 },
+    { ...image, matchingLists: 3 },
+    { ...image, matchingLists: 1.5 },
+    { ...image, distinctListLengths: [2, 1] },
+    { ...image, distinctListLengths: [1, 1] },
+    { ...image, distinctListLengths: [Infinity] },
+    { ...image, distinctListLengths: [-1] },
+    { ...image, distinctListLengths: [IG_FIXTURE.code] },
+    { ...image, qualifyingObjects: 0 },
+    { ...image, source: 'video-poster' },
+    { ...image, source: 'none' },
+    { ...image, status: plantedUrl },
+  ])
+    expect(ContextStepReportSchema.safeParse({ image: invalid }).success).toBe(
+      false,
+    );
+});
 test('C28 per-step memory is strict numeric data rather than arbitrary fields in the loose step', () => {
   const memory = {
     observed: true,
@@ -234,6 +264,7 @@ test.each([
   ['postElement', 'selectors.ts'],
   ['scrollPostComments', 'selectors.ts'],
   ['currentImageSource', 'selectors.ts'],
+  ['imageDiagnostic', 'canary.ts'],
   ['confirmOnPost', 'driver.ts'],
   ['postReopenTarget', 'driver.ts'],
   ['listTimeoutDiagnostic', 'driver.ts'],

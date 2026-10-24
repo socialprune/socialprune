@@ -158,7 +158,7 @@ export function postPage(
   const owner =
     variant === 'owner'
       ? IG_FIXTURE.other.username
-      : item.reference.ownerHandle!;
+      : (item.reference.ownerHandle ?? IG_FIXTURE.ownerWithoutExport);
   const profile = (name: string) =>
     `<a href="/${escape(name)}/"><div><div><span dir="auto">${escape(name)}</span></div></div></a>`;
   const author = (name: string) =>
@@ -376,7 +376,7 @@ export function postAnswer(
       username:
         variant === 'different-owner' || different
           ? IG_FIXTURE.other.username
-          : item.reference.ownerHandle,
+          : (item.reference.ownerHandle ?? IG_FIXTURE.ownerWithoutExport),
     },
     taken_at:
       Date.parse(IG_FIXTURE.postAt) / 1000 +

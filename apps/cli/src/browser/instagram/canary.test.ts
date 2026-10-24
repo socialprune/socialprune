@@ -46,6 +46,7 @@ test.each([
 });
 
 const record: InstagramContext = {
+  ownerCheck: 'matched-export',
   confirmedBy: 'post',
   itemId: 'instagram:generated',
   accountKey: 'instagram:generated',

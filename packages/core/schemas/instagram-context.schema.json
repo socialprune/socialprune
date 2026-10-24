@@ -119,6 +119,10 @@
         },
         "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "attemptId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "ownerCheck": {
+          "type": "string",
+          "enum": ["matched-export", "not-in-export"]
+        },
         "confirmedBy": { "type": "string", "const": "post" },
         "comment": {
           "type": "object",
@@ -144,6 +148,7 @@
         "confirmedAt",
         "runId",
         "attemptId",
+        "ownerCheck",
         "confirmedBy",
         "comment"
       ],
@@ -267,6 +272,10 @@
         },
         "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "attemptId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "ownerCheck": {
+          "type": "string",
+          "enum": ["matched-export", "not-in-export"]
+        },
         "confirmedBy": { "type": "string", "const": "list" },
         "comment": {
           "type": "object",
@@ -288,6 +297,7 @@
         "confirmedAt",
         "runId",
         "attemptId",
+        "ownerCheck",
         "confirmedBy",
         "comment"
       ],

@@ -70,6 +70,29 @@ test('C10 list-confirmed context explains the list evidence in both languages an
     );
   }
 });
+test('C29 owner-unchecked evidence names the missing exported owner in both languages without claiming an owner match', () => {
+  const record = {
+    ...instagramContractRecord(),
+    ownerCheck: 'not-in-export' as const,
+  };
+  for (const locale of ['en', 'de'] as const) {
+    const html = renderToStaticMarkup(
+      createElement(IntlProvider, {
+        locale,
+        messages: catalogs[locale],
+        children: createElement(InstagramPost, { record, zone: 'UTC' }),
+      }),
+    );
+    expect(html).toContain(
+      locale === 'en'
+        ? 'The export names no post account'
+        : 'Der Export nennt kein Beitragskonto',
+    );
+    expect(html).not.toContain(
+      locale === 'en' ? 'match your export' : 'stimmen mit deinem Export',
+    );
+  }
+});
 
 test('RED CONTROL forbidden values from a second fixture account fail on the view without the identity wrapper', async () => {
   const fixture = JSON.parse(

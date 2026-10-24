@@ -26,8 +26,10 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
       delete (settings.review as Record<string, unknown>).feed;
     for (const record of legacy.submissions as Record<string, unknown>[])
       delete record.criteria;
-    for (const record of legacy.instagramContext as Record<string, unknown>[])
+    for (const record of legacy.instagramContext as Record<string, unknown>[]) {
       delete record.confirmedBy;
+      delete record.ownerCheck;
+    }
     await waitForApp(page);
     expect(
       await page.evaluate(
@@ -47,9 +49,13 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
       });
       return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
     });
-    expect(before.schemaVersion).toBe(7);
+    expect(before.schemaVersion).toBe(8);
     expect(
-      before.instagramContext!.every((record) => record.confirmedBy === 'post'),
+      before.instagramContext!.every(
+        (record) =>
+          record.confirmedBy === 'post' &&
+          record.ownerCheck === 'matched-export',
+      ),
     ).toBe(true);
     const id = await page.evaluate(async () => {
       const open = (name: string, version?: number) =>
@@ -150,7 +156,10 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
               delete (settings.review as Record<string, unknown>).feed;
           }
           if (definition.name === 'submissions') delete value.criteria;
-          if (definition.name === 'instagramContext') delete value.confirmedBy;
+          if (definition.name === 'instagramContext') {
+            delete value.confirmedBy;
+            delete value.ownerCheck;
+          }
           const store = tx.objectStore(definition.name);
           if (store.keyPath === null) store.put(value, definition.keys[index]);
           else store.put(value);
@@ -194,7 +203,7 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
         workspace: JSON.parse(text) as import('@socialprune/core').WorkspaceV2,
       };
     }, id);
-    expect(after.version).toBe(7);
+    expect(after.version).toBe(8);
     expect(after.workspace.instagramContext).toEqual(before.instagramContext);
     expect(after.workspace.items).toEqual(before.items);
     expect(after.workspace.browserRuns).toEqual(before.browserRuns);

@@ -80,6 +80,7 @@ import {
   automaticReadbackCheck,
   compareSources,
   canaryAudit,
+  imageDiagnostic,
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
 import {
@@ -708,6 +709,11 @@ export async function runContextWithDependencies(
               caught.token === 'list-timeout'
             ) {
               const timeoutStep = {
+                image: {
+                  status: 'not-attempted',
+                  bytes: 0,
+                  ...imageDiagnostic(null, null, []),
+                },
                 ready: { postMs: 0 },
                 filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
                 listTimeout: rowCounts.listTimeout,
@@ -753,6 +759,11 @@ export async function runContextWithDependencies(
         stage = 'answers';
         await answers.flush(deps.responseMs);
         const stepReport: Record<string, unknown> = {
+          image: {
+            status: 'not-attempted',
+            bytes: 0,
+            ...imageDiagnostic(null, null, []),
+          },
           ready: { postMs: 0 },
           filterByLists: true,
           rows: list.rowCount,
@@ -777,7 +788,7 @@ export async function runContextWithDependencies(
         };
         report.steps.push(stepReport);
         activeStep = stepReport;
-        answers.reset(options.plan.canary);
+        answers.reset(true);
         answerReport = options.plan.canary
           ? () => {
               stepReport.secondSource = answers!.summary(
@@ -893,12 +904,19 @@ export async function runContextWithDependencies(
         stepReport.expansionClicks = read.expandClicks;
         stepReport.expansionScrolls = read.expansionScrolls;
         stepReport.ownerCount = read.post.ownerCount;
+        await answers.flush(deps.responseMs);
+        stepReport.image = {
+          status: 'not-attempted',
+          bytes: 0,
+          ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+        };
         if (options.plan.canary) {
           await answers.flush(deps.responseMs);
           stepReport.secondSource = answers.summary(read.post.code);
         }
         await checkpoint();
         const fromList =
+          Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
           read.result.state === 'unconfirmed' &&
           read.result.code === 'not-shown' &&
           list.candidates.length === 1 &&
@@ -948,6 +966,9 @@ export async function runContextWithDependencies(
           accountKey: options.plan.accountKey,
           ...(read.result.state === 'confirmed'
             ? {
+                ownerCheck: ownerName(row.item.reference.ownerHandle ?? '')
+                  ? ('matched-export' as const)
+                  : ('not-in-export' as const),
                 confirmedBy: 'post' as const,
                 comment: {
                   id: read.result.comment.id,
@@ -956,6 +977,7 @@ export async function runContextWithDependencies(
                 },
               }
             : {
+                ownerCheck: 'matched-export' as const,
                 confirmedBy: 'list' as const,
                 comment: {
                   id: null,
@@ -1000,7 +1022,11 @@ export async function runContextWithDependencies(
           fields: check.fields,
           ownerShown: check.ownerShown,
           timeShown: check.timeShown,
-          image: { status: record.image.status, bytes: captures.imageBytes },
+          image: {
+            status: record.image.status,
+            bytes: captures.imageBytes,
+            ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+          },
           screenshot: {
             status: record.screenshot.status,
             bytes: captures.shotBytes,

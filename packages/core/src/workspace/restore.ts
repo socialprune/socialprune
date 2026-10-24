@@ -166,6 +166,7 @@ export async function restoreBackup(
   let version: number | undefined;
   let provisionalVersion: number | undefined;
   let implicitInstagramConfirmation = false;
+  let implicitInstagramOwner = false;
   let buffers: BufferedRecord[] = [];
   let pendingLegacyEvents = 0;
 
@@ -367,10 +368,18 @@ export async function restoreBackup(
       if (version === undefined || version < 5)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       if (version === 5) implicitInstagramConfirmation = true;
+      if (
+        !record.value ||
+        typeof record.value !== 'object' ||
+        !Object.hasOwn(record.value, 'ownerCheck')
+      )
+        implicitInstagramOwner = true;
       const value =
         version === 5
           ? migrateInstagramContext(record.value)
-          : InstagramContextSchema.parse(record.value);
+          : version < 8
+            ? migrateInstagramContext(record.value, 7)
+            : InstagramContextSchema.parse(record.value);
       acceptUnique(name, value.itemId);
       instagramContext.push(value);
       rawCounts.instagramContext = (rawCounts.instagramContext ?? 0) + 1;
@@ -425,7 +434,8 @@ export async function restoreBackup(
       }
       await buffered(name, index, value);
     } else if (name === 'reviewPlans') {
-      if (version !== 7) throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+      if (version === undefined || version < 7)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       const value = ReviewPlanSchema.parse(record.value);
       acceptUnique(name, value.actionId);
       reviewPlans.push(value);
@@ -508,9 +518,11 @@ export async function restoreBackup(
         const value = part.value as Record<string, unknown>;
         const inferred =
           part.name === 'instagramContext'
-            ? Object.hasOwn(value, 'confirmedBy')
-              ? 6
-              : 5
+            ? value.ownerCheck === 'not-in-export'
+              ? 8
+              : Object.hasOwn(value, 'confirmedBy')
+                ? 6
+                : 5
             : part.name === 'originals' && Object.hasOwn(value, 'anonymous')
               ? 4
               : part.name === 'browserRuns' || part.name === 'browserAttempts'
@@ -557,6 +569,8 @@ export async function restoreBackup(
       submissionRecords,
     );
     if (version >= 6 && implicitInstagramConfirmation)
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version >= 8 && implicitInstagramOwner)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (
       provisionalVersion !== undefined &&

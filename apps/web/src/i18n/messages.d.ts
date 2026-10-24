@@ -517,6 +517,7 @@ declare global {
     'instagramContext.captionCut': Record<never, never>;
     'instagramContext.found': { date: string };
     'instagramContext.foundInList': { date: string };
+    'instagramContext.foundWithoutOwner': { date: string };
     'instagramContext.imageNotKept': Record<never, never>;
     'instagramContext.open': Record<never, never>;
     'instagramContext.screenshot': { date: string };

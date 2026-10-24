@@ -1,6 +1,146 @@
 import { expect, test } from '@playwright/test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  generatedPostImage,
+  generatedPostScreenshot,
+} from '../e2e/feed-fixture.ts';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/context/instagram/Generated_design/image.png', (route) =>
+    route.fulfill({ contentType: 'image/svg+xml', body: generatedPostImage }),
+  );
+  await page.route('**/context/instagram/Generated_design/shot.jpg', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: generatedPostScreenshot,
+    }),
+  );
+});
+
+for (const lang of ['de', 'en'])
+  for (const theme of ['light', 'dark'])
+    for (const width of [320, 1280])
+      for (const screenshotOnly of [false, true])
+        test(`Instagram ${screenshotOnly ? 'screenshot' : 'before/after'} gallery ${lang} ${theme} ${width}`, async ({
+          page,
+        }) => {
+          await page.setViewportSize({ width, height: 960 });
+          for (const kind of [
+            'x',
+            'image',
+            'screenshot',
+            'list',
+            'unread',
+            'owner',
+            'long',
+          ]) {
+            if (screenshotOnly && kind !== 'screenshot') continue;
+            for (const before of [true, false]) {
+              await page.goto(
+                `/feed-design.html?surface=instagram-gallery&case=${kind}&lang=${lang}&theme=${theme}&before=${before}`,
+              );
+              const card = page.getByTestId('feed-card');
+              await expect(card).toBeVisible();
+              if (kind === 'screenshot') {
+                await expect(card.locator('img')).toHaveCount(0);
+                await card
+                  .getByRole('button', {
+                    name:
+                      lang === 'de' ? 'Screenshot zeigen' : 'Show screenshot',
+                    exact: true,
+                  })
+                  .click();
+                await expect(
+                  card.getByRole('button', {
+                    name:
+                      lang === 'de'
+                        ? 'Screenshot ausblenden'
+                        : 'Hide screenshot',
+                    exact: true,
+                  }),
+                ).toHaveAttribute('aria-expanded', 'true');
+              }
+              if (!before && kind !== 'x') {
+                await expect(card).not.toContainText(
+                  /Reposts|reposts|Likes:|Gefällt mir:/,
+                );
+                if (kind !== 'unread') await card.locator('summary').click();
+                const owner = card.locator('[data-instagram-owner]');
+                if (kind === 'unread') await expect(owner).toBeVisible();
+                else await expect(owner).toBeHidden();
+              }
+              await page.locator('img').evaluateAll(async (images) => {
+                await Promise.all(
+                  images.map((image) => {
+                    (image as HTMLImageElement).loading = 'eager';
+                    return (image as HTMLImageElement).decode();
+                  }),
+                );
+              });
+              expect(
+                await page.evaluate(() => document.documentElement.scrollWidth),
+              ).toBeLessThanOrEqual(width);
+              const bounds = await card.evaluate((article) => ({
+                bottom: Math.max(
+                  article.getBoundingClientRect().bottom,
+                  ...[...article.querySelectorAll('button')].map(
+                    (button) => button.getBoundingClientRect().bottom,
+                  ),
+                ),
+                page: document.documentElement.scrollHeight,
+              }));
+              expect(bounds.bottom).toBeLessThanOrEqual(bounds.page + 1);
+              await page.screenshot({
+                fullPage: true,
+                path: `${directory}/pairs/${kind}-${lang}-${theme}-${width}-${before ? 'before' : 'after'}.png`,
+              });
+            }
+          }
+        });
+
+for (const lang of ['de', 'en'])
+  for (const theme of ['light', 'dark'])
+    for (const width of [320, 1280])
+      test(`Instagram read and missing post ${lang} ${theme} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(
+          `/feed-design.html?lang=${lang}&theme=${theme}&platform=instagram`,
+        );
+        const read = page.getByRole('feed').locator('article').first();
+        const missing = page.getByRole('feed').locator('article').nth(1);
+        await expect(
+          read.getByTestId('instagram-post').locator('img'),
+        ).toBeVisible();
+        await expect(read).toContainText(
+          lang === 'de' ? 'Nachbarschaftsgarten' : 'neighbourhood garden',
+        );
+        await expect(missing).toContainText(
+          lang === 'de'
+            ? 'Instagram liefert den Beitrag nicht mit.'
+            : 'Instagram does not include the post.',
+        );
+        await expect(read).not.toContainText(
+          lang === 'de' ? 'Reposts' : 'reposts',
+        );
+        await expect(read).not.toContainText(
+          lang === 'de' ? 'Gefällt mir:' : 'Likes:',
+        );
+        await page.screenshot({
+          path: `${folder}/instagram-read-${lang}-${theme}-${width}.png`,
+        });
+        await missing.evaluate((element) =>
+          element.scrollIntoView({ block: 'start' }),
+        );
+        await page.screenshot({
+          path: `${folder}/instagram-missing-${lang}-${theme}-${width}.png`,
+        });
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth),
+        ).toBeLessThanOrEqual(width);
+      });
 
 const directory =
   // eslint-disable-next-line no-restricted-properties -- Test-only output directory explicitly chosen by the operator, never a credential.

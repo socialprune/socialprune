@@ -1,4 +1,4 @@
-import type { WorkspaceV2 } from '@socialprune/core';
+import type { WorkspaceV2, InstagramContext } from '@socialprune/core';
 import {
   criterionHash,
   migrateReviewContract,
@@ -7,6 +7,8 @@ import { reviewFixture } from './review-fixture.ts';
 import { waitForApp } from './helpers.ts';
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { createServer, request as proxyRequest } from 'node:http';
+import { fileURLToPath } from 'node:url';
 
 export const liveExpected = {
   account: 'x:feed',
@@ -16,7 +18,45 @@ export const liveExpected = {
   kept: ['x:feed-5'],
   unclear: ['x:feed-6', 'x:feed-8'],
   marked: ['x:feed-7'],
+  readComment: 'instagram:feed-read',
+  caption:
+    'Generated park photograph. A new path through the neighbourhood garden.',
 };
+export const generatedPostImage =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"><rect width="320" height="320" fill="#dce7e1"/><path d="M0 190 110 105 210 205 320 130V320H0Z" fill="#7e9b87"/><path d="M90 320 155 190H180L225 320" fill="#f4eee2"/><circle cx="246" cy="68" r="28" fill="#f4eee2"/></svg>';
+export const generatedPostScreenshot =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="420" viewBox="0 0 320 420"><rect width="320" height="420" fill="#fff"/><circle cx="24" cy="24" r="14" fill="#dce7e1"/><text x="48" y="29" font-family="sans-serif" font-size="14" fill="#172033">demo_maple</text><rect y="48" width="320" height="270" fill="#dce7e1"/><path d="M0 230 110 130 210 240 320 170V318H0Z" fill="#7e9b87"/><path d="M90 318 155 218H180L225 318" fill="#f4eee2"/><circle cx="246" cy="100" r="28" fill="#f4eee2"/><text x="12" y="345" font-family="sans-serif" font-size="13" fill="#172033">demo_maple: A generated garden.</text><text x="12" y="375" font-family="sans-serif" font-size="13" fill="#172033">demo_fern: An invented comment.</text><text x="12" y="405" font-family="sans-serif" font-size="12" fill="#475569">Generated screenshot for this review</text></svg>';
+export function generatedReadPost(): InstagramContext {
+  return {
+    itemId: liveExpected.readComment,
+    accountKey: liveExpected.instagram,
+    confirmedBy: 'post',
+    ownerCheck: 'matched-export',
+    post: {
+      kind: 'p',
+      code: 'Generated_feed',
+      owner: 'generated_owner',
+      ownerCount: 1,
+      createdAt: '2024-01-31T00:00:00.000Z',
+      caption: liveExpected.caption,
+      captionComplete: true,
+    },
+    comment: {
+      id: '910002',
+      createdAt: '2024-01-31T00:00:00.000Z',
+      expandClicks: 0,
+    },
+    image: {
+      file: 'image.png',
+      host: 'generated.cdninstagram.com',
+      status: 'stored',
+    },
+    screenshot: { file: null, bytes: null, status: 'failed' },
+    confirmedAt: '2026-10-15T00:00:00.000Z',
+    runId: 'generated-feed-read',
+    attemptId: 'generated-feed-read-one',
+  };
+}
 export function liveFeedFixture(count = 8): WorkspaceV2 {
   const old = reviewFixture('personal', false, Math.max(8, count));
   old.settings.categories = ['political', 'unclear'];
@@ -43,6 +83,12 @@ export function liveFeedFixture(count = 8): WorkspaceV2 {
   };
   instagram.reference.ownerHandle = 'generated_owner';
   old.items.push(instagram);
+  old.items.push({
+    ...structuredClone(instagram),
+    id: liveExpected.readComment,
+    text: 'Invented comment about the generated garden path and council.',
+    createdAt: '2024-01-31T00:00:00.000Z',
+  });
   const data = migrateReviewContract(old);
   data.settings.criteria!.selected = ['political'];
   data.settings.criteria!.level = 0;
@@ -126,7 +172,9 @@ export async function restoreLiveFeed(
   page: Page,
   data = liveFeedFixture(),
   inspectInitial?: () => Promise<void>,
+  contextRecords: InstagramContext[] = [],
 ) {
+  // Only the Instagram-specific config serves generated context media.
   await waitForApp(page);
   await inspectInitial?.();
   const reply = await page.evaluate(
@@ -139,8 +187,82 @@ export async function restoreLiveFeed(
     JSON.stringify(data),
   );
   expect(reply.type).toBe('opened');
+  // Pages intentionally returns no context. This UI-only fixture injects the
+  // same bounded client response local review/desktop receive, never production.
+  const records = contextRecords.filter((record) =>
+    data.items.some((item) => item.id === record.itemId),
+  );
+  if (records.length) {
+    await page.evaluate((records) => {
+      window.workspace.getInstagramContext = (ids) =>
+        Promise.resolve(
+          records.filter((record) => ids.includes(record.itemId)),
+        );
+    }, records);
+  }
   await page.goto('/socialprune/#/review');
   await expect(page.getByRole('feed')).toBeVisible();
   await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
   return data;
 }
+
+/** Test-only preview. No production config imports this fixture entrypoint. */
+async function previewGeneratedFeed(port: number) {
+  if (!Number.isInteger(port) || port < 1024 || port >= 65535)
+    throw new Error('Invalid feed preview port.');
+  const { preview } = await import('vite');
+  const app = await preview({
+    preview: { host: '127.0.0.1', port: port + 1, strictPort: true },
+  });
+  const server = createServer((request, response) => {
+    if (
+      request.method === 'GET' &&
+      /^\/context\/instagram\/Generated_feed\/(?:image\.png|shot\.jpg)$/.test(
+        request.url ?? '',
+      )
+    ) {
+      response.writeHead(200, {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'no-store',
+      });
+      response.end(
+        request.url!.endsWith('shot.jpg')
+          ? generatedPostScreenshot
+          : generatedPostImage,
+      );
+      return;
+    }
+    const forwarded = proxyRequest(
+      {
+        hostname: '127.0.0.1',
+        port: port + 1,
+        path: request.url,
+        method: request.method,
+        headers: request.headers,
+      },
+      (upstream) => {
+        response.writeHead(upstream.statusCode!, upstream.headers);
+        upstream.pipe(response);
+      },
+    );
+    forwarded.on('error', () => {
+      response.writeHead(502);
+      response.end();
+    });
+    request.pipe(forwarded);
+  });
+  server.listen(port, '127.0.0.1', () =>
+    console.log(`Generated feed preview ready on ${port}.`),
+  );
+  for (const signal of ['SIGINT', 'SIGTERM'] as const)
+    process.on(signal, () => {
+      server.close();
+      app.httpServer.close();
+    });
+}
+
+if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === '--preview'
+)
+  await previewGeneratedFeed(Number(process.argv[3]));

@@ -15,6 +15,8 @@ export function CriteriaPicker({
   onRemove,
   onOfferRule,
   presetsOnly = false,
+  onEdit,
+  onCancelEdit,
 }: {
   model: CriteriaModel;
   onToggle: (id: string, selected: boolean) => void;
@@ -25,6 +27,8 @@ export function CriteriaPicker({
   onRemove: (id: string) => void;
   onOfferRule: () => void;
   presetsOnly?: boolean;
+  onEdit?: (id: string) => void;
+  onCancelEdit?: () => void;
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -46,7 +50,9 @@ export function CriteriaPicker({
               <input
                 type="checkbox"
                 checked={option.selected}
-                disabled={option.noRoom}
+                disabled={
+                  option.noRoom || (!option.selected && option.selectionBlocked)
+                }
                 onChange={(event) => onToggle(option.id, event.target.checked)}
                 aria-describedby={`${id}-${option.id}-help`}
               />
@@ -83,15 +89,28 @@ export function CriteriaPicker({
             {(option.custom || option.earlier) && (
               <button
                 className={styles.iconButton}
+                disabled={model.busy}
                 aria-label={t('criteriaPicker.remove', { label: option.label })}
                 onClick={() => onRemove(option.id)}
               >
                 <X size={18} aria-hidden="true" />
               </button>
             )}
+            {option.custom && onEdit && (
+              <button
+                disabled={model.busy}
+                className={styles.editButton}
+                onClick={() => onEdit(option.id)}
+              >
+                {t('criteriaPicker.edit', { label: option.label })}
+              </button>
+            )}
           </div>
         ))}
       </fieldset>
+      {model.selectionLimit && (
+        <p className={styles.help}>{model.selectionLimit}</p>
+      )}
       {!presetsOnly && (
         <section className={styles.own} aria-labelledby={`${id}-own-title`}>
           <h3 id={`${id}-own-title`}>{t('criteriaPicker.own')}</h3>
@@ -103,7 +122,7 @@ export function CriteriaPicker({
             <input
               value={model.ownLabel}
               maxLength={60}
-              disabled={model.busy || customCount >= 8}
+              disabled={model.busy || (!model.editingId && customCount >= 8)}
               placeholder={t('criteriaPicker.placeholder')}
               aria-describedby={`${id}-own-hint${model.ownError ? ` ${id}-error` : ''}`}
               aria-invalid={!!model.ownError}
@@ -116,7 +135,7 @@ export function CriteriaPicker({
               value={model.ownDescription}
               maxLength={300}
               rows={2}
-              disabled={model.busy || customCount >= 8}
+              disabled={model.busy || (!model.editingId && customCount >= 8)}
               onChange={(event) => onOwnDescription(event.target.value)}
             />
           </label>
@@ -138,7 +157,8 @@ export function CriteriaPicker({
             <button
               disabled={
                 model.busy ||
-                customCount >= 8 ||
+                (!model.editingId &&
+                  (customCount >= 8 || model.ownRoom === false)) ||
                 !model.ownLabel.trim() ||
                 !model.ownDescription.trim() ||
                 !!model.limitOffer ||
@@ -147,12 +167,24 @@ export function CriteriaPicker({
               onClick={onAdd}
             >
               <Plus size={18} aria-hidden="true" />
-              {t('criteriaPicker.add')}
+              {t(
+                model.editingId
+                  ? 'criteriaPicker.saveEdit'
+                  : 'criteriaPicker.add',
+              )}
             </button>
+            {model.editingId && (
+              <button disabled={model.busy} onClick={onCancelEdit}>
+                {t('criteriaPicker.cancelEdit')}
+              </button>
+            )}
             <span className={styles.help}>
               {t('criteriaPicker.customCount', { count: customCount })}
             </span>
           </div>
+          {model.ownRoom === false && !model.editingId && (
+            <p className={styles.help}>{t('criteriaPicker.noRoom')}</p>
+          )}
         </section>
       )}
       <fieldset className={styles.level} disabled={model.busy}>

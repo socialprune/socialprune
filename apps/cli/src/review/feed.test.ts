@@ -16,6 +16,7 @@ test('real socket serves feed counts, final-mark preview and an atomic plan reco
       ...meta,
       settings: {
         ...meta.settings,
+        categories: [...meta.settings.categories, 'earlier-generated'],
         criteria: {
           selected: ['political'],
           custom: [],
@@ -112,6 +113,7 @@ test('real socket serves feed counts, final-mark preview and an atomic plan reco
           nextCustom: 1,
           level: 0,
         },
+        removeCategories: ['earlier-generated'],
       },
       { type: 'setKeepRules', requestId: 'wire-rules', keepRules: [] },
     ];

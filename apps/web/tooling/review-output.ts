@@ -30,8 +30,9 @@ export function assertReviewOutput(files: ReadonlyMap<string, string>) {
   if (/rel=["']manifest|<script(?![^>]*\bsrc=)/.test(html))
     throw new Error('Manifest or inline script in local-review HTML.');
   for (const [path, content] of files) {
+    // shellManifest writes sw.js at the build root; chunk hashes may end in sw.
     if (
-      /sw\.js$|\.webmanifest$|manifest\.json$|worker[^/]*\.js$|^test\//.test(
+      /(?:^|\/)(?:sw\.js|manifest\.json)$|\.webmanifest$|worker[^/]*\.js$|^test\//.test(
         path,
       )
     )

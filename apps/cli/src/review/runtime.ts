@@ -142,7 +142,10 @@ export class ReviewRuntime {
         case 'setKeepRules': {
           const changed =
             input.type === 'setCriteria'
-              ? await this.settings.setCriteria(input.criteria)
+              ? await this.settings.setCriteria(
+                  input.criteria,
+                  input.removeCategories,
+                )
               : await this.settings.setKeepRules(input.keepRules);
           this.query.settingsChanged();
           post({ type: 'settingsChanged', requestId, ...changed });

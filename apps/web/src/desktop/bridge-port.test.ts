@@ -111,6 +111,7 @@ test('all non-preview feed requests forward unchanged through the bridge', async
         nextCustom: 1,
         level: 1,
       },
+      removeCategories: ['earlier-generated'],
     },
     { type: 'setKeepRules', requestId: 'rules', keepRules: [] },
   ] as const;

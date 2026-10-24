@@ -199,6 +199,7 @@ export async function startDesktop(options: DesktopOptions) {
     options.engine,
     {
       dataFolder: dataDirectory,
+      storeBuild: process.windowsStore === true,
       ...(placement ? { windowPlacement: placement.browser } : {}),
     },
     record,
@@ -221,6 +222,10 @@ export async function startDesktop(options: DesktopOptions) {
   const localMethods = mainMethods({
     dataDirectory,
     guides,
+    appInfo: () => ({
+      version: app.getVersion(),
+      build: process.windowsStore === true ? 'store' : 'direct',
+    }),
     external: (url) =>
       options.links ? options.links.external(url) : shell.openExternal(url),
     folder: (path) =>
@@ -272,7 +277,11 @@ export async function startDesktop(options: DesktopOptions) {
         requestId: request.requestId,
         code: 'NOT_AVAILABLE' as const,
       };
-    if (request.type === 'openLink' || request.type === 'dataFolderOpen')
+    if (
+      request.type === 'openLink' ||
+      request.type === 'dataFolderOpen' ||
+      request.type === 'appInfo'
+    )
       return localMethods(request);
     if (request.type === 'runAction' && request.action === 'start') {
       const split = splitWorkArea(

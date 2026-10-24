@@ -63,6 +63,33 @@ for (const lang of ['de', 'en'] as const)
               'aria-busy',
               'false',
             );
+            if (platform === 'instagram' && tab === 'suggested') {
+              await expect(page.getByTestId('instagram-post')).toContainText(
+                liveExpected.caption,
+              );
+              await expect(
+                page.getByTestId('instagram-post').locator('img'),
+              ).toBeVisible();
+              for (const [state, id] of [
+                ['read', liveExpected.readComment],
+                ['missing', 'instagram:feed-comment'],
+              ]) {
+                await page
+                  .locator(`article[data-item-id="${id}"]`)
+                  .evaluate((element) =>
+                    element.scrollIntoView({ block: 'start' }),
+                  );
+                await page.screenshot({
+                  path: join(
+                    folder,
+                    `feed-instagram-${state}-${lang}-${theme}-${width}.png`,
+                  ),
+                });
+              }
+              await page.getByRole('tabpanel').evaluate((element) => {
+                element.scrollTop = 0;
+              });
+            }
             expect(
               await page.evaluate(() => document.documentElement.scrollWidth),
             ).toBeLessThanOrEqual(width);

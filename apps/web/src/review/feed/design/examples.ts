@@ -1,4 +1,5 @@
 import type { CriteriaModel, KeepRuleModel } from '../../criteria/types.ts';
+import type { InstagramContext } from '@socialprune/core';
 import type {
   FeedCardModel,
   FeedCounts,
@@ -260,6 +261,41 @@ export function instagramCard(
     decision: marked ? 'delete' : 'undecided',
     decidedAt: marked ? '2026-10-20T12:00:00Z' : undefined,
     markedVia: marked ? 'final' : undefined,
+  };
+}
+
+export function instagramReadPost(locale: SheetLocale): InstagramContext {
+  return {
+    itemId: 'instagram:design-read',
+    accountKey: 'instagram:design',
+    confirmedBy: 'post',
+    ownerCheck: 'matched-export',
+    post: {
+      kind: 'p',
+      code: 'Generated_design',
+      owner: 'demo_maple',
+      ownerCount: 1,
+      createdAt: '2020-06-12T09:00:00Z',
+      caption:
+        locale === 'de'
+          ? 'Ein neuer Weg durch unseren Nachbarschaftsgarten. Was fehlt euch noch im Park?'
+          : 'A new path through our neighbourhood garden. What else would you like in the park?',
+      captionComplete: true,
+    },
+    comment: {
+      id: '910003',
+      createdAt: '2020-06-12T10:00:00Z',
+      expandClicks: 0,
+    },
+    image: {
+      file: 'image.png',
+      host: 'generated.cdninstagram.com',
+      status: 'stored',
+    },
+    screenshot: { file: null, bytes: null, status: 'failed' },
+    confirmedAt: '2026-10-15T00:00:00Z',
+    runId: 'generated-design',
+    attemptId: 'generated-design-one',
   };
 }
 

@@ -9,7 +9,7 @@ export function assertDesktopOutput(files: ReadonlyMap<string, string>) {
     throw new Error('Inline script or manifest in desktop HTML.');
   for (const [path, content] of files) {
     if (
-      /\.wasm$|sw\.js$|\.webmanifest$|worker[^/]*\.js$|(?:^|\/)(?:e2e|test)\//.test(
+      /\.wasm$|(?:^|\/)sw\.js$|\.webmanifest$|worker[^/]*\.js$|(?:^|\/)(?:e2e|test)\//.test(
         path,
       )
     )

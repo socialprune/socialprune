@@ -700,7 +700,7 @@ export async function restoreBackup(
     if (fixtureAssessment && meta.kind !== 'demo')
       throw new WorkspaceError('FIXTURE_NOT_ALLOWED');
     for (const category of categories)
-      if (!meta.settings.categories.includes(category))
+      if (version < 7 && !meta.settings.categories.includes(category))
         throw new WorkspaceError('UNKNOWN_CATEGORY');
     for (const [id, assessment] of assessmentSubmissions) {
       const submission = submissions.get(id);

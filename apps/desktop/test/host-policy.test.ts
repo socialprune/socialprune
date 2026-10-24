@@ -9,6 +9,7 @@ test('main resolves only known guide identifiers and closed post routes', async 
     external,
     folder,
     guides: [],
+    appInfo: () => ({ version: '0.0.0', build: 'direct' }),
   });
   expect(
     await dispatch({

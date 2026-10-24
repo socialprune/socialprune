@@ -13,6 +13,7 @@ import { catalogs, useT } from '../../../i18n/index.ts';
 import '../../../styles/tokens.css';
 import { ReviewFeed } from '../ReviewFeed.tsx';
 import { FeedCard } from '../FeedCard.tsx';
+import { InstagramPost } from '../../../social/InstagramPost.tsx';
 import { MarkPreview } from '../MarkPreview.tsx';
 import { CriteriaPicker } from '../../criteria/CriteriaPicker.tsx';
 import { RulesEditor } from '../../criteria/RulesEditor.tsx';
@@ -26,13 +27,20 @@ import {
   rulesExample,
   SHEET_SENTINEL,
   instagramCard,
+  instagramReadPost,
 } from './examples.ts';
 import type { SheetLocale } from './examples.ts';
 import styles from './Sheet.module.css';
+import {
+  InstagramGallery,
+  instagramGalleryCases,
+} from './InstagramGallery.tsx';
 
 const params = new URLSearchParams(location.search);
 const locale: SheetLocale = params.get('lang') === 'en' ? 'en' : 'de';
 const platform = params.get('platform') === 'instagram' ? 'instagram' : 'x';
+const galleryCase =
+  instagramGalleryCases.find((kind) => kind === params.get('case')) ?? 'image';
 document.documentElement.lang = locale;
 document.documentElement.dataset['theme'] =
   params.get('theme') === 'dark' ? 'dark' : 'light';
@@ -431,7 +439,14 @@ function Sheet() {
                     : surface === 'states'
                       ? cards.all
                       : platform === 'instagram'
-                        ? [instagramCard(locale, tab === 'marked')]
+                        ? [
+                            {
+                              ...instagramCard(locale, tab === 'marked'),
+                              id: 'invented-instagram-read',
+                              contextMissing: false,
+                            },
+                            instagramCard(locale, tab === 'marked'),
+                          ]
                         : cards[tab]
                 }
                 tab={surface === 'states' ? 'all' : tab}
@@ -462,6 +477,18 @@ function Sheet() {
                 }}
                 onDelete={() => setNotice(words.delete)}
                 onConversation={() => setNotice(words.conversation)}
+                context={
+                  platform === 'instagram'
+                    ? (card) =>
+                        card.id === 'invented-instagram-read' ? (
+                          <InstagramPost
+                            record={instagramReadPost(locale)}
+                            variant="feed"
+                            zone="Europe/Berlin"
+                          />
+                        ) : undefined
+                    : undefined
+                }
               />
               {surface === 'states' && state === 'ready' && (
                 <section className={styles.additional}>
@@ -522,6 +549,14 @@ function ShieldMark() {
 }
 createRoot(document.getElementById('root')!).render(
   <IntlProvider locale={locale} messages={catalogs[locale]}>
-    <Sheet />
+    {params.get('surface') === 'instagram-gallery' ? (
+      <InstagramGallery
+        locale={locale}
+        kind={galleryCase}
+        before={params.get('before') === 'true'}
+      />
+    ) : (
+      <Sheet />
+    )}
   </IntlProvider>,
 );

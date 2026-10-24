@@ -88,6 +88,22 @@ test('real worker switch and client carry all five feed requests, settings and p
       revision: 0,
     });
     expect(client.summary?.keepRules).toEqual([]);
+    await backing.write(async (tx) => {
+      const meta = await tx.meta.get();
+      await tx.meta.set({
+        ...meta,
+        settings: {
+          ...meta.settings,
+          categories: [...meta.settings.categories, 'earlier-generated'],
+        },
+      });
+    });
+    expect(
+      await client.setCriteria(client.summary!.criteria!, [
+        'earlier-generated',
+      ]),
+    ).toMatchObject({ type: 'settingsChanged', revision: 0 });
+    expect(client.summary?.categories).not.toContain('earlier-generated');
     const preview = await client.previewPlan({
       accountKey: 'x:generated',
       pageId: 'page',

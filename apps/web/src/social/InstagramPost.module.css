@@ -1,4 +1,67 @@
 @layer components {
+  .feedPost {
+    min-width: 0;
+    padding-bottom: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-social-divider);
+    overflow-wrap: anywhere;
+  }
+  .feedHeader {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--type-sm);
+    margin-bottom: var(--space-3);
+  }
+  .feedHeader time {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    margin-left: auto;
+  }
+  .feedAvatar {
+    display: grid;
+    place-items: center;
+    width: var(--space-6);
+    height: var(--space-6);
+    border-radius: 50%;
+    background: var(--color-canvas);
+    color: var(--color-text-secondary);
+    border: var(--border-width) solid var(--color-social-divider);
+    font-size: var(--type-xs);
+    font-weight: var(--weight-heading);
+  }
+  .feedPreview {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .feedPreview > div {
+    min-width: 0;
+  }
+  .feedImage {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 470px;
+    object-fit: contain;
+    border-radius: var(--radius-control);
+  }
+  .feedCaption {
+    margin: 0;
+    font-size: var(--type-md);
+    line-height: var(--line-md);
+    white-space: pre-wrap;
+  }
+  .feedEvidence {
+    margin-top: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .feedEvidence summary {
+    min-height: var(--target-size);
+    cursor: pointer;
+    align-content: center;
+  }
   .post {
     border: var(--border-width) solid var(--color-social-divider);
     border-radius: var(--radius-panel);

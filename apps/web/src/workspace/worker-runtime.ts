@@ -366,7 +366,7 @@ async function handle(input: WorkspaceRequest) {
       if (!settings) throw new Error('Workspace settings closed.');
       const changed =
         input.type === 'setCriteria'
-          ? await settings.setCriteria(input.criteria)
+          ? await settings.setCriteria(input.criteria, input.removeCategories)
           : await settings.setKeepRules(input.keepRules);
       query.settingsChanged();
       post({ type: 'settingsChanged', requestId, ...changed });

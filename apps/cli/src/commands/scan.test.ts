@@ -6,10 +6,112 @@ import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { networkRecorder } from '../cli/test/network-recorder.ts';
 import { scanFixture } from './scan-fixture.test-support.ts';
+import { commandRegistry } from '../cli/registry.ts';
 
-test('R2 reports observed and confirmed model separately and names both in human output', async () => {
+test('scan check declares that it writes the explicitly named source file', () => {
+  expect(
+    commandRegistry().find((entry) => entry.path.join('.') === 'scan.check'),
+  ).toMatchObject({ writes: true, dryRun: false });
+});
+
+test('R6 no recorded check or mismatching confirmation refuses before any request', async () => {
   const h = await scanFixture();
   try {
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    const args = [
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      'generated-model',
+    ];
+    const noCheck = await h.invoke(args);
+    expect(noCheck.code).toBe(2);
+    expect(noCheck.data.error?.code).toBe('ENDPOINT_NOT_CONFIRMED');
+    expect(h.requests).toHaveLength(0);
+    expect(noCheck.stderr).toContain('scan check');
+    expect(noCheck.stderr).toContain('no recorded check');
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    const before = h.requests.length;
+    args[args.indexOf('--confirm-model') + 1] = 'generated-wrong-model';
+    const mismatch = await h.invoke(args);
+    expect(mismatch.data.error?.code).toBe('ENDPOINT_NOT_CONFIRMED');
+    expect(h.requests).toHaveLength(before);
+    expect(mismatch.stderr).toContain('generated-model');
+    expect(mismatch.stderr).toContain('generated-wrong-model');
+  } finally {
+    await h.close();
+  }
+});
+test('R6 changed recorded check makes the old plan stale without a run request', async () => {
+  let model = 'generated-model';
+  const h = await scanFixture({ answeringModel: () => model });
+  try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    const stored = JSON.parse(await readFile(h.source, 'utf8')) as {
+      check?: {
+        answeringModel: string;
+        rubricVersion: string;
+        checkedAt: string;
+      };
+    };
+    expect(stored.check).toMatchObject({ answeringModel: 'generated-model' });
+    expect(stored.check?.checkedAt).toMatch(/^\d{4}-/);
+    expect(stored.check?.rubricVersion).toHaveLength(12);
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    model = 'generated-model-2';
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    const before = h.requests.length;
+    const result = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      model,
+    ]);
+    expect(result.data.error?.code).toBe('STALE_PLAN');
+    expect(h.requests).toHaveLength(before);
+  } finally {
+    await h.close();
+  }
+});
+
+test('R2 reports observed and confirmed model separately when live model changes after recorded check', async () => {
+  let model = 'generated-wrong-model';
+  const h = await scanFixture({ answeringModel: () => model });
+  try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    model = 'generated-model';
     const preview = await h.invoke([
       'scan',
       'run',
@@ -53,6 +155,8 @@ test('R4 sends before an answer and prints token figures only after they are rep
   const notices: string[] = [];
   const h = await scanFixture({ observe: (text) => notices.push(text) });
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    notices.length = 0;
     const preview = await h.invoke([
       'scan',
       'run',
@@ -96,6 +200,7 @@ test('R4 sends before an answer and prints token figures only after they are rep
 test('R5 a wrong confirmed model stops before coverage counts or workspace text are sent again', async () => {
   const h = await scanFixture({ entries: 5 });
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
     const preview = await h.invoke([
       'scan',
       'run',
@@ -123,20 +228,8 @@ test('R5 a wrong confirmed model stops before coverage counts or workspace text 
     const before = h.requests.length;
     args[args.indexOf('--confirm-model') + 1] = 'generated-wrong-model';
     const stopped = await h.invoke(args);
-    expect(stopped.data.data).toMatchObject({
-      coverageCounted: false,
-      entries: null,
-      source: {
-        confirmedModel: 'generated-wrong-model',
-        answeringModel: 'generated-model',
-      },
-    });
-    expect(h.requests.slice(before)).toHaveLength(1);
-    const body = h.requests.at(-1)!.body!;
-    const messages = body.messages as { content: string }[];
-    expect(messages[1]!.content).toContain('invented museum');
-    expect(messages[1]!.content).not.toContain('Generated contract input');
-    expect(messages[1]!.content).not.toContain('Generated text');
+    expect(stopped.data.error?.code).toBe('ENDPOINT_NOT_CONFIRMED');
+    expect(h.requests.slice(before)).toHaveLength(0);
   } finally {
     await h.close();
   }
@@ -145,7 +238,7 @@ test('R5 a wrong confirmed model stops before coverage counts or workspace text 
 test('foundation: real CLI dry-run, check, confirmed run, SQLite submission and resume with no decisions', async () => {
   const h = await scanFixture();
   try {
-    const preview = await h.invoke([
+    let preview = await h.invoke([
       'scan',
       'run',
       '--workspace',
@@ -168,6 +261,15 @@ test('foundation: real CLI dry-run, check, confirmed run, SQLite submission and 
       structuredOutput: true,
     });
     expect(h.requests).toHaveLength(2);
+    preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
     const args = [
       'scan',
       'run',
@@ -292,6 +394,8 @@ test('the sharing notice precedes the first real request and the fifty-entry can
     observe: (stderr) => observed.push(stderr),
   });
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    observed.length = 0;
     const preview = await h.invoke([
       'scan',
       'run',
@@ -349,8 +453,12 @@ test('a redirect is refused without contacting a second origin', async () => {
   }
 });
 test('endpoint refusal returns a bounded final report and leaves no suggestion or decision', async () => {
-  const h = await scanFixture({ errorStatus: 401 });
+  const h = await scanFixture({
+    errorStatus: 401,
+    delayErrorsUntilChecked: true,
+  });
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
     const preview = await h.invoke([
       'scan',
       'run',
@@ -421,6 +529,7 @@ test('explicit source ignores ambient key canaries and Ctrl+C settles with no de
   }
   let sent = false;
   const stopped = await scanFixture({
+    delayErrorsUntilChecked: true,
     observe: () => {
       if (!sent) {
         sent = true;
@@ -429,6 +538,7 @@ test('explicit source ignores ambient key canaries and Ctrl+C settles with no de
     },
   });
   try {
+    await stopped.invoke(['scan', 'check', '--source', stopped.source]);
     const preview = await stopped.invoke([
       'scan',
       'run',
@@ -517,7 +627,7 @@ test('no source or confirmation means no network; changed source invalidates a p
       '--confirm-model',
       'generated-model',
     ]);
-    expect(stale.data.error?.code).toBe('STALE_PLAN');
+    expect(stale.data.error?.code).toBe('ENDPOINT_NOT_CONFIRMED');
     expect(h.requests).toHaveLength(0);
   } finally {
     await h.close();
@@ -588,6 +698,7 @@ test('source setup is exclusive, outside Git, never reads the named key, and mak
 test('dry-run never opens the named key and a criteria edit invalidates the plan without network', async () => {
   const h = await scanFixture();
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
     const config = JSON.parse(await readFile(h.source, 'utf8')) as Record<
       string,
       unknown
@@ -604,7 +715,9 @@ test('dry-run never opens the named key and a criteria edit invalidates the plan
       '--dry-run',
     ]);
     expect(preview.code).toBe(0);
-    expect(h.requests).toHaveLength(0);
+    expect(h.requests).toHaveLength(2);
+    delete config.keyFile;
+    await writeFile(h.source, JSON.stringify(config));
     const store = await SQLiteStore.open(
       join(h.workspace, 'socialprune.sqlite'),
     );
@@ -632,7 +745,7 @@ test('dry-run never opens the named key and a criteria edit invalidates the plan
       'generated-model',
     ]);
     expect(result.data.error?.code).toBe('STALE_PLAN');
-    expect(h.requests).toHaveLength(0);
+    expect(h.requests).toHaveLength(2);
   } finally {
     await h.close();
   }

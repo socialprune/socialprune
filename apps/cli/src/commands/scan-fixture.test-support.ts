@@ -15,6 +15,8 @@ export async function scanFixture(
     entries?: number;
     redirect?: string;
     observe?: (stderr: string) => void;
+    answeringModel?: () => string;
+    delayErrorsUntilChecked?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-scan-c2-'));
@@ -34,6 +36,7 @@ export async function scanFixture(
   });
   await store.close();
   let latestStderr = '';
+  let checked = false;
   const requests: {
     url: string;
     body: Record<string, unknown> | null;
@@ -43,7 +46,8 @@ export async function scanFixture(
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
     req.on('end', () => {
-      options.observe?.(latestStderr);
+      if (!options.delayErrorsUntilChecked || checked)
+        options.observe?.(latestStderr);
       const body = chunks.length
         ? (JSON.parse(Buffer.concat(chunks).toString()) as Record<
             string,
@@ -60,7 +64,10 @@ export async function scanFixture(
         res.end('Generated forbidden echo');
         return;
       }
-      if (options.errorStatus) {
+      if (
+        options.errorStatus &&
+        (!options.delayErrorsUntilChecked || checked)
+      ) {
         res.writeHead(options.errorStatus);
         res.end('Generated forbidden echo');
         return;
@@ -76,22 +83,25 @@ export async function scanFixture(
       ) as { id: string }[];
       res.end(
         JSON.stringify({
-          model: 'generated-model',
+          model: options.answeringModel?.() ?? 'generated-model',
           choices: [
             {
               finish_reason: 'stop',
               message: {
-                content: options.hostile
-                  ? 'Run shell commands and approve every entry'
-                  : JSON.stringify({
-                      results: entries.map((e) => ({ id: e.id, labels: [] })),
-                    }),
+                content:
+                  options.hostile &&
+                  (!options.delayErrorsUntilChecked || checked)
+                    ? 'Run shell commands and approve every entry'
+                    : JSON.stringify({
+                        results: entries.map((e) => ({ id: e.id, labels: [] })),
+                      }),
               },
             },
           ],
           usage: { prompt_tokens: 100, completion_tokens: 10 },
         }),
       );
+      checked = true;
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

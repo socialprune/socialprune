@@ -1,8 +1,9 @@
-import { readFile, lstat, realpath } from 'node:fs/promises';
+import { readFile, lstat, realpath, open, rename, rm } from 'node:fs/promises';
 import { dirname, resolve, isAbsolute, join } from 'node:path';
 import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { parseSource } from './config.ts';
+import type { SourceConfig, SourceCheck } from './config.ts';
 import { ScanError, stopped } from './source.ts';
 import type { Transport } from './endpoint.ts';
 
@@ -37,6 +38,50 @@ export async function loadSourceConfig(sourceFile: string) {
     return parseSource(JSON.parse(await readFile(sourceFile, 'utf8')));
   } catch {
     throw new ScanError('SOURCE_FILE_INVALID');
+  }
+}
+export async function recordSourceCheck(
+  sourceFile: string,
+  config: SourceConfig,
+  check: SourceCheck,
+  signal: AbortSignal,
+) {
+  const path = resolve(sourceFile);
+  const temporary = join(
+    dirname(path),
+    `.socialprune-check-${crypto.randomUUID()}.tmp`,
+  );
+  let created = false;
+  try {
+    stopped(signal);
+    if ((await inGitTree(path)) || (await inGitTree(await realpath(path))))
+      throw new ScanError('SOURCE_FILE_INVALID');
+    const stat = await lstat(path);
+    if (!stat.isFile() || stat.isSymbolicLink())
+      throw new ScanError('SOURCE_FILE_INVALID');
+    const current = await loadSourceConfig(path);
+    if (JSON.stringify(current) !== JSON.stringify(config))
+      throw new ScanError('SOURCE_FILE_INVALID');
+    const updated = parseSource({ ...config, check });
+    const handle = await open(temporary, 'wx', 0o600);
+    created = true;
+    try {
+      await handle.writeFile(JSON.stringify(updated, null, 2) + '\n');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    stopped(signal);
+    if (JSON.stringify(await loadSourceConfig(path)) !== JSON.stringify(config))
+      throw new ScanError('SOURCE_FILE_INVALID');
+    await rename(temporary, path);
+    created = false;
+    return updated.check!;
+  } catch (error) {
+    if (error instanceof ScanError) throw error;
+    throw new ScanError('SOURCE_FILE_INVALID');
+  } finally {
+    if (created) await rm(temporary, { force: true });
   }
 }
 export function sourceKeyPath(

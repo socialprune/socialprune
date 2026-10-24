@@ -52,6 +52,8 @@ socialprune scan run --workspace "<workspace>" --source "<source.json>" --plan "
 
 No batch-size default has been measured for your model, so setup requires an explicit size. Check sends one invented entry with preset criteria; the dry run sends nothing. Before sending workspace entries, the agent shows the check's origin and answering model and waits for your agreement. The CLI says before every check and run how many entries leave, what they carry, the origin and the key-file path. A local endpoint may forward them to the internet, count them against your plan or cost money there. The endpoint's and platforms' terms apply; SocialPrune cannot inspect or limit that service.
 
+A successful check records only the observed answering model, origin, rubric version, time and configuration hash in a separate block of your named source file, written atomically. It never writes the key. Make the dry-run plan after that check. A run refuses a missing check or a confirmation different from those recorded values before any request, with a hint to check again. Each re-check invalidates old plans. After matching those values, the run still probes the live model with invented text before it counts or sends workspace entries, so a model switch at the endpoint stops there too.
+
 Choose criteria in review. The run sends their definitions with each entry's platform, kind and full text, but no originals, keep rules or engagement. It records model suggestions only. Look at the first 50 in review before asking the agent to remove the limit. An interrupted run resumes with the same plan and confirmations; written current checks are skipped. Output stays aggregate, with requests and tokens where the endpoint reports them.
 
 ## Review is your handoff

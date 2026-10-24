@@ -9,6 +9,7 @@ import {
   sourceVersion,
   loopback,
   RUBRIC_VERSION,
+  sourceConfigurationHash,
 } from '@socialprune/classify';
 import type {
   RunEntry,
@@ -22,6 +23,7 @@ import {
   loadSourceKey,
   nodeTransport,
   sourceKeyPath,
+  recordSourceCheck,
 } from '@socialprune/classify/node';
 import {
   PRESETS,
@@ -748,6 +750,21 @@ export async function checkScanSource(input: ScanCheckCall) {
         /[\r\n]/.test(answer.answeredBy)
       )
         throw new ScanError('MODEL_CHANGED');
+      const recordedCheck =
+        valid.valid.size === 1
+          ? await recordSourceCheck(
+              input.source,
+              config,
+              {
+                origin,
+                answeringModel: answer.answeredBy,
+                rubricVersion: RUBRIC_VERSION,
+                checkedAt: new Date().toISOString(),
+                configurationHash: sourceConfigurationHash(config),
+              },
+              input.signal,
+            )
+          : null;
       return {
         data: {
           origin,
@@ -759,6 +776,7 @@ export async function checkScanSource(input: ScanCheckCall) {
           usageReported: answer.usage.promptTokens !== null,
           cachedTokensReported: answer.usage.cachedPromptTokens !== null,
           rubricVersion: RUBRIC_VERSION,
+          recordedCheck,
         },
       };
     } finally {
@@ -775,11 +793,26 @@ export async function runScan(input: ScanRunCall) {
     input.signal.throwIfAborted();
     const config = await loadSourceConfig(input.source);
     const origin = new URL(config.baseUrl).origin;
+    const recorded = config.check;
+    const checkMatches = Boolean(
+      recorded &&
+      recorded.origin === origin &&
+      recorded.rubricVersion === RUBRIC_VERSION &&
+      recorded.configurationHash === sourceConfigurationHash(config),
+    );
     if (
       !input.dryRun &&
-      (!input.plan || input.confirmEndpoint !== origin || !input.confirmModel)
-    )
+      (!input.plan ||
+        input.confirmEndpoint !== origin ||
+        !input.confirmModel ||
+        !checkMatches ||
+        input.confirmModel !== recorded?.answeringModel)
+    ) {
+      input.progress(
+        `No request sent. Origin from source: ${origin}; you confirmed ${input.confirmEndpoint ?? 'none'}. Recorded answering model: ${checkMatches ? recorded!.answeringModel : 'no recorded check'}; you confirmed ${input.confirmModel ?? 'none'}. Run scan check --source with this named source file, then make a fresh dry-run plan and confirm the values it printed.`,
+      );
       throw new CliError('ENDPOINT_NOT_CONFIRMED');
+    }
     store = await readOnlyWorkspace(input);
     const snapshot = await store.read(async (tx) => ({
       workspace: await readWorkspace(tx),
@@ -845,6 +878,7 @@ export async function runScan(input: ScanRunCall) {
       answeringModel: observedModel as string | null,
       rubricVersion: RUBRIC_VERSION,
       keyFile: sourceKeyPath(config, input.source),
+      recordedCheck: checkMatches ? recorded : null,
     };
     if (!input.dryRun) {
       shareScan(config, input.source, 1, input.progress, true, false, true);
@@ -920,7 +954,8 @@ export async function runScan(input: ScanRunCall) {
           },
         };
     }
-    const model = observedModel ?? config.model;
+    const model =
+      observedModel ?? (checkMatches ? recorded!.answeringModel : config.model);
     const version = sourceVersion(model);
     const checks = currentChecks(workspace);
     const entries: RunEntry[] = [];
@@ -1022,7 +1057,7 @@ export async function runScan(input: ScanRunCall) {
           source: sourceSummary,
           coverageCounted: true,
           coverageModel: model,
-          coverageProvisional: true,
+          coverageProvisional: !checkMatches,
           entries: {
             planned: entries.length,
             skipped: { currentSource: skipped },

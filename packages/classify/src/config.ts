@@ -1,5 +1,14 @@
 import { ScanError } from './source.ts';
 import { object } from './normalize.ts';
+import { definitionHash } from '@socialprune/core/criteria';
+
+export interface SourceCheck {
+  origin: string;
+  answeringModel: string;
+  rubricVersion: string;
+  checkedAt: string;
+  configurationHash: string;
+}
 
 export interface SourceConfig {
   schemaVersion: 1;
@@ -14,6 +23,18 @@ export interface SourceConfig {
   parallelRequests: number;
   requestTimeoutSeconds: number;
   allowPaid: boolean;
+  check?: SourceCheck;
+}
+export function sourceConfigurationHash(config: SourceConfig) {
+  return definitionHash(
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(config)
+          .filter(([key]) => key !== 'check')
+          .sort(([a], [b]) => a.localeCompare(b)),
+      ),
+    ),
+  );
 }
 export function loopback(hostname: string) {
   return (
@@ -35,6 +56,7 @@ export function parseSource(input: unknown): SourceConfig {
     'parallelRequests',
     'requestTimeoutSeconds',
     'allowPaid',
+    'check',
   ];
   if (
     !value ||
@@ -90,7 +112,7 @@ export function parseSource(input: unknown): SourceConfig {
     (typeof value.keyFile !== 'string' || !value.keyFile.trim())
   )
     throw new ScanError('SOURCE_FILE_INVALID');
-  return {
+  const config: SourceConfig = {
     schemaVersion: 1,
     name: value.name,
     model: value.model,
@@ -106,4 +128,35 @@ export function parseSource(input: unknown): SourceConfig {
     requestTimeoutSeconds: number('requestTimeoutSeconds', 10, 600, 120),
     allowPaid: value.allowPaid === true,
   };
+  if (value.check !== undefined) {
+    const check = object(value.check);
+    if (
+      !check ||
+      Object.keys(check).sort().join(',') !==
+        [
+          'origin',
+          'answeringModel',
+          'rubricVersion',
+          'checkedAt',
+          'configurationHash',
+        ]
+          .sort()
+          .join(',') ||
+      typeof check.origin !== 'string' ||
+      typeof check.answeringModel !== 'string' ||
+      !check.answeringModel.trim() ||
+      check.answeringModel.length > 200 ||
+      /[\r\n]/.test(check.answeringModel) ||
+      typeof check.rubricVersion !== 'string' ||
+      !/^[a-f0-9]{12}$/.test(check.rubricVersion) ||
+      typeof check.checkedAt !== 'string' ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(check.checkedAt) ||
+      !Number.isFinite(Date.parse(check.checkedAt)) ||
+      typeof check.configurationHash !== 'string' ||
+      !/^sha256:[a-f0-9]{64}$/.test(check.configurationHash)
+    )
+      throw new ScanError('SOURCE_FILE_INVALID');
+    config.check = check as unknown as SourceCheck;
+  }
+  return config;
 }

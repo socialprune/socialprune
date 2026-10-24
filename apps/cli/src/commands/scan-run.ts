@@ -1,7 +1,7 @@
 import { buildCommand } from '@stricli/core';
 import { jsonFlag, workspaceFlag, dryRunFlag } from '../cli/context.ts';
 import type { CommandRunContext } from '../cli/context.ts';
-import { CliError, CLI_ERRORS } from '../cli/errors.ts';
+import { CLI_ERRORS } from '../cli/errors.ts';
 import { workspaceCall, workspaceService } from './workspace-context.ts';
 import { integerFlag } from './scan-source.ts';
 import { plainLines } from '../cli/output.ts';
@@ -156,11 +156,6 @@ export const scanRunCommand = buildCommand({
       confirmModel?: string;
     },
   ) {
-    if (
-      !flags.dryRun &&
-      (!flags.plan || !flags.confirmEndpoint || !flags.confirmModel)
-    )
-      throw new CliError('ENDPOINT_NOT_CONFIRMED');
     const controller = new AbortController();
     const stop = () => controller.abort();
     this.signal.throwIfAborted();

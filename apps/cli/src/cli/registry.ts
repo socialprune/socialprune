@@ -145,7 +145,7 @@ export function commandRegistry(): readonly RegistryEntry[] {
       {
         path: ['scan', 'check'],
         command: scanCheckCommand,
-        writes: false,
+        writes: true,
         dryRun: false,
       },
       {

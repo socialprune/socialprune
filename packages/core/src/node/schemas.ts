@@ -40,6 +40,15 @@ export const SCHEMA_MODELS = {
     parallelRequests: z.int().min(1).max(4).optional(),
     requestTimeoutSeconds: z.int().min(10).max(600).optional(),
     allowPaid: z.boolean().optional(),
+    check: z
+      .strictObject({
+        origin: z.url(),
+        answeringModel: z.string().min(1).max(200),
+        rubricVersion: z.string().regex(/^[a-f0-9]{12}$/),
+        checkedAt: z.iso.datetime(),
+        configurationHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      })
+      .optional(),
   }),
   item: ItemSchema,
   assessment: AssessmentSchema,

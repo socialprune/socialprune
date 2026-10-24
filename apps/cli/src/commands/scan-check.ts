@@ -40,6 +40,9 @@ export const scanCheckCommand = buildCommand({
         `Token usage: ${data.usageReported ? 'reported' : 'not reported'}`,
         `Cached tokens: ${data.cachedTokensReported ? 'reported' : 'not reported'}`,
         `Rubric: ${data.rubricVersion}`,
+        data.recordedCheck
+          ? `Check recorded in the named source file at ${data.recordedCheck.checkedAt}. Make a fresh dry-run plan before scan run.`
+          : 'Check not recorded because the answer did not pass validation.',
       ].join('\n'),
     });
   },

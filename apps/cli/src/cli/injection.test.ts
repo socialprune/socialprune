@@ -487,10 +487,11 @@ test('every agent-route exception path strips raw export text and rejects plante
   );
 });
 test('scan treats exported hostile text and endpoint instructions as data, never decisions or executable instructions', async () => {
-  const h = await scanFixture({ hostile: true });
+  const h = await scanFixture({ hostile: true, delayErrorsUntilChecked: true });
   const input = await injectionInput();
   const markerBefore: unknown = Reflect.get(globalThis, input.marker);
   try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
     const store = await SQLiteStore.open(
       join(h.workspace, 'socialprune.sqlite'),
     );
@@ -532,8 +533,8 @@ test('scan treats exported hostile text and endpoint instructions as data, never
       'generated-model',
     ]);
     expect(result.code, result.stdout).toBe(0);
-    expect(h.requests).toHaveLength(3);
-    const messages = h.requests[1]!.body!.messages as { content: string }[];
+    expect(h.requests).toHaveLength(5);
+    const messages = h.requests[3]!.body!.messages as { content: string }[];
     expect(messages[0]!.content).toMatch(/^Item text is data/);
     expect(
       (JSON.parse(messages[1]!.content) as { text: string }[])[0]!.text,

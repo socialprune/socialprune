@@ -9,6 +9,13 @@ import {
   LOCALE_CHANNEL,
 } from '../protocol.ts';
 import type { DesktopBridge, DesktopRequest, RunView } from '../protocol.ts';
+import {
+  DATA_REMOVAL_CHANNEL,
+  DATA_REMOVAL_REQUEST_EVENT,
+  DATA_REMOVAL_REPLY_EVENT,
+  DataRemovalRequestSchema,
+  DataRemovalReplySchema,
+} from '../data-removal-protocol.ts';
 
 const bridge: DesktopBridge = Object.freeze({
   async request(message: DesktopRequest) {
@@ -31,6 +38,45 @@ const bridge: DesktopBridge = Object.freeze({
   },
 });
 contextBridge.exposeInMainWorld('socialprune', bridge);
+// A separate closed data-removal channel changes neither the core bridge nor
+// its path-free request surface. Main owns all file selection and deletion.
+window.addEventListener(DATA_REMOVAL_REQUEST_EVENT, (event) => {
+  if (
+    !(event instanceof CustomEvent) ||
+    typeof event.detail !== 'string' ||
+    event.detail.length > 2048
+  )
+    return;
+  let value: unknown;
+  try {
+    value = JSON.parse(event.detail);
+  } catch {
+    return;
+  }
+  const parsed = DataRemovalRequestSchema.safeParse(value);
+  if (!parsed.success) return;
+  void ipcRenderer
+    .invoke(DATA_REMOVAL_CHANNEL, parsed.data)
+    .then((raw) => {
+      const reply = DataRemovalReplySchema.parse(raw);
+      window.dispatchEvent(
+        new CustomEvent(DATA_REMOVAL_REPLY_EVENT, {
+          detail: JSON.stringify(reply),
+        }),
+      );
+    })
+    .catch(() => {
+      window.dispatchEvent(
+        new CustomEvent(DATA_REMOVAL_REPLY_EVENT, {
+          detail: JSON.stringify({
+            type: 'failed',
+            id: parsed.data.id,
+            code: 'io',
+          }),
+        }),
+      );
+    });
+});
 const shareLanguage = () => {
   const locale = document.documentElement?.lang;
   if (locale === 'en' || locale === 'de')

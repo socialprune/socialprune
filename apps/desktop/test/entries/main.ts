@@ -12,6 +12,14 @@ const requests: string[] = [];
 const selections: EngineFileSelection[] = [];
 const links: string[] = [];
 const dialogLocales: string[] = [];
+const platformWindow: {
+  value: {
+    id: string;
+    bounds: { x: number; y: number; width: number; height: number };
+  } | null;
+  moves: unknown[];
+} = { value: null, moves: [] };
+const removalReports: unknown[] = [];
 // Session observation is attached before startDesktop creates the window.
 void app.whenReady().then(() => {
   const local = session.fromPartition('socialprune');
@@ -27,6 +35,19 @@ void startDesktop({
   assets: join(import.meta.dirname, 'renderer'),
   preload: join(import.meta.dirname, 'preload.cjs'),
   engine: join(import.meta.dirname, 'engine.cjs'),
+  platformWindow: {
+    current: () => Promise.resolve(platformWindow.value),
+    move(id, bounds, flags) {
+      platformWindow.moves.push({ id, bounds, flags });
+      if (platformWindow.value?.id === id)
+        platformWindow.value = { id, bounds };
+      return Promise.resolve();
+    },
+  },
+  removalReport(result) {
+    removalReports.push(result);
+    return Promise.resolve();
+  },
   dialogs: {
     select: (_window, type, locale) => {
       dialogLocales.push(locale);
@@ -50,6 +71,14 @@ void startDesktop({
   },
 }).then((state) =>
   Object.assign(globalThis, {
-    desktopProbe: { ...state, requests, selections, links, dialogLocales },
+    desktopProbe: {
+      ...state,
+      requests,
+      selections,
+      links,
+      dialogLocales,
+      platformWindow,
+      removalReports,
+    },
   }),
 );

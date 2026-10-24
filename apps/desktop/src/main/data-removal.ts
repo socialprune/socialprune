@@ -8,15 +8,7 @@ import {
   open,
   readFile,
 } from 'node:fs/promises';
-import {
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Stats } from 'node:fs';
 import { DataRemovalRequestSchema } from '../data-removal-protocol.ts';
 import type {
@@ -113,20 +105,32 @@ export function managedDataFile(name: string): boolean {
   );
 }
 
-async function canonicalDirectory(path: string): Promise<void> {
-  const absolute = resolve(path),
-    root = parse(absolute).root;
-  let current = root;
-  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-    current = join(current, part);
-    const stat = await lstat(current);
-    if (
-      !stat.isDirectory() ||
-      stat.isSymbolicLink() ||
-      resolve(await realpath(current)) !== current
-    )
-      throw new Error('REMOVAL_ROOT');
-  }
+/** Main chooses the app's root. Resolve aliases or redirected parent folders
+ * once, but inspect the root itself before realpath can hide a linked root. */
+export async function canonicalDataRoot(path: string): Promise<string> {
+  const absolute = resolve(path);
+  const before = await lstat(absolute);
+  if (!before.isDirectory() || before.isSymbolicLink())
+    throw new Error('REMOVAL_ROOT');
+  const canonical = await realpath(absolute),
+    after = await lstat(canonical);
+  if (
+    !after.isDirectory() ||
+    after.isSymbolicLink() ||
+    !sameDirectory(before, after)
+  )
+    throw new Error('REMOVAL_ROOT');
+  return canonical;
+}
+function sameDirectory(
+  left: Pick<Stats, 'dev' | 'ino' | 'birthtimeMs'>,
+  right: Pick<Stats, 'dev' | 'ino' | 'birthtimeMs'>,
+) {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.birthtimeMs === right.birthtimeMs
+  );
 }
 function inside(root: string, name: string) {
   const target = resolve(root, name),
@@ -154,14 +158,44 @@ export function createDataRemoval(options: {
     rmdir(path: string): Promise<void>;
   };
 }) {
-  const root = resolve(options.root),
-    now = options.now ?? Date.now;
+  let root = resolve(options.root);
+  const now = options.now ?? Date.now;
+  let rootIdentity: Identity | undefined;
+  const canonicalDirectory = async (path: string): Promise<void> => {
+    if (!rootIdentity) throw new Error('REMOVAL_ROOT');
+    const rootStat = await lstat(root);
+    if (
+      !rootStat.isDirectory() ||
+      rootStat.isSymbolicLink() ||
+      !sameDirectory(rootIdentity, rootStat)
+    )
+      throw new Error('REMOVAL_ROOT');
+    const part = relative(root, path);
+    if (isAbsolute(part) || part === '..' || part.startsWith('..' + sep))
+      throw new Error('REMOVAL_ROOT');
+    let current = root;
+    for (const segment of part.split(sep).filter(Boolean)) {
+      current = join(current, segment);
+      const stat = await lstat(current);
+      if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        stat.dev !== rootIdentity.dev
+      )
+        throw new Error('REMOVAL_ROOT');
+    }
+  };
   const fs = options.fileOperations ?? { unlink, rmdir };
   let plan: Plan | undefined,
     removing = false;
   let checking = false;
   let previewFrame: string | undefined;
   const scan = async () => {
+    if (!rootIdentity) {
+      root = await canonicalDataRoot(root);
+      rootIdentity = identity(await lstat(root));
+      options.record('DATA_REMOVAL_ROOT_CANONICALIZED');
+    }
     await canonicalDirectory(root);
     const rows: DataRemovalRow[] = [],
       entries: Entry[] = [];
@@ -180,7 +214,7 @@ export function createDataRemoval(options: {
         if (name.length > 1024) throw new Error('REMOVAL_LIMIT');
         const path = inside(root, name),
           stat = await lstat(path);
-        if (stat.isSymbolicLink()) {
+        if (stat.isSymbolicLink() || stat.dev !== rootIdentity!.dev) {
           rows.push({ name, bytes: 0, disposition: 'retain', reason: 'link' });
         } else if (stat.isDirectory()) {
           if (retain || backup(name)) {
@@ -374,6 +408,7 @@ export function createDataRemoval(options: {
           if (
             !stat.isFile() ||
             stat.isSymbolicLink() ||
+            stat.dev !== rootIdentity!.dev ||
             stat.nlink !== 1 ||
             stat.dev !== entry.identity.dev ||
             stat.ino !== entry.identity.ino ||

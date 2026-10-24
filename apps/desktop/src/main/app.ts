@@ -1,5 +1,5 @@
 import { appendFile, mkdir, readFile, readdir, lstat } from 'node:fs/promises';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import {
   app,
@@ -45,7 +45,7 @@ import { readLanguage, writeLanguage } from './language.ts';
 import { authorizedSender } from './router.ts';
 import { attachDisplayRecovery } from './display-change.ts';
 import type { PlatformWindowOwner } from './display-change.ts';
-import { createDataRemoval } from './data-removal.ts';
+import { canonicalDataRoot, createDataRemoval } from './data-removal.ts';
 import {
   DATA_REMOVAL_CHANNEL,
   DataRemovalRequestSchema,
@@ -95,7 +95,7 @@ export async function startDesktop(options: DesktopOptions) {
   mkdirSync(options.dataDirectory, { recursive: true });
   // Windows may supply an 8.3 alias. Canonicalize before Electron or the
   // engine derives paths, without weakening the engine's profile link check.
-  const dataDirectory = realpathSync.native(options.dataDirectory);
+  const dataDirectory = await canonicalDataRoot(options.dataDirectory);
   app.setPath('userData', dataDirectory);
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -120,6 +120,7 @@ export async function startDesktop(options: DesktopOptions) {
         console.error('DESKTOP_LOG_WRITE_FAILED');
       });
   };
+  record('DATA_ROOT_CANONICALIZED');
   const local = session.fromPartition('socialprune');
   // The platform runs in a separate installed browser. Neither Electron
   // session needs proxy discovery or a network request, including at startup.

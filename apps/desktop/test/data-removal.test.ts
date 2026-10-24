@@ -8,12 +8,26 @@ import {
   symlink,
   unlink,
   rmdir,
+  realpath,
+  lstat,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, test, vi } from 'vitest';
 import { createDataRemoval } from '../src/main/data-removal.ts';
 import { lockGeneratedFile } from './file-lock.ts';
+import { windowsShortPath } from './short-path.ts';
+import { WINDOWS_QUERY_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
+import type { DataRemovalReply } from '../src/data-removal-protocol.ts';
+
+function expectPreview(reply: DataRemovalReply) {
+  // Only a closed state/code is printed. Never dump a successful inventory.
+  expect(
+    reply.type === 'failed' ? `${reply.type}:${reply.code}` : reply.type,
+  ).toBe('preview');
+  if (reply.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
+  return reply;
+}
 
 function sender() {
   const mainFrame = {
@@ -79,7 +93,7 @@ test('removes only preview-approved managed entries; locked file, unknown, backu
       type: 'preview',
       id: crypto.randomUUID(),
     });
-    expect(preview.type).toBe('preview');
+    expectPreview(preview);
     if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     expect(preview.rows).toEqual(
       expect.arrayContaining([
@@ -177,6 +191,7 @@ test('preconditions, sender, phrase, expiry and a changed preview fail before sh
       type: 'preview',
       id: crypto.randomUUID(),
     });
+    expectPreview(preview);
     if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     await expect(
       remover.handle(event, {
@@ -202,6 +217,7 @@ test('preconditions, sender, phrase, expiry and a changed preview fail before sh
       type: 'preview',
       id: crypto.randomUUID(),
     });
+    expectPreview(next);
     if (next.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     now = 300001;
     expect(
@@ -218,6 +234,7 @@ test('preconditions, sender, phrase, expiry and a changed preview fail before sh
       type: 'preview',
       id: crypto.randomUUID(),
     });
+    expectPreview(changed);
     if (changed.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     await writeFile(
       join(data.root, 'workspace', 'socialprune.sqlite'),
@@ -266,6 +283,7 @@ test.skipIf(process.platform !== 'win32')(
         type: 'preview',
         id: crypto.randomUUID(),
       });
+      expectPreview(preview);
       if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
       expect(preview.rows).toContainEqual({
         name: 'workspace/originals',
@@ -329,6 +347,7 @@ test.skipIf(process.platform !== 'win32')(
         type: 'preview',
         id: crypto.randomUUID(),
       });
+      expectPreview(preview);
       if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
       expect(
         await remover.handle(event, {
@@ -423,6 +442,7 @@ test('managed profile attribution and closed cache leaves preserve nested unknow
       type: 'preview',
       id: crypto.randomUUID(),
     });
+    expectPreview(preview);
     if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     expect(preview.rows).toContainEqual(
       expect.objectContaining({
@@ -504,6 +524,7 @@ test('a new run after preview prevents confirmation and a shutdown identity repl
       type: 'preview',
       id: crypto.randomUUID(),
     });
+    expectPreview(preview);
     if (preview.type !== 'preview') throw new Error('EXPECTED_PREVIEW');
     idle = false;
     expect(
@@ -543,3 +564,144 @@ test('a new run after preview prevents confirmation and a shutdown identity repl
     await rm(data.temporary, { recursive: true, force: true });
   }
 });
+
+test.skipIf(process.platform !== 'win32')(
+  'a real generated 8.3 alias and drive-letter case resolve to one plain root before preview and removal',
+  async () => {
+    const data = await fixture(),
+      { owner, event } = sender();
+    try {
+      const canonical = await realpath(data.root);
+      const short = await windowsShortPath(data.root);
+      const lowerDrive = canonical[0]!.toLowerCase() + canonical.slice(1);
+      const aliases = short ? [short, lowerDrive] : [lowerDrive];
+      expect(aliases.some((alias) => alias !== canonical)).toBe(true);
+      for (const alias of aliases) {
+        const stat = await lstat(alias),
+          normal = await lstat(canonical);
+        expect(stat.isSymbolicLink()).toBe(false);
+        expect(stat.ino).toBe(normal.ino);
+        expect(stat.dev).toBe(normal.dev);
+        console.info(
+          'DATA_REMOVAL_ALIAS_CLASS',
+          JSON.stringify({
+            aliasClass: alias === short ? '8.3' : 'drive-case',
+            oldStringComparisonRejects: (await realpath(alias)) !== alias,
+            sameIdentity: stat.ino === normal.ino && stat.dev === normal.dev,
+            linked: stat.isSymbolicLink(),
+          }),
+        );
+        const record = vi.fn(),
+          shutdown = vi.fn();
+        const remover = createDataRemoval({
+          root: alias,
+          owner,
+          idle: () => Promise.resolve(true),
+          shutdown,
+          report: vi.fn(),
+          quit: vi.fn(),
+          record,
+        });
+        const reply = await remover.handle(event, {
+          type: 'preview',
+          id: crypto.randomUUID(),
+        });
+        console.info(
+          'DATA_REMOVAL_ALIAS_PROOF',
+          JSON.stringify({
+            aliasClass: alias === short ? '8.3' : 'drive-case',
+            sameIdentity: true,
+            linked: false,
+            state: reply.type,
+            code: reply.type === 'failed' ? reply.code : null,
+          }),
+        );
+        const preview = expectPreview(reply);
+        expect(preview.root).toBe(canonical);
+        expect(record).toHaveBeenCalledWith('DATA_REMOVAL_ROOT_CANONICALIZED');
+        expect(preview.rows).toContainEqual(
+          expect.objectContaining({
+            name: 'workspace/backup.json',
+            disposition: 'retain',
+          }),
+        );
+        expect(shutdown).not.toHaveBeenCalled();
+      }
+      const remover = createDataRemoval({
+        root: aliases[0]!,
+        owner,
+        idle: () => Promise.resolve(true),
+        shutdown: vi.fn(),
+        report: vi.fn(),
+        quit: vi.fn(),
+        record: vi.fn(),
+      });
+      const preview = expectPreview(
+        await remover.handle(event, {
+          type: 'preview',
+          id: crypto.randomUUID(),
+        }),
+      );
+      expect(
+        await remover.handle(event, {
+          type: 'confirm',
+          id: crypto.randomUUID(),
+          token: preview.token,
+          signedOut: true,
+          phrase: 'REMOVE',
+          locale: 'en',
+        }),
+      ).toMatchObject({ type: 'result', failures: 0 });
+      await expect(
+        readFile(join(data.root, 'workspace', 'socialprune.sqlite')),
+      ).rejects.toThrow();
+      expect(
+        await readFile(join(data.root, 'workspace', 'backup.json'), 'utf8'),
+      ).toBe('generated backup');
+    } finally {
+      await rm(data.temporary, { recursive: true, force: true });
+    }
+  },
+  WINDOWS_QUERY_TEST_TIMEOUT_MS,
+);
+
+test.skipIf(process.platform !== 'win32')(
+  'a redirected parent resolves to the selected plain root without widening its removal boundary',
+  async () => {
+    const data = await fixture(),
+      { owner, event } = sender();
+    try {
+      const alias = join(data.temporary, 'linked-parent');
+      await symlink(data.root, alias, 'junction');
+      const remover = createDataRemoval({
+        root: join(alias, 'workspace'),
+        owner,
+        idle: () => Promise.resolve(true),
+        shutdown: vi.fn(),
+        report: vi.fn(),
+        quit: vi.fn(),
+        record: vi.fn(),
+      });
+      const preview = expectPreview(
+        await remover.handle(event, {
+          type: 'preview',
+          id: crypto.randomUUID(),
+        }),
+      );
+      expect(preview.root).toBe(await realpath(join(data.root, 'workspace')));
+      // Ownership does not become recursive merely because the parent moved.
+      // Without the workspace/ prefix these names are deliberately unknown.
+      expect(preview.rows.every((row) => row.disposition === 'retain')).toBe(
+        true,
+      );
+      expect(
+        await readFile(
+          join(data.root, 'workspace', 'socialprune.sqlite'),
+          'utf8',
+        ),
+      ).toBe('generated db');
+    } finally {
+      await rm(data.temporary, { recursive: true, force: true });
+    }
+  },
+);

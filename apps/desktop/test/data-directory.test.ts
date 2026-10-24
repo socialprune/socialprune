@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, vi } from 'vitest';
@@ -62,4 +62,29 @@ test(
     }
   },
   WINDOWS_QUERY_TEST_TIMEOUT_MS,
+);
+
+test.skipIf(process.platform !== 'win32')(
+  'main refuses a linked data root before Electron canonicalization can hide it',
+  async () => {
+    const temporary = await mkdtemp(join(tmpdir(), 'socialprune-root-link-'));
+    try {
+      const target = join(temporary, 'target'),
+        linked = join(temporary, 'linked');
+      await mkdir(target);
+      await symlink(target, linked, 'junction');
+      electron.app.setPath.mockClear();
+      await expect(
+        startDesktop({
+          dataDirectory: linked,
+          assets: '',
+          preload: '',
+          engine: '',
+        }),
+      ).rejects.toThrow('REMOVAL_ROOT');
+      expect(electron.app.setPath).not.toHaveBeenCalled();
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  },
 );

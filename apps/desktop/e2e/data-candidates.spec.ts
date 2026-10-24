@@ -1,8 +1,17 @@
 import { expect, test } from '@playwright/test';
-import { mkdir, readFile, readdir, writeFile, symlink } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+  symlink,
+  realpath,
+  lstat,
+} from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { launch } from './helpers.ts';
 import { lockGeneratedFile } from '../test/file-lock.ts';
+import { windowsShortPath } from '../test/short-path.ts';
 
 test('display recovery moves only an injected wholly offscreen owner without activation and leaves a visible placement', async () => {
   const app = await launch('probe', true);
@@ -72,16 +81,32 @@ test('display recovery moves only an injected wholly offscreen owner without act
 });
 
 test('data removal confirms generated managed data and quits with partial receipt while backups, unknown files and link targets remain', async () => {
-  const app = await launch('probe', true, async (data) => {
-    await writeFile(join(data, 'unknown.txt'), 'generated unknown');
-    await writeFile(join(data, 'generated-backup.json'), 'generated backup');
-    const outside = join(dirname(data), 'outside');
-    await mkdir(outside);
-    await writeFile(join(outside, 'keep.txt'), 'generated external');
-    await symlink(outside, join(data, 'workspace', 'originals'), 'junction');
-  });
+  const app = await launch(
+    'probe',
+    true,
+    async (data) => {
+      await writeFile(join(data, 'unknown.txt'), 'generated unknown');
+      await writeFile(join(data, 'generated-backup.json'), 'generated backup');
+      const outside = join(dirname(data), 'outside');
+      await mkdir(outside);
+      await writeFile(join(outside, 'keep.txt'), 'generated external');
+      await symlink(outside, join(data, 'workspace', 'originals'), 'junction');
+    },
+    async (data) => {
+      const canonical = await realpath(data);
+      const selected =
+        (await windowsShortPath(data)) ??
+        canonical[0]!.toLowerCase() + canonical.slice(1);
+      expect(selected).not.toBe(canonical);
+      expect((await lstat(selected)).isSymbolicLink()).toBe(false);
+      return selected;
+    },
+  );
   let unlock: (() => Promise<void>) | undefined;
   try {
+    expect(
+      await app.application.evaluate(({ app }) => app.getPath('userData')),
+    ).toBe(await realpath(app.data));
     await app.application.evaluate(() => {
       (
         Reflect.get(globalThis, 'desktopProbe') as {

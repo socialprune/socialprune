@@ -51,6 +51,7 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { runWindowProbe } from '../packaging/window-readiness.ts';
 import { launchReviewApp } from '../packaging/review-app-launch.ts';
+import { waitForAppReadiness } from '../packaging/app-readiness.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -133,6 +134,7 @@ const exists = pathExists;
 const proof: string[] = [];
 const tempSnapshot = async () => (await readdir(installerTemp)).sort();
 const [tokenProof, taskControl, initialSystem] = await (async () => {
+  await waitForAppReadiness(proofOutput('release-app-readiness-controls.json'));
   const tokenProof = await systemTokenProof('controls');
   const taskControl = await systemTaskControl();
   return [tokenProof, taskControl, await systemSnapshot()] as const;

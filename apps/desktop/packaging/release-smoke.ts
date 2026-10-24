@@ -46,6 +46,7 @@ import { pollQuery, LAYOUT_POLL_TIMEOUT_MS } from './query-poll.ts';
 import { runWindowProbe } from './window-readiness.ts';
 import { launchReviewApp } from './review-app-launch.ts';
 import { runnerQueryCalibration } from './runner-query-calibration.ts';
+import { waitForAppReadiness } from './app-readiness.ts';
 
 const run = runNativeQuery;
 const LayoutSchema = z.strictObject({
@@ -120,6 +121,7 @@ assert.equal(
   false,
   'EXISTING_REGISTRATION_REFUSED',
 );
+await waitForAppReadiness(proofOutput('release-app-readiness-smoke.json'));
 const tokenProof = await systemTokenProof('smoke');
 const initial = await systemSnapshot();
 const data = await mkdtemp(join(tmpdir(), 'socialprune-release-generated-'));

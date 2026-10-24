@@ -24,6 +24,7 @@ import { failureRecord } from './proof-failure.ts';
 import { root } from '../packaging/paths.ts';
 import { collectProof } from './proof-collection.ts';
 import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
+import { waitForAppReadiness } from '../packaging/app-readiness.ts';
 
 // Test-only launcher. The installer receives no test flag and has no exemption
 // from its elevated-token guard. A restricted same-user process uses an owned
@@ -38,6 +39,12 @@ assert.ok(
   'INSTALLED_PROOF_MODE',
 );
 const run = runNativeQuery;
+// Before even the elevated refusal or a restricted child: its existing ready
+// handshake must not absorb first-logon AppX preparation time.
+await mkdir(dist, { recursive: true });
+await waitForAppReadiness(
+  join(dist, `release-app-readiness-parent-${mode}.json`),
+);
 const ps = (script: string, args: string[] = []) =>
   runPowerShell(
     [

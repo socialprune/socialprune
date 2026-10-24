@@ -1,6 +1,6 @@
 # Use SocialPrune through your agent
 
-SocialPrune can give your own agent batches of posts or comments to label. The agent records suggestions, then opens review for you. You decide in the review page. You make the final clicks on X or Instagram yourself; SocialPrune and the agent do not act there.
+SocialPrune can give your own agent batches of posts or comments to label. The agent records suggestions, then opens review for you. You decide in the review page. You can delete manually from the click list, or start SocialPrune's X deletion in your own visible browser. The agent never starts deletion or acknowledges a warning card for you.
 
 ## Install the skill
 
@@ -67,3 +67,9 @@ The agent first runs `review --dry-run` through the chosen command to check the 
 The agent must never run `review --no-open`, obtain a token or call the review API. If your browser does not open, run `review` yourself in your own terminal. The token can appear in the browser's process arguments, and a failed opener can print a fallback token when stderr is a terminal. Software running as you may read those surfaces; the local server does not protect against that software.
 
 Keep the workspace on a local disk. Avoid network shares, and pause any sync client copying the folder while a command or review runs. The agent must never repair or edit the SQLite file. Read the skill's [command contract](../skills/socialprune/references/commands.md), [label reference](../skills/socialprune/references/labels.md), [error table](../skills/socialprune/references/errors.md) and [privacy boundary](../skills/socialprune/references/privacy.md) for the exact flow.
+
+## X deletion remains your action
+
+The pace rules accepted on 2026-10-24 start at 30 seconds and 200 pages per workspace day. A clean hundred of direct confirmed deletions permits 15 seconds and 300; only a live DeleteTweet window with more than half available permits 8 seconds and 500. Every stage pauses for 15 minutes after 20 confirmed deletions. Not-found pages and verification do not fill that batch. An unconfirmed deletion or an exceptional stop resets promotion; reading and deletion share the workspace-zone daily page counter. These are chosen bounds, not measured limits of X's website.
+
+Only warning signs, HTTP 429 or recognized limit/warning notices, block the next deletion until the next workspace day and a card acknowledgement. Ordinary account, language, extension or page-shape stops do not set that day gate. Reading and verification stay available. Read the parent's card first. Then, in your own terminal, run `socialprune delete x --workspace "<dir>" --account "<key>" --profile "<dir>" --acknowledge-warning "<runId>"` and type the displayed statement naming the warned run. It opens no browser and starts no deletion. The CLI checks your statement, not external card delivery; the agent must not enter it. The database gate and CLI-owned profile marker survive an older or fresh workspace, and restore refuses to replace an unacknowledged warning workspace. A warning-classified backup rebuilds its gate once in staging; ordinary platform-check stops do not. A newly created profile after `browser forget`, combined with a workspace lacking the warning, remains a stated gap. See the Proposed [ADR-027](architecture/adrs/ADR-027-x-deletion-browser.md), whose document acceptance is still pending.

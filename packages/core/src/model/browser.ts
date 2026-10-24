@@ -3,6 +3,11 @@ import { UtcTimestampSchema } from './v1.ts';
 import type { Item } from './index.ts';
 
 const id = z.string().min(1).max(512);
+export const XWarningKindSchema = z.enum([
+  'http-429',
+  'limit-notice',
+  'warning-notice',
+]);
 export const BrowserActionSchema = z.enum([
   'delete-post',
   'undo-repost',
@@ -79,8 +84,19 @@ export const BrowserRunSchema = z
     canaryAcceptedAt: UtcTimestampSchema.nullable().optional(),
     pageOpens: z.number().int().nonnegative().optional(),
     lastPageOpenedAt: UtcTimestampSchema.nullable().optional(),
+    warningKind: XWarningKindSchema.optional(),
   })
   .superRefine((run, ctx) => {
+    if (
+      run.warningKind &&
+      (run.platform !== 'x' ||
+        run.endReason !== 'platform-check' ||
+        !run.endedAt)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'An X warning belongs to a completed platform-check run.',
+      });
     if (
       (run.platform === 'instagram') !== (run.mode === 'context') ||
       !run.accountKey.startsWith(`${run.platform}:`) ||

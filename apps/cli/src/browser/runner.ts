@@ -38,6 +38,12 @@ import { XResponseWindows } from './x/rate-windows.ts';
 import { errorStop } from './x/fill/report.ts';
 import { rateWindow } from './confirmation-state.ts';
 import type { XRateWindow } from '@socialprune/core/workspace/desktop-protocol';
+import { xWarningReason } from '../workspace/browser-journal.ts';
+import { xWarningNotice } from './copy.ts';
+import {
+  requireXWarningFileClear,
+  readXWarningFile,
+} from '../workspace/x-warning-file.ts';
 
 export interface RunOptions {
   session?: RunSession;
@@ -116,6 +122,38 @@ export async function runWithDependencies(
   options: RunOptions,
   dependencies: RunDependencies,
 ) {
+  const writer = options.store.browserOutcomeWriter();
+  writer.bindXWarningProfile(options.profile);
+  if (!options.verify) {
+    try {
+      await writer.mirrorXWarning(options.plan.accountKey, options.profile);
+      await requireXWarningFileClear(
+        options.profile,
+        options.now().toISOString(),
+        options.plan.timeZone,
+      );
+      await writer.requireXWarningClear(
+        options.plan.accountKey,
+        options.now().toISOString(),
+        options.plan.timeZone,
+      );
+    } catch (error) {
+      if (
+        error instanceof CliError &&
+        (error.code === 'X_WARNING_DAY' ||
+          error.code === 'X_WARNING_CARD_REQUIRED')
+      ) {
+        const warning =
+          (await readXWarningFile(options.profile)) ??
+          (await writer.xWarning(options.plan.accountKey));
+        if (warning)
+          options.notice(
+            xWarningNotice(error.code, warning.runId, options.lang),
+          );
+      }
+      throw error;
+    }
+  }
   await validateProfile(options.profile);
   const before = await profileSnapshot(options.profile);
   const mode = options.verify ? 'verify' : 'delete';
@@ -132,7 +170,6 @@ export async function runWithDependencies(
     profileReport: null,
     ownerPid: process.pid,
   };
-  const writer = options.store.browserOutcomeWriter();
   const summary = planSummary(options.plan, options.lang);
   const confirmation = await (
     options.session?.confirmation ??
@@ -211,7 +248,16 @@ export async function runWithDependencies(
         ? undefined
         : new URL(confirmation.url).origin,
       onLaunched: (close) => options.session?.browser(close),
-      record: (request) => writer.request(run.runId, request),
+      record: async (request) => {
+        await writer.request(run.runId, request);
+        if (request.status === 429 && began)
+          await writer.recordXWarning(
+            run.runId,
+            options.now().toISOString(),
+            options.plan.timeZone,
+            'http-429',
+          );
+      },
       windowPlacement: options.windowPlacement,
       desktop: Boolean(options.session),
       now: () => options.now(),
@@ -267,6 +313,7 @@ export async function runWithDependencies(
           options.store,
           options.plan.accountKey,
           options.include,
+          options.now(),
         )
       ).hash !== options.plan.hash
     )
@@ -347,14 +394,35 @@ export async function runWithDependencies(
       ? Math.max(...priorStarts)
       : null;
     const recent: number[] = [];
+    const deletionRuns = new Set(
+      priorJournal.runs
+        .filter(
+          (value) =>
+            value.platform === 'x' &&
+            value.mode === 'delete' &&
+            value.accountKey === options.plan.accountKey,
+        )
+        .map((value) => value.runId),
+    );
+    const sends = new Map(
+      priorJournal.attempts
+        .filter((value) => value.state === 'sending')
+        .map((value) => [value.attemptId, value]),
+    );
     const earlier = priorJournal.attempts
       .filter(
         (attempt) =>
-          priorRuns.has(attempt.runId) &&
-          (attempt.state === 'sending' ||
-            (attempt.state === 'not-found' && attempt.settles === null) ||
-            attempt.action === 'verify') &&
-          dateInZone(attempt.at, options.plan.timeZone) === day,
+          (options.verify
+            ? priorRuns.has(attempt.runId) && attempt.action === 'verify'
+            : deletionRuns.has(attempt.runId) &&
+              attempt.state === 'deleted' &&
+              attempt.receipt?.status === 200 &&
+              attempt.settles !== null &&
+              sends.get(attempt.settles)?.runId === attempt.runId &&
+              sends.get(attempt.settles)?.itemId === attempt.itemId &&
+              sends.get(attempt.settles)?.action === attempt.action) &&
+          (!options.verify ||
+            dateInZone(attempt.at, options.plan.timeZone) === day),
       )
       .map((attempt) => Date.parse(attempt.at))
       .sort((a, b) => a - b);
@@ -378,6 +446,8 @@ export async function runWithDependencies(
         cleanDeletions(
           await options.store.browserJournal(),
           options.plan.accountKey,
+          (await writer.xWarning(options.plan.accountKey))?.runId,
+          (await writer.xWarning(options.plan.accountKey))?.at,
         ),
         windows,
         options.now().getTime(),
@@ -617,7 +687,6 @@ export async function runWithDependencies(
         if (extensionsChanged(before, await profileSnapshot(options.profile)))
           throw new CliError('PLATFORM_CHECK');
         used++;
-        batch++;
         checkStop();
         if (!(await windowReady())) break;
         if (dateInZone(options.now(), options.plan.timeZone) !== day) {
@@ -649,6 +718,7 @@ export async function runWithDependencies(
         await deleteOne(writer, browser, row, sending, run, () =>
           options.now(),
         );
+        batch++;
         checkStop();
         completed++;
         options.session?.progress(
@@ -695,6 +765,14 @@ export async function runWithDependencies(
     error = rateLimited
       ? new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429')
       : caught;
+    const warning = xWarningReason(error);
+    if (began && warning)
+      await writer.recordXWarning(
+        run.runId,
+        options.now().toISOString(),
+        options.plan.timeZone,
+        warning,
+      );
     run.endReason =
       controller.signal.aborted ||
       options.signal.aborted ||
@@ -714,13 +792,29 @@ export async function runWithDependencies(
       if (began) {
         try {
           await browser?.flush();
-        } catch {
+        } catch (flushError) {
+          const warning = xWarningReason(flushError);
+          if (warning)
+            await writer.recordXWarning(
+              run.runId,
+              options.now().toISOString(),
+              options.plan.timeZone,
+              warning,
+            );
           run.endReason = 'platform-check';
           error ??= new CliError('PLATFORM_CHECK');
         }
         try {
           if (browser && accountBefore) accountAfter = await browser.account();
-        } catch {
+        } catch (accountError) {
+          const warning = xWarningReason(accountError);
+          if (warning)
+            await writer.recordXWarning(
+              run.runId,
+              options.now().toISOString(),
+              options.plan.timeZone,
+              warning,
+            );
           error ??= new CliError('PLATFORM_CHECK');
           run.endReason = 'platform-check';
         }
@@ -758,7 +852,6 @@ export async function runWithDependencies(
           run.endReason = 'platform-check';
         }
         run.endedAt = options.now().toISOString();
-        await writer.finish(run);
         const report = await writeExtensionReport(
           options.profile,
           run.runId,
@@ -801,6 +894,14 @@ export async function runWithDependencies(
           );
       }
     } catch (readbackError) {
+      const warning = xWarningReason(readbackError);
+      if (began && warning)
+        await writer.recordXWarning(
+          run.runId,
+          options.now().toISOString(),
+          options.plan.timeZone,
+          warning,
+        );
       error ??= readbackError;
       run.endReason = 'error';
       options.notice(
@@ -864,13 +965,42 @@ export async function runWithDependencies(
       } finally {
         try {
           if (browser) await browser.close();
+        } catch (closeError) {
+          error ??= closeError;
+          run.endReason = 'error';
         } finally {
           try {
             await confirmation.close();
+          } catch (closeError) {
+            error ??= closeError;
+            run.endReason = 'error';
           } finally {
             options.signal.removeEventListener('abort', abort);
             process.removeListener('SIGINT', signalHandler);
             process.removeListener('SIGTERM', signalHandler);
+            if (began) {
+              if (rateLimited) {
+                error = new CliError(
+                  'PLATFORM_CHECK',
+                  undefined,
+                  undefined,
+                  'http-429',
+                );
+                run.endReason = 'platform-check';
+              }
+              const warning = xWarningReason(error);
+              if (warning)
+                await writer.recordXWarning(
+                  run.runId,
+                  options.now().toISOString(),
+                  options.plan.timeZone,
+                  warning,
+                );
+              run.endedAt = options.now().toISOString();
+              run.warningKind = await writer.warningKind(run.runId);
+              if (run.warningKind) run.endReason = 'platform-check';
+              await writer.finish(run);
+            }
           }
         }
       }

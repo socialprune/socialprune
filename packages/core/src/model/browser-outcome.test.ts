@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest';
-import { OutcomeEventSchema, DecisionEventSchema } from './index.ts';
+import {
+  OutcomeEventSchema,
+  DecisionEventSchema,
+  BrowserRunSchema,
+} from './index.ts';
 import { OutcomeSchema } from './v1.ts';
 const action = {
   id: 'generated-attempt',
@@ -42,4 +46,33 @@ test('browser via never authorizes a decision event', () => {
       decidedAt: event.recordedAt,
     }).success,
   ).toBe(false);
+});
+
+test('D7 warning classification is closed and belongs only to an ended X warning run', () => {
+  const run = {
+    runId: 'generated-warning',
+    platform: 'x',
+    accountKey: 'x:generated',
+    mode: 'fill',
+    planHash: null,
+    startedAt: '2026-10-24T10:00:00.000Z',
+    endedAt: '2026-10-24T10:01:00.000Z',
+    endReason: 'platform-check',
+    bodyShapes: {},
+    profileReport: null,
+  };
+  expect(BrowserRunSchema.safeParse(run).success).toBe(true);
+  for (const warningKind of ['http-429', 'limit-notice', 'warning-notice'])
+    expect(BrowserRunSchema.safeParse({ ...run, warningKind }).success).toBe(
+      true,
+    );
+  for (const patch of [
+    { warningKind: 'focal-count' },
+    { warningKind: 'http-429', endedAt: null, endReason: null },
+    { warningKind: 'http-429', platform: 'instagram', mode: 'context' },
+    { warningKind: 'http-429', endReason: 'error' },
+  ])
+    expect(BrowserRunSchema.safeParse({ ...run, ...patch }).success).toBe(
+      false,
+    );
 });

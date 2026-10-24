@@ -12,7 +12,29 @@ import {
   PLATFORM_CHECK_REASONS,
   platformCheckReason,
 } from '../cli/errors.ts';
-import { fillWindowWaitNotice, fillPaceNotice } from './copy.ts';
+import {
+  fillWindowWaitNotice,
+  fillPaceNotice,
+  xWarningNotice,
+} from './copy.ts';
+
+test('D6 warning refusals name the run and prior card in German and English', () => {
+  for (const code of ['X_WARNING_DAY', 'X_WARNING_CARD_REQUIRED'] as const) {
+    expect(xWarningNotice(code, 'generated-run', 'en')).toContain(
+      "Read the parent's card",
+    );
+    expect(xWarningNotice(code, 'generated-run', 'de')).toContain(
+      'Lies zuerst die Karte',
+    );
+    for (const lang of ['en', 'de'] as const)
+      expect(xWarningNotice(code, 'generated-run', lang)).toContain(
+        '--acknowledge-warning generated-run',
+      );
+  }
+  expect(fillPaceNotice(10, 300, false, 'de', 'UTC')).toContain(
+    'Kalendertag (UTC)',
+  );
+});
 
 const reasons: DisplayEndReason[] = [
   'done',
@@ -258,7 +280,7 @@ test('R9 and R10 fill-only window and pace copy stays bilingual without changing
   expect(endText('daily-cap')).toContain(
     'The daily page limit has been reached.',
   );
-  expect(fillPaceNotice(10, 300, false)).toBe(
-    'Pace: at least 10 seconds between pages, at most 300 pages per Berlin day; no fixed batch pause.',
+  expect(fillPaceNotice(10, 300, false, 'en', 'Europe/Berlin')).toBe(
+    'Pace: at least 10 seconds between pages, at most 300 pages per calendar day (Europe/Berlin); no fixed batch pause.',
   );
 });

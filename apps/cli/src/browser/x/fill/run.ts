@@ -61,6 +61,7 @@ import { entryView } from '../../run-session.ts';
 import type { RunSession } from '../../run-session.ts';
 import { rateWindow } from '../../confirmation-state.ts';
 import type { XRateWindow } from '@socialprune/core/workspace/desktop-protocol';
+import { xWarningReason } from '../../../workspace/browser-journal.ts';
 
 export interface FillOptions {
   session?: RunSession;
@@ -84,6 +85,8 @@ export interface FillOptions {
 }
 export interface FillDependencies {
   origin: string;
+  /** Injected generated media origin, never selected by the production entry. */
+  testResponseOrigin?: string;
   port: number;
   responseMs: number;
   intervalMs: number;
@@ -297,6 +300,7 @@ export async function runFillWithDependencies(
     dayCap,
     effectivePace.pauseMs > 0,
     options.lang,
+    options.plan.timeZone,
   );
   const summary = fillSummary(options.plan, options.lang, options.order),
     confirmation = await (
@@ -439,10 +443,14 @@ export async function runFillWithDependencies(
         ? X_ALLOWED_HOSTS.map((host) => `https://${host}`)
         : [deps.origin];
     if (!options.session) allowed.push(new URL(confirmation.url).origin);
+    if (deps.origin !== X_ORIGIN && deps.testResponseOrigin)
+      allowed.push(deps.testResponseOrigin);
     await restrictOrigins(context, allowed, abortedHosts);
     context.on('response', (response) => {
-      if (!windows.accepts(response.url())) return;
-      if (response.status() === 429) {
+      if (
+        response.status() === 429 &&
+        new URL(response.url()).origin !== new URL(confirmation.url).origin
+      ) {
         rateLimited = true;
         rejectRateLimit(
           new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429'),
@@ -450,6 +458,7 @@ export async function runFillWithDependencies(
         cancelMedia.abort();
         cancelWait();
       }
+      if (!windows.accepts(response.url())) return;
       windows.observe(
         response.url(),
         response.headers(),
@@ -513,6 +522,7 @@ export async function runFillWithDependencies(
       ownerPid: process.pid,
     });
     began = true;
+    options.store.browserOutcomeWriter().bindXWarningProfile(options.profile);
     if (options.order)
       await options.store
         .browserOutcomeWriter()
@@ -611,7 +621,7 @@ export async function runFillWithDependencies(
     };
     check();
     await cleanupParts(options.workspace);
-    const day = dateInZone(options.now(), 'Europe/Berlin');
+    const day = dateInZone(options.now(), options.plan.timeZone);
     let used = 0,
       last = 0;
     const lastBatch: number[] = [];
@@ -626,7 +636,7 @@ export async function runFillWithDependencies(
           run.pageOpens !== undefined
         ) {
           precise.add(run.runId);
-          if (dateInZone(run.startedAt, 'Europe/Berlin') === day)
+          if (dateInZone(run.startedAt, options.plan.timeZone) === day)
             used += run.pageOpens;
           if (run.lastPageOpenedAt)
             last = Math.max(last, Date.parse(run.lastPageOpenedAt));
@@ -638,7 +648,7 @@ export async function runFillWithDependencies(
           (attempt.state === 'sending' ||
             attempt.action === 'verify' ||
             (attempt.state === 'not-found' && attempt.settles === null)) &&
-          dateInZone(attempt.at, 'Europe/Berlin') === day
+          dateInZone(attempt.at, options.plan.timeZone) === day
         ) {
           used++;
           last = Math.max(last, Date.parse(attempt.at));
@@ -647,7 +657,7 @@ export async function runFillWithDependencies(
         if (
           accounts.has(attempt.runId) &&
           attempt.state === 'sending' &&
-          dateInZone(attempt.at, 'Europe/Berlin') === day
+          dateInZone(attempt.at, options.plan.timeZone) === day
         )
           lastBatch.push(Date.parse(attempt.at));
     });
@@ -751,7 +761,7 @@ export async function runFillWithDependencies(
         continue;
       if (
         used >= dayCap ||
-        dateInZone(options.now(), 'Europe/Berlin') !== day
+        dateInZone(options.now(), options.plan.timeZone) !== day
       ) {
         run.endReason = 'daily-cap';
         break;
@@ -801,7 +811,7 @@ export async function runFillWithDependencies(
         check();
       }
       if (longWindow) break;
-      if (dateInZone(options.now(), 'Europe/Berlin') !== day) {
+      if (dateInZone(options.now(), options.plan.timeZone) !== day) {
         run.endReason = 'daily-cap';
         break;
       }
@@ -1208,6 +1218,16 @@ export async function runFillWithDependencies(
             : caught;
     if (error instanceof CliError && error.code === 'PLATFORM_CHECK')
       stopReason = platformCheckReason(error.reason) ?? 'unspecified';
+    const warning = xWarningReason(error);
+    if (began && warning)
+      await options.store
+        .browserOutcomeWriter()
+        .recordXWarning(
+          runId,
+          options.now().toISOString(),
+          options.plan.timeZone,
+          warning,
+        );
     run.endReason =
       stop || options.signal.aborted
         ? 'stopped-by-person'
@@ -1215,7 +1235,8 @@ export async function runFillWithDependencies(
           ? 'shape-changed'
           : caught instanceof CliError && caught.code === 'CANCELLED'
             ? 'stopped-by-person'
-            : caught instanceof CliError && caught.code === 'PLATFORM_CHECK'
+            : warning ||
+                (caught instanceof CliError && caught.code === 'PLATFORM_CHECK')
               ? 'platform-check'
               : 'error';
   } finally {
@@ -1333,6 +1354,16 @@ export async function runFillWithDependencies(
           if (!accountRead) readback = 'account-readback';
         } catch (caught) {
           accountAfter = null;
+          const readbackWarning = xWarningReason(caught);
+          if (readbackWarning)
+            await options.store
+              .browserOutcomeWriter()
+              .recordXWarning(
+                runId,
+                options.now().toISOString(),
+                options.plan.timeZone,
+                readbackWarning,
+              );
           error ??= caught;
           stopReason ??=
             caught instanceof CliError && caught.code === 'PLATFORM_CHECK'
@@ -1388,12 +1419,17 @@ export async function runFillWithDependencies(
           );
           run.endReason = 'platform-check';
         }
+        const warningKind = await options.store
+          .browserOutcomeWriter()
+          .warningKind(runId);
+        if (warningKind) run.endReason = 'platform-check';
         await writer.endRun({
           runId,
           endedAt: options.now().toISOString(),
           endReason: run.endReason ?? 'error',
           bodyShapes: run.bodyShapes,
           profileReport: run.profileReport,
+          ...(warningKind ? { warningKind } : {}),
         });
         if (options.order && run.endReason === 'canary' && !error) {
           await options.store
@@ -1419,6 +1455,16 @@ export async function runFillWithDependencies(
           await writer.acceptCanary(runId, options.now().toISOString());
         options.notice(`Read-back: ${JSON.stringify(run.profileReport)}\n`);
       } catch (caught) {
+        const readbackWarning = xWarningReason(caught);
+        if (readbackWarning)
+          await options.store
+            .browserOutcomeWriter()
+            .recordXWarning(
+              runId,
+              options.now().toISOString(),
+              options.plan.timeZone,
+              readbackWarning,
+            );
         error ??= caught;
         if (rateLimited) {
           error =
@@ -1455,6 +1501,16 @@ export async function runFillWithDependencies(
       }
     }
     windowSummary = windows.summary();
+    const finalWarning = rateLimited ? 'http-429' : xWarningReason(error);
+    if (began && finalWarning)
+      await options.store
+        .browserOutcomeWriter()
+        .recordXWarning(
+          runId,
+          options.now().toISOString(),
+          options.plan.timeZone,
+          finalWarning,
+        );
     windowReport.xWindows = windowSummary;
     if (windowSummary.length && !reports.includes(windowReport))
       reports.push(windowReport);

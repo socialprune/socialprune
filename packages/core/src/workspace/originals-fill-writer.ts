@@ -186,6 +186,7 @@ export class OriginalsFillWriter {
     endReason: NonNullable<BrowserRun['endReason']>;
     bodyShapes: Record<string, string[]>;
     profileReport: BrowserProfileReport;
+    warningKind?: BrowserRun['warningKind'];
   }) {
     await this.store.write(async (tx) => {
       const run = await tx.browserRuns.get(input.runId);

@@ -26,6 +26,31 @@ import { createProfile, validateProfile, profileSnapshot } from './profile.ts';
 import ts from 'typescript';
 import { request } from 'node:http';
 
+test('D7 D deletion plan binds the workspace calendar day', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d7-plan-day-'));
+  const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
+    initial: fixtureWorkspace(['1001']),
+  });
+  try {
+    const yesterday = await planDeletion(
+      store,
+      FIXTURE.account.key,
+      new Set(),
+      new Date('2026-10-11T12:00:00.000Z'),
+    );
+    const today = await planDeletion(
+      store,
+      FIXTURE.account.key,
+      new Set(),
+      new Date('2026-10-12T12:00:00.000Z'),
+    );
+    expect(today.hash).not.toBe(yesterday.hash);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('dry-run lists independent fixture decisions, origins and zero mutations/network', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-delete-plan-'));
   const db = join(directory, 'socialprune.sqlite');

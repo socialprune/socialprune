@@ -74,6 +74,7 @@ export async function planDeletion(
   store: SQLiteStore,
   accountKey: string,
   include: ReadonlySet<string> = new Set(),
+  now = new Date(),
 ): Promise<DeletePlan> {
   const journal = await store.browserJournal();
   return store.read(async (tx) => {
@@ -140,7 +141,13 @@ export async function planDeletion(
     }
     rows.sort((a, b) => a.item.id.localeCompare(b.item.id));
     const hash = createHash('sha256')
-      .update(JSON.stringify(rows.map((row) => displayRow(row, timeZone))))
+      .update(
+        JSON.stringify({
+          day: dateInZone(now, timeZone),
+          timeZone,
+          rows: rows.map((row) => displayRow(row, timeZone)),
+        }),
+      )
       .digest('hex');
     let originalsPending = 0,
       originalsFillable = 0;

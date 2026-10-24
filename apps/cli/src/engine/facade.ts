@@ -167,7 +167,7 @@ export async function createEngine(
         ? await planContext(db, request.accountKey)
         : request.mode === 'fill'
           ? await planFill(db, request.accountKey)
-          : await planDeletion(db, request.accountKey);
+          : await planDeletion(db, request.accountKey, new Set(), deps.now());
     plan.handle = resolveAccountName(plan.handle, request.handle).handle;
     if (!plan.handle)
       throw new CliError(
@@ -280,6 +280,26 @@ export async function createEngine(
       mode = selection.request.mode;
     if (mode === 'delete' && (plan as DeletePlan).originalsPending)
       throw new CliError('ORIGINALS_PENDING');
+    if (mode === 'delete')
+      await db
+        .browserOutcomeWriter()
+        .mirrorXWarning(plan.accountKey, profile('x'));
+    if (mode === 'delete')
+      await (
+        await import('../workspace/x-warning-file.ts')
+      ).requireXWarningFileClear(
+        profile('x'),
+        deps.now().toISOString(),
+        plan.timeZone,
+      );
+    if (mode === 'delete')
+      await db
+        .browserOutcomeWriter()
+        .requireXWarningClear(
+          plan.accountKey,
+          deps.now().toISOString(),
+          plan.timeZone,
+        );
     await validateProfile(
       profile(selection.request.platform),
       selection.request.platform,
@@ -299,7 +319,7 @@ export async function createEngine(
           ? fillSummary(plan as FillPlan, options.lang).warning
           : planSummary(plan as DeletePlan, options.lang).warning;
     const journal = await db.browserJournal();
-    const timeZone = mode === 'fill' ? 'Europe/Berlin' : plan.timeZone;
+    const timeZone = plan.timeZone;
     const day = dateInZone(deps.now(), timeZone);
     const used =
       mode === 'context'

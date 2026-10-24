@@ -26,6 +26,211 @@ import { browserWorkspace } from './test/inputs.ts';
 import { SQLiteStore } from './sqlite-store.ts';
 import { writeChunks } from './files.ts';
 import { instagramContextDirectory } from './context-files.ts';
+import { FIXTURE, fixtureWorkspace } from '../../e2e/fake-x/fixture.ts';
+import { exportBackup, restoreWorkspace } from './services.ts';
+
+test('D7 B restore preserves warning-classified ends and refuses replacement of an outstanding warning', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d7-warning-restore-'));
+  const workspace = join(directory, 'workspace');
+  await mkdir(workspace);
+  const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'), {
+    initial: fixtureWorkspace(['1001']),
+  });
+  const run = {
+    runId: 'restore-media-warning',
+    platform: 'x' as const,
+    accountKey: FIXTURE.account.key,
+    mode: 'fill' as const,
+    planHash: 'a'.repeat(64),
+    startedAt: FIXTURE.now,
+    endedAt: FIXTURE.now,
+    endReason: 'platform-check' as const,
+    warningKind: 'http-429' as const,
+    bodyShapes: {},
+    profileReport: null,
+  };
+  await store.write((tx) => tx.browserRuns.add(run));
+  await store
+    .browserOutcomeWriter()
+    .recordXWarning(run.runId, FIXTURE.now, 'Europe/Berlin', 'http-429');
+  await store.close();
+  const input = {
+    workspace,
+    now: () => new Date(FIXTURE.now),
+    signal: new AbortController().signal,
+    dryRun: false,
+  };
+  const out = join(directory, 'warning.json');
+  try {
+    const older = join(directory, 'older.json');
+    await writeChunks(
+      older,
+      createBackup(
+        createMemoryStore(new MemoryStoreBacking(fixtureWorkspace(['1001']))),
+      ).chunks,
+      input.signal,
+    );
+    await exportBackup({ ...input, out });
+    await expect(
+      restoreWorkspace({ ...input, file: out }),
+    ).rejects.toMatchObject({ code: 'X_WARNING_RESTORE_BLOCKED' });
+    await expect(
+      restoreWorkspace({ ...input, file: older }),
+    ).rejects.toMatchObject({ code: 'X_WARNING_RESTORE_BLOCKED' });
+    const fresh = join(directory, 'fresh');
+    await restoreWorkspace({ ...input, workspace: fresh, file: out });
+    const restored = await SQLiteStore.open(join(fresh, 'socialprune.sqlite'));
+    try {
+      expect(
+        await restored.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+      ).toMatchObject({
+        runId: run.runId,
+        acknowledged: false,
+        kind: 'http-429',
+      });
+      await expect(
+        restored
+          .browserOutcomeWriter()
+          .requireXWarningClear(
+            FIXTURE.account.key,
+            '2026-10-12T12:00:00.000Z',
+            'Europe/Berlin',
+          ),
+      ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    } finally {
+      await restored.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('D7 B restoring an older backup into fresh storage still cannot delete through a warned profile', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d7-old-backup-profile-'));
+  const profile = join(directory, 'profile');
+  const { createProfile } = await import('../browser/profile.ts');
+  const { writeXWarningFile } = await import('./x-warning-file.ts');
+  const { planDeletion } = await import('../browser/plan.ts');
+  const { runWithDependencies } = await import('../browser/runner.ts');
+  await createProfile(profile);
+  await writeXWarningFile(profile, {
+    runId: 'profile-warning',
+    kind: 'http-429',
+    zone: 'Europe/Berlin',
+    day: '2026-10-11',
+    createdAt: FIXTURE.now,
+  });
+  const file = join(directory, 'older.json');
+  const signal = new AbortController().signal;
+  try {
+    await writeChunks(
+      file,
+      createBackup(
+        createMemoryStore(new MemoryStoreBacking(fixtureWorkspace(['1001']))),
+      ).chunks,
+      signal,
+    );
+    const workspace = join(directory, 'fresh');
+    await restoreWorkspace({
+      workspace,
+      file,
+      now: () => new Date(FIXTURE.now),
+      signal,
+      dryRun: false,
+    });
+    const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'));
+    try {
+      expect(
+        await store.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+      ).toBeNull();
+      await expect(
+        runWithDependencies(
+          {
+            store,
+            profile,
+            plan: await planDeletion(
+              store,
+              FIXTURE.account.key,
+              new Set(),
+              new Date('2026-10-12T12:00:00.000Z'),
+            ),
+            executablePath: 'generated',
+            verify: false,
+            list: '',
+            lang: 'en',
+            signal,
+            now: () => new Date('2026-10-12T12:00:00.000Z'),
+            notice() {},
+          },
+          {
+            pace: {
+              intervalMs: 30000,
+              batchSize: 20,
+              pauseMs: 900000,
+              perDay: 200,
+            },
+            confirmationPort: 0,
+            sleep: () => Promise.resolve(),
+            driver: () => {
+              throw new Error('Must not launch browser');
+            },
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    } finally {
+      await store.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('D7 A staging restore never upgrades an ordinary platform-check end into a warning', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d7-ordinary-restore-'));
+  const workspace = join(directory, 'workspace');
+  await mkdir(workspace);
+  const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'), {
+    initial: fixtureWorkspace(['1001']),
+  });
+  await store.write((tx) =>
+    tx.browserRuns.add({
+      runId: 'ordinary-stop',
+      platform: 'x',
+      accountKey: FIXTURE.account.key,
+      mode: 'fill',
+      planHash: null,
+      startedAt: FIXTURE.now,
+      endedAt: FIXTURE.now,
+      endReason: 'platform-check',
+      bodyShapes: {},
+      profileReport: null,
+    }),
+  );
+  await store.close();
+  const call = {
+      workspace,
+      now: () => new Date(FIXTURE.now),
+      signal: new AbortController().signal,
+      dryRun: false,
+    },
+    file = join(directory, 'ordinary.json');
+  try {
+    await exportBackup({ ...call, out: file });
+    await restoreWorkspace({ ...call, file });
+    const restored = await SQLiteStore.open(
+      join(workspace, 'socialprune.sqlite'),
+    );
+    try {
+      expect(
+        await restored.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+      ).toBeNull();
+    } finally {
+      await restored.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('backup export reports context files and bytes separately from the portable JSON', async () => {
   const directory = await mkdtemp(

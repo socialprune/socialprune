@@ -12,6 +12,49 @@ import type {
 import type { WriteTransaction } from '@socialprune/core/workspace/store';
 import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
 import { CliError, CLI_ERRORS } from '../cli/errors.ts';
+function warningDay(at: string, zone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(at));
+}
+
+export const X_WARNING_REASONS = [
+  'http-429',
+  'limit-notice',
+  'warning-notice',
+] as const;
+export function xWarningReason(
+  error: unknown,
+): import('@socialprune/core').BrowserRun['warningKind'] | null {
+  if (error instanceof CliError && error.code === 'MEDIA_RATE_LIMIT')
+    return 'http-429';
+  if (!(error instanceof CliError) || error.code !== 'PLATFORM_CHECK')
+    return null;
+  if (error.reason === 'http-429') return 'http-429';
+  if (error.reason === 'marker-rate-limit') return 'limit-notice';
+  if (error.reason === 'notice-text') return 'warning-notice';
+  if (error.reason === 'marker-locked') return 'warning-notice';
+  return null;
+}
+const X_WARNING_LAYOUT = `
+CREATE TABLE IF NOT EXISTS browser_x_warnings (
+  seq INTEGER PRIMARY KEY, run_id TEXT NOT NULL UNIQUE,
+  account_key TEXT NOT NULL, at TEXT NOT NULL, zone TEXT NOT NULL, day TEXT NOT NULL,
+  reason TEXT NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS browser_x_warning_ack (
+  run_id TEXT PRIMARY KEY REFERENCES browser_x_warnings(run_id), at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS browser_x_warnings_account ON browser_x_warnings(account_key,seq);
+CREATE TRIGGER IF NOT EXISTS browser_x_warnings_no_update BEFORE UPDATE ON browser_x_warnings BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_x_warnings_no_delete BEFORE DELETE ON browser_x_warnings BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_x_warning_ack_no_update BEFORE UPDATE ON browser_x_warning_ack BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS browser_x_warning_ack_no_delete BEFORE DELETE ON browser_x_warning_ack BEGIN SELECT RAISE(ABORT,'append-only'); END;
+`;
+const warningProfiles = new WeakMap<DatabaseSync, string>();
 
 export type BrowserAction = 'delete-post' | 'undo-repost' | 'verify';
 export type AttemptState =
@@ -54,6 +97,7 @@ export interface ProfileReport {
   unexpectedRequests: BrowserRequest[];
 }
 export interface BrowserRun {
+  warningKind?: import('@socialprune/core').BrowserRun['warningKind'];
   startedBy?: 'agent-on-order';
   orderSha256?: string;
   acceptedBy?: 'automatic-check';
@@ -171,6 +215,9 @@ export function readJournal(db: DatabaseSync): {
 
 /** CLI-only capability. It cannot create decisions or choose other outcome values. */
 export class BrowserOutcomeWriter {
+  bindXWarningProfile(profile: string): void {
+    warningProfiles.set(this.db, profile);
+  }
   private readonly db: DatabaseSync;
   private readonly transact: <T>(
     operation: (tx: WriteTransaction) => Promise<T>,
@@ -183,6 +230,226 @@ export class BrowserOutcomeWriter {
   ) {
     this.db = db;
     this.transact = transact;
+  }
+
+  async recordXWarning(
+    runId: string,
+    at: string,
+    zone: string,
+    reason: string,
+  ): Promise<void> {
+    if (!X_WARNING_REASONS.some((value) => value === reason))
+      throw new CliError('WORKSPACE_INVALID');
+    await this.transact(async (tx) => {
+      this.db.exec(X_WARNING_LAYOUT);
+      const run = await tx.browserRuns.get(runId);
+      if (!run || run.platform !== 'x') throw new CliError('WORKSPACE_INVALID');
+      this.db
+        .prepare(
+          'INSERT OR IGNORE INTO browser_x_warnings(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)',
+        )
+        .run(runId, run.accountKey, at, zone, warningDay(at, zone), reason);
+    });
+    const warningProfile = warningProfiles.get(this.db);
+    if (warningProfile) {
+      const { writeXWarningFile } = await import('./x-warning-file.ts');
+      await writeXWarningFile(warningProfile, {
+        runId,
+        kind: reason as 'http-429' | 'limit-notice' | 'warning-notice',
+        day: warningDay(at, zone),
+        zone,
+        createdAt: at,
+      });
+    }
+  }
+  async xWarning(accountKey: string): Promise<{
+    runId: string;
+    at: string;
+    zone: string;
+    day: string;
+    kind: string;
+    acknowledged: boolean;
+  } | null> {
+    return this.transact(async () => {
+      await Promise.resolve();
+      if (
+        !this.db
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE name='browser_x_warnings'",
+          )
+          .get()
+      )
+        return null;
+      const row = this.db
+        .prepare(
+          'SELECT w.*, a.at AS acknowledged_at FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE w.account_key=? ORDER BY w.at DESC,w.seq DESC LIMIT 1',
+        )
+        .get(accountKey);
+      return row
+        ? {
+            runId: String(row.run_id),
+            at: String(row.at),
+            zone: String(row.zone),
+            day: String(row.day),
+            kind: String(row.reason),
+            acknowledged: row.acknowledged_at !== null,
+          }
+        : null;
+    });
+  }
+  async rebuildXWarnings(): Promise<void> {
+    const runs = readJournal(this.db).runs;
+    const zone = await this.transact(
+      async (tx) =>
+        (await tx.meta.get()).settings.timeZone ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+    for (const run of runs)
+      if (run.warningKind && run.endedAt && run.endReason === 'platform-check')
+        await this.recordXWarning(
+          run.runId,
+          run.endedAt,
+          zone,
+          run.warningKind,
+        );
+  }
+  async warningKind(
+    runId: string,
+  ): Promise<import('@socialprune/core').BrowserRun['warningKind']> {
+    return this.transact(async () => {
+      await Promise.resolve();
+      if (
+        !this.db
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE name='browser_x_warnings'",
+          )
+          .get()
+      )
+        return undefined;
+      const row = this.db
+        .prepare('SELECT reason FROM browser_x_warnings WHERE run_id=?')
+        .get(runId);
+      return row?.reason as import('@socialprune/core').BrowserRun['warningKind'];
+    });
+  }
+  async mirrorXWarning(accountKey: string, profile: string): Promise<void> {
+    const warning = await this.xWarning(accountKey);
+    if (!warning || warning.acknowledged) return;
+    const { lstat } = await import('node:fs/promises');
+    const exists = await lstat(profile).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      )
+        return null;
+      throw error;
+    });
+    if (!exists) return;
+    const { writeXWarningFile } = await import('./x-warning-file.ts');
+    await writeXWarningFile(profile, {
+      runId: warning.runId,
+      kind: warning.kind as 'http-429' | 'limit-notice' | 'warning-notice',
+      day: warning.day,
+      zone: warning.zone,
+      createdAt: warning.at,
+    });
+  }
+  async adoptXProfileWarning(
+    accountKey: string,
+    warning: import('./x-warning-file.ts').XWarningFile,
+  ): Promise<void> {
+    await this.transact(async (tx) => {
+      let account = false;
+      for await (const imported of tx.imports.iterate())
+        if (
+          imported.platform === 'x' &&
+          imported.accounts.some((value) => value.key === accountKey)
+        )
+          account = true;
+      if (!account)
+        for await (const { item } of tx.items.iterate())
+          if (item.account.key === accountKey && item.platform === 'x') {
+            account = true;
+            break;
+          }
+      if (!account) throw new CliError('ACCOUNT_REQUIRED');
+      this.db.exec(X_WARNING_LAYOUT);
+      this.db
+        .prepare(
+          'INSERT OR IGNORE INTO browser_x_warnings(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)',
+        )
+        .run(
+          warning.runId,
+          accountKey,
+          warning.createdAt,
+          warning.zone,
+          warning.day,
+          warning.kind,
+        );
+    });
+  }
+  hasUnacknowledgedXWarning(): boolean {
+    if (
+      !this.db
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE name='browser_x_warnings'",
+        )
+        .get()
+    )
+      return false;
+    return Boolean(
+      this.db
+        .prepare(
+          'SELECT 1 FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE a.run_id IS NULL AND w.run_id=(SELECT recent.run_id FROM browser_x_warnings recent WHERE recent.account_key=w.account_key ORDER BY recent.at DESC,recent.seq DESC LIMIT 1) LIMIT 1',
+        )
+        .get(),
+    );
+  }
+  async requireXWarningClear(
+    accountKey: string,
+    at: string,
+    zone: string,
+  ): Promise<void> {
+    const warning = await this.xWarning(accountKey);
+    if (!warning) return;
+    // Retain the warned day's original zone as well as the current zone: changing
+    // a setting must not shorten the wait already imposed by a warning.
+    if (
+      warningDay(at, warning.zone) <= warning.day ||
+      warningDay(at, zone) <= warningDay(warning.at, zone)
+    )
+      throw new CliError('X_WARNING_DAY');
+    if (!warning.acknowledged) throw new CliError('X_WARNING_CARD_REQUIRED');
+  }
+  async acknowledgeXWarning(
+    accountKey: string,
+    runId: string,
+    at: string,
+    zone: string,
+  ): Promise<void> {
+    const warning = await this.xWarning(accountKey);
+    if (!warning || warning.runId !== runId)
+      throw new CliError('X_WARNING_CARD_REQUIRED');
+    if (
+      warningDay(at, warning.zone) <= warning.day ||
+      warningDay(at, zone) <= warningDay(warning.at, zone)
+    )
+      throw new CliError('X_WARNING_DAY');
+    await this.transact(async () => {
+      const latest = this.db
+        .prepare(
+          'SELECT run_id FROM browser_x_warnings WHERE account_key=? ORDER BY at DESC,seq DESC LIMIT 1',
+        )
+        .get(accountKey);
+      if (latest?.run_id !== runId)
+        throw new CliError('X_WARNING_CARD_REQUIRED');
+      this.db
+        .prepare('INSERT OR IGNORE INTO browser_x_warning_ack VALUES(?,?)')
+        .run(runId, at);
+      await Promise.resolve();
+    });
   }
 
   async begin(run: BrowserRun): Promise<void> {

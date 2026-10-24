@@ -4,11 +4,13 @@
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (one of the two actions [ADR-023](ADR-023-acting-in-own-account.md) allows), 2 (post IDs from the export reach X, which already holds them; the person is told at that point), 1 (no account, no key, no cost), 6 (tests use a local fake, never X)
 - **Supersedes in part, on acceptance:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" gives the new wording. How a partial change is recorded is an open question in ADR-023.
-- **Related:** [ADR-005](ADR-005-browser-storage.md), [ADR-021](ADR-021-archive-media.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-027](ADR-027-x-deletion-browser.md)
+- **Related:** [ADR-005](ADR-005-browser-storage.md), [ADR-021](ADR-021-archive-media.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-027](ADR-027-x-deletion-browser.md), [ADR-029](ADR-029-signed-in-originals-pass.md)
+
+Revision candidate of 2026-10-24, based on `bf8843f` and the D6 corrections. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting its behavior and code alignment, not this record. The dated `209c895` checks remain historical evidence; the current model pointer below uses schema 8. This record still needs separate acceptance and authorizes no platform run by itself.
 
 Decided by the maintainer on 2026-10-11: fetch the originals ("Ja, hole die originale accordingly").
 
-Needs the maintainer's decision: whether stored photos of the original posts are shown in the local review, which needs `img-src blob:` in the local-review policy. Until he decides, the review shows the text and the number of stored photos.
+The local review has shown stored photos through its authenticated same-origin route since the build of 2026-10-11. It uses `img-src 'self'`, not `img-src blob:`. The former photo-display question is resolved in the implementation, not evidence of acceptance of this record.
 
 ## Context
 
@@ -106,37 +108,37 @@ We chose **Option 1: the syndication endpoint `react-tweet` uses**, because it i
 ### Command
 
 ```text
-socialprune originals fetch --workspace <dir> --account <key> [--only-marked] [--refresh] [--dry-run] [--allow-network] [--json]
+socialprune originals fetch --workspace <dir> [--account <key>] [--limit <n>] [--dry-run] [--json]
 ```
 
-- **Which posts.** For every item of the account whose kind is `reply` with a `replyToId`, or `quote` with a `quotedId`, that ID. Duplicates are fetched once. With `--only-marked`, only items whose current decision is `delete`. Posts already stored as `fetched`, `not-found` or `tombstone` are skipped unless `--refresh` is given; `failed` posts are tried again on the next run.
-- **Dry run.** `--dry-run` reads the workspace only and prints the number of posts, the hosts it would contact, the estimated time at the pace below, and the notice. It sends nothing.
-- **The network flag.** Without `--allow-network`, the command sends nothing, prints what it would send, and exits 2 with `NETWORK_NOT_ALLOWED`. The flag is the person's order in the sense of [ADR-023](ADR-023-acting-in-own-account.md) PA-1. An agent passes it only after asking the person in the conversation and getting a yes, as with `--share-with-agent` ([ADR-014](ADR-014-agent-interface.md)). The flag records that answer; it cannot check it.
-- **The notice**, printed to stderr before the first request of every run, with the real counts:
+- **Which posts.** The built command, checked on 2026-10-23, collects `replyToId` and `quotedId` references from complete X imports, for the selected account or all X accounts when `--account` is absent. Human delete decisions do not filter it. Duplicates are fetched once. The parent walk and the quoted-post pass follow ADR-029 section 1. Missing records and anonymous `failed` results are fetched; existing anonymous answers are reused for links and media. A row with a signed-in result is not replaced or edited by this command. `--limit` bounds new post fetches, not downloads from stored answers. There is no `--only-marked` or `--refresh` flag.
+- **Dry run.** `--dry-run` reads the workspace only and prints referenced, stored and planned counts. It sends nothing and writes no files. It does not print a host list or a duration estimate.
+- **The order.** Running this command without `--dry-run` is the person's order under ADR-023 PA-1. There is no `--allow-network` flag or `NETWORK_NOT_ALLOWED` branch. An agent first asks whether X may see the person's IP address and the referenced, parent and quoted post IDs, and runs it only after a yes in the conversation (ADR-014). The CLI cannot verify that conversation.
+- **The notice.** `fetch.ts` prints counts, then this English sentence to stderr before requests in a non-dry run, as checked on 2026-10-23:
 
-  > This contacts X's public embed service at cdn.syndication.twimg.com and X's image server at pbs.twimg.com. X sees your IP address and the IDs of the 412 posts your replies and quotes answered. No sign-in is used, and nothing changes in your account.
+  > This command sends referenced, parent and quoted post IDs to the anonymous X embed host and downloads their media without sign-in. Long-post text may still be incomplete.
 
-  German, in the documentation and in `--lang de` output: "Das kontaktiert den öffentlichen Einbettungsdienst von X unter cdn.syndication.twimg.com und den Bildserver von X unter pbs.twimg.com. X sieht deine IP-Adresse und die IDs der 412 Beiträge, auf die deine Antworten und Zitate antworten. Es wird keine Anmeldung genutzt, und an deinem Konto ändert sich nichts."
+  The hosts are `cdn.syndication.twimg.com`, `pbs.twimg.com` and `video.twimg.com`. They see the person's IP address and the requested IDs or media paths. The current notice does not spell out those host names or the IP disclosure, and this command has no `--lang` flag or German notice. Those are differences from the original draft, not claims that the longer bilingual notice ships.
 
 ### Pace and stopping
 
-- At most one request per second, counted across both hosts, so each photo download counts as one request.
-- One request at a time. A request that gets no complete answer within 15 seconds counts as failed.
-- No retries within a run.
-- Five failed requests in a row stop the run with `ORIGINALS_STOPPED` (exit 1). An HTTP 429 stops it at once. Not-found and tombstone answers are results, not failures.
-- Ctrl+C finishes the request in flight, records it and stops.
-- At this pace, 1,000 posts with on average one photo each take about 35 minutes. This is arithmetic, not a measurement.
+- Code limits checked on 2026-10-23: one request at a time; post fetches have a one-second wait clock, and media requests share a separate one-second clock across image and video hosts. They are not one clock across all three hosts.
+- The syndication client applies a 30-second timeout to a request, not the draft's 15 seconds. Video files use ADR-029 section 3's separate 15-second header deadline and 30-second idle deadline. These are chosen code limits, not measured response times.
+- No failed post is retried within a run. A later run can try an anonymous `failed` result again. Choosing a smaller video variant after a declared size exceeds the limit follows ADR-029, not a retry of a failed deletion.
+- Five consecutive failed post fetches end the loop; the command reports `ORIGINALS_FAILED` (exit 1). Media failures use their separate consecutive-failure counter. Not-found and tombstone answers are results, not failures.
+- An embed-host HTTP 429 stops immediately with `PLATFORM_CHECK` and `Stop detail: http-429`; D2 added this propagation on 2026-10-23. Photo and video HTTP 429 responses stop with `MEDIA_RATE_LIMIT`. None is converted into one of five ordinary failures or retried.
+- Cancellation aborts the in-flight request through its signal; it does not promise to finish that request first.
 
 ### What is requested and how
 
 - The post ID must match `^[0-9]{1,40}$` before any URL is built. URLs are built with the `URL` API from the pinned host, never by string concatenation with export data.
-- The request carries the ID, the `token` from `getToken`, and the `features` value `react-tweet` sends. It carries no cookie and no referrer. Its user agent is `SocialPrune/<version>`, so X can tell what is asking ([ADR-023](ADR-023-acting-in-own-account.md), PA-9).
-- A photo is downloaded only if its URL is `https` on `pbs.twimg.com`, its type is JPEG, PNG, GIF or WebP, and it is at most 15 MB. Videos are not downloaded; the record notes that a video was not stored.
-- Responses larger than 1 MB are not parsed and count as failed. The JSON is parsed as data; no part of it is executed or rendered as HTML.
+- The request carries the ID, `lang=en` and the `token` derived from the ID. It sends no `features` value. It carries no cookie and no referrer. Its user agent is `SocialPrune/<version>`, so X can tell what is asking (ADR-023 PA-9).
+- A photo is downloaded only from `https` on `pbs.twimg.com`, with a JPEG, PNG, GIF or WebP type and at most 20 MiB. Videos, GIF MP4 files and posters follow ADR-029 section 3, including its host, file, size and disk-space checks. These code bounds were checked on 2026-10-23; the anonymous-video 403 observation of 2026-10-11 is not a rule that all such files are refused.
+- Responses larger than 2 MiB are not parsed and count as failed, the code bound checked on 2026-10-23. The JSON is parsed as data; no part of it is executed or rendered as HTML.
 
 ### What is stored
 
-A SQLite table `originals` in the workspace ([ADR-015](ADR-015-cli-storage-node-baseline.md)), one row per original post, with these fields:
+A SQLite table `originals` in the workspace (ADR-015), one row per original post. The following table describes the initial layout built on 2026-10-11, not the current record shape. ADR-029 section 5 owns the replacement `Original` and `OriginalMedia` model, introduced in schema 4 on 2026-10-12; writers use schema 8 at `bf8843f`, checked on 2026-10-24. Its parent walk, quoted records, media, anonymous and signed-in provenance replace the old `photos` and `video` fields below.
 
 | Field | Meaning |
 |---|---|
@@ -152,30 +154,30 @@ A SQLite table `originals` in the workspace ([ADR-015](ADR-015-cli-storage-node-
 | `video` | `not-stored` when the post had a video, else `null` |
 | `raw` | the parsed response, kept as data for later readers |
 
-The table is not append-only: a later run may replace a `failed` row, and `--refresh` may replace any row. Photo files go to `<workspace>/originals/<id>/<n>.<ext>`, written to a temporary name first and renamed when complete. File names come only from the record, never from the response.
+The table is not append-only: a later anonymous run may replace an anonymous `failed` row without a signed-in result, and may store missing media from a retained anonymous answer. There is no refresh option. Files go to `<workspace>/originals/<id>/<n>.<ext>`, under temporary names before rename as ADR-029 specifies. File names come only from the record, never from the response.
 
 ### What the person sees
 
 - The workspace protocol ([ADR-007](ADR-007-review-data-worker.md)) gains `getOriginals { ids }` with at most 200 IDs, answered by `originals { originals }`. The local review's HTTP API carries it ([ADR-016](ADR-016-local-review-server.md)).
-- The card review and the archive show, under a reply or quote, the stored original: author, text, the quoted post's text when the response had it, and "2 photos stored". A line says "Fetched from X on 11 October 2026. Long posts may be cut off. Videos are not stored." (German: "Am 11. Oktober 2026 von X geholt. Lange Beiträge können gekürzt sein. Videos werden nicht gespeichert.") `not-found` and `tombstone` read "X did not return this post. It may have been deleted or made private."
+- The local review and archive show stored text and authenticated local media. ADR-029 section 4 replaces the initial photo counts and "Videos are not stored" sentence with per-media states, videos and conversation context. Neither stored media nor a post link triggers a remote fetch while reviewing.
 - All of it renders as React text nodes, like the person's own text.
 - In the Pages web app, the browser store keeps originals that arrive through a restore, so a backup survives the round trip, but `getOriginals` answers with an empty list. Showing them there is left to a later record, because the Pages app cannot fetch and its policy has no room for stored photos.
 
 ### Backup and restore
 
-- The workspace document gains an optional `originals` array after `outcomeEvents` and an optional `counts.originals`. Both are left out when there are no originals, so a backup without originals stays readable by every version 2 reader. A file with originals is rejected by readers older than this record, which do not know the key.
-- The backup carries the rows, not the photo files. `backup export` prints how many photo files stay in `<workspace>/originals/` and that the folder has to be copied separately to keep them. After a restore without the folder, the review shows "Photo not in this copy".
-- The reader checks: `id` values unique, each record valid, `counts.originals` equal to the array length, every `file` name matching the pattern above.
+- The initial version 2 addition was the optional `originals` array and `counts.originals`. ADR-029 section 5 replaces its record shape in version 4. At `bf8843f`, checked on 2026-10-24, writers use schema 8 and readers accept backups from versions 1 to 8; no claim of version 2 compatibility applies to a current backup.
+- Backups carry records, not photo, poster or video files. The `originals/` folder must be copied separately to keep those files; the review names media missing from the restored copy. ADR-029 governs their counts and file checks.
+- The reader checks unique IDs, valid current records, matching counts and the per-kind file patterns of ADR-029 section 5, not only the initial photo pattern above.
 
 ### Licensing
 
-`getToken` and the `features` value are copied from `react-tweet` 3.3.1 under its MIT license, with an entry in `THIRD_PARTY_NOTICES` naming Vercel, the package, the version and the license text. No package is added to the dependency graph ([ADR-002](ADR-002-dependency-licenses.md)).
+The token derivation is copied from `react-tweet` 3.3.1 under its MIT license, with an entry in `THIRD_PARTY_NOTICES` naming Vercel, the package, the version and the license text. The built request sends no `features` value. No package is added to the dependency graph ([ADR-002](ADR-002-dependency-licenses.md)).
 
 ### Tests
 
 - The command takes the base URL of each host from its handler context. Production uses the pinned constants; tests point them at a local fake server that answers with generated payloads, including not found, tombstone, a cut-off text, a video, a 429, a slow answer and an oversized body.
-- A test asserts that the production constants are exactly `https://cdn.syndication.twimg.com` and `https://pbs.twimg.com`, and that the fake cannot be selected from the production entry.
-- The zero-network test of ADR-013 runs `originals fetch --dry-run` and `originals fetch` without `--allow-network` and asserts zero calls.
+- Tests assert the pinned production embed, image and video hosts, and that fake hosts cannot be selected from the production entry.
+- The zero-network boundary of ADR-013 covers `originals fetch --dry-run`, not a real `originals fetch` invocation. D2's generated embed-429 case checks immediate propagation and no later request, as checked on 2026-10-23.
 - No test contacts X.
 
 ### Changes to accepted records
@@ -184,11 +186,11 @@ The table is not append-only: a later run may replace a `failed` row, and `--ref
 |---|---|
 | ADR-006 | The workspace document gains the optional `originals: Original[]` after `outcomeEvents` and the optional `counts.originals`, both left out when empty. The reader checks unique IDs, valid records and the count. |
 | ADR-007 | The protocol table gains `getOriginals { ids ≤ 200 }` → `originals { originals }`. The browser worker answers with an empty list until a later record. |
-| ADR-013 | The command tree gains `originals fetch`. "No network access in any Phase 2 command" becomes "No network access in any command except `originals fetch` with `--allow-network` ([ADR-026](ADR-026-x-originals-fetch.md)) and the deletion runs of [ADR-027](ADR-027-x-deletion-browser.md) and [ADR-028](ADR-028-instagram-signed-in-session.md)". The zero-network test covers every other command and these commands' dry runs. New codes: `NETWORK_NOT_ALLOWED` (exit 2), `ORIGINALS_STOPPED` (exit 1). |
-| ADR-014 | Agents may run `originals fetch --dry-run`, and `originals fetch --allow-network` only after the person agreed in the conversation. The skill asks: "Fetching the originals means X sees your IP address and which posts you replied to. No sign-in is used. Shall I fetch them?" The prohibition "no requests on X or Instagram" gains the exception for this command. |
+| ADR-013 | The command tree gains `originals fetch`; running it without `--dry-run` permits its anonymous requests. Other network exceptions are the signed-in runs named in ADR-027 to ADR-029. The zero-network test covers other commands and these commands' dry runs. The built failure codes include `ORIGINALS_FAILED`, `PLATFORM_CHECK` for an embed 429 and `MEDIA_RATE_LIMIT`; there is no network-consent flag. |
+| ADR-014 | Agents may run `originals fetch --dry-run`, and `originals fetch` only after the person agreed in the conversation. The skill asks whether X may see their IP address and the referenced, parent and quoted post IDs. The prohibition on platform requests gains this exact anonymous-command exception. |
 | ADR-015 | The workspace gains the `STRICT` table `originals` (not append-only) and the folder `originals/` next to `socialprune.sqlite`. A layout migration adds the table. |
-| ADR-016 | The HTTP API list gains `getOriginals`. If [ADR-025](README.md) is accepted first, the same change applies to it. |
-| ADR-018 | The packed smoke test runs `originals fetch --dry-run` on the generated demo export and asserts zero network calls; it never passes `--allow-network`. `THIRD_PARTY_NOTICES` gains the `react-tweet` entry. |
+| ADR-016 | The HTTP API gains `getOriginals` and the authenticated same-origin media route; ADR-029 extends that route for videos and ranges. |
+| ADR-018 | The packed smoke test runs `originals fetch --dry-run` on generated data and asserts zero network calls; it never runs the network mode. `THIRD_PARTY_NOTICES` gains the `react-tweet` entry. |
 
 [ADR-021](ADR-021-archive-media.md) stays as it is: it is about media inside the export, and the review still loads nothing from a post's link.
 
@@ -208,13 +210,13 @@ The table is not append-only: a later run may replace a `failed` row, and `--ref
 
 ### Risks
 - **X changes or closes the endpoint, or the token function.** Mitigation: a changed answer fails validation and stops the run after five failures; the links from `5fb9c54` keep working; the fake server's payloads are updated from the new shape, never from a real post.
-- **X blocks the person's address after many requests.** Mitigation: one request per second, a stop on 429 and on five failures, and no retries. The block would concern this anonymous service, not the account.
+- **X blocks the person's address after many requests.** Mitigation: the separate post and media clocks and failure stops in "Pace and stopping", immediate propagation of a 429, and no failed-post retry within the run. Anonymous requests carry no account session.
 - **Cut-off text looks complete.** Mitigation: the review says that long posts may be cut off on every fetched original.
 
-## Open questions for the maintainer
+## Questions resolved in the implementation
 
-- Should the local review show the stored photos, which needs one change to its page policy? Answer yes or no.
-- Should the fetch take all replies and quotes by default, or only the ones you marked for deletion? Answer "all" or "marked".
+- 2026-10-11, build `133a226`: stored photos are shown through the session-checked same-origin route, under `img-src 'self'`. No blob policy change is needed.
+- 2026-10-11, build `133a226`: the default is all referenced originals, not only human-marked entries. The command has no marked-only flag. These dated implementation answers do not substitute for the maintainer's acceptance of this Proposed record.
 
 ## Evidence
 
@@ -222,3 +224,5 @@ The table is not append-only: a later run may replace a `failed` row, and `--ref
 - The response contents, the not-found and tombstone answers, cut-off long posts, anonymous 403s from `video.twimg.com`, and X's oEmbed returning text only inside HTML: observed 2026-10-11 by the research, without any request to X from this lane; the maintainer's reading pending.
 - `packages/core/src/model/v1.ts` at commit `5fb9c54`: `reference` holds `replyToId` and `quotedId`.
 - Pace, time and size figures in this record are chosen limits and arithmetic, not measurements.
+- Code checked on 2026-10-23 at `209c895`: `apps/cli/src/commands/originals-fetch.ts` (flags and failure output), `originals/fetch.ts` (planning, reuse, notice and embed-429 propagation), `originals/syndication.ts` (30-second timeout, request fields and HTTP status handling), `originals/store-media.ts` and `video.ts` (separate media clock and failure rules), `review/static.ts` (same-origin image and media policy), and `packages/core/src/model/index.ts` (schema 7). No request to a platform was made for this revision.
+- Rechecked on 2026-10-24 against `bf8843f`: command flags, notice, timeout and immediate embed-429 propagation retain those branches, while the workspace writer is schema 8. D6's signed-in warning gate belongs to ADR-027 and does not turn this anonymous command into a signed-in action. No request to a platform was made.

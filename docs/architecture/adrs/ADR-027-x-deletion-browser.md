@@ -4,11 +4,13 @@
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (the second action [ADR-023](ADR-023-acting-in-own-account.md) allows), 3 (only the person's own delete decisions; outcomes record their source), 1 (no developer account, no key; the installed browser), 5 (the warning makes no promise), 6 (tests use a local fake site, never X)
 - **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-011](ADR-011-internationalization.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" gives the new wording. How a partial change is recorded is an open question in ADR-023.
-- **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-012](ADR-012-time-zone-grouping.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-028](ADR-028-instagram-signed-in-session.md)
+- **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-012](ADR-012-time-zone-grouping.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-028](ADR-028-instagram-signed-in-session.md), [ADR-029](ADR-029-signed-in-originals-pass.md), [ADR-031](ADR-031-desktop-app.md)
+
+Revision candidate of 2026-10-24. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting the four points and code alignment below. V2 supersedes v1. The source baseline is `bf8843f`, including DEL-1, D2 and D5, plus D6 and D7's one targeted warning/restore revision. This behavior decision does not accept the record or authorize a platform run; a separate acceptance card is still required.
 
 Decided by the maintainer on 2026-10-11: automated deletion of his own X entries, with the risk of a locked or suspended account accepted ("Probier's auch dann ... das mit den automatischen ... auch mit dem Risiko, das ist mir klar"), and without X's paid developer API.
 
-Needs the maintainer's decision: the four questions under "Open questions for the maintainer".
+Needs the maintainer's decision: this record's separate acceptance and the remaining questions below. ADR-DEL v2 A's behavior is decided; the record stays Proposed.
 
 ## Context
 
@@ -101,9 +103,10 @@ We chose **Option B: drive X's own pages in the dedicated profile and read X's a
 
 ```text
 socialprune browser setup  --platform x --profile <dir> [--browser chrome|edge]
-socialprune delete x --workspace <dir> --account <key> --dry-run [--list <file>] [--include <file>] [--json]
-socialprune delete x --workspace <dir> --account <key> --profile <dir> --plan <hash> [--include <file>] [--per-day <n>] [--browser chrome|edge]
-socialprune delete x --workspace <dir> --account <key> --profile <dir> --verify
+socialprune delete x --workspace <dir> --account <key> --dry-run [--handle <name>] [--list <file>] [--include <file>] [--json] [--lang en|de]
+socialprune delete x --workspace <dir> --account <key> --profile <dir> --plan <hash> [--handle <name>] [--list <file>] [--include <file>] [--per-day <n>] [--without-originals] [--browser chrome|edge] [--lang en|de]
+socialprune delete x --workspace <dir> --account <key> --profile <dir> --verify [--handle <name>] [--per-day <n>] [--browser chrome|edge] [--lang en|de]
+socialprune delete x --workspace <dir> --account <key> --profile <dir> --acknowledge-warning <runId> [--handle <name>] [--lang en|de]
 socialprune browser forget --profile <dir>
 ```
 
@@ -120,9 +123,12 @@ An entry enters the plan only when all of these hold (ADR-023 PA-3):
 1. platform X, in the account given with `--account`;
 2. its current decision is `delete`, from a decision event with `source.kind: 'human'`;
 3. its current outcome is `unknown`;
-4. no earlier attempt for it ended `not-found` or `ambiguous`, unless the person names it in a file passed with `--include` (one item ID per line), and it still meets 1 to 3.
+4. no unresolved `sending` or `ambiguous` attempt exists for it; `--include` never overrides this block, and only read-only verification settles it;
+5. its latest attempt is neither `not-found` nor `failed`, unless the person names the item in `--include` (one `x:<id>` item ID per line), and it still meets 1 to 4. A verified `not-deleted` result may enter a new plan without that override.
 
 Posts, replies and quotes get the action "delete post"; reposts get "undo repost".
+
+Undo-repost still has a real-page uncertainty. The generated status-page case stops with `focal-count` before any click when the requested repost ID does not match the original post's timestamp link. V's finding of 2026-10-23 did not prove that the real status page exposes the repost entry as the selector requires. The watched first undo-repost canary must settle that before a main run; an unrecognized page stops without becoming a warning-day lock.
 
 ### Dry run
 
@@ -130,7 +136,7 @@ Posts, replies and quotes get the action "delete post"; reposts get "undo repost
 
 - **The list.** One row per entry: date in the workspace time zone ([ADR-012](ADR-012-time-zone-grouping.md)), kind, action, the first line of its text with control characters removed, the time of its current delete decision, that decision's `via`, and whether it came from a single or a bulk action. Above the rows: how many entries came from bulk actions. The list goes to the terminal when stdout is a terminal, or into the file named with `--list`; the command refuses to overwrite a file.
 - **`--json`** gives counts, the plan hash, the time estimate and the warning, never entry text, and refuses `--list`. Agents may run it ([ADR-014](ADR-014-agent-interface.md)).
-- **The plan hash** is SHA-256 over the canonical JSON of the rows sorted by item ID, each with the item ID and the event ID of its current delete decision.
+- **The plan hash** is SHA-256 over the workspace calendar day, effective zone and displayed rows sorted by item ID, including item and decision-event IDs, date, kind, action, first line, decision time, source and single/bulk origin. D7, checked on 2026-10-24, therefore rejects yesterday's plan with `STALE_PLAN` before navigating X even if the entries did not change. A new day requires a fresh dry run.
 - **The estimate** at the default pace below, and the warning of ADR-023.
 
 ### A run
@@ -140,6 +146,8 @@ Posts, replies and quotes get the action "delete post"; reposts get "undo repost
 3. **Profile check.** The folder has the SocialPrune marker for X (`PROFILE_INVALID`, exit 2). The browser is the installed Chrome or Edge, started visible through `playwright-core`, which talks to it over a pipe, not a network port (`BROWSER_NOT_FOUND`, exit 1, when neither is installed). Its launch passes `chromiumSandbox: true`, so Playwright does not add `--no-sandbox`. It retains `--enable-automation`, the remote-debugging pipe, `navigator.webdriver` and all other marks of program control; none is removed or masked. Playwright's `--disable-extensions` stays active; only `--disable-infobars` is ignored. A new Edge profile installs default extensions on first start, as observed on 2026-10-12. On 2026-10-13 the first driven launch was observed to remove those default folders with extensions disabled. A preinstalled set is therefore recorded and allowed; removed IDs do not stop the run. An ID absent from the before set, including the new side of a replacement, stops with `PLATFORM_CHECK` at every checkpoint. Manifests and extension contents are never read. The same launch rule holds for read-only verify and originals-fill. Snapshot, durable before/after and removed/added ID-set read-back and "what a run can change" follow ADR-023.
 4. **Confirmation page.** The first tab shows a page the run serves on `127.0.0.1` at a random port. The run opens it through `playwright-core` with a random 256-bit page token in the fragment, so the token never appears on stdout, stderr or in a log. The page shows the counts, the bulk count, the first 20 rows with the path of the full list, the time estimate, what the run can change, and the warning, with a **Start** button. English is the default; `--lang de` translates every page label, button and status. A same-origin stylesheet provides spacing and a visible primary action, without inline styles or scripts. Its requests follow [ADR-016](ADR-016-local-review-server.md): exact `Host` and `Origin`, `Sec-Fetch-Site: same-origin` when present, no CORS, JSON bodies only, the token in a header, the unchanged local-review page policy. A second-origin stylesheet or connection remains blocked. Nothing is sent to X before the person clicks **Start**.
 5. **Account check.** A second tab opens X. The run reads the signed-in account from X's page and compares it with the export's account (`ACCOUNT_MISMATCH`, exit 1).
+
+For a desktop run, ADR-031 section 10 replaces the terminal restriction and the loopback confirmation page with the app window and the engine's shared confirmation state. The person's Start, canary Continue and Stop actions stay human actions; the platform remains in the installed browser beside the app. This exception does not give the HTTP review page or an agent a deletion start path.
 
 The 2026-10-13 structure-only diagnosis showed that `domcontentloaded` precedes X's script-rendered navigation. Delete and verify now wait at most 20 seconds for a visible account switcher or a login/challenge/lock/limit marker, then run the block checks and require one account name. The initial account check is the only `/home` navigation; read-back uses the switcher on the current status page. A conversation can contain many tweet articles. The focal article is exactly the `article[data-testid="tweet"]` containing the requested status URL's link and a `time` element; only its More or repost control is used. Ambiguous focal or timestamp matches still stop.
 
@@ -158,74 +166,117 @@ The same diagnosis observed page requests to `grok.com` and `ton.twimg.com`, whi
 4. **Click.** For "delete post": the post's "More" menu, "Delete", then the confirmation. For "undo repost": the post's repost button, then "Undo repost". The selectors live in one module. They prefer the page's stable test attributes, fall back to accessible names in English and German, and are checked against the page before each click; a missing element stops the run.
 5. **Read X's answer.** After the last click, the run waits up to 30 seconds for the response to the request X's page sends (`DeleteTweet` or `DeleteRetweet`). It records only the method, path, status and the shape of the body (its keys, not its values).
    - `deleted`: status 200, a JSON body with `data` and without `errors`, and the page shows X's own confirmation.
-   - `failed`: a status other than 200, an `errors` member, or a notice on the page. The run stops.
-   - `ambiguous`: no response within 30 seconds, the page navigated away, or the browser closed. The run stops.
-6. **Shape lock.** The body shape that the first entry of each action produced is stored with the run. A later answer with a different shape counts as `failed` and stops the run, so a change on X's side cannot silently count as success.
+   - `ambiguous`: every result after the final click that lacks both the accepted response and the page confirmation. This includes a non-200 status, an `errors` member, invalid JSON, a missing confirmation, a page check or warning, no response within 30 seconds, navigation away or browser closure. Any receipt already read is retained, and the run stops. These are D2's implemented rules of 2026-10-23, not a claim that a failed response proves no deletion happened.
+6. **Shape lock.** The body shape that the first entry of each action produced is stored with the run. A later answer with a different shape is `ambiguous` with `SHAPE_CHANGED` and stops the run. It never counts as a confirmed deletion.
 7. **Outcome.** For `deleted`, the settling transaction also appends an outcome event `deleted-via-browser` (below).
 
-There are no retries. An `ambiguous` or `failed` entry is never sent again on its own (ADR-023 PA-6).
+There are no deletion retries. Unresolved `sending` and `ambiguous` records block resending even with `--include` (ADR-023 PA-6); `failed` requires the explicit inclusion described above. On a later run, recovery acts only on a positively dead owner: delete and verify attempts become `ambiguous` with `PROCESS_LOST`; fill attempts become `failed` with `INTERRUPTED`, preserving their original IDs. A live, unknown or unproven owner blocks with `WORKSPACE_BUSY`. D2 added the mode-specific recovery on 2026-10-23.
 
-### Pace
+### Pace, DEL-1 stages
 
-| Setting | Default and maximum |
-|---|---|
-| time between the start of two entries | at least 30 seconds |
-| entries per batch | 20 |
-| pause after each batch | 15 minutes |
-| entries per calendar day, in the workspace time zone | 200; `--per-day` can lower it, not raise it |
+DEL-1 Tempo A, decided on 2026-10-20 and implemented on 2026-10-23, replaces the original single-stage pace. The figures below are chosen bounds, not measured website limits. The research cited by ADR-DEL v2 was read on 2026-10-20: X's developer interface publishes 50 deletions per 15 minutes, and the compared tools stop on a 429 or warning and pause for 50 to 60 minutes. Neither establishes a tested limit for deletion through X's website.
 
-At this pace a day's 200 entries take about four hours, and 3,000 entries take 15 days. These numbers are chosen limits, not measured ones: no source shows what pace X tolerates, and Cyd's maintainers saw suspensions within X's rate limits. Waits are fixed, never randomized (ADR-023 PA-9). Each new day starts with a new dry run, so the person sees the remaining list again.
+| Stage | Entry condition | Minimum interval between starts | Daily cap |
+|---|---|---|---|
+| A1 | initial stage, or reset under the rule below | 30 seconds | 200 |
+| A2 | 100 consecutive directly confirmed deletions in this account's journal | 15 seconds | 300 |
+| A3 | A2's hundred plus a current `DeleteTweet` window whose remaining capacity above half can hold every projected 8-second start until reset | 8 seconds | 500 |
 
-Amendment, 2026-10-23, implementing the maintainer's DEL-1 Tempo A decision of 2026-10-20: deletion starts at 30 seconds per entry and 200 per workspace calendar day, then uses 15 seconds and 300 after 100 consecutive confirmed deletions in that account's journal; a failed, unresolved or interrupted deletion, or a run ending with an error, resets that count. Only direct successful settlements with a response receipt count, not later verification settlements. After that hundred, a live `DeleteTweet` window permits 8 seconds and 500 only when the projected starts until its reset fit in the capacity above half of its limit; absent, expired or insufficient window evidence returns the run to 15 seconds and 300. The batch size and pause stay unchanged, and an explicit lower daily cap still applies. The deletion runner now shares fill's per-operation header reader, reserves one request before crossing half of any observed window, waits until reset plus five seconds when the reset is at most 16 minutes away, and ends for the day when it is farther away. Any HTTP 429 or first unconfirmed deletion stops the run without a retry. The CLI prints a closed `Stop detail` token and writes the window numbers and stop token, without response contents, into its own deletion structure report in the dedicated profile. Desktop run views carry the staged bounds and deletion's rate wait. Deletion retains the workspace time zone stated above; originals-fill still counts its day in Berlin. Generated unit tests and fake-X browser cases cover these branches, including the clean-hundred transition and the header-gated fast stage; no real account was driven. This amendment records the implementation, not acceptance of this Proposed ADR.
+Only direct `deleted` settlements in the sending run with a status-200 response receipt count toward the hundred; later read-only verification does not. When the `DeleteTweet` evidence is absent, expired or insufficient, A3 falls back to A2, not a new promotion by elapsed time. An explicit `--per-day` lowers the active cap; at `209c895` that CLI flag itself accepts only 1 to 200, even when the automatic stage cap is higher. Waits stay fixed, never randomized. Each new day needs a fresh dry run.
+
+#### Four points accepted as ADR-DEL v2 A on 2026-10-24
+
+1. After every 20 deletions, pause for 15 minutes, in all three stages.
+2. Every deletion X does not confirm, and every stop except `done`, `daily-cap` or `stopped-by-person`, resets the next stage to A1 and the hundred to zero.
+3. Every warning sign, including HTTP 429 or a limit or warning notice, stops the run immediately. The next run starts at the earliest on the next day, at A1, after the person receives a card.
+4. Reading and deletion assign their shared daily counter's day using the workspace time zone. For the maintainer's workspace that zone is Berlin. With no saved zone, both use the effective system zone of the plan.
+
+The card says "Nach je 20 Löschungen". The batch therefore counts directly confirmed deletions, not pages opened, not-found results or verification. A later verification settlement is not a new deletion. V2 also says "Wo der Code davon abweicht, passe ich ihn an"; D6 aligns the implementation instead of accepting the earlier differences.
+
+Source comparison and D6 corrections on 2026-10-24, against `bf8843f` plus this revision:
+
+1. Before D6 the batch counted opened entries, including `not-found` and earlier verify starts. It now counts only `deleted` settlements with a status-200 receipt, bound to a sending attempt in that same deletion run. The in-run counter advances only after that settlement. The journal carries confirmations across restarts and midnight; a gap of at least 15 minutes clears the batch, not a day change. The pause precedes another deletion; a completed plan does not idle just to display a pause. All stages use the same 20/15-minute settings.
+2. Before D6, `finish(run)` preceded reports and the final view, so a later error could leave a clean stored end. D6 writes the deletion or verification end once after reports, final projection and browser/confirmation cleanup. A failure in any of those paths persists `error`; a crash before that write leaves an active run for dead-owner recovery. Exceptional X endings reset promotion, but D7 treats a normal fill `canary` end like `done`: reading shares the daily counter and does not manufacture or erase clean deletions. Verification never adds to or repairs the hundred.
+3. Only warning signs set the day/card gate. D7 classifies HTTP 429, a recognized limit notice or a recognized warning notice at the stop site as `http-429`, `limit-notice` or `warning-notice`, and records `warningKind` with the completed X `platform-check` run. Login, challenge, account mismatch, page language, invalid profile, added extension, unrecognized focal page and render-timeout do not set it merely because they stop. A classified fill or verify warning also gates the next deletion, not reading or verification. A same-day deletion refusal is `X_WARNING_DAY`; missing acknowledgement later is `X_WARNING_CARD_REQUIRED`. Database lookup reads only its gate table, never reinterprets arbitrary historical `platform-check` runs.
+4. Fill's day checks, pace text and desktop counter now use the plan's workspace zone, as deletion already did. The generated UTC boundary case reads both pages instead of counting a prior-day deletion as today; a Berlin workspace retains its previous boundary. The day still counts page opens, including retries, not only deletions; the confirmed-deletion batch is a different counter.
+
+#### Warning card acknowledgement
+
+The smallest enforceable card step is a separate terminal command, not an override flag on a deletion run. On or after the next workspace day, the person runs `delete x --workspace <dir> --account <key> --profile <dir> --acknowledge-warning <warnedRunId>` and types exactly `I read the card for <warnedRunId>`, or `Ich habe die Karte zu <warnedRunId> gelesen` with `--lang de`. Input must be a terminal; the latest outstanding database/profile warning's run ID must match. This opens no browser and permits no deletion. The person then makes a fresh dry run and uses the normal Start and canary controls. The lock holds deletion only, not reading or verification.
+
+The warning record retains its original zone and day as well as its timestamp. Admission requires both that original day and the day recomputed in the current workspace zone to have passed, so a zone change cannot shorten the imposed delay. The CLI verifies the typed statement, not delivery or reading of an external card. The parent must present the card first; an agent must not acknowledge it for the person. The desktop currently has no acknowledgement control and refuses until the terminal step is recorded. A newer warning needs its own acknowledgement.
+
+The CLI also writes `socialprune-x-warning.json` next to `socialprune-profile.json`, outside Chromium's own data. Its closed fields are run ID, warning kind, workspace day and zone, and created time, with no post content or account session. It is included in the disclosed profile changes and snapshot comparison. The file is checked together with the database before every deletion start, including a different or newly restored workspace, and removed only by acknowledgement. If the workspace lacks the warned run, acknowledgement imports the marker's closed reset evidence before clearing it. The profile itself is not read by an agent.
+
+`backup restore` refuses to replace a workspace with an unacknowledged warning using `X_WARNING_RESTORE_BLOCKED`, whose message names the acknowledgement command. A backup carrying a classified warning end reconstructs the gate once in the staging database before replacement. Ordinary `platform-check` ends do not reconstruct one. A portable backup carries `warningKind`, not local acknowledgement; old backups lack that classification and cannot infer it. Restoring an older backup or creating a fresh workspace still cannot delete through the same profile until its marker is acknowledged. Remaining gap: `browser forget` removes the dedicated profile, so a newly created profile together with an older or fresh workspace has no retained marker or warning-classified history. The CLI does not claim a cross-profile account lock.
+
+#### Rate windows and reports
+
+At `209c895`, checked on 2026-10-23, deletion and fill share the per-operation reader of numeric `x-rate-limit-limit`, `x-rate-limit-remaining` and `x-rate-limit-reset` on `x.com` and `api.x.com`. Before another deletion, the runner reserves one request so a known window is not crossed below half. A reset at most 16 minutes away yields a cancellable wait to reset plus five seconds; a longer low window ends as `daily-cap` with `x-window-long`. A wait is not a retry, and it cannot permit another attempt at an ambiguous deletion. Any HTTP 429 stops immediately.
+
+The CLI prints a closed `Stop detail` token and writes `socialprune-delete-<runId>.json` or `socialprune-verify-<runId>.json` in its dedicated profile. These reports contain window numbers and the closed stop record, not response contents. D2 added verify reports and the detailed final message on 2026-10-23. Desktop views carry the same stage bounds and rate wait. The implementation proofs use generated data; this candidate starts no real-account run.
+
+#### Shared daily counter, accepted v2 A point 4
+
+The counter includes this account's signed-in fill, delete and verify page opens, with older attempts used when a run has no page count. D6 uses the workspace zone for all three, or the plan's system fallback when no zone is saved. This implements v2 A point 4, accepted on 2026-10-24, and replaces fill's former hardcoded Berlin boundary. It does not change the stage-specific daily cap or turn a page open into a confirmed deletion.
 
 ### Verify
 
 `delete x --verify` reads, without clicking anything:
 
-- every entry whose last attempt is `ambiguous`: if X shows the post as gone, the attempt is settled as `deleted` and the outcome is recorded; if the post is still there, it is settled as `not-deleted` and the entry can enter the next plan;
+- every unresolved `sending` or `ambiguous` attempt: if X shows the post as gone, the attempt is settled as `deleted` and the outcome is recorded; if the post is still there, it is settled as `not-deleted` and the entry can enter the next plan;
 - every entry deleted at least 7 days earlier and not yet checked: `still-gone`, or `reappeared`, which appends an outcome event `unknown` with the browser source, so the entry shows up as not deleted and can enter the next plan.
 
-Verify pace: one page every 10 seconds, at most 100 pages per day, with the same stop rules.
+Verify pace at `209c895`, checked on 2026-10-23: one page every 10 seconds, at most 100 pages per day, with the same warning stops and no deletion clicks or retries. These are chosen code limits, not measured platform limits.
 
 ### Journal and outcomes
 
-The workspace gains two record types and one outcome value:
+The deletion journal introduced two record types and one outcome value in schema 3 on 2026-10-11. The shared types at `bf8843f` plus D7, checked on 2026-10-24, are in `packages/core/src/model/browser.ts`. D7 adds the optional closed `warningKind` to completed X warning-classified runs so restore need not guess from `endReason`. Writers retain schema version 8 and readers here accept the field; an earlier strict schema-8 reader may reject a backup containing it. CLI-local gate/acknowledgement tables and the profile mirror are not portable records. In this summary `?` means optional, and IDs and times retain their core schema validation:
 
 ```ts
 BrowserRun = {
-  runId, platform: 'x' | 'instagram', accountKey, mode: 'delete' | 'verify',
+  runId, platform: 'x' | 'instagram', accountKey,
+  mode: 'delete' | 'verify' | 'fill' | 'context',
   planHash: string | null, startedAt, endedAt: UtcTimestamp | null,
-  endReason: 'done' | 'daily-cap' | 'stopped-by-person' | 'error' | 'platform-check' | null,
+  endReason: 'done' | 'daily-cap' | 'stopped-by-person' | 'error' | 'platform-check'
+           | 'canary' | 'size-cap' | 'shape-changed' | null,
   bodyShapes: Record<string, string[]>,          // per action, the keys of the first success body
   profileReport: {                                 // written once, at the end
     accountBefore, accountAfter, extensionsBefore: number, extensionsAfter: number,
-    changedFiles: number, unexpectedRequests: { method, host, path, status }[]
-  } | null
+    changedFiles: string[],
+    unexpectedRequests: { runId?, requestId, method, host, path, status, operation? }[]
+  } | null,
+  ownerPid?: number,
+  canaryAcceptedAt?: UtcTimestamp | null,
+  pageOpens?: number,
+  lastPageOpenedAt?: UtcTimestamp | null
+  warningKind?: 'http-429' | 'limit-notice' | 'warning-notice'
 }
 BrowserAttempt = {
-  seq, attemptId, runId, itemId,
-  action: 'delete-post' | 'undo-repost' | 'delete-comment' | 'verify',
+  seq, attemptId, runId, itemId: string | null, originalId?: string | null,
+  action: 'delete-post' | 'undo-repost' | 'verify' | 'read-post' | 'confirm-comment',
   state: 'withdrawn' | 'sending' | 'deleted' | 'not-found' | 'failed' | 'ambiguous'
-       | 'not-deleted' | 'still-gone' | 'reappeared',
+       | 'not-deleted' | 'still-gone' | 'reappeared' | 'read' | 'tombstone'
+       | 'unavailable' | 'confirmed' | 'unconfirmed' | 'not-listed',
   settles: string | null,                          // the attemptId this record settles, if any
-  at, code: string | null
+  at, code: string | null,
+  receipt?: { method, path, status, shape: string[] }
 }
 ```
 
 - An attempt is one `withdrawn` or `not-found` record, or one `sending` record followed by at most one settling record. A verify attempt is one record; when it settles an ambiguous attempt, it also appends a settling record for that attempt whose `settles` names it.
-- The outcome event for a deletion: `value: 'deleted-via-browser'`, `previous` from the entry's current outcome in the same transaction, `source: { kind: 'browser', runId, attemptId }`, `action: { kind: 'single', size: 1, reverts: null }`.
+- The outcome event for a deletion: `value: 'deleted-via-browser'`, `previous` from the entry's current outcome in the same transaction, `source: { kind: 'human', via: 'browser-x' }`, `action: { id: <settling attemptId>, kind: 'single', size: 1, reverts: null }`. The settling attempt names the run. There is no `source.kind: 'browser'` in the built model.
 - `deleted-via-browser` is final: the click lists show no outcome buttons for it, and the protocol's `outcome` command rejects a change with `OUTCOME_FINAL`. Only a verify `reappeared` moves it back to `unknown`.
-- **Narrow writer.** `BrowserOutcomeWriter` in `packages/core/src/workspace/` appends run and attempt records and only these two outcome events with a browser source. It has no method for decision events or other outcome values. Only the browser runner constructs it (ADR-023 PA-16).
+- **Narrow writer.** `BrowserOutcomeWriter` in `apps/cli/src/workspace/browser-journal.ts` appends run and attempt records and only these two outcome values with `via: 'browser-x'`. It has no method for decision events or other outcome values. The CLI and desktop engine use it through the same runners (ADR-023 PA-16).
 - **Profile read-back.** The expected state-changing requests for X are the page's `DeleteTweet` and `DeleteRetweet` requests. Every other non-GET request to X's hosts during the run is listed in `unexpectedRequests` and shown to the person.
 
-### Schema version 3
+### Schema history and current version 8
 
-A new outcome value and a new source kind do not fit version 2's enums, which version 2 readers reject. So:
+The new outcome value did not fit version 2's enum. Version 3 introduced the journal on 2026-10-11; version 4 added X fill, versions 5 and 6 Instagram context, version 7 the review-feed contract and version 8 Instagram's owner-check migration on 2026-10-23. At `bf8843f`, checked on 2026-10-24:
 
-- `schemaVersion: 3`. `WorkspaceV3` adds `browserRuns` and `browserAttempts` after `outcomeEvents` (and after `originals` when present, [ADR-026](ADR-026-x-originals-fetch.md)), and `counts.browserRuns`, `counts.browserAttempts`.
-- Migration from version 2 adds the empty arrays and zero counts and changes nothing else. Readers accept versions 1, 2 and 3; writers write 3. A version 2 reader meets a version 3 file with `WORKSPACE_SCHEMA_UNSUPPORTED` (exit 3).
-- **Both stores carry them verbatim.** SQLite: `STRICT` tables `browser_runs` (the end fields may be written once, enforced by a trigger) and `browser_attempts` (append-only, triggers against `UPDATE` and `DELETE`). IndexedDB: stores `browserRuns` (key `runId`) and `browserAttempts` (auto-increment key, unique index on `seq`, indexes on `attemptId`, `itemId`, `runId`). The browser never writes them; it keeps what a restore brings, and backup and restore copy them in order in both directions.
-- **Reader checks.** Counts match; `seq` increases and never repeats; every attempt names an existing run and item; the attempt structure above holds; every outcome event with `source.kind: 'browser'` and value `deleted-via-browser` names a `deleted` settling record for the same item, and every `deleted` record has exactly one such event; every browser `unknown` event names a `reappeared` verify attempt.
+- `WORKSPACE_SCHEMA_VERSION` is 8. Current backups carry `browserRuns`, `browserAttempts` and their counts, with the shared types above. Readers accept versions 1 to 8; writers write 8. The version 2 to 3 migration added empty journal arrays and counts; later migrations keep them while adding their own records.
+- **Both stores carry them.** SQLite has `STRICT` tables `browser_runs` and `browser_attempts`. Run progress may increase its page counter while active; end fields are written once, with the separate one-time canary-acceptance update allowed for fill and context. Attempts are append-only, with triggers against `UPDATE` and `DELETE`. IndexedDB uses `runId` for runs and `attemptId` for attempts, with unique `seq` and `settles` indexes on attempts. The browser carries restored journal records rather than running a platform action. Backup and restore preserve their order and apply the migrations required by the file's version.
+- **Reader checks.** Counts match; `seq` increases and never repeats; every attempt names a run and the target its action permits. A fill `read-post` names an original and has `itemId: null`; deletion and verification name X items; `confirm-comment` names an Instagram comment in a context run. Outcome events with `via: 'browser-x'` link through `action.id` to exactly one matching `deleted` settlement or `reappeared` verification. An Instagram context run is not a deletion run, and the current action enum has no `delete-comment`.
 
 ### Who reads `deleted-via-browser`
 
@@ -240,7 +291,7 @@ A new outcome value and a new source kind do not fit version 2's enums, which ve
 
 ### Isolation in the code
 
-- `apps/cli/src/browser/` holds the `playwright-core` driver, the profile procedure and the confirmation page server; `apps/cli/src/browser/x/` holds the X steps and the selectors module. Only `apps/cli/src/commands/delete.ts` and `apps/cli/src/commands/browser.ts` import them, and they load `playwright-core` with a dynamic import only in run, verify and setup modes. A `no-restricted-imports` rule and an import-graph test keep them out of other commands, the review server, `packages/mcp` and `apps/web`.
+- `apps/cli/src/browser/` holds the driver, profile procedure and confirmation state and page; `browser/x/` holds X's steps and selectors. The named CLI commands and ADR-031's internal engine entry reach the runners; setup launches the installed browser without a driver. Import-boundary tests keep browser control out of unrelated commands, the HTTP review server, `packages/mcp` and the web renderer. The desktop bridge invokes the engine, not browser code in the renderer.
 - The runner navigates only to URLs it builds from one pinned origin, `https://x.com`, and an entry's numeric ID; a test checks the constant and the URL builder. The runner itself sends no request to X. The browser loads whatever X's page loads, on that page's behalf.
 
 ### Tests
@@ -254,15 +305,15 @@ A new outcome value and a new source kind do not fit version 2's enums, which ve
 
 | Record | New wording |
 |---|---|
-| ADR-005 | Two IndexedDB stores, `browserRuns` and `browserAttempts`, carried verbatim from restores; the store reads schema version 3. |
-| ADR-006 | Outcome value `deleted-via-browser`, source `{ kind: 'browser', runId, attemptId }`, `BrowserRun` and `BrowserAttempt`, schema version 3 with its migration and reader checks; `deleted-via-browser` is final except for a verified reappearance. |
+| ADR-005 | Two IndexedDB stores, `browserRuns` and `browserAttempts`, introduced in version 3 and carried from restores through current version 8. |
+| ADR-006 | Outcome value `deleted-via-browser`, source `{ kind: 'human', via: 'browser-x' }` linked through `action.id` to the settling attempt, and the journal with its version 3 migration and current version 8 types; the outcome is final except for a verified reappearance. |
 | ADR-007 | The outcome enum and filters gain the value; `outcome` rejects a change to a final outcome with `OUTCOME_FINAL`. |
 | ADR-011 | Catalog keys for the badge, the confirmation page and the warning of ADR-023 in both languages, under the catalog and copy checks. |
-| ADR-013 | The command tree gains `browser setup`, `browser forget` and `delete x`. "There is no `approve`, `decide`, `delete` or `mark` command" becomes "There is no `approve`, `decide` or `mark` command. The `delete` commands act only on entries with a human delete decision, start only after the person clicks Start in the browser window, and never write a decision event". The network rule reads as in [ADR-026](ADR-026-x-originals-fetch.md). New codes: `PROFILE_INVALID`, `NOT_INTERACTIVE` (exit 2); `BROWSER_NOT_FOUND`, `STALE_PLAN`, `ACCOUNT_MISMATCH`, `PLATFORM_CHECK`, `RUN_STOPPED` (exit 1). A run that ends at the daily cap exits 0 and names the reason. |
+| ADR-013 | The command tree gains `browser setup`, `browser forget` and `delete x`. There is no approve, decide or mark command. Deletion acts only on human delete decisions, starts after human Start on the loopback page or in ADR-031's desktop app, and never writes a decision event. The network rule follows ADR-026. A daily-cap end exits 0 and names the reason. |
 | ADR-014 | Agents may run `delete x --dry-run --json`. They never run `delete x` without `--dry-run`, `browser setup` or `browser forget`, never read the profile folder, never edit run or attempt records. The skill says so. The MCP server in 0.2 gets no deletion tool. |
 | ADR-015 | `STRICT` tables `browser_runs` and `browser_attempts` as above; the check before each entry in one `BEGIN IMMEDIATE` transaction; a layout migration for schema version 3. |
 | ADR-016 | The confirmation page reuses its request controls and page policy. The review server and its opener do not change; the confirmation page is opened by `playwright-core` in the dedicated window. |
-| ADR-017 | "`ReviewService` is the only code that appends decision or outcome events" becomes: `ReviewService` appends human decision and outcome events; `BrowserOutcomeWriter` appends only `deleted-via-browser` and verified-reappearance `unknown` outcome events with a browser source, plus run and attempt records, never decision events, and only the browser runner constructs it. |
+| ADR-017 | `ReviewService` appends human review decisions and outcomes; the CLI's `BrowserOutcomeWriter` appends only `deleted-via-browser` and verified-reappearance `unknown` outcomes with `via: 'browser-x'`, plus journal records, never decision events. CLI and desktop runs share it. |
 | ADR-018 | The package gains the runtime dependency `playwright-core` 1.63.0 (Apache-2.0, no dependencies of its own), kept outside the bundle and loaded only by the browser commands; the package files gain the confirmation page assets; the packed smoke test runs `delete x --dry-run --json` and never a run. |
 
 [ADR-002](ADR-002-dependency-licenses.md) needs no exception: `playwright-core` is Apache-2.0, and the browser is the one already installed, so rule 6 on downloaded artifacts does not apply.
@@ -277,21 +328,21 @@ A new outcome value and a new source kind do not fit version 2's enums, which ve
 - Nothing SocialPrune sends imitates X's client, and the person can watch every step.
 
 ### Negative
-- Slow by design: thousands of entries take weeks of daily runs.
+- Daily caps and batch pauses spread large plans over several runs; the elapsed duration has not been measured on a real deletion run.
 - The selectors module breaks with larger changes to X's pages; until it is updated, runs stop at the first entry.
-- `playwright-core` adds about 13 MB to the installed package, and the person needs Chrome or Edge.
-- Schema version 3 and changes to ten accepted records.
+- The npm registry reported `playwright-core` 1.63.0 as 13,453,369 bytes unpacked on 2026-10-11; the person also needs Chrome or Edge.
+- The journal began in schema 3; current backups use schema 8 and the accepted records listed above need their stated amendments. Warning admission and acknowledgement stay CLI-local and must be kept with that workspace.
 
 ### Risks
-- **X locks or suspends the account.** Mitigation: ADR-023's rules, the slow defaults and the stop at the first sign. This lowers the chance; it cannot settle X's judgment, and the warning says so.
+- **X locks or suspends the account.** Mitigation: ADR-023's rules, the documented pace and immediate warning stops. No measured relation between this website pace and restrictions is established; X can act regardless.
 - **A click hits the wrong element.** Mitigation: the run opens one post per page, checks that the post on the page has the entry's ID before the first click, and checks each element before clicking it; a mismatch stops the run.
 - **X reports success but the post comes back.** Mitigation: the verify pass after 7 days, and the outcome moves back to `unknown` when it does.
-- **An agent starts the run.** Mitigation: the run refuses pipes, and nothing is sent to X before the person clicks Start in the window. An agent that can control the person's screen is software running as the person, outside what SocialPrune can control.
+- **An agent starts the run.** Mitigation: the CLI refuses pipes and desktop confirmation requires the person's Start; neither offers a written-order deletion path. An agent that can control the person's screen is software running as the person, outside what SocialPrune can control.
 
 ## Open questions for the maintainer
 
 - Delete by clicking through X's own pages, slower but without imitating X's app, instead of sending X's internal requests directly like the other tools do? Answer "clicks" or "requests".
-- Default pace: at least 30 seconds per entry, 20 per batch, 15 minutes pause, at most 200 a day. Accept, or name a slower one? Answer "accept" or the numbers.
+- Accept this corrected record separately from the behavior already chosen as ADR-DEL v2 A? The warning-card mechanism and its CLI-local storage limits are stated above; choosing A on v2 did not accept the document.
 - Undo your reposts the same way, on the original post's page? Answer yes or no.
 - Check again 7 days after deleting, because one report says deleted posts can come back? Answer yes or no.
 
@@ -304,3 +355,6 @@ A new outcome value and a new source kind do not fit version 2's enums, which ve
 - Code at commit `5fb9c54`: `packages/adapter-x/src/tweet.ts` (kinds; reposts keep `repostOfHandle`, not the original's ID) and `packages/adapter-x/src/index.ts` (click-list actions and status URL).
 - `playwright-core` 1.63.0 on the npm registry: Apache-2.0, no dependencies, 13,453,369 bytes unpacked; read by the architect on 2026-10-11.
 - The pace and time figures are chosen limits and arithmetic. No request to X was made for this record.
+- Code checked on 2026-10-23 at `209c895`: `apps/cli/src/browser/x/delete-pace.ts` (hundred and stages), `browser/pace.ts` and `runner.ts` (batch carry, windows, late-error ordering and reports), `browser/plan.ts` (eligibility), `browser/x/driver.ts` (post-click ambiguity), `workspace/browser-journal.ts` (recovery and outcome source), `engine/facade.ts` (desktop confirmation), and `packages/core/src/model/browser.ts` and `index.ts` (journal types and schema 7). No code or real-account state was changed for this candidate.
+- D6, 2026-10-24: source at `bf8843f` plus this revision and generated tests cover confirmed-deletion batch carry, report/view/close errors persisted before final finish, HTTP and page-warning admission, next-day typed acknowledgement and the workspace-zone counter. `commands/delete.ts`, `workspace/browser-journal.ts`, `browser/runner.ts`, X fill and `engine/facade.ts` are the enforcement owners. Schema 8 is unchanged. No real account or signed-in profile was used.
+- D7, 2026-10-24: `warningKind` is an optional closed addition to the schema-8 run shape, with the strict-reader compatibility caveat above. `workspace/x-warning-file.ts` owns the profile mirror; `services.ts` rebuilds classified gates only in restore staging and refuses replacement of an unacknowledged workspace. Negative generated tests cover ordinary platform-check stops, a fill canary, older/fresh workspaces and the next-day plan hash. Any-response and downloaded-media 429 cases prove the two fill warning paths. No real profile or platform was used.

@@ -379,6 +379,9 @@ declare global {
     'desktop.token.WORKSPACE_BUSY': Record<never, never>;
     'desktop.token.WORKSPACE_INVALID': Record<never, never>;
     'desktop.token.WORKSPACE_SCHEMA_UNSUPPORTED': Record<never, never>;
+    'desktop.token.X_WARNING_CARD_REQUIRED': Record<never, never>;
+    'desktop.token.X_WARNING_DAY': Record<never, never>;
+    'desktop.token.X_WARNING_RESTORE_BLOCKED': Record<never, never>;
     'desktop.token.account-changed': Record<never, never>;
     'desktop.token.account-handle': Record<never, never>;
     'desktop.token.account-mismatch': Record<never, never>;

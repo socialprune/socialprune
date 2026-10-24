@@ -2,7 +2,9 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeAll, afterAll, expect, test } from 'vitest';
+import { beforeAll, afterAll, expect, test, vi } from 'vitest';
+import * as profileReports from '../src/browser/profile.ts';
+import { acknowledgeWarningCard } from '../src/commands/delete.ts';
 import { chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
@@ -107,7 +109,12 @@ async function harness(
   fake.setLanguage(false);
   fake.setAccessibleOnly(false);
   fake.renderOptions({});
-  const plan = await planDeletion(store, workspace.items[0]!.account.key);
+  const plan = await planDeletion(
+    store,
+    workspace.items[0]!.account.key,
+    new Set(),
+    new Date(now),
+  );
   let started!: () => void;
   let virtualWaits = false;
   let shown = new Promise<void>((resolve) => {
@@ -273,6 +280,7 @@ async function harness(
   };
   return {
     directory,
+    profile,
     store,
     plan,
     waits,
@@ -636,7 +644,7 @@ test.each([false, true])(
   },
 );
 
-test('D2 the twentieth entry in a restarted run pauses before another deletion', async () => {
+test('D6 point 1 not-found starts in a prior run do not trigger the deletion pause', async () => {
   const h = await harness(['1001', '1002']);
   h.virtualWaits();
   try {
@@ -676,7 +684,127 @@ test('D2 the twentieth entry in a restarted run pauses before another deletion',
     await h.click('Start');
     await h.click('Continue');
     expect(await running).toMatchObject({ completed: 2, endReason: 'done' });
-    expect(h.waits).toEqual([29000, 900000]);
+    expect(h.waits).toEqual([29000, 30000]);
+  } finally {
+    await h.close();
+  }
+});
+
+test.each(['429', 'side-429', 'limit', 'after-click-limit'] as const)(
+  'D6 point 3 fake X %s persists a next-day card gate before another browser launch',
+  async (variant) => {
+    const h = await harness(['1001', '1002']);
+    try {
+      h.virtualWaits();
+      fake.variants.set('1001', variant);
+      const first = h.launch().catch((error: unknown) => error);
+      await h.click('Start');
+      expect(await first).toMatchObject({ code: 'PLATFORM_CHECK' });
+      const warning = await h.store
+        .browserOutcomeWriter()
+        .xWarning(FIXTURE.account.key);
+      expect(warning).toMatchObject({ acknowledged: false });
+      const opens = h.launchUrls.length;
+      const requests = fake.requests.length;
+      await expect(h.launch()).rejects.toMatchObject({ code: 'X_WARNING_DAY' });
+      h.setNow('2026-10-12T12:00:00.000Z');
+      await expect(h.launch()).rejects.toMatchObject({
+        code: 'X_WARNING_CARD_REQUIRED',
+      });
+      expect(h.launchUrls).toHaveLength(opens);
+      expect(fake.requests).toHaveLength(requests);
+      expect(h.notices.join('')).toContain(warning!.runId);
+      await acknowledgeWarningCard(
+        h.store,
+        FIXTURE.account.key,
+        warning!.runId,
+        '2026-10-12T12:00:00.000Z',
+        h.plan.timeZone,
+        'en',
+        () => Promise.resolve(`I read the card for ${warning!.runId}`),
+        h.profile,
+      );
+      fake.variants.clear();
+      Object.assign(
+        h.plan,
+        await planDeletion(
+          h.store,
+          FIXTURE.account.key,
+          new Set(),
+          new Date('2026-10-12T12:00:00.000Z'),
+        ),
+      );
+      const resumed = h.launch(false, {
+        intervalMs: 30000,
+        batchSize: 20,
+        pauseMs: 900000,
+        perDay: 200,
+      });
+      await h.click('Start');
+      await h.click('Continue');
+      expect(await resumed).toMatchObject({
+        completed: variant === 'limit' || variant === 'side-429' ? 2 : 1,
+        endReason: 'done',
+      });
+      expect(
+        h.notices.some((text) => text.includes('at most 200 per calendar day')),
+      ).toBe(true);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test('D6 point 2 fake X confirmed deletion plus late report failure durably resets promotion', async () => {
+  const h = await harness(['1001']);
+  try {
+    vi.spyOn(profileReports, 'writeExtensionReport').mockRejectedValueOnce(
+      new Error('Generated report failure'),
+    );
+    const run = h.launch().catch((error: unknown) => error);
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await run).toMatchObject({ code: 'RUN_STOPPED' });
+    expect((await h.store.browserJournal()).runs.at(-1)).toMatchObject({
+      endReason: 'error',
+    });
+    expect((await h.store.browserJournal()).attempts.at(-1)).toMatchObject({
+      state: 'deleted',
+    });
+  } finally {
+    vi.restoreAllMocks();
+    await h.close();
+  }
+});
+
+test('D7 A focal-count stop does not set a warning gate and a same-day corrected plan can start', async () => {
+  const h = await harness(['1004']);
+  try {
+    fake.variants.set('1004', 'repost-original-time');
+    const stopped = h.launch().catch((error: unknown) => error);
+    await h.click('Start');
+    expect(await stopped).toMatchObject({ code: 'PLATFORM_CHECK' });
+    expect(
+      await h.store.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+    ).toBeNull();
+    fake.variants.clear();
+    const resumed = h.launch();
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await resumed).toMatchObject({ completed: 1, endReason: 'done' });
+  } finally {
+    await h.close();
+  }
+});
+
+test('D7 D a yesterday deletion plan is STALE_PLAN before any X navigation', async () => {
+  const h = await harness(['1001']);
+  try {
+    h.setNow('2026-10-12T12:00:00.000Z');
+    const stopped = h.launch().catch((error: unknown) => error);
+    await h.click('Start');
+    expect(await stopped).toMatchObject({ code: 'STALE_PLAN' });
+    expect(fake.requests).toHaveLength(0);
   } finally {
     await h.close();
   }
@@ -740,7 +868,12 @@ test.each([false, true])(
       for (let page = 0; page < 199; page++)
         await writer.pageOpen(run.runId, FIXTURE.now);
       await writer.finish({ ...run, endedAt: FIXTURE.now, endReason: 'done' });
-      const plan = await planDeletion(h.store, FIXTURE.account.key);
+      const plan = await planDeletion(
+        h.store,
+        FIXTURE.account.key,
+        new Set(),
+        new Date(FIXTURE.now),
+      );
       h.plan.rows = plan.rows;
       h.plan.hash = plan.hash;
       const running = h.launch(false, {
@@ -1226,7 +1359,12 @@ test('daily cap counts earlier attempts in the workspace calendar day', async ()
     await h.click('Start');
     await h.click('Continue');
     expect(await first).toMatchObject({ completed: 1, endReason: 'daily-cap' });
-    const refreshed = await planDeletion(h.store, FIXTURE.account.key);
+    const refreshed = await planDeletion(
+      h.store,
+      FIXTURE.account.key,
+      new Set(),
+      new Date(FIXTURE.now),
+    );
     h.plan.rows = refreshed.rows;
     h.plan.hash = refreshed.hash;
     const second = h.launch(false, {
@@ -1545,7 +1683,12 @@ test('same-day fresh-plan resume deletes only remaining entries, with no duplica
     await h.click('Start');
     await h.click('Continue');
     await first;
-    const remaining = await planDeletion(h.store, FIXTURE.account.key);
+    const remaining = await planDeletion(
+      h.store,
+      FIXTURE.account.key,
+      new Set(),
+      new Date(FIXTURE.now),
+    );
     expect(remaining.rows.map((r) => r.item.id)).toEqual(['x:1002']);
     h.plan.rows = remaining.rows;
     h.plan.hash = remaining.hash;

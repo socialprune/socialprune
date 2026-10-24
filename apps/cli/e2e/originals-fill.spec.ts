@@ -237,6 +237,7 @@ for (const variant of [
   'order-window-short',
   'order-window-long',
   'order-window-side-429',
+  'order-window-media-side-429',
   'order-window-none',
   'order-window-stop',
   'order-pace-ten',
@@ -578,6 +579,17 @@ for (const variant of [
     let statusBroughtToFront = 0;
     let releaseHome: () => void = () => {};
     let now = Date.parse(FIXTURE.now);
+    const media429 =
+      variant === 'order-window-media-side-429'
+        ? createServer((_request, response) => {
+            response.writeHead(429, { 'Access-Control-Allow-Origin': '*' });
+            response.end('{}');
+          })
+        : undefined;
+    if (media429)
+      await new Promise<void>((resolve) =>
+        media429.listen(TEST_PORTS.reviewMedia, '127.0.0.1', resolve),
+      );
     const server = createServer((request, response) => {
       requests.push(request.url ?? '');
       const pathname = (request.url ?? '').split('?')[0];
@@ -860,7 +872,7 @@ for (const variant of [
             ? '<button data-testid="loginButton">Generated login</button>'
             : '';
         response.end(
-          `${slow ? delayedStopSwitcherMarkup(nav) : account}${marker}${flowMarkup(id, mismatch)}<script>${variant.endsWith('side-429') ? "fetch('/i/api/graphql/generated/SideOperation');" : variant === 'order-window-late-429' ? "setTimeout(()=>fetch('/i/api/graphql/generated/SideOperation'),500);" : ''}${variant === 'order-flow-unexpected' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'});" : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${id}'})))</script>`,
+          `${slow ? delayedStopSwitcherMarkup(nav) : account}${marker}${flowMarkup(id, mismatch)}<script>${variant === 'order-window-media-side-429' ? `fetch('http://127.0.0.1:${TEST_PORTS.reviewMedia}/generated-media');` : variant.endsWith('side-429') ? "fetch('/i/api/graphql/generated/SideOperation');" : variant === 'order-window-late-429' ? "setTimeout(()=>fetch('/i/api/graphql/generated/SideOperation'),500);" : ''}${variant === 'order-flow-unexpected' ? "fetch('/i/api/graphql/generated/FavoriteTweet',{method:'POST'});" : ''}fetch('/i/api/graphql/generated/TweetDetail?variables='+encodeURIComponent(JSON.stringify({focalTweetId:'${id}'})))</script>`,
         );
         return;
       }
@@ -1071,6 +1083,11 @@ for (const variant of [
         },
         {
           origin: TEST_ORIGINS.x,
+          ...(media429
+            ? {
+                testResponseOrigin: `http://127.0.0.1:${TEST_PORTS.reviewMedia}`,
+              }
+            : {}),
           port: TEST_PORTS.confirmation,
           responseMs: flow
             ? FLOW_FIXTURE.slowWaitMs
@@ -1233,8 +1250,8 @@ for (const variant of [
               if (paceVariant)
                 await expect(page.locator('#profile')).toContainText(
                   variant === 'order-pace-batch-default'
-                    ? 'Pace: at least 30 seconds between pages, at most 200 pages per Berlin day; a 15-minute pause after 20 pages.'
-                    : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per Berlin day; no fixed batch pause.`,
+                    ? `Pace: at least 30 seconds between pages, at most 200 pages per calendar day (${plan.timeZone}); a 15-minute pause after 20 pages.`
+                    : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per calendar day (${plan.timeZone}); no fixed batch pause.`,
                 );
               if (variant.startsWith('order-platform-'))
                 await expect(page.locator('#result')).toContainText(
@@ -1353,8 +1370,23 @@ for (const variant of [
           return;
         }
         const outcome = await result;
+        if (variant === 'order-flow-canary-timeout')
+          expect(
+            await store
+              .browserOutcomeWriter()
+              .xWarning(workspace.items[0]!.account.key),
+          ).toBeNull();
         if (windowVariant || paceVariant) {
           const run = (await store.browserJournal()).runs.at(-1)!;
+          if (variant.endsWith('side-429')) {
+            expect(
+              await store.browserOutcomeWriter().xWarning(run.accountKey),
+            ).toMatchObject({ runId: run.runId, acknowledged: false });
+            expect(run).toMatchObject({
+              endReason: 'platform-check',
+              warningKind: 'http-429',
+            });
+          }
           if (
             variant.includes('window-long') ||
             variant === 'order-window-canary-long'
@@ -1375,17 +1407,15 @@ for (const variant of [
           else if (variant === 'order-window-stop')
             expect(outcome).toMatchObject({ code: 'CANCELLED' });
           else
-            expect(outcome).toMatchObject({
+            expect(outcome, JSON.stringify(notices)).toMatchObject({
               completed:
-                variant === 'order-pace-deletion-cap' ||
-                variant === 'order-pace-berlin-cap'
+                variant === 'order-pace-deletion-cap'
                   ? 1
                   : variant.startsWith('order-pace-batch-')
                     ? 21
                     : 2,
               endReason:
-                variant === 'order-pace-deletion-cap' ||
-                variant === 'order-pace-berlin-cap'
+                variant === 'order-pace-deletion-cap'
                   ? 'daily-cap'
                   : windowCanary
                     ? 'canary'
@@ -1416,11 +1446,10 @@ for (const variant of [
             expect(
               flowStarts[1]!.at - flowStarts[0]!.at,
             ).toBeGreaterThanOrEqual(10000);
-          if (
-            variant === 'order-pace-deletion-cap' ||
-            variant === 'order-pace-berlin-cap'
-          )
+          if (variant === 'order-pace-deletion-cap')
             expect(run.pageOpens).toBe(1);
+          if (variant === 'order-pace-berlin-cap')
+            expect(run.pageOpens).toBe(2);
           if (variant.startsWith('order-pace-batch-')) {
             expect(flowStarts).toHaveLength(21);
             for (let index = 1; index < flowStarts.length; index++)
@@ -1436,8 +1465,8 @@ for (const variant of [
           if (paceVariant)
             expect(notices).toContain(
               variant === 'order-pace-batch-default'
-                ? 'Pace: at least 30 seconds between pages, at most 200 pages per Berlin day; a 15-minute pause after 20 pages.\n'
-                : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per Berlin day; no fixed batch pause.\n`,
+                ? `Pace: at least 30 seconds between pages, at most 200 pages per calendar day (${plan.timeZone}); a 15-minute pause after 20 pages.\n`
+                : `Pace: at least 10 seconds between pages, at most ${variant === 'order-pace-deletion-cap' || variant === 'order-pace-berlin-cap' ? 2 : 300} pages per calendar day (${plan.timeZone}); no fixed batch pause.\n`,
             );
           if (
             windowVariant &&
@@ -1882,13 +1911,45 @@ for (const variant of [
             readbackVariant || variant.startsWith('order-platform-')
               ? { endReason: 'platform-check' }
               : injectedError
-                ? { endReason: 'error' }
+                ? injectedError === 'rate-limit'
+                  ? { endReason: 'platform-check', warningKind: 'http-429' }
+                  : { endReason: 'error' }
                 : variant.startsWith('order-parent-unknown-') ||
                     variant === 'order-empty-focal-unknown' ||
                     variant === 'order-empty-focal-module'
                   ? { endReason: 'shape-changed' }
                   : { endReason: 'error', displayEndReason: 'canary-mismatch' },
           );
+          if (injectedError === 'rate-limit') {
+            const { exportBackup, restoreWorkspace } =
+              await import('../src/workspace/services.ts');
+            const file = join(directory, 'warning-media-backup.json');
+            const call = {
+              workspace: directory,
+              now: () => new Date(now),
+              signal: new AbortController().signal,
+              dryRun: false,
+            };
+            await exportBackup({ ...call, out: file });
+            const restoredFolder = join(directory, 'restored-warning');
+            await restoreWorkspace({
+              ...call,
+              workspace: restoredFolder,
+              file,
+            });
+            const restored = await SQLiteStore.open(
+              join(restoredFolder, 'socialprune.sqlite'),
+            );
+            try {
+              expect(
+                await restored
+                  .browserOutcomeWriter()
+                  .xWarning(workspace.items[0]!.account.key),
+              ).toMatchObject({ kind: 'http-429', acknowledged: false });
+            } finally {
+              await restored.close();
+            }
+          }
         }
         if (variant.startsWith('order-optional-')) {
           const run = (await store.browserJournal()).runs.at(-1)!;
@@ -3009,6 +3070,10 @@ for (const variant of [
           (await store.browserJournal()).runs[0]?.canaryAcceptedAt,
         ).not.toBeNull();
     } finally {
+      if (media429) {
+        media429.closeAllConnections();
+        await new Promise<void>((resolve) => media429.close(() => resolve()));
+      }
       releaseHome();
       abort.abort();
       await context?.close();

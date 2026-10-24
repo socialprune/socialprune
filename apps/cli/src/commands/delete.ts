@@ -16,6 +16,13 @@ import {
   accountNameText,
 } from '../browser/plan.ts';
 import { productionPace } from '../browser/pace.ts';
+import { xWarningNotice } from '../browser/copy.ts';
+import { createInterface } from 'node:readline/promises';
+import {
+  readXWarningFile,
+  requireXWarningFileClear,
+  clearXWarningFile,
+} from '../workspace/x-warning-file.ts';
 
 export interface DeleteFlags {
   workspace: string;
@@ -32,6 +39,71 @@ export interface DeleteFlags {
   browser?: 'chrome' | 'edge';
   lang: 'en' | 'de';
   withoutOriginals: boolean;
+  acknowledgeWarning?: string;
+}
+export async function acknowledgeWarningCard(
+  store: SQLiteStore,
+  account: string,
+  runId: string,
+  at: string,
+  zone: string,
+  lang: 'en' | 'de',
+  read: (prompt: string) => Promise<string>,
+  profile?: string,
+): Promise<void> {
+  if (profile)
+    await store.browserOutcomeWriter().mirrorXWarning(account, profile);
+  let warning = await store.browserOutcomeWriter().xWarning(account);
+  const mirrored = profile ? await readXWarningFile(profile) : null;
+  if (
+    mirrored &&
+    (!warning ||
+      (warning.at <= mirrored.createdAt && warning.runId !== mirrored.runId))
+  ) {
+    await store.browserOutcomeWriter().adoptXProfileWarning(account, mirrored);
+    warning = await store.browserOutcomeWriter().xWarning(account);
+  }
+  if (
+    (!warning && !mirrored) ||
+    (warning && warning.runId !== runId) ||
+    (mirrored && mirrored.runId !== runId)
+  )
+    throw new CliError('X_WARNING_CARD_REQUIRED');
+  // Check the day before asking for input, without recording acknowledgement.
+  try {
+    await store.browserOutcomeWriter().requireXWarningClear(account, at, zone);
+  } catch (error) {
+    if (!(
+      error instanceof CliError && error.code === 'X_WARNING_CARD_REQUIRED'
+    ))
+      throw error;
+  }
+  if (profile) {
+    try {
+      await requireXWarningFileClear(profile, at, zone);
+    } catch (error) {
+      if (!(
+        error instanceof CliError && error.code === 'X_WARNING_CARD_REQUIRED'
+      ))
+        throw error;
+    }
+  }
+  const phrase =
+    lang === 'de'
+      ? `Ich habe die Karte zu ${runId} gelesen`
+      : `I read the card for ${runId}`;
+  if (
+    (
+      await read(
+        `${lang === 'de' ? 'Tippe genau' : 'Type exactly'}: ${phrase}\n> `,
+      )
+    ).trim() !== phrase
+  )
+    throw new CliError('X_WARNING_CARD_REQUIRED');
+  await store
+    .browserOutcomeWriter()
+    .acknowledgeXWarning(account, runId, at, zone);
+  if (profile) await clearXWarningFile(profile, runId);
 }
 export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
   const flagHandle = parseHandle(flags.handle);
@@ -39,7 +111,16 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
     throw new CliError('INVALID_ARGUMENTS');
   if (!flags.dryRun && (flags.json || !context.stdoutIsTerminal))
     throw new CliError('NOT_INTERACTIVE');
-  if (!flags.dryRun && (!flags.profile || (!flags.verify && !flags.plan)))
+  if (
+    flags.acknowledgeWarning &&
+    (flags.dryRun || flags.verify || flags.plan || !flags.profile)
+  )
+    throw new CliError('INVALID_ARGUMENTS');
+  if (
+    !flags.dryRun &&
+    !flags.acknowledgeWarning &&
+    (!flags.profile || (!flags.verify && !flags.plan))
+  )
     throw new CliError('INVALID_ARGUMENTS');
   const perDay = flags.perDay === undefined ? undefined : Number(flags.perDay);
   productionPace(
@@ -60,9 +141,46 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
           throw new CliError('INVALID_ARGUMENTS');
         include.add(line.trim());
       }
-    const plan = await planDeletion(store, flags.account, include);
+    const plan = await planDeletion(
+      store,
+      flags.account,
+      include,
+      context.now(),
+    );
     const accountName = resolveAccountName(plan.handle, flagHandle);
     const text = planText(plan, flags.lang);
+    if (flags.acknowledgeWarning) {
+      if (!process.stdin.isTTY) throw new CliError('NOT_INTERACTIVE');
+      const { validateProfile } = await import('../browser/profile.ts');
+      await validateProfile(flags.profile!);
+      await acknowledgeWarningCard(
+        store,
+        flags.account,
+        flags.acknowledgeWarning,
+        context.now().toISOString(),
+        plan.timeZone,
+        flags.lang,
+        async (prompt) => {
+          const input = createInterface({
+            input: process.stdin,
+            output: process.stderr,
+          });
+          try {
+            return await input.question(prompt, { signal: context.signal });
+          } finally {
+            input.close();
+          }
+        },
+        flags.profile,
+      );
+      return {
+        data: { acknowledgedRun: flags.acknowledgeWarning },
+        human:
+          flags.lang === 'de'
+            ? 'Karte bestätigt. Es wurde kein Browser geöffnet. Erstelle vor dem nächsten Löschlauf einen neuen Testlauf.'
+            : 'Card acknowledged. No browser was opened. Make a new dry run before the next deletion run.',
+      };
+    }
     if (flags.dryRun) {
       if (flags.list) {
         await assertOutput(flags.list, flags.workspace);
@@ -97,6 +215,40 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
       throw new CliError('STALE_PLAN');
     if (!flags.verify && plan.originalsPending && !flags.withoutOriginals)
       throw new CliError('ORIGINALS_PENDING');
+    if (!flags.verify) {
+      try {
+        await store
+          .browserOutcomeWriter()
+          .mirrorXWarning(flags.account, flags.profile!);
+        await requireXWarningFileClear(
+          flags.profile!,
+          context.now().toISOString(),
+          plan.timeZone,
+        );
+        await store
+          .browserOutcomeWriter()
+          .requireXWarningClear(
+            flags.account,
+            context.now().toISOString(),
+            plan.timeZone,
+          );
+      } catch (error) {
+        if (
+          error instanceof CliError &&
+          (error.code === 'X_WARNING_DAY' ||
+            error.code === 'X_WARNING_CARD_REQUIRED')
+        ) {
+          const warning =
+            (await readXWarningFile(flags.profile!)) ??
+            (await store.browserOutcomeWriter().xWarning(flags.account));
+          if (warning)
+            context.io.stderr.write(
+              xWarningNotice(error.code, warning.runId, flags.lang),
+            );
+        }
+        throw error;
+      }
+    }
     const { validateProfile, installedBrowser } =
       await import('../browser/profile.ts');
     await validateProfile(flags.profile!);
@@ -205,6 +357,13 @@ export const deleteXCommand = buildCommand({
         optional: true,
         brief:
           'Lower the daily cap (maximum 200 deletion or 100 verification entries)',
+      },
+      acknowledgeWarning: {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief:
+          'Acknowledge the parent card for this warned run by typing its exact phrase; opens no browser',
       },
       browser: {
         kind: 'enum',

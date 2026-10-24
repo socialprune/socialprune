@@ -16,6 +16,8 @@ export function deletionPace(
 export function cleanDeletions(
   journal: { runs: BrowserRun[]; attempts: BrowserAttempt[] },
   accountKey: string,
+  resetAfterRun?: string,
+  resetAfterAt?: string,
 ): number {
   let count = 0;
   const settlements = new Map(
@@ -29,12 +31,24 @@ export function cleanDeletions(
     sends.set(attempt.runId, values);
   }
   for (const run of journal.runs) {
-    if (
-      run.platform !== 'x' ||
-      run.accountKey !== accountKey ||
-      run.mode !== 'delete'
-    )
+    if (resetAfterAt && Date.parse(run.startedAt) < Date.parse(resetAfterAt)) {
+      count = 0;
       continue;
+    }
+    if (run.runId === resetAfterRun) {
+      count = 0;
+      continue;
+    }
+    if (run.platform !== 'x' || run.accountKey !== accountKey) continue;
+    if (run.mode !== 'delete') {
+      if (run.mode === 'fill' && run.endReason === 'canary') continue;
+      if (
+        run.endReason &&
+        !['done', 'daily-cap', 'stopped-by-person'].includes(run.endReason)
+      )
+        count = 0;
+      continue;
+    }
     for (const sending of sends.get(run.runId) ?? []) {
       const settled = settlements.get(sending.attemptId);
       if (

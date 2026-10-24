@@ -15,8 +15,8 @@ export function profileWarning(
     : `Signed in as @${handle}, a program can do anything the website can: post, like, follow, send messages, change settings and delete. It can also change this browser profile's cookies, site data, cache, history and settings. SocialPrune's code only does the steps listed for this run.`;
 }
 export const EXTENSION_NOTICE = {
-  en: 'Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile.',
-  de: 'Erweiterungen sind für diesen Lauf ausgeschaltet. SocialPrune erfasst ihre Kennungen und schreibt seine eigene Profilkontrolle als JSON-Datei in dieses eigene Profil.',
+  en: "Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile. An X warning also writes socialprune-x-warning.json beside socialprune-profile.json; only the person's warning-card acknowledgement removes it.",
+  de: 'Erweiterungen sind für diesen Lauf ausgeschaltet. SocialPrune erfasst ihre Kennungen und schreibt seine eigene Profilkontrolle als JSON-Datei in dieses eigene Profil. Eine X-Warnung schreibt außerdem socialprune-x-warning.json neben socialprune-profile.json; nur die persönliche Bestätigung der Warnkarte entfernt sie.',
 };
 export const FILL_STEPS = {
   en: 'Open each listed post by its address and keep what X sends. No clicks, typing or scrolling in the X tab. Download media anonymously. Pages change history, cache, cookies and site data.',
@@ -87,10 +87,20 @@ export function fillPaceNotice(
   daily: number,
   pause: boolean,
   lang: BrowserLanguage = 'en',
+  zone = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): string {
   return lang === 'de'
-    ? `Tempo: mindestens ${seconds} Sekunden zwischen Seiten, höchstens ${daily} Seiten pro Berliner Tag; ${pause ? '15 Minuten Pause nach 20 Seiten' : 'keine feste Blockpause'}.`
-    : `Pace: at least ${seconds} seconds between pages, at most ${daily} pages per Berlin day; ${pause ? 'a 15-minute pause after 20 pages' : 'no fixed batch pause'}.`;
+    ? `Tempo: mindestens ${seconds} Sekunden zwischen Seiten, höchstens ${daily} Seiten pro Kalendertag (${zone}); ${pause ? '15 Minuten Pause nach 20 Seiten' : 'keine feste Blockpause'}.`
+    : `Pace: at least ${seconds} seconds between pages, at most ${daily} pages per calendar day (${zone}); ${pause ? 'a 15-minute pause after 20 pages' : 'no fixed batch pause'}.`;
+}
+export function xWarningNotice(
+  code: 'X_WARNING_DAY' | 'X_WARNING_CARD_REQUIRED',
+  runId: string,
+  lang: BrowserLanguage,
+): string {
+  return lang === 'de'
+    ? `${code === 'X_WARNING_DAY' ? 'Löschen bleibt bis zum nächsten Tag in der Zeitzone des Arbeitsbereichs gesperrt.' : 'Löschen bleibt gesperrt.'} Lies zuerst die Karte der übergeordneten Sitzung zur X-Warnung. Bestätige danach als Person den gewarnten Lauf ${runId} mit --acknowledge-warning ${runId} --profile <dir>. Lesen und Kontrolle bleiben möglich.\n`
+    : `${code === 'X_WARNING_DAY' ? 'Deletion is blocked until the next workspace day.' : 'Deletion is blocked.'} Read the parent\'s card about the X warning first. Then acknowledge warned run ${runId} as a person with --acknowledge-warning ${runId} --profile <dir>. Reading and verification remain available.\n`;
 }
 const END_REASON = {
   'canary-mismatch': {

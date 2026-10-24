@@ -43,6 +43,54 @@
             {
               "type": "object",
               "properties": {
+                "code": {
+                  "type": "string",
+                  "const": "X_WARNING_RESTORE_BLOCKED"
+                },
+                "message": {
+                  "type": "string",
+                  "const": "Restore cannot replace a workspace with an unacknowledged X warning. Read the parent card, then use delete x --acknowledge-warning <runId> --profile <dir> before restoring."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "X_WARNING_DAY" },
+                "message": {
+                  "type": "string",
+                  "const": "An X warning blocks deletion until the next workspace day. Read the parent's card first, then acknowledge the warned run by name."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "const": "X_WARNING_CARD_REQUIRED"
+                },
+                "message": {
+                  "type": "string",
+                  "const": "Read the parent's card about the X warning first. A person must acknowledge that warned run by name before deletion can start."
+                },
+                "exitCode": { "type": "number", "const": 2 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
                 "code": { "type": "string", "const": "SOURCE_FILE_INVALID" },
                 "message": {
                   "type": "string",

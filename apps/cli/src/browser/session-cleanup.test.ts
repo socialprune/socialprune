@@ -116,7 +116,12 @@ test.each(
           ? runWithDependencies(
               {
                 ...common,
-                plan: await planDeletion(store, account),
+                plan: await planDeletion(
+                  store,
+                  account,
+                  new Set(),
+                  new Date(FIXTURE.now),
+                ),
                 verify: false,
               },
               {

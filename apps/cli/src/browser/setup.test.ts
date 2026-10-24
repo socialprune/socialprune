@@ -950,7 +950,12 @@ test('a preinstalled generated extension set reaches the disabled-extension driv
   const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
     initial: fixtureWorkspace(['1005']),
   });
-  const plan = await planDeletion(store, FIXTURE.account.key);
+  const plan = await planDeletion(
+    store,
+    FIXTURE.account.key,
+    new Set(),
+    new Date(FIXTURE.now),
+  );
   let called = false;
   try {
     const result = await runWithDependencies(

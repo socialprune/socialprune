@@ -16,6 +16,326 @@ import {
   IG_FIXTURE,
 } from '../../e2e/fake-instagram/fixture.ts';
 import { SQLiteStore } from './sqlite-store.ts';
+import { acknowledgeWarningCard } from '../commands/delete.ts';
+
+test('D6 warning gate survives reopen, rejects early and wrong acknowledgements and binds the latest warned run', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d6-warning-'));
+  const path = join(directory, 'socialprune.sqlite');
+  let store = await SQLiteStore.open(path, {
+    initial: fixtureWorkspace(['1001']),
+  });
+  const at = '2026-10-11T22:30:00.000Z';
+  try {
+    const writer = store.browserOutcomeWriter();
+    await writer.begin({
+      runId: 'warned',
+      platform: 'x',
+      accountKey: FIXTURE.account.key,
+      mode: 'delete',
+      planHash: 'a'.repeat(64),
+      startedAt: at,
+      endedAt: null,
+      endReason: null,
+      bodyShapes: {},
+      profileReport: null,
+    });
+    await writer.recordXWarning(
+      'warned',
+      at,
+      'America/Los_Angeles',
+      'http-429',
+    );
+    await writer.finish({
+      runId: 'warned',
+      platform: 'x',
+      accountKey: FIXTURE.account.key,
+      mode: 'delete',
+      planHash: 'a'.repeat(64),
+      startedAt: at,
+      endedAt: at,
+      endReason: 'platform-check',
+      warningKind: 'http-429',
+      bodyShapes: {},
+      profileReport: null,
+    });
+    await store.close();
+    store = await SQLiteStore.open(path);
+    const reopened = store.browserOutcomeWriter();
+    await expect(
+      reopened.requireXWarningClear(
+        FIXTURE.account.key,
+        '2026-10-12T01:00:00.000Z',
+        'America/Los_Angeles',
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_DAY' });
+    await expect(
+      reopened.requireXWarningClear(
+        FIXTURE.account.key,
+        '2026-10-12T08:00:00.000Z',
+        'America/Los_Angeles',
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    const read = vi.fn(() => Promise.resolve('wrong'));
+    await expect(
+      acknowledgeWarningCard(
+        store,
+        FIXTURE.account.key,
+        'warned',
+        '2026-10-12T01:00:00.000Z',
+        'America/Los_Angeles',
+        'en',
+        read,
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_DAY' });
+    expect(read).not.toHaveBeenCalled();
+    await expect(
+      acknowledgeWarningCard(
+        store,
+        FIXTURE.account.key,
+        'warned',
+        '2026-10-12T08:00:00.000Z',
+        'America/Los_Angeles',
+        'en',
+        read,
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    await acknowledgeWarningCard(
+      store,
+      FIXTURE.account.key,
+      'warned',
+      '2026-10-12T08:00:00.000Z',
+      'America/Los_Angeles',
+      'de',
+      () => Promise.resolve('Ich habe die Karte zu warned gelesen'),
+    );
+    await expect(
+      reopened.requireXWarningClear(
+        FIXTURE.account.key,
+        '2026-10-12T08:00:00.000Z',
+        'America/Los_Angeles',
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      reopened.acknowledgeXWarning(
+        FIXTURE.account.key,
+        'other-run',
+        '2026-10-12T08:00:00.000Z',
+        'America/Los_Angeles',
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    await store.close();
+    store = await SQLiteStore.open(path);
+    expect(
+      await store.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+    ).toMatchObject({ runId: 'warned', acknowledged: true });
+    const portable = await store.read(async (tx) => ({
+      browserRuns: await records(tx.browserRuns),
+      browserAttempts: await records(tx.browserAttempts),
+    }));
+    const restored = await SQLiteStore.open(
+      join(directory, 'restored.sqlite'),
+      {
+        initial: {
+          ...fixtureWorkspace(['1001']),
+          browserRuns: portable.browserRuns,
+          browserAttempts: portable.browserAttempts,
+          counts: {
+            ...fixtureWorkspace(['1001']).counts,
+            browserRuns: portable.browserRuns.length,
+            browserAttempts: portable.browserAttempts.length,
+          },
+        },
+      },
+    );
+    try {
+      await restored.browserOutcomeWriter().rebuildXWarnings();
+      await expect(
+        restored
+          .browserOutcomeWriter()
+          .requireXWarningClear(
+            FIXTURE.account.key,
+            '2026-10-13T12:00:00.000Z',
+            'Europe/Berlin',
+          ),
+      ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+      expect(
+        await restored.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+      ).toMatchObject({ runId: 'warned', acknowledged: false });
+    } finally {
+      await restored.close();
+    }
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('D7 B profile gate survives an older or fresh workspace and acknowledgement clears both copies', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d7-profile-gate-'));
+  const profile = join(directory, 'profile');
+  const { createProfile, profileSnapshot, changedProfileFiles } =
+    await import('../browser/profile.ts');
+  const { requireXWarningFileClear, readXWarningFile } =
+    await import('./x-warning-file.ts');
+  await createProfile(profile);
+  const before = await profileSnapshot(profile);
+  const store = await SQLiteStore.open(join(directory, 'original.sqlite'), {
+    initial: fixtureWorkspace(['1001']),
+  });
+  try {
+    const writer = store.browserOutcomeWriter();
+    writer.bindXWarningProfile(profile);
+    const run = {
+      runId: 'mirrored-warning',
+      platform: 'x' as const,
+      accountKey: FIXTURE.account.key,
+      mode: 'delete' as const,
+      planHash: 'a'.repeat(64),
+      startedAt: FIXTURE.now,
+      endedAt: null,
+      endReason: null,
+      bodyShapes: {},
+      profileReport: null,
+    };
+    await writer.begin(run);
+    await writer.recordXWarning(
+      run.runId,
+      FIXTURE.now,
+      'Europe/Berlin',
+      'http-429',
+    );
+    await writer.finish({
+      ...run,
+      endedAt: FIXTURE.now,
+      endReason: 'platform-check',
+      warningKind: 'http-429',
+    });
+    expect(changedProfileFiles(before, await profileSnapshot(profile))).toEqual(
+      ['socialprune-x-warning.json'],
+    );
+    for (const name of ['older-backup', 'fresh-workspace']) {
+      const other = await SQLiteStore.open(join(directory, `${name}.sqlite`), {
+        initial: fixtureWorkspace(['1001']),
+      });
+      try {
+        expect(
+          await other.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+        ).toBeNull();
+        await expect(
+          requireXWarningFileClear(profile, FIXTURE.now, 'Europe/Berlin'),
+        ).rejects.toMatchObject({ code: 'X_WARNING_DAY' });
+        await expect(
+          requireXWarningFileClear(
+            profile,
+            '2026-10-12T12:00:00.000Z',
+            'Europe/Berlin',
+          ),
+        ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+        const { runWithDependencies } = await import('../browser/runner.ts');
+        const { planDeletion } = await import('../browser/plan.ts');
+        const launch = vi.fn(() => {
+          throw new Error('Must refuse before browser');
+        });
+        await expect(
+          runWithDependencies(
+            {
+              store: other,
+              profile,
+              plan: await planDeletion(
+                other,
+                FIXTURE.account.key,
+                new Set(),
+                new Date('2026-10-12T12:00:00.000Z'),
+              ),
+              executablePath: 'generated',
+              verify: false,
+              list: '',
+              lang: 'en',
+              signal: new AbortController().signal,
+              now: () => new Date('2026-10-12T12:00:00.000Z'),
+              notice() {},
+            },
+            {
+              pace: {
+                intervalMs: 30000,
+                batchSize: 20,
+                pauseMs: 900000,
+                perDay: 200,
+              },
+              confirmationPort: 0,
+              sleep: () => Promise.resolve(),
+              driver: launch,
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+        expect(launch).not.toHaveBeenCalled();
+      } finally {
+        await other.close();
+      }
+    }
+    await acknowledgeWarningCard(
+      store,
+      FIXTURE.account.key,
+      run.runId,
+      '2026-10-12T12:00:00.000Z',
+      'Europe/Berlin',
+      'en',
+      () => Promise.resolve(`I read the card for ${run.runId}`),
+      profile,
+    );
+    expect(await readXWarningFile(profile)).toBeNull();
+    await expect(
+      writer.requireXWarningClear(
+        FIXTURE.account.key,
+        '2026-10-12T12:00:00.000Z',
+        'Europe/Berlin',
+      ),
+    ).resolves.toBeUndefined();
+    const markerRun = {
+      ...run,
+      runId: 'fresh-profile-warning',
+      startedAt: '2026-10-12T12:00:00.000Z',
+    };
+    await writer.begin(markerRun);
+    await writer.recordXWarning(
+      markerRun.runId,
+      markerRun.startedAt,
+      'Europe/Berlin',
+      'limit-notice',
+    );
+    await writer.finish({
+      ...markerRun,
+      endedAt: markerRun.startedAt,
+      endReason: 'platform-check',
+      warningKind: 'limit-notice',
+    });
+    const fresh = await SQLiteStore.open(
+      join(directory, 'fresh-after-warning.sqlite'),
+      { initial: fixtureWorkspace(['1001']) },
+    );
+    try {
+      await acknowledgeWarningCard(
+        fresh,
+        FIXTURE.account.key,
+        markerRun.runId,
+        '2026-10-13T12:00:00.000Z',
+        'Europe/Berlin',
+        'en',
+        () => Promise.resolve(`I read the card for ${markerRun.runId}`),
+        profile,
+      );
+      expect(await readXWarningFile(profile)).toBeNull();
+      expect(
+        await fresh.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+      ).toMatchObject({ runId: markerRun.runId, acknowledged: true });
+    } finally {
+      await fresh.close();
+    }
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test.each(['delete', 'verify'] as const)(
   'D2 %s starts after a positively dead fill run and preserves the read identity',

@@ -149,6 +149,53 @@ test('clean journal count binds direct confirmed settlements to their sending, r
   expect(cleanDeletions({ runs: [run], attempts }, run.accountKey)).toBe(100);
   expect(
     cleanDeletions(
+      {
+        runs: [
+          run,
+          {
+            ...run,
+            runId: 'normal-fill-canary',
+            mode: 'fill',
+            endReason: 'canary',
+          },
+        ],
+        attempts,
+      },
+      run.accountKey,
+    ),
+  ).toBe(100);
+  expect(
+    cleanDeletions({ runs: [run], attempts }, run.accountKey, run.runId),
+  ).toBe(0);
+  expect(
+    deletionPace(
+      cleanDeletions({ runs: [run], attempts }, run.accountKey, run.runId),
+      new XResponseWindows(),
+      now,
+    ),
+  ).toEqual({ intervalMs: 30000, perDay: 200 });
+  for (const endReason of ['done', 'daily-cap', 'stopped-by-person'] as const)
+    expect(
+      cleanDeletions(
+        { runs: [{ ...run, endReason }], attempts },
+        run.accountKey,
+      ),
+    ).toBe(100);
+  for (const mode of ['delete', 'verify', 'fill'] as const)
+    expect(
+      cleanDeletions(
+        {
+          runs: [
+            run,
+            { ...run, runId: `stopped-${mode}`, mode, endReason: 'error' },
+          ],
+          attempts,
+        },
+        run.accountKey,
+      ),
+    ).toBe(0);
+  expect(
+    cleanDeletions(
       { runs: [{ ...run, accountKey: 'x:other' }], attempts },
       run.accountKey,
     ),

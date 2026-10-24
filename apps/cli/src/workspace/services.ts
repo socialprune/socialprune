@@ -528,6 +528,8 @@ export async function restoreWorkspace(input: RestoreCall) {
       fileChunks(input.file, input.signal),
       { signal: input.signal },
     );
+    if (staging)
+      await (store as SQLiteStore).browserOutcomeWriter().rebuildXWarnings();
     const workspace = await identity(store);
     await store.close();
     if (staging) {
@@ -536,6 +538,8 @@ export async function restoreWorkspace(input: RestoreCall) {
         const current = await SQLiteStore.open(target.path);
         try {
           await current.checkExclusive();
+          if (current.browserOutcomeWriter().hasUnacknowledgedXWarning())
+            throw new CliError('X_WARNING_RESTORE_BLOCKED');
         } finally {
           await current.close();
         }

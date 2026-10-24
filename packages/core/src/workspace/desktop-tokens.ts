@@ -10,6 +10,9 @@ import { WORKSPACE_ERROR_CODES } from './errors.ts';
 // CLI into the renderer's graph. Update this vocabulary and its catalog consumers
 // together when a producer gains a token.
 export const DesktopCliErrorCodeSchema = z.enum([
+  'X_WARNING_RESTORE_BLOCKED',
+  'X_WARNING_DAY',
+  'X_WARNING_CARD_REQUIRED',
   'SOURCE_FILE_INVALID',
   'SOURCE_PATH_REFUSED',
   'KEY_FILE_INVALID',

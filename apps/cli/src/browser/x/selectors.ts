@@ -64,14 +64,34 @@ export const xSelectors = {
       ['challenge', 'marker-challenge'],
       ['lockedAccount', 'marker-locked'],
       ['rateLimit', 'marker-rate-limit'],
+      ['warning', 'notice-text'],
+      ['warningNotice', 'notice-text'],
     ] as const)
       if (await page.getByTestId(testId).count())
         throw new CliError('PLATFORM_CHECK', undefined, undefined, reason);
-    const notice = page.getByText(
-      /^(Log in to X|Sign in to X|Bei X anmelden|Verify your identity|Confirm you are human|Bestätige deine Identität|Your account is locked|Dein Account wurde gesperrt|Rate limit exceeded|Du hast dein Limit erreicht)$/,
+    const warning = page.getByText(
+      /^(Your account is locked|Dein Account wurde gesperrt|Rate limit exceeded|Du hast dein Limit erreicht)$/,
     );
-    if (await notice.count())
+    if (await warning.count())
       throw new CliError('PLATFORM_CHECK', undefined, undefined, 'notice-text');
+    const login = page.getByText(/^(Log in to X|Sign in to X|Bei X anmelden)$/);
+    if (await login.count())
+      throw new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'marker-login',
+      );
+    const challenge = page.getByText(
+      /^(Verify your identity|Confirm you are human|Bestätige deine Identität)$/,
+    );
+    if (await challenge.count())
+      throw new CliError(
+        'PLATFORM_CHECK',
+        undefined,
+        undefined,
+        'marker-challenge',
+      );
   },
   async account(page: Page, timeoutMs = 20_000): Promise<string> {
     await this.rendered(

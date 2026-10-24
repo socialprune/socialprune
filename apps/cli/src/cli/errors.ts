@@ -9,6 +9,24 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  X_WARNING_RESTORE_BLOCKED: {
+    message:
+      'Restore cannot replace a workspace with an unacknowledged X warning. Read the parent card, then use delete x --acknowledge-warning <runId> --profile <dir> before restoring.',
+    exitCode: 2,
+    retryable: false,
+  },
+  X_WARNING_DAY: {
+    message:
+      "An X warning blocks deletion until the next workspace day. Read the parent's card first, then acknowledge the warned run by name.",
+    exitCode: 2,
+    retryable: false,
+  },
+  X_WARNING_CARD_REQUIRED: {
+    message:
+      "Read the parent's card about the X warning first. A person must acknowledge that warned run by name before deletion can start.",
+    exitCode: 2,
+    retryable: false,
+  },
   SOURCE_FILE_INVALID: {
     message:
       'Name a valid source file with --source; choose its endpoint, model and entries per request explicitly.',

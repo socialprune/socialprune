@@ -17,6 +17,8 @@ Before any request, a live run requires the answering model recorded by a succes
 | `ACCOUNT_REQUIRED` | 2 | Use `summary` and select the account the person named. |
 | `INVALID_CURSOR` | 2 | Keep the same account and source name, or start without a cursor. Previously submitted suggestions are skipped. |
 | `INVALID_ARGUMENTS` | 2 | Check the command reference and `--help --json`. Size must be 1 to 200. |
+| `X_WARNING_DAY`, `X_WARNING_CARD_REQUIRED` | 2 | Stop the deletion handoff. The person must receive the parent's card, wait until the next workspace day and type the exact run-named acknowledgement in their own terminal. Never acknowledge for them or retry deletion automatically. |
+| `X_WARNING_RESTORE_BLOCKED` | 2 | Restore cannot replace an outstanding warning workspace. The person first reads the card and uses `delete x --acknowledge-warning <runId> --profile <dir>` themselves. Never clear the marker or acknowledge for them. |
 | `INVALID_LABELS` | 1 | Correct every indexed failure below, preview again, then submit. No labels were written. |
 | `SUBMISSION_CONFLICT` | 1 | Do not overwrite the recorded submission. Verify which file was already accepted. If this is a deliberate new set of suggestions, use a new ID; do not hide an accidental changed retry. |
 | `WORKSPACE_BUSY` | 1 | Retry later with the same file and submission ID after the competing command finishes. Do not remove locks or edit the database. |

@@ -16,6 +16,71 @@ import { createProfile } from '../browser/profile.ts';
 import { ConfirmationState } from '../browser/confirmation-state.ts';
 import type { RunView } from '@socialprune/core/workspace/desktop-protocol';
 
+test('D6 desktop deletion warning refuses before browser selection and cannot be cleared by Start', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sp-engine-warning-'));
+  await mkdir(join(root, 'workspace'));
+  const store = await SQLiteStore.open(
+    join(root, 'workspace', 'socialprune.sqlite'),
+    { initial: fixtureWorkspace(['1001']) },
+  );
+  const prior = {
+    runId: 'desktop-warning',
+    platform: 'x' as const,
+    accountKey: FIXTURE.account.key,
+    mode: 'delete' as const,
+    planHash: 'a'.repeat(64),
+    startedAt: FIXTURE.now,
+    endedAt: null,
+    endReason: null,
+    bodyShapes: {},
+    profileReport: null,
+  };
+  const writer = store.browserOutcomeWriter();
+  await writer.begin(prior);
+  await writer.recordXWarning(
+    prior.runId,
+    FIXTURE.now,
+    'Europe/Berlin',
+    'http-429',
+  );
+  await writer.finish({
+    ...prior,
+    endedAt: FIXTURE.now,
+    endReason: 'platform-check',
+  });
+  await store.close();
+  const browser = vi.fn(() => Promise.resolve('generated'));
+  const engine = await createEngine(
+    { dataFolder: root },
+    {
+      ...productionDependencies,
+      now: () => new Date('2026-10-12T12:00:00.000Z'),
+      browser,
+    },
+  );
+  try {
+    const plan = await engine.request({
+      type: 'planRun',
+      requestId: 'plan-warning',
+      platform: 'x',
+      mode: 'delete',
+      accountKey: FIXTURE.account.key,
+    });
+    if (plan.type !== 'runPlanned') throw new Error(JSON.stringify(plan));
+    const reply = await engine.request({
+      type: 'startRun',
+      requestId: 'blocked-warning',
+      browser: 'edge',
+      planHash: plan.plan.planHash,
+    });
+    expect(JSON.stringify(reply)).toContain('X_WARNING_CARD_REQUIRED');
+    expect(browser).not.toHaveBeenCalled();
+  } finally {
+    await engine.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('engine opens a generated workspace, uses the review handlers and closes its store', async () => {
   const dataFolder = await mkdtemp(join(tmpdir(), 'sp-engine-'));
   const engine = await openEngine({ dataFolder });

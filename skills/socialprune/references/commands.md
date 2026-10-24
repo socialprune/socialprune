@@ -26,6 +26,8 @@ socialprune <command> --help --json
 
 Only export a click list when the person asks, after their review decisions. A click list is a file for the person to follow, not permission to act on the platform. Its entries name the decision's `via`. The JSON command result gives counts and the output path, not entry text.
 
+Deletion and `delete x --acknowledge-warning <runId> --profile <dir>` are not agent commands. The person starts deletion and types any warning-card acknowledgement themselves. Under the pace decision of 2026-10-24, every stage pauses after 20 confirmed deletions; opened pages and verification do not fill that batch. Only warning signs set the next-workspace-day deletion gate. Reading and verification stay available. Never type the card statement, pass its acknowledgement or treat a dry-run request as permission to delete. See [the setup guide](../../../docs/agent-setup.md#x-deletion-remains-your-action).
+
 With `--json`, stdout contains exactly one envelope with `schemaVersion: 1`, the dotted command name, `status`, `data` or `error`, and `warnings`. Workspace results also include its ID and revision. Progress and notices use stderr. Exit codes are 0 for success, 1 for a runtime error, 2 for wrong usage, 3 for a format or schema this version cannot read, and 4 for a partial import. Do not treat a partial import as complete.
 
 ## Batches

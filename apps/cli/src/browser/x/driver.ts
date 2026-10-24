@@ -161,12 +161,15 @@ export async function pageDriver(options: {
     await route.fallback();
   });
   context.on('response', (response) => {
+    if (
+      response.status() === 429 &&
+      new URL(response.url()).origin !== options.confirmationOrigin
+    ) {
+      rateLimited = true;
+      rejectRateLimit(rateError());
+      options.onRateLimit?.();
+    }
     if (rateWindows.accepts(response.url())) {
-      if (response.status() === 429) {
-        rateLimited = true;
-        rejectRateLimit(rateError());
-        options.onRateLimit?.();
-      }
       rateWindows.observe(
         response.url(),
         response.headers(),

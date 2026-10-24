@@ -15,7 +15,7 @@ export const IMAGE_CASES = [
   { name: 'unrelated-image-paths', agrees: true, captured: true, paths: 3 },
   {
     name: 'extra-rendition-common-url',
-    agrees: false,
+    agrees: true,
     captured: true,
     paths: 2,
   },

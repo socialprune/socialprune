@@ -330,7 +330,7 @@ test('each stored field needs its own second source and exact normalized agreeme
         },
       },
     ]).image.agrees,
-  ).toBe(false);
+  ).toBe(true);
   for (const [field, key] of [
     ['owner', 'user'],
     ['time', 'taken_at'],

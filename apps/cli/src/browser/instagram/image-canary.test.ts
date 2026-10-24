@@ -10,6 +10,44 @@ import {
 import { instagramContractRecord } from '@socialprune/core/workspace/store-contract';
 import { automaticCanaryCheck, compareSources } from './canary.ts';
 import { imageDiagnostic } from './canary.ts';
+test('IG-IMAGE A keeps every-object membership and scalar conflicts instead of taking a union', async () => {
+  const { items } = await instagramFixture();
+  const shape = imageCase(
+    'extra-rendition-common-url',
+    items[0]!,
+    'https://generated.cdninstagram.com',
+  );
+  const record = instagramContractRecord(items[0]);
+  Object.assign(record.post, {
+    code: IG_FIXTURE.code,
+    createdAt: IG_FIXTURE.postAt,
+    caption: IG_FIXTURE.caption,
+  });
+  expect(compareSources(record, shape.first, [shape.body]).image.agrees).toBe(
+    true,
+  );
+  for (const change of [
+    { user: { username: IG_FIXTURE.other.username } },
+    { taken_at: Date.parse(IG_FIXTURE.other.time) / 1000 },
+    { caption: { text: IG_FIXTURE.other.text } },
+    { image_versions2: { candidates: [{ url: shape.second }] } },
+    { image_versions2: { candidates: [] } },
+  ]) {
+    const body = structuredClone(shape.body);
+    Object.assign(body.media!, change);
+    const fields = compareSources(record, shape.first, [body]);
+    expect(() =>
+      automaticCanaryCheck({
+        confirmed: true,
+        fields,
+        ownerShown: true,
+        timeShown: true,
+        imageStored: true,
+        screenshotStored: true,
+      }),
+    ).toThrow();
+  }
+});
 
 test('IG-IMAGE diagnostic counts qualifying focal objects and exact-url candidate lists without leaking addresses', async () => {
   const { items } = await instagramFixture();

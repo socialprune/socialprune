@@ -1378,7 +1378,7 @@ async function harness(
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
 test.each(IMAGE_CASES)(
-  'IG-IMAGE $name uses real responses and current-source capture before unchanged automatic acceptance',
+  'IG-IMAGE $name uses real responses and current-source capture before automatic acceptance',
   async (entry) => {
     const h = await harness(
       entry.name.startsWith('reel-') ? 'reel' : 'success',
@@ -1513,7 +1513,7 @@ test('IG-IMAGE main run records exact-url counts but does not enforce canary agr
       distinctListLengths: [1, 2],
       source: 'img-current-src',
     });
-    expect(report.steps[0]!.fields.image.agrees).toBe(false);
+    expect(report.steps[0]!.fields.image.agrees).toBe(true);
     expect(
       await h.store.read((tx) =>
         tx.instagramContext.get(h.fixture.items[0]!.id),

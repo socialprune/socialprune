@@ -16,6 +16,7 @@ import type {
   DesktopRunPlan,
   RunView,
 } from '@socialprune/core/workspace/desktop-protocol';
+import { DesktopReplySchema } from '@socialprune/core/workspace/desktop-protocol';
 import type { WorkspaceSummary } from '@socialprune/core/workspace/protocol';
 import { catalogs, initialLocale, useT } from '../i18n/index.ts';
 import type { Locale } from '../i18n/index.ts';
@@ -188,6 +189,28 @@ function Content({
       })
       .catch(failed);
   }, [client, failed]);
+  useEffect(() => {
+    const dropped = (event: Event) => {
+      if (!(event instanceof CustomEvent) || typeof event.detail !== 'string')
+        return;
+      try {
+        const parsed = DesktopReplySchema.safeParse(JSON.parse(event.detail));
+        if (!parsed.success) return;
+        if (parsed.data.type === 'desktopFailed')
+          failed(new BridgeError(parsed.data.code));
+        else if (
+          parsed.data.type === 'exportImported' &&
+          parsed.data.result.status === 'imported'
+        )
+          imported();
+      } catch {
+        /* A forged page event cannot select or import a file. */
+      }
+    };
+    window.addEventListener('socialprune:import-dropped', dropped);
+    return () =>
+      window.removeEventListener('socialprune:import-dropped', dropped);
+  }, [failed, imported]);
   useEffect(() => {
     if (view.phase === 'ended') void client.open().catch(failed);
   }, [view.phase, client, failed]);
@@ -516,6 +539,9 @@ function Content({
 
 export function DesktopApp({ bridge }: { bridge: DesktopBridge }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   return (
     <IntlProvider locale={locale} messages={catalogs[locale]}>
       <Content

@@ -12,7 +12,12 @@ import {
   shell,
 } from 'electron';
 import { guides } from 'socialprune/engine';
-import { REQUEST_CHANNEL, RUN_VIEW_CHANNEL } from '../protocol.ts';
+import {
+  REQUEST_CHANNEL,
+  RUN_VIEW_CHANNEL,
+  DROP_CHANNEL,
+  LOCALE_CHANNEL,
+} from '../protocol.ts';
 import { createRouter } from './router.ts';
 import {
   APP_URL,
@@ -27,6 +32,17 @@ import { mainMethods, splitWorkArea } from './methods.ts';
 import { mediaResponse } from './media.ts';
 import type { DesktopRequest, RunView } from '../protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
+import { importSelection } from './import-selection.ts';
+import {
+  dialogLocale,
+  dialogLabels,
+  openDialogOptions,
+  saveDialogOptions,
+} from './dialogs.ts';
+import type { DialogLocale } from './dialogs.ts';
+import { createDropHandler } from './drop.ts';
+import { readLanguage, writeLanguage } from './language.ts';
+import { authorizedSender } from './router.ts';
 
 export interface DesktopOptions {
   dataDirectory: string;
@@ -37,6 +53,7 @@ export interface DesktopOptions {
     select(
       window: BrowserWindow,
       type: 'importExport' | 'backupExport' | 'backupRestore',
+      locale: DialogLocale,
     ): Promise<EngineFileSelection>;
   };
   links?: {
@@ -75,6 +92,8 @@ export async function startDesktop(options: DesktopOptions) {
   const counts: Record<string, number> = {};
   const logs = join(dataDirectory, 'logs');
   await mkdir(logs, { recursive: true });
+  let appLanguage = await readLanguage(dataDirectory, app.getLocale());
+  let languageWriting: Promise<void> = Promise.resolve();
   let logQueue = Promise.resolve();
   const record = (code: string) => {
     counts[code] = (counts[code] ?? 0) + 1;
@@ -190,32 +209,41 @@ export async function startDesktop(options: DesktopOptions) {
   const selection = async (
     type: 'importExport' | 'backupExport' | 'backupRestore',
   ): Promise<EngineFileSelection> => {
-    if (options.dialogs) return options.dialogs.select(window, type);
+    const locale = await selectedLocale();
+    if (options.dialogs) {
+      const result = await options.dialogs.select(window, type, locale);
+      return result.type === 'importExport'
+        ? importSelection(result.paths)
+        : result;
+    }
     if (type === 'backupExport') {
-      const result = await dialog.showSaveDialog(window, {
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        // A bare name: the dialog opens in the person's usual folder. The data
-        // folder would be wrong, because a Store uninstall deletes it.
-        defaultPath: 'socialprune-backup.json',
-        properties: ['showOverwriteConfirmation'],
-      });
+      const result = await dialog.showSaveDialog(
+        window,
+        saveDialogOptions(locale),
+      );
       return { type, path: result.canceled ? null : (result.filePath ?? null) };
     }
-    const result = await dialog.showOpenDialog(window, {
-      filters: [
-        {
-          name: type === 'importExport' ? 'ZIP' : 'JSON',
-          extensions: [type === 'importExport' ? 'zip' : 'json'],
-        },
-      ],
-      properties:
-        type === 'importExport'
-          ? ['openFile', 'multiSelections']
-          : ['openFile'],
-    });
+    const result = await dialog.showOpenDialog(
+      window,
+      openDialogOptions(type, locale),
+    );
     return type === 'importExport'
-      ? { type, paths: result.canceled ? null : result.filePaths }
+      ? importSelection(result.canceled ? null : result.filePaths)
       : { type, path: result.canceled ? null : (result.filePaths[0] ?? null) };
+  };
+  const selectedLocale = async (): Promise<DialogLocale> => {
+    if (!window.isDestroyed() && isAppDocument(window.webContents.getURL())) {
+      try {
+        const value: unknown = await window.webContents.executeJavaScript(
+          'document.documentElement.lang',
+          false,
+        );
+        return dialogLocale(value, appLanguage);
+      } catch {
+        record('DIALOG_LANGUAGE_UNAVAILABLE');
+      }
+    }
+    return appLanguage;
   };
   const dispatch = async (request: DesktopRequest) => {
     if (request.type === 'openLink' || request.type === 'dataFolderOpen')
@@ -226,17 +254,26 @@ export async function startDesktop(options: DesktopOptions) {
       );
       if (split) window.setBounds(split.app);
     }
+    let selected: EngineFileSelection | undefined;
+    if (
+      request.type === 'importExport' ||
+      request.type === 'backupExport' ||
+      request.type === 'backupRestore'
+    ) {
+      try {
+        selected = await selection(request.type);
+      } catch {
+        record('FILE_SELECTION_REJECTED');
+        return {
+          type: 'desktopFailed' as const,
+          requestId: request.requestId,
+          code: 'INVALID_ARCHIVE_PATH' as const,
+        };
+      }
+    }
     const reply = await engine.request({
       request,
-      ...(['importExport', 'backupExport', 'backupRestore'].includes(
-        request.type,
-      )
-        ? {
-            selection: await selection(
-              request.type as 'importExport' | 'backupExport' | 'backupRestore',
-            ),
-          }
-        : {}),
+      ...(selected ? { selection: selected } : {}),
     });
     if ('view' in reply) runView = reply.view;
     return reply;
@@ -262,6 +299,33 @@ export async function startDesktop(options: DesktopOptions) {
     REQUEST_CHANNEL,
     createRouter(window.webContents, dispatch, record),
   );
+  ipcMain.handle(
+    DROP_CHANNEL,
+    createDropHandler(
+      window.webContents,
+      (message) => engine.request(message),
+      record,
+    ),
+  );
+  const documentLanguage = (
+    event: import('electron').IpcMainEvent,
+    value: unknown,
+  ) => {
+    if (
+      !authorizedSender(event, window.webContents) ||
+      (value !== 'en' && value !== 'de')
+    ) {
+      record('LANGUAGE_REJECTED');
+      return;
+    }
+    appLanguage = value;
+    languageWriting = languageWriting
+      .then(() => writeLanguage(dataDirectory, value))
+      .catch(() => {
+        record('LANGUAGE_WRITE_FAILED');
+      });
+  };
+  ipcMain.on(LOCALE_CHANNEL, documentLanguage);
   window.webContents.on('did-finish-load', () => {
     if (isAppDocument(window.webContents.getURL()))
       window.webContents.send(RUN_VIEW_CHANNEL, runView);
@@ -274,22 +338,18 @@ export async function startDesktop(options: DesktopOptions) {
     event.preventDefault();
     if (confirming) return;
     confirming = true;
-    void dialog
-      .showMessageBox(window, {
-        type: 'warning',
-        message:
-          runView.phase !== 'idle' && runView.warning?.text
-            ? runView.warning.text
-            : 'SocialPrune',
-        buttons:
-          window.getTitle() === 'SocialPrune' &&
-          app.getLocale().startsWith('de')
-            ? ['Stoppen', 'Abbrechen']
-            : ['Stop', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true,
-      })
+    void selectedLocale()
+      .then((locale) =>
+        dialog.showMessageBox(window, {
+          type: 'warning',
+          title: 'SocialPrune',
+          message: dialogLabels(locale).stopMessage,
+          buttons: [dialogLabels(locale).stop, dialogLabels(locale).cancel],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        }),
+      )
       .then(({ response }) => {
         confirming = false;
         if (response === 0) app.quit();
@@ -343,8 +403,11 @@ export async function startDesktop(options: DesktopOptions) {
         }
       }
       await engine.close();
+      await languageWriting;
       await logQueue;
       ipcMain.removeHandler(REQUEST_CHANNEL);
+      ipcMain.removeHandler(DROP_CHANNEL);
+      ipcMain.removeListener(LOCALE_CHANNEL, documentLanguage);
       settled = true;
       app.quit();
     })().catch(() => {
@@ -363,7 +426,7 @@ export async function startDesktop(options: DesktopOptions) {
     contents: window.webContents,
     load: () => window.loadURL(APP_URL),
     dataDirectory,
-    locale: () => app.getLocale(),
+    locale: () => appLanguage,
     message: (box) => dialog.showMessageBox(box),
     // Use before-quit, including its run Stop and engine settlement.
     quit: () => app.quit(),

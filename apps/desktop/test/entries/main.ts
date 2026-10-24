@@ -11,6 +11,7 @@ if (!dataDirectory) throw new Error('TEST_DATA_DIRECTORY_REQUIRED');
 const requests: string[] = [];
 const selections: EngineFileSelection[] = [];
 const links: string[] = [];
+const dialogLocales: string[] = [];
 // Session observation is attached before startDesktop creates the window.
 void app.whenReady().then(() => {
   const local = session.fromPartition('socialprune');
@@ -27,13 +28,15 @@ void startDesktop({
   preload: join(import.meta.dirname, 'preload.cjs'),
   engine: join(import.meta.dirname, 'engine.cjs'),
   dialogs: {
-    select: (_window, type) =>
-      Promise.resolve(
+    select: (_window, type, locale) => {
+      dialogLocales.push(locale);
+      return Promise.resolve(
         selections.shift() ??
           (type === 'importExport'
             ? { type, paths: null }
             : { type, path: null }),
-      ),
+      );
+    },
   },
   links: {
     external: (url) => {
@@ -47,6 +50,6 @@ void startDesktop({
   },
 }).then((state) =>
   Object.assign(globalThis, {
-    desktopProbe: { ...state, requests, selections, links },
+    desktopProbe: { ...state, requests, selections, links, dialogLocales },
   }),
 );

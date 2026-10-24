@@ -127,6 +127,15 @@ declare global {
     'desktop.clientErrors': Record<never, never>;
     'desktop.currentEntry': Record<never, never>;
     'desktop.data': Record<never, never>;
+    'desktop.dialog.exportButton': Record<never, never>;
+    'desktop.dialog.exportTitle': Record<never, never>;
+    'desktop.dialog.importButton': Record<never, never>;
+    'desktop.dialog.importTitle': Record<never, never>;
+    'desktop.dialog.json': Record<never, never>;
+    'desktop.dialog.restoreButton': Record<never, never>;
+    'desktop.dialog.restoreTitle': Record<never, never>;
+    'desktop.dialog.stopMessage': Record<never, never>;
+    'desktop.dialog.zip': Record<never, never>;
     'desktop.directNote': Record<never, never>;
     'desktop.doesNotMatch': Record<never, never>;
     'desktop.endedBrowserOpen': Record<never, never>;

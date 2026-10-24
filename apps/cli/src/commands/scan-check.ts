@@ -28,6 +28,19 @@ export const scanCheckCommand = buildCommand({
       signal: this.signal,
       progress: (text) => this.io.stderr.write(plainLines(text) + '\n'),
     });
-    this.reply({ ...result, human: JSON.stringify(result.data) });
+    const data = result.data;
+    this.reply({
+      ...result,
+      human: [
+        `Endpoint check: ${data.origin}`,
+        `Requested model: ${data.model}`,
+        `Listed by endpoint: ${data.modelListed ? 'yes' : 'no'}`,
+        `Answering model: ${data.answeringModel}`,
+        `Structured answer: ${data.structuredOutput ? 'accepted' : 'not accepted'}`,
+        `Token usage: ${data.usageReported ? 'reported' : 'not reported'}`,
+        `Cached tokens: ${data.cachedTokensReported ? 'reported' : 'not reported'}`,
+        `Rubric: ${data.rubricVersion}`,
+      ].join('\n'),
+    });
   },
 });

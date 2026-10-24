@@ -107,7 +107,11 @@ export async function scanFixture(
       entriesPerRequest: 25,
     }),
   );
-  async function invoke(args: string[], signal = new AbortController().signal) {
+  async function invoke(
+    args: string[],
+    signal = new AbortController().signal,
+    json = true,
+  ) {
     const stdout: string[] = [],
       stderr: string[] = [];
     latestStderr = '';
@@ -121,10 +125,10 @@ export async function scanFixture(
       },
       signal,
     );
-    const code = await executeCli([...args, '--json'], context);
+    const code = await executeCli(json ? [...args, '--json'] : args, context);
     return {
       code,
-      data: JSON.parse(stdout.join('')) as {
+      data: (json ? JSON.parse(stdout.join('')) : {}) as {
         data?: Record<string, unknown>;
         error?: { code: string };
       },

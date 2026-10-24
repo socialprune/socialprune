@@ -4,6 +4,8 @@ Read the exit code and symbolic `error.code`. Error messages come from a fixed t
 
 `scan run` can finish with `status: "partial"`, a nonzero exit and a count-only final report carrying `data.stopDetail`; its fixed warning names the cause. Stored suggestions remain. Do not turn that into a success claim or switch endpoints, models or output modes. Resume the same plan only when the person has resolved the cause and still agrees to share there.
 
+Before a live run counts or selects workspace entries, it sends one invented entry with preset criteria to observe the answering model. `MODEL_CHANGED` at that step reports `source.confirmedModel` separately from the endpoint's `source.answeringModel`, uses null when no model was observed, and leaves `coverageCounted: false` and `entries: null`. Nothing from the workspace was sent or stored. A dry run remains network-free, so its coverage count is marked provisional against the configured model. Only a matching observed model supplies the live coverage identity; changing the confirmation string cannot relabel existing checks as another source or resend those entries.
+
 | Code | Exit | Action |
 |---|---:|---|
 | `SOURCE_FILE_INVALID`, `SOURCE_PATH_REFUSED`, `KEY_FILE_INVALID` | 2 | Use the person's explicit source and separate one-line key files outside repositories. Never search for a replacement or open another tool's configuration. |

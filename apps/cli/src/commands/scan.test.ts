@@ -7,6 +7,141 @@ import { readWorkspace } from '@socialprune/core/workspace/store';
 import { networkRecorder } from '../cli/test/network-recorder.ts';
 import { scanFixture } from './scan-fixture.test-support.ts';
 
+test('R2 reports observed and confirmed model separately and names both in human output', async () => {
+  const h = await scanFixture();
+  try {
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    const args = [
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      'generated-wrong-model',
+    ];
+    const result = await h.invoke(args);
+    expect(result.data.data).toMatchObject({
+      source: {
+        confirmedModel: 'generated-wrong-model',
+        answeringModel: 'generated-model',
+      },
+      stopDetail: 'MODEL_CHANGED',
+    });
+    const human = await h.invoke(args, undefined, false);
+    expect(human.stdout).toContain(
+      'The endpoint answered as generated-model; you confirmed generated-wrong-model. Nothing was stored.',
+    );
+  } finally {
+    await h.close();
+  }
+});
+test('R4 sends before an answer and prints token figures only after they are reported', async () => {
+  const notices: string[] = [];
+  const h = await scanFixture({ observe: (text) => notices.push(text) });
+  try {
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    const result = await h.invoke(
+      [
+        'scan',
+        'run',
+        '--workspace',
+        h.workspace,
+        '--source',
+        h.source,
+        '--plan',
+        preview.data.data!.plan as string,
+        '--confirm-endpoint',
+        h.origin,
+        '--confirm-model',
+        'generated-model',
+      ],
+      undefined,
+      false,
+    );
+    expect(result.code).toBe(0);
+    expect(notices[0]).toContain('Sending model check: 1 invented entry');
+    expect(notices[0]).not.toContain('Tokens:');
+    expect(notices.at(-1)).toContain('Sending request 1 of 1; batch 1.');
+    const beforeAnswer = notices
+      .at(-1)!
+      .split('Sending request 1 of 1; batch 1.')[1]!;
+    expect(beforeAnswer).not.toContain('Stored');
+    expect(beforeAnswer).not.toContain('Tokens:');
+  } finally {
+    await h.close();
+  }
+});
+test('R5 a wrong confirmed model stops before coverage counts or workspace text are sent again', async () => {
+  const h = await scanFixture({ entries: 5 });
+  try {
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    const args = [
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      'generated-model',
+    ];
+    expect((await h.invoke(args)).code).toBe(0);
+    const before = h.requests.length;
+    args[args.indexOf('--confirm-model') + 1] = 'generated-wrong-model';
+    const stopped = await h.invoke(args);
+    expect(stopped.data.data).toMatchObject({
+      coverageCounted: false,
+      entries: null,
+      source: {
+        confirmedModel: 'generated-wrong-model',
+        answeringModel: 'generated-model',
+      },
+    });
+    expect(h.requests.slice(before)).toHaveLength(1);
+    const body = h.requests.at(-1)!.body!;
+    const messages = body.messages as { content: string }[];
+    expect(messages[1]!.content).toContain('invented museum');
+    expect(messages[1]!.content).not.toContain('Generated contract input');
+    expect(messages[1]!.content).not.toContain('Generated text');
+  } finally {
+    await h.close();
+  }
+});
+
 test('foundation: real CLI dry-run, check, confirmed run, SQLite submission and resume with no decisions', async () => {
   const h = await scanFixture();
   try {
@@ -53,11 +188,11 @@ test('foundation: real CLI dry-run, check, confirmed run, SQLite submission and 
       entries: { checked: 1, remaining: 0 },
       requests: { sent: 1 },
     });
-    expect(result.stderr).toContain('1 entries: platform, kind and full text');
+    expect(result.stderr).toContain('1 entry: platform, kind and full text');
     expect(result.stderr).not.toContain('Generated contract input.');
     const again = await h.invoke(args);
     expect(again.code).toBe(0);
-    expect(h.requests).toHaveLength(3);
+    expect(h.requests).toHaveLength(5);
     const store = await SQLiteStore.open(
       join(h.workspace, 'socialprune.sqlite'),
       { readOnly: true },
@@ -70,6 +205,82 @@ test('foundation: real CLI dry-run, check, confirmed run, SQLite submission and 
     } finally {
       await store.close();
     }
+  } finally {
+    await h.close();
+  }
+});
+test('human output uses named lines, marks a dry run before the sharing notice and keeps JSON unchanged', async () => {
+  const h = await scanFixture();
+  try {
+    const check = await h.invoke(
+      ['scan', 'check', '--source', h.source],
+      undefined,
+      false,
+    );
+    expect(check.code).toBe(0);
+    expect(check.stdout).toContain('Endpoint check:');
+    expect(check.stdout).toContain('Structured answer: accepted');
+    expect(check.stdout).not.toMatch(/^\{/m);
+    expect(check.stderr).toContain(
+      'One invented entry and preset criteria; nothing from your workspace is sent.',
+    );
+    expect(check.stderr).not.toContain("Your entries' text");
+    const preview = await h.invoke(
+      [
+        'scan',
+        'run',
+        '--workspace',
+        h.workspace,
+        '--source',
+        h.source,
+        '--dry-run',
+      ],
+      undefined,
+      false,
+    );
+    expect(preview.stdout).toContain(
+      'Dry-run plan. No request was sent or suggestion written.',
+    );
+    expect(preview.stdout).not.toMatch(/^\{/m);
+    expect(preview.stderr.indexOf('Dry run: no request')).toBe(0);
+    const plan = preview.stdout.match(/^Plan: (sha256:[a-f0-9]+)$/m)![1]!;
+    const run = await h.invoke(
+      [
+        'scan',
+        'run',
+        '--workspace',
+        h.workspace,
+        '--source',
+        h.source,
+        '--plan',
+        plan,
+        '--confirm-endpoint',
+        h.origin,
+        '--confirm-model',
+        'generated-model',
+        '--limit',
+        '1',
+      ],
+      undefined,
+      false,
+    );
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain('Suggestions stored: 1; entries remaining: 0');
+    expect(run.stderr).toContain('Stored 1; remaining 0; requests 1');
+    expect(run.stdout + run.stderr).not.toMatch(/^\{/m);
+    const json = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    expect(json.data.data).toMatchObject({
+      dryRun: true,
+      entries: { planned: 0 },
+    });
   } finally {
     await h.close();
   }
@@ -110,7 +321,8 @@ test('the sharing notice precedes the first real request and the fifty-entry can
       entries: { checked: 50 },
       requests: { sent: 2 },
     });
-    for (const notice of observed) {
+    expect(observed[0]).toContain('One invented entry and preset criteria');
+    for (const notice of observed.slice(1)) {
       expect(notice).toContain('50 entries: platform, kind and full text');
       expect(notice).toContain(h.origin);
       expect(notice).toContain('Without a key.');
@@ -167,7 +379,9 @@ test('endpoint refusal returns a bounded final report and leaves no suggestion o
       status: 'partial',
       data: {
         stopDetail: 'ENDPOINT_UNAUTHORIZED',
-        entries: { checked: 0, remaining: 1 },
+        coverageCounted: false,
+        entries: null,
+        source: { answeringModel: null, confirmedModel: 'generated-model' },
         requests: { failed: 1 },
       },
     });
@@ -241,8 +455,10 @@ test('explicit source ignores ambient key canaries and Ctrl+C settles with no de
     expect(result.code).toBe(1);
     expect(result.data.data).toMatchObject({
       stopDetail: 'RUN_STOPPED',
-      entries: { checked: 0 },
-      requests: { sent: 1 },
+      coverageCounted: false,
+      entries: null,
+      requests: { sent: 0 },
+      modelCheck: { sent: 1 },
     });
   } finally {
     await stopped.close();

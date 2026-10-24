@@ -12,6 +12,7 @@ import type { WorkspaceStore, StoredState, ReadTransaction } from './store.ts';
 import type { FeedCard, PlanCounts } from './protocol.ts';
 import type { FeedTab } from '../criteria/schema.ts';
 import { WorkspaceError } from './errors.ts';
+import { CompactFeed } from './feed-compact.ts';
 
 /** Feed queries never need originals, context media or browser journals. */
 export async function feedWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
@@ -162,18 +163,17 @@ export function projectFeed(
 
 /** One account projection per revision/configuration. Card bodies are read only in range. */
 export class FeedQuery {
-  // Settings do not advance the data revision. Keep one source snapshot and
-  // definition-bound basis, but always recompute the changed configuration.
-  private source?: { revision: number; workspace: WorkspaceV2 };
+  // Definitions/data build compact count inputs; entry bodies remain in store.
   private basis?: {
     revision: number;
     key: string;
-    value: ReturnType<typeof prepareFeedCounts>;
+    value: CompactFeed;
   };
   private cache?: {
     key: string;
     revision: number;
-    value: ReturnType<typeof projectFeed>;
+    value: ReturnType<CompactFeed['project']>;
+    basis: CompactFeed;
   };
   private readonly store: WorkspaceStore;
   constructor(store: WorkspaceStore) {
@@ -186,16 +186,7 @@ export class FeedQuery {
       const key = feedKey(accountKey, meta.settings);
       if (this.cache?.key === key && this.cache.revision === runtime.revision)
         return this.cache;
-      if (this.source?.revision !== runtime.revision) {
-        this.source = {
-          revision: runtime.revision,
-          workspace: await feedWorkspace(tx),
-        };
-        this.basis = undefined;
-      }
-      const workspace = { ...this.source.workspace, ...meta };
       const basisKey = canonicalJson({
-        accountKey,
         categories: meta.settings.categories,
         custom: meta.settings.criteria?.custom,
       });
@@ -206,10 +197,15 @@ export class FeedQuery {
         this.basis = {
           revision: runtime.revision,
           key: basisKey,
-          value: prepareFeedCounts(workspace, accountKey),
+          value: new CompactFeed(await feedWorkspace(tx)),
         };
-      const value = projectFeed(workspace, accountKey, this.basis.value);
-      this.cache = { key, revision: runtime.revision, value };
+      const value = this.basis.value.project(meta.settings, accountKey);
+      this.cache = {
+        key,
+        revision: runtime.revision,
+        value,
+        basis: this.basis.value,
+      };
       return this.cache;
     });
   }
@@ -243,10 +239,7 @@ export class FeedQuery {
       const frozen = await this.current(input.accountKey);
       const projection = frozen.value;
       const revision = frozen.revision;
-      const ids = projection.order.filter(
-        (id) =>
-          input.tab === 'all' || projection.membership.get(id) === input.tab,
-      );
+      const ids = frozen.basis.window(projection, input.tab);
       const index = input.anchor === undefined ? -1 : ids.indexOf(input.anchor);
       const offset = input.offset ?? Math.max(index, 0);
       const result = await this.store.read(async (tx) => {
@@ -300,7 +293,7 @@ export class FeedQuery {
                 ),
               ).values(),
             ],
-            holdingRules: projection.holding.get(id) ?? [],
+            holdingRules: frozen.basis.holding(projection, id),
             decision: state?.decision ?? 'undecided',
             outcome: state?.outcome ?? 'unknown',
             decisionEvent: event,
@@ -322,35 +315,10 @@ export class FeedQuery {
     states: readonly StoredState[],
   ) {
     const cache = this.cache;
-    // The delta below advances only the final projection. A later settings
-    // change must not rebuild from events captured before this commit.
-    this.source = undefined;
-    this.basis = undefined;
     if (!cache || cache.revision !== previousRevision) return;
-    // Decision-only updates preserve hit/rule counters; tab counters move once.
-    for (const state of states) {
-      const before = cache.value.membership.get(state.itemId);
-      if (!before) continue;
-      const after =
-        state.decision === 'delete'
-          ? 'marked'
-          : state.decision === 'keep'
-            ? 'kept'
-            : state.decision === 'later'
-              ? 'unclear'
-              : cache.value.baseMembership.get(state.itemId)!;
-      for (const key of cache.value.itemSources.get(state.itemId) ?? []) {
-        const source = cache.value.sourceCounters.get(key)!;
-        if (before === 'suggested') source.count--;
-        if (after === 'suggested') source.count++;
-      }
-      if (before !== 'all') cache.value.tabs[before]--;
-      if (after !== 'all') cache.value.tabs[after]++;
-      cache.value.membership.set(state.itemId, after);
-    }
+    cache.basis.committed(cache.value, states);
+    if (this.basis?.revision === previousRevision)
+      this.basis.revision = revision;
     cache.revision = revision;
-    cache.value.sources = [...cache.value.sourceCounters.values()].filter(
-      (source) => source.count > 0,
-    );
   }
 }

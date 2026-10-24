@@ -197,3 +197,97 @@ The generator, seed, item counts and serialized sizes match the earlier procedur
 | `webkit-2026-10-24T08-55-09-014Z.json` | `d788996ff935658b035e9ff7654062dc1644fc9c0ccdce1c2a22aad1166472e8` |
 
 Wheel, touch and scrollbar traversal, Instagram, media, originals, small screens, isolated-host performance, repeated-run variance, the eight-byte incremental projection budget and fresh-data-revision count distributions remain outside this evidence. The two remaining frame misses keep the feed from full slice 8 performance acceptance.
+
+### Retained count inputs and frame attribution, 2026-10-24
+
+This bounded follow-up starts at `bf8843f174ff173b974abc8410ff619ba379f4b0`. The maintainer changed the first memory measurement from a Chromium worker to a Node probe on 2026-10-24 at 09:38 UTC after the browser RAM gate refused admission. No foreign process was stopped. `apps/web/e2e/feed-heap.measurement.ts` is an explicit, opt-in Node entrypoint, not a test suite or a memory-budget assertion. It creates the same generated 100,000-entry workspace as `scale-data.ts`, retains it in the core in-memory store, releases the parsed input and script-local workspace, and records `process.memoryUsage()` after two explicit `gc()` calls separated by released async turns. Separate Node 24.21.0 processes measure before the first `planCounts`, after it, after a level change and after twenty alternating configuration-cold queries. All four design samples reuse one 88,124,025-byte input file, SHA-256 `652abba5831fad8ec60103cf846dd6d5f68b29540880656b411ba6c37cf3997e`.
+
+These are increments over an already retained in-memory store, not total browser-worker heap and not an isolated heap-snapshot size for a single object. `heapUsed` does not include typed-array backing stores, so the table also reports `arrayBuffers`, which is already included in Node's `external` total. Adding `external` again would count those bytes twice. A GC delta includes runtime bookkeeping and carries no repeated-run confidence interval.
+
+| Node design | Heap increment after first count, bytes | ArrayBuffer increment, bytes | Combined increment per entry, bytes | Combined after level change per entry, bytes | Configuration-cold p95, ms |
+|---|---:|---:|---:|---:|---:|
+| `2676f15`, original transient source, retained map projection | 20,969,704 | 0 | 209.69704 | 209.92928 | 4,145.84 |
+| `bf8843f`, retained workspace and basis | 172,080,024 | 0 | 1,720.80024 | 1,721.02696 | 402.50 |
+| Initial body-free columns, source `c43b866d` | 7,838,984 | 4,400,004 | 122.38988 | 122.75276 | 30.19 |
+| Final adaptive columns, source `ca1eeff9` | 7,838,936 | 4,400,004 | 122.38940 | 122.75276 | 37.49 |
+
+The final candidate drops retained `Item`, `Assessment`, workspace and event objects. It keeps IDs and their index, account indices, numeric timestamps and engagement, eligibility and decision columns, creation order, offsets into encoded criterion/status/risk checks, and the small membership/base/rule-mask projection. Full bodies and explanations remain in storage and are read for the bounded card response; the preview path retains its existing full-text semantics. Definition changes invalidate the encoded checked-hash basis, and data revisions rebuild it; decision-only commits update the numeric decision and tab state. Current-check source precedence is resolved before encoding, using the existing implementation, rather than retaining assessment reasons or per-source labels in the count cache. Generated equivalence cases cover multiple sources, changed definitions, all risk levels, all keep-rule kinds, multiple accounts and decisions. The body-retention test fails against `bf8843f`. A further red test found that a fixed byte criterion index would impose a new limit on archives with 260 historical category IDs; the final representation chooses a wider index when needed and passes that test.
+
+The measured final combined count-cache increment is 12,238,940 bytes for 100,000 entries, about 93 percent below the retained-workspace candidate. This whole-cache measurement is not the per-item projection growth named by ADR-032. A subsequent direct allocation check on the same input separates membership (one byte), base membership (one), holding-rule mask (two) and order index (four): exactly 800,000 typed bytes for 100,000 entries, or eight per entry. Counters have six tab fields, fourteen criterion fields and one unchecked field in this fixture, plus per-configuration metadata and array headers; the measured projection call adds 6,936 heap bytes beyond its 400,000 newly allocated output-array bytes, while the 400,000-byte order array already exists in the basis. That fixed-size overhead is not a per-item column. The remaining 3,600,004 typed bytes are retained count inputs, and the roughly 7.84 MB heap increment covers IDs, their index and runtime bookkeeping. They remain owned cache memory even though the store also holds these identifiers and source data. The previous return's statement that the projection missed eight bytes compared different boundaries; the projection's linear columns meet eight, while the complete cache uses 122.3894 combined bytes per entry on this sample. No ADR amendment card follows from this split. The final Node sample's first query took 3,289.87 ms and its level-change query 32.06 ms; its twenty-query p95 does not establish a fresh-data-revision p95.
+
+F2 adds opt-in instrumentation only in the test harness, enabled by `SP_FEED_FRAME_DIAGNOSTICS=1` in the test process. It installs performance marks at window request/reply boundaries and React production commit callbacks, observes DOM changes, times layout reads and retains bounded event overlap for intervals above 50 ms. No such flag is read by a shipped runtime entrypoint. React's production build exposes commit timestamps here but no actual render duration. An asynchronous window request spanning an interval is not evidence that it occupied the main thread. The observer changes frame cadence, so the diagnostic samples below are not plain acceptance measurements.
+
+| Diagnostic sample before final adaptive-column freeze | Firefox | WebKit |
+|---|---:|---:|
+| Start, UTC | 10:18:24.489 | 10:27:51.721 |
+| Maximum interval, ms | 137.82 | 109 |
+| Intervals above 50 ms captured | 3 | 31 |
+| Captured intervals overlapping a window request/reply lifetime | 3 | 25 |
+| Captured intervals with a React commit timestamp | 2 | 30 |
+| Largest timed layout read inside those intervals, ms | none recorded | 1 |
+| Captured intervals with no recorded event overlap | 0 | 1 |
+| Consecutive focused and visible cards | 6,000 | 6,000 |
+
+Firefox's three outliers follow window replies at offsets 650, 5,150 and 5,750; two also end at React commit timestamps. WebKit has several overlapping work classes and one interval with no recorded event. These observations do not identify the duration or cause of the missing main-thread time, and no F2 production rendering fix was made from this correlation. GC, scheduling and unobserved render work remain competing explanations rather than findings. The two diagnostic runs, a prior plain Chromium run and the initial compact heap sample retain their original source identity `d4ab3da4` or `c43b866d`; they are not relabelled as final-source proof. The historical-category correction invalidated that executable identity and prompted a new final freeze and its own unit, browser and plain scale proofs.
+
+The final executable measurement identity is `ca1eeff9d500a85eabdacc42f4094d494d2010fbf7205be1bdf674349aaabe7e`, with harness hash `6ccd2faa4597c6cb6fbb73ec79830717343ce5d11a0116c72b34909fc2e5661d`. Only the opt-in diagnostic addition changes the scale harness; targets, thresholds, generated counts, viewport, request limits and keyboard procedure are unchanged. The final plain runs leave diagnostics disabled. Each engine ran once against this final identity, serially at port 4781 after the 12 GiB admission check, on the same Windows host and Node/browser versions as the preceding table. The whole web, core and CLI unit projects pass at one worker, with 1,674 tests passed and the existing Linux-only PTY test skipped on Windows. Feed and person-view specs pass 45 tests across three engines on the final freeze. All these are local Windows proofs, not Linux acceptance.
+
+| Final plain measurement, 2026-10-24 | Chromium 153.0.8010.12 | Firefox 155.0 | WebKit 26.6 |
+|---|---:|---:|---:|
+| Run start, UTC | 11:00:13.743 | 11:08:49.752 | 11:17:43.723 |
+| Run end, UTC | 11:08:27.920 | 11:17:25.484 | 11:30:58.519 |
+| CPU load at in-test admission, percent | 76 | 85 | 37 |
+| Free physical bytes at in-test admission | 16,220,311,552 | 14,955,692,032 | 15,926,403,072 |
+| Configuration-cold counts at 100,000 entries, p95, ms | 16.8, met | 33, met | 27, met |
+| Configuration-cold counts, maximum, ms | 3,108 | 3,063 | 3,484 |
+| Warm counts, p95, ms | 1.2 | 2 | 16 |
+| Scroll frame interval, p95, ms | 16.7 | 6.96 | 19 |
+| Scroll frame interval, maximum, ms | 33.4, met | 125, miss | 107, miss |
+| Frame intervals above 50 ms | 0 of 16,249 | 26 of 35,371 | 24 of 19,660 |
+| Consecutive focused and visible cards | 6,000 of 6,000 | 6,000 of 6,000 | 6,000 of 6,000 |
+| Largest feed response, cards | 50 | 50 | 50 |
+| Largest mounted card count | 23 | 23 | 23 |
+| Owned browser tree private bytes after 100,000-entry restore | 1,146,458,112 | 1,413,324,800 | 3,334,201,344 |
+
+The final plain runs preserve M1 and meet M3 configuration-cold p95 in all engines. F1 reduces retained count inputs substantially; the whole-cache and eight-byte projection boundaries are separated above. F2 remains open: Firefox and WebKit still miss the frame target, and their final plain outliers carry no causal attribution. They are not described as repaired, nor attributed to host load from these observations. The initial compact plain Chromium sample had one 66.7 ms outlier; it remains in the raw evidence rather than being erased by the final-source result. No run on an unchanged source identity was repeated to replace a miss in this round. The 300-card retained-window contract remains enforced by session tests; the measured 23-card DOM maximum is a separate observation. First data-revision query maxima remain above three seconds. No original or media-rich, touch, wheel, small-screen, isolated-host or repeated-variance claims follow from this table.
+
+The complete raw Node, diagnostic and plain reports, six final screenshots, input bytes and command logs are retained outside Git at `socialprune-handoff/phase2/w-s9/`; the subsequent projection split is in `w-s10/projection-heap.json`. The final plain reports use the same generated 6,000/100,000-entry hashes as the earlier feed-owner follow-up. The unresolved frame target and matched attribution remain pending before full slice 8 acceptance; this record changes no ADR.
+
+| Follow-up raw file | SHA-256 |
+|---|---|
+| `heap-2676f15.json` | `043148656332dc38a20d801593ca8a97cd8a7dcc8a84ea6042d00f30f59c4749` |
+| `heap-bf8843f.json` | `756de63aee992cfad9e8eb018369b0285d0712328523b9ccd9f97a8f5ff73058` |
+| `heap-compact.json` | `9a72d11d95426dc29d955999bd9710881d824d684536a526a2a56ebee4b3b5f8` |
+| `heap-compact-final.json` | `d8e9376a86dc027e8789ea488ebae12b5144e5305dedc86f61a68f0dbd454205` |
+| `chromium-2026-10-24T10-10-14-426Z.json`, pre-final plain | `9c436b86667fe234918ddb919e579c7652559bafac7ea84c6d579265edba4ca3` |
+| `firefox-2026-10-24T10-18-24-489Z.json`, diagnostic | `c320e8c9aa26fc44abcf4d7d221f3901e3e37eac89126ee6d5130e68a41a8765` |
+| `webkit-2026-10-24T10-27-51-721Z.json`, diagnostic | `6637253cf36712c1295d954272fc69dcea66c9315156c1f4ba8a9c3ea5f48079` |
+| `chromium-2026-10-24T11-00-13-743Z.json`, final plain | `7b8f0ebbc52e1dad60c68f325537bdf1d79fc2ea4aed5fe6d5bdf01032fa05c8` |
+| `firefox-2026-10-24T11-08-49-752Z.json`, final plain | `451d1a68c06c7bb334a9004492806da5737e3eafb03a77589d54a40cd0dc3043` |
+| `webkit-2026-10-24T11-17-43-723Z.json`, final plain | `4c02da5572b25d6709badbe8a5bdb9af7a541595d51df4ee43375ecad81e1146` |
+
+### Matched attribution and projection boundary, 2026-10-24
+
+The maintainer requested an interleaved A/B check because the previous plain samples contradicted the morning frame numbers. A uses the exact `bf8843f` query implementation; B uses the compact candidate without a production change. Each command rebuilds production and runs the byte-identical `bf8843f` scale harness, SHA-256 `969ac27576f6cad73cb26ca036e86db8170a14fbee73b1c06a5ef07caeca0ad2`, with diagnostics absent. A's source-tree measurement identity is `6367076766052c5f80337eaa7e770eea47f7f8c49fd9913e35a03bf89f5fac5d`: the extra compact module remains on disk but the exact baseline query does not import it. B's identity remains `ca1eeff9d500a85eabdacc42f4094d494d2010fbf7205be1bdf674349aaabe7e`. The query file hashes are `42435798ebb10c597cbbed08da59c3184a1a81002d601900da0294aa0d756311` for A and `6c7f6df961691e7d9cddb6747a3a28ec0e9ee899aa64b6011386e55206bb6c2a` for B. The generated fixture hashes match the earlier follow-up.
+
+At admission and every thirty seconds during a run, a metadata-only process census groups browser descendants by known lane worktree. Another lane's browser appearing causes only this lane's own run to stop; that interrupted sample is excluded and retained separately. This establishes no observed concurrent lane browser in the accepted samples, not the absence of sub-thirty-second overlap or other host CPU work. Start CPU/free-memory measurements below precede the production build; each raw report separately records the later in-test admission. The host remains loaded, and neither CPU nor free RAM is held constant between commands.
+
+| Accepted Firefox sequence | CPU at command admission, percent | Free physical bytes at command admission | Other lane browser processes at start | Thirty-second census samples, all with zero other lane browser processes | Maximum frame interval, ms | Intervals above 50 ms | Configuration-cold count p95, ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A1, 11:57:51 UTC | 36 | 15,813,713,920 | 0 | 20 | 83.32 | 17 | 414 |
+| B1, 12:53:27 UTC | 38 | 18,745,692,160 | 0 | 17 | 48.60 | 0 | 29 |
+| A2, 13:02:34 UTC | 58 | 16,657,461,248 | 0 | 18 | 62.50 | 3 | 323 |
+| B2, 13:24:09 UTC | 51 | 15,643,361,280 | 0 | 20 | 90.28 | 13 | 42 |
+
+All four reach 6,000 consecutive focused and visible suggestions. The candidate improves the first pair and worsens the second, so it is not worse in both pairs. The baseline itself now produces 17 and three long intervals instead of the morning sample's one. These mixed samples do not reproduce a consistent compact-cache regression; they also do not identify a single host-load cause. No production fix was made from that ambiguity. The frame target remains unproven across the observed host conditions rather than being silently promoted from the good B1 sample.
+
+| WebKit frame phase | CPU at command admission, percent | Free physical bytes at command admission | Other lane browser processes at start | Thirty-second census samples, all with zero other lane browser processes | Maximum frame interval, ms | Intervals above 50 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| A1, 14:33:37 UTC | 76 | 13,998,190,592 | 0 | 30 | 167 | 42 |
+| B1, 17:24:40 UTC | 57 | 14,424,920,064 | 0 | 30 | 209 | 309 |
+
+Both WebKit frame phases reach all 6,000 focused and visible cards and contain the full raw frame arrays. Both complete scale commands then hit the unchanged fifteen-minute timeout in the later 100,000-entry phase, so neither has a new count p95 or a full-run success claim. The frame-phase recovery verifies the raw frame count, maximum, above-target count, final destination, harness hash and absence of another lane browser in the sampled censuses before exposing these numbers. WebKit B is worse in this single frame pair, but its command starts almost three hours after A because RAM admission repeatedly failed and one startup attempt stopped with the worker gate unavailable before restoring generated data. Other attempted runs were stopped when lane browsers appeared, and their numbers are excluded. Start CPU readings differ, and both accepted WebKit runs include later high CPU readings despite zero observed lane browsers. Neither a compact-cache regression nor a host-load-only explanation is established by this one unequal-host pair plus the opposing Firefox pairs. The requested repeated-worse condition for a causal repair was not observed, and production code remains unchanged from the compact candidate.
+
+The completed and recovered raw reports, failed/contaminated admission records, process censuses and exact variant patch remain in `socialprune-handoff/phase2/w-s10/`. Failed startup and interrupted commands are not counted as A/B results. The frame target is still open, and the mixed attribution result is not an integration approval. The S10 repository delta is limited to this evidence correction and a generated projection-byte regression test, within the existing eight-path candidate; no worker-runtime or workspace-client file changed.
+
+The allocation-boundary correction above is backed by `w-s10/projection-heap.json`, SHA-256 `844dbea0f1a0ecd82dc81eda10e396d6a6b430707b28d05962c10edb8bc1ce64`, and a generated unit test at ten and 1,000 entries. At 100,000 entries, membership/base/holding/order consume 100,000/100,000/200,000/400,000 bytes, exactly eight linear projection bytes per entry. Retained account, date, likes, reposts, eligibility, decision and encoded-check inputs consume 3,600,004 additional typed bytes; IDs, the ID index and runtime bookkeeping account for the separately measured roughly 7.84 MB heap increment. Counters and headers add per-configuration overhead, not a new per-entry column. The complete owned cache remains 122.3894 measured combined bytes per entry; meeting the narrower eight-byte projection growth does not make the other retained inputs free. The direct projection call added 6,936 heap bytes beyond the new output arrays. No ADR amendment is proposed from this split.

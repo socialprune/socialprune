@@ -161,7 +161,7 @@ test('one decision moves cached tab counts and undo restores them without rescan
     selected: [],
   });
   expect((await query.planCounts('x:generated')).tabs.suggested).toBe(0);
-  expect(reads).toBeGreaterThan(scans);
+  expect(reads).toBe(scans);
   expect((await backing.read(readWorkspace)).decisionEvents).toHaveLength(2);
 });
 

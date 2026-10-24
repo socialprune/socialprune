@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { measurementIdentity } from '../tooling/measurement-identity.ts';
+import { observeFeedFrames } from './frame-diagnostics.ts';
 import { waitForApp } from './helpers.ts';
 import {
   scaleHost,
@@ -164,6 +165,12 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     colorScheme: 'light',
   });
   const page = await context.newPage();
+  // Test process opt-in only. No runtime setting reaches a shipped entrypoint.
+  const frameDiagnostics =
+    // eslint-disable-next-line no-restricted-properties -- Content-free test-process diagnostics opt-in, not credentials.
+    process.env['SP_FEED_FRAME_DIAGNOSTICS'] === '1'
+      ? await observeFeedFrames(page)
+      : null;
   const external: string[] = [],
     pageErrors: string[] = [];
   const startupEvents: { at: string; kind: string; detail: string }[] = [];
@@ -280,6 +287,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     await page.screenshot({
       path: join(output, `${browserName}-6000-feed.png`),
     });
+    await frameDiagnostics?.start();
     await page.evaluate(() => {
       const panel = document.querySelector<HTMLElement>('[role="tabpanel"]');
       if (!panel) throw new Error('Connected scroll panel missing.');
@@ -399,6 +407,8 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       focusedCards,
       stopDetail: scrollStop,
     };
+    if (frameDiagnostics)
+      report['frameDiagnostics'] = await frameDiagnostics.read();
     await save();
     await sampleMemory('after 6000 traversal attempt');
     const previewStart = performance.now();

@@ -292,6 +292,7 @@ test('W4 bundled demo imports, reviews, bulk marks, undoes, opens both click lis
     expect(dataRequests).toEqual([]);
     await audit.assert();
   } catch (error) {
+    console.error('DEMO_ORIGINAL_ERROR', String(error));
     await captureReviewAccount(page, info);
     throw error;
   }
@@ -413,92 +414,112 @@ test('W4 personal review survives demo and reset; fixture restore is refused wit
 
 test('W4 demo recreates from precached bytes after reload with its actual server stopped', async ({
   page,
-}) => {
-  await page.addInitScript(() => {
-    const Original = Worker;
-    const trace: {
-      worker: string;
-      direction: string;
-      type: string;
-      requestId?: string;
-    }[] = [];
-    Reflect.set(globalThis, '__demoLifecycleTrace', trace);
-    globalThis.Worker = class extends Original {
-      private readonly address: string;
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options);
-        this.address = String(url);
-        this.addEventListener(
-          'message',
-          (event: MessageEvent<{ type: string; requestId?: string }>) => {
-            trace.push({
-              worker: this.address,
-              direction: 'reply',
-              type: event.data.type,
-              requestId: event.data.requestId,
-            });
-          },
-        );
-      }
-      override postMessage(
-        message: unknown,
-        transferOrOptions: Transferable[] | StructuredSerializeOptions = [],
-      ) {
-        const request = message as { type: string; requestId?: string };
-        trace.push({
-          worker: this.address,
-          direction: 'request',
-          type: request.type,
-          requestId: request.requestId,
-        });
-        if (Array.isArray(transferOrOptions))
-          super.postMessage(message, transferOrOptions);
-        else super.postMessage(message, transferOrOptions);
-      }
-    };
+}, info) => {
+  const observed: unknown[] = [];
+  page.on('console', (message) => {
+    if (!message.text().startsWith('DEMO_LIFECYCLE ')) return;
+    observed.push(
+      JSON.parse(message.text().slice('DEMO_LIFECYCLE '.length)) as unknown,
+    );
+    if (observed.length > 200) observed.shift();
   });
-  const expected = await fixture();
-  // eslint-disable-next-line no-restricted-properties -- Serial E2E test server port, never a credential.
-  const probePort = Number(process.env['SP_E2E_PROBE_PORT'] ?? '4182');
-  const server = await startStaticServer(probePort);
   try {
-    await page.goto(`${server.origin}/socialprune/#/demo`);
-    await expect(page.getByTestId('review-card')).toBeVisible();
-    await listView(page);
+    await page.addInitScript(() => {
+      const Original = Worker;
+      type LifecycleEvent = {
+        worker: string;
+        direction: string;
+        type: string;
+        requestId?: string;
+      };
+      const record = (event: LifecycleEvent) => {
+        console.debug(
+          'DEMO_LIFECYCLE ' + JSON.stringify({ at: Date.now(), ...event }),
+        );
+      };
+      globalThis.Worker = class extends Original {
+        private readonly address: string;
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          this.address = String(url);
+          this.addEventListener(
+            'message',
+            (event: MessageEvent<{ type: string; requestId?: string }>) => {
+              record({
+                worker: this.address,
+                direction: 'reply',
+                type: event.data.type,
+                requestId: event.data.requestId,
+              });
+            },
+          );
+        }
+        override postMessage(
+          message: unknown,
+          transferOrOptions: Transferable[] | StructuredSerializeOptions = [],
+        ) {
+          const request = message as { type: string; requestId?: string };
+          record({
+            worker: this.address,
+            direction: 'request',
+            type: request.type,
+            requestId: request.requestId,
+          });
+          if (Array.isArray(transferOrOptions))
+            super.postMessage(message, transferOrOptions);
+          else super.postMessage(message, transferOrOptions);
+        }
+      };
+    });
+    const expected = await fixture();
+    // eslint-disable-next-line no-restricted-properties -- Serial E2E test server port, never a credential.
+    const probePort = Number(process.env['SP_E2E_PROBE_PORT'] ?? '4182');
+    const server = await startStaticServer(probePort);
+    try {
+      await page.goto(`${server.origin}/socialprune/#/demo`);
+      await expect(page.getByTestId('review-card')).toBeVisible();
+      await listView(page);
+      await expect(page.locator('main[data-gate]')).toHaveAttribute(
+        'data-gate',
+        'ready',
+      );
+      await expect(page.getByRole('grid')).toBeVisible();
+      // The grid renders before the list's open/query finishes. Complete that
+      // initialization before testing the offline reload and reset.
+      await expect(
+        page.getByRole('grid').getByRole('row').first(),
+      ).toBeVisible();
+    } finally {
+      await server.close();
+    }
+    const response = await page.reload();
+    expect(response?.fromServiceWorker()).toBe(true);
     await expect(page.locator('main[data-gate]')).toHaveAttribute(
       'data-gate',
       'ready',
     );
     await expect(page.getByRole('grid')).toBeVisible();
-  } finally {
-    await server.close();
-  }
-  const response = await page.reload();
-  expect(response?.fromServiceWorker()).toBe(true);
-  await expect(page.locator('main[data-gate]')).toHaveAttribute(
-    'data-gate',
-    'ready',
-  );
-  await expect(page.getByRole('grid')).toBeVisible();
-  await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
-  try {
+    await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
     await expect(
       page.getByText(
         'The demo was reset. Your demo decisions and outcome records were removed.',
         { exact: true },
       ),
     ).toBeVisible();
+    expect((await backup(page)).items).toHaveLength(expected.items.length);
   } catch (error) {
-    console.log(
-      await page.evaluate(() => ({
-        trace: Reflect.get(globalThis, '__demoLifecycleTrace') as unknown,
-        import: window.socialprune.getImportSnapshot(),
-        failures: window.workspace.diagnostics,
-      })),
-    );
+    // Preserve the first failure without re-entering a potentially stalled page.
+    console.error('DEMO_ORIGINAL_ERROR', String(error));
+    try {
+      await info.attach('demo-lifecycle.json', {
+        body: JSON.stringify(observed, null, 2),
+        contentType: 'application/json',
+      });
+    } catch (captureError) {
+      console.error('DEMO_CAPTURE_ERROR', String(captureError));
+    }
     throw error;
   }
-  expect((await backup(page)).items).toHaveLength(expected.items.length);
 });
 
 test('W4 demo banner and review reflow at 320 pixels in both languages', async ({

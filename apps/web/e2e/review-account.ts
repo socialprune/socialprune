@@ -1,7 +1,22 @@
 import type { Page, TestInfo } from '@playwright/test';
 
+const traces = new WeakMap<Page, unknown[]>();
+
 /** Synthetic-demo trace and a test-only route-task delay; never imported by the app. */
 export async function traceReviewAccount(page: Page) {
+  if (!traces.has(page)) {
+    const events: unknown[] = [];
+    traces.set(page, events);
+    page.on('console', (message) => {
+      if (!message.text().startsWith('REVIEW_ACCOUNT_TRACE ')) return;
+      events.push(
+        JSON.parse(
+          message.text().slice('REVIEW_ACCOUNT_TRACE '.length),
+        ) as unknown,
+      );
+      if (events.length > 100) events.shift();
+    });
+  }
   await page.evaluate(() => {
     const events: unknown[] = [];
     Reflect.set(globalThis, '__reviewAccountTrace', events);
@@ -35,8 +50,10 @@ export async function traceReviewAccount(page: Page) {
       };
     };
     const record = (kind: string, detail: unknown) => {
-      events.push({ at: performance.now(), kind, detail });
+      const event = { at: performance.now(), kind, detail };
+      events.push(event);
       if (events.length > 100) events.shift();
+      console.debug('REVIEW_ACCOUNT_TRACE ' + JSON.stringify(event));
     };
     const request = window.workspace.request.bind(window.workspace);
     window.workspace.request = (message, transfer) => {
@@ -130,16 +147,15 @@ export async function traceReviewAccount(page: Page) {
 }
 
 export async function captureReviewAccount(page: Page, info: TestInfo) {
-  const trace = await page.evaluate(() => ({
-    events: Reflect.get(globalThis, '__reviewAccountTrace') as unknown,
-    current: (
-      Reflect.get(globalThis, '__reviewAccountSnapshot') as
-        (() => unknown) | undefined
-    )?.(),
-  }));
+  // A diagnostic must not wait on the page whose first failure it records.
+  const trace = { events: traces.get(page) ?? [], capturedFrom: 'node-events' };
   console.log('ACCOUNT_TRACE', JSON.stringify(trace));
-  await info.attach('review-account.json', {
-    body: JSON.stringify(trace, null, 2),
-    contentType: 'application/json',
-  });
+  try {
+    await info.attach('review-account.json', {
+      body: JSON.stringify(trace, null, 2),
+      contentType: 'application/json',
+    });
+  } catch (error) {
+    console.error('ACCOUNT_TRACE_CAPTURE_ERROR', String(error));
+  }
 }

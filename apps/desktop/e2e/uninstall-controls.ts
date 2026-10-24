@@ -51,6 +51,7 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { runWindowProbe } from '../packaging/window-readiness.ts';
 import { launchReviewApp } from '../packaging/review-app-launch.ts';
+import { appxPhase } from './appx-phase.ts';
 
 // Only this test entrypoint plants files/links. The shipped builder and app
 // never import it. All roots must be absent before this run claims ownership.
@@ -80,6 +81,7 @@ type Layout = {
 const layout = async () =>
   JSON.parse((await ps('install-layout.ps1')).stdout) as Layout;
 const initial = await layout();
+await appxPhase('controls-child-entry', true);
 assert.equal(initial.installExists, false, 'EXISTING_INSTALL_REFUSED');
 assert.equal(initial.dataExists, false, 'EXISTING_DATA_REFUSED');
 assert.equal(
@@ -135,7 +137,10 @@ const tempSnapshot = async () => (await readdir(installerTemp)).sort();
 const [tokenProof, taskControl, initialSystem] = await (async () => {
   const tokenProof = await systemTokenProof('controls');
   const taskControl = await systemTaskControl();
-  return [tokenProof, taskControl, await systemSnapshot()] as const;
+  await appxPhase('controls-initial-snapshot-start', true);
+  const snapshot = await systemSnapshot();
+  await appxPhase('controls-initial-snapshot-end', true);
+  return [tokenProof, taskControl, snapshot] as const;
 })().catch(async (error: unknown) => {
   // No install has started; only the exact scratch root belongs to this run.
   await rm(scratch, { recursive: true, force: true });
@@ -214,14 +219,17 @@ async function installedSnapshot() {
   };
 }
 async function install() {
+  await appxPhase('controls-nsis-install-start', true);
   await run(setup, ['/S'], {
     timeout: 120_000,
     windowsHide: true,
     env: installerEnv,
   });
   await access(exe);
+  await appxPhase('controls-nsis-install-end', true);
 }
 async function remove() {
+  await appxPhase('controls-nsis-remove-start', true);
   uninstallerHash = digest(await readFile(uninstall));
   // NSIS's outer uninstaller returns before its temp child. Poll the owned
   // registration and files, not a guessed sleep or a successful launch code.
@@ -257,6 +265,7 @@ async function remove() {
     uninstallCount,
     uninstallerHash,
   );
+  await appxPhase('controls-nsis-remove-end', true);
 }
 let app: Awaited<ReturnType<typeof launchReviewApp>> | undefined;
 let dataOwned = false;
@@ -480,6 +489,7 @@ try {
   );
   const generated = join(scratch, 'generated');
   await generatedWorkspace(generated);
+  await appxPhase('controls-app-launch', true);
   app = await launchReviewApp(
     exe,
     [`--data-dir=${generated}`, '--force-renderer-accessibility'],
@@ -493,7 +503,9 @@ try {
     proofOutput('release-window-controls-ready.json'),
   );
   const runningBefore = await installedSnapshot();
+  await appxPhase('controls-running-snapshot-start', true);
   const runningSystem = await systemSnapshot();
+  await appxPhase('controls-running-snapshot-end', true);
   const runningTemp = await tempSnapshot();
   const pids = (await appProcesses(exe)).map((row) => row.ProcessId).sort();
   await assert.rejects(
@@ -529,7 +541,9 @@ try {
     pids,
     'RUNNING_APP_ENDED',
   );
+  await appxPhase('controls-refusal-snapshot-start', true);
   await compareSystem('running-refusal', runningSystem, await systemSnapshot());
+  await appxPhase('controls-refusal-snapshot-end', true);
   assert.deepEqual(
     await tempSnapshot(),
     runningTemp,
@@ -727,7 +741,9 @@ try {
   assert.ok(tempCopies.length <= 2);
   const networkResult = await network.stop();
   assertNoOwnedNetwork(networkResult);
+  await appxPhase('controls-final-snapshot-start', true);
   const afterSystem = await systemSnapshot();
+  await appxPhase('controls-final-snapshot-end', true);
   const finalComparison = compareSystemSnapshots(initialSystem, afterSystem);
   systemComparisons.push({ phase: 'after-uninstall', ...finalComparison });
   await writeFile(

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { appxPhase } from '../e2e/appx-phase.ts';
 import { createHash } from 'node:crypto';
 import {
   access,
@@ -121,7 +122,9 @@ assert.equal(
   'EXISTING_REGISTRATION_REFUSED',
 );
 const tokenProof = await systemTokenProof('smoke');
+await appxPhase('smoke-initial-snapshot-start', true);
 const initial = await systemSnapshot();
+await appxPhase('smoke-initial-snapshot-end', true);
 const data = await mkdtemp(join(tmpdir(), 'socialprune-release-generated-'));
 const installerTemp = join(data, 'installer-temp');
 await mkdir(installerTemp);
@@ -213,6 +216,7 @@ try {
     'WINDOWS_SETTINGS_UNINSTALL_WIRING',
   );
   for (let index = 0; index < 5; index++) {
+    await appxPhase(`smoke-app-${index + 1}-launch`, true);
     const started = Date.now();
     const child = await launchReviewApp(
       installedExe,
@@ -236,7 +240,9 @@ try {
           enabledReviewActionFocused: z.literal(true),
         })
         .parse(JSON.parse(stdout));
+      await appxPhase(`smoke-running-${index + 1}-snapshot-start`, true);
       const running = await systemSnapshot();
+      await appxPhase(`smoke-running-${index + 1}-snapshot-end`, true);
       snapshots.push({ phase: `running-${index + 1}`, snapshot: running });
       await compareSystem(`running-${index + 1}`, running);
       samples.push({

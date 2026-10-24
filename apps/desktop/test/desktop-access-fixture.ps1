@@ -44,9 +44,9 @@ $method=@'
       try {
         DesktopDeny.WaitFile(Path.Combine(scratch,"ready"));
         DesktopDeny.Apply(owned.DesktopHandle);File.WriteAllText(Path.Combine(scratch,"denied-go"),"go");
-        DesktopDeny.WaitFile(Path.Combine(scratch,"denied.json"));deniedResult=File.ReadAllText(Path.Combine(scratch,"denied.json"));
+        DesktopDeny.WaitFile(Path.Combine(scratch,"denied.json"));deniedResult=DesktopReceipt.Read(Path.Combine(scratch,"denied.json"));
         owned.RestoreOwnedAccess(impersonation);File.WriteAllText(Path.Combine(scratch,"granted-go"),"go");
-        DesktopDeny.WaitFile(Path.Combine(scratch,"granted.json"));grantedResult=File.ReadAllText(Path.Combine(scratch,"granted.json"));
+        DesktopDeny.WaitFile(Path.Combine(scratch,"granted.json"));grantedResult=DesktopReceipt.Read(Path.Combine(scratch,"granted.json"));
         if(WaitForSingleObject(nested.process,queryTimeoutMs)!=0)throw new Exception("NESTED_PROBE_TIMEOUT");
       }finally{CloseHandle(nested.thread);CloseHandle(nested.process);}
       bool environment=Environment.GetEnvironmentVariable("SystemRoot")!=null && Environment.GetEnvironmentVariable("windir")!=null && Environment.GetEnvironmentVariable("PATHEXT")!=null;
@@ -64,7 +64,7 @@ $method=@'
   }
 '@
 $native=$native.Replace('  public static uint Run(', $method+"`n  public static uint Run(")
-Add-Type -TypeDefinition ($native+[IO.File]::ReadAllText("$PSScriptRoot\..\e2e\limited-desktop.cs"))
+Add-Type -TypeDefinition ($native+[IO.File]::ReadAllText("$PSScriptRoot\..\e2e\limited-desktop.cs")+[IO.File]::ReadAllText("$PSScriptRoot\desktop-receipt.cs"))
 if ([LimitedProof]::ParentElevated()) {
   @{parentElevated=$true;state='record-only';reason='non-elevated-parent-required';mechanismRun=$false} | ConvertTo-Json -Compress
 } else {

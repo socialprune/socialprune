@@ -24,6 +24,7 @@ import { failureRecord } from './proof-failure.ts';
 import { root } from '../packaging/paths.ts';
 import { collectProof } from './proof-collection.ts';
 import { POWERSHELL_READY_TIMEOUT_MS } from '../packaging/query-poll.ts';
+import { appxPhase } from './appx-phase.ts';
 
 // Test-only launcher. The installer receives no test flag and has no exemption
 // from its elevated-token guard. A restricted same-user process uses an owned
@@ -38,6 +39,7 @@ assert.ok(
   'INSTALLED_PROOF_MODE',
 );
 const run = runNativeQuery;
+await appxPhase(`parent-${mode}-entry`);
 const ps = (script: string, args: string[] = []) =>
   runPowerShell(
     [
@@ -164,6 +166,7 @@ try {
     TEMP: parentTemp,
     TMP: parentTemp,
   };
+  await appxPhase(`parent-${mode}-restricted-launch`);
   const child = spawnPowerShell(
     [
       '-NoProfile',
@@ -247,6 +250,7 @@ try {
     await writeFile(join(scratch, 'refused.ready'), 'refused');
   }
   const code = await exited;
+  await appxPhase(`parent-${mode}-restricted-return`);
   const report = JSON.parse(
     (await readFile(tokenReport, 'utf8')).replace(/^\uFEFF/, ''),
   ) as { adminMember: boolean; childExit: number };

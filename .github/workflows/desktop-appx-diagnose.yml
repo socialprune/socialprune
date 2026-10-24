@@ -1,0 +1,47 @@
+name: Desktop AppX timing diagnostic (not acceptance)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# Fresh runners distinguish autonomous provisioning from the same restricted
+# launcher and the installed sequence. No release publication, caches or waiver.
+jobs:
+  observe:
+    if: github.head_ref == 'diag/appx-firewall'
+    name: AppX timing (${{ matrix.arm }}, diagnostic only)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [idle, restricted, installed]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 3
+      - name: Observe without acceptance authority
+        timeout-minutes: 23
+        env:
+          SP_APPX_DIAGNOSTIC_ROOT: ${{ github.workspace }}/apps/desktop/dist/appx-observation
+          APPX_DIAGNOSTIC_ARM: ${{ matrix.arm }}
+        run: node apps/desktop/e2e/appx-diagnose.ts $env:APPX_DIAGNOSTIC_ARM
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: appx-observation-${{ matrix.arm }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            apps/desktop/dist/appx-observation/
+            apps/desktop/dist/release-*.json

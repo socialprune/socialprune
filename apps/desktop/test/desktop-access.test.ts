@@ -93,6 +93,41 @@ test('the launcher uses only owned desktop security and inherited environment, n
   expect(source).not.toMatch(/LoadUserProfile\s*\(/);
 });
 
+test.skipIf(process.platform !== 'win32')(
+  'atomic receipt publication remains readable while its publisher handle is open, with missing files still rejected',
+  async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-receipt-share-'));
+    try {
+      const { stdout } = await runPowerShell(
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          join(directory, 'test/desktop-receipt-control.ps1'),
+          '-Scratch',
+          scratch,
+        ],
+        {
+          timeout: WINDOWS_QUERY_TIMEOUT_MS,
+          windowsHide: true,
+          env: testEnvironment(),
+        },
+      );
+      expect(JSON.parse(stdout)).toEqual({
+        oldReaderFailed: true,
+        win32Error: 32,
+        newReaderExact: true,
+        publicationHandleStillOpen: true,
+        publisherAccess: 'DELETE',
+        timeoutChanged: false,
+      });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  },
+  WINDOWS_QUERY_TIMEOUT_MS + 1000,
+);
+
 test('both runner samples set all PowerShell query floors and enclosing test budgets, including native compilation and proof isolation', async () => {
   expect(WINDOWS_QUERY_TIMEOUT_MS).toBeGreaterThanOrEqual(33_055 * 3 + 100);
   const { RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS, WINDOWS_QUERY_TEST_TIMEOUT_MS } =

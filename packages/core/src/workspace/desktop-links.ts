@@ -1,3 +1,10 @@
+/** UPD-1 opens this page in the person's browser, never an API or download. */
+export function releasePageUrl(value: string): string | null {
+  return value === 'https://github.com/socialprune/socialprune/releases'
+    ? value
+    : null;
+}
+
 /** Post routes emitted by the review, click list and archive, not arbitrary URLs. */
 export function platformPostUrl(value: string): string | null {
   // Check the original spelling first: URL parsing would erase dot segments,

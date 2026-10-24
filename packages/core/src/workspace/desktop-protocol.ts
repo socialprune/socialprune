@@ -2,7 +2,7 @@ import { z } from 'zod';
 import '../browser-init.ts';
 import { ItemKindSchema, UtcTimestampSchema } from '../model/v1.ts';
 import { HttpReviewRequestSchema, WorkspaceReplySchema } from './protocol.ts';
-import { platformPostUrl } from './desktop-links.ts';
+import { platformPostUrl, releasePageUrl } from './desktop-links.ts';
 import {
   DesktopCliErrorCodeSchema,
   DesktopErrorCodeSchema,
@@ -50,6 +50,13 @@ export const DesktopLinkSchema = z.discriminatedUnion('kind', [
     locale: z.enum(['en', 'de']),
   }),
   z.strictObject({ kind: z.literal('guide-report') }),
+  z.strictObject({
+    kind: z.literal('app-releases'),
+    url: z
+      .string()
+      .max(128)
+      .refine((value) => releasePageUrl(value) !== null),
+  }),
   z.strictObject({
     kind: z.literal('platform-post'),
     url: z
@@ -608,6 +615,7 @@ export const DesktopCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ ...request, type: z.literal('backupRestore') }),
   z.strictObject({ ...request, type: z.literal('dataFolderInfo') }),
   z.strictObject({ ...request, type: z.literal('dataFolderOpen') }),
+  z.strictObject({ ...request, type: z.literal('appInfo') }),
   z.strictObject({
     ...request,
     type: z.literal('openLink'),
@@ -683,6 +691,15 @@ export const DesktopDataFolderSchema = z.strictObject({
     ),
 });
 export type DesktopDataFolder = z.infer<typeof DesktopDataFolderSchema>;
+export const DesktopAppInfoSchema = z.strictObject({
+  version: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/),
+  build: z.enum(['direct', 'store']),
+});
+export type DesktopAppInfo = z.infer<typeof DesktopAppInfoSchema>;
 export const DesktopReplySchema = z.discriminatedUnion('type', [
   // ReviewRuntime can return progress/chunks followed by one terminal reply.
   // Keep those bytes and shapes unchanged inside a bounded IPC reply envelope.
@@ -807,6 +824,11 @@ export const DesktopReplySchema = z.discriminatedUnion('type', [
   z.strictObject({ ...request, type: z.literal('linkOpened') }),
   z.strictObject({
     ...request,
+    type: z.literal('appInfo'),
+    ...DesktopAppInfoSchema.shape,
+  }),
+  z.strictObject({
+    ...request,
     type: z.literal('desktopFailed'),
     code: DesktopErrorCodeSchema,
   }),
@@ -828,6 +850,7 @@ const commandReplies = {
   backupRestore: 'backupRestored',
   dataFolderInfo: 'dataFolderInfo',
   dataFolderOpen: 'dataFolderOpened',
+  appInfo: 'appInfo',
   openLink: 'linkOpened',
 } as const satisfies Record<DesktopCommand['type'], DesktopReply['type']>;
 export type DesktopReplyFor<Request extends DesktopRequest> = Extract<

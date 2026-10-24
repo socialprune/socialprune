@@ -36,6 +36,7 @@ export async function fakeBridge(
   page: Page,
   locale = 'en',
   seed?: WorkspaceV2,
+  appBuild: 'direct' | 'store' = 'store',
 ) {
   const root = new URL('../../../../fixtures/synthetic/demo/', import.meta.url);
   const fixture =
@@ -172,7 +173,7 @@ export async function fakeBridge(
             requestId,
             folder: {
               path: 'C:\\Generated\\SocialPrune Data',
-              storeBuild: true,
+              storeBuild: appBuild === 'store',
               folders: [
                 { kind: 'workspace', bytes: 4096 },
                 { kind: 'profile-x', bytes: 8192 },
@@ -180,6 +181,14 @@ export async function fakeBridge(
                 { kind: 'logs', bytes: 512 },
               ],
             },
+          };
+          break;
+        case 'appInfo':
+          reply = {
+            type: 'appInfo',
+            requestId,
+            version: '1.2.3',
+            build: appBuild,
           };
           break;
         case 'dataFolderOpen':

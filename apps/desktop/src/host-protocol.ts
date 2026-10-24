@@ -20,7 +20,10 @@ export const HostCommandSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('request'),
-    message: EngineHostMessageSchema,
+    message: EngineHostMessageSchema.refine(
+      (value) => value.request.type !== 'appInfo',
+      'App information belongs to main.',
+    ),
   }),
   z.strictObject({ type: z.literal('shutdown') }),
 ]);

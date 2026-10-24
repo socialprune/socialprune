@@ -140,6 +140,33 @@ test('native ZIP drop imports through main without renderer paths; dialogs follo
     expect(
       app.requests.filter((url) => !url.startsWith('app://socialprune/')),
     ).toEqual([]);
+  } catch (error) {
+    // The generated directory is removed by close(). Preserve the causal
+    // boundary first so a CI timeout distinguishes UI/IPC from persistence.
+    const evidence = {
+      document: await app.page
+        .evaluate(() => ({
+          language: document.documentElement.lang,
+          selection:
+            document.querySelector<HTMLSelectElement>('header select')?.value,
+          saved: localStorage.getItem('sp-locale'),
+        }))
+        .catch(() => null),
+      preference: await readFile(
+        join(app.data, 'ui-language.json'),
+        'utf8',
+      ).catch(() => null),
+      log: await readFile(
+        join(app.data, 'logs', 'desktop.ndjson'),
+        'utf8',
+      ).catch(() => null),
+    };
+    console.log('NATIVE_DROP_LANGUAGE_FAILURE', JSON.stringify(evidence));
+    await test.info().attach('language-failure', {
+      body: JSON.stringify(evidence),
+      contentType: 'application/json',
+    });
+    throw error;
   } finally {
     await app.close();
   }

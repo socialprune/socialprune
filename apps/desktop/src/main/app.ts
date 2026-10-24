@@ -319,8 +319,9 @@ export async function startDesktop(options: DesktopOptions) {
       return;
     }
     appLanguage = value;
+    record('LANGUAGE_REQUEST_ACCEPTED');
     languageWriting = languageWriting
-      .then(() => writeLanguage(dataDirectory, value))
+      .then(() => writeLanguage(dataDirectory, value, record))
       .catch(() => {
         record('LANGUAGE_WRITE_FAILED');
       });

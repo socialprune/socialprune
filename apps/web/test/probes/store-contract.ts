@@ -11,6 +11,7 @@ import { activeWorkspace } from '../../src/workspace/registry.ts';
 import { ReviewService } from '@socialprune/core/workspace/review';
 import { QueryEngine } from '@socialprune/core/workspace/query';
 import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
+export { proveOwnerUpgrade } from '../../src/workspace/instagram-owner-migration.browser.ts';
 
 export async function runBrowserStoreContract(): Promise<string[]> {
   const passed: string[] = [];

@@ -1936,6 +1936,12 @@ test('CLI -> real IndexedDB -> CLI backup preserves ambiguous receipts and block
     v4.schemaVersion = 4;
     delete v4.instagramContext;
     delete v4.counts.instagramContext;
+    delete v4.reviewPlans;
+    delete v4.counts.reviewPlans;
+    delete v4.settings.criteria;
+    delete v4.settings.keepRules;
+    if (v4.settings.review) delete v4.settings.review.feed;
+    for (const submission of v4.submissions) delete submission.criteria;
     v4.browserRuns = v4.browserRuns!.filter((run) => run.platform === 'x');
     v4.browserAttempts = v4.browserAttempts!.filter(
       (attempt) => attempt.action !== 'confirm-comment',

@@ -9,6 +9,7 @@ import {
 } from '@socialprune/core/workspace/backup';
 import { readWorkspace } from '@socialprune/core/workspace/store';
 import { createWorkspace } from '@socialprune/core/workspace/store';
+import { WorkspaceMetaSchema } from '@socialprune/core';
 import {
   runStoreContract,
   writeInstagramContextContract,
@@ -130,25 +131,24 @@ export async function upgradeDecoy(): Promise<{
     request.onerror = () =>
       reject(request.error ?? new Error('Upgrade decoy open failed'));
   });
-  const {
-    counts: unused,
-    imports,
-    items,
-    submissions,
-    assessments,
-    decisionEvents,
-    outcomeEvents,
-    ...meta
-  } = createWorkspace({ id });
-  void unused;
-  void imports;
-  void items;
-  void submissions;
-  void assessments;
-  void decisionEvents;
-  void outcomeEvents;
+  // Select historical metadata explicitly. A rest projection of the current
+  // workspace also includes newer record arrays, which strict metadata rejects.
+  const workspace = createWorkspace({ id });
+  const meta = WorkspaceMetaSchema.parse({
+    format: workspace.format,
+    schemaVersion: 4,
+    id,
+    kind: workspace.kind,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+    lastBackupAt: workspace.lastBackupAt,
+    settings: {
+      categories: workspace.settings.categories,
+      timeZone: workspace.settings.timeZone,
+    },
+  });
   const tx = opened.transaction(['meta', 'runtime', 'originals'], 'readwrite');
-  tx.objectStore('meta').put({ ...meta, schemaVersion: 4 }, 'workspace');
+  tx.objectStore('meta').put(meta, 'workspace');
   tx.objectStore('runtime').put({ revision: 0, lastEventSeq: 0 }, 'runtime');
   tx.objectStore('originals').put({
     id: '901',

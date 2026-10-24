@@ -1,8 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { STORE_CONTRACT_CHECKS } from '@socialprune/core/workspace/store-contract';
+import {
+  STORE_CONTRACT_CHECKS,
+  contractWorkspace,
+  writeInstagramContextContract,
+} from '@socialprune/core/workspace/store-contract';
 import { readFile } from 'node:fs/promises';
 import type { WorkspaceV2 } from '@socialprune/core';
-import { createWorkspace } from '@socialprune/core/workspace/store';
+import {
+  createWorkspace,
+  readWorkspace,
+} from '@socialprune/core/workspace/store';
+import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
+import { JOURNAL_FIXTURE } from '../../../../packages/core/src/model/browser-fixture.ts';
 
 test('core store contract runs against real IndexedDB in a browser page', async ({
   page,
@@ -119,4 +128,69 @@ test('quota failure rolls back the real transaction and versionchange closes the
     rolledBack: true,
     lifecycle: ['versionchange'],
   });
+});
+
+test('v7 to v8 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen', async ({
+  page,
+}) => {
+  const store = createMemoryStore();
+  const receipts = JOURNAL_FIXTURE.attempts.map((attempt) => ({
+    ...attempt,
+    seq: attempt.seq + 2,
+    ...(attempt.state === 'ambiguous'
+      ? {
+          receipt: {
+            method: 'POST',
+            path: '/i/api/graphql/generated/DeleteTweet',
+            status: 200,
+            shape: ['data', 'data.delete_tweet'],
+          },
+        }
+      : {}),
+  }));
+  let current: WorkspaceV2;
+  try {
+    await writeInstagramContextContract(store);
+    await store.write(async (tx) => {
+      await tx.items.put({
+        item: contractWorkspace().items[0]!,
+        importId: '',
+        metadataImportId: '',
+      });
+      await tx.browserRuns.add(JOURNAL_FIXTURE.run);
+      for (const attempt of receipts) await tx.browserAttempts.add(attempt);
+    });
+    current = await store.read(readWorkspace);
+  } finally {
+    await store.close();
+  }
+  const legacy = structuredClone(current);
+  legacy.schemaVersion = 7;
+  for (const record of legacy.instagramContext!)
+    Reflect.deleteProperty(record, 'ownerCheck');
+  await page.goto('/socialprune/icon.svg');
+  const result = (await page.evaluate(async (input) => {
+    const module = (await import(
+      /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
+    )) as {
+      proveOwnerUpgrade(value: WorkspaceV2, fail: boolean): Promise<unknown>;
+    };
+    return module.proveOwnerUpgrade(input, false);
+  }, legacy)) as {
+    first: WorkspaceV2;
+    second: WorkspaceV2;
+    version: number;
+    duplicateRejected: boolean;
+    addOnly: boolean;
+  };
+  expect(result.version).toBe(8);
+  expect(result.first).toEqual(current);
+  expect(result.second).toEqual(current);
+  expect(
+    result.first.browserAttempts!.filter(
+      (attempt) => attempt.runId === JOURNAL_FIXTURE.run.runId,
+    ),
+  ).toEqual(receipts);
+  expect(result.duplicateRejected).toBe(true);
+  expect(result.addOnly).toBe(true);
 });

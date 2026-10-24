@@ -530,6 +530,7 @@
   "originals.media.stored": "Auf diesem Gerät gespeichert",
   "instagramContext.found": "SocialPrune hat diesen Kommentar am {date} in deinem angemeldeten Instagram unter dem Beitrag gefunden. Text, Zeit und das Konto des Beitrags stimmen mit deinem Export überein.",
   "instagramContext.foundInList": "SocialPrune hat diesen Kommentar am {date} in deiner Instagram-Kommentarliste gefunden. Die Liste hat diesen Beitrag geöffnet, und das Konto des Beitrags stimmt mit deinem Export überein. Der Beitrag selbst hat den Kommentar nicht gezeigt.",
+  "instagramContext.foundWithoutOwner": "SocialPrune hat am {date} genau einen Kommentar mit deinem Text unter deinem Benutzernamen auf diesem Beitrag gefunden. Seine Zeit liegt höchstens eine Minute von der Exportzeit entfernt. Der Export nennt kein Beitragskonto, deshalb konnte SocialPrune es nicht vergleichen.",
   "instagramContext.captionCut": "Instagram hat nur den Anfang dieser Bildunterschrift gezeigt.",
   "instagramContext.showScreenshot": "Screenshot zeigen",
   "instagramContext.open": "Auf Instagram öffnen",

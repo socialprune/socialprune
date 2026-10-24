@@ -17,6 +17,7 @@ export const IG_FIXTURE = {
   ],
   scroll: { first: 1, beyondLimit: 11, maximum: 10, empty: 2, delta: 700 },
   postAt: '2025-07-30T18:00:00.000Z',
+  ownerWithoutExport: 'generated_owner_without_export',
   other: {
     username: 'planted_other_person',
     text: 'Other person private generated comment words 92',

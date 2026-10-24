@@ -111,9 +111,11 @@ export function InstagramPost({
       </div>
       <p className={styles.note}>
         {t(
-          record.confirmedBy === 'list'
-            ? 'instagramContext.foundInList'
-            : 'instagramContext.found',
+          record.ownerCheck === 'not-in-export'
+            ? 'instagramContext.foundWithoutOwner'
+            : record.confirmedBy === 'list'
+              ? 'instagramContext.foundInList'
+              : 'instagramContext.found',
           { date },
         )}
       </p>

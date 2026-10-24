@@ -15,7 +15,10 @@ import type {
   InstagramContext,
   ReviewPlan,
 } from '../model/index.ts';
-import { DEFAULT_CATEGORIES } from '../model/index.ts';
+import {
+  DEFAULT_CATEGORIES,
+  WORKSPACE_SCHEMA_VERSION,
+} from '../model/index.ts';
 import { defaultCriteria, defaultKeepRules } from '../criteria/schema.ts';
 import type { WorkspaceErrorCode } from './errors.ts';
 import { deriveState } from './state.ts';
@@ -196,7 +199,7 @@ export function createWorkspace(
   const time = (options.now ?? new Date()).toISOString();
   return validateWorkspace({
     format: 'socialprune-workspace',
-    schemaVersion: 7,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
     id: options.id ?? crypto.randomUUID(),
     kind: options.kind ?? 'personal',
     createdAt: time,

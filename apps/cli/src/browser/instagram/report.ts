@@ -189,7 +189,48 @@ export const RunMemorySchema = z
       (value.failedSamples === 0 || value.observationFailed) &&
       (value.peak !== null) === value.samples > value.failedSamples,
   );
+const imageDiagnosticFields = {
+  qualifyingObjects: count,
+  matchingLists: count,
+  distinctListLengths: z.array(count),
+  source: z.enum(['img-current-src', 'none']),
+};
+export const ImageDiagnosticSchema = z
+  .strictObject(imageDiagnosticFields)
+  .refine(
+    (value) =>
+      value.matchingLists <= value.qualifyingObjects &&
+      value.distinctListLengths.length <= value.qualifyingObjects &&
+      value.distinctListLengths.every(
+        (length, index) =>
+          index === 0 || length > value.distinctListLengths[index - 1]!,
+      ) &&
+      (value.source !== 'none' || value.matchingLists === 0),
+  );
+export type ImageDiagnostic = z.infer<typeof ImageDiagnosticSchema>;
+const StepImageSchema = z
+  .strictObject({
+    status: z.enum([
+      'stored',
+      'not-captured',
+      'too-large',
+      'not-image',
+      'not-attempted',
+    ]),
+    bytes: count,
+    ...imageDiagnosticFields,
+  })
+  .refine(
+    (value) =>
+      ImageDiagnosticSchema.safeParse({
+        qualifyingObjects: value.qualifyingObjects,
+        matchingLists: value.matchingLists,
+        distinctListLengths: value.distinctListLengths,
+        source: value.source,
+      }).success,
+  );
 export const ContextStepReportSchema = z.looseObject({
+  image: StepImageSchema.optional(),
   memory: MemorySampleSchema.optional(),
   listTimeout: ListTimeoutDiagnosticSchema.optional(),
   ready: z.strictObject({ postMs: count }).optional(),
@@ -438,6 +479,7 @@ const OWN_FUNCTION_MODULES = {
   ],
   'capture.ts': ['pageAnswers', 'writeOnce', 'capturePost', 'writeStructure'],
   'canary.ts': [
+    'imageDiagnostic',
     'compareSources',
     'automaticCanaryCheck',
     'automaticReadbackCheck',

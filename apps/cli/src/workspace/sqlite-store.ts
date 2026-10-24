@@ -59,7 +59,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 7;
+export const SQLITE_LAYOUT_VERSION = 8;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
@@ -222,7 +222,7 @@ export class SQLiteStore implements WorkspaceStore {
   private pinned = false;
   private exclusive = false;
   private hasOriginals = true;
-  private legacyContext = false;
+  private legacyContext: 5 | 6 | 7 | undefined;
 
   private constructor(db: DatabaseSync, path: string, readOnly: boolean) {
     this.db = db;
@@ -259,7 +259,10 @@ export class SQLiteStore implements WorkspaceStore {
       )
         throw new CliError('WORKSPACE_SCHEMA_UNSUPPORTED');
       const store = new SQLiteStore(db, path, Boolean(options.readOnly));
-      store.legacyContext = Number(version) === 5 && Boolean(options.readOnly);
+      store.legacyContext =
+        options.readOnly && Number(version) >= 5 && Number(version) < 8
+          ? (Number(version) as 5 | 6 | 7)
+          : undefined;
       if (version === 0) {
         if (options.readOnly || !options.initial)
           throw new CliError('WORKSPACE_INVALID');
@@ -333,6 +336,26 @@ export class SQLiteStore implements WorkspaceStore {
                 DROP TRIGGER instagram_context_no_update;
                 DROP TRIGGER instagram_context_no_delete;
                 UPDATE instagram_context SET data=json_set(data,'$.confirmedBy','post');
+                CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+                CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+              `);
+            }
+            if (Number(version) < 8) {
+              db.exec(
+                'DROP TRIGGER instagram_context_no_update; DROP TRIGGER instagram_context_no_delete;',
+              );
+              for (const row of db
+                .prepare('SELECT item_id, data FROM instagram_context')
+                .all()) {
+                const record = migrateInstagramContext(
+                  JSON.parse(String(row.data)),
+                  7,
+                );
+                db.prepare(
+                  'UPDATE instagram_context SET data=? WHERE item_id=?',
+                ).run(JSON.stringify(record), String(row.item_id));
+              }
+              db.exec(`
                 CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
                 CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
               `);
@@ -655,7 +678,7 @@ export class SQLiteStore implements WorkspaceStore {
           const result = WorkspaceMetaSchema.safeParse(value);
           if (!result.success) throw new CliError('WORKSPACE_INVALID');
           return Promise.resolve(
-            this.legacyContext
+            this.legacyContext === 5
               ? { ...result.data, schemaVersion: 6 }
               : result.data,
           );
@@ -799,7 +822,7 @@ export class SQLiteStore implements WorkspaceStore {
             value === undefined
               ? undefined
               : this.legacyContext
-                ? migrateInstagramContext(value)
+                ? migrateInstagramContext(value, this.legacyContext)
                 : InstagramContextSchema.parse(value),
           );
         },
@@ -812,7 +835,7 @@ export class SQLiteStore implements WorkspaceStore {
               options,
             ))
               yield legacy
-                ? migrateInstagramContext(value)
+                ? migrateInstagramContext(value, legacy)
                 : InstagramContextSchema.parse(value);
           })();
         },

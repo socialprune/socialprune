@@ -53,7 +53,10 @@ test('schema 6 to 7 copies before its first write, preserves both context kinds 
     expect(firstMutationObserved).toBe(true);
     const actual = await upgraded.read(readWorkspace);
     await upgraded.close();
-    expect(actual).toEqual(migrateReviewContract(legacy));
+    expect(actual).toEqual({
+      ...migrateReviewContract(legacy),
+      schemaVersion: 8,
+    });
     expect(
       actual.instagramContext!.map((record) => record.confirmedBy),
     ).toEqual(['post', 'list']);
@@ -74,7 +77,7 @@ test('schema 6 to 7 copies before its first write, preserves both context kinds 
     ).toEqual(copies);
     const db = new DatabaseSync(file);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(7);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(8);
       expect(
         db
           .prepare(

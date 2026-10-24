@@ -2,7 +2,10 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, test, vi } from 'vitest';
-import { instagramFixture } from '../../../e2e/fake-instagram/fixture.ts';
+import {
+  instagramFixture,
+  IG_FIXTURE,
+} from '../../../e2e/fake-instagram/fixture.ts';
 import { SQLiteStore } from '../../workspace/sqlite-store.ts';
 import {
   planContext,
@@ -459,7 +462,89 @@ test('C18 run command passes the same exclusion set to the runner without contac
   }
 });
 
-test('manual reasons and include cannot plan empty, ownerless or close twins; marked status changes the canonical hash', async () => {
+test('C29 nonempty ownerless comments enter the plan and respect the person skip file', async () => {
+  const h = await excludeFixture();
+  try {
+    await h.store.write(async (tx) => {
+      const stored = (await tx.items.get(h.fixture.items[0]!.id))!;
+      await tx.items.put({
+        ...stored,
+        item: {
+          ...stored.item,
+          reference: { ...stored.item.reference, ownerHandle: null },
+        },
+      });
+    });
+    const plan = await planContext(h.store, h.accountKey);
+    expect(plan.rows).toHaveLength(6);
+    expect(plan.manual.noOwner).toBe(0);
+    const skipped = await planContext(
+      h.store,
+      h.accountKey,
+      new Set(),
+      new Set([h.fixture.items[0]!.id]),
+    );
+    expect(skipped.rows).toHaveLength(5);
+    expect(skipped.personExcluded).toBe(1);
+    expect(skipped.hash).not.toBe(plan.hash);
+    const writer = new InstagramContextWriter(h.store);
+    await writer.startRun({
+      runId: 'generated-ownerless-include',
+      accountKey: h.accountKey,
+      planHash: plan.hash,
+      startedAt: IG_FIXTURE.now,
+    });
+    await writer.sending({
+      runId: 'generated-ownerless-include',
+      attemptId: 'generated-ownerless-send',
+      itemId: h.fixture.items[0]!.id,
+      at: IG_FIXTURE.now,
+    });
+    await writer.settle({
+      attemptId: 'generated-ownerless-send',
+      state: 'not-listed',
+      code: 'no-row',
+      at: IG_FIXTURE.now,
+    });
+    expect(
+      (await planContext(h.store, h.accountKey)).excluded['not-listed'],
+    ).toBe(1);
+    const restored = await planContext(
+      h.store,
+      h.accountKey,
+      new Set([h.fixture.items[0]!.id]),
+    );
+    expect(
+      restored.rows.some(({ item }) => item.id === h.fixture.items[0]!.id),
+    ).toBe(true);
+  } finally {
+    await h.close();
+  }
+});
+test('C29 an ownerless text-time twin cannot become a plan row even beside an owner-bearing export', async () => {
+  const h = await excludeFixture();
+  try {
+    await h.store.write(async (tx) => {
+      const first = (await tx.items.get(h.fixture.items[0]!.id))!;
+      const second = (await tx.items.get(h.fixture.items[1]!.id))!;
+      second.item = {
+        ...second.item,
+        text: first.item.text,
+        createdAt: new Date(
+          Date.parse(first.item.createdAt) + 120_000,
+        ).toISOString(),
+        reference: { ...second.item.reference, ownerHandle: null },
+      };
+      await tx.items.put(second);
+    });
+    const plan = await planContext(h.store, h.accountKey);
+    expect(plan.manual).toEqual({ emptyText: 0, noOwner: 0, closeTwin: 2 });
+    expect(plan.rows).toHaveLength(4);
+  } finally {
+    await h.close();
+  }
+});
+test('manual reasons exclude empty and close twins but plan ownerless comments; marked status changes the canonical hash', async () => {
   const fixture = await instagramFixture(6),
     directory = await mkdtemp(join(tmpdir(), 'sp-ig-plan-'));
   fixture.workspace.items[1]!.text = ' \n ';
@@ -477,9 +562,9 @@ test('manual reasons and include cannot plan empty, ownerless or close twins; ma
       fixture.items[0]!.account.key,
       new Set(fixture.items.map((item) => item.id)),
     );
-    expect(plan.manual).toEqual({ emptyText: 1, noOwner: 1, closeTwin: 2 });
+    expect(plan.manual).toEqual({ emptyText: 1, noOwner: 0, closeTwin: 2 });
     expect(plan.rows.map(({ item }) => item.id)).toEqual(
-      fixture.items.slice(4).map((item) => item.id),
+      [fixture.items[2]!, ...fixture.items.slice(4)].map((item) => item.id),
     );
     const before = plan.hash,
       itemId = fixture.items[5]!.id;
@@ -513,7 +598,7 @@ test('manual reasons and include cannot plan empty, ownerless or close twins; ma
     const after = await planContext(store, plan.accountKey);
     expect(after.hash).not.toBe(before);
     expect(after.rows[0]!.item.id).toBe(itemId);
-    expect(canaryRows(after)[0]!.item.id).toBe(fixture.items[4]!.id);
+    expect(canaryRows(after)[0]!.item.id).toBe(fixture.items[2]!.id);
     expect(normalize('e\u0301 \n moss')).toBe('é moss');
   } finally {
     await store.close();

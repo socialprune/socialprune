@@ -4,6 +4,8 @@ import { IG_FIXTURE, POST_NOTICE_FIXTURE } from './fixture.ts';
 import type { Variant } from './fixture.ts';
 import { listPage, postPage, postAnswer, answerResponse } from './pages.ts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { imageCase, imageCasePage, imageCasePng } from './image-cases.ts';
+import type { ImageCaseName } from './image-cases.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
@@ -25,6 +27,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let emptyFilteredLists = 0;
   let clientSidePosts = false;
   let filteredPlaceholders: { count: number; status: boolean } | undefined;
+  let imageShape: ImageCaseName | undefined;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -204,14 +207,23 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           await delay(6500);
         }
         response.writeHead(200, { 'Content-Type': 'text/html' });
+        const html = postPage(
+          items[Math.max(0, index)]!,
+          Math.max(0, index),
+          postVariants.get(index) ?? variant,
+          undefined,
+          hiddenPosts.has(index),
+        );
         response.end(
-          postPage(
-            items[Math.max(0, index)]!,
-            Math.max(0, index),
-            postVariants.get(index) ?? variant,
-            undefined,
-            hiddenPosts.has(index),
-          ),
+          imageShape
+            ? imageCasePage(
+                html,
+                imageShape,
+                items[Math.max(0, index)]!,
+                `http://127.0.0.1:${port}`,
+                post[1]!,
+              )
+            : html,
         );
         return;
       }
@@ -258,6 +270,19 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           (_, index) => path === `/data/${IG_FIXTURE.code}${index || ''}.json`,
         );
         response.writeHead(200, { 'Content-Type': 'application/json' });
+        if (imageShape) {
+          response.end(
+            JSON.stringify(
+              imageCase(
+                imageShape,
+                items[Math.max(0, index)]!,
+                `http://127.0.0.1:${port}`,
+                path.slice('/data/'.length, -'.json'.length),
+              ).body,
+            ),
+          );
+          return;
+        }
         response.end(
           JSON.stringify(
             postAnswer(
@@ -276,7 +301,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         path.startsWith('/profiles/') ||
         path === '/thumb.png'
       ) {
-        const image = Buffer.from(IG_FIXTURE.png, 'base64');
+        const image =
+          imageShape && path.startsWith('/media/')
+            ? imageCasePng(path.endsWith('/second.png'))
+            : Buffer.from(IG_FIXTURE.png, 'base64');
         response.writeHead(200, {
           'Content-Type': variant === 'image-type' ? 'text/plain' : 'image/png',
         });
@@ -313,6 +341,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(index) || !items[index])
         throw new Error('Invalid generated post index.');
       postVariants.set(index, value);
+    },
+    setImageCase(value: ImageCaseName) {
+      imageShape = value;
     },
     slowPostOpens(index: number, count: number) {
       if (!items[index] || !Number.isInteger(count) || count < 0)

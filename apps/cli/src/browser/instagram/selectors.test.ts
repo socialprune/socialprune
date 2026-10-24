@@ -420,6 +420,51 @@ test.each(['owner', 'author', 'text', 'time', 'several'] as const)(
     );
   },
 );
+test('C29 an ownerless comment confirms only by own exact text, exact time and uniqueness on the post', async () => {
+  const { items } = await instagramFixture();
+  const item = items[0]!;
+  const owner = item.reference.ownerHandle!;
+  item.reference.ownerHandle = null;
+  const comment = {
+    username: item.account.handle!,
+    text: item.text,
+    id: IG_FIXTURE.commentId,
+    createdAt: item.createdAt,
+  };
+  const post = {
+    kind: 'p',
+    code: IG_FIXTURE.code,
+    owner,
+    ownerCount: 1,
+    ownerMatchesProfile: true,
+    caption: null,
+    captionComplete: true,
+    createdAt: IG_FIXTURE.postAt,
+    comments: [comment],
+  } as PostProjection;
+  expect(confirmComment(post, item, item.account.handle!).state).toBe(
+    'confirmed',
+  );
+  for (const change of [
+    { username: IG_FIXTURE.other.username },
+    { text: 'Generated different text' },
+    { createdAt: new Date(Date.parse(item.createdAt) + 60_001).toISOString() },
+  ])
+    expect(
+      confirmComment(
+        { ...post, comments: [{ ...comment, ...change }] },
+        item,
+        item.account.handle!,
+      ).state,
+    ).toBe('unconfirmed');
+  expect(
+    confirmComment(
+      { ...post, comments: [comment, { ...comment, id: '929292' }] },
+      item,
+      item.account.handle!,
+    ),
+  ).toMatchObject({ state: 'unconfirmed', code: 'several' });
+});
 test('author, full normalized text, 60 second time and first owner are independent confirmation checks', async () => {
   const { items } = await instagramFixture(),
     item = items[0]!;

@@ -746,7 +746,8 @@ export function confirmComment(
   if (
     post.ownerCount !== 1 ||
     !post.ownerMatchesProfile ||
-    ownerName(post.owner) !== ownerName(item.reference.ownerHandle ?? '')
+    (Boolean(ownerName(item.reference.ownerHandle ?? '')) &&
+      ownerName(post.owner) !== ownerName(item.reference.ownerHandle ?? ''))
   )
     return { state: 'unconfirmed', code: 'owner' };
   const own = post.comments.filter(

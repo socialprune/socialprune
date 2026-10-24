@@ -55,10 +55,12 @@ const PostCommentSchema = z.strictObject({
 export const InstagramContextSchema = z
   .discriminatedUnion('confirmedBy', [
     ContextFieldsSchema.extend({
+      ownerCheck: z.enum(['matched-export', 'not-in-export']),
       confirmedBy: z.literal('post'),
       comment: PostCommentSchema,
     }),
     ContextFieldsSchema.extend({
+      ownerCheck: z.enum(['matched-export', 'not-in-export']),
       confirmedBy: z.literal('list'),
       comment: z.strictObject({
         id: z.null(),
@@ -68,6 +70,11 @@ export const InstagramContextSchema = z
     }),
   ])
   .superRefine((value, ctx) => {
+    if (value.confirmedBy === 'list' && value.ownerCheck !== 'matched-export')
+      ctx.addIssue({
+        code: 'custom',
+        message: 'List confirmation requires an exported owner.',
+      });
     if (
       (value.image.status === 'stored') !== (value.image.file !== null) ||
       (value.screenshot.status === 'stored') !==
@@ -84,12 +91,38 @@ export type InstagramContext = z.infer<typeof InstagramContextSchema>;
 
 /** Only version-5 readers/migrations may supply the formerly implicit kind. */
 export const LegacyInstagramContextSchema = ContextFieldsSchema.extend({
+  ownerCheck: z.literal('matched-export').optional(),
   comment: PostCommentSchema,
 });
-export function migrateInstagramContext(input: unknown): InstagramContext {
+/** Version 6/7 adapters may repeat the matched-export projection, never waive it. */
+export const PreviousInstagramContextSchema = z.discriminatedUnion(
+  'confirmedBy',
+  [
+    ContextFieldsSchema.extend({
+      ownerCheck: z.literal('matched-export').optional(),
+      confirmedBy: z.literal('post'),
+      comment: PostCommentSchema,
+    }),
+    ContextFieldsSchema.extend({
+      ownerCheck: z.literal('matched-export').optional(),
+      confirmedBy: z.literal('list'),
+      comment: z.strictObject({
+        id: z.null(),
+        createdAt: z.null(),
+        expandClicks: z.number().int().min(0).max(10),
+      }),
+    }),
+  ],
+);
+export function migrateInstagramContext(
+  input: unknown,
+  version: 5 | 6 | 7 = 5,
+): InstagramContext {
   return InstagramContextSchema.parse({
-    ...LegacyInstagramContextSchema.parse(input),
-    confirmedBy: 'post',
+    ...(version === 5
+      ? { ...LegacyInstagramContextSchema.parse(input), confirmedBy: 'post' }
+      : PreviousInstagramContextSchema.parse(input)),
+    ownerCheck: 'matched-export',
   });
 }
 
@@ -105,9 +138,12 @@ export function validateInstagramContextItem(
     item.kind !== 'comment' ||
     item.account.key !== record.accountKey ||
     !item.text.normalize('NFC').trim() ||
-    !item.reference.ownerHandle ||
-    !owner(item.reference.ownerHandle) ||
-    owner(item.reference.ownerHandle) !== owner(record.post.owner) ||
+    (record.ownerCheck === 'matched-export'
+      ? !item.reference.ownerHandle ||
+        !owner(item.reference.ownerHandle) ||
+        owner(item.reference.ownerHandle) !== owner(record.post.owner)
+      : record.confirmedBy !== 'post' ||
+        Boolean(owner(item.reference.ownerHandle ?? ''))) ||
     (record.confirmedBy === 'post' &&
       record.comment.createdAt !== null &&
       Math.abs(

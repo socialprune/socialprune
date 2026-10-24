@@ -88,6 +88,7 @@ export async function writeContextFixture(
       const runId = `generated-context-${index}`,
         attemptId = `generated-send-${index}`;
       const record: InstagramContext = {
+        ownerCheck: 'matched-export',
         ...(listConfirmed
           ? {
               confirmedBy: 'list' as const,

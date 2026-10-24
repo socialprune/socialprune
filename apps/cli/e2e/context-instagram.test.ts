@@ -78,6 +78,9 @@ import { errorClass } from '../src/browser/instagram/report.ts';
 import type { MemorySample } from '../src/browser/instagram/report.ts';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
+import { IMAGE_CASES, imageCasePng } from './fake-instagram/image-cases.ts';
+import type { SourceChecks } from '../src/browser/instagram/canary.ts';
+import type { ImageDiagnostic } from '../src/browser/instagram/report.ts';
 
 test.each([
   {
@@ -1374,6 +1377,284 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each(IMAGE_CASES)(
+  'IG-IMAGE $name uses real responses and current-source capture before unchanged automatic acceptance',
+  async (entry) => {
+    const h = await harness(
+      entry.name.startsWith('reel-') ? 'reel' : 'success',
+      entry.agrees ? 5 : 1,
+    );
+    h.fake.setImageCase(entry.name);
+    try {
+      const result = await h.start(true);
+      if (entry.agrees)
+        expect(result, h.notices.join('')).toMatchObject({
+          endReason: 'canary',
+          completed: 5,
+        });
+      else
+        expect(result, h.notices.join('')).toMatchObject({
+          code: !entry.captured
+            ? 'CANARY_CHECK_FAILED'
+            : entry.name === 'thumbnail-field-only' ||
+                entry.name === 'partial-matching-post'
+              ? 'CANARY_NO_SECOND_SOURCE'
+              : 'CANARY_MISMATCH',
+        });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, `context/instagram/canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          fields: SourceChecks;
+          image: { status: string } & ImageDiagnostic;
+          screenshot: { status: string };
+        }[];
+      };
+      const step = report.steps.at(-1)!;
+      for (const field of ['owner', 'time', 'caption'] as const)
+        expect(step.fields[field]).toMatchObject({ found: true, agrees: true });
+      expect(step.fields.image).toMatchObject({ agrees: entry.agrees });
+      expect(step.fields.image.paths).toHaveLength(entry.paths);
+      expect(step.image.status).toBe(
+        entry.captured ? 'stored' : 'not-captured',
+      );
+      expect(step.image.source).toBe(
+        entry.captured ? 'img-current-src' : 'none',
+      );
+      if (entry.name === 'extra-rendition-common-url')
+        expect(step.image).toMatchObject({
+          qualifyingObjects: 2,
+          matchingLists: 2,
+          distinctListLengths: [1, 2],
+        });
+      if (
+        entry.name === 'disjoint-resolutions' ||
+        entry.name === 'changed-signed-query'
+      )
+        expect(step.image).toMatchObject({
+          qualifyingObjects: 2,
+          matchingLists: 1,
+          distinctListLengths: [1],
+        });
+      if (entry.name === 'thumbnail-field-only')
+        expect(step.image).toMatchObject({
+          qualifyingObjects: 1,
+          matchingLists: 0,
+          distinctListLengths: [],
+        });
+      if (entry.name === 'partial-matching-post')
+        expect(step.image).toMatchObject({
+          qualifyingObjects: 2,
+          matchingLists: 1,
+          distinctListLengths: [1],
+        });
+      for (const value of [
+        IG_FIXTURE.code,
+        'signature=',
+        '/media/',
+        'generated-a',
+        h.fixture.items[0]!.text,
+      ])
+        expect(JSON.stringify(step.image)).not.toContain(value);
+      expect(step.screenshot.status).toBe('stored');
+      if (entry.captured) {
+        const bytes = await readFile(
+          join(
+            instagramContextDirectory(h.directory, IG_FIXTURE.code),
+            'image.png',
+          ),
+        );
+        expect(bytes).toEqual(
+          imageCasePng(
+            entry.name === 'carousel-second-displayed' ||
+              entry.name === 'wrong-media-url',
+          ),
+        );
+      }
+      const records = await h.store.read((tx) =>
+        tx.instagramContext.get(h.fixture.items[0]!.id),
+      );
+      expect(Boolean(records)).toBe(entry.agrees);
+      expect(Boolean(run.canaryAcceptedAt)).toBe(entry.agrees);
+      if (!entry.agrees)
+        expect(
+          h.fake.requests.filter((request) =>
+            /^\/(?:p|reel)\//.test(request.path),
+          ),
+        ).toHaveLength(1);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('IG-IMAGE main run records exact-url counts but does not enforce canary agreement', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.setImageCase('extra-rendition-common-url');
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      endReason: 'done',
+      completed: 1,
+    });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, `context/instagram/canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: { image: ImageDiagnostic; fields: SourceChecks }[] };
+    expect(report.steps[0]!.image).toMatchObject({
+      qualifyingObjects: 2,
+      matchingLists: 2,
+      distinctListLengths: [1, 2],
+      source: 'img-current-src',
+    });
+    expect(report.steps[0]!.fields.image.agrees).toBe(false);
+    expect(
+      await h.store.read((tx) =>
+        tx.instagramContext.get(h.fixture.items[0]!.id),
+      ),
+    ).toBeDefined();
+  } finally {
+    await h.close();
+  }
+});
+test('IG-IMAGE unconfirmed main step records image counts without capturing or confirming', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.setPostVariant(0, 'edited');
+  h.fake.setImageCase('single-image');
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      endReason: 'done',
+      completed: 0,
+    });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, `context/instagram/canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as {
+      steps: {
+        image: ImageDiagnostic & { status: string; bytes: number };
+        result: string;
+      }[];
+    };
+    expect(report.steps[0]).toMatchObject({
+      result: 'text',
+      image: {
+        status: 'not-attempted',
+        bytes: 0,
+        qualifyingObjects: 1,
+        matchingLists: 1,
+        distinctListLengths: [1],
+        source: 'img-current-src',
+      },
+    });
+    expect(
+      await h.store.read((tx) =>
+        tx.instagramContext.get(h.fixture.items[0]!.id),
+      ),
+    ).toBeUndefined();
+  } finally {
+    await h.close();
+  }
+});
+test.each([
+  'success',
+  'other-author',
+  'edited',
+  'time',
+  'several',
+  'not-shown',
+] as const)(
+  'C29 ownerless %s retains only three-check post evidence and never confirms through the list',
+  async (variant) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.setPostVariant(0, variant);
+    await h.store.write(async (tx) => {
+      const stored = (await tx.items.get(h.fixture.items[0]!.id))!;
+      stored.item.reference.ownerHandle = null;
+      await tx.items.put(stored);
+    });
+    h.fixture.items[0]!.reference.ownerHandle = null;
+    await h.refresh();
+    try {
+      const result = await h.start('no-canary');
+      expect(result, h.notices.join('')).toMatchObject({
+        endReason: 'done',
+        completed: variant === 'success' ? 1 : 0,
+      });
+      const record = await h.store.read((tx) =>
+        tx.instagramContext.get(h.fixture.items[0]!.id),
+      );
+      if (variant === 'success')
+        expect(record).toMatchObject({
+          confirmedBy: 'post',
+          ownerCheck: 'not-in-export',
+          post: { owner: IG_FIXTURE.ownerWithoutExport },
+          comment: {
+            id: IG_FIXTURE.commentId,
+            createdAt: h.fixture.items[0]!.createdAt,
+          },
+        });
+      else {
+        expect(record).toBeUndefined();
+        const attempts = await h.store.read((tx) =>
+          records(tx.browserAttempts),
+        );
+        expect(attempts.at(-1)).toMatchObject({
+          state: 'unconfirmed',
+          code:
+            variant === 'other-author' || variant === 'not-shown'
+              ? 'not-shown'
+              : variant === 'edited'
+                ? 'text'
+                : variant,
+        });
+      }
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('C29 ownerless canary counts five post confirmations only after every unchanged automatic check passes', async () => {
+  const h = await harness('success', 5);
+  for (const item of h.fixture.items) {
+    item.reference.ownerHandle = null;
+    await h.store.write(async (tx) => {
+      const stored = (await tx.items.get(item.id))!;
+      stored.item.reference.ownerHandle = null;
+      await tx.items.put(stored);
+    });
+  }
+  await h.refresh();
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      endReason: 'canary',
+      completed: 5,
+    });
+    const saved = await h.store.read((tx) => records(tx.instagramContext));
+    expect(saved).toHaveLength(5);
+    for (const record of saved)
+      expect(record).toMatchObject({
+        ownerCheck: 'not-in-export',
+        confirmedBy: 'post',
+        post: { owner: IG_FIXTURE.ownerWithoutExport },
+      });
+    expect(
+      (await h.store.browserJournal()).runs.at(-1)!.canaryAcceptedAt,
+    ).not.toBeNull();
+  } finally {
+    await h.close();
+  }
+});
 // Opt-in measurement only, never part of the default context-suite duration.
 // eslint-disable-next-line no-restricted-properties -- Test-only generated benchmark selection, never credentials.
 const memoryBenchmark = process.env['SP_CONTEXT_MEMORY_BENCHMARK'] === '1';
@@ -2939,7 +3220,7 @@ test.each(POST_NOTICE_FIXTURE.cases)(
       );
       try {
         expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
-          user_version: 7,
+          user_version: 8,
         });
       } finally {
         database.close();
@@ -5217,6 +5498,7 @@ async function fullRunReady(
   });
   await writer.confirm({
     confirmedBy: 'post',
+    ownerCheck: 'matched-export',
     itemId: item.id,
     accountKey: h.plan.accountKey,
     post: {
@@ -6401,6 +6683,7 @@ test('a full run uses accepted canary, observes limit and a pause before step 21
     });
     await writer.confirm({
       confirmedBy: 'post',
+      ownerCheck: 'matched-export',
       itemId: item.id,
       accountKey: h.plan.accountKey,
       post: {

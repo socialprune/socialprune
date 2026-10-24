@@ -90,16 +90,20 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
     candidate &&
     typeof candidate === 'object' &&
     'schemaVersion' in candidate &&
-    candidate.schemaVersion === 5 &&
+    typeof candidate.schemaVersion === 'number' &&
+    candidate.schemaVersion >= 5 &&
+    candidate.schemaVersion < 8 &&
     'instagramContext' in candidate &&
     Array.isArray(candidate.instagramContext)
   ) {
     try {
+      const contextVersion = candidate.schemaVersion === 5 ? 5 : 7;
       candidate = {
         ...candidate,
-        schemaVersion: 6,
-        instagramContext: candidate.instagramContext.map(
-          migrateInstagramContext,
+        schemaVersion:
+          candidate.schemaVersion === 5 ? 6 : candidate.schemaVersion,
+        instagramContext: candidate.instagramContext.map((record) =>
+          migrateInstagramContext(record, contextVersion),
         ),
       };
     } catch {

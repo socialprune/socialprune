@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "format": { "type": "string", "const": "socialprune-workspace" },
-    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 7 },
+    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 8 },
     "id": { "type": "string", "minLength": 1 },
     "kind": { "type": "string", "enum": ["personal", "demo"] },
     "createdAt": {
@@ -1702,6 +1702,10 @@
                 "minLength": 1,
                 "maxLength": 512
               },
+              "ownerCheck": {
+                "type": "string",
+                "enum": ["matched-export", "not-in-export"]
+              },
               "confirmedBy": { "type": "string", "const": "post" },
               "comment": {
                 "type": "object",
@@ -1731,6 +1735,7 @@
               "confirmedAt",
               "runId",
               "attemptId",
+              "ownerCheck",
               "confirmedBy",
               "comment"
             ],
@@ -1861,6 +1866,10 @@
                 "minLength": 1,
                 "maxLength": 512
               },
+              "ownerCheck": {
+                "type": "string",
+                "enum": ["matched-export", "not-in-export"]
+              },
               "confirmedBy": { "type": "string", "const": "list" },
               "comment": {
                 "type": "object",
@@ -1886,6 +1895,7 @@
               "confirmedAt",
               "runId",
               "attemptId",
+              "ownerCheck",
               "confirmedBy",
               "comment"
             ],

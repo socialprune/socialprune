@@ -7,6 +7,7 @@ import { useT } from '../i18n/index.ts';
 import { command } from './bridge.ts';
 import styles from './Desktop.module.css';
 import { folderMessages } from './messages.ts';
+import { DataRemoval } from './DataRemoval.tsx';
 
 export function DesktopSettings({
   bridge,
@@ -107,6 +108,7 @@ export function DesktopSettings({
         </button>
       </div>
       <p role="status">{busy ? t('desktop.busy') : notice}</p>
+      <DataRemoval />
     </section>
   );
 }

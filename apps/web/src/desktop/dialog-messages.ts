@@ -17,5 +17,19 @@ export function dialogLabels(locale: 'en' | 'de') {
     stopMessage: messages['desktop.dialog.stopMessage'],
     stop: messages['desktop.stop'],
     cancel: messages['bulk.cancel'],
+    removalPartial: messages['desktop.removal.partial'],
+    removalComplete: messages['desktop.removal.complete'],
+    removalRemoved: messages['desktop.removal.removed'],
+    removalRetained: messages['desktop.removal.retained'],
+    removalQuit: messages['desktop.removal.quit'],
+    removalReasons: {
+      managed: messages['desktop.removal.willRemove'],
+      backup: messages['desktop.removal.reason.backup'],
+      unknown: messages['desktop.removal.reason.unknown'],
+      link: messages['desktop.removal.link'],
+      changed: messages['desktop.removal.reason.changed'],
+      locked: messages['desktop.removal.reason.locked'],
+      io: messages['desktop.removal.reason.io'],
+    },
   };
 }

@@ -2,7 +2,7 @@
 
 This file records the acceptance measurements Phase 2 has taken so far: the bulk-storage check that ADR-005 rule 7 asks for, the substring search latency that ADR-007 names as its revisit trigger, and the memory behaviour of the query projection and of restore. The implementing lanes measured them on 2026-10-07, and the import measurement in section 6 on 2026-10-08; this file only collects their numbers. Every row names the commit or source hash it belongs to.
 
-All browser runs used the desktop and the Playwright 1.63.0 browsers listed in [section 1 of the architecture evidence](../architecture/evidence-2026-10.md#1-trial-environment): Chromium 153.0.8010.12, Firefox 155.0 and WebKit 26.6, which is Playwright's Windows build and not Safari on macOS or iOS. Node runs used Node 24.14.1. The browser runs and the Node projection run were announced on the shared board, and the other lanes held their heavy work while they ran. The restore run in section 5 was not announced, so it may have shared the machine with other lanes' tests. The machine was never isolated from the operating system's own background tasks. Each browser row is one run per engine unless it says otherwise.
+The browser runs in sections 1 to 6 used the desktop and the Playwright 1.63.0 browsers listed in [section 1 of the architecture evidence](../architecture/evidence-2026-10.md#1-trial-environment): Chromium 153.0.8010.12, Firefox 155.0 and WebKit 26.6, which is Playwright's Windows build and not Safari on macOS or iOS. Node runs in sections 1 to 5 used Node 24.14.1. The browser runs and the Node projection run were announced on the shared board, and the other lanes held their heavy work while they ran. The restore run in section 5 was not announced, so it may have shared the machine with other lanes' tests. The machine was never isolated from the operating system's own background tasks. Each browser row is one run per engine unless it says otherwise.
 
 ## 1. Bulk storage: production path against raw IndexedDB
 
@@ -107,3 +107,53 @@ G1 took 7.61 to 8.72 s with a peak of 483 to 497 MiB, but it kept every item on 
 ## 7. Open points
 
 - In CI, the WebKit abort test failed once on Ubuntu at `54e648e`. After the atomic purge in `00a7754` it passed in the CI runs of `c66c412` and `dc699cb`. Two passing runs do not prove the fix.
+
+## 8. Connected review feed scale, 2026-10-23
+
+ADR-032 section 7 sets three latency targets: counts p95 below 500 ms at 100,000 entries, a first card below 1,000 ms after a tab switch, and no frame above 50 ms while scrolling 6,000 suggestions. It also limits each feed response to 50 cards and the web's card window to 300. The harness is `apps/web/e2e/scale.measurement.ts`, run through `pnpm --filter @socialprune/web exec playwright test --config e2e/scale.config.ts --project <engine> --workers 1`. The config builds production before serving it on its own strict loopback port. A web unit build probe can replace `dist` with code whose development gate refuses import; two rejected Chromium startups showed that state and contribute no scale samples.
+
+The generated workspace expands `@socialprune/fixture-gen`'s `createDemo` items with `createRandom`, seed `20261023`. The first workspace has 6,000 entries with 6,000 political risk-2 agent suggestions, no decisions, no keep rules and no media or originals. Its 5,433,211 serialized bytes have SHA-256 `b353bde4b370d0a6193b5c674761cc5922f52ead73880e1ed26d4b1c752c1499`. Restore, counts, windows and preview use the production page, workspace client, worker and IndexedDB, not a fake bridge. The preview is cancelled; nothing is marked for deletion.
+
+The tab measurement alternates All and Suggested ten times, from the click until the new feed is no longer busy and a card intersects the panel, followed by two animation frames. The traversal sends real Playwright ArrowDown keys through the feed's keyboard handler. Before the next key, it checks the exact next generated ID, focus, panel visibility and an idle feed, then waits two animation frames. It neither changes scroll positions after initial setup nor dispatches synthetic scroll events or calls the feed's private navigation methods. This follows the person's one-card-at-a-time keyboard path through the same window loader and virtualizer as wheel scrolling; the expected consecutive IDs prevent skipped render commits from counting as coverage. A ten-second focus/visibility timeout ends traversal and preserves the partial result. The sampler continues through loading and waiting, so its frame intervals include those periods. Wheel, touch and scrollbar gestures are not measured.
+
+An earlier Chromium attempt moved 70 percent of the panel per animation frame. It reached near the last item but sampled only 1,522 distinct visible entries, so it does not prove a 6,000-card traversal. That attempt measured cold-count p95 4,486.1 ms, a maximum frame of 116.7 ms with 98 intervals over 50 ms, and tab maximum 259.6 ms. Its raw file is `chromium-2026-10-23T22-20-10-168Z.json`, SHA-256 `e8c46da8118de1c5886c4c86d59eb2c207e725e32102c63c56fe29663aab9090`, source hash as below and harness hash `ff236bc29b9d13efcb920564f9a4370639f35e15cbfe41566020d538cb313644`. The sequential-key results below replace that scrolling method, not its historical observations.
+
+For the count measurement, a second generated workspace holds 100,000 entries and assessments, still with exactly 6,000 suggestions. Twenty cold reads follow alternating level changes between 0 and 2, which invalidate the criteria-dependent count cache; the timing starts after each settings reply. Each cold read is followed by a warm read without changes. These are configuration-cold counts after restore, not a fresh worker or a decision-revision rebuild. Five plan previews check the same 6,000 count without confirmation. For twenty samples, p95 is the nineteenth sorted value.
+
+The host is Windows 10.0.26200, an Intel Core i9-11900K at 3.50 GHz, 16 logical CPUs and 68,603,314,176 bytes of physical RAM, with Node 24.21.0 and Playwright 1.63.0 at 1,440 by 1,000 pixels. Each engine runs alone in this lane, admitted only with at least 12 GiB free physical RAM both before the command and inside the test. Other programs and lanes remain running; these are loaded-desktop observations, not isolated benchmarks. The executable source is base `3fc6de9b987beca00223ba8cd6fa827a9d568e7c`, measurement source hash `f9602373dede5bf8741116f37fa7c7f448c9df9238012df8d4ff90c33b916bca`, checked again before each report finishes. The common measured harness hash is `836019875f17cec62a976b569c14c871b05e51274c0ac3139aa3c883a25ccfb4`. After these runs, only the stdout digest calculation changed to hash the saved file rather than a report object that cleanup events could still change. The WebKit stdout digest differed from its file; the evidence hashes below come from file readback. That reporting-only edit does not change timings or the recorded harness identity.
+
+| Observation | Chromium 153.0.8010.12 | Firefox 155.0 | WebKit 26.6 |
+|---|---:|---:|---:|
+| Run start, UTC on 2026-10-23 | 22:51:05.986 | 22:59:27.750 | 23:08:40.982 |
+| Run end, UTC on 2026-10-23 | 22:58:47.145 | 23:08:13.977 | 23:22:30.896 |
+| CPU load at admission, percent | 80 | 100 | 97 |
+| Free physical bytes at in-test admission | 18,173,624,320 | 17,052,270,592 | 17,761,202,176 |
+| Cold counts at 100,000 entries, p95, ms | 5,607.6, miss | 6,675, miss | 4,440, miss |
+| Warm counts, p95, ms | 2.3 | 3 | 18 |
+| Tab switch first card, maximum of ten, ms | 128.2, met | 228, met | 226, met |
+| Scroll frame interval, p95, ms | 16.7 | 27.78 | 35 |
+| Scroll frame interval, maximum, ms | 66.7, miss | 111.1, miss | 107, miss |
+| Frame intervals above 50 ms | 1 of 6,673 | 2 of 6,593 | 47 of 4,892 |
+| Largest observed feed response, cards | 50, met | 50, met | 50, met |
+| Largest observed mounted card count | 23, below 300 | 23, below 300 | 23, below 300 |
+| Consecutive focused and visible cards before timeout | 2,248 of 6,000 | 548 of 6,000 | 1,248 of 6,000 |
+| Distinct cards intersecting the viewport | 2,255 | 556 | 1,253 |
+| First expected card that did not become focused and visible | 2,249 | 549 | 1,249 |
+| Traversal duration including timeout, ms | 111,286.5 | 62,035 | 99,719 |
+| Initial review navigation to a card, ms | 1,889.6 | 3,331.6 | 6,159.5 |
+| 6,000-suggestion human preview ready, ms | 1,486.6 | 1,821.7 | 4,752.9 |
+| Plan preview at 100,000 entries, median of five, ms | 6,084.1 | 8,683 | 8,224 |
+| Restore of 6,000 entries, ms | 5,106.8 | 12,948 | 31,184 |
+| Restore of 100,000 entries, ms | 191,829.7 | 265,503 | 554,389 |
+| Owned browser tree private bytes after 100,000-entry restore | 1,098,940,416 | 1,392,369,664 | 3,630,522,368 |
+| Owned browser tree working-set bytes at that point | 1,222,795,264 | 1,385,005,056 | 2,717,077,504 |
+
+All three configuration-cold count measurements exceed 500 ms. Warm-cache reads meet that time but do not replace the cold results. All three traversal attempts contain frame intervals over 50 ms and fail to visit all 6,000 consecutive cards. These are partial-traversal misses, not proof of acceptable scrolling over the whole set, nor proof that the remaining cards are unreachable by every UI path. Card responses and mounted-card counts stay within their bounds in the observed portion; the 300-card loaded-window bound is not independently observed as an internal heap count. Each run reports zero page errors and zero observed off-origin requests. The unmeasured remainder, gestures other than ArrowDown, Instagram, media, originals, small screens, isolated-host performance and repeated-run variance remain outside this measurement. No feed product code changed; the cold-count, frame-time and sequential-navigation findings go to the feed owner before slice 8 acceptance.
+
+Raw JSON reports, the six generated screenshots and command outputs are retained outside Git under `socialprune-handoff/phase2/s8-scale-evidence/`. Their original working directory is the system temp folder `kilo/phase2/s8/`. All numbers above come from the JSON files, rounded to at most two decimal places, and all three reports use the same 88,124,025-byte 100,000-entry data set, SHA-256 `cef2d23b6d889ab70ed948ec799c838da68222226d8430c81b7e7aa18d217428`. An exit-zero Playwright run means the measurement procedure completed, including its saved misses; it does not mean the performance targets passed.
+
+| Raw file | SHA-256 from file readback |
+|---|---|
+| `chromium-2026-10-23T22-51-05-986Z.json` | `888f54bef9824c725236b9c3037e980204e55ce6f6b7a6b375053c2fd011bec0` |
+| `firefox-2026-10-23T22-59-27-750Z.json` | `586580309e2a6f5f1e992f9f638cabfe98d270899cee5e7aeb1780abcf991e61` |
+| `webkit-2026-10-23T23-08-40-982Z.json` | `d31d4b0f8c0af2829bfc76d59a6d92230a74aac4e674ab1bf364c658edddf332` |

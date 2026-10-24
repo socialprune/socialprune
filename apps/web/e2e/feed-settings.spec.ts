@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os';
 import { mkdir } from 'node:fs/promises';
 import { env } from 'node:process';
 type MessageKey = keyof MessageArguments;
+type PendingRuleSave = {
+  calls: number;
+  replies: number;
+  release: () => void;
+};
 
 for (const lang of ['de', 'en'] as const)
   test(`editor and held cards use the same rule wording ${lang}`, async ({
@@ -284,12 +289,97 @@ test('a content limit offers a deterministic rule instead of adding an own crite
     .getByRole('button', { name: en['keepRules.add'], exact: true })
     .click();
   await expect(page.getByRole('spinbutton').last()).toHaveValue('20');
+  // The field is optimistic; only the worker receipt updates the summary.
+  await page.evaluate(() => window.workspace.flushCommands());
   expect(
     await page.evaluate(() => window.workspace.summary?.criteria?.custom),
   ).toEqual([]);
   expect(
     await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
   ).toMatchObject({ kind: 'likes-at-least', count: 20, enabled: true });
+  await page.reload();
+  await expect(page.getByRole('feed')).toBeVisible();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
+  ).toMatchObject({ kind: 'likes-at-least', count: 20, enabled: true });
+});
+
+test('a pending offered rule and the final number edit persist after their replies', async ({
+  page,
+}) => {
+  await restoreLiveFeed(page);
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.evaluate(() => {
+    const save = window.workspace.setKeepRules.bind(window.workspace);
+    const pending = {
+      calls: 0,
+      replies: 0,
+      release: () => {},
+    };
+    Reflect.set(window, '__pendingRuleSave', pending);
+    window.workspace.setKeepRules = async (rules) => {
+      pending.calls++;
+      await new Promise<void>((resolve) => {
+        pending.release = resolve;
+      });
+      const reply = await save(rules);
+      pending.replies++;
+      return reply;
+    };
+  });
+  await page
+    .getByRole('textbox', { name: en['criteriaPicker.label'], exact: true })
+    .fill('At least 20 likes');
+  await page
+    .getByRole('button', { name: en['keepRules.add'], exact: true })
+    .click();
+  const value = page.getByRole('spinbutton').last();
+  await expect(value).toHaveValue('20');
+  await expect(value).toBeDisabled();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules),
+  ).toEqual([expect.objectContaining({ id: 'likes-ten', count: 10 })]);
+  expect(
+    await page.evaluate(() => {
+      const pending = Reflect.get(
+        window,
+        '__pendingRuleSave',
+      ) as PendingRuleSave;
+      return { calls: pending.calls, replies: pending.replies };
+    }),
+  ).toEqual({ calls: 1, replies: 0 });
+  await page.evaluate(() => {
+    (Reflect.get(window, '__pendingRuleSave') as PendingRuleSave).release();
+  });
+  await expect(value).toBeEnabled();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
+  ).toMatchObject({ kind: 'likes-at-least', count: 20, enabled: true });
+  await value.fill('3');
+  await value.fill('30');
+  await value.blur();
+  await expect(value).toBeDisabled();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
+  ).toMatchObject({ count: 20 });
+  await page.evaluate(() => {
+    (Reflect.get(window, '__pendingRuleSave') as PendingRuleSave).release();
+  });
+  await expect(value).toBeEnabled();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
+  ).toMatchObject({ kind: 'likes-at-least', count: 30, enabled: true });
+  expect(
+    await page.evaluate(
+      () =>
+        (Reflect.get(window, '__pendingRuleSave') as PendingRuleSave).replies,
+    ),
+  ).toBe(2);
+  await page.reload();
+  await expect(page.getByRole('feed')).toBeVisible();
+  expect(
+    await page.evaluate(() => window.workspace.summary?.keepRules?.at(-1)),
+  ).toMatchObject({ kind: 'likes-at-least', count: 30, enabled: true });
 });
 
 test('all rule kinds persist, invalid drafts stay out and unknown inclusion is explicit', async ({

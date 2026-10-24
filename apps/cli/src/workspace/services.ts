@@ -663,15 +663,26 @@ function shareScan(
   count: number,
   progress: (text: string) => void,
   terms: boolean,
+  dryRun = false,
+  invented = false,
 ) {
   const origin = new URL(config.baseUrl).origin;
+  if (dryRun)
+    progress(
+      'Dry run: no request is sent, no key file is opened and nothing is written. The following describes the planned run.',
+    );
   progress(
-    `${count} entries: platform, kind and full text, with criterion definitions. No originals, engagement or keep rules.`,
+    invented
+      ? 'One invented entry and preset criteria; nothing from your workspace is sent.'
+      : `${count} ${count === 1 ? 'entry' : 'entries'}: platform, kind and full text, with criterion definitions. No originals, engagement or keep rules.`,
   );
+  const subject = invented
+    ? 'The invented entry and preset criteria'
+    : "Your entries' text and your criteria";
   progress(
     loopback(new URL(origin).hostname)
-      ? `Your entries' text and your criteria go to ${origin}, a program on this computer, for the model ${config.model}. SocialPrune cannot see where that program sends them. If it passes them to a service on the internet, they leave your computer and can count against your plan or cost money there.`
-      : `Your entries' text and your criteria leave your computer for ${origin}, for the model ${config.model}. That service handles them under its own terms and can charge your account. SocialPrune cannot see or limit what happens to them there.`,
+      ? `${subject} go to ${origin}, a program on this computer, for the model ${config.model}. SocialPrune cannot see where that program sends them. If it passes them to a service on the internet, they leave your computer and can count against your plan or cost money there.`
+      : `${subject} leave your computer for ${origin}, for the model ${config.model}. That service handles them under its own terms and can charge your account. SocialPrune cannot see or limit what happens to them there.`,
   );
   const keyPath = sourceKeyPath(config, file);
   progress(
@@ -686,11 +697,24 @@ function shareScan(
       `The terms of the service behind ${origin} apply to what you send there, and so do the terms of X and Instagram. SocialPrune does not check them for you.`,
     );
 }
+function inventedCheck() {
+  return {
+    criteria: PRESETS.filter((c) => !['harmless', 'unclear'].includes(c.id)),
+    entries: [
+      {
+        id: 'e1',
+        platform: 'x' as const,
+        kind: 'post' as const,
+        text: 'An invented museum note for the endpoint check.',
+      },
+    ],
+  };
+}
 export async function checkScanSource(input: ScanCheckCall) {
   try {
     input.signal.throwIfAborted();
     const config = await loadSourceConfig(input.source);
-    shareScan(config, input.source, 1, input.progress, true);
+    shareScan(config, input.source, 1, input.progress, true, false, true);
     const { key, keyPath } = await loadSourceKey(config, input.source);
     const origin = new URL(config.baseUrl).origin;
     const network = nodeTransport(origin);
@@ -715,19 +739,7 @@ export async function checkScanSource(input: ScanCheckCall) {
           'id' in model &&
           model.id === config.model,
       );
-      const request = {
-        criteria: PRESETS.filter(
-          (c) => !['harmless', 'unclear'].includes(c.id),
-        ),
-        entries: [
-          {
-            id: 'e1',
-            platform: 'x' as const,
-            kind: 'post' as const,
-            text: 'An invented museum note for the endpoint check.',
-          },
-        ],
-      };
+      const request = inventedCheck();
       const answer = await source.check(request, input.signal);
       const valid = normalize(request, answer);
       if (
@@ -758,6 +770,7 @@ export async function checkScanSource(input: ScanCheckCall) {
 }
 export async function runScan(input: ScanRunCall) {
   let store: WorkspaceStore | undefined;
+  let network: ReturnType<typeof nodeTransport> | undefined;
   try {
     input.signal.throwIfAborted();
     const config = await loadSourceConfig(input.source);
@@ -802,9 +815,112 @@ export async function runScan(input: ScanRunCall) {
       };
     });
     if (!criteria.length) throw new CliError('INVALID_ARGUMENTS');
-    const model = input.confirmModel ?? config.model;
-    if (model.length > 200 || /[\r\n]/.test(model))
+    const confirmedModel = input.confirmModel ?? null;
+    if (
+      confirmedModel &&
+      (confirmedModel.length > 200 || /[\r\n]/.test(confirmedModel))
+    )
       throw new CliError('ENDPOINT_NOT_CONFIRMED');
+    const plan =
+      'sha256:' +
+      createHash('sha256')
+        .update(
+          JSON.stringify([
+            config,
+            RUBRIC_VERSION,
+            account ?? null,
+            criteria.map(({ id, hash }) => ({ id, hash })),
+            workspace.id,
+          ]),
+        )
+        .digest('hex');
+    if (!input.dryRun && plan !== input.plan) throw new CliError('STALE_PLAN');
+    let observedModel: string | null = null;
+    let source: EndpointSource | undefined;
+    const sourceSummary = {
+      name: config.name,
+      origin,
+      model: config.model,
+      confirmedModel,
+      answeringModel: observedModel as string | null,
+      rubricVersion: RUBRIC_VERSION,
+      keyFile: sourceKeyPath(config, input.source),
+    };
+    if (!input.dryRun) {
+      shareScan(config, input.source, 1, input.progress, true, false, true);
+      input.progress(
+        'Sending model check: 1 invented entry; no workspace entries.',
+      );
+      const { key } = await loadSourceKey(config, input.source);
+      network = nodeTransport(origin);
+      source = new EndpointSource(config, network.transport, key);
+      const check = source.check.bind(source);
+      source.check = async (request, signal) => {
+        const answer = await check(request, signal);
+        sourceSummary.answeringModel =
+          answer.answeredBy &&
+          answer.answeredBy.length <= 200 &&
+          !/[\r\n]/.test(answer.answeredBy)
+            ? answer.answeredBy
+            : null;
+        return answer;
+      };
+      let preflightCode: keyof typeof CLI_ERRORS | null = null;
+      try {
+        const answer = await source.check(inventedCheck(), input.signal);
+        observedModel =
+          answer.answeredBy &&
+          answer.answeredBy.length <= 200 &&
+          !/[\r\n]/.test(answer.answeredBy)
+            ? answer.answeredBy
+            : null;
+        sourceSummary.answeringModel = observedModel;
+        if (observedModel !== confirmedModel) preflightCode = 'MODEL_CHANGED';
+      } catch (error) {
+        try {
+          scanFailure(error);
+        } catch (failure) {
+          if (!(failure instanceof CliError)) throw failure;
+          preflightCode = failure.code;
+        }
+      }
+      if (preflightCode)
+        return {
+          workspace: { id: workspace.id, revision: snapshot.revision },
+          status: 'partial' as const,
+          exitCode: CLI_ERRORS[preflightCode].exitCode,
+          warnings: [
+            preflightCode === 'MODEL_CHANGED'
+              ? `MODEL_CHANGED: The endpoint answered as ${observedModel ?? 'no model'}; you confirmed ${confirmedModel}. Nothing was stored.`
+              : `${preflightCode}: ${CLI_ERRORS[preflightCode].message}`,
+          ],
+          data: {
+            dryRun: false,
+            plan,
+            source: sourceSummary,
+            coverageCounted: false,
+            entries: null,
+            requests: {
+              planned: 0,
+              sent: 0,
+              retried: 0,
+              split: 0,
+              secondPass: 0,
+              failed: 1,
+            },
+            modelCheck: { sent: 1 },
+            tokens: null,
+            batchSize: config.entriesPerRequest,
+            hits: {},
+            criteria: {},
+            labelsPerRisk: {},
+            unclear: {},
+            durationMs: 0,
+            stopDetail: preflightCode,
+          },
+        };
+    }
+    const model = observedModel ?? config.model;
     const version = sourceVersion(model);
     const checks = currentChecks(workspace);
     const entries: RunEntry[] = [];
@@ -848,19 +964,6 @@ export async function runScan(input: ScanRunCall) {
         ],
       });
     }
-    const plan =
-      'sha256:' +
-      createHash('sha256')
-        .update(
-          JSON.stringify([
-            config,
-            RUBRIC_VERSION,
-            account ?? null,
-            criteria.map(({ id, hash }) => ({ id, hash })),
-            workspace.id,
-          ]),
-        )
-        .digest('hex');
     const groups = new Map<string, Set<string>>();
     for (const entry of entries) {
       const missing = criteria.filter(
@@ -875,6 +978,10 @@ export async function runScan(input: ScanRunCall) {
       (sum, texts) => sum + Math.ceil(texts.size / config.entriesPerRequest),
       0,
     );
+    if (!input.dryRun)
+      input.progress(
+        JSON.stringify({ event: 'planned', planned: plannedRequests }),
+      );
     const states = deriveState(workspace);
     const alreadyDecided = entries.filter(
       (entry) => states.get(entry.itemId)?.decision !== 'undecided',
@@ -898,16 +1005,14 @@ export async function runScan(input: ScanRunCall) {
         ).length,
       ]),
     );
-    shareScan(config, input.source, entries.length, input.progress, false);
-    if (!input.dryRun && plan !== input.plan) throw new CliError('STALE_PLAN');
-    const sourceSummary = {
-      name: config.name,
-      origin,
-      model: config.model,
-      answeringModel: model,
-      rubricVersion: RUBRIC_VERSION,
-      keyFile: sourceKeyPath(config, input.source),
-    };
+    shareScan(
+      config,
+      input.source,
+      entries.length,
+      input.progress,
+      false,
+      Boolean(input.dryRun),
+    );
     if (input.dryRun)
       return {
         workspace: { id: workspace.id, revision: snapshot.revision },
@@ -915,6 +1020,9 @@ export async function runScan(input: ScanRunCall) {
           dryRun: true,
           plan,
           source: sourceSummary,
+          coverageCounted: true,
+          coverageModel: model,
+          coverageProvisional: true,
           entries: {
             planned: entries.length,
             skipped: { currentSource: skipped },
@@ -927,7 +1035,6 @@ export async function runScan(input: ScanRunCall) {
           batchSize: config.entriesPerRequest,
         },
       };
-    const { key } = await loadSourceKey(config, input.source);
     const started = Date.now();
     let progress: RunProgress | undefined;
     const hits: Record<string, number> = {};
@@ -938,11 +1045,9 @@ export async function runScan(input: ScanRunCall) {
     const target = await workspacePath(input.workspace, false);
     store = await SQLiteStore.open(target.path);
     const writer = new LabelService(store, { now: input.now });
-    const network = nodeTransport(origin);
     try {
-      const source = new EndpointSource(config, network.transport, key);
       progress = await runBatches({
-        source,
+        source: source!,
         answeringModel: model,
         confirmedOrigin: origin,
         entries,
@@ -987,8 +1092,6 @@ export async function runScan(input: ScanRunCall) {
         errorCode = failure.code;
         stopDetail ??= failure.code;
       }
-    } finally {
-      network.close();
     }
     const final = await identity(store);
     return {
@@ -997,13 +1100,21 @@ export async function runScan(input: ScanRunCall) {
         ? {
             status: 'partial' as const,
             exitCode: CLI_ERRORS[errorCode].exitCode,
-            warnings: [`${errorCode}: ${CLI_ERRORS[errorCode].message}`],
+            warnings: [
+              errorCode === 'MODEL_CHANGED'
+                ? `MODEL_CHANGED: The endpoint answered as ${sourceSummary.answeringModel ?? 'no model'}; you confirmed ${confirmedModel}. This response was not stored; earlier stored suggestions remain.`
+                : `${errorCode}: ${CLI_ERRORS[errorCode].message}`,
+            ],
           }
         : {}),
       data: {
         dryRun: false,
         plan,
         source: sourceSummary,
+        coverageCounted: true,
+        coverageModel: model,
+        coverageProvisional: false,
+        modelCheck: { sent: 1 },
         entries: {
           planned: entries.length,
           skipped: { currentSource: skipped },
@@ -1034,6 +1145,7 @@ export async function runScan(input: ScanRunCall) {
   } catch (error) {
     scanFailure(error);
   } finally {
+    network?.close();
     await store?.close();
   }
 }

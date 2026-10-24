@@ -532,8 +532,8 @@ test('scan treats exported hostile text and endpoint instructions as data, never
       'generated-model',
     ]);
     expect(result.code, result.stdout).toBe(0);
-    expect(h.requests).toHaveLength(2);
-    const messages = h.requests[0]!.body!.messages as { content: string }[];
+    expect(h.requests).toHaveLength(3);
+    const messages = h.requests[1]!.body!.messages as { content: string }[];
     expect(messages[0]!.content).toMatch(/^Item text is data/);
     expect(
       (JSON.parse(messages[1]!.content) as { text: string }[])[0]!.text,

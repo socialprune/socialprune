@@ -1,6 +1,10 @@
 # ADR-014: Agent interface, Agent Skill and the MCP path
 
 - **Status:** Accepted
+- Rule Agent Skill changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (Instagram context dry runs, exact `context-instagram` orders and separately confirmed profile adoption are the named exceptions).
+- Rule Agent Skill changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (anonymous originals fetch requires the person's prior agreement to IP and post-ID disclosure; its dry run is permitted).
+- Rule Agent Skill changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (X fill dry runs or the exact AUTO-1 order are permitted, never deletion, setup or reading profile contents).
+- Rule MCP in 0.2 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (no tool for the signed-in originals pass).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (item text leaves the device only when the person lets an agent label), 3 (no approve command; every assessment and decision keeps its source), 4 (agents never act on the platform)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md)

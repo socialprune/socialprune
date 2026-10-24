@@ -81,6 +81,14 @@ The rules for these records:
 8. **Authorship line.** `Decision made by` is `maintainer`, as the `adr-creation` skill requires. Records written by an agent on the maintainer's request carry the same line, stay `Proposed`, and pass an independent review before the maintainer decides on them.
 9. **Open questions.** A record that needs a choice only the maintainer can make says so in one line, "Needs the maintainer's decision: …", and stays `Proposed` until he makes it. Once he has decided, that line reads "Decided by the maintainer on YYYY-MM-DD: …" and states his choice.
 
+**Amended 2026-10-24 by the maintainer's decision ADR-TEIL A** (card ADR-TEIL v1; 19:28:04Z, "überall kannst du continue nach deiner Empfehlung accordingly"). Rule 3 above remains visible as the original text. For a partial change, the changing record says `Supersedes in part`, links each affected record and lists exactly which numbered rules or named sections it changes, with the new wording. The changed accepted record keeps its status and its original wording. Near its status it gains exactly one line per change, in this form:
+
+```text
+- Rule <number or section name> changed by [ADR-NNN](ADR-NNN-slug.md) on YYYY-MM-DD (<short description of the change>).
+```
+
+The link names the changing record, and the date is its approval date. This form replaces rule 3's full-restatement requirement only for the listed partial changes. Full supersession still follows rule 3. A Proposed record's changes do not receive these lines before its acceptance.
+
 **Decision made by:** maintainer
 **Approved on:** 2026-10-09
 

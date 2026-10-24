@@ -1,6 +1,8 @@
 # ADR-007: Review data in a workspace worker, its protocol, queries and search
 
 - **Status:** Accepted
+- Rule Protocol changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`getOriginals` accepts at most 200 IDs; the browser worker returns an empty list).
+- Rule Protocol changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`getConversation` returns at most 21 links and a chain state; the browser worker returns an empty chain).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (local first), 3 (a person decides)
 - **Related:** [ADR-004](ADR-004-content-security-policy.md), [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-008](ADR-008-review-ui-primitives.md)

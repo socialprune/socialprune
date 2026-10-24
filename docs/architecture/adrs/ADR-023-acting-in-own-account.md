@@ -1,19 +1,28 @@
 # ADR-023: The tool acts in the person's own account, on the person's order
 
-- **Status:** Proposed
+- **Status:** Accepted
+- Rule PA-1 changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (the exact `context-instagram` reading order and its conditional automatic canary acceptance).
+- Rule PA-8 changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (Instagram reading pace is counted apart from X, in manual and ordered runs).
+- Rule What is allowed changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (missing X original content and posts above it are included).
+- Rule PA-1 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (manual or desktop Start, or the exact AUTO-1 reading order and automatic comparison, never deletion).
+- Rule PA-5 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the originals-fill canary of section 10).
+- Rule PA-6 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (read-only settlement and dead-owner recovery in section 5).
+- Rule PA-7 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the bounded main-run reading exceptions in section 6).
+- Rule PA-8 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the default and written-order bounds in section 7).
+- Rule The warning changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the reading-only warning in section 6).
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (changed by the maintainer on 2026-10-11; this record writes the change down and sets the rules every platform action follows), 1, 2, 3 and 5 (unchanged; they bound the change)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-027](ADR-027-x-deletion-browser.md), [ADR-028](ADR-028-instagram-signed-in-session.md), [ADR-029](ADR-029-signed-in-originals-pass.md), [ADR-030](ADR-030-instagram-context-record.md), [ADR-031](ADR-031-desktop-app.md)
 
-Revision candidate of 2026-10-24. The maintainer chose ADR-DEL v2 A at 10:31:43Z that day, accepting its four behavior points and code alignment, not this record. V2 supersedes v1. The source baseline is `bf8843f` plus D6 and D7's targeted warning/restore correction; each record still needs its own acceptance.
+Revision of 2026-10-24. The maintainer chose ADR-DEL v2 A at 10:31:43Z that day, accepting its four behavior points and code alignment, not this record at that time. V2 supersedes v1. The source baseline is `bf8843f` plus D6 and D7's targeted warning/restore correction. At 19:28:04Z he separately accepted this record as written at `c4700552ea56648780baf2bc1f2daccb33b82db2` on card ADR-023 v1 A; ADR-027 remains Proposed.
 
 Decided by the maintainer on 2026-10-11: hard constraint 4 changes from "Nothing acts on the platform" to "The tool acts on the platform only in the person's own account, only on the person's order". Two actions are allowed: fetching the original posts that the person's replies and quotes answered, and deleting the person's own entries through a browser session the person signed in to. He accepted the risk that X or Instagram locks or suspends the account. He rejected the route through X's paid developer API.
 
 On 2026-10-12 he widened the reading scope to the posts above a reply and the media of quoted posts. [ADR-029](ADR-029-signed-in-originals-pass.md) describes the anonymous and signed-in X passes. The Instagram reading path and its stored context are in ADR-028 and ADR-030, accepted on 2026-10-16. ADR-031, also accepted that day, permits confirmation in the desktop app rather than the loopback page.
 
-Needs the maintainer's decision: the wording of this record and of the rules below, which build lanes will treat as binding.
+Decided by the maintainer on 2026-10-24: the wording of this record and rules PA-1 to PA-16 is accepted on card ADR-023 v1 A at 19:28:04Z; build lanes treat them as binding.
 
-Needs the maintainer's decision: [ADR-001](ADR-001-decision-records.md) has no way to change one rule of an accepted record; rule 3 lets a record change only through a new record that supersedes all of it. ADR-026, ADR-027 and ADR-028 each change a few rules in up to eleven accepted records. Either ADR-001 gains a "Supersedes in part" form (the old record keeps its status and gains one line naming the record that changed which rule), or each changed record is restated in full by a new record.
+Decided by the maintainer on 2026-10-24: [ADR-001](ADR-001-decision-records.md) gains the "Supersedes in part" form on card ADR-TEIL v1 A at 19:28:04Z. Its original rule 3 allowed only a new record superseding the whole accepted record. ADR-026, ADR-027 and ADR-028 each identify partial changes; the old accepted record now keeps its status and gains one line per change naming the rule and changing record, rather than a full restatement. ADR-027's lines wait for its acceptance.
 
 ## Context
 
@@ -198,10 +207,10 @@ The skill in `skills/socialprune/` states these rules in plain words.
 
 ### What this record changes in accepted records
 
-This record does not itself settle how to amend an accepted record. ADR-026 to ADR-031 identify the affected rules. ADR-012 and ADR-014 mention the old constraint in their "Hard constraints touched" lines, ADR-013 in its no-network rule, and ADR-022 in its evidence. Those historical statements do not describe the implementation at `209c895`, checked on 2026-10-23: anonymous fetch, signed-in X reading and deletion, Instagram context reading and the desktop engine entry are built. Implementation is not acceptance of a Proposed record and does not answer open question 2 below. The accepted Instagram and desktop records remain authorities for their own changes.
+This record does not itself settle how to amend an accepted record. ADR-026 to ADR-031 identify the affected rules. ADR-012 and ADR-014 mention the old constraint in their "Hard constraints touched" lines, ADR-013 in its no-network rule, and ADR-022 in its evidence. Those historical statements do not describe the implementation at `209c895`, checked on 2026-10-23: anonymous fetch, signed-in X reading and deletion, Instagram context reading and the desktop engine entry are built. Implementation alone did not accept a Proposed record or answer open question 2. On 2026-10-24 at 19:28:04Z the maintainer separately accepted ADR-023, ADR-026 and ADR-029 and chose ADR-TEIL A for partial supersession; ADR-027 remains Proposed. The accepted Instagram and desktop records remain authorities for their own changes.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-24 (card ADR-023 v1 A; 19:28:04Z, "überall kannst du continue nach deiner Empfehlung accordingly"; record at `c4700552ea56648780baf2bc1f2daccb33b82db2`).
 
 ## Consequences
 
@@ -222,8 +231,11 @@ This record does not itself settle how to amend an accepted record. ADR-026 to A
 ## Open questions for the maintainer
 
 - Do you approve the wording of this record and its rules PA-1 to PA-16? Answer yes, or name what to change.
+  Answered by the maintainer on 2026-10-24 at 19:28:04Z, card ADR-023 v1 A: yes, the record and rules PA-1 to PA-16 are accepted as written at `c4700552ea56648780baf2bc1f2daccb33b82db2`.
 - Should a changed accepted record keep its status and get one line "rule changed by ADR-0NN", instead of a full rewrite? Answer yes or no.
+  Answered by the maintainer on 2026-10-24 at 19:28:04Z, card ADR-TEIL v1 A: yes; ADR-001 gains the "Supersedes in part" form, and each changed accepted record keeps its status with one line per change naming the rule and changing record.
 - Is a dedicated browser profile you sign in to by hand, in a folder you name, the right setup for you? Answer yes or no.
+  Answered by the maintainer on 2026-10-24 at 19:28:04Z, card ADR-023 v1 A: yes, the dedicated profile is signed in to by hand in a folder the person names.
 
 ## Evidence
 

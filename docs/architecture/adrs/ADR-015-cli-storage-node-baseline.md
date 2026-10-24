@@ -1,6 +1,11 @@
 # ADR-015: CLI workspace storage on node:sqlite and the Node baseline
 
 - **Status:** Accepted
+- Rule Workspace folder changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the `originals/` media folder sits beside `socialprune.sqlite`).
+- Rule Database settings changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the non-append-only `STRICT` table `originals` is added).
+- Rule Migration, backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (a layout migration adds `originals`).
+- Rule Database settings changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the version 4 original columns and `browser_attempts.originalId`).
+- Rule Migration, backup and restore changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the layout migration for those columns copies the database first).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (no paid storage), 2 (the workspace stays in the folder the person names), 3 (decision history is append-only)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-016](ADR-016-local-review-server.md)

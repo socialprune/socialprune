@@ -1,6 +1,7 @@
 # ADR-017: Package boundaries and the shared workspace service
 
 - **Status:** Accepted
+- Rule Capability split changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`OriginalsFillWriter` writes only originals, fill runs and read attempts, never decisions or outcomes; only the fill runner constructs it).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (the capability to write decisions exists only on the review side)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md)

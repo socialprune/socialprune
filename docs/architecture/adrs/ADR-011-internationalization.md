@@ -1,6 +1,7 @@
 # ADR-011: Internationalization with React Intl and checked catalogs
 
 - **Status:** Accepted
+- Rule Catalogs and types changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (media states, conversation, source lines, unavailable cases, confirmation page and reading warning in both languages under the existing checks).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (no catalog fetch), 5 (forbidden words are checked in both languages)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-022](ADR-022-export-guide-content.md), [design specification](../../design/README.md)

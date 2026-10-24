@@ -1,6 +1,10 @@
 # ADR-018: CLI release bundle and npm package contents
 
 - **Status:** Accepted
+- Rule Checks changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (the packed smoke runs `context instagram --dry-run --json`).
+- Rule Package contents changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`THIRD_PARTY_NOTICES` includes the `react-tweet` entry).
+- Rule Checks changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the packed smoke runs only the generated-data originals-fetch dry run and asserts zero network calls).
+- Rule Checks changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the packed smoke runs the demo originals-fill dry run and asserts zero network calls, with no new dependency).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 1 (free tooling and free publishing only), 6 (no fixtures or real data in the package)
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md)

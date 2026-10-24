@@ -1,6 +1,10 @@
 # ADR-016: Local review server and session token handling
 
 - **Status:** Accepted
+- Rule API changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (`getInstagramContext` and its authenticated context route, without a page-policy change).
+- Rule API changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`getOriginals` and the authenticated same-origin media route).
+- Rule API changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`getConversation` and the media route with byte ranges).
+- Rule The local-review document changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`media-src 'self'` is added to the header and meta policy).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 2 (local first), 3 (only a person decides, in the review UI)
 - **Related:** [ADR-004](ADR-004-content-security-policy.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md)

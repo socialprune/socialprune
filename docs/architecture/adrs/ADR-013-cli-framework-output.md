@@ -1,6 +1,14 @@
 # ADR-013: CLI framework, command tree and machine output contract
 
 - **Status:** Accepted
+- Rule Command tree for Phase 2 changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (`context instagram` is added).
+- Rule Execution adapter changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (Instagram context dry runs stay without network; runs follow its signed-in reading rules).
+- Rule Command tree for Phase 2 changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`originals fetch` is added).
+- Rule Execution adapter changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (non-dry anonymous fetch permits its requests without a network-consent flag; the zero-network proof covers dry runs and other commands).
+- Rule Exit codes changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`ORIGINALS_FAILED`, embed-429 `PLATFORM_CHECK` and `MEDIA_RATE_LIMIT`).
+- Rule Command tree for Phase 2 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`originals fill x` is added).
+- Rule Execution adapter changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the listed anonymous and signed-in run modes are network exceptions; dry runs retain zero-network proof).
+- Rule Exit codes changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`SHAPE_CHANGED`, `UNEXPECTED_ACTION`, `DISK_LOW` and `ORIGINALS_PENDING`; daily and media bounds end with exit 0).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (no approve command), 2 (no network from CLI commands in Phase 2)
 - **Related:** [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md)

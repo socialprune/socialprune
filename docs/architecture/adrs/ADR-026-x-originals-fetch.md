@@ -1,16 +1,20 @@
 # ADR-026: Fetching the originals of the person's replies and quotes on X
 
-- **Status:** Proposed
+- **Status:** Accepted
+- Rule Command changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (anonymous parent and quoted-post handling and the notice for their IDs and media).
+- Rule What is requested and how changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (video and GIF handling and both truncation signs).
+- Rule What is stored changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the replacement original and media model and temporary-file writes).
+- Rule What the person sees changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (per-media states replace the former no-video sentence).
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (one of the two actions [ADR-023](ADR-023-acting-in-own-account.md) allows), 2 (post IDs from the export reach X, which already holds them; the person is told at that point), 1 (no account, no key, no cost), 6 (tests use a local fake, never X)
-- **Supersedes in part, on acceptance:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" gives the new wording. How a partial change is recorded is an open question in ADR-023.
+- **Supersedes in part:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" names the rules and gives the new wording. The maintainer chose ADR-001's partial-supersession form on card ADR-TEIL v1 A, 2026-10-24 at 19:28:04Z.
 - **Related:** [ADR-005](ADR-005-browser-storage.md), [ADR-021](ADR-021-archive-media.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-027](ADR-027-x-deletion-browser.md), [ADR-029](ADR-029-signed-in-originals-pass.md)
 
-Revision candidate of 2026-10-24, based on `bf8843f` and the D6 corrections. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting its behavior and code alignment, not this record. The dated `209c895` checks remain historical evidence; the current model pointer below uses schema 8. This record still needs separate acceptance and authorizes no platform run by itself.
+Revision of 2026-10-24, based on `bf8843f` and the D6 corrections. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting its behavior and code alignment, not this record at that time. The dated `209c895` checks remain historical evidence; the current model pointer below uses schema 8. At 19:28:04Z he separately accepted this record as written at `c4700552ea56648780baf2bc1f2daccb33b82db2` on card ADR-026 v1 A. Acceptance authorizes no platform run by itself.
 
 Decided by the maintainer on 2026-10-11: fetch the originals ("Ja, hole die originale accordingly").
 
-The local review has shown stored photos through its authenticated same-origin route since the build of 2026-10-11. It uses `img-src 'self'`, not `img-src blob:`. The former photo-display question is resolved in the implementation, not evidence of acceptance of this record.
+The local review has shown stored photos through its authenticated same-origin route since the build of 2026-10-11. It uses `img-src 'self'`, not `img-src blob:`. The former photo-display question was resolved in the implementation before this record's separate acceptance on 2026-10-24.
 
 ## Context
 
@@ -182,20 +186,20 @@ The token derivation is copied from `react-tweet` 3.3.1 under its MIT license, w
 
 ### Changes to accepted records
 
-| Record | New wording |
-|---|---|
-| ADR-006 | The workspace document gains the optional `originals: Original[]` after `outcomeEvents` and the optional `counts.originals`, both left out when empty. The reader checks unique IDs, valid records and the count. |
-| ADR-007 | The protocol table gains `getOriginals { ids ≤ 200 }` → `originals { originals }`. The browser worker answers with an empty list until a later record. |
-| ADR-013 | The command tree gains `originals fetch`; running it without `--dry-run` permits its anonymous requests. Other network exceptions are the signed-in runs named in ADR-027 to ADR-029. The zero-network test covers other commands and these commands' dry runs. The built failure codes include `ORIGINALS_FAILED`, `PLATFORM_CHECK` for an embed 429 and `MEDIA_RATE_LIMIT`; there is no network-consent flag. |
-| ADR-014 | Agents may run `originals fetch --dry-run`, and `originals fetch` only after the person agreed in the conversation. The skill asks whether X may see their IP address and the referenced, parent and quoted post IDs. The prohibition on platform requests gains this exact anonymous-command exception. |
-| ADR-015 | The workspace gains the `STRICT` table `originals` (not append-only) and the folder `originals/` next to `socialprune.sqlite`. A layout migration adds the table. |
-| ADR-016 | The HTTP API gains `getOriginals` and the authenticated same-origin media route; ADR-029 extends that route for videos and ranges. |
-| ADR-018 | The packed smoke test runs `originals fetch --dry-run` on generated data and asserts zero network calls; it never runs the network mode. `THIRD_PARTY_NOTICES` gains the `react-tweet` entry. |
+| Record | Rules or sections changed | New wording |
+|---|---|---|
+| ADR-006 | Workspace document, version 2; Backup and restore | The workspace document gains the optional `originals: Original[]` after `outcomeEvents` and the optional `counts.originals`, both left out when empty. The reader checks unique IDs, valid records and the count. |
+| ADR-007 | Protocol | The protocol table gains `getOriginals { ids ≤ 200 }` → `originals { originals }`. The browser worker answers with an empty list until a later record. |
+| ADR-013 | Command tree for Phase 2; Execution adapter; Exit codes | The command tree gains `originals fetch`; running it without `--dry-run` permits its anonymous requests. Other network exceptions are the signed-in runs named in ADR-027 to ADR-029. The zero-network test covers other commands and these commands' dry runs. The built failure codes include `ORIGINALS_FAILED`, `PLATFORM_CHECK` for an embed 429 and `MEDIA_RATE_LIMIT`; there is no network-consent flag. |
+| ADR-014 | Agent Skill | Agents may run `originals fetch --dry-run`, and `originals fetch` only after the person agreed in the conversation. The skill asks whether X may see their IP address and the referenced, parent and quoted post IDs. The prohibition on platform requests gains this exact anonymous-command exception. |
+| ADR-015 | Workspace folder; Database settings; Migration, backup and restore | The workspace gains the `STRICT` table `originals` (not append-only) and the folder `originals/` next to `socialprune.sqlite`. A layout migration adds the table. |
+| ADR-016 | API | The HTTP API gains `getOriginals` and the authenticated same-origin media route; ADR-029 extends that route for videos and ranges. |
+| ADR-018 | Checks; Package contents | The packed smoke test runs `originals fetch --dry-run` on generated data and asserts zero network calls; it never runs the network mode. `THIRD_PARTY_NOTICES` gains the `react-tweet` entry. |
 
 [ADR-021](ADR-021-archive-media.md) stays as it is: it is about media inside the export, and the review still loads nothing from a post's link.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-24 (card ADR-026 v1 A; 19:28:04Z, "überall kannst du continue nach deiner Empfehlung accordingly"; record at `c4700552ea56648780baf2bc1f2daccb33b82db2`).
 
 ## Consequences
 
@@ -216,7 +220,7 @@ The token derivation is copied from `react-tweet` 3.3.1 under its MIT license, w
 ## Questions resolved in the implementation
 
 - 2026-10-11, build `133a226`: stored photos are shown through the session-checked same-origin route, under `img-src 'self'`. No blob policy change is needed.
-- 2026-10-11, build `133a226`: the default is all referenced originals, not only human-marked entries. The command has no marked-only flag. These dated implementation answers do not substitute for the maintainer's acceptance of this Proposed record.
+- 2026-10-11, build `133a226`: the default is all referenced originals, not only human-marked entries. The command has no marked-only flag. These implementation answers preceded the maintainer's separate acceptance on 2026-10-24 at 19:28:04Z, card ADR-026 v1 A.
 
 ## Evidence
 

@@ -1,6 +1,10 @@
 # ADR-006: Workspace model, decision event log, schema version 2 and portable backup
 
 - **Status:** Accepted
+- Rule Workspace document, version 2 changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (optional `originals` and `counts.originals`, omitted when empty).
+- Rule Backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (original IDs, records and counts are validated).
+- Rule Workspace document, version 2 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (version 4 originals, media and fill-journal fields).
+- Rule Backup and restore changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (version 3 originals migrate to version 4, with the reader checks in section 5).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (a person decides; every decision records its source), 6 (backups in tests come from generated data)
 - **Related:** [ADR-005](ADR-005-browser-storage.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-020](ADR-020-demo-suggestions.md)

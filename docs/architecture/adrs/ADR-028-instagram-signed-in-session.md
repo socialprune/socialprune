@@ -4,7 +4,7 @@
 - **Date:** 2026-10-11, revised 2026-10-15, amended 2026-10-16 (IG-5), 2026-10-17 (post page shape, IG-6, IG-7), 2026-10-18 (IG-8, the settled post read) and 2026-10-19 (IG-9, the account check)
 - **Title until 2026-10-15:** "Instagram: context and deletion through the person's signed-in session"
 - **Hard constraints touched:** 4 (reading in the person's own account through a session they signed in to, [ADR-023](ADR-023-acting-in-own-account.md)), 2 (what the run keeps stays in the workspace; backups carry records, not files), 1 (no developer account, no key, the installed browser), 5 (the warning and the review's wording make no promise), 6 (tests use a generated fake Instagram, never Instagram). Hard constraint 3 returns with the deletion record.
-- **Supersedes in part, on acceptance:** [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md). It also changes the proposed records [ADR-023](ADR-023-acting-in-own-account.md) and [ADR-027](ADR-027-x-deletion-browser.md). The data model, its versions and the changes to [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md) and [ADR-015](ADR-015-cli-storage-node-baseline.md) are in [ADR-030](ADR-030-instagram-context-record.md). Section 13 gives the new wording.
+- **Supersedes in part:** [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md), [ADR-018](ADR-018-cli-distribution.md). It also changes [ADR-023](ADR-023-acting-in-own-account.md), accepted on 2026-10-24, and the still-Proposed [ADR-027](ADR-027-x-deletion-browser.md). The data model, its versions and the changes to [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md) and [ADR-015](ADR-015-cli-storage-node-baseline.md) are in [ADR-030](ADR-030-instagram-context-record.md). Section 13 gives the new wording; the partial-supersession form follows ADR-001's amendment of 2026-10-24 (ADR-TEIL v1 A).
 - **Related:** [ADR-012](ADR-012-time-zone-grouping.md), [ADR-021](ADR-021-archive-media.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-029](ADR-029-signed-in-originals-pass.md), [ADR-030](ADR-030-instagram-context-record.md)
 - **Evidence:** [spike S5](../../spikes/S5.md)
 
@@ -457,15 +457,15 @@ An automatic acceptance covers points 3, 5 and 7 and the agreement of point 9 fo
 
 ### 13. Changes to other records
 
-| Record | New wording |
-|---|---|
-| ADR-013 | The command tree gains `context instagram`. Its dry run makes no network call; its run follows the run rules of ADR-027. |
-| ADR-014 | Agents may run `context instagram --dry-run --json`. With the person's written order for exactly `context-instagram` they may start its `--order` run, which runs the canary and accepts it by the automatic checks of section 11 only when the order says `acceptCanary: true`. Only after the person's own confirmation that names it they may run `browser setup --platform instagram --adopt`. Nothing else of this record. |
-| ADR-016 | The HTTP API gains `getInstagramContext`, and the server gains the context route of section 9. The page policy does not change. If ADR-025 is accepted first, the same change applies to it. |
-| ADR-018 | The packed package's smoke test runs `context instagram --dry-run --json`. |
-| ADR-023, proposed | PA-1 gains a second written-order scope, `context-instagram`, for reading only (IG-3 point 3). It needs a canary the person accepted, unless the order says `acceptCanary: true`; then the order runs the canary and accepts it only when every automatic check of section 11 passes, as AUTO-1 does on X. PA-8 gains this record's pace for Instagram reading, counted apart from X, the same in both modes. |
-| ADR-027, proposed | `browser setup` takes `--platform instagram`; the profile marker names its platform and a profile serves one platform. `--adopt` writes the marker into an unmarked Instagram profile under the conditions of section 6. |
-| ADR-030, proposed | The record, the journal changes and schema version 5. |
+| Record | Rules or sections changed | New wording |
+|---|---|---|
+| ADR-013 | Command tree for Phase 2; Execution adapter | The command tree gains `context instagram`. Its dry run makes no network call; its run follows the run rules of ADR-027. |
+| ADR-014 | Agent Skill | Agents may run `context instagram --dry-run --json`. With the person's written order for exactly `context-instagram` they may start its `--order` run, which runs the canary and accepts it by the automatic checks of section 11 only when the order says `acceptCanary: true`. Only after the person's own confirmation that names it they may run `browser setup --platform instagram --adopt`. Nothing else of this record. |
+| ADR-016 | API | The HTTP API gains `getInstagramContext`, and the server gains the context route of section 9. The page policy does not change. If ADR-025 is accepted first, the same change applies to it. |
+| ADR-018 | Checks | The packed package's smoke test runs `context instagram --dry-run --json`. |
+| ADR-023, accepted 2026-10-24 | PA-1; PA-8 | PA-1 gains a second written-order scope, `context-instagram`, for reading only (IG-3 point 3). It needs a canary the person accepted, unless the order says `acceptCanary: true`; then the order runs the canary and accepts it only when every automatic check of section 11 passes, as AUTO-1 does on X. PA-8 gains this record's pace for Instagram reading, counted apart from X, the same in both modes. |
+| ADR-027, proposed | Commands | `browser setup` takes `--platform instagram`; the profile marker names its platform and a profile serves one platform. `--adopt` writes the marker into an unmarked Instagram profile under the conditions of section 6. |
+| ADR-030, accepted 2026-10-16 | Record and journal (original schema version 5) | The record, the journal changes and schema version 5. |
 
 **Decision made by:** maintainer
 **Approved on:** 2026-10-16

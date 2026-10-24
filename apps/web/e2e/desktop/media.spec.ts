@@ -91,8 +91,13 @@ test('fake bridge feed renders stored original and confirmed Instagram media usi
     const post = page
       .locator(`article[data-item-id="${fixture.context.itemId}"]`)
       .getByTestId('instagram-post');
-    await expect(post).toContainText(fixture.context.post.owner);
+    await expect(
+      post.locator('[data-instagram-post-header] > strong'),
+    ).toHaveText(fixture.context.post.owner);
     await post.getByRole('button', { name: 'Show screenshot' }).click();
+    await expect(
+      post.getByRole('button', { name: 'Hide screenshot', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true');
     await expect(post.locator('img')).toHaveCount(2);
     for (const image of await post.locator('img').all())
       await expect

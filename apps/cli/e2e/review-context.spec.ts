@@ -107,13 +107,17 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
       hasText: fixture.records[0]!.post.caption!,
     });
     await expect(post).toHaveCount(1);
-    await expect(post).toContainText('@' + fixture.records[0]!.post.owner);
+    await expect(
+      post.locator('[data-instagram-post-header] > strong'),
+    ).toHaveText(fixture.records[0]!.post.owner);
     await expect(post.locator('time')).toHaveAttribute(
       'datetime',
       own.createdAt,
     );
-    await expect(post.locator('[dir="auto"]')).toHaveText(
-      fixture.records[0]!.post.caption!,
+    await expect(
+      post.locator('[data-instagram-caption] > p[dir="auto"]'),
+    ).toHaveText(
+      `${fixture.records[0]!.post.owner} ${fixture.records[0]!.post.caption!}`,
     );
     await expect(post).toContainText(
       'Instagram showed only the beginning of this caption.',
@@ -135,8 +139,15 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
       exact: true,
     });
     await expect(show).toHaveAttribute('aria-expanded', 'false');
+    const screenshotId = await show.getAttribute('aria-controls');
+    expect(screenshotId).toBeTruthy();
     await show.click();
-    await expect(show).toHaveAttribute('aria-expanded', 'true');
+    const hide = post.getByRole('button', {
+      name: 'Hide screenshot',
+      exact: true,
+    });
+    await expect(hide).toHaveAttribute('aria-expanded', 'true');
+    await expect(hide).toHaveAttribute('aria-controls', screenshotId!);
     const shot = post.getByRole('img', {
       name: 'Screenshot of the post as Instagram showed it on 15 October 2026',
       exact: true,
@@ -205,8 +216,8 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
       'SocialPrune hat diesen Kommentar am 15. Oktober 2026 in deinem angemeldeten Instagram unter dem Beitrag gefunden. Text, Zeit und das Konto des Beitrags stimmen mit deinem Export überein.',
     );
     await expect(
-      post.getByRole('button', { name: 'Screenshot zeigen', exact: true }),
-    ).toBeVisible();
+      post.getByRole('button', { name: 'Screenshot ausblenden', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true');
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

@@ -113,7 +113,7 @@ export function compareSources(
       const agrees =
         values.length > 0 &&
         values.length === candidates.length &&
-        signatures.size === 1 &&
+        (field === 'image' || signatures.size === 1) &&
         values.every((value) =>
           field === 'image'
             ? Array.isArray(value) &&

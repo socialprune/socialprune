@@ -42,4 +42,10 @@ describe('DESIGN-H C foundation', () => {
     expect(controls).toContain('border-radius: var(--radius-control)');
     expect(controls).not.toContain('999px');
   });
+  test('preview captures require a caller-selected folder instead of a local home directory', async () => {
+    const script = await source('../../scripts/focus-preview-screens.spec.ts');
+    expect(script).toContain("process.env['SP_H_SCREEN_DIR']");
+    expect(script).toContain("throw Error('SP_H_SCREEN_DIR required')");
+    expect(script).not.toMatch(/[A-Za-z]:[/\\]+Users[/\\]/iu);
+  });
 });

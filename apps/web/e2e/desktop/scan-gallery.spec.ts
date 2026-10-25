@@ -8,6 +8,7 @@ import { EngineScan } from '../../../cli/src/engine/scan.ts';
 import { RunControls } from '../../../cli/src/browser/run-controls.ts';
 import { SQLiteStore } from '../../../cli/src/workspace/sqlite-store.ts';
 import { fakeBridge } from './fake-bridge.ts';
+import { expectDesktopNavigation } from './navigation.ts';
 
 // eslint-disable-next-line no-restricted-properties -- Explicit generated gallery destination.
 const folder = process.env['SP_C5_GALLERY_DIR'];
@@ -72,6 +73,7 @@ for (const locale of ['de', 'en'] as const)
           });
           await page.emulateMedia({ colorScheme: theme });
           await page.goto('/desktop.html');
+          await expectDesktopNavigation(page, locale);
           await page
             .getByRole('button', {
               name: de ? 'Modellvorschläge' : 'Model suggestions',

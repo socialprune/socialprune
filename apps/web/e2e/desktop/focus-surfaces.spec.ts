@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
 import { fakeBridge } from './fake-bridge.ts';
+import { expectDesktopNavigation } from './navigation.ts';
 import { runView } from './views.ts';
 import en from '../../src/i18n/en.json' with { type: 'json' };
 import de from '../../src/i18n/de.json' with { type: 'json' };
@@ -33,6 +34,7 @@ for (const lang of ['de', 'en'] as const)
           const requests: string[] = [];
           page.on('request', (r) => requests.push(r.url()));
           await page.goto('/desktop.html');
+          await expectDesktopNavigation(page, lang);
           const origin = new URL(page.url()).origin;
           const shot = async (name: string) => {
             expect(

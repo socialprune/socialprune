@@ -5,6 +5,26 @@ import { expect, test } from '@playwright/test';
 import { root } from '../packaging/paths.ts';
 import { launch, call, select } from './helpers.ts';
 import { writeZipFile } from '../../../tools/fixture-gen/src/shared/zip.ts';
+import { expectDesktopNavigation } from '../../web/e2e/desktop/navigation.ts';
+
+test('desktop navigation follows setup and human review before optional model suggestions', async () => {
+  const app = await launch('probe', false);
+  try {
+    await expectDesktopNavigation(app.page, 'en');
+    const buttons = app.page
+      .getByRole('navigation', { name: 'SocialPrune' })
+      .getByRole('button');
+    await buttons.first().focus();
+    for (const button of await buttons.all()) {
+      await expect(button).toBeFocused();
+      await app.page.keyboard.press('Tab');
+    }
+    await buttons.first().click();
+    await expect(app.page.getByTestId('desktop-setup')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
 
 test('demo review decision crosses the real bridge, portable backup, CLI and restore', async () => {
   const app = await launch('probe');

@@ -276,12 +276,12 @@ function Content({
     }
   }
   const titles = {
-    scan: 'scan.title',
     setup: 'desktop.setup',
     review: 'review.title',
     archive: 'proto.archiveTitle',
     clicklist: 'clicklist.title',
     monitor: 'desktop.monitor',
+    scan: 'scan.title',
     settings: 'desktop.data',
     guide: 'nav.guide',
   } as const;

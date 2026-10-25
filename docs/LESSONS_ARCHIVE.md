@@ -509,3 +509,29 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 2 times (2026-10-25 17:26Z: "Durchgehend öffnen sich von SocialPrune drei Fenster, also auf Repeat … Es blockiert meine ganze Sicht … das ist unglaublich nervig." Lanes ran the X and Instagram deletion browser matrices and a packaged desktop window test ten times in a row on his machine; their admission checked free memory and other lane browsers but not that every run put windows in front of him. The parent set STOP at 17:30Z, and the lanes resume with rule 5. 2026-10-23, run 17 above)
+
+### [LL-2026-10-019] 2026-10-25 IMPLEMENTATION: Keep machine-local destinations out of reusable artifacts
+
+**ID:** LL-2026-10-019
+**Severity:** HIGH
+**Category:** IMPLEMENTATION
+**Expires:** Never (kernel). The screenshot script below is evidence from 2026-10-25.
+**Feedback:** On 2026-10-25 at 13:13 UTC the parent's range scan flagged a personal absolute output path in a tracked screenshot test, after the same command had already pushed the commit to a branch; the branch was deleted two minutes later, before any pull request or CI run, and the maintainer was told. The parent then asked for the whole changed-file set to be checked.
+**Problem:** A capture script embedded its author's local output directory even though the other capture scripts accepted a caller-supplied folder. Its local success proved image creation, not portability.
+**5 Whys Analysis:**
+1. Why was a personal path tracked? -> A temporary capture destination was placed directly in the test.
+2. Why did the test pass? -> That destination existed on the author's machine.
+3. Why did the existing pattern not prevent it? -> The capture flow was copied without its caller-supplied output contract.
+4. Why did verification miss it? -> It checked images and dimensions but not the script's dependency on one home directory.
+5. Why? -> Root cause: local execution was treated as portability evidence, with no source-level negative check for the output-location contract.
+**Rule(s):**
+1. Reusable capture scripts take machine-local destinations from an explicit caller setting rather than embedding a developer's home directory.
+2. A missing required destination is a clear configuration error, not a reason to invent a personal default.
+3. Personal output destinations, documented operating-system locations and generated path fixtures are different cases; a keyword hit alone does not justify rewriting the latter two.
+**Detection Pattern:** a tracked capture script contains a home-directory path or assumes an output directory that exists only on its author's machine.
+**Affected Files:** apps/web/scripts/focus-preview-screens.spec.ts; apps/web/src/styles/focus-design.test.ts.
+**Related Lessons:** LL-2026-10-002 (negative proof), LL-2026-10-003 (all consumers), LL-2026-10-004 (bound local evidence).
+**Regression / Verification Note:** The correction uses the existing `SP_H_SCREEN_DIR` contract and a source-level regression check. The task also checks files changed since the design baseline, recording generic Windows storage references separately instead of changing an accepted ADR.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-25, the tracked preview capture destination)

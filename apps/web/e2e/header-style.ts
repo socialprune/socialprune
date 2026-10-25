@@ -2,6 +2,36 @@ import { expect } from '@playwright/test';
 import type { Page, TestInfo } from '@playwright/test';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
+import { liveFeedFixture } from './feed-fixture.ts';
+
+/** Real review transports enumerate accounts from completed imports. */
+export function headerFixture() {
+  const data = liveFeedFixture();
+  data.imports = [...new Set(data.items.map((item) => item.platform))].map(
+    (platform) => {
+      const items = data.items.filter((item) => item.platform === platform);
+      return {
+        id: `generated-header-${platform}`,
+        platform,
+        status: 'complete' as const,
+        accounts: [
+          ...new Map(
+            items.map((item) => [item.account.key, item.account]),
+          ).values(),
+        ],
+        archives: [...new Set(items.map((item) => item.provenance.archive))],
+        importedAt: data.createdAt,
+        exportCreatedAt: null,
+        adapter: { name: 'generated-header', version: '1' },
+        variant: null,
+        diagnostics: [],
+        itemCount: items.length,
+      };
+    },
+  );
+  data.counts.imports = data.imports.length;
+  return data;
+}
 
 export async function expectHeaderStyle(
   page: Page,
@@ -58,10 +88,37 @@ export async function expectHeaderStyle(
       radius: getComputedStyle(node).borderTopLeftRadius,
       borderWidth: getComputedStyle(node).borderTopWidth,
     }));
+    const select = document.querySelector<HTMLSelectElement>(
+      '[data-feed-toolbar] select',
+    );
+    const option = select?.selectedOptions[0];
+    const selectedAccount = select
+      ? {
+          value: select.value,
+          selectedIndex: select.selectedIndex,
+          options: [...select.options].map((node) => ({
+            value: node.value,
+            text: node.textContent,
+          })),
+          text: option?.textContent?.trim() ?? '',
+          color: getComputedStyle(select).color,
+          background: background(select),
+          optionColor: option ? getComputedStyle(option).color : null,
+          optionBackground: option
+            ? getComputedStyle(option).backgroundColor
+            : null,
+          contrast: (() => {
+            const a = luminance(rgba(getComputedStyle(select).color));
+            const b = luminance(background(select));
+            return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          })(),
+        }
+      : null;
     return {
       text,
       menuBackground,
       tabs,
+      selectedAccount,
       sheets: [...document.styleSheets].map((sheet) => ({
         href: sheet.href?.split('/').at(-1),
         layers: [...sheet.cssRules]
@@ -87,6 +144,14 @@ export async function expectHeaderStyle(
     );
   }
   expect(observed.text.length).toBeGreaterThan(0);
+  const expectedAccount = headerFixture().items[0]!.account;
+  expect.soft(observed.selectedAccount?.value).toBe(expectedAccount.key);
+  expect
+    .soft(observed.selectedAccount?.text)
+    .toBe(`@${expectedAccount.handle}`);
+  expect
+    .soft(observed.selectedAccount?.contrast ?? 0)
+    .toBeGreaterThanOrEqual(4.5);
   for (const row of observed.text)
     expect
       .soft(

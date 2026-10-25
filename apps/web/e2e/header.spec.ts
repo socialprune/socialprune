@@ -1,6 +1,6 @@
 import { test } from '@playwright/test';
 import { restoreLiveFeed } from './feed-fixture.ts';
-import { expectHeaderStyle } from './header-style.ts';
+import { expectHeaderStyle, headerFixture } from './header-style.ts';
 
 for (const theme of ['light', 'dark'] as const)
   for (const width of [1280, 390])
@@ -13,7 +13,7 @@ for (const theme of ['light', 'dark'] as const)
         localStorage.setItem('sp-theme', theme);
         localStorage.setItem('sp-locale', 'en');
       }, theme);
-      await restoreLiveFeed(page);
+      await restoreLiveFeed(page, headerFixture());
       try {
         await expectHeaderStyle(page, info, `web-${theme}-${width}`);
       } finally {

@@ -10,8 +10,10 @@ import {
 import { startReviewServer } from '../src/review/server.ts';
 import { reviewAssetDirectory } from '../src/review/static.ts';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
-import { liveFeedFixture } from '../../web/e2e/feed-fixture.ts';
-import { expectHeaderStyle } from '../../web/e2e/header-style.ts';
+import {
+  expectHeaderStyle,
+  headerFixture,
+} from '../../web/e2e/header-style.ts';
 
 for (const theme of ['light', 'dark'] as const)
   for (const width of [1280, 390])
@@ -23,7 +25,7 @@ for (const theme of ['light', 'dark'] as const)
       );
       const store = await SQLiteStore.open(
         join(workspace, 'socialprune.sqlite'),
-        { initial: liveFeedFixture() },
+        { initial: headerFixture() },
       );
       await store.close();
       const server = await startReviewServer({

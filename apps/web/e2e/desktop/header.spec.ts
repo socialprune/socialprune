@@ -1,14 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { fakeBridge } from './fake-bridge.ts';
-import { liveFeedFixture } from '../feed-fixture.ts';
-import { expectHeaderStyle } from '../header-style.ts';
+import { expectHeaderStyle, headerFixture } from '../header-style.ts';
 
 for (const theme of ['light', 'dark'] as const)
   for (const width of [1280, 390])
     test(`header and flat feed tabs ${theme} ${width}`, async ({
       page,
     }, info) => {
-      const bridge = await fakeBridge(page, 'en', liveFeedFixture());
+      const bridge = await fakeBridge(page, 'en', headerFixture());
       try {
         await page.setViewportSize({ width, height: 1000 });
         await page.emulateMedia({

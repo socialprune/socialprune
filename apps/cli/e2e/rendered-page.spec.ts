@@ -81,6 +81,11 @@ test('selector structural and text checks report only their closed reason tokens
   await page.setContent('<p>Bei X anmelden</p>');
   await expect(xSelectors.check(page)).rejects.toMatchObject({
     code: 'PLATFORM_CHECK',
+    reason: 'marker-login',
+  });
+  await page.setContent('<p>Du hast dein Limit erreicht</p>');
+  await expect(xSelectors.check(page)).rejects.toMatchObject({
+    code: 'PLATFORM_CHECK',
     reason: 'notice-text',
   });
   await page.setContent(

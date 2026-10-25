@@ -31,6 +31,28 @@ interface Runner {
 }
 const runner = (await import(entry)) as Runner;
 
+test('engine 429 fixture closes its listener before assertions even when no context was launched', async () => {
+  const source = await readFile(
+    resolve(root, 'apps/cli/e2e/engine-run-controls.test.ts'),
+    'utf8',
+  );
+  const block = source.slice(
+    source.indexOf("test('fill HTTP 429"),
+    source.indexOf("test('engine fill watches"),
+  );
+  const cleanup = block.slice(
+    block.indexOf('} finally {', block.indexOf("detail: 'http-429'")),
+  );
+  expect(cleanup.indexOf('server.closeAllConnections()')).toBeGreaterThan(-1);
+  expect(cleanup.indexOf('server.close(() => resolve())')).toBeLessThan(
+    cleanup.indexOf('expect(context?.pages())'),
+  );
+  expect(cleanup.indexOf('await rm(root')).toBeLessThan(
+    cleanup.indexOf('expect(context?.pages())'),
+  );
+  expect(cleanup).toMatch(/finally\s*\{\s*server\.closeAllConnections/);
+});
+
 test('suite temp paths are canonical before any generated profile or child process is created', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'sp-suite-temp-'));
   try {

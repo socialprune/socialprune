@@ -655,12 +655,18 @@ test('fill HTTP 429 keeps its cause even when rate headers exceed the Date range
       },
     });
   } finally {
-    await context?.close();
-    await engine.close();
+    try {
+      await context?.close();
+    } finally {
+      try {
+        await engine.close();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await rm(root, { recursive: true, force: true });
+      }
+    }
     expect(context?.pages()).toEqual([]);
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
   }
 });
 

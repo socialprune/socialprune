@@ -14,6 +14,7 @@ import {
   MemoryValuesSchema,
   RunMemorySchema,
 } from './report.ts';
+import { interruptibleWork } from './interruptible.ts';
 import type {
   BodyClass,
   PostRequestStatus,
@@ -400,14 +401,11 @@ export async function guardInstagramNetwork(
   };
   let failure: ContextStop | undefined;
   let disposed = false;
-  let signalFailure!: () => void;
-  const failed = new Promise<void>((resolve) => {
-    signalFailure = resolve;
-  });
+  const work = interruptibleWork();
   const fail = (error: ContextStop) => {
     if (!failure) {
       failure = error;
-      signalFailure();
+      work.interrupt();
       onStop(error);
     }
   };
@@ -584,13 +582,14 @@ export async function guardInstagramNetwork(
       const inspection = (async () => {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          const bytes = await Promise.race([
-            response.body(),
-            new Promise<null>((resolve) => {
-              timer = setTimeout(() => resolve(null), 30000);
-            }),
-            failed.then(() => null),
-          ]);
+          const bytes = await work.until(
+            Promise.race([
+              response.body(),
+              new Promise<null>((resolve) => {
+                timer = setTimeout(() => resolve(null), 30000);
+              }),
+            ]),
+          );
           if (bytes) inspectRate(bytes);
         } catch {
           /* Invalid or absent JSON is not an enumerated limit signal. */
@@ -641,13 +640,14 @@ export async function guardInstagramNetwork(
       // Stopping the run does not erase the diagnostic for its failing response.
       await Promise.all([...bodyInspections]);
       check();
-      await Promise.race([Promise.all([...inspections]), failed]);
+      await work.until(Promise.all([...inspections]));
       check();
-      await Promise.race([Promise.all([...pending]), failed]);
+      await work.until(Promise.all([...pending]));
       check();
     },
     dispose() {
       disposed = true;
+      work.interrupt();
       for (const cancel of bodyCancels) cancel();
       bodyCancels.clear();
       postWindow = undefined;

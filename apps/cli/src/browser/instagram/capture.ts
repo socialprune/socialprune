@@ -15,6 +15,7 @@ import { productionPolicy } from './network.ts';
 import { ContextStop } from './report.ts';
 import { parseAnswer, answerSummary } from './answers.ts';
 import type { CollectedAnswer } from './answers.ts';
+import { interruptibleWork } from './interruptible.ts';
 
 export function pageAnswers(
   page: Page,
@@ -27,11 +28,14 @@ export function pageAnswers(
   let totalBytes = 0;
   const generations = new WeakMap<Request, number>();
   let generation = 0,
-    json = false;
+    json = false,
+    disposed = false;
+  let work = interruptibleWork();
   const sent = (request: Request) => {
     generations.set(request, generation);
   };
   const receive = (response: Response) => {
+    if (disposed || generations.get(response.request()) !== generation) return;
     const type =
       response
         .headers()
@@ -51,8 +55,9 @@ export function pageAnswers(
     const current = generation;
     const task = (async () => {
       try {
-        const bytes = await response.body();
+        const bytes = await work.until(response.body());
         if (
+          bytes !== null &&
           bytes.length <= INSTAGRAM_IMAGE_MAX_BYTES &&
           current === generation &&
           json &&
@@ -95,6 +100,9 @@ export function pageAnswers(
       return answerSummary(collected, code);
     },
     reset(collectJSON: boolean) {
+      if (disposed) return;
+      work.interrupt();
+      work = interruptibleWork();
       generation++;
       images.clear();
       bodies.length = 0;
@@ -114,8 +122,14 @@ export function pageAnswers(
       });
     },
     dispose() {
+      disposed = true;
       json = false;
       generation++;
+      work.interrupt();
+      images.clear();
+      bodies.length = 0;
+      collected.length = 0;
+      totalBytes = 0;
       page.off('response', receive);
       page.off('request', sent);
     },

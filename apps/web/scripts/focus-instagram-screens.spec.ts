@@ -8,6 +8,11 @@ import {
 
 // eslint-disable-next-line no-restricted-properties -- Explicit generated gallery output, no credentials.
 const folder = process.env['SP_H_SCREEN_DIR'];
+const states =
+  // eslint-disable-next-line no-restricted-properties -- S3b leaves the unaffected missing-post images intact.
+  process.env['SP_H_SKIP_MISSING_POST'] === 'true'
+    ? instagramStates.filter((state) => state !== 'missing-post')
+    : instagramStates;
 if (!folder) throw Error('SP_H_SCREEN_DIR required');
 for (const lang of ['de', 'en'])
   for (const theme of ['light', 'dark'] as const)
@@ -31,7 +36,7 @@ for (const lang of ['de', 'en'])
           },
           { lang, theme },
         );
-        for (const state of instagramStates) {
+        for (const state of states) {
           const { data, records } = focusInstagramFixture(state);
           await restoreLiveFeed(page, data, undefined, records);
           await page

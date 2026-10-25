@@ -3,7 +3,10 @@ import type { AddressInfo } from 'node:net';
 import type { ServerResponse } from 'node:http';
 
 /** Generated endpoint. Delayed answers keep real sockets observable on Windows. */
-export async function scanEndpoint() {
+export async function scanEndpoint(
+  // eslint-disable-next-line no-restricted-properties -- Explicit generated test listener port, never credentials.
+  port = Number(process.env['SP_SCAN_TEST_PORT'] ?? '0'),
+) {
   const requests: {
     path: string;
     authorization: string | undefined;
@@ -99,7 +102,9 @@ export async function scanEndpoint() {
       }
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) =>
+    server.listen(port, '127.0.0.1', resolve),
+  );
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     origin,

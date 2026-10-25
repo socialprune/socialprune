@@ -51,6 +51,31 @@
     line-height: var(--line-md);
     white-space: pre-wrap;
   }
+  @media (min-width: 1080px) {
+    [data-instagram-card] .feedPost,
+    [data-instagram-card] .feedPreview {
+      display: contents;
+    }
+    [data-instagram-card] .feedHeader {
+      grid-column: 2;
+      grid-row: 1;
+      margin: 0;
+    }
+    [data-instagram-card] .feedMedia {
+      grid-column: 1;
+      grid-row: 1 / span 4;
+      min-width: 0;
+      align-self: start;
+    }
+    [data-instagram-card] [data-instagram-caption] {
+      grid-column: 2;
+      grid-row: 2;
+    }
+    [data-instagram-card] .feedDetails {
+      grid-column: 1;
+      grid-row: 5;
+    }
+  }
   .feedEvidence {
     margin-top: var(--space-2);
     color: var(--color-text-secondary);

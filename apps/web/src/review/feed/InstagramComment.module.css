@@ -62,4 +62,15 @@
     font-size: var(--type-xs);
     line-height: var(--line-xs);
   }
+  @media (min-width: 1080px) {
+    .content:has([data-testid='instagram-post']),
+    .content:has([data-testid='instagram-post']) > .context {
+      display: contents;
+    }
+    .content:has([data-testid='instagram-post']) > .comment {
+      grid-column: 2;
+      grid-row: 3;
+      margin: 0;
+    }
+  }
 }

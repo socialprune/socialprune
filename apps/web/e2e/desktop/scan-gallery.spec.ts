@@ -13,7 +13,7 @@ import { fakeBridge } from './fake-bridge.ts';
 const folder = process.env['SP_C5_GALLERY_DIR'];
 for (const locale of ['de', 'en'] as const)
   for (const theme of ['light', 'dark'] as const)
-    for (const width of [390, 1280])
+    for (const width of [320, 390, 1280])
       test(`C5 gallery ${locale} ${theme} ${width}`, async ({ page }) => {
         test.skip(!folder, 'Gallery output is opt-in.');
         const root = await mkdtemp(join(tmpdir(), 'sp-scan-gallery-'));
@@ -45,24 +45,31 @@ for (const locale of ['de', 'en'] as const)
           keyFile,
         );
         let hold = false;
-        const fake = await fakeEndpoint((input) => {
-          if (input.url.endsWith('/models'))
-            return { body: { data: [{ id: 'generated-model' }] } };
-          if (hold && scan.view.requests > 0 && !scan.view.pauseRequested) {
-            void scan.handle({
-              type: 'scanAction',
-              action: 'pause',
-              runId: scan.view.runId!,
-              version: scan.view.version,
-              requestId: crypto.randomUUID(),
-            });
-          }
-          return {};
-        });
+        const fake = await fakeEndpoint(
+          (input) => {
+            if (input.url.endsWith('/models'))
+              return { body: { data: [{ id: 'generated-model' }] } };
+            if (hold && scan.view.requests > 0 && !scan.view.pauseRequested) {
+              void scan.handle({
+                type: 'scanAction',
+                action: 'pause',
+                runId: scan.view.runId!,
+                version: scan.view.version,
+                requestId: crypto.randomUUID(),
+              });
+            }
+            return {};
+          },
+          // eslint-disable-next-line no-restricted-properties -- Test server port only, never a key.
+          Number(process.env['SP_SCAN_TEST_PORT'] ?? '0'),
+        );
         const bridge = await fakeBridge(page, locale, seed, 'direct', scan);
         const de = locale === 'de';
         try {
-          await page.setViewportSize({ width, height: 900 });
+          await page.setViewportSize({
+            width,
+            height: width === 1280 ? 800 : 844,
+          });
           await page.emulateMedia({ colorScheme: theme });
           await page.goto('/desktop.html');
           await page
@@ -110,10 +117,55 @@ for (const locale of ['de', 'en'] as const)
               () => document.documentElement.scrollWidth <= innerWidth,
             ),
           ).toBe(true);
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await expect(
+            page.getByRole('heading', {
+              name: de ? 'Modellvorschläge' : 'Model suggestions',
+              exact: true,
+            }),
+          ).toBeVisible();
           await page.screenshot({
-            path: join(folder!, `setup-${locale}-${theme}-${width}.png`),
-            fullPage: true,
+            path: join(
+              folder!,
+              `desktop-scan-setup-${locale}-${theme}-${width}.png`,
+            ),
+            fullPage: false,
           });
+          await page
+            .locator('[data-testid="desktop-scan"] [class*="scanAgreement"]')
+            .first()
+            .evaluate(async (node) => {
+              window.scrollBy(0, node.getBoundingClientRect().top - 16);
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                ),
+              );
+            });
+          await page.screenshot({
+            path: join(
+              folder!,
+              `desktop-scan-agreement-${locale}-${theme}-${width}.png`,
+            ),
+            fullPage: false,
+          });
+          if (width <= 390 && !test.info().project.name.includes('baseline')) {
+            const facts = await page
+              .locator('[class*="scanFacts"] > div')
+              .evaluateAll((nodes) =>
+                nodes.map((node) => {
+                  const label = node
+                    .querySelector('dt')!
+                    .getBoundingClientRect();
+                  const value = node
+                    .querySelector('dd')!
+                    .getBoundingClientRect();
+                  return { labelBottom: label.bottom, valueTop: value.top };
+                }),
+              );
+            for (const fact of facts)
+              expect(fact.valueTop).toBeGreaterThanOrEqual(fact.labelBottom);
+          }
           await agreement.check();
           hold = true;
           await page
@@ -126,13 +178,21 @@ for (const locale of ['de', 'en'] as const)
           await expect(monitor).toHaveAttribute('data-phase', 'paused');
           await monitor.scrollIntoViewIfNeeded();
           await page.screenshot({
-            path: join(folder!, `monitor-${locale}-${theme}-${width}.png`),
-            fullPage: true,
+            path: join(
+              folder!,
+              `desktop-scan-monitor-${locale}-${theme}-${width}.png`,
+            ),
+            fullPage: false,
           });
         } finally {
           await scan.close();
           await bridge.close();
           await fake.close();
-          await rm(root, { recursive: true, force: true });
+          await rm(root, {
+            recursive: true,
+            force: true,
+            maxRetries: 5,
+            retryDelay: 100,
+          });
         }
       });

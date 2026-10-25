@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { DESKTOP_POLICY } from '../../src/desktop/policy.ts';
 
 const port = Number(process.argv[2]);
-const root = fileURLToPath(new URL('../../dist-desktop/', import.meta.url));
+const root =
+  process.argv[3] ??
+  fileURLToPath(new URL('../../dist-desktop/', import.meta.url));
 const files = new Map<string, { bytes: Buffer; type: string }>();
 async function walk(folder: string, prefix = '') {
   for (const entry of await readdir(folder, { withFileTypes: true })) {

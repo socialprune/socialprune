@@ -144,7 +144,10 @@ test('C5 packaged error bodies never enter the renderer, desktop log, store or b
 
 test('C5 packaged redirect refuses a second origin and has no engine traffic before Check', async () => {
   const fake = await scanEndpoint();
-  const foreign = await scanEndpoint();
+  const foreign = await scanEndpoint(
+    // eslint-disable-next-line no-restricted-properties -- Second generated test listener port only.
+    Number(process.env['SP_SCAN_FOREIGN_TEST_PORT'] ?? '0'),
+  );
   const app = await launch('test', false, async (data) => {
     await mkdir(join(data, 'workspace'), { recursive: true });
     const db = await SQLiteStore.open(
@@ -498,7 +501,10 @@ test('C5 packaged foundation uses real utility engine for confirmed loopback sug
       join(app.data, 'scan-planted-network.json'),
       [mainPid],
     );
-    const foreign = await scanEndpoint();
+    const foreign = await scanEndpoint(
+      // eslint-disable-next-line no-restricted-properties -- Second generated test listener port only.
+      Number(process.env['SP_SCAN_FOREIGN_TEST_PORT'] ?? '0'),
+    );
     let plantedObservation: Awaited<ReturnType<typeof planted.stop>>;
     try {
       await app.application.evaluate(async (_electron, url) => {

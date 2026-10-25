@@ -33,10 +33,13 @@ for (const locale of ['en', 'de'] as const)
       initial: seed,
     });
     await db.close();
-    const fake = await fakeEndpoint((input) =>
-      input.url.endsWith('/models')
-        ? { body: { data: [{ id: 'generated-model' }] } }
-        : {},
+    const fake = await fakeEndpoint(
+      (input) =>
+        input.url.endsWith('/models')
+          ? { body: { data: [{ id: 'generated-model' }] } }
+          : {},
+      // eslint-disable-next-line no-restricted-properties -- Test server port only, never a key.
+      Number(process.env['SP_SCAN_TEST_PORT'] ?? '0'),
     );
     const scan = new EngineScan(workspace, () => new Date(), RunControls);
     const bridge = await fakeBridge(page, locale, seed, 'direct', scan);
@@ -154,6 +157,11 @@ for (const locale of ['en', 'de'] as const)
       await scan.close();
       await bridge.close();
       await fake.close();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
     }
   });

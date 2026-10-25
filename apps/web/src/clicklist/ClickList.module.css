@@ -26,7 +26,8 @@
     padding: var(--space-4);
     margin-block: var(--space-3);
     background: var(--color-surface);
-    border: var(--border-width) solid var(--color-boundary);
+    border: 0;
+    border-bottom: var(--border-width) solid var(--color-divider);
     border-radius: var(--radius-panel);
     overflow-wrap: anywhere;
   }
@@ -41,6 +42,10 @@
     min-height: var(--target-size);
     display: inline-flex;
     align-items: center;
+    padding-inline: var(--space-3);
+    border-radius: var(--radius-control);
+    background: var(--color-selected-bg);
+    text-decoration: none;
   }
   .day {
     font-size: var(--type-lg);

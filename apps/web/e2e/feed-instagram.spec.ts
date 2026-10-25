@@ -88,6 +88,10 @@ test('Instagram screenshot fallback and both confirmation kinds keep their disti
           .querySelector('[data-instagram-caption]')!
           .getBoundingClientRect().top,
         imageBottom: image.getBoundingClientRect().bottom,
+        imageRight: image.getBoundingClientRect().right,
+        captionLeft: post
+          .querySelector('[data-instagram-caption]')!
+          .getBoundingClientRect().left,
       };
     });
   expect(screenshotLayout.width).toBe(470);
@@ -95,8 +99,10 @@ test('Instagram screenshot fallback and both confirmation kinds keep their disti
     screenshotLayout.natural[1]! / screenshotLayout.natural[0]!,
     2,
   );
-  expect(screenshotLayout.imageBottom).toBeLessThanOrEqual(
-    screenshotLayout.captionTop,
+  // The screenshot is expanded inside a real review card, so its retained
+  // caption remains beside it at this desktop viewport.
+  expect(screenshotLayout.imageRight).toBeLessThan(
+    screenshotLayout.captionLeft,
   );
   await hide.click();
   await expect(
@@ -153,10 +159,12 @@ for (const lang of ['de', 'en'] as const)
             header: header.getBoundingClientRect().bottom,
             imageTop: image.getBoundingClientRect().top,
             imageBottom: image.getBoundingClientRect().bottom,
+            imageRight: image.getBoundingClientRect().right,
+            captionLeft: caption.getBoundingClientRect().left,
             caption: caption.getBoundingClientRect().top,
             imageWidth: image.getBoundingClientRect().width,
             imageHeight: image.getBoundingClientRect().height,
-            contentWidth: node.clientWidth,
+            contentWidth: image.parentElement!.clientWidth,
             natural: [image.naturalWidth, image.naturalHeight],
             avatar: {
               radius: getComputedStyle(avatar).borderRadius,
@@ -166,8 +174,10 @@ for (const lang of ['de', 'en'] as const)
             },
           };
         });
-        expect(layout.header).toBeLessThanOrEqual(layout.imageTop);
-        expect(layout.imageBottom).toBeLessThanOrEqual(layout.caption);
+        if (width === 320) {
+          expect(layout.header).toBeLessThanOrEqual(layout.imageTop);
+          expect(layout.imageBottom).toBeLessThanOrEqual(layout.caption);
+        } else expect(layout.imageRight).toBeLessThan(layout.captionLeft);
         expect(layout.imageWidth).toBe(Math.min(layout.contentWidth, 470));
         expect(layout.imageHeight / layout.imageWidth).toBeCloseTo(
           layout.natural[1]! / layout.natural[0]!,
@@ -184,7 +194,7 @@ for (const lang of ['de', 'en'] as const)
         ).toBeVisible();
         const positions = await read.evaluate((article) => ({
           post: article
-            .querySelector('[data-testid="instagram-post"]')!
+            .querySelector('[data-instagram-caption]')!
             .getBoundingClientRect().bottom,
           comment: article
             .querySelector('[data-instagram-comment] > div:last-child')!

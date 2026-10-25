@@ -398,6 +398,15 @@ export function FeedCard({
         )}
         {!card.deleted && (
           <div className={styles.actions}>
+            {platform === 'instagram' && card.kind === 'comment' && (
+              <p
+                className={styles.commentExcerpt}
+                role="note"
+                aria-label={t('review.comment')}
+              >
+                <strong>{card.handle}</strong> {card.text || t('review.noText')}
+              </p>
+            )}
             {decided && card.decision !== 'later' ? (
               <button
                 className={controls.button}

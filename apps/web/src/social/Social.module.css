@@ -30,6 +30,8 @@
   .panel {
     padding: var(--space-5);
     margin-bottom: var(--space-4);
+    border: 0;
+    border-top: var(--border-width) solid var(--color-divider);
   }
   .panel h2 {
     margin: 0 0 var(--space-3);
@@ -402,12 +404,8 @@
     margin-top: var(--space-3);
   }
   .banner {
-    height: var(--profile-height);
-    background: linear-gradient(
-      var(--cover-angle),
-      var(--cover-start),
-      var(--cover-end)
-    );
+    height: 96px;
+    background: var(--color-social-cover);
     --cover-start: var(--cover-start-0);
     --cover-end: var(--cover-end-0);
     position: relative;
@@ -425,7 +423,7 @@
     --cover-end: var(--cover-end-3);
   }
   .banner::after {
-    content: '';
+    content: none;
     position: absolute;
     inset: 28px 24px;
     border: var(--border-width) solid var(--color-social-divider);
@@ -525,7 +523,8 @@
   }
   .yearLinks button {
     color: var(--color-action);
-    border-color: var(--color-social-divider);
+    border-color: transparent;
+    background: var(--color-selected-bg);
   }
   @media (max-width: 900px) {
     .layout {

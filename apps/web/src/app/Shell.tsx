@@ -329,6 +329,7 @@ function Content({
           id="main"
           className={styles.main}
           data-gate={gateState}
+          data-page={route}
           data-reading={route === '/review' || route === '/demo'}
         >
           <h1

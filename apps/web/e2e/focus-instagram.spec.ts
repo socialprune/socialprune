@@ -126,6 +126,28 @@ for (const lang of ['de', 'en'])
               ),
           );
           const actions = article.locator('[data-keep-action]').locator('..');
+          if (records.length && width === 1280) {
+            const commentBox = await article
+              .locator('[data-instagram-comment] > [class*="comment"] p')
+              .first()
+              .boundingBox();
+            const viewport = await page.getByRole('tabpanel').boundingBox();
+            expect(commentBox!.y).toBeLessThan(viewport!.y + viewport!.height);
+            expect(commentBox!.y + commentBox!.height).toBeGreaterThan(
+              viewport!.y,
+            );
+          }
+          if (records.length && width !== 1280) {
+            const excerpt = actions.getByRole('note', {
+              name: lang === 'de' ? 'Kommentar' : 'Comment',
+              exact: true,
+            });
+            await expect(excerpt).toBeVisible();
+            await expect(excerpt).not.toHaveAttribute('aria-hidden', 'true');
+            await expect(excerpt).toContainText('Invented comment about the');
+            const box = await excerpt.boundingBox();
+            expect(box!.height).toBeLessThanOrEqual(19);
+          }
           const openingActions = await actions.boundingBox();
           const panelBox = await page.getByRole('tabpanel').boundingBox();
           expect(openingActions!.y).toBeGreaterThanOrEqual(panelBox!.y);
@@ -164,7 +186,7 @@ for (const lang of ['de', 'en'])
                 };
                 const article = node.closest('article')!,
                   post = article.querySelector(
-                    '[data-testid="instagram-post"]',
+                    '[data-testid="instagram-post"] img',
                   )!,
                   panel = article.closest('[role="tabpanel"]')!;
                 return {

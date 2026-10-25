@@ -13,6 +13,7 @@ export async function fakeEndpoint(
     input: RecordedRequest,
     index: number,
   ) => { status?: number; body?: unknown; headers?: Record<string, string> },
+  port = 0,
 ) {
   const requests: RecordedRequest[] = [];
   const server = createServer((request, response) => {
@@ -73,7 +74,9 @@ export async function fakeEndpoint(
       );
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) =>
+    server.listen(port, '127.0.0.1', resolve),
+  );
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const config = (overrides: Partial<SourceConfig> = {}) =>
     parseSource({

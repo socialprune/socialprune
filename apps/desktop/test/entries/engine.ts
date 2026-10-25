@@ -2,7 +2,13 @@ import { chromium } from 'playwright-core';
 import { z } from 'zod';
 import { startEngine } from '../../src/engine-host/host.ts';
 import { openTestEngine } from '../../../cli/e2e/engine-test-entry.ts';
-import { processIdentities } from '../windows.ts';
+import {
+  processIdentities,
+  assertNoRemainingProcesses,
+  BROWSER_CLEANUP_TIMEOUT_MS,
+} from '../windows.ts';
+import { closeProbe } from '../probe-cleanup.ts';
+import { recordCleanup } from '../../e2e/cleanup-receipt.ts';
 import type { ProcessIdentity } from '../windows.ts';
 import type { BrowserContext } from 'playwright-core';
 import { join } from 'node:path';
@@ -10,6 +16,7 @@ import { setQueryMeasurementDirectory } from '../../packaging/windows-powershell
 import { setWindowsQueryExecutable } from '../../packaging/windows-query.ts';
 import { WindowBoundsSchema } from '../../../cli/src/browser/owned-window.ts';
 import type { CDPSession } from 'playwright-core';
+import { writeFile } from 'node:fs/promises';
 const displayCommands = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('displayPosition'),
@@ -39,10 +46,14 @@ const browserEvents: {
   detail?: string;
 }[] = [];
 let now = Date.parse('2026-10-15T12:00:00.000Z');
-startEngine((options) => {
+let probeDirectory: string | undefined;
+const probeContexts = new Set<BrowserContext>();
+const probeTasks = new Set<Promise<void>>();
+startEngine(async (options) => {
+  probeDirectory = options.dataFolder;
   setQueryMeasurementDirectory(join(options.dataFolder, 'query-measurements'));
   setWindowsQueryExecutable(join(options.dataFolder, 'desktop-query.exe'));
-  return openTestEngine(options, {
+  const engine = await openTestEngine(options, {
     xOrigin: 'http://127.0.0.1:4656',
     headed: options.dataFolder.endsWith('display-producer'),
     instagramOrigin: 'http://127.0.0.1:4661',
@@ -107,6 +118,16 @@ startEngine((options) => {
       await system.detach();
     },
   });
+  return {
+    ...engine,
+    async close() {
+      // Shutdown can arrive while a probe is navigating or collecting identities.
+      // Its test-owned context must settle before the host claims closed/exits.
+      await Promise.all([...probeContexts].map((context) => context.close()));
+      await Promise.all(probeTasks);
+      await engine.close();
+    },
+  };
 });
 process.parentPort.on('message', (event: Electron.MessageEvent) => {
   const display = displayCommands.safeParse(event.data);
@@ -178,15 +199,56 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
   }
   const probe = ProbeSchema.safeParse(event.data);
   if (!probe.success) return;
-  void (async () => {
-    let context;
+  const task = (async () => {
+    let context: BrowserContext | undefined;
+    let identities: ProcessIdentity[] = [];
+    let phase = 'launch';
+    let failure: string | undefined;
+    let title: string | undefined;
+    let closed = false;
+    const receipt = join(
+      probeDirectory!,
+      `release-browser-probe-${crypto.randomUUID()}.json`,
+    );
+    const started = performance.now();
+    const record = () =>
+      writeFile(
+        receipt,
+        JSON.stringify({
+          phase,
+          elapsedMs: Math.ceil(performance.now() - started),
+          processes: identities,
+          closed,
+          failure: failure ?? null,
+        }),
+      );
     try {
+      await record();
       context = await chromium.launchPersistentContext(probe.data.profile, {
         executablePath: probe.data.executable,
         headless: false,
         chromiumSandbox: true,
         args: ['--disable-background-networking'],
       });
+      probeContexts.add(context);
+      phase = 'identify';
+      await record();
+      const browser = context.browser();
+      if (!browser) throw new Error('BROWSER_PROCESS_ID_MISSING');
+      const cdp = await browser.newBrowserCDPSession();
+      const processes = await cdp.send('SystemInfo.getProcessInfo');
+      const pids = processes.processInfo.map((info) => Number(info.id));
+      identities = await processIdentities(pids);
+      if (!identities.length) throw new Error('BROWSER_PROCESS_ID_MISSING');
+      await cdp.detach();
+      // Publish ownership before navigation, so a failed/timed-out probe still
+      // leaves the harness the exact PID/birth pairs it must await.
+      process.parentPort.postMessage({
+        type: 'browserProbeStarted',
+        processes: identities,
+      });
+      phase = 'navigate';
+      await record();
       await context.route('**/*', async (route) => {
         if (
           new URL(route.request().url()).origin !==
@@ -197,33 +259,50 @@ process.parentPort.on('message', (event: Electron.MessageEvent) => {
       });
       const page = context.pages()[0] ?? (await context.newPage());
       await page.goto(probe.data.url);
-      const title = await page.title();
-      const browser = context.browser();
-      if (!browser) throw new Error('BROWSER_PROCESS_ID_MISSING');
-      const cdp = await browser.newBrowserCDPSession();
-      const processes = await cdp.send('SystemInfo.getProcessInfo');
-      const pids = processes.processInfo.map((info) => Number(info.id));
-      const identities = await processIdentities(pids);
-      if (!identities.length) throw new Error('BROWSER_PROCESS_ID_MISSING');
-      await cdp.detach();
-      await context.close();
-      context = undefined;
-      process.parentPort.postMessage({
-        type: 'browserProbeResult',
-        title,
-        closed: true,
-        pids,
-        processes: identities,
-      });
+      title = await page.title();
     } catch (error) {
       if (error instanceof Error && 'query' in error)
         console.error('BROWSER_PROBE_QUERY_FAILED', error.message);
+      failure = phase;
+    } finally {
+      phase = 'close-and-exit';
+      await record();
+      try {
+        await closeProbe({
+          close: async () => {
+            await context?.close();
+          },
+          wait: () =>
+            recordCleanup('browser', {
+              directory: probeDirectory,
+              timeoutMs: BROWSER_CLEANUP_TIMEOUT_MS,
+              close: () => Promise.resolve(),
+              wait: async () => {
+                if (!identities.length)
+                  throw new Error('BROWSER_PROCESS_ID_MISSING');
+                await assertNoRemainingProcesses(identities);
+              },
+            }),
+        });
+        closed = true;
+      } catch {
+        failure ??= 'close-or-exit';
+      }
+      phase = 'settled';
+      await record();
+      if (context) probeContexts.delete(context);
       process.parentPort.postMessage({
         type: 'browserProbeResult',
-        error: 'BROWSER_PROBE_FAILED',
+        title,
+        closed,
+        pids: identities.map((entry) => entry.pid),
+        processes: identities,
+        ...(failure ? { error: 'BROWSER_PROBE_FAILED', phase: failure } : {}),
       });
-    } finally {
-      await context?.close();
     }
   })();
+  probeTasks.add(task);
+  void task
+    .finally(() => probeTasks.delete(task))
+    .catch(() => console.error('BROWSER_PROBE_RECEIPT_FAILED'));
 });

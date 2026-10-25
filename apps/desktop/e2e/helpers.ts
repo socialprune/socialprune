@@ -1,10 +1,24 @@
-import { copyFile, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { dist, executable } from '../packaging/paths.ts';
 import { generatedWorkspace } from '../test/workspace.ts';
-import { appProcesses, ELECTRON_CLEANUP_TIMEOUT_MS } from '../test/windows.ts';
+import {
+  appProcesses,
+  assertNoRemainingProcesses,
+  ELECTRON_CLEANUP_TIMEOUT_MS,
+} from '../test/windows.ts';
+import type { ProcessIdentity } from '../test/windows.ts';
+import { removeAfterExit } from './remove-after-exit.ts';
 import type { DesktopRequest, DesktopReply } from '../src/protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
@@ -97,7 +111,7 @@ export async function launch(
     errors,
     requests,
     startupMs,
-    async close() {
+    async close(browserProcesses?: ProcessIdentity[]) {
       await recordCleanup('electron', {
         timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
         close: async () => {
@@ -137,8 +151,36 @@ export async function launch(
         );
         await copyFile(join(queryFolder, file), join(dist, file));
       }
-      await test.step('remove generated data directory', () =>
-        rm(temporary, { recursive: true, force: true }));
+      // Preserve utility-side close receipts even when a probe failed before
+      // its reply, rather than deleting the only evidence with its profile.
+      for (const file of await readdir(data)) {
+        if (
+          !/^release-(process-cleanup-browser|browser-probe)-[a-f0-9-]+\.json$/.test(
+            file,
+          )
+        )
+          continue;
+        await copyFile(join(data, file), join(dist, file));
+      }
+      await removeAfterExit({
+        wait: () =>
+          test.step('wait for disposable Chromium exit before directory removal', async () => {
+            if (browserProcesses && !browserProcesses.length)
+              throw new Error('BROWSER_PROCESS_ID_MISSING');
+            await assertNoRemainingProcesses(browserProcesses ?? []);
+          }),
+        remove: () =>
+          test.step('remove generated data directory', () =>
+            rm(temporary, { recursive: true, force: true })),
+        record: async (receipt) => {
+          await mkdir(dist, { recursive: true });
+          await writeFile(
+            join(dist, `release-directory-cleanup-${randomUUID()}.json`),
+            JSON.stringify(receipt),
+          );
+          console.log('DIRECTORY_CLEANUP_RECEIPT', JSON.stringify(receipt));
+        },
+      });
     },
   };
 }

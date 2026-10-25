@@ -130,7 +130,13 @@ D3 leaves the source to a later record; what any source writes is decided here, 
 - `planCounts` (ADR-007 row below) comes from one projection pass per revision; a decision then moves one counter. The projection grows by 8 bytes per item.
 - `feedWindow` returns up to 50 cards with full text (rows stop at 280 characters today), engagement, references, suggestions, holding rules, decision and outcome.
 - The web keeps at most 300 cards, requests the virtualizer's range plus 10 each side, gets a window's originals in one `getOriginals` call, and loads conversations and Instagram context only in range (ADR-008).
-- Targets for slice 8, not measured: counts p95 under 500 ms at 100,000 entries (ADR-007's bar), first card under 1 s after a tab switch, no frame over 50 ms while scrolling 6,000 suggestions.
+- Targets for slice 8: counts p95 under 500 ms at 100,000 entries (ADR-007's bar), first card under 1 s after a tab switch. The original scroll target, "no frame over 50 ms while scrolling 6,000 suggestions", is superseded by the amendment below.
+
+#### Amended 2026-10-25 by the maintainer's decision FRAME-1 B
+
+While scrolling 6,000 suggestions, at least 99.9 % of measured scroll frames at most 50 ms, and no frame over 200 ms; every measurement reports its maximum and its count of frames over 50 ms. Both time bounds are inclusive. The harness computes p99.9 by nearest rank on the complete measured frame array, at sorted position `ceil(0.999 * frame count)` (one-based).
+
+The maintainer chose option B on card FRAME-1 v1 at 16:48:34Z on 2026-10-25. The repeatable WebKit first-paging pause remains recorded with its measurements in [BL-011](../../BACKLOG.md#bl-011-webkits-first-paging-pause). This amendment accepts bounded outliers; it does not claim to remove the pause or identify its CPU cause. No other rule in this record changes.
 
 ### 8. Originals and context in the desktop review
 

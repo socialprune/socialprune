@@ -92,6 +92,28 @@ export type ScrollOutlier = {
   followingFrameMs: number | null;
 };
 
+// FRAME-1 B: nearest-rank p99.9 of every measured interval. Both time
+// limits are inclusive; up to 0.1 percent may exceed 50 ms, none may exceed 200 ms.
+export function scrollFrameTargets(frames: readonly number[]) {
+  if (
+    !frames.length ||
+    frames.some((value) => !Number.isFinite(value) || value < 0)
+  )
+    throw new Error('Missing or invalid scroll frame samples.');
+  const sorted = [...frames].sort((a, b) => a - b);
+  const frameP999Ms = sorted[Math.ceil(sorted.length * 0.999) - 1]!;
+  const maxFrameMs = sorted.at(-1)!;
+  return {
+    frameP999Ms,
+    maxFrameMs,
+    framesOver50Ms: frames.filter((value) => value > 50).length,
+    targets: {
+      scrollFramesP999Under50: frameP999Ms <= 50,
+      noScrollFrameOver200: maxFrameMs <= 200,
+    },
+  };
+}
+
 export function installScrollObserver() {
   const panel = document.querySelector<HTMLElement>('[role="tabpanel"]');
   if (!panel) throw new Error('Connected scroll panel missing.');

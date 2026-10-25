@@ -110,7 +110,7 @@ G1 took 7.61 to 8.72 s with a peak of 483 to 497 MiB, but it kept every item on 
 
 ## 8. Connected review feed scale, 2026-10-23
 
-ADR-032 section 7 sets three latency targets: counts p95 below 500 ms at 100,000 entries, a first card below 1,000 ms after a tab switch, and no frame above 50 ms while scrolling 6,000 suggestions. It also limits each feed response to 50 cards and the web's card window to 300. The harness is `apps/web/e2e/scale.measurement.ts`, run through `pnpm --filter @socialprune/web exec playwright test --config e2e/scale.config.ts --project <engine> --workers 1`. The config builds production before serving it on its own strict loopback port. A web unit build probe can replace `dist` with code whose development gate refuses import; two rejected Chromium startups showed that state and contribute no scale samples.
+ADR-032 section 7 originally set three latency targets: counts p95 below 500 ms at 100,000 entries, a first card below 1,000 ms after a tab switch, and no frame above 50 ms while scrolling 6,000 suggestions. FRAME-1 B, decided on 2026-10-25, supersedes only that scroll target with at least 99.9 % of measured frames at most 50 ms and none over 200 ms, always reporting the maximum and over-50 count. The dated FRAME-1 B subsection below records the new proof; earlier strict-target misses stay visible as historical measurements. Each feed response remains limited to 50 cards and the web's card window to 300. The harness is `apps/web/e2e/scale.measurement.ts`, run through `pnpm --filter @socialprune/web exec playwright test --config e2e/scale.config.ts --project <engine> --workers 1`. The config builds production before serving it on its own strict loopback port. A web unit build probe can replace `dist` with code whose development gate refuses import; two rejected Chromium startups showed that state and contribute no scale samples.
 
 The generated workspace expands `@socialprune/fixture-gen`'s `createDemo` items with `createRandom`, seed `20261023`. The first workspace has 6,000 entries with 6,000 political risk-2 agent suggestions, no decisions, no keep rules and no media or originals. Its 5,433,211 serialized bytes have SHA-256 `b353bde4b370d0a6193b5c674761cc5922f52ead73880e1ed26d4b1c752c1499`. Restore, counts, windows and preview use the production page, workspace client, worker and IndexedDB, not a fake bridge. The preview is cancelled; nothing is marked for deletion.
 
@@ -437,3 +437,52 @@ Raw baseline and six-repeat artifacts, personally executed reader/consistency ch
 | `webkit-2026-10-25T13-41-24-573Z.json` | `d99af6998466526df6b5488bd16d61bf62298d8f1cc2a513759465ca1adeaf27` |
 | `webkit-2026-10-25T13-41-24-702Z.json` | `b0e22c34614454d9743b88c8e0c9f88acb184dab64d44216465c9d6e75aecfd6` |
 | `webkit-2026-10-25T13-41-19-723Z.json` | `87de1efa2aede5e182a790667f000c3f86980476879cb3564c1a6efe013e5287` |
+
+### FRAME-1 B acceptance and quiet-runner confirmation, 2026-10-25
+
+At 16:48:34Z the maintainer chose option B on card FRAME-1 v1, "nach deiner Empfehlung". The accepted terms were at least 99.9 % of measured scroll frames at most 50 ms, no frame over 200 ms, the maximum always shown, and the WebKit pause kept in the backlog with its measurements. [ADR-032 section 7](../architecture/adrs/ADR-032-review-feed.md#7-protocol-and-performance) records that amendment beside the superseded strict maximum. No count, tab, response, retention, focus or visibility target changes. [BL-011](../BACKLOG.md#bl-011-webkits-first-paging-pause) retains the pause and the S13/S14 interventions and diagnostics with their run IDs; no experimental rendering or transport change is integrated.
+
+The harness computes nearest-rank p99.9 from the complete scroll-frame array: sort ascending and take one-based position `ceil(0.999 * frame count)`. Exactly 50 ms passes the percentile bound; exactly 200 ms passes the maximum bound. An empty array or a non-finite or negative duration is rejected. A failing-first unit and source guard failed on the unchanged harness, then passed with the new computation and both report consumers. Full-scale `targetResults` and frame-only `frameTargetResults` now contain `scrollFramesP999Under50` and `noScrollFrameOver200`; `maxFrameMs` and `framesOver50Ms` remain in every scroll report, with `frameP999Ms` added. Computation occurs after scroll capture in the test process. The production bundle and page-sampling procedure are unchanged.
+
+Applying the new helper to all six retained S12 arrays is a **derived reclassification**, not six new measurements. Firefox p99.9 is 33.40/33.24/33.20 ms, maxima 66.54/34.18/34.18 ms and over-50 counts 3/0/0. WebKit p99.9 is 43/41/43 ms, maxima 151/138/135 ms and over-50 counts 4/4/2. All six pass both new frame targets. Their old strict-target results are not rewritten.
+
+Fresh [run 40215594359](https://github.com/socialprune/socialprune/actions/runs/40215594359) on `measure/w-s15-frame1b`, commit `93c9e67fb04204a1073bc5b55a2adf3baa744749`, completed all six independent VM jobs. Every job built and measured plain production, passed the observer/workflow contract tests and passed `frame-build-check.ts plain`. Raw-array readback independently recomputed all seven target results, maxima, p99.9, over-50 counts and outlier neighbors. It found every reported target true; successful workflow completion alone is not the acceptance evidence.
+
+All six share unchanged product source hash `6937946e60368469f0aedac4255798a23ba3668e280ba37b6769605a7ec0ec70` and amended harness hash `0970829b89b03eada4803b68c5a30b8df11fe59841cbf8f292cc419222a3ab32`. Generated inputs retain S12's 5,433,211-byte 6,000-entry SHA-256 `c698798c9703080b37b45e0680e7ff0f8e12e856c91c7c3ad6cf50c67e0895cc` and 88,124,025-byte 100,000-entry SHA-256 `7dace3b02d7b0ce9ed769f1987a320bf3c6b33c9e35168f691519faea06a5362`.
+
+| Engine/repetition | Job ID | Frames | Frame p99.9, ms | Maximum, ms | Above 50 ms | Count p95, ms | First revision count, ms | Tab maximum, ms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Firefox 1 | 121235922233 | 13,402 | 17.26 | 34.18 | 0 | 18 | 2,972 | 128 |
+| Firefox 2 | 121235922083 | 13,233 | 17.28 | 50.36 | 1 | 18 | 2,773 | 114 |
+| Firefox 3 | 121235922281 | 14,018 | 33.18 | 49.46 | 0 | 30 | 3,204 | 489 |
+| WebKit 1 | 121235922247 | 13,522 | 33 | 101 | 1 | 21 | 1,767 | 126 |
+| WebKit 2 | 121235922157 | 14,177 | 41 | 119 | 1 | 47 | 2,186 | 172 |
+| WebKit 3 | 121235922266 | 14,222 | 42 | 125 | 3 | 38 | 2,213 | 173 |
+
+All seven exact `targetResults` keys are read back per run below. C is `countsP95Under500`; T is `firstCardAfterEveryTabUnder1000`; P is `scrollFramesP999Under50`; M is `noScrollFrameOver200`; R is `atMost50ResponseCards`; D is `atMost300DomCards`; V is `all6000SuggestionsVisible`.
+
+| Engine/repetition | C | T | P | M | R | D | V |
+|---|---|---|---|---|---|---|---|
+| Firefox 1 | true | true | true | true | true | true | true |
+| Firefox 2 | true | true | true | true | true | true | true |
+| Firefox 3 | true | true | true | true | true | true | true |
+| WebKit 1 | true | true | true | true | true | true | true |
+| WebKit 2 | true | true | true | true | true | true | true |
+| WebKit 3 | true | true | true | true | true | true | true |
+
+Every run focuses and shows all 6,000 consecutive cards, returns at most 50 cards per response and mounts at most 23 cards. Page errors and observed off-origin requests are zero, with no traversal stop. The separate 300-card retained-window contract remains covered by unchanged session tests, not inferred from the DOM count. Between 99.9789 % and 100 % of frames are at most 50 ms in each run. WebKit still pauses at card index 48 in three of three repetitions: 101 ms at frame 100, 119 ms at frame 103, and adjacent 57/125 ms intervals at frames 105/106. Window and worker lifetimes overlap these intervals; that does not identify CPU work. Accepting the new target does not repair that pause or prove a host-load, layout or GC cause.
+
+Each job uses Linux `7.0.0-1017-azure`, four logical CPUs, Node `v24.21.0`, Firefox `155.0` or WebKit `26.6` and the unchanged 1,440 by 1,000 viewport. Firefox 1/2 use AMD EPYC 9V45 VMs, Firefox 3 Intel Xeon Platinum 8573C, WebKit 1 AMD EPYC 9V74 and WebKit 2/3 AMD EPYC 7763. Free physical memory at admission ranges from 14,731,993,088 to 14,959,292,416 bytes and short-sample CPU load from 0 to 2.56 percent. These are separate quiet-runner samples, not matched-hardware or continuous-idle proof. The raw reports retain individual host values and timestamps, from 17:16:10.597Z to 17:25:25.031Z.
+
+The feed is accepted at 100,000 entries under FRAME-1 B for the measured desktop, generated-data scope. The earlier Chromium proof's 33.4 ms maximum and zero over-50 frames also satisfy the amended bounds, a derived reclassification rather than a fresh Chromium run; these new Firefox/WebKit repetitions meet every reported target. The 100,000-entry phase measures configuration-cold count p95; traversal still uses 6,000 suggestions. It does not establish fresh-worker or fresh-data-revision count p95, and the first revision queries above remain multi-second. Wheel, touch and scrollbar gestures, Instagram/media/original-rich feeds, small screens, exact CPU/GC attribution, matched-hardware variance, a person's Safari installation and the later S4-restyled product source remain unmeasured. Acceptance here must not be carried to changed rendering without its own proof. The prior strict-target misses and unresolved causes remain historical facts, not claims that the pause disappeared.
+
+Local verification passed the whole web project once at one worker (299 tests, 49 files), root typecheck, format and copy checks, and the data guard over 1,566 tracked files. Lint passed with one pre-existing unused-disable warning in `playwright.probe.config.ts`. A pinned dependency reinstall repaired a missing ESLint rule before that pass, without changing the lockfile or source. No local browser ran. Raw measurements, screenshots and the independent array readers are retained outside Git under `phase2/w-s15/` in the maintainer's evidence archive.
+
+| Raw repetition file, run 40215594359 | SHA-256 |
+|---|---|
+| `firefox-2026-10-25T17-16-10-597Z.json` | `5d676f67575c6d16f9787c43518d38d3a5cbedda3e1074aea4d7bba0fe58f0aa` |
+| `firefox-2026-10-25T17-16-14-489Z.json` | `6c0d771364f303fadc94a8d0b41ff6870d86f46e0a67a4734d41c7c0e926f840` |
+| `firefox-2026-10-25T17-16-20-582Z.json` | `ed5250d0031720cc5ca40f2b0f70c4d904802f1011cc455f523552ecf8263516` |
+| `webkit-2026-10-25T17-16-41-379Z.json` | `ed0a28628f3b02b968ea678557cb495d7a09d5317342ce8b33e8141f1e78e6c9` |
+| `webkit-2026-10-25T17-16-53-542Z.json` | `a31b2d23738b1f10f2f948039316c0576608cab9a6334d3cbe080b299760bb13` |
+| `webkit-2026-10-25T17-16-37-799Z.json` | `3fb96e382fb63a679f5b9ab2d1bf69208ea79b340572d9e2a0dfd56539dd1db7` |

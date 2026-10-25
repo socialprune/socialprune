@@ -2,10 +2,86 @@ import { afterEach, expect, test, vi } from 'vitest';
 import {
   installScaleActivity,
   installScrollObserver,
+  scrollFrameTargets,
   type ScrollOutlier,
 } from '../e2e/scroll-observer.ts';
+import { readFile } from 'node:fs/promises';
 
 afterEach(() => vi.unstubAllGlobals());
+
+test('FRAME-1 B uses nearest-rank p99.9 with inclusive 50 ms and 200 ms bounds', () => {
+  const frames = [...Array<number>(999).fill(50), 200];
+  const unchanged = [...frames];
+  expect(scrollFrameTargets(frames)).toEqual({
+    frameP999Ms: 50,
+    maxFrameMs: 200,
+    framesOver50Ms: 1,
+    targets: {
+      scrollFramesP999Under50: true,
+      noScrollFrameOver200: true,
+    },
+  });
+  expect(frames).toEqual(unchanged);
+  expect(scrollFrameTargets([200, ...Array<number>(999).fill(50)])).toEqual(
+    scrollFrameTargets(frames),
+  );
+  expect(
+    scrollFrameTargets([...Array<number>(998).fill(50), 50.01, 200]),
+  ).toMatchObject({
+    frameP999Ms: 50.01,
+    targets: { scrollFramesP999Under50: false, noScrollFrameOver200: true },
+  });
+  expect(
+    scrollFrameTargets([...Array<number>(999).fill(50), 200.01]),
+  ).toMatchObject({
+    frameP999Ms: 50,
+    targets: { scrollFramesP999Under50: true, noScrollFrameOver200: false },
+  });
+  // One outlier is more than 0.1 percent of 999 frames, but not of 1,001.
+  expect(
+    scrollFrameTargets([...Array<number>(998).fill(50), 51]).targets
+      .scrollFramesP999Under50,
+  ).toBe(false);
+  expect(
+    scrollFrameTargets([...Array<number>(1000).fill(50), 51]).targets
+      .scrollFramesP999Under50,
+  ).toBe(true);
+  expect(scrollFrameTargets([50]).targets.scrollFramesP999Under50).toBe(true);
+});
+
+test.each([
+  { frames: [] },
+  { frames: [NaN] },
+  { frames: [Infinity] },
+  { frames: [-1] },
+])(
+  'FRAME-1 B refuses missing or invalid frame samples: $frames',
+  ({ frames }) => expect(() => scrollFrameTargets(frames)).toThrow(),
+);
+
+test('full and frame-only scale reports consume FRAME-1 B without changing other targets', async () => {
+  const source = await readFile(
+    new URL('../e2e/scale.measurement.ts', import.meta.url),
+    'utf8',
+  );
+  expect(source).not.toMatch(/noScrollFrameOver50|noFrameOver50/);
+  expect(source.match(/\.\.\.scrollFrameResult\.targets/g)).toHaveLength(2);
+  for (const line of [
+    'scrollFrameTargets(scroll.frames)',
+    'scrollFrameP999Ms: 50',
+    'maximumScrollFrameMs: 200',
+    'countsP95Ms: 500',
+    'firstCardAfterTabMs: 1000',
+    'maximumResponseCards: 50',
+    'maximumUiCards: 300',
+    'countsP95Under500: distribution(counts.cold).p95 < 500',
+    'firstCardAfterEveryTabUnder1000: tabMs.every((value) => value < 1000)',
+    'scroll.maxDomCards <= 300',
+    'scroll.uniqueVisible === 6000 && focusedCards === 6000',
+    'event.cards! <= 50',
+  ])
+    expect(source).toContain(line);
+});
 
 test('outliers retain exact positions, interval overlaps and neighboring durations without contents', () => {
   let callback: (at: number) => void = () => {};

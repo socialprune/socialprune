@@ -8,6 +8,7 @@ import { observeFeedFrames } from './frame-diagnostics.ts';
 import {
   installScaleActivity,
   installScrollObserver,
+  scrollFrameTargets,
 } from './scroll-observer.ts';
 import { waitForApp } from './helpers.ts';
 import {
@@ -145,7 +146,8 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     targets: {
       countsP95Ms: 500,
       firstCardAfterTabMs: 1000,
-      maximumScrollFrameMs: 50,
+      scrollFrameP999Ms: 50,
+      maximumScrollFrameMs: 200,
       maximumResponseCards: 50,
       maximumUiCards: 300,
     },
@@ -369,6 +371,18 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       focusedCards,
       stopDetail: scrollStop,
     };
+    const scroll = report['scroll'] as {
+      frames: number[];
+      maxFrameMs: number;
+      maxDomCards: number;
+      uniqueVisible: number;
+    };
+    const scrollFrameResult = scrollFrameTargets(scroll.frames);
+    Object.assign(scroll, {
+      frameP999Ms: scrollFrameResult.frameP999Ms,
+      maxFrameMs: scrollFrameResult.maxFrameMs,
+      framesOver50Ms: scrollFrameResult.framesOver50Ms,
+    });
     if (frameDiagnostics)
       report['frameDiagnostics'] = await frameDiagnostics.read();
     await save();
@@ -384,13 +398,8 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
         '6000-suggestion frame attribution only; 100k counts omitted';
       report['completed'] = true;
       report['framePhaseOnly'] = true;
-      const scroll = report['scroll'] as {
-        maxFrameMs: number;
-        maxDomCards: number;
-        uniqueVisible: number;
-      };
       report['frameTargetResults'] = {
-        noFrameOver50: scroll.maxFrameMs <= 50,
+        ...scrollFrameResult.targets,
         atMost300DomCards: scroll.maxDomCards <= 300,
         all6000SuggestionsVisible:
           scroll.uniqueVisible === 6000 && focusedCards === 6000,
@@ -487,15 +496,10 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     report['memory'] = memory;
     report['networkOutsideOrigin'] = external;
     report['pageErrors'] = pageErrors;
-    const scroll = report['scroll'] as {
-      maxFrameMs: number;
-      maxDomCards: number;
-      uniqueVisible: number;
-    };
     report['targetResults'] = {
       countsP95Under500: distribution(counts.cold).p95 < 500,
       firstCardAfterEveryTabUnder1000: tabMs.every((value) => value < 1000),
-      noScrollFrameOver50: scroll.maxFrameMs <= 50,
+      ...scrollFrameResult.targets,
       atMost50ResponseCards: trace
         .filter((event) => event.type === 'feedWindow')
         .every((event) => event.cards! <= 50),

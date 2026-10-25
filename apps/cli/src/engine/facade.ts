@@ -74,6 +74,7 @@ import { EngineOptionsSchema, EngineHostMessageSchema } from './host.ts';
 import type { DesktopEngine, EngineOptions } from './host.ts';
 import type { EngineDependencies } from './dependencies.ts';
 import { EngineMedia } from './media.ts';
+import { createWindowOwner } from './window.ts';
 
 export const guides = Object.freeze([xGuide, instagramGuide]);
 function code(error: unknown) {
@@ -106,6 +107,7 @@ export async function createEngine(
   let task: Promise<unknown> | undefined;
   let taskActive = false;
   let closeBrowser: (() => Promise<void>) | undefined;
+  const windows = createWindowOwner();
   let closing = false;
   const signal = new AbortController();
   const listeners = new Set<(view: RunView) => void>();
@@ -492,12 +494,21 @@ export async function createEngine(
     const startConfirmed = owner.wait('start');
     const session: RunSession = {
       controls,
-      browser(close) {
-        closeBrowser = close;
-        if (closing)
-          void Promise.resolve().then(close).catch(recoverFailedProjection);
+      browser(close, closed) {
+        let requested: Promise<void> | undefined;
+        const requestClose = () =>
+          (requested ??= Promise.resolve()
+            .then(close)
+            .catch(recoverFailedProjection));
+        closeBrowser = requestClose;
+        windows.started(closed);
+        void closed?.then(() => {
+          if (closeBrowser === requestClose) closeBrowser = undefined;
+        });
+        if (closing) void requestClose();
       },
       failed: recoverFailedProjection,
+      ownedWindow: (window) => windows.register(window),
       confirmation(initial) {
         owner.update({
           warning: initial.warning,
@@ -700,7 +711,6 @@ export async function createEngine(
       })
       .finally(() => {
         taskActive = false;
-        closeBrowser = undefined;
       });
     return owner.runView;
   };
@@ -1000,6 +1010,10 @@ export async function createEngine(
     return result;
   };
   return {
+    window: (request) =>
+      closing
+        ? Promise.resolve({ type: 'unavailable' as const })
+        : windows.request(request),
     media: (request) => {
       if (closing) return Promise.resolve({ type: 'failed' as const });
       // Share store initialization/release ordering with review and backups.

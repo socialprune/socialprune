@@ -25,6 +25,13 @@ import {
 } from '../src/originals/test/detail.ts';
 import { TEST_PORTS, TEST_ORIGINS } from '../playwright.ports.config.ts';
 import type { RunSession } from '../src/browser/run-session.ts';
+async function expectOwnedWindow(engine: DesktopEngine) {
+  const reply = await engine.window({ type: 'current' });
+  expect(reply.type).toBe('window');
+  if (reply.type !== 'window' || !reply.value)
+    throw new Error('ENGINE_OWNED_WINDOW_MISSING');
+  expect(reply.value.id).toMatch(/^[a-f0-9-]{36}$/);
+}
 
 async function generated(
   platform: 'x' | 'instagram',
@@ -271,6 +278,7 @@ test('engine delete lifecycle watches canaries, pauses after an in-flight deleti
     );
     expect(h.waits.filter((ms) => ms === 30000)).toHaveLength(1);
     expect(h.context?.pages().length).toBeGreaterThan(0);
+    await expectOwnedWindow(h.engine);
     expect(
       await h.engine.request({
         type: 'planRun',
@@ -297,6 +305,9 @@ test('engine delete lifecycle watches canaries, pauses after an in-flight deleti
       code: 'WORKSPACE_BUSY',
     });
     await h.context!.close();
+    await expect
+      .poll(() => h.engine.window({ type: 'current' }))
+      .toEqual({ type: 'window', value: null });
     await expect
       .poll(
         async () =>
@@ -404,6 +415,7 @@ test('Instagram engine pauses only after a complete step and rejects automatic c
     ).not.toBeNull();
     await after.close();
     expect(h.context?.pages().length).toBeGreaterThan(0);
+    await expectOwnedWindow(h.engine);
     expect(
       await h.engine.request({
         type: 'planRun',
@@ -816,6 +828,7 @@ test('engine fill watches Continue and Matches, preserves rate-operation identit
     });
     expect(inherited.every((page) => page.isClosed())).toBe(true);
     expect(context!.pages().length).toBeGreaterThan(0);
+    await expectOwnedWindow(engine);
     expect(context!.pages().some((page) => inherited.includes(page))).toBe(
       false,
     );

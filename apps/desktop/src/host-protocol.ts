@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  EngineWindowRequestSchema,
+  EngineWindowReplySchema,
   EngineHostMessageSchema,
   EngineOptionsSchema,
   EngineMediaRequestSchema,
@@ -9,6 +11,11 @@ import { DesktopReplySchema, RunViewSchema } from './protocol.ts';
 
 // These messages belong to the private main/utility channel, not the bridge.
 export const HostCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('window'),
+    id: z.uuid(),
+    message: EngineWindowRequestSchema,
+  }),
   z.strictObject({
     type: z.literal('media'),
     id: z.uuid(),
@@ -28,6 +35,11 @@ export const HostCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('shutdown') }),
 ]);
 export const HostEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('window'),
+    id: z.uuid(),
+    reply: EngineWindowReplySchema,
+  }),
   z.strictObject({
     type: z.literal('media'),
     id: z.uuid(),

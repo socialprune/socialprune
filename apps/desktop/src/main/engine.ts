@@ -5,9 +5,15 @@ import {
   EngineHostMessageSchema,
   EngineOptionsSchema,
   EngineMediaRequestSchema,
+  EngineWindowRequestSchema,
 } from 'socialprune/engine';
 import type { EngineHostMessage, EngineOptions } from 'socialprune/engine';
 import type { EngineMediaRequest, EngineMediaReply } from 'socialprune/engine';
+import type {
+  EngineWindowRequest,
+  EngineWindowReply,
+} from 'socialprune/engine';
+import type { PlatformWindowOwner } from './display-change.ts';
 import { HostCommandSchema, HostEventSchema } from '../host-protocol.ts';
 
 export function launchEngine(
@@ -41,6 +47,21 @@ export function launchEngine(
       timer: NodeJS.Timeout;
     }
   >();
+  const windowPending = new Map<
+    string,
+    {
+      message: EngineWindowRequest;
+      finish(reply: EngineWindowReply): void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  const failWindows = () => {
+    for (const task of windowPending.values()) {
+      clearTimeout(task.timer);
+      task.finish({ type: 'unavailable' });
+    }
+    windowPending.clear();
+  };
   const failMedia = () => {
     for (const task of mediaPending.values()) {
       clearTimeout(task.timer);
@@ -70,6 +91,7 @@ export function launchEngine(
       }
       pending.clear();
       failMedia();
+      failWindows();
       resolve();
     });
   });
@@ -80,11 +102,14 @@ export function launchEngine(
       return;
     }
     if (parsed.data.type === 'ready') {
+      if (ready || closing || unavailable || exited) return;
       ready = true;
       for (const task of pending.values())
         send({ type: 'request', message: task.message });
       for (const [id, task] of mediaPending)
         send({ type: 'media', id, message: task.message });
+      for (const [id, task] of windowPending)
+        send({ type: 'window', id, message: task.message });
       return;
     }
     if (parsed.data.type === 'view') {
@@ -100,6 +125,16 @@ export function launchEngine(
       }
       pending.clear();
       failMedia();
+      failWindows();
+      return;
+    }
+    if (parsed.data.type === 'window') {
+      const task = windowPending.get(parsed.data.id);
+      if (task) {
+        clearTimeout(task.timer);
+        windowPending.delete(parsed.data.id);
+        task.finish(parsed.data.reply);
+      }
       return;
     }
     if (parsed.data.type === 'media') {
@@ -140,8 +175,47 @@ export function launchEngine(
   port.start();
   child.postMessage('connect', [port2]);
   send({ type: 'initialize', options: EngineOptionsSchema.parse(options) });
+  const windowRequest = (
+    raw: EngineWindowRequest,
+  ): Promise<EngineWindowReply> => {
+    const message = EngineWindowRequestSchema.parse(raw);
+    if (exited || closing || unavailable || windowPending.size >= 8)
+      return Promise.resolve({ type: 'unavailable' });
+    const id = crypto.randomUUID();
+    return new Promise((finish) => {
+      const timer = setTimeout(() => {
+        windowPending.delete(id);
+        record('ENGINE_WINDOW_TIMEOUT');
+        finish({ type: 'unavailable' });
+      }, 5000);
+      windowPending.set(id, { message, finish, timer });
+      if (ready) send({ type: 'window', id, message });
+    });
+  };
+  const platformWindow: PlatformWindowOwner = {
+    async current() {
+      const reply = await windowRequest({ type: 'current' });
+      if (reply.type !== 'window') throw new Error('OWNED_WINDOW_UNAVAILABLE');
+      return reply.value;
+    },
+    async move(id, bounds, options) {
+      if (options.activate !== false)
+        throw new Error('OWNED_WINDOW_UNAVAILABLE');
+      if (!options.expected) throw new Error('OWNED_WINDOW_UNAVAILABLE');
+      const reply = await windowRequest({
+        type: 'move',
+        id,
+        expected: options.expected,
+        bounds,
+        activate: false,
+        expiresAt: Date.now() + 5000,
+      });
+      if (reply.type !== 'moved') throw new Error('OWNED_WINDOW_UNAVAILABLE');
+    },
+  };
   return {
     child,
+    platformWindow,
     async media(raw: EngineMediaRequest): Promise<EngineMediaReply> {
       const message = EngineMediaRequestSchema.parse(raw);
       if (exited || closing || unavailable || mediaPending.size >= 32)
@@ -190,6 +264,7 @@ export function launchEngine(
     async close(): Promise<void> {
       closing = true;
       failMedia();
+      failWindows();
       if (!exited) send({ type: 'shutdown' });
       let timer: NodeJS.Timeout | undefined;
       await Promise.race([

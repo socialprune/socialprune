@@ -7,6 +7,7 @@ import type {
   RunView,
 } from '@socialprune/core/workspace/desktop-protocol';
 import type { EngineMediaRequest, EngineMediaReply } from './media.ts';
+import type { EngineWindowRequest, EngineWindowReply } from './window.ts';
 
 export type EngineRequest = Exclude<
   DesktopRequest,
@@ -59,6 +60,7 @@ export const EngineOptionsSchema = z.strictObject({
 });
 export type EngineOptions = z.input<typeof EngineOptionsSchema>;
 export interface DesktopEngine {
+  window(message: EngineWindowRequest): Promise<EngineWindowReply>;
   media(message: EngineMediaRequest): Promise<EngineMediaReply>;
   request(message: EngineRequest): Promise<DesktopReply>;
   handleHost(message: EngineHostMessage): Promise<DesktopReply>;

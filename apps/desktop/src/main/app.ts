@@ -321,11 +321,12 @@ export async function startDesktop(options: DesktopOptions) {
       activeRequests--;
     }
   };
+  const platformWindow = options.platformWindow ?? engine.platformWindow;
   const recovery = attachDisplayRecovery({
     events: screen,
     areas: () => screen.getAllDisplays().map((display) => display.workArea),
     appBounds: () => window.getBounds(),
-    ...(options.platformWindow ? { owner: options.platformWindow } : {}),
+    owner: platformWindow,
     record,
   });
   const removal = createDataRemoval({
@@ -339,8 +340,7 @@ export async function startDesktop(options: DesktopOptions) {
         !['idle', 'ended'].includes(runView.phase)
       )
         return false;
-      if (options.platformWindow && (await options.platformWindow.current()))
-        return false;
+      if (await platformWindow.current()) return false;
       // profileStatus probes Chromium's lock. Reject a planted parent/profile
       // link before asking the engine to inspect any profile name.
       for (const name of ['profiles', 'profiles/x', 'profiles/instagram']) {

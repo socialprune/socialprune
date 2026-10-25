@@ -11,11 +11,13 @@ import type {
 } from './confirmation-state.ts';
 import type { ProfileSnapshot } from './profile.ts';
 import type { RunControls } from './run-controls.ts';
+import type { OwnedWindow } from './owned-window.ts';
 
 /** Embedding hooks are not CLI flags and cannot change the run's pace or order. */
 export interface RunSession {
   controls: RunControls;
-  browser(close: () => Promise<void>): void;
+  browser(close: () => Promise<void>, closed?: Promise<void>): void;
+  ownedWindow?(window: OwnedWindow): void;
   failed(error: unknown): void;
   confirmation(
     initial: Omit<ConfirmationView, 'version'>,

@@ -4,7 +4,11 @@ import type { Bounds } from './methods.ts';
  * enumeration or title/process lookup fallback in the desktop app. */
 export interface PlatformWindowOwner {
   current(): Promise<{ id: string; bounds: Bounds } | null>;
-  move(id: string, bounds: Bounds, options: { activate: false }): Promise<void>;
+  move(
+    id: string,
+    bounds: Bounds,
+    options: { activate: false; expected?: Bounds },
+  ): Promise<void>;
 }
 const valid = (b: Bounds) =>
   [b.x, b.y, b.width, b.height].every(Number.isFinite) &&
@@ -85,7 +89,10 @@ export function attachDisplayRecovery(options: {
         .some((area) => valid(area) && intersects(current.bounds, area))
     )
       return;
-    await options.owner.move(target.id, bounds, { activate: false });
+    await options.owner.move(target.id, bounds, {
+      activate: false,
+      expected: target.bounds,
+    });
     options.record('DISPLAY_WINDOW_MOVED');
   };
   const changed = () => {

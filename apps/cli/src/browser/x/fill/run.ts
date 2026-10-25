@@ -56,6 +56,7 @@ import { productionMedia } from '../../../originals/video.ts';
 import type { MediaDependencies } from '../../../originals/video.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { launchRunBrowser, freshPlatformPage } from '../../launch.ts';
+import { browserClosed, captureOwnedWindow } from '../../owned-window.ts';
 import type { WindowPlacement } from '../../launch.ts';
 import { entryView } from '../../run-session.ts';
 import type { RunSession } from '../../run-session.ts';
@@ -437,7 +438,7 @@ export async function runFillWithDependencies(
       options.executablePath,
       options.windowPlacement,
     );
-    options.session?.browser(() => context!.close());
+    options.session?.browser(() => context!.close(), browserClosed(context));
     const allowed =
       deps.origin === X_ORIGIN
         ? X_ALLOWED_HOSTS.map((host) => `https://${host}`)
@@ -570,6 +571,13 @@ export async function runFillWithDependencies(
     page = options.session
       ? await freshPlatformPage(context)
       : await context.newPage();
+    if (options.session?.ownedWindow) {
+      try {
+        options.session.ownedWindow(await captureOwnedWindow(context, page));
+      } catch {
+        console.error('OWNED_WINDOW_UNAVAILABLE');
+      }
+    }
     // /home is used once for the account check. Read-back uses the current page.
     await page.goto(deps.origin + '/home', { waitUntil: 'domcontentloaded' });
     accountBefore = await xSelectors.account(

@@ -11,6 +11,8 @@ import {
 } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
 import { XResponseWindows } from './rate-windows.ts';
+import { browserClosed, captureOwnedWindow } from '../owned-window.ts';
+import type { OwnedWindow } from '../owned-window.ts';
 
 export const X_ORIGIN = 'https://x.com';
 export const X_ALLOWED_HOSTS = Object.freeze([
@@ -65,6 +67,7 @@ export async function pageDriver(options: {
   signal?: AbortSignal;
   record(request: BrowserRequest): Promise<void>;
   desktop?: boolean;
+  onOwnedWindow?(window: OwnedWindow): void;
   now?: () => Date;
   onRateLimit?: () => void;
   onWindow?: (url: string, headers: Record<string, string>) => void;
@@ -186,7 +189,16 @@ export async function pageDriver(options: {
     if (record)
       observe(options.record({ ...record, status: response.status() }));
   });
-  if (options.desktop) platform = local = await freshPlatformPage(context);
+  if (options.desktop) {
+    platform = local = await freshPlatformPage(context);
+    if (options.onOwnedWindow) {
+      try {
+        options.onOwnedWindow(await captureOwnedWindow(context, platform));
+      } catch {
+        console.error('OWNED_WINDOW_UNAVAILABLE');
+      }
+    }
+  }
   const guard = (checkStop = true) => {
     if (rateLimited) throw rateError();
     if (projectionError) throw projectionError;
@@ -409,7 +421,8 @@ export async function productionDriver(options: {
   signal?: AbortSignal;
   onClosed?(): void;
   confirmationOrigin?: string;
-  onLaunched?(close: () => Promise<void>): void;
+  onLaunched?(close: () => Promise<void>, closed?: Promise<void>): void;
+  onOwnedWindow?(window: OwnedWindow): void;
   record(request: BrowserRequest): Promise<void>;
   windowPlacement?: WindowPlacement;
   desktop?: boolean;
@@ -422,7 +435,7 @@ export async function productionDriver(options: {
     options.executablePath,
     options.windowPlacement,
   );
-  options.onLaunched?.(() => context.close());
+  options.onLaunched?.(() => context.close(), browserClosed(context));
   context.once('close', () => options.onClosed?.());
   const driver = await pageDriver({
     context,
@@ -433,6 +446,9 @@ export async function productionDriver(options: {
     signal: options.signal,
     record: (request) => options.record(request),
     desktop: options.desktop,
+    onOwnedWindow: options.onOwnedWindow
+      ? (window) => options.onOwnedWindow?.(window)
+      : undefined,
     now: options.now,
     onRateLimit: options.onRateLimit,
     onWindow: options.onWindow,

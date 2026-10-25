@@ -1,4 +1,5 @@
 import type { BrowserContext, Request } from 'playwright-core';
+import { browserClosed, captureOwnedWindow } from '../owned-window.ts';
 import type {
   BrowserRun,
   BrowserProfileReport,
@@ -428,7 +429,7 @@ export async function runContextWithDependencies(
     options.session?.browser(() => {
       runtime?.closing();
       return context!.close();
-    });
+    }, browserClosed(context));
     network = await guardInstagramNetwork(
       context,
       options.session ? '' : new URL(confirmation.url).origin,
@@ -446,6 +447,13 @@ export async function runContextWithDependencies(
     });
     const local = await pages.startupPage();
     runtime.own(local);
+    if (options.session?.ownedWindow) {
+      try {
+        options.session.ownedWindow(await captureOwnedWindow(context, local));
+      } catch {
+        console.error('OWNED_WINDOW_UNAVAILABLE');
+      }
+    }
     await network.flush();
     guard();
     await context.setOffline(false);

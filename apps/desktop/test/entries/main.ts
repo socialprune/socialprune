@@ -8,6 +8,7 @@ const dataDirectory = process.argv
   .find((argument) => argument.startsWith('--data-dir='))
   ?.slice(11);
 if (!dataDirectory) throw new Error('TEST_DATA_DIRECTORY_REQUIRED');
+const displayProducer = dataDirectory.endsWith('display-producer');
 const requests: string[] = [];
 const selections: EngineFileSelection[] = [];
 const links: string[] = [];
@@ -35,15 +36,19 @@ void startDesktop({
   assets: join(import.meta.dirname, 'renderer'),
   preload: join(import.meta.dirname, 'preload.cjs'),
   engine: join(import.meta.dirname, 'engine.cjs'),
-  platformWindow: {
-    current: () => Promise.resolve(platformWindow.value),
-    move(id, bounds, flags) {
-      platformWindow.moves.push({ id, bounds, flags });
-      if (platformWindow.value?.id === id)
-        platformWindow.value = { id, bounds };
-      return Promise.resolve();
-    },
-  },
+  ...(displayProducer
+    ? {}
+    : {
+        platformWindow: {
+          current: () => Promise.resolve(platformWindow.value),
+          move(id, bounds, flags) {
+            platformWindow.moves.push({ id, bounds, flags });
+            if (platformWindow.value?.id === id)
+              platformWindow.value = { id, bounds };
+            return Promise.resolve();
+          },
+        },
+      }),
   removalReport(result) {
     removalReports.push(result);
     return Promise.resolve();

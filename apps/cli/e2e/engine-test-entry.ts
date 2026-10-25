@@ -12,6 +12,7 @@ import { productionContext } from '../src/browser/instagram/driver.ts';
 import { productionMedia } from '../src/originals/video.ts';
 import { SyndicationClient } from '../src/originals/syndication.ts';
 import { windowArguments, waitForBrowserClose } from '../src/browser/launch.ts';
+import { browserClosed } from '../src/browser/owned-window.ts';
 
 export interface EngineTestOptions {
   xOrigin: string;
@@ -23,6 +24,7 @@ export interface EngineTestOptions {
   session?(
     value: NonNullable<Parameters<typeof runWithDependencies>[0]['session']>,
   ): void;
+  headed?: boolean;
 }
 /** Separate test bundle: only this entry selects generated hosts and Chromium. */
 export function openTestEngine(
@@ -39,14 +41,19 @@ export function openTestEngine(
   ) => {
     const context = await chromium.launchPersistentContext(profile, {
       executablePath,
-      headless: true,
+      headless: !test.headed,
       offline,
       chromiumSandbox: true,
       args: ['--enable-automation', ...windowArguments(placement)],
       serviceWorkers: 'block',
       ignoreDefaultArgs: ['--disable-infobars'],
     });
-    await test.launched?.(context);
+    try {
+      await test.launched?.(context);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
     return context;
   };
   return createEngine(options, {
@@ -66,7 +73,10 @@ export function openTestEngine(
             configuration.executablePath,
             configuration.windowPlacement,
           );
-          configuration.onLaunched?.(() => context.close());
+          configuration.onLaunched?.(
+            () => context.close(),
+            browserClosed(context),
+          );
           context.once('close', () => configuration.onClosed?.());
           const driver = await pageDriver({
             context,
@@ -77,6 +87,9 @@ export function openTestEngine(
             signal: configuration.signal,
             record: (request) => configuration.record(request),
             desktop: true,
+            onOwnedWindow: configuration.onOwnedWindow
+              ? (window) => configuration.onOwnedWindow?.(window)
+              : undefined,
           });
           return {
             ...driver,

@@ -27,7 +27,7 @@ test('generated display events move only the exact wholly offscreen owned window
   expect(move).toHaveBeenCalledExactlyOnceWith(
     'engine-window',
     { x: 960, y: 0, width: 700, height: 700 },
-    { activate: false },
+    { activate: false, expected: { x: 2500, y: 100, width: 700, height: 700 } },
   );
   events.emit('display-metrics-changed');
   await recovery.settled();
@@ -98,7 +98,7 @@ test('nearest remaining negative-coordinate work area fits an oversized window a
   expect(move).toHaveBeenCalledExactlyOnceWith(
     'engine-negative',
     { x: -1920, y: -100, width: 1920, height: 1040 },
-    { activate: false },
+    { activate: false, expected: target.bounds },
   );
   recovery.close();
   events.emit('display-removed');

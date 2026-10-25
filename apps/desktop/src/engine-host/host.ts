@@ -48,6 +48,27 @@ export function startEngine(
         });
         return;
       }
+      if (command.type === 'window') {
+        if (!engine || closing) {
+          send({
+            type: 'window',
+            id: command.id,
+            reply: { type: 'unavailable' },
+          });
+          return;
+        }
+        void engine
+          .window(command.message)
+          .then((reply) => send({ type: 'window', id: command.id, reply }))
+          .catch(() =>
+            send({
+              type: 'window',
+              id: command.id,
+              reply: { type: 'unavailable' },
+            }),
+          );
+        return;
+      }
       if (!engine || closing) return;
       if (command.type === 'media') {
         void engine

@@ -247,7 +247,10 @@ export async function runWithDependencies(
       confirmationOrigin: options.session
         ? undefined
         : new URL(confirmation.url).origin,
-      onLaunched: (close) => options.session?.browser(close),
+      onLaunched: (close, closed) => options.session?.browser(close, closed),
+      onOwnedWindow: options.session
+        ? (window) => options.session?.ownedWindow?.(window)
+        : undefined,
       record: async (request) => {
         await writer.request(run.runId, request);
         if (request.status === 429 && began)

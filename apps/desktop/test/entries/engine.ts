@@ -8,6 +8,17 @@ import type { BrowserContext } from 'playwright-core';
 import { join } from 'node:path';
 import { setQueryMeasurementDirectory } from '../../packaging/windows-powershell.ts';
 import { setWindowsQueryExecutable } from '../../packaging/windows-query.ts';
+import { WindowBoundsSchema } from '../../../cli/src/browser/owned-window.ts';
+import type { CDPSession } from 'playwright-core';
+const displayCommands = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('displayPosition'),
+    bounds: WindowBoundsSchema,
+  }),
+  z.strictObject({ type: z.literal('displayClose') }),
+]);
+let displayCdp: CDPSession | undefined;
+let displayWindowId: number | undefined;
 
 const ProbeSchema = z.strictObject({
   type: z.literal('browserProbe'),
@@ -33,6 +44,7 @@ startEngine((options) => {
   setWindowsQueryExecutable(join(options.dataFolder, 'desktop-query.exe'));
   return openTestEngine(options, {
     xOrigin: 'http://127.0.0.1:4656',
+    headed: options.dataFolder.endsWith('display-producer'),
     instagramOrigin: 'http://127.0.0.1:4661',
     now: () => new Date(now),
     sleep: (ms) => {
@@ -77,6 +89,10 @@ startEngine((options) => {
         (await cdp.send('Browser.getBrowserCommandLine')).arguments,
       );
       await cdp.detach();
+      // The dedicated display foundation proves exact-window ownership through
+      // the real host seam. Legacy native PID observations remain unchanged
+      // for the existing run proofs; they are not its launch precondition.
+      if (options.dataFolder.endsWith('display-producer')) return;
       const browser = context.browser();
       if (!browser) throw new Error('BROWSER_PROCESS_ID_MISSING');
       const system = await browser.newBrowserCDPSession();
@@ -93,6 +109,43 @@ startEngine((options) => {
   });
 });
 process.parentPort.on('message', (event: Electron.MessageEvent) => {
+  const display = displayCommands.safeParse(event.data);
+  if (display.success) {
+    void (async () => {
+      if (display.data.type === 'displayClose') {
+        await Promise.all(contexts.map((context) => context.close()));
+        return { closed: true };
+      }
+      const context = contexts.at(-1);
+      if (!context) throw new Error('DISPLAY_CONTEXT_MISSING');
+      const page = context.pages()[0];
+      if (!page) throw new Error('DISPLAY_PAGE_MISSING');
+      displayCdp ??= await context.newCDPSession(page);
+      displayWindowId ??= (await displayCdp.send('Browser.getWindowForTarget'))
+        .windowId;
+      const bounds = display.data.bounds;
+      await displayCdp.send('Browser.setWindowBounds', {
+        windowId: displayWindowId,
+        bounds: {
+          left: bounds.x,
+          top: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        },
+      });
+      return { positioned: true };
+    })()
+      .then((value) =>
+        process.parentPort.postMessage({ type: 'displayControl', ...value }),
+      )
+      .catch(() =>
+        process.parentPort.postMessage({
+          type: 'displayControl',
+          failed: true,
+        }),
+      );
+    return;
+  }
   if (event.data === 'runProbe') {
     void Promise.all(
       contexts

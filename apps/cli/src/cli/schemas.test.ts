@@ -357,15 +357,41 @@ test('the product skill has one canonical copy, its required frontmatter and liv
   );
   for (const text of [skill, labelReference, docs])
     expect(text).not.toMatch(/[\u2013\u2014]/u);
+  const packageManifest = JSON.parse(
+    await readFile(new URL('apps/cli/package.json', repo), 'utf8'),
+  ) as { dependencies: Record<string, string> };
+  const driverVersion = packageManifest.dependencies['playwright-core'];
+  expect(driverVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  const commandsReference = await readFile(
+    new URL('skills/socialprune/references/commands.md', repo),
+    'utf8',
+  );
+  const readme = await readFile(new URL('apps/cli/README.md', repo), 'utf8');
   for (const text of [skill, docs]) {
     expect(text).toContain('The npm package is not published yet.');
     expect(text).toContain('pnpm -s socialprune');
+  }
+  for (const text of [skill, docs, commandsReference, readme]) {
+    // The packed package keeps playwright-core as its one runtime dependency,
+    // so an offline install of the CLI tarball alone fails with ENOTCACHED in
+    // an empty folder (observed 2026-10-25 in the G2 harness). The documented
+    // install lists the driver tarball before the CLI tarball.
     expect(text).toContain(
-      'npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz',
+      'npm install --offline --no-audit --no-fund --prefix . ./playwright-core-<driver-version>.tgz ./socialprune-<version>.tgz',
     );
+    expect(text).not.toMatch(
+      /npm install --offline --no-audit --no-fund --prefix \. \.\/socialprune-<version>\.tgz/,
+    );
+    expect(text).toContain('ENOTCACHED');
     // Without --prefix, npm installs into the nearest parent folder with a
     // package.json or node_modules (observed 2026-10-09 in a home folder).
     expect(text).not.toMatch(/npm install --offline --no-audit --no-fund \.\//);
+  }
+  // The skill and the setup guide name the pinned driver version as dated
+  // evidence; it must match the package manifest so the two cannot drift.
+  for (const text of [skill, docs])
+    expect(text).toContain(`(${driverVersion} on `);
+  for (const text of [skill, docs]) {
     expect(text).toContain('node node_modules/socialprune/bin/socialprune.mjs');
     for (const command of [
       '`npx socialprune`',

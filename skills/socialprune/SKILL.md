@@ -11,13 +11,13 @@ SocialPrune reads an export and records suggestions. The person decides what to 
 
 The npm package is not published yet. Use Node.js 24.15 or newer and read [the command contract](references/commands.md). Choose the mode that matches the files the person supplied:
 
-1. With a local packed tarball, install only the file the person put in your working folder:
+1. With local packed tarballs, install only the two files the person put in your working folder, the CLI and its one runtime dependency `playwright-core`:
 
    ```text
-   npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz
+   npm install --offline --no-audit --no-fund --prefix . ./playwright-core-<driver-version>.tgz ./socialprune-<version>.tgz
    ```
 
-   Replace `<version>` with that file's version. Keep `--prefix .`: without it, npm installs into the nearest parent folder that has a `package.json` or `node_modules`, which can change another project of the person. Never fetch a package from the registry. In this mode, wherever this skill writes `socialprune`, use `node node_modules/socialprune/bin/socialprune.mjs` from the same working folder. If that entry file is missing, stop and ask the person. The packed package includes the review page under `web/`, so no build step is needed.
+   Replace `<version>` with the CLI file's version and `<driver-version>` with the version named under `dependencies` in that package's `package.json` (1.63.0 on 2026-10-25). Without the driver file, an offline install in an empty folder stops with `ENOTCACHED`, because npm cannot fetch the dependency. Keep `--prefix .`: without it, npm installs into the nearest parent folder that has a `package.json` or `node_modules`, which can change another project of the person. Never fetch a package from the registry. In this mode, wherever this skill writes `socialprune`, use `node node_modules/socialprune/bin/socialprune.mjs` from the same working folder. If that entry file is missing, stop and ask the person. The same holds for a missing driver file before the install. The packed package includes the review page under `web/`, so no build step is needed.
 
 2. With a repository checkout and its dependencies already installed, replace `socialprune` with `pnpm -s socialprune` and run from the repository root. Before review, the person builds its page with `pnpm --filter @socialprune/web build:review`.
 

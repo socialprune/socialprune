@@ -30,7 +30,7 @@ import { launchEngine } from './engine.ts';
 import { loadReview } from './startup.ts';
 import { mainMethods, splitWorkArea } from './methods.ts';
 import { mediaResponse } from './media.ts';
-import type { DesktopRequest, RunView } from '../protocol.ts';
+import type { DesktopRequest, RunView, DesktopScanView } from '../protocol.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
 import { importSelection } from './import-selection.ts';
 import {
@@ -59,7 +59,7 @@ export interface DesktopOptions {
   dialogs?: {
     select(
       window: BrowserWindow,
-      type: 'importExport' | 'backupExport' | 'backupRestore',
+      type: 'importExport' | 'backupExport' | 'backupRestore' | 'scanKey',
       locale: DialogLocale,
     ): Promise<EngineFileSelection>;
   };
@@ -205,10 +205,32 @@ export async function startDesktop(options: DesktopOptions) {
     record,
   );
   let runView: RunView = { phase: 'idle', version: 0 };
+  let scanView: DesktopScanView | undefined;
+  let scanPolling = false;
+  const scanActive = () =>
+    scanView !== undefined && !['idle', 'ended'].includes(scanView.phase);
+  const scanTimer = setInterval(() => {
+    if (!scanActive() || scanPolling || engineClosing) return;
+    scanPolling = true;
+    void engine
+      .request({
+        request: { type: 'scanView', requestId: crypto.randomUUID() },
+      })
+      .then((reply) => {
+        if (reply.type === 'scanView') scanView = reply.view;
+      })
+      .catch(() => record('SCAN_VIEW_FAILED'))
+      .finally(() => {
+        scanPolling = false;
+      });
+  }, 500);
   let engineClosing: Promise<void> | undefined;
   let activeRequests = 0;
   let removalQuitting = false;
-  const closeEngine = () => (engineClosing ??= engine.close());
+  const closeEngine = () => {
+    clearInterval(scanTimer);
+    return (engineClosing ??= engine.close());
+  };
   engine.onRunView((view) => {
     if (
       view.phase === 'ended' &&
@@ -232,7 +254,7 @@ export async function startDesktop(options: DesktopOptions) {
       options.links ? options.links.folder(path) : shell.openPath(path),
   });
   const selection = async (
-    type: 'importExport' | 'backupExport' | 'backupRestore',
+    type: 'importExport' | 'backupExport' | 'backupRestore' | 'scanKey',
   ): Promise<EngineFileSelection> => {
     const locale = await selectedLocale();
     if (options.dialogs) {
@@ -247,6 +269,17 @@ export async function startDesktop(options: DesktopOptions) {
         saveDialogOptions(locale),
       );
       return { type, path: result.canceled ? null : (result.filePath ?? null) };
+    }
+    if (type === 'scanKey') {
+      const result = await dialog.showOpenDialog(window, {
+        title: dialogLabels(locale).scanKeyTitle,
+        buttonLabel: dialogLabels(locale).scanKeyButton,
+        properties: ['openFile'],
+      });
+      return {
+        type,
+        path: result.canceled ? null : (result.filePaths[0] ?? null),
+      };
     }
     const result = await dialog.showOpenDialog(
       window,
@@ -293,7 +326,8 @@ export async function startDesktop(options: DesktopOptions) {
     if (
       request.type === 'importExport' ||
       request.type === 'backupExport' ||
-      request.type === 'backupRestore'
+      request.type === 'backupRestore' ||
+      (request.type === 'scanKey' && !request.clear)
     ) {
       try {
         selected = await selection(request.type);
@@ -310,7 +344,15 @@ export async function startDesktop(options: DesktopOptions) {
       request,
       ...(selected ? { selection: selected } : {}),
     });
-    if ('view' in reply) runView = reply.view;
+    if (
+      reply.type === 'scanStart' ||
+      reply.type === 'scanView' ||
+      reply.type === 'scanAction'
+    )
+      scanView = reply.view;
+    else if ('view' in reply) runView = reply.view;
+    if (request.type === 'scanAction' && request.action === 'stop')
+      record('SCAN_STOP_REQUESTED');
     return reply;
   };
   const dispatch = async (request: DesktopRequest) => {
@@ -337,6 +379,7 @@ export async function startDesktop(options: DesktopOptions) {
         quitting ||
         engineClosing ||
         activeRequests ||
+        scanActive() ||
         !['idle', 'ended'].includes(runView.phase)
       )
         return false;
@@ -494,7 +537,11 @@ export async function startDesktop(options: DesktopOptions) {
       event.preventDefault();
       return;
     }
-    if (quitting || ['idle', 'ended'].includes(runView.phase)) return;
+    if (
+      quitting ||
+      (['idle', 'ended'].includes(runView.phase) && !scanActive())
+    )
+      return;
     event.preventDefault();
     if (confirming) return;
     confirming = true;

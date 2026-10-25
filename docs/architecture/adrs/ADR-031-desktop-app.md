@@ -126,7 +126,7 @@ We chose **Option A: Electron 44.8.0, pinned, with the engine in a utility proce
 | Main | window, `app://` scheme, IPC routing, single-instance lock, file dialogs, window placement | the engine through one `MessagePort`; `shell.openExternal` for the guide's own links, after the person's click; since 2026-10-16 (maintainer, card DESK-2) also for the platform post addresses that the review, the click list and the archive link to, X status and Instagram `/p/` and `/reel/` addresses, after the person's click and only when `platformPostUrl` in `packages/core` accepts the address | export content beyond passing messages; any network |
 | Renderer | the `dist-desktop` build of `apps/web` | the preload bridge | Node, `require`, the file system, any network: `contextIsolation`, `sandbox` and `webSecurity` on, `nodeIntegration` and `webviewTag` off, navigation and new windows denied, every permission request denied |
 | Preload | `contextBridge` exposes `window.socialprune` with `request(method, body)` and `onRunView(listener)` | `ipcRenderer` inside the preload only | anything else; `ipcRenderer` itself is never exposed |
-| Engine | a bundled `engine.js` in a utility process | the workspace folder, the dedicated profiles, Chrome or Edge through `playwright-core`, and during a run the platform hosts ADR-027 to ADR-030 allow | the renderer directly |
+| Engine | a bundled `engine.js` in a utility process | the workspace folder, the dedicated profiles, Chrome or Edge through `playwright-core`, and during a run the platform hosts ADR-027 to ADR-030 allow, and, during a suggestion run the person started in the app, the one origin their source file names | the renderer directly |
 
 The renderer keeps the review build's Content Security Policy with Trusted Types (ADR-004), sent by the scheme handler as a response header and repeated in a `meta` element, with `connect-src 'none'`, because the bridge is not a network request, and `img-src` and `media-src` limited to `app:` for stored originals and Instagram context files.
 
@@ -140,6 +140,8 @@ The shipped executable sets these fuses, and CI reads them back from the built f
 - Decisions are written by the review service as today and record `via: 'local-review'`, because the person decides in the same local review. No schema version changes.
 - Stored originals and Instagram context images are served by the `app://` handler under `app://socialprune/originals/...` and `app://socialprune/context/...`, with the review server's record check and byte-range code.
 - `socialprune review` keeps its server, its port and its token. Nothing in the CLI changes for people who use it.
+
+Amended 2026-10-21 by the maintainer's decision ADR-033: the engine's named-origin suggestion route above also covers loopback. Main, renderer and the release smoke stay unchanged; the smoke starts no suggestion run.
 
 ### 4. The engine in its utility process
 
@@ -236,6 +238,7 @@ The German text names "Der Computer wurde durch Windows geschützt", "Weitere In
 
 | Claim | Proof |
 |---|---|
+| The engine reaches only the named origin | the packaged test of ADR-033 section 10 |
 | The renderer has no Node and no network | Playwright drives the test build's window: `require` and `process` are undefined in the page; a listener on the session records every request, and the test fails on any URL outside `app://socialprune`. Positive controls: a planted request to a second origin and a planted inline script must both be caught. |
 | Only the app's own frame can use the bridge | unit tests of the main-process router with forged senders and malformed bodies; in the test build, a second window's request gets no answer and is counted |
 | The review behaves as in the web app and the CLI | the review scenarios run against the desktop window on the demo export; decisions travel by backup into the CLI and the browser and back |

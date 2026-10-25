@@ -15,6 +15,7 @@ import type {
   DesktopRunMode,
   DesktopRunPlan,
   RunView,
+  DesktopScanView,
 } from '@socialprune/core/workspace/desktop-protocol';
 import { DesktopReplySchema } from '@socialprune/core/workspace/desktop-protocol';
 import type { WorkspaceSummary } from '@socialprune/core/workspace/protocol';
@@ -27,6 +28,7 @@ import { installDesktopLinks } from './links.ts';
 import { DesktopGuide, Setup } from './Setup.tsx';
 import { DesktopSettings } from './Settings.tsx';
 import { Monitor } from './Monitor.tsx';
+import { Scan } from './Scan.tsx';
 import styles from './Desktop.module.css';
 import { browserMessages, modeMessages, tokenMessage } from './messages.ts';
 
@@ -55,6 +57,7 @@ const DeleteMode = lazy(() =>
 );
 
 type Screen =
+  | 'scan'
   | 'setup'
   | 'review'
   | 'archive'
@@ -81,6 +84,7 @@ function Content({
   );
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [view, setView] = useState<RunView>({ phase: 'idle', version: 0 });
+  const [scanView, setScanView] = useState<DesktopScanView | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [accountKey, setAccountKey] = useState('');
   const [mode, setMode] = useState<DesktopRunMode>('fill');
@@ -214,6 +218,9 @@ function Content({
   useEffect(() => {
     if (view.phase === 'ended') void client.open().catch(failed);
   }, [view.phase, client, failed]);
+  useEffect(() => {
+    if (scanView?.phase === 'ended') void client.open().catch(failed);
+  }, [scanView?.phase, client, failed]);
   const activeAccount = summary?.accounts.find(
     (account) => account.key === accountKey,
   );
@@ -269,6 +276,7 @@ function Content({
     }
   }
   const titles = {
+    scan: 'scan.title',
     setup: 'desktop.setup',
     review: 'review.title',
     archive: 'proto.archiveTitle',
@@ -353,6 +361,32 @@ function Content({
               </button>
             </div>
           )}
+        {screen !== 'scan' &&
+          scanView?.runId &&
+          !['idle', 'ended'].includes(scanView.phase) && (
+            <div className={styles.controls}>
+              <button
+                className={styles.stop}
+                onClick={() => {
+                  void command(bridge, {
+                    type: 'scanAction',
+                    runId: scanView.runId!,
+                    version: scanView.version,
+                    action: 'stop',
+                  })
+                    .then((reply) => {
+                      if (reply.type === 'scanAction') setScanView(reply.view);
+                    })
+                    .catch(failed);
+                }}
+              >
+                {t('desktop.stop')}
+              </button>
+              <button onClick={() => setScreen('scan')}>
+                {t('scan.title')}
+              </button>
+            </div>
+          )}
         <main
           id="main"
           className={
@@ -399,6 +433,14 @@ function Content({
               failed={failed}
             />
           )}
+          <div hidden={screen !== 'scan'}>
+            <Scan
+              bridge={bridge}
+              summary={summary}
+              failed={failed}
+              onView={setScanView}
+            />
+          </div>
           {screen === 'monitor' && (
             <>
               {(view.phase === 'idle' || view.phase === 'ended') && (

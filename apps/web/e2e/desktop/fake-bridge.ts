@@ -30,6 +30,7 @@ import type {
 } from '@socialprune/core';
 import { ReviewRuntime } from '../../../cli/src/review/runtime.ts';
 import { runView } from './views.ts';
+import type { EngineScan, ScanCommand } from '../../../cli/src/engine/scan.ts';
 
 // desktop-fake-bridge: this module is loaded only by Playwright in Node.
 export async function fakeBridge(
@@ -37,6 +38,7 @@ export async function fakeBridge(
   locale = 'en',
   seed?: WorkspaceV2,
   appBuild: 'direct' | 'store' = 'store',
+  scan?: EngineScan,
 ) {
   const root = new URL('../../../../fixtures/synthetic/demo/', import.meta.url);
   const fixture =
@@ -119,6 +121,45 @@ export async function fakeBridge(
         });
       }
       let reply: unknown;
+      if (input.type.startsWith('scan')) {
+        if (scan)
+          return parseDesktopReply(
+            input,
+            await scan.handle(input as ScanCommand),
+          );
+        if (input.type === 'scanView')
+          return parseDesktopReply(input, {
+            type: 'scanView',
+            requestId,
+            view: {
+              phase: 'idle',
+              version: 0,
+              runId: null,
+              planHash: null,
+              pauseRequested: false,
+              limit: null,
+              canResume: false,
+              planned: 0,
+              stored: 0,
+              remaining: 0,
+              requests: 0,
+              retries: 0,
+              secondPassEntries: 0,
+              batchSize: 1,
+              tokens: {
+                promptTokens: null,
+                cachedPromptTokens: null,
+                completionTokens: null,
+              },
+              stopCode: null,
+            },
+          });
+        return parseDesktopReply(input, {
+          type: 'desktopFailed',
+          requestId,
+          code: 'NOT_AVAILABLE',
+        });
+      }
       switch (input.type) {
         case 'open': {
           const replies = await runtime.run(++sequence, input);
@@ -311,7 +352,11 @@ export async function fakeBridge(
           message: unknown,
         ) => Promise<{ view?: unknown }>;
         const reply = await send(message);
-        if (reply.view) for (const listener of listeners) listener(reply.view);
+        if (
+          reply.view &&
+          !String((message as { type?: string }).type).startsWith('scan')
+        )
+          for (const listener of listeners) listener(reply.view);
         return reply;
       },
       onRunView(listener: (view: unknown) => void) {

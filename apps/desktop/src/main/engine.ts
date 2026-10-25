@@ -255,7 +255,11 @@ export function launchEngine(
             record('ENGINE_TIMEOUT');
             finish(fail(request.requestId));
           },
-          request.type === 'profileSetup' ? 3_600_000 : 120_000,
+          request.type === 'profileSetup'
+            ? 3_600_000
+            : request.type === 'scanCheck'
+              ? 250_000
+              : 120_000,
         );
         pending.set(request.requestId, { message, finish, timer });
         if (ready) send({ type: 'request', message });

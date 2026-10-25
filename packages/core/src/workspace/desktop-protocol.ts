@@ -545,7 +545,151 @@ export const RunViewSchema = z
 export type RunView = z.infer<typeof RunViewSchema>;
 
 const request = { requestId: id };
+const scanText = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[^\r\n\u0000-\u001f\u007f]*$/u);
+const scanOrigin = z
+  .string()
+  .max(4096)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        url.origin === value &&
+        !url.username &&
+        !url.password &&
+        (url.protocol === 'https:' ||
+          (url.protocol === 'http:' &&
+            (url.hostname === '[::1]' ||
+              /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(url.hostname))))
+      );
+    } catch {
+      return false;
+    }
+  });
+const scanPlanHash = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+export const DesktopScanSetupSchema = z
+  .strictObject({
+    origin: scanOrigin,
+    model: scanText,
+    keyFile: z.string().min(1).max(32767).nullable(),
+    local: z.boolean(),
+    modelListed: z.boolean().nullable(),
+    answeringModel: scanText.nullable(),
+    structuredOutput: z.boolean().nullable(),
+    usageReported: z.boolean().nullable(),
+    cachedTokensReported: z.boolean().nullable(),
+    entriesPerRequest: z.number().int().min(1).max(50),
+  })
+  .refine(
+    (value) =>
+      value.local ===
+        (new URL(value.origin).hostname === '[::1]' ||
+          /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(
+            new URL(value.origin).hostname,
+          )) &&
+      (value.answeringModel === null || value.structuredOutput === true),
+    'Scan destination and check evidence must agree.',
+  );
+export type DesktopScanSetup = z.infer<typeof DesktopScanSetupSchema>;
+export const DesktopScanPlanSchema = z
+  .strictObject({
+    planHash: scanPlanHash,
+    accountKey: id,
+    planned: count,
+    skipped: count,
+    uniqueTexts: count,
+    requests: count,
+    alreadyDecided: count,
+  })
+  .refine(
+    (value) =>
+      value.uniqueTexts <= value.planned &&
+      value.alreadyDecided <= value.planned,
+  );
+export type DesktopScanPlan = z.infer<typeof DesktopScanPlanSchema>;
+export const DesktopScanViewSchema = z
+  .strictObject({
+    phase: z.enum(['idle', 'running', 'paused', 'ending', 'ended']),
+    version: count,
+    runId: id.nullable(),
+    pauseRequested: z.boolean(),
+    planHash: scanPlanHash.nullable(),
+    limit: z.literal(50).nullable(),
+    canResume: z.boolean(),
+    planned: count,
+    stored: count,
+    remaining: count,
+    requests: count,
+    retries: count,
+    secondPassEntries: count,
+    batchSize: z.number().int().min(1).max(50),
+    tokens: z.strictObject({
+      promptTokens: count.nullable(),
+      cachedPromptTokens: count.nullable(),
+      completionTokens: count.nullable(),
+    }),
+    stopCode: DesktopCliErrorCodeSchema.nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.stored > value.planned ||
+      value.remaining > value.planned ||
+      value.stored + value.remaining !== value.planned ||
+      (value.limit !== null && value.planned > value.limit) ||
+      (value.phase === 'idle'
+        ? value.runId !== null || value.planHash !== null || value.planned !== 0
+        : value.runId === null || value.planHash === null) ||
+      (value.canResume && value.phase !== 'ended') ||
+      (value.phase === 'paused' && value.pauseRequested)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Scan identity, progress or canary bound differs.',
+      });
+  });
+export type DesktopScanView = z.infer<typeof DesktopScanViewSchema>;
 export const DesktopCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    ...request,
+    type: z.literal('scanKey'),
+    clear: z.literal(true).optional(),
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanSource'),
+    baseUrl: z.string().min(1).max(4096),
+    model: scanText,
+    entriesPerRequest: z.number().int().min(1).max(50),
+    profile: z.enum([
+      'openai-compatible',
+      'llama-server',
+      'ollama',
+      'openrouter',
+    ]),
+  }),
+  z.strictObject({ ...request, type: z.literal('scanCheck') }),
+  z.strictObject({ ...request, type: z.literal('scanPlan'), accountKey: id }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanStart'),
+    planHash: scanPlanHash,
+    origin: scanOrigin,
+    answeringModel: scanText,
+    agreed: z.literal(true),
+    resume: z.boolean(),
+  }),
+  z.strictObject({ ...request, type: z.literal('scanView') }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanAction'),
+    runId: id,
+    version: count,
+    action: z.enum(['pause', 'resume', 'stop']),
+  }),
   z
     .strictObject({
       ...request,
@@ -701,6 +845,41 @@ export const DesktopAppInfoSchema = z.strictObject({
 });
 export type DesktopAppInfo = z.infer<typeof DesktopAppInfoSchema>;
 export const DesktopReplySchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    ...request,
+    type: z.literal('scanKey'),
+    keyFile: z.string().min(1).max(32767).nullable(),
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanSource'),
+    setup: DesktopScanSetupSchema,
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanCheck'),
+    setup: DesktopScanSetupSchema,
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanPlan'),
+    plan: DesktopScanPlanSchema,
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanStart'),
+    view: DesktopScanViewSchema,
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanView'),
+    view: DesktopScanViewSchema,
+  }),
+  z.strictObject({
+    ...request,
+    type: z.literal('scanAction'),
+    view: DesktopScanViewSchema,
+  }),
   // ReviewRuntime can return progress/chunks followed by one terminal reply.
   // Keep those bytes and shapes unchanged inside a bounded IPC reply envelope.
   z
@@ -836,6 +1015,13 @@ export const DesktopReplySchema = z.discriminatedUnion('type', [
 export type DesktopReply = z.infer<typeof DesktopReplySchema>;
 
 const commandReplies = {
+  scanKey: 'scanKey',
+  scanSource: 'scanSource',
+  scanCheck: 'scanCheck',
+  scanPlan: 'scanPlan',
+  scanStart: 'scanStart',
+  scanView: 'scanView',
+  scanAction: 'scanAction',
   planRun: 'runPlanned',
   startRun: 'runStarted',
   runAction: 'runActionResult',

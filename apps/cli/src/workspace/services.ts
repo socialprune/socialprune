@@ -650,6 +650,11 @@ export interface ScanRunCall extends WorkspaceCall {
   confirmEndpoint?: string;
   confirmModel?: string;
   progress: (text: string) => void;
+  /** Optional embedding controls. The CLI passes neither hook. */
+  controls?: {
+    checkpoint: (signal: AbortSignal) => Promise<void>;
+    wait: (seconds: number, signal: AbortSignal) => Promise<void>;
+  };
 }
 function scanFailure(error: unknown): never {
   if (error instanceof ScanError) {
@@ -891,7 +896,17 @@ export async function runScan(input: ScanRunCall) {
       );
       const { key } = await loadSourceKey(config, input.source);
       network = nodeTransport(origin);
-      source = new EndpointSource(config, network.transport, key);
+      const transport = network.transport;
+      source = new EndpointSource(
+        config,
+        input.controls
+          ? async (request, signal) => {
+              await input.controls!.checkpoint(signal);
+              return transport(request, signal);
+            }
+          : transport,
+        key,
+      );
       const check = source.check.bind(source);
       source.check = async (request, signal) => {
         const answer = await check(request, signal);
@@ -1094,6 +1109,7 @@ export async function runScan(input: ScanRunCall) {
         entriesPerRequest: config.entriesPerRequest,
         parallelRequests: config.parallelRequests,
         signal: input.signal,
+        ...(input.controls ? { wait: input.controls.wait } : {}),
         progress: (value) => {
           progress = value;
           input.progress(JSON.stringify(value));

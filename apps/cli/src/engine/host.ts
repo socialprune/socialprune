@@ -24,6 +24,7 @@ const path = z
   .refine((value) => !value.includes('\0') && isAbsolute(value));
 /** Main supplies dialog results through this interface, never renderer paths. */
 export const EngineFileSelectionSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('scanKey'), path: path.nullable() }),
   z.strictObject({
     type: z.literal('importExport'),
     paths: z.array(path).min(1).max(32).nullable(),

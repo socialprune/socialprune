@@ -58,6 +58,7 @@ const backup = (name: string) =>
 export function managedDataFile(name: string): boolean {
   if (backup(name)) return false;
   if (name === 'ui-language.json') return true;
+  if (name === 'workspace/suggestion-source.json') return true;
   if (/^logs\/(?:desktop|startup)\.ndjson$/.test(name)) return true;
   if (/^workspace\/socialprune\.sqlite(?:-(?:wal|shm|journal))?$/.test(name))
     return true;

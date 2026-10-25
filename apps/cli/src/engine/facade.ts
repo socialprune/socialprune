@@ -75,6 +75,7 @@ import type { DesktopEngine, EngineOptions } from './host.ts';
 import type { EngineDependencies } from './dependencies.ts';
 import { EngineMedia } from './media.ts';
 import { createWindowOwner } from './window.ts';
+import { EngineScan } from './scan.ts';
 
 export const guides = Object.freeze([xGuide, instagramGuide]);
 function code(error: unknown) {
@@ -108,6 +109,7 @@ export async function createEngine(
   let taskActive = false;
   let closeBrowser: (() => Promise<void>) | undefined;
   const windows = createWindowOwner();
+  const scan = new EngineScan(workspace, deps.now, RunControls);
   let closing = false;
   const signal = new AbortController();
   const listeners = new Set<(view: RunView) => void>();
@@ -117,7 +119,8 @@ export async function createEngine(
     view = RunViewSchema.parse(value);
     for (const listener of listeners) listener(structuredClone(view));
   };
-  const active = () => taskActive || !['idle', 'ended'].includes(view.phase);
+  const active = () =>
+    scan.active || taskActive || !['idle', 'ended'].includes(view.phase);
   const getStore = async () => {
     if (!store) {
       const target = await workspacePath(workspace, true);
@@ -733,6 +736,23 @@ export async function createEngine(
       const id = request.requestId;
       let reply: DesktopReply;
       switch (request.type) {
+        case 'scanKey':
+        case 'scanSource':
+        case 'scanCheck':
+        case 'scanPlan':
+        case 'scanStart':
+        case 'scanView':
+        case 'scanAction':
+          if (taskActive || !['idle', 'ended'].includes(view.phase))
+            throw new CliError('WORKSPACE_BUSY');
+          if (request.type === 'scanStart') await getStore();
+          reply = await scan.handle(
+            request,
+            message.selection?.type === 'scanKey'
+              ? message.selection.path
+              : undefined,
+          );
+          break;
         case 'openLink':
         case 'dataFolderOpen':
           throw new CliError('INVALID_ARGUMENTS');
@@ -1001,7 +1021,8 @@ export async function createEngine(
     const stop = EngineHostMessageSchema.safeParse(raw);
     if (
       stop.success &&
-      stop.data.request.type === 'runAction' &&
+      (stop.data.request.type === 'runAction' ||
+        stop.data.request.type === 'scanAction') &&
       stop.data.request.action === 'stop'
     )
       return handle(stop.data);
@@ -1030,6 +1051,7 @@ export async function createEngine(
     async close() {
       closing = true;
       signal.abort();
+      await scan.close();
       controls?.stop();
       await state?.close();
       await closeBrowser?.();

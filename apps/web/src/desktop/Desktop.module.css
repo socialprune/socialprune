@@ -71,6 +71,78 @@
     margin-block: var(--space-4);
     overflow-wrap: anywhere;
   }
+  .scan {
+    max-width: var(--reading-width);
+    margin-inline: auto;
+  }
+  .scan button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .lead {
+    color: var(--color-text-secondary);
+    max-width: 65ch;
+    margin-bottom: var(--space-6);
+  }
+  .scanSurface {
+    background: var(--color-surface);
+    padding: var(--space-6);
+    border-radius: var(--radius-panel);
+    margin-block: var(--space-5);
+  }
+  .scanFields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--space-5);
+  }
+  .scanForm {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+  .scanFields .field {
+    margin-block: 0 var(--space-5);
+  }
+  .scanFields .field:first-child {
+    grid-column: 1 / -1;
+  }
+  .scanHint {
+    font-size: var(--type-sm);
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+  .scanSurface details {
+    margin-block: var(--space-5);
+  }
+  .scanSurface summary {
+    cursor: pointer;
+    min-height: var(--target-size);
+    padding-block: var(--space-3);
+    color: var(--color-action);
+  }
+  .scanAgreement {
+    margin-top: var(--space-6);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--color-divider);
+  }
+  .scanFacts {
+    margin: 0 0 var(--space-5);
+  }
+  .scanFacts > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--space-4);
+    padding-block: var(--space-2);
+  }
+  .scanFacts dt {
+    color: var(--color-text-secondary);
+  }
+  .scanFacts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: var(--weight-heading);
+  }
   .field {
     display: grid;
     gap: var(--space-2);
@@ -165,6 +237,12 @@
     top: 0;
   }
   @media (max-width: 520px) {
+    .scanSurface {
+      padding: var(--space-4);
+    }
+    .scanFields {
+      grid-template-columns: minmax(0, 1fr);
+    }
     .shell {
       padding: 0 var(--space-3) var(--space-3);
     }

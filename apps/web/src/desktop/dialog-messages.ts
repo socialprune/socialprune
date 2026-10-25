@@ -17,6 +17,8 @@ export function dialogLabels(locale: 'en' | 'de') {
     stopMessage: messages['desktop.dialog.stopMessage'],
     stop: messages['desktop.stop'],
     cancel: messages['bulk.cancel'],
+    scanKeyTitle: messages['scan.keyTitle'],
+    scanKeyButton: messages['scan.chooseKey'],
     removalPartial: messages['desktop.removal.partial'],
     removalComplete: messages['desktop.removal.complete'],
     removalRemoved: messages['desktop.removal.removed'],

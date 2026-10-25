@@ -486,3 +486,48 @@ Local verification passed the whole web project once at one worker (299 tests, 4
 | `webkit-2026-10-25T17-16-41-379Z.json` | `ed0a28628f3b02b968ea678557cb495d7a09d5317342ce8b33e8141f1e78e6c9` |
 | `webkit-2026-10-25T17-16-53-542Z.json` | `a31b2d23738b1f10f2f948039316c0576608cab9a6334d3cbe080b299760bb13` |
 | `webkit-2026-10-25T17-16-37-799Z.json` | `3fb96e382fb63a679f5b9ab2d1bf69208ea79b340572d9e2a0dfd56539dd1db7` |
+
+### FRAME-1 B on the integrated Fokus feed, 2026-10-25
+
+The integrated Fokus feed meets every measured FRAME-1 B target in three repetitions per engine in Firefox and WebKit. [Run 40223273860](https://github.com/socialprune/socialprune/actions/runs/40223273860) measured commit `58242e007d5c16cfb3affac086d6633fa1530b83` on `measure/design-23`, including the S2 through S4b rendering changes and the FRAME-1 B harness. This closes the earlier evidence gap for that integrated rendering in these two engines, rather than carrying the pre-restyle timings forward. No new measurement was started for this documentation update.
+
+All six reports carry product source hash `6d42570077f44e04488ebf925f2df24d3c0199472870b97ec121a5d27188975d` and unchanged harness hash `0970829b89b03eada4803b68c5a30b8df11fe59841cbf8f292cc419222a3ab32`. The generated 6,000-entry input remains 5,433,211 bytes, SHA-256 `c698798c9703080b37b45e0680e7ff0f8e12e856c91c7c3ad6cf50c67e0895cc`; the 100,000-entry input remains 88,124,025 bytes, SHA-256 `7dace3b02d7b0ce9ed769f1987a320bf3c6b33c9e35168f691519faea06a5362`. Every job completed its plain production measurement, observer/workflow contracts and production-bundle exclusion check successfully. Independent readback recomputed the seven target results from the raw frame, count, tab and response samples, checked outlier neighbors, and matched this table and the raw-file hashes. A successful job alone is not the target proof.
+
+| Engine/repetition | Job ID | Frames | Frame p99.9, ms | Maximum, ms | Above 50 ms | Count p95, ms | First revision count, ms | Tab maximum, ms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Firefox 1 | 121259248787 | 14,415 | 33.42 | 49.48 | 0 | 32 | 3,222 | 201 |
+| Firefox 2 | 121259249167 | 14,499 | 33.26 | 50.30 | 1 | 34 | 4,008 | 185 |
+| Firefox 3 | 121259249062 | 13,749 | 17.44 | 34.18 | 0 | 20 | 2,222 | 127 |
+| WebKit 1 | 121259249089 | 14,402 | 45 | 129 | 3 | 39 | 2,303 | 208 |
+| WebKit 2 | 121259249064 | 14,224 | 42 | 132 | 2 | 52 | 2,240 | 177 |
+| WebKit 3 | 121259248973 | 14,466 | 45 | 129 | 5 | 49 | 2,225 | 177 |
+
+The exact `targetResults` keys use the same abbreviations as the preceding table: C is `countsP95Under500`, T is `firstCardAfterEveryTabUnder1000`, P is `scrollFramesP999Under50`, M is `noScrollFrameOver200`, R is `atMost50ResponseCards`, D is `atMost300DomCards`, and V is `all6000SuggestionsVisible`.
+
+| Engine/repetition | C | T | P | M | R | D | V |
+|---|---|---|---|---|---|---|---|
+| Firefox 1 | true | true | true | true | true | true | true |
+| Firefox 2 | true | true | true | true | true | true | true |
+| Firefox 3 | true | true | true | true | true | true | true |
+| WebKit 1 | true | true | true | true | true | true | true |
+| WebKit 2 | true | true | true | true | true | true | true |
+| WebKit 3 | true | true | true | true | true | true | true |
+
+Each repetition focuses and shows all 6,000 consecutive suggestions, returns at most 50 cards per response and mounts at most 23 cards. No traversal stops, page errors or observed off-origin requests occur. At least 99.9654 % of measured frames are at most 50 ms in each run, and none exceeds 132 ms. The separate 300-card retained-window contract is not a new heap measurement here; the DOM count and response bound are the observations above.
+
+WebKit's first-paging pause persists at zero-based card index 48 in all three repetitions, for 129/132/129 ms at frame indexes 110/104/104 and elapsed times 1,957/1,845/1,881 ms. These intervals overlap pending window and worker-message lifetimes, which do not measure CPU work. The result meets the amended bounds but does not repair the pause or identify a style/layout, GC or scheduling cause. It stays in [BL-011](../BACKLOG.md#bl-011-webkits-first-paging-pause); the entry is unchanged because this run has no frame over 200 ms, uses the same WebKit 26.6 and supplies no Safari user report or release change that meets its reopening triggers.
+
+The six VMs report Linux `7.0.0-1017-azure`, four logical CPUs, Node `v24.21.0`, Firefox `155.0` or WebKit `26.6`, with the unchanged 1,440 by 1,000 viewport. Five use AMD EPYC 7763 processors; Firefox 3 uses AMD EPYC 9V45. Admission free memory ranges from 14,791,946,240 to 15,039,430,656 bytes, with short-sample CPU load from 0 to 2.50 percent. These are independent runner samples, not a matched-hardware comparison or continuous-idle proof. Raw measurement timestamps span 18:52:33.449Z to 19:03:07.540Z.
+
+The integrated feed is accepted under FRAME-1 B for the measured Firefox/WebKit desktop generated-data scope at 100,000 entries, with traversal over 6,000 suggestions and configuration-cold count p95 at 100,000. This run contains no Chromium measurement of the integrated source; the earlier Chromium result remains evidence for its earlier source only. Fresh-worker and fresh-data-revision count distributions, wheel/touch/scrollbar gestures, Instagram/media/original-rich feeds, small screens, a person's Safari installation, matched-hardware variance and exact CPU/GC attribution remain unmeasured. The multi-second first revision queries above are not closed by the passing configuration-cold p95. The original strict-target misses and the historical pre-restyle boundary remain visible; this subsection supersedes only that rendering gap for the two measured engines.
+
+Raw reports and screenshots are retained outside Git under `phase2/w-s16/run-40223273860/` in the maintainer's evidence archive; the documentation reader is under `phase2/w-s16/`. No archive contents enter the repository.
+
+| Raw repetition file, run 40223273860 | SHA-256 |
+|---|---|
+| `firefox-2026-10-25T18-53-33-757Z.json` | `285361c6a8f8cf599f675f1735554263adaf7e846b92dcb5d8f4bcacfcbf654d` |
+| `firefox-2026-10-25T18-54-26-522Z.json` | `f1a3bffd1bf27758145b0d2f97549a1e6d6d04d072a34ee6be832df7106899b0` |
+| `firefox-2026-10-25T18-52-33-449Z.json` | `f6ba720a456517732cc1614c2580dfcbd77d99204ecdd1a300229ed99f9536c0` |
+| `webkit-2026-10-25T18-52-52-260Z.json` | `4586caab75c1ad2adee160d224e8910a35715c653daea21757b974f1ab80ccdc` |
+| `webkit-2026-10-25T18-52-48-074Z.json` | `b11462db7913d4f7f20eb729005c0671869ae9fd210a346e73efc46870a58822` |
+| `webkit-2026-10-25T18-53-06-991Z.json` | `6e8d386be12a3ad509f6d59c4c68dbae838e132ef1fb7da317c6712688364c2e` |

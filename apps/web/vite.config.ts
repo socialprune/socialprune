@@ -5,6 +5,7 @@ import { shellManifest } from './tooling/manifest.ts';
 import { demoBytes } from './tooling/demo-bytes.ts';
 import { reviewBuild } from './tooling/review-build.ts';
 import { desktopBuild } from './tooling/desktop-build.ts';
+import { frameAttributionBuild } from './tooling/frame-attribution-build.ts';
 
 export default defineConfig(({ mode }) => {
   // Build targets use Vite --mode only. No environment-variable lookup is
@@ -18,6 +19,7 @@ export default defineConfig(({ mode }) => {
     base: review || desktop ? '/' : '/socialprune/',
     appType: 'mpa',
     plugins: [
+      frameAttributionBuild(mode),
       react(),
       ...(desktop
         ? [desktopBuild()]

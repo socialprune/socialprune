@@ -1,8 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { join } from 'node:path';
-import { SCALE_OUTPUT } from './scale-host.ts';
+import { SCALE_OUTPUT, SCALE_PORT } from './scale-host.ts';
 
-const port = 4781;
+const port = SCALE_PORT;
 const origin = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: '.',

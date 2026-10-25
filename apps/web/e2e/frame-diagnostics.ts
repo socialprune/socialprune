@@ -1,163 +1,244 @@
 import type { Page } from '@playwright/test';
+import { summarizeFrame } from './frame-attribution-model.ts';
+import type { FrameWork } from './frame-attribution-model.ts';
 
-/** Test-only opt-in attribution. Request lifetimes are not synchronous CPU time. */
+/** Paired with the explicit e2e-frame build, never a shipped runtime switch. */
 export async function observeFeedFrames(page: Page) {
   await page.addInitScript(() => {
-    const events: {
-      kind: string;
-      start: number;
-      end: number;
-      detail: string;
-    }[] = [];
-    const frames: { start: number; end: number; overlapping: typeof events }[] =
-      [];
-    let active = false;
-    const record = (kind: string, start: number, detail: string) => {
-      events.push({ kind, start, end: performance.now(), detail });
-      if (events.length > 500) events.shift();
-    };
-    const mark = (kind: string, detail: string) => {
-      const start = performance.now();
-      performance.mark(`feed-diagnostic:${kind}`);
-      record(kind, start, detail);
-      performance.clearMarks(`feed-diagnostic:${kind}`);
-    };
-    const hook = {
+    Reflect.set(window, '__spNativeRAF', requestAnimationFrame);
+    Reflect.set(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
       supportsFiber: true,
       inject: () => 1,
-      onCommitFiberRoot: (_renderer: unknown, root: unknown) => {
-        const fiber = root as {
-          current?: { actualDuration?: number; treeBaseDuration?: number };
-        };
-        const end = performance.now();
-        const duration = fiber.current?.actualDuration;
-        if (active) mark('react-commit-mark', 'production commit boundary');
-        events.push({
-          kind: 'react-commit',
-          start: end - (duration ?? 0),
-          end,
-          detail:
-            duration === undefined
-              ? 'commit timestamp only; production duration unavailable'
-              : `actualDuration=${duration}`,
-        });
-        if (events.length > 500) events.shift();
+      onCommitFiberRoot: () => {
+        const current = probe();
+        const now = performance.now();
+        current?.record(
+          'react-commit',
+          now,
+          now,
+          'production commit timestamp',
+        );
       },
       onCommitFiberUnmount: () => {},
+    });
+    type Probe = {
+      measure: <T>(kind: string, callback: () => T, detail?: string) => T;
+      record: (
+        kind: string,
+        start: number,
+        end: number,
+        detail: string,
+        scope?: 'marker' | 'async-lifetime',
+      ) => void;
     };
-    Reflect.set(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__', hook);
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked below with the original receiver through call(this).
-    const measure = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = function () {
-      const start = performance.now();
-      const result = measure.call(this);
-      const duration = performance.now() - start;
-      if (duration >= 1)
-        record(
-          'layout-read',
-          start,
-          this.tagName === 'ARTICLE'
-            ? `article:${this.getAttribute('aria-posinset')}`
-            : (this.getAttribute('role') ?? this.tagName),
+    const probe = () =>
+      Reflect.get(window, '__spFrameAttribution') as Probe | undefined;
+    const timed = <T>(kind: string, callback: () => T, detail = '') => {
+      const current = probe();
+      return current ? current.measure(kind, callback, detail) : callback();
+    };
+    // The synchronous listener body, not the asynchronous request lifetime.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with original Worker receiver below.
+    const workerAdd = Worker.prototype.addEventListener;
+    const listeners = new WeakMap<
+      EventListenerOrEventListenerObject,
+      EventListener
+    >();
+    Worker.prototype.addEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type !== 'message')
+        return workerAdd.call(this, type, listener, options);
+      const wrapped: EventListener = (event) =>
+        timed(
+          'worker-message-handler',
+          () =>
+            typeof listener === 'function'
+              ? listener.call(this, event)
+              : listener.handleEvent(event),
+          (event as MessageEvent<{ type?: string }>).data?.type ?? 'unknown',
         );
-      return result;
+      listeners.set(listener, wrapped);
+      return workerAdd.call(this, type, wrapped, options);
     };
-    const observer = new MutationObserver(() => {
-      const start = performance.now();
-      const feed = document.querySelector('[role="feed"]');
-      record(
-        'feed-dom-commit',
-        start,
-        `mounted=${feed?.querySelectorAll('article').length ?? 0}`,
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with original Worker receiver below.
+    const workerRemove = Worker.prototype.removeEventListener;
+    Worker.prototype.removeEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | EventListenerOptions,
+    ) {
+      return workerRemove.call(
+        this,
+        type,
+        listeners.get(listener) ?? listener,
+        options,
       );
-    });
-    observer.observe(document, { childList: true, subtree: true });
-    if (PerformanceObserver.supportedEntryTypes.includes('longtask'))
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries())
-          events.push({
-            kind: 'longtask',
-            start: entry.startTime,
-            end: entry.startTime + entry.duration,
-            detail: entry.name,
-          });
-      }).observe({ type: 'longtask', buffered: true });
-    let previous: number | undefined;
-    function tick(now: number) {
-      if (active && previous !== undefined && now - previous > 50) {
-        const start = previous;
-        frames.push({
-          start,
-          end: now,
-          overlapping: events
-            .filter((event) => event.end >= start && event.start <= now)
-            .slice(-100),
-        });
-        if (frames.length > 100) frames.shift();
-      }
-      previous = now;
-      requestAnimationFrame(tick);
+    };
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with original Element receiver below.
+    const originalRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      return timed(
+        'style-layout-read',
+        () => originalRect.call(this),
+        this.tagName,
+      );
+    };
+    for (const key of ['offsetHeight', 'offsetWidth'] as const) {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        key,
+      );
+      if (!descriptor?.get) continue;
+      Object.defineProperty(HTMLElement.prototype, key, {
+        ...descriptor,
+        get() {
+          return timed(
+            'style-layout-read',
+            () => descriptor.get!.call(this) as number,
+            key,
+          );
+        },
+      });
     }
-    requestAnimationFrame(tick);
-    Reflect.set(window, '__feedFrameDiagnostics', {
-      start() {
-        active = true;
-        previous = undefined;
-        events.length = 0;
-        frames.length = 0;
-      },
-      read() {
-        active = false;
-        return {
-          frames,
-          trailingEvents: events,
-          boundary:
-            'React production commit timestamps, DOM mutations and timed layout reads; overlapping asynchronous window waits do not prove CPU cause',
-        };
-      },
-      record,
-      mark,
-    });
+    const originalComputed = getComputedStyle;
+    window.getComputedStyle = (element, pseudo) =>
+      timed('computed-style', () => originalComputed(element, pseudo));
+    const OriginalResize = ResizeObserver;
+    window.ResizeObserver = class extends OriginalResize {
+      constructor(callback: ResizeObserverCallback) {
+        super((entries, observer) =>
+          timed(
+            'resize-observer',
+            () => callback(entries, observer),
+            `entries=${entries.length}`,
+          ),
+        );
+      }
+    };
+    const originalFrame = requestAnimationFrame;
+    window.requestAnimationFrame = (callback) =>
+      originalFrame((time) => timed('raf-callback', () => callback(time)));
+    const portMessage = Object.getOwnPropertyDescriptor(
+      MessagePort.prototype,
+      'onmessage',
+    );
+    if (portMessage?.get && portMessage.set) {
+      Object.defineProperty(MessagePort.prototype, 'onmessage', {
+        ...portMessage,
+        set(callback: ((event: MessageEvent) => unknown) | null) {
+          const receiver = this as MessagePort;
+          portMessage.set!.call(
+            receiver,
+            callback
+              ? (event: MessageEvent) =>
+                  timed('scheduler-messageport-callback', () =>
+                    callback.call(receiver, event),
+                  )
+              : null,
+          );
+        },
+      });
+    }
+    for (const name of [
+      'appendChild',
+      'insertBefore',
+      'removeChild',
+    ] as const) {
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Reflect.apply restores the original Node receiver.
+      const original = Node.prototype[name] as (...args: unknown[]) => unknown;
+      Reflect.set(
+        Node.prototype,
+        name,
+        function (this: Node, ...args: unknown[]) {
+          return timed(
+            'react-dom-mutation',
+            () => Reflect.apply(original, this, args),
+            name,
+          );
+        },
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Original Element receiver restored by call(this).
+    const attribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name: string, value: string) {
+      return timed(
+        'dom-attribute-write',
+        () => attribute.call(this, name, value),
+        name,
+      );
+    };
   });
   return {
     async start() {
       await page.evaluate(() => {
-        const diagnostics = Reflect.get(window, '__feedFrameDiagnostics') as {
-          start: () => void;
-          record: (kind: string, start: number, detail: string) => void;
-          mark: (kind: string, detail: string) => void;
-        };
-        const original = window.workspace.feedWindow.bind(window.workspace);
-        window.workspace.feedWindow = async (input) => {
-          const start = performance.now();
-          diagnostics.mark(
-            'window-start',
-            `offset=${input.offset ?? 'anchor'}`,
+        const probe = Reflect.get(window, '__spFrameAttribution') as
+          | {
+              start: () => void;
+              record: (
+                kind: string,
+                start: number,
+                end: number,
+                detail: string,
+                scope: 'async-lifetime',
+              ) => void;
+            }
+          | undefined;
+        if (!probe)
+          throw Error(
+            'Frame attribution requires the explicit e2e-frame build.',
           );
+        const original = window.workspace.request.bind(window.workspace);
+        window.workspace.request = async (input, ...rest) => {
+          const start = performance.now();
           try {
-            return await original(input);
+            return await original(input, ...rest);
           } finally {
-            diagnostics.mark(
-              'window-end',
-              `offset=${input.offset ?? 'anchor'}`,
-            );
-            diagnostics.record(
-              'window-lifetime',
-              start,
-              `offset=${input.offset ?? 'anchor'}`,
-            );
+            if (['planCounts', 'feedWindow'].includes(input.type))
+              probe.record(
+                `request-${input.type}`,
+                start,
+                performance.now(),
+                input.type,
+                'async-lifetime',
+              );
           }
         };
-        diagnostics.start();
+        probe.start();
       });
     },
-    read: () =>
-      page.evaluate(() =>
+    async read() {
+      const result = await page.evaluate(() =>
         (
-          Reflect.get(window, '__feedFrameDiagnostics') as {
-            read: () => unknown;
+          Reflect.get(window, '__spFrameAttribution') as {
+            read: () => {
+              format: string;
+              frames: {
+                start: number;
+                end: number;
+                work: FrameWork[];
+                dropped: number;
+              }[];
+              dropped: number;
+              profiledReact: boolean;
+              coverage: Record<
+                string,
+                { calls: number; wallMs: number; selfMs: number }
+              >;
+              boundary: string;
+            };
           }
         ).read(),
-      ),
+      );
+      return {
+        ...result,
+        frames: result.frames.map((frame) => ({
+          ...frame,
+          ...summarizeFrame(frame.start, frame.end, frame.work),
+        })),
+      };
+    },
   };
 }

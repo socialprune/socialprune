@@ -291,3 +291,55 @@ Both WebKit frame phases reach all 6,000 focused and visible cards and contain t
 The completed and recovered raw reports, failed/contaminated admission records, process censuses and exact variant patch remain in `socialprune-handoff/phase2/w-s10/`. Failed startup and interrupted commands are not counted as A/B results. The frame target is still open, and the mixed attribution result is not an integration approval. The S10 repository delta is limited to this evidence correction and a generated projection-byte regression test, within the existing eight-path candidate; no worker-runtime or workspace-client file changed.
 
 The allocation-boundary correction above is backed by `w-s10/projection-heap.json`, SHA-256 `844dbea0f1a0ecd82dc81eda10e396d6a6b430707b28d05962c10edb8bc1ce64`, and a generated unit test at ten and 1,000 entries. At 100,000 entries, membership/base/holding/order consume 100,000/100,000/200,000/400,000 bytes, exactly eight linear projection bytes per entry. Retained account, date, likes, reposts, eligibility, decision and encoded-check inputs consume 3,600,004 additional typed bytes; IDs, the ID index and runtime bookkeeping account for the separately measured roughly 7.84 MB heap increment. Counters and headers add per-configuration overhead, not a new per-entry column. The complete owned cache remains 122.3894 measured combined bytes per entry; meeting the narrower eight-byte projection growth does not make the other retained inputs free. The direct projection call added 6,936 heap bytes beyond the new output arrays. No ADR amendment is proposed from this split.
+
+### Frame work attribution on DESIGN-H S1, 2026-10-25
+
+This round uses `9f02d1be50d61f6c21a61ab791bffa0e10668f06`, which includes the maintainer-passed DESIGN-H S1 feed CSS. It does not reuse the previous base's timing identity or edit lane H's held feed TSX, CSS, settings or shared styles. A test-only Vite mode, `e2e-frame`, substitutes an entrypoint and wrappers at the feed's virtualizer and session module boundaries. The normal production, review, desktop and release entrypoints do not import the probes. Built-bundle readback verifies that the attribution marker is present in the attribution build and absent from a normal production build.
+
+The producer chain is explicit: test-only Vite resolution selects the wrappers; wrappers around virtualizer measurement/scroll methods, layout reads, React DOM writes, the Scheduler's message-port callback, worker message handlers and feed count/window updates record synchronous wall spans; an rAF observer associates those spans with each interval above 50 ms. The JSON consumer recomputes interval union coverage, exclusive nested-call totals and unobserved time. React production commit callbacks are zero-duration markers, not render durations. The pinned React package advertises but does not contain its optional profiling entry, so no development React timing is substituted for production. Asynchronous window-request lifetimes are retained as a separate class and cannot contribute to synchronous-duration totals. Firefox and WebKit expose no Long Tasks entry in this procedure; unrecorded browser style, layout, paint, scheduling, GC or host preemption remains unassigned.
+
+A controlled browser case in each engine records a deliberate 65 ms synchronous span and checks that it appears in a long interval, alongside real commit, Scheduler and virtualizer coverage. A planted accounting defect that classified an asynchronous wait as synchronous work fails the deterministic unit guard. That guard also checks nested spans are not counted twice and cross-frame spans are clipped. These controls prove producer reachability and the accounting rule, not full engine CPU coverage. The wrappers change the workload, so the following intervals are diagnostic observations, not uninstrumented target acceptance.
+
+| Diagnostic observation | Firefox 155.0 | WebKit 26.6 |
+|---|---:|---:|
+| Run start, UTC | 10:39:48.623 | 11:33:06.468 |
+| Run end, UTC | 10:45:24.744 | 11:39:03.522 |
+| CPU load at in-test admission, percent | 91 | 59 |
+| Free physical bytes at in-test admission | 13,117,526,016 | 15,878,545,408 |
+| Consecutive focused and visible suggestions | 6,000 | 6,000 |
+| Mounted-card maximum | 23 | 23 |
+| rAF interval maximum, ms | 118.04 | 112 |
+| Intervals above 50 ms, all with attached work records | 63 | 36 |
+| Dropped work records | 0 | 0 |
+| Union of measured synchronous wall time in long intervals, ms | 1,699.74 | 332 |
+| Unobserved time in long intervals, ms | 2,355.42 | 1,933 |
+| Unobserved share of long-interval time, percent | 58.08 | 85.34 |
+| Long intervals with more than half their duration unobserved | 36 of 63 | 36 of 36 |
+| Layout-read exclusive wall time in long intervals, ms | 506.10 | 160 |
+| Of that, `offsetHeight` reads nested under virtualizer measurement, ms | 466.78 | 139 |
+| `scrollToIndex` exclusive wall time in long intervals, ms | 476 | 2 |
+| DOM attribute writes plus DOM mutation calls in long intervals, ms | 564 | 102 |
+| Worker message-handler exclusive wall time in long intervals, ms | 89 | 29 |
+| Feed count/window update exclusive wall time in long intervals, ms | 1 | 2 |
+
+The capture source identity is `257feb4e930846b57b8a53b539c1699f9221a703037320aba3114d6f3d336c75`, with harness identity `ebd0a7dc5fb97ffc8def932e0461df62c4a27cc1ba761474743c7ab43f208b01`. Both runs cover only the 6,000-suggestion phase; no 100,000-entry count p95 was measured in this round. The known-source and generated-input hashes, every raw rAF delta, attached work records, aggregate hook coverage and resource-census logs are retained outside Git under `phase2/w-s11/` in the maintainer's evidence archive. The monitor admitted only at at least 12 GiB free and no browser descendants of another `phase2/wt-*` lane, and would stop its owned run below 6,144 MiB. One WebKit attempt was stopped when another lane browser appeared; it is not one of the two completed captures. Admission refusals and a startup-gate failure are preserved separately. No foreign process was stopped.
+
+The layout wrapper also sees the harness's own geometry polling. The `offsetHeight` reads nested under virtualizer methods are attributable to that app call path, while other rectangle reads and rAF callback spans can include measurement work. All synchronous spans are wall duration, so an enclosing method can include OS preemption rather than continuous CPU execution. The aggregate attribution is therefore not a claim that application JS consumed every recorded millisecond. A later report-field addition saves the frame phase's response log before the optional early return; these two earlier captures do not contain that field and are not described as proving a new maximum response size. No repeat capture was made just to populate it.
+
+The delivered harness hash after that report-only addition is `d1a42d61e48bad28e488b7e8a9a8f5120a74e605b068e468c8f3e4307d20b3c1`. Instrumentation code and source identity remain unchanged. The renamed opt-in control measurement additionally switches tabs to assert worker-handler and count/window-update coverage; that final control passes in both engines and stays outside the ordinary `*.spec.ts` suite. Earlier capture hashes remain attached to their original bytes.
+
+| Engine | Proven contributor | Inference and remaining gap |
+|---|---|---|
+| Firefox | `offsetHeight`/layout reads nested under virtualizer measurement and `scrollToIndex` are the two largest named synchronous categories; count/window updates do not dominate the measured spans. | The missing 58.08 percent prevents a dominant overall cause. Coarse clocks and preemption affect callback wall time. Layout/style interaction is a candidate, not a proven fix. |
+| WebKit | Layout reads are the largest named synchronous category; DOM calls are next. Worker handlers and count/window updates are smaller measured contributors. | The missing 85.34 percent dominates every long interval. Browser layout/paint, scheduling, GC and host contention are not separated by these marks. No dominant overall cause is proven. |
+
+No application repair follows from those incomplete causal traces. A conditional callsite plan for H is returned outside Git, not applied to its held files: inspect duplicate `scrollToIndex` requests across a retention rebase and focus retry, and compare ResizeObserver measurements with the `offsetHeight` fallback only if the quiet trace confirms that path. Existing focus/visibility acknowledgement, 50-card responses, 300-card retained windows and variable-height cards must remain intact. This is a hypothesis plan, not a claim that the current focus path is defective. The 50 ms target remains open and the feed is not accepted at this scale.
+
+For the independent host, `.github/workflows/scale-measure.yml` produces one Firefox and one WebKit job on `ubuntu-latest`, triggered by pushes to `measure/**` or `workflow_dispatch`. The parent-owned branch is `measure/adr032-s11-frame-attribution`. Jobs use pinned actions, read-only contents, frozen dependencies and no configured secrets, deployment or `ci.yml` change. Each job validates the known-work control, runs the plain production scale procedure, then captures the attribution-only 6,000-entry phase separately. Artifacts named `feed-scale-firefox-<commit SHA>` and `feed-scale-webkit-<commit SHA>` are retained even on failure. Their consumers are the parent and this evidence record: read `renderer`, `scope`, `host`, `sourceHash`, `harnessHash`, `completed`, `framePhaseOnly`, `targetResults` or `frameTargetResults` before comparing any number. Linux memory reporting is summed owned-tree `VmRSS`, not Windows private bytes, and the original 12 GiB admission is retained. The workflow has not been pushed or executed by this lane; a hosted artifact readback is still required before any quiet-host conclusion.
+
+The evidence producer changed here is test-only instrumentation and host reporting. The downstream AGENTS status sentence is proposed to the parent, not edited by this lane, and must continue to name the unresolved frame target rather than imply a repair. No criterion, worker/client behavior, decision semantics, architecture target or UI CSS changed.
+
+| Raw attribution file | SHA-256 |
+|---|---|
+| `firefox-2026-10-25T10-39-48-623Z.json` | `fb7db57c02d74364555673fb3107eb681e0802f991497437f36d8c75267d5ba1` |
+| `webkit-2026-10-25T11-33-06-468Z.json` | `4bb3828481f31f6a24199bec8286dd53e7de08aea3642b6f98a7f45b7f350e5f` |

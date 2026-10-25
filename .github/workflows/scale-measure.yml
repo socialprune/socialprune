@@ -1,0 +1,62 @@
+name: Feed scale measurement
+
+on:
+  push:
+    branches: ['measure/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feed-scale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+    env:
+      SP_SCALE_PORT: '4707'
+      SP_SCALE_OUTPUT: ${{ runner.temp }}/feed-scale/${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install browser system dependencies
+        timeout-minutes: 30
+        run: pnpm --filter @socialprune/web exec playwright install-deps ${{ matrix.engine }}
+      - name: Install pinned browser
+        timeout-minutes: 5
+        run: pnpm --filter @socialprune/web exec playwright install ${{ matrix.engine }}
+      - name: Validate attribution control
+        timeout-minutes: 5
+        run: pnpm --filter @socialprune/web exec playwright test --config e2e/frame-controls.config.ts --project ${{ matrix.engine }} --workers=1
+      - name: Plain production measurement
+        timeout-minutes: 18
+        run: pnpm --filter @socialprune/web exec playwright test --config e2e/scale.config.ts --project ${{ matrix.engine }} --workers=1
+      - name: Attribution build, 6000-suggestion phase only
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        env:
+          SP_FEED_FRAME_DIAGNOSTICS: '1'
+          SP_SCALE_SCOPE: frames
+        run: pnpm --filter @socialprune/web exec playwright test --config e2e/frame.config.ts --project ${{ matrix.engine }} --workers=1
+      - name: Upload raw measurements and traces
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: feed-scale-${{ matrix.engine }}-${{ github.sha }}
+          path: ${{ runner.temp }}/feed-scale/${{ matrix.engine }}/
+          if-no-files-found: error
+          retention-days: 14

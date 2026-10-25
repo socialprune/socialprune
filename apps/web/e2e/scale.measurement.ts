@@ -112,6 +112,15 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     'scale-data.ts',
     'scale-host.ts',
     'scale.config.ts',
+    'frame-diagnostics.ts',
+    'frame-attribution-model.ts',
+    'frame.config.ts',
+    '../test/probes/frame-entry.tsx',
+    '../test/probes/frame-runtime.ts',
+    '../test/probes/frame-session.ts',
+    '../test/probes/frame-virtualizer.ts',
+    '../tooling/frame-attribution-build.ts',
+    '../vite.config.ts',
   ];
   const harnessHash = createHash('sha256');
   for (const name of harnessFiles)
@@ -171,6 +180,9 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     process.env['SP_FEED_FRAME_DIAGNOSTICS'] === '1'
       ? await observeFeedFrames(page)
       : null;
+  report['renderer'] = frameDiagnostics
+    ? 'test-only wrapped production React attribution build, not uninstrumented acceptance timing'
+    : 'production';
   const external: string[] = [],
     pageErrors: string[] = [];
   const startupEvents: { at: string; kind: string; detail: string }[] = [];
@@ -196,6 +208,27 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
   });
   page.on('pageerror', (error) => pageErrors.push(error.message));
   const memory: unknown[] = [];
+  let resourceFailure: string | null = null;
+  let checkingResources = false;
+  const resourceGuard = setInterval(() => {
+    if (checkingResources) return;
+    checkingResources = true;
+    void scaleHost()
+      .then((state) => {
+        if (state.freePhysicalBytes < 6144 * 1024 ** 2) {
+          resourceFailure =
+            'free physical memory below6144MiB; only owned browser closed';
+          report['resourceAbort'] = { at: new Date().toISOString(), ...state };
+          return context.close();
+        }
+      })
+      .catch((error) => {
+        resourceFailure = String(error);
+      })
+      .finally(() => {
+        checkingResources = false;
+      });
+  }, 15000);
   async function sampleMemory(label: string) {
     memory.push({ label, ...(await scaleOwnedMemory(rootPid!)) });
   }
@@ -203,6 +236,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     report['engineVersion'] = browser.version();
     const startupStart = performance.now();
     await waitForApp(page);
+    if (resourceFailure) throw Error(resourceFailure);
     report['startupMs'] = performance.now() - startupStart;
     report['startupEvents'] = startupEvents;
     await page.evaluate(() => {
@@ -411,6 +445,34 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       report['frameDiagnostics'] = await frameDiagnostics.read();
     await save();
     await sampleMemory('after 6000 traversal attempt');
+    report['requests6000'] = await page.evaluate(
+      () => Reflect.get(window, '__scaleRequests') as unknown,
+    );
+    // Attribution-only mode shortens the loop; it does not claim the omitted
+    // 100k timings or alter any acceptance threshold.
+    // eslint-disable-next-line no-restricted-properties -- Test-process measurement scope only.
+    if (process.env['SP_SCALE_SCOPE'] === 'frames') {
+      report['scope'] =
+        '6000-suggestion frame attribution only; 100k counts omitted';
+      report['completed'] = true;
+      report['framePhaseOnly'] = true;
+      const scroll = report['scroll'] as {
+        maxFrameMs: number;
+        maxDomCards: number;
+        uniqueVisible: number;
+      };
+      report['frameTargetResults'] = {
+        noFrameOver50: scroll.maxFrameMs <= 50,
+        atMost300DomCards: scroll.maxDomCards <= 300,
+        all6000SuggestionsVisible:
+          scroll.uniqueVisible === 6000 && focusedCards === 6000,
+      };
+      report['pageErrors'] = pageErrors;
+      report['networkOutsideOrigin'] = external;
+      expect(external).toEqual([]);
+      expect(pageErrors).toEqual([]);
+      return;
+    }
     const previewStart = performance.now();
     await page
       .getByRole('button', {
@@ -523,24 +585,31 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     report['startupEvents'] = startupEvents;
     report['pageErrors'] = pageErrors;
     report['networkOutsideOrigin'] = external;
-    report['failureState'] = await page.evaluate(async () => ({
-      url: location.href,
-      gate: document
-        .querySelector('main[data-gate]')
-        ?.getAttribute('data-gate'),
-      controller: navigator.serviceWorker.controller?.scriptURL ?? null,
-      registrations: (await navigator.serviceWorker.getRegistrations()).map(
-        (registration) => ({
-          scope: registration.scope,
-          active: registration.active?.state ?? null,
-          waiting: registration.waiting?.state ?? null,
-          installing: registration.installing?.state ?? null,
-        }),
-      ),
-    }));
-    await page.screenshot({ path: file.replace(/\.json$/, '-failure.png') });
+    report['failureState'] = await page
+      .evaluate(async () => ({
+        url: location.href,
+        gate: document
+          .querySelector('main[data-gate]')
+          ?.getAttribute('data-gate'),
+        controller: navigator.serviceWorker.controller?.scriptURL ?? null,
+        registrations: (await navigator.serviceWorker.getRegistrations()).map(
+          (registration) => ({
+            scope: registration.scope,
+            active: registration.active?.state ?? null,
+            waiting: registration.waiting?.state ?? null,
+            installing: registration.installing?.state ?? null,
+          }),
+        ),
+      }))
+      .catch(() => ({
+        unavailable: 'owned page closed or diagnostic evaluation failed',
+      }));
+    await page
+      .screenshot({ path: file.replace(/\.json$/, '-failure.png') })
+      .catch(() => undefined);
     throw error;
   } finally {
+    clearInterval(resourceGuard);
     report['endedAt'] = new Date().toISOString();
     report['memory'] = memory;
     await save();

@@ -1,6 +1,9 @@
 # ADR-007: Review data in a workspace worker, its protocol, queries and search
 
 - **Status:** Accepted
+- Rule Projection changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (outcome values include `deleted-via-browser`).
+- Rule Protocol changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`outcome` rejects changes to the final browser-deletion outcome with `OUTCOME_FINAL`).
+- Rule Queries changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (outcome filters include `deleted-via-browser`).
 - Rule Protocol changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`getOriginals` accepts at most 200 IDs; the browser worker returns an empty list).
 - Rule Protocol changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`getConversation` returns at most 21 links and a chain state; the browser worker returns an empty chain).
 - **Date:** 2026-10-06

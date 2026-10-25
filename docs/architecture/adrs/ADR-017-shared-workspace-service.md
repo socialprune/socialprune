@@ -1,6 +1,7 @@
 # ADR-017: Package boundaries and the shared workspace service
 
 - **Status:** Accepted
+- Rule Capability split changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`BrowserOutcomeWriter` appends only browser-deletion or verified-reappearance outcomes and journal records, never decisions; CLI and desktop runners share it).
 - Rule Capability split changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (`OriginalsFillWriter` writes only originals, fill runs and read attempts, never decisions or outcomes; only the fill runner constructs it).
 - **Date:** 2026-10-06
 - **Hard constraints touched:** 3 (the capability to write decisions exists only on the review side)

@@ -1,6 +1,8 @@
 # ADR-014: Agent interface, Agent Skill and the MCP path
 
 - **Status:** Accepted
+- Rule Agent Skill changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (agents may plan X deletion with `--dry-run --json`, never start it, manage its profile or edit its journal).
+- Rule Decision Drivers changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (the human-started runner has a narrow outcome writer, never a decision writer or agent deletion capability).
 - Rule Agent Skill changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (Instagram context dry runs, exact `context-instagram` orders and separately confirmed profile adoption are the named exceptions).
 - Rule Agent Skill changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (anonymous originals fetch requires the person's prior agreement to IP and post-ID disclosure; its dry run is permitted).
 - Rule Agent Skill changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (X fill dry runs or the exact AUTO-1 order are permitted, never deletion, setup or reading profile contents).

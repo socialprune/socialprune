@@ -1,6 +1,7 @@
 # ADR-005: Browser storage engine and persistence
 
 - **Status:** Accepted
+- Rule 2 changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`browserRuns` and `browserAttempts` retain the restored deletion journal through version 9).
 - Rule 1 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (restored version 2 or 3 originals migrate to the version 4 record shape).
 - Rule 2 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the `originals` store retains restored records; the browser still fetches nothing).
 - **Date:** 2026-10-06

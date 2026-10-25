@@ -1,6 +1,9 @@
 # ADR-018: CLI release bundle and npm package contents
 
 - **Status:** Accepted
+- Rule Build changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`playwright-core` 1.63.0 remains external to the bundle and loads only for browser commands).
+- Rule Package contents changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (the runtime dependency and confirmation-page assets are included).
+- Rule Checks changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (the packed smoke runs `delete x --dry-run --json`, never deletion).
 - Rule Checks changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (the packed smoke runs `context instagram --dry-run --json`).
 - Rule Package contents changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`THIRD_PARTY_NOTICES` includes the `react-tweet` entry).
 - Rule Checks changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the packed smoke runs only the generated-data originals-fetch dry run and asserts zero network calls).

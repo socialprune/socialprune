@@ -1,6 +1,9 @@
 # ADR-006: Workspace model, decision event log, schema version 2 and portable backup
 
 - **Status:** Accepted
+- Rule Outcome events changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`deleted-via-browser` and `browser-x` provenance link to a settling attempt; only verified reappearance reverses that outcome).
+- Rule Workspace document, version 2 changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (the schema-3 browser journal and current version-9 records and counts).
+- Rule Backup and restore changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (journal/outcome graph validation and CLI warning-gated restore preserve unresolved effects and classified warnings).
 - Rule Workspace document, version 2 changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (optional `originals` and `counts.originals`, omitted when empty).
 - Rule Backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (original IDs, records and counts are validated).
 - Rule Workspace document, version 2 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (version 4 originals, media and fill-journal fields).

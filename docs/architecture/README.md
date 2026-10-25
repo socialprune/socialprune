@@ -2,7 +2,7 @@
 
 This is the map for contributors. It describes how SocialPrune is meant to be built from Phase 2 on: which package owns what, which process runs where, how export data moves, and where the trust boundaries are. The reasons behind each choice are in the [decision records](adrs/README.md), and the measurements behind them in [evidence-2026-10.md](evidence-2026-10.md). The visual and interaction design is in [docs/design/README.md](../design/README.md).
 
-Records 001 to 022, which this map relies on, are `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. On 2026-10-11 the maintainer changed hard constraint 4, so that SocialPrune may act in the person's own account on the person's order; records 023 and 026 to 030 describe how. He accepted 028 and 030 on 2026-10-16, and 023, 026 and 029 on 2026-10-24 at 19:28:04Z (cards ADR-023 v1 A, ADR-026 v1 A and ADR-029 v1 A); only 027 remains `Proposed`. The accepted [ADR-031](adrs/ADR-031-desktop-app.md) adds a Windows desktop app around the same review and engine. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
+Records 001 to 022, which this map relies on, are `Accepted`. The web app, the CLI and the agent interface it describes are built and tested on generated data. On 2026-10-11 the maintainer changed hard constraint 4, so that SocialPrune may act in the person's own account on the person's order; records 023 and 026 to 030 describe how. He accepted 028 and 030 on 2026-10-16, 023, 026 and 029 on 2026-10-24 at 19:28:04Z (cards ADR-023 v1 A, ADR-026 v1 A and ADR-029 v1 A), and 027 on 2026-10-25 at 13:37:56Z (ADR-027 v1 A). The accepted [ADR-031](adrs/ADR-031-desktop-app.md) adds a Windows desktop app around the same review and engine. The [index](adrs/README.md) lists each record with the maintainer's decision on the choices it left open.
 
 ## What the system does
 
@@ -164,7 +164,7 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 
 ## Decision records
 
-001 to 023, 026 and 028 to 034 accepted; only 027 remains proposed after the approvals of 2026-10-24; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
+001 to 023 and 026 to 034 are accepted after ADR-027 v1 A on 2026-10-25; see the [index](adrs/README.md) for status and the maintainer's decisions. Numbers 024 and 025 are not in the repository: 024 was a rejected draft, 025 is reserved for a draft outside it.
 
 | ADR | Decision |
 |---|---|
@@ -189,11 +189,11 @@ No change to `packages/core` should be needed. If one is, that is a gap in the a
 | [019](adrs/ADR-019-pages-deployment.md) | Manual Pages workflow, publish off by default |
 | [020](adrs/ADR-020-demo-suggestions.md) | Hand-written example suggestions with source kind `fixture`, demo only |
 | [021](adrs/ADR-021-archive-media.md) | Media count shown, media not displayed |
-| [022](adrs/ADR-022-export-guide-content.md) | Guide facts with sources and dates, re-read by a person before each release |
+| [022](adrs/ADR-022-export-guide-content.md) | Guide facts cite public help pages; the maintainer verifies each fact himself or confirms the parent's same-day source re-read and private step screenshots; the 120-day release check stays |
 | [023](adrs/ADR-023-acting-in-own-account.md) | Accepted on 2026-10-24: two actions in the person's own account, on their order; rules PA-1 to PA-16; dedicated browser profile; nothing hidden |
 | [026](adrs/ADR-026-x-originals-fetch.md) | Accepted on 2026-10-24: originals of replies and quotes from X's public embed service, one request per second, stored in the workspace |
-| [027](adrs/ADR-027-x-deletion-browser.md) | Proposed: deletion on X by driving X's own pages in the dedicated profile; journal, one entry first, slow, schema version 3 |
-| [028](adrs/ADR-028-instagram-signed-in-session.md) | Accepted on 2026-10-16, revised 2026-10-15 after spike S5: each Instagram comment is found in the "Your activity" list by date and text and counts only when its post confirms text, time and owner; the post's context is kept; X's pace, counted apart; deletion in a later record |
+| [027](adrs/ADR-027-x-deletion-browser.md) | Accepted on 2026-10-25 (ADR-027 v1 A): X's own page clicks, including undo repost; seven-day read-back; DEL-1 A pace and ADR-DEL v2 A batch pause/warning gate; current version 9 |
+| [028](adrs/ADR-028-instagram-signed-in-session.md) | Accepted on 2026-10-16, with IG-18 A and IG-19 A on 2026-10-25 for the narrowly observed image-only manual result and between-comment reading-page replacement; IG-DEL A decides post-confirmed, exported-owner-matched deletion for implementation and generated tests only, with a separate real-run order still required |
 | [029](adrs/ADR-029-signed-in-originals-pass.md) | Accepted on 2026-10-24: a signed-in pass reads only what the anonymous fetch missed, from X's own page answers; videos stored and served with byte ranges; canary first; schema version 4 |
 | [030](adrs/ADR-030-instagram-context-record.md) | Accepted on 2026-10-16: Instagram post context as its own record per confirmed comment; the journal names its platform; schema version 5 |
 | [031](adrs/ADR-031-desktop-app.md) | Accepted on 2026-10-16: a Windows desktop app on Electron 44.8.0 that hosts the review build and runs the CLI's engine in a utility process, a narrow IPC bridge instead of the loopback server, the platform in the person's visible Edge or Chrome beside a run monitor, Store MSIX first and SignPath later |

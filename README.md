@@ -4,7 +4,7 @@ SocialPrune helps people review old X posts and Instagram comments locally on th
 
 **Release 0.1 draft, not a released version.** The [demo destination](https://socialprune.github.io/socialprune/#/demo) is not deployed. When it is published, the demo will use generated data and require no account.
 
-> GIF placeholder: import a generated X export, compare a suggestion with the full post, choose Keep, then preview the final marks. No real account, export or browser profile.
+![Demo on generated data: import an X export, keep one suggestion, mark another, then preview the final marks without confirming them](docs/media/demo.gif)
 
 [![CI](https://github.com/socialprune/socialprune/actions/workflows/ci.yml/badge.svg)](https://github.com/socialprune/socialprune/actions/workflows/ci.yml) [![License](https://img.shields.io/github/license/socialprune/socialprune)](LICENSE) · [Downloads](https://github.com/socialprune/socialprune/releases)
 
@@ -23,11 +23,11 @@ The desktop app is Windows x64. The browser app and the CLI share the review mod
 
 The parsers, review, backups and packaged desktop paths have tests using generated data. X deletion has been exercised against a generated fake X, not a real X deletion flow. Instagram context retries and confirmation checks have generated-page tests; those do not establish that every current Instagram page will work. A Kilo agent completed the CLI run on the generated demo export with only the skill and the packed CLI ([evidence](docs/evidence/G2.md)); no model endpoint's suggestion quality has been measured yet. The maintainer confirmed the 22 export guide facts on 2026-10-25, and the release checks ask for a new check 120 days later. The maintainer's complete own-export review is not accepted yet. Nothing is published or deployed.
 
-> Screenshot placeholder: the six review tabs on a generated X account, with a rule holding one entry and a human Keep decision on another.
->
-> Screenshot placeholder: a generated Instagram comment with its confirmed post image, the evidence explanation and Keep, Later and Mark controls.
->
-> Screenshot placeholder: the Windows app beside a generated fake platform page, showing the run monitor and Stop control. Label the platform page as generated.
+![The six review tabs on a generated X account, with a keep rule holding one entry and a human Keep decision on another](docs/media/review-x.png)
+
+![A generated Instagram comment beside its confirmed post image, with the evidence explanation and the Keep, Later and Mark controls](docs/media/review-instagram.png)
+
+![The Windows app's run monitor with its Stop control beside a page labelled as a generated example, not a real platform](docs/media/desktop-monitor.png)
 
 ## Try the CLI from a checkout
 

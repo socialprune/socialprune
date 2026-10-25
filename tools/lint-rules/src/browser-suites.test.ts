@@ -31,6 +31,35 @@ interface Runner {
 }
 const runner = (await import(entry)) as Runner;
 
+test('single-file context receives its measured outer budget without changing test or hook deadlines', async () => {
+  expect(runner.suites.context!.minutes).toBe(70);
+  expect(runner.suites.delete!.minutes).toBe(25);
+  expect(runner.suites.engine!.minutes).toBe(10);
+  expect(runner.suites.fill!.minutes).toBe(25);
+  const config = await readFile(
+    resolve(root, 'apps/cli/e2e/context.vitest.config.ts'),
+    'utf8',
+  );
+  expect(config).toContain(
+    "include: ['apps/cli/e2e/context-instagram.test.ts']",
+  );
+  expect(config).toContain('testTimeout: 60000');
+  expect(config).toContain('hookTimeout: 30000');
+  const workflow = await readFile(
+    resolve(root, '.github/workflows/browser-suites.yml'),
+    'utf8',
+  );
+  expect(workflow).toMatch(
+    /name: Instagram context suite[\s\S]*?timeout-minutes: 72\s+run: node \.github\/scripts\/browser-suite\.mjs run context/,
+  );
+  expect(workflow).toContain('timeout-minutes: 170');
+  expect(workflow).toContain('browser-suite-context-${{ github.run_attempt }}');
+  expect(workflow).toContain(
+    'path: apps/cli/test-results/browser-suites/context/',
+  );
+  expect(workflow).not.toContain('--shard');
+});
+
 test('engine 429 fixture closes its listener before assertions even when no context was launched', async () => {
   const source = await readFile(
     resolve(root, 'apps/cli/e2e/engine-run-controls.test.ts'),
@@ -387,7 +416,7 @@ test('the standalone workflow keeps all four suites serial, bounded and independ
   expect(
     workflow.match(/run: node .github\/scripts\/browser-suite.mjs run /g),
   ).toHaveLength(4);
-  expect(workflow.match(/timeout-minutes: (?:27|12|42)\n/g)).toHaveLength(4);
+  expect(workflow.match(/timeout-minutes: (?:27|12|72)\n/g)).toHaveLength(4);
   const pins = [...workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/g)];
   expect(pins.length).toBeGreaterThan(5);
   for (const [, , pin] of pins) expect(pin).toMatch(/^[a-f0-9]{40}$/);

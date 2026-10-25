@@ -22,8 +22,8 @@ concurrency:
 jobs:
   suites:
     runs-on: windows-latest
-    # 100 min suite bounds plus setup, uploads and owned-process termination.
-    timeout-minutes: 140
+    # 130 min runner bounds, 8 min step termination margins, plus setup/uploads.
+    timeout-minutes: 170
     env:
       CI: 'true'
       # Generated fakes only. Setup downloads finish before any suite starts.
@@ -96,7 +96,9 @@ jobs:
           retention-days: 7
       - name: Instagram context suite
         if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.context == 'true' }}
-        timeout-minutes: 42
+        # Single-file suite cannot use Vitest's file shards. The 70 min runner
+        # bound comes from hosted timings; tests retain their 60 s deadlines.
+        timeout-minutes: 72
         run: node .github/scripts/browser-suite.mjs run context
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ always() && steps.selected.outputs.context == 'true' }}

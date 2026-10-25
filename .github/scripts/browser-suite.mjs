@@ -20,7 +20,10 @@ const console = new Console(process.stdout, process.stderr);
 export const suites = Object.freeze({
   delete: { script: 'test:delete', minutes: 25, runner: 'vitest' },
   engine: { script: 'test:engine', minutes: 10, runner: 'vitest' },
-  context: { script: 'test:context', minutes: 40, runner: 'vitest' },
+  // One file: Vitest shards files, not cases. Hosted 40 min completed 275/318
+  // cases; matched-case projection against the 2244 s complete run is 3343 s.
+  // 25% headroom, rounded up: 70 min outer budget, no test deadline changes.
+  context: { script: 'test:context', minutes: 70, runner: 'vitest' },
   fill: { script: 'test:fill', minutes: 25, runner: 'playwright' },
 });
 export function selection(value = 'all') {

@@ -128,7 +128,7 @@ test('older injected Node keeps help schemas structure and guide paths free of S
     );
     if (args[0] === 'guide') {
       expect(result.status, `${args.join(' ')}: ${result.stderr}`).toBe(0);
-      expect(result.stdout).toContain('Not yet checked by a person');
+      expect(result.stdout).toContain('Checked on 2026-10-25');
     } else {
       expect([0, 2], `${args.join(' ')}: ${result.stderr}`).toContain(
         result.status,

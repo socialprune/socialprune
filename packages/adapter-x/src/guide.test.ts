@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { checkGuides, guideFacts } from '@socialprune/core/guide/check';
 import { xGuide } from '@socialprune/adapter-x/guide';
 
-test('X guide data passes ordinary checks without pretending to be human-verified', () => {
+test('X guide data carries the maintainer confirmation and passes release checks', () => {
   expect(
     checkGuides([xGuide], {
       today: '2026-10-25',
@@ -20,19 +20,19 @@ test('X guide data passes ordinary checks without pretending to be human-verifie
   expect(xGuide.startUrl.sourceDe?.title).toBe(
     'So lädst du dein X Archiv herunter | X Hilfe-Center',
   );
-  expect(xGuide.startUrl.verifiedOn).toBeNull();
+  expect(xGuide.startUrl.verifiedOn).toBe('2026-10-25');
   expect(guideFacts(xGuide)).toHaveLength(13);
   for (const fact of guideFacts(xGuide)) {
     expect(fact.retrievedOn, fact.id).toBe('2026-10-25');
-    expect(fact.verifiedOn, fact.id).toBeNull();
+    expect(fact.verifiedOn, fact.id).toBe('2026-10-25');
   }
   expect(
     checkGuides([xGuide], {
       today: '2026-10-25',
       maxAgeDays: 120,
       release: true,
-    }).every(({ code }) => code === 'unverified'),
-  ).toBe(true);
+    }),
+  ).toEqual([]);
 });
 
 test('X guide text contains no fetch-conversion artifacts', () => {
@@ -98,5 +98,5 @@ test('X computer guide preserves the differing public EN and DE help paths', () 
   for (const text of Object.values(desktop.text)) {
     expect(text).not.toMatch(/observed|beobachtet|25 October|25\. Oktober/);
   }
-  expect(desktop.verifiedOn).toBeNull();
+  expect(desktop.verifiedOn).toBe('2026-10-25');
 });

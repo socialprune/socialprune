@@ -13,7 +13,7 @@ const facts = [
   ...(instagramGuide.paths?.mobile ?? []),
 ];
 
-test('Instagram guide has fresh researched facts but remains human-unverified', () => {
+test('Instagram guide carries the maintainer confirmation and passes release checks', () => {
   expect(
     checkGuides([instagramGuide], {
       today: '2026-10-25',
@@ -26,7 +26,7 @@ test('Instagram guide has fresh researched facts but remains human-unverified', 
   expect(facts).toHaveLength(9);
   for (const fact of facts) {
     expect(fact.retrievedOn, fact.id).toBe('2026-10-25');
-    expect(fact.verifiedOn, fact.id).toBeNull();
+    expect(fact.verifiedOn, fact.id).toBe('2026-10-25');
     if (['instagram.start', 'instagram.download-window'].includes(fact.id)) {
       expect(fact.sourceDe?.url, fact.id).toBe(
         'https://www.facebook.com/help/instagram/181231772500920/?locale=de_DE',
@@ -43,14 +43,7 @@ test('Instagram guide has fresh researched facts but remains human-unverified', 
       maxAgeDays: 120,
       release: true,
     }),
-  ).toEqual(
-    facts.map(({ id }) => ({
-      platform: 'instagram',
-      factId: id,
-      code: 'unverified',
-      field: 'verifiedOn',
-    })),
-  );
+  ).toEqual([]);
 });
 
 test('Instagram steps and provenance follow the supplied public help evidence', () => {

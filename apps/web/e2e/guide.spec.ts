@@ -117,7 +117,10 @@ for (const [locale, messages] of [
         page.getByTestId('guide-steps').locator(':scope > li'),
       ).toHaveCount(guide.steps.length + 1);
       await expect(page.getByTestId('guide-verification')).toHaveText(
-        messages['guide.notChecked'],
+        messages['guide.checked'].replace(
+          '{date}',
+          locale === 'de' ? '25. Oktober 2026' : '25 October 2026',
+        ),
       );
       await expect(
         view.getByRole('link', { name: messages['guide.report'] }),

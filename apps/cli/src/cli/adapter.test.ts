@@ -311,7 +311,7 @@ test('guide consumes injected shared guide facts in the selected language', asyn
   });
 });
 
-test('production guide returns adapter data with null human verification dates', async () => {
+test('production guide returns adapter data with the maintainer confirmation date', async () => {
   const capture = capturedContext(services);
   const node = createNodeContext(
     capture.context.io.stdout,
@@ -337,8 +337,8 @@ test.each([xGuide, instagramGuide])(
   'production $platform guide prints human-check status in EN and DE',
   async (guide) => {
     for (const [lang, message] of [
-      ['en', 'Not yet checked by a person'],
-      ['de', 'Noch nicht von einer Person geprüft'],
+      ['en', 'Checked on 2026-10-25'],
+      ['de', 'Geprüft am 2026-10-25'],
     ] as const) {
       const capture = capturedContext(services);
       const node = createNodeContext(

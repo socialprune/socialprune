@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Console } from 'node:console';
+import { promisify } from 'node:util';
 
 const console = new Console(process.stdout, process.stderr);
 export const suites = Object.freeze({
@@ -47,22 +48,57 @@ export function suiteArguments(name, report) {
         ]),
   ];
 }
-export function invocation(command, platform = process.platform) {
-  if (platform !== 'win32')
-    return { executable: command[0], args: command.slice(1), options: {} };
-  const quoted = command
-    .map((part) => `"${part.replaceAll('"', '')}"`)
-    .join(' ');
-  return {
-    executable: process.env.ComSpec ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', `"${quoted}"`],
-    options: { windowsVerbatimArguments: true },
+export async function resolvePnpm(
+  environment = process.env,
+  platform = process.platform,
+) {
+  const variable = (name) =>
+    Object.entries(environment).find(
+      ([key]) => key.toUpperCase() === name,
+    )?.[1];
+  const home = variable('PNPM_HOME');
+  const directories = [
+    ...(variable('PATH') ?? '').split(platform === 'win32' ? ';' : ':'),
+    ...(home ? [join(home, 'bin'), home] : []),
+  ].filter(Boolean);
+  const isFile = async (path) => {
+    try {
+      return (await stat(path)).isFile();
+    } catch {
+      return false;
+    }
   };
+  for (const directory of new Set(directories)) {
+    const folder = resolve(directory.replace(/^"|"$/g, ''));
+    if (platform !== 'win32') {
+      const executable = join(folder, 'pnpm');
+      if (await isFile(executable)) return { executable, args: [] };
+      continue;
+    }
+    // action-setup exposes its self-updated executable beside a cmd shim.
+    const executable = join(folder, 'pnpm.exe');
+    if (await isFile(executable)) return { executable, args: [] };
+    const shim = join(folder, 'pnpm.cmd');
+    if (!(await isFile(shim))) continue;
+    // npm's global and .bin shims name their JS entry relative to the shim.
+    // Read that target instead of running cmd or guessing a global store path.
+    const target = (await readFile(shim, 'utf8')).match(
+      /"%(?:dp0%|~dp0)[\\/]([^"\r\n]*pnpm\.(?:cjs|mjs|js))"/i,
+    )?.[1];
+    const script = target && resolve(folder, target.replaceAll('\\', '/'));
+    if (script && (await isFile(script)))
+      return { executable: process.execPath, args: [script] };
+    throw Object.assign(new Error('PNPM_SHIM_TARGET_MISSING'), {
+      code: 'PNPM_SHIM_TARGET_MISSING',
+    });
+  }
+  throw Object.assign(new Error('PNPM_NOT_FOUND'), { code: 'PNPM_NOT_FOUND' });
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export async function runSuite(
   name,
   output = 'apps/cli/test-results/browser-suites',
+  launchEnvironment = process.env,
 ) {
   assert(Object.hasOwn(suites, name), 'Unknown suite.');
   const suite = suites[name];
@@ -74,10 +110,10 @@ export async function runSuite(
   const networkFailure = join(directory, 'network-failures.log');
   await rm(networkFailure, { force: true });
   const environment = {
-    ...process.env,
+    ...launchEnvironment,
     PLAYWRIGHT_JUNIT_OUTPUT_FILE: report,
     SP_SUITE_NETWORK_FAILURE: networkFailure,
-    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --require=${JSON.stringify(join(root, '.github/scripts/loopback-only.cjs'))}`,
+    NODE_OPTIONS: `${launchEnvironment.NODE_OPTIONS ?? ''} --require=${JSON.stringify(join(root, '.github/scripts/loopback-only.cjs'))}`,
   };
   const args = suiteArguments(name, report);
   // Suite names and scripts are closed above; no shell text comes from dispatch.
@@ -105,52 +141,77 @@ export async function runSuite(
   const summaryPath = join(directory, 'summary.json');
   await writeFile(summaryPath, JSON.stringify(summary, null, 2));
   const log = createWriteStream(join(directory, 'suite.log'));
-  const launch = invocation(command);
-  const child = spawn(launch.executable, launch.args, {
-    ...launch.options,
-    cwd: root,
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: environment,
-  });
-  for (const [stream, destination] of [
-    [child.stdout, process.stdout],
-    [child.stderr, process.stderr],
-  ])
-    stream.on('data', (bytes) => {
-      log.write(bytes);
-      destination.write(bytes);
-    });
-  let timedOut = false;
-  let termination = Promise.resolve();
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    // Terminate only the exact process tree this invocation started.
-    if (process.platform === 'win32')
-      termination = new Promise((done) => {
-        const killer = spawn(
-          'taskkill.exe',
-          ['/PID', String(child.pid), '/T', '/F'],
-          {
-            stdio: 'ignore',
-            windowsHide: true,
-          },
-        );
-        killer.once('error', done);
-        killer.once('close', done);
-      });
-    else child.kill('SIGTERM');
-  }, suite.minutes * 60_000);
   let launchError;
-  const code = await new Promise((done) => {
-    child.once('error', (error) => {
-      launchError = error.code ?? 'SPAWN_FAILED';
-      done(null);
+  let timedOut = false;
+  let code = null;
+  let launch;
+  try {
+    launch = await resolvePnpm(launchEnvironment);
+    // A broken shim/entry is a launch failure, not a test failure. This also
+    // records Node's MODULE_NOT_FOUND output before a suite can be started.
+    await promisify(execFile)(
+      launch.executable,
+      [...launch.args, '--version'],
+      {
+        cwd: root,
+        env: environment,
+        windowsHide: true,
+        timeout: 30_000,
+      },
+    );
+  } catch (error) {
+    launchError =
+      typeof error.code === 'string' ? error.code : 'PNPM_STARTUP_FAILED';
+    log.write(`${launchError}\n${error.stderr ?? error.message}\n`);
+  }
+  if (!launchError) {
+    const child = spawn(launch.executable, [...launch.args, ...args], {
+      cwd: root,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: environment,
     });
-    child.once('close', done);
-  });
-  clearTimeout(timeout);
-  await termination;
+    for (const [stream, destination] of [
+      [child.stdout, process.stdout],
+      [child.stderr, process.stderr],
+    ])
+      stream.on('data', (bytes) => {
+        log.write(bytes);
+        destination.write(bytes);
+      });
+    let termination = Promise.resolve();
+    const timeout = setTimeout(
+      () => {
+        timedOut = true;
+        // Terminate only the exact process tree this invocation started.
+        if (process.platform === 'win32')
+          termination = new Promise((done) => {
+            const killer = spawn(
+              'taskkill.exe',
+              ['/PID', String(child.pid), '/T', '/F'],
+              {
+                stdio: 'ignore',
+                windowsHide: true,
+              },
+            );
+            killer.once('error', done);
+            killer.once('close', done);
+          });
+        else child.kill('SIGTERM');
+      },
+      Math.max(1, suite.minutes * 60_000 - (Date.now() - started)),
+    );
+    code = await new Promise((done) => {
+      child.once('error', (error) => {
+        launchError = error.code ?? 'SPAWN_FAILED';
+        log.write(`${launchError}\n${error.message}\n`);
+        done(null);
+      });
+      child.once('close', done);
+    });
+    clearTimeout(timeout);
+    await termination;
+  }
   await new Promise((done) => log.end(done));
   let reportPresent = false;
   try {
@@ -184,6 +245,9 @@ export async function runSuite(
               : 'report-missing',
     exitCode: code,
     launchError: launchError ?? null,
+    resolvedCommand: launch
+      ? [launch.executable, ...launch.args, ...args]
+      : null,
     reportPresent,
     networkFailures,
   };

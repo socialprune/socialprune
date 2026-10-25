@@ -1,9 +1,16 @@
-import { readFile, mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
+import {
+  readFile,
+  mkdtemp,
+  writeFile,
+  mkdir,
+  rm,
+  copyFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, delimiter } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../../..');
 const entry = resolve(root, '.github/scripts/browser-suite.mjs');
@@ -11,17 +18,156 @@ interface Runner {
   suites: Record<string, { script: string; minutes: number; runner: string }>;
   selection(value?: string): string[];
   suiteArguments(name: string, report: string): string[];
-  runSuite(name: string, output?: string): Promise<number>;
-  invocation(
-    command: string[],
+  runSuite(
+    name: string,
+    output?: string,
+    environment?: NodeJS.ProcessEnv,
+  ): Promise<number>;
+  resolvePnpm(
+    environment?: NodeJS.ProcessEnv,
     platform?: string,
-  ): {
-    executable: string;
-    args: string[];
-    options: { windowsVerbatimArguments?: boolean };
-  };
+  ): Promise<{ executable: string; args: string[] }>;
 }
 const runner = (await import(entry)) as Runner;
+
+test('pnpm resolution follows generated action-setup and npm-global layouts without a shell or inferred global path', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-pnpm-layout-'));
+  const home = resolve(directory, 'action home');
+  const bin = resolve(home, 'bin');
+  const local = resolve(directory, 'npm global');
+  const script = resolve(local, 'node_modules/pnpm/bin/pnpm.cjs');
+  try {
+    await mkdir(bin, { recursive: true });
+    await mkdir(resolve(local, 'node_modules/pnpm/bin'), { recursive: true });
+    await writeFile(
+      resolve(bin, 'pnpm.cmd'),
+      '@node "../../global/v11/missing/node_modules/pnpm/bin/pnpm.cjs" %*\r\n',
+    );
+    await copyFile(process.execPath, resolve(bin, 'pnpm.exe'));
+    await writeFile(
+      resolve(local, 'pnpm.cmd'),
+      '@"node" "%dp0%\\node_modules\\pnpm\\bin\\pnpm.cjs" %*\r\n',
+    );
+    await writeFile(
+      script,
+      'console.log(JSON.stringify(process.argv.slice(2)));',
+    );
+    const args = ['--filter', 'socialprune', 'test:engine', 'space & literal'];
+    const execute = promisify(execFile);
+    for (const environment of [
+      { PNPM_HOME: home, PATH: bin },
+      { PNPM_HOME: home, PATH: '' },
+      { Path: local },
+    ]) {
+      const launch = await runner.resolvePnpm(environment, 'win32');
+      if (environment.Path) {
+        expect(launch).toEqual({
+          executable: process.execPath,
+          args: [script],
+        });
+        const result = await execute(launch.executable, [
+          ...launch.args,
+          ...args,
+        ]);
+        expect(JSON.parse(result.stdout)).toEqual(args);
+      } else {
+        expect(launch).toEqual({
+          executable: resolve(bin, 'pnpm.exe'),
+          args: [],
+        });
+        if (process.platform === 'win32') {
+          const result = await execute(launch.executable, ['--version']);
+          expect(result.stdout.trim()).toBe(process.version);
+        }
+      }
+    }
+    await expect(
+      readFile(resolve(directory, 'global/v11')),
+    ).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('missing pnpm is a retained launchError rather than a suite exit failure', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-pnpm-missing-'));
+  try {
+    expect(
+      await runner.runSuite('engine', directory, {
+        PNPM_HOME: directory,
+        PATH: directory,
+      }),
+    ).toBe(1);
+    const result = JSON.parse(
+      await readFile(resolve(directory, 'engine/summary.json'), 'utf8'),
+    ) as unknown;
+    expect(result).toMatchObject({
+      state: 'launch-failed',
+      exitCode: null,
+      launchError: 'PNPM_NOT_FOUND',
+      reportPresent: false,
+    });
+    expect(
+      await readFile(resolve(directory, 'engine/suite.log'), 'utf8'),
+    ).toContain('PNPM_NOT_FOUND');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a cmd shim with a missing target is reported instead of falling through to another installation', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-pnpm-shim-'));
+  try {
+    await writeFile(
+      resolve(directory, 'pnpm.cmd'),
+      '@"node" "%~dp0\\missing\\pnpm.cjs" %*\r\n',
+    );
+    await expect(
+      runner.resolvePnpm({ PNPM_HOME: directory, PATH: directory }, 'win32'),
+    ).rejects.toMatchObject({ code: 'PNPM_SHIM_TARGET_MISSING' });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('pnpm startup failure retains its causal log and launchError before a suite starts', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-pnpm-broken-'));
+  try {
+    const script = resolve(directory, 'pnpm.cjs');
+    if (process.platform === 'win32') {
+      await writeFile(
+        resolve(directory, 'pnpm.cmd'),
+        '@"node" "%~dp0\\pnpm.cjs" %*\r\n',
+      );
+      await writeFile(script, 'require("./generated-missing-entry.cjs");');
+    } else {
+      await writeFile(resolve(directory, 'pnpm'), 'not executable');
+    }
+    expect(
+      await runner.runSuite('engine', directory, {
+        PNPM_HOME: directory,
+        PATH: directory,
+      }),
+    ).toBe(1);
+    const result = JSON.parse(
+      await readFile(resolve(directory, 'engine/summary.json'), 'utf8'),
+    ) as unknown;
+    expect(result).toMatchObject({
+      state: 'launch-failed',
+      exitCode: null,
+      launchError:
+        process.platform === 'win32' ? 'PNPM_STARTUP_FAILED' : 'EACCES',
+      reportPresent: false,
+    });
+    expect(
+      await readFile(resolve(directory, 'engine/suite.log'), 'utf8'),
+    ).toContain(process.platform === 'win32' ? 'MODULE_NOT_FOUND' : 'EACCES');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('dispatch selection is closed, deduplicated and canonical before shell use', () => {
   expect(runner.selection()).toEqual(['delete', 'engine', 'context', 'fill']);
@@ -123,25 +269,15 @@ test('test-only preload refuses Node TCP before dialing and configures a closed 
   expect(source).toContain("bypass: 'localhost,127.0.0.1,[::1]'");
 });
 
-test('the workflow invocation preserves Windows arguments rather than escaping quotes into the command name', async () => {
-  const command = [process.execPath, '--version'];
-  const launch = runner.invocation(command);
-  const execute = promisify(execFile);
-  const result = await execute(launch.executable, launch.args, {
-    ...launch.options,
-    cwd: root,
-  });
-  expect(result.stdout.trim()).toBe(process.version);
-  expect(
-    runner.invocation(
-      ['pnpm', '--filter', 'socialprune', 'test:engine'],
-      'linux',
-    ),
-  ).toEqual({
-    executable: 'pnpm',
-    args: ['--filter', 'socialprune', 'test:engine'],
-    options: {},
-  });
+test('pnpm resolution uses the current terminal installation and never enables a shell', async () => {
+  const launch = await runner.resolvePnpm();
+  const result = await promisify(execFile)(launch.executable, [
+    ...launch.args,
+    '--version',
+  ]);
+  expect(result.stdout.trim()).toBe('10.33.0');
+  const source = await readFile(entry, 'utf8');
+  expect(source).not.toMatch(/shell\s*:|cmd\.exe|windowsVerbatimArguments/);
 });
 
 test.skipIf(process.platform !== 'win32')(
@@ -159,16 +295,25 @@ test.skipIf(process.platform !== 'win32')(
       // PATH selects a test-only command double, never a runtime activation flag.
       await writeFile(
         resolve(directory, 'pnpm.cmd'),
-        '@echo Generated suite failure\r\n@exit /b 7\r\n',
+        '@"node" "%dp0%\\pnpm.cjs" %*\r\n',
       );
-      vi.stubEnv('PATH', directory + delimiter + process.env.PATH);
-      expect(await runner.runSuite('engine', output)).toBe(1);
+      await writeFile(
+        resolve(directory, 'pnpm.cjs'),
+        'if(process.argv[2]==="--version") console.log("10.33.0"); else { console.log("Generated suite failure"); process.exitCode=7; }',
+      );
+      expect(
+        await runner.runSuite('engine', output, {
+          ...process.env,
+          PATH: directory + delimiter + process.env.PATH,
+        }),
+      ).toBe(1);
       const result = JSON.parse(
         await readFile(resolve(folder, 'summary.json'), 'utf8'),
       ) as unknown;
       expect(result).toMatchObject({
         state: 'failed',
         exitCode: 7,
+        launchError: null,
         reportPresent: false,
       });
       expect(await readFile(resolve(folder, 'suite.log'), 'utf8')).toContain(
@@ -178,7 +323,6 @@ test.skipIf(process.platform !== 'win32')(
         readFile(resolve(folder, 'junit.xml')),
       ).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
-      vi.unstubAllEnvs();
       await rm(directory, { recursive: true, force: true });
     }
   },

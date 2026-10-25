@@ -13,8 +13,9 @@
     "schemas:check": "node src/cli/schema-files.ts check",
     "test:e2e": "pnpm --filter @socialprune/web build:review && playwright test",
     "test:delete": "vitest run --config e2e/delete.vitest.config.ts",
-    "test:context": "vitest run --config e2e/context.vitest.config.ts --maxWorkers=2",
+    "test:context": "vitest run --config e2e/context.vitest.config.ts",
     "test:engine": "vitest run --config e2e/engine-controls.vitest.config.ts",
+    "test:fill": "playwright test --config e2e/fill.playwright.config.ts",
     "build:release": "node release/release.ts",
     "pack:check": "node release/pack-check.ts --plant-defect",
     "smoke:package": "node release/smoke.ts"

@@ -1,0 +1,115 @@
+name: CLI browser suites
+run-name: CLI browser suites (${{ inputs.suites || 'all' }})
+
+on:
+  push:
+    branches: ['suites/**']
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: all or a comma-separated subset of delete,engine,context,fill
+        type: string
+        required: true
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-suites-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suites:
+    runs-on: windows-latest
+    # 100 min suite bounds plus setup, uploads and owned-process termination.
+    timeout-minutes: 140
+    env:
+      CI: 'true'
+      # Generated fakes only. Setup downloads finish before any suite starts.
+      SP_X_TEST_PORT: '4651'
+      SP_CONFIRMATION_TEST_PORT: '4652'
+      SP_REVIEW_MEDIA_TEST_PORT: '4653'
+      SP_STYLE_TEST_PORT: '4654'
+      SP_FOREIGN_TEST_PORT: '4655'
+      SP_ENGINE_INSTAGRAM_TEST_PORT: '4656'
+      SP_CONTEXT_TEST_PORT: '4657'
+      SP_CONTEXT_CONFIRMATION_TEST_PORT: '4658'
+      SP_CONTEXT_SERVER_TEST_PORT: '4659'
+      SP_CONTEXT_REVIEW_TEST_PORT: '4660'
+      SP_CONTEXT_FOREIGN_TEST_PORT: '4661'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - name: Select suites
+        id: selected
+        env:
+          SUITES: ${{ inputs.suites || 'all' }}
+        run: |
+          $selected = node .github/scripts/browser-suite.mjs select $env:SUITES
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $selected >> $env:GITHUB_OUTPUT
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 5
+      - name: Install pinned test Chromium
+        run: pnpm --filter socialprune exec playwright install chromium
+        timeout-minutes: 5
+      # The existing fill config includes local-review media checks.
+      - name: Build local review assets
+        if: steps.selected.outputs.fill == 'true'
+        run: pnpm --filter @socialprune/web build:review
+        timeout-minutes: 5
+      - name: Setup complete
+        id: ready
+        run: node --version
+      # One job, no matrix: a failed suite cannot overlap the next one.
+      - name: X deletion suite
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.delete == 'true' }}
+        timeout-minutes: 27
+        run: node .github/scripts/browser-suite.mjs run delete
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && steps.selected.outputs.delete == 'true' }}
+        with:
+          name: browser-suite-delete-${{ github.run_attempt }}
+          path: apps/cli/test-results/browser-suites/delete/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Desktop engine controls suite
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.engine == 'true' }}
+        timeout-minutes: 12
+        run: node .github/scripts/browser-suite.mjs run engine
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && steps.selected.outputs.engine == 'true' }}
+        with:
+          name: browser-suite-engine-${{ github.run_attempt }}
+          path: apps/cli/test-results/browser-suites/engine/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Instagram context suite
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.context == 'true' }}
+        timeout-minutes: 42
+        run: node .github/scripts/browser-suite.mjs run context
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && steps.selected.outputs.context == 'true' }}
+        with:
+          name: browser-suite-context-${{ github.run_attempt }}
+          path: apps/cli/test-results/browser-suites/context/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: X originals fill suite
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.fill == 'true' }}
+        timeout-minutes: 27
+        run: node .github/scripts/browser-suite.mjs run fill
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && steps.selected.outputs.fill == 'true' }}
+        with:
+          name: browser-suite-fill-${{ github.run_attempt }}
+          path: apps/cli/test-results/browser-suites/fill/
+          if-no-files-found: warn
+          retention-days: 7

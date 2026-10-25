@@ -1,4 +1,6 @@
 import '@socialprune/core/browser-init';
+// Establish cascade layers before the deferred UI's component styles arrive.
+import './styles/tokens.css';
 import { ReviewSession } from './local-review/session.ts';
 
 const session = new ReviewSession({

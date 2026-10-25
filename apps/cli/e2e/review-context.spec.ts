@@ -9,6 +9,55 @@ import {
 } from '../src/review/test/context-fixture.ts';
 import { startReviewServer } from '../src/review/server.ts';
 import { reviewAssetDirectory } from '../src/review/static.ts';
+import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
+import { liveFeedFixture } from '../../web/e2e/feed-fixture.ts';
+import { expectHeaderStyle } from '../../web/e2e/header-style.ts';
+
+for (const theme of ['light', 'dark'] as const)
+  for (const width of [1280, 390])
+    test(`header and flat feed tabs ${theme} ${width}`, async ({
+      page,
+    }, info) => {
+      const workspace = await mkdtemp(
+        join(tmpdir(), 'socialprune-header-review-'),
+      );
+      const store = await SQLiteStore.open(
+        join(workspace, 'socialprune.sqlite'),
+        { initial: liveFeedFixture() },
+      );
+      await store.close();
+      const server = await startReviewServer({
+        workspace,
+        assetDirectory: reviewAssetDirectory(),
+        handleSignals: false,
+        // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+        port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
+      });
+      try {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.emulateMedia({
+          colorScheme: theme,
+          reducedMotion: 'reduce',
+        });
+        await page.addInitScript((theme) => {
+          localStorage.setItem('sp-theme', theme);
+          localStorage.setItem('sp-locale', 'en');
+        }, theme);
+        await page.goto(server.launchUrl);
+        await page
+          .getByRole('navigation', { name: 'Primary navigation', exact: true })
+          .getByRole('link', { name: 'Review', exact: true })
+          .click();
+        await expect(page.getByRole('feed')).toHaveAttribute(
+          'aria-busy',
+          'false',
+        );
+        await expectHeaderStyle(page, info, `review-${theme}-${width}`);
+      } finally {
+        await server.stop();
+        await rm(workspace, { recursive: true, force: true });
+      }
+    });
 
 const own = contextInputs.items[0]!;
 test('C10 list-confirmed review states what the list checked and has no comment link', async ({

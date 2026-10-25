@@ -13,6 +13,7 @@ test('quiet measurement workflow has only bounded read-only engine jobs and arti
   expect(file).toContain('workflow_dispatch:');
   expect(file).toContain('runs-on: ubuntu-latest');
   expect(file).toContain('engine: [firefox, webkit]');
+  expect(file).toContain('run: [1, 2, 3]');
   expect(file).toContain('contents: read');
   expect(file).not.toMatch(
     /secrets\.|contents: write|deploy|pull_request_target/,
@@ -22,5 +23,12 @@ test('quiet measurement workflow has only bounded read-only engine jobs and arti
   expect(file).toContain('if: always()');
   expect(file).toContain('SP_SCALE_OUTPUT:');
   expect(file).toContain('e2e/scale.config.ts');
-  expect(file).toContain('e2e/frame.config.ts');
+  expect(file).not.toContain('e2e/frame.config.ts');
+  expect(file).toContain('scripts/frame-build-check.ts plain');
+  expect(file).toContain(
+    'feed-scale-${{ matrix.engine }}-${{ matrix.run }}-${{ github.sha }}',
+  );
+  expect(file).toContain(
+    '${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}-${{ matrix.run }}',
+  );
 });

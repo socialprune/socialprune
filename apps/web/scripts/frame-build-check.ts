@@ -7,12 +7,15 @@ const assets = resolve(import.meta.dirname, '../dist/assets');
 let marker = false;
 for (const name of await readdir(assets)) {
   if (!name.endsWith('.js')) continue;
-  if (
-    (await readFile(resolve(assets, name), 'utf8')).includes(
-      '__spFrameAttribution',
-    )
-  )
-    marker = true;
+  const source = await readFile(resolve(assets, name), 'utf8');
+  if (source.includes('__spFrameAttribution')) marker = true;
+  for (const observer of [
+    '__scaleActivity',
+    '__scaleFinishScroll',
+    'outliersOver50Ms',
+  ])
+    if (source.includes(observer))
+      throw Error('Test-page scroll observer reached a shipped bundle.');
 }
 if (marker !== (expected === 'attribution'))
   throw Error('Frame probe build boundary mismatch.');

@@ -20,10 +20,11 @@ jobs:
       fail-fast: false
       matrix:
         engine: [firefox, webkit]
+        run: [1, 2, 3]
     env:
       SP_SCALE_PORT: '4707'
       # The runner context is not available in job-level env.
-      SP_SCALE_OUTPUT: ${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}
+      SP_SCALE_OUTPUT: ${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}-${{ matrix.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,30 +35,24 @@ jobs:
           node-version: '24.21.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate observer and workflow contracts
+        run: pnpm exec vitest run --project web apps/web/test/scroll-observer.test.ts apps/web/test/scale-workflow.test.ts apps/web/test/frame-build.test.ts --maxWorkers=1
       - name: Install browser system dependencies
         timeout-minutes: 30
         run: pnpm --filter @socialprune/web exec playwright install-deps ${{ matrix.engine }}
       - name: Install pinned browser
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install ${{ matrix.engine }}
-      - name: Validate attribution control
-        timeout-minutes: 5
-        run: pnpm --filter @socialprune/web exec playwright test --config e2e/frame-controls.config.ts --project ${{ matrix.engine }} --workers=1
       - name: Plain production measurement
         timeout-minutes: 18
         run: pnpm --filter @socialprune/web exec playwright test --config e2e/scale.config.ts --project ${{ matrix.engine }} --workers=1
-      - name: Attribution build, 6000-suggestion phase only
-        if: ${{ !cancelled() }}
-        timeout-minutes: 15
-        env:
-          SP_FEED_FRAME_DIAGNOSTICS: '1'
-          SP_SCALE_SCOPE: frames
-        run: pnpm --filter @socialprune/web exec playwright test --config e2e/frame.config.ts --project ${{ matrix.engine }} --workers=1
+      - name: Prove production bundle excludes test observers
+        run: pnpm --filter @socialprune/web exec node scripts/frame-build-check.ts plain
       - name: Upload raw measurements and traces
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: feed-scale-${{ matrix.engine }}-${{ github.sha }}
-          path: ${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}/
+          name: feed-scale-${{ matrix.engine }}-${{ matrix.run }}-${{ github.sha }}
+          path: ${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}-${{ matrix.run }}/
           if-no-files-found: error
           retention-days: 14

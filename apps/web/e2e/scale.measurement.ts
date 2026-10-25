@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { measurementIdentity } from '../tooling/measurement-identity.ts';
 import { observeFeedFrames } from './frame-diagnostics.ts';
+import {
+  installScaleActivity,
+  installScrollObserver,
+} from './scroll-observer.ts';
 import { waitForApp } from './helpers.ts';
 import {
   scaleHost,
@@ -109,6 +113,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
   const sourceHash = await measurementIdentity();
   const harnessFiles = [
     'scale.measurement.ts',
+    'scroll-observer.ts',
     'scale-data.ts',
     'scale-host.ts',
     'scale.config.ts',
@@ -287,29 +292,8 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
     ).toBeVisible();
     await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
     report['initialFeedMs'] = performance.now() - navigationStart;
-    // Transparent request timing. No responses, fetches, delays or results are stubbed.
-    await page.evaluate(() => {
-      const events: {
-        type: string;
-        ms: number;
-        offset: number | null;
-        cards: number | null;
-      }[] = [];
-      Reflect.set(window, '__scaleRequests', events);
-      const original = window.workspace.request.bind(window.workspace);
-      window.workspace.request = async (input, ...rest) => {
-        const start = performance.now();
-        const reply = await original(input, ...rest);
-        if (['planCounts', 'feedWindow', 'previewPlan'].includes(input.type))
-          events.push({
-            type: input.type,
-            ms: performance.now() - start,
-            offset: input.type === 'feedWindow' ? (input.offset ?? null) : null,
-            cards: reply.type === 'feedCards' ? reply.cards.length : null,
-          });
-        return reply;
-      };
-    });
+    // Test-page observations only. No responses, delays or results are stubbed.
+    await page.evaluate(installScaleActivity);
     const tabMs: number[] = [];
     for (let index = 0; index < 10; index++) {
       scaleStop();
@@ -322,63 +306,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       path: join(output, `${browserName}-6000-feed.png`),
     });
     await frameDiagnostics?.start();
-    await page.evaluate(() => {
-      const panel = document.querySelector<HTMLElement>('[role="tabpanel"]');
-      if (!panel) throw new Error('Connected scroll panel missing.');
-      panel.scrollTop = 0;
-      const frames: number[] = [],
-        visited = new Set<string>(),
-        visible = new Set<string>();
-      let maxDomCards = 0,
-        previous: number | null = null,
-        loadingFrames = 0;
-      const begin = performance.now();
-      let active = true;
-      function step(now: number) {
-        if (!active) return;
-        if (previous !== null) frames.push(now - previous);
-        previous = now;
-        const feed = document.querySelector<HTMLElement>('[role="feed"]');
-        const cards = [
-          ...(feed?.querySelectorAll<HTMLElement>('article[data-card-id]') ??
-            []),
-        ];
-        maxDomCards = Math.max(maxDomCards, cards.length);
-        const bounds = panel!.getBoundingClientRect();
-        for (const card of cards) {
-          const id = card.dataset['cardId']!;
-          visited.add(id);
-          const box = card.getBoundingClientRect();
-          if (
-            box.bottom > Math.max(0, bounds.top) &&
-            box.top < Math.min(innerHeight, bounds.bottom)
-          )
-            visible.add(id);
-        }
-        if (feed?.getAttribute('aria-busy') === 'true') loadingFrames++;
-        requestAnimationFrame(step);
-      }
-      requestAnimationFrame(step);
-      Reflect.set(window, '__scaleFinishScroll', () => {
-        active = false;
-        const sorted = [...frames].sort((a, b) => a - b);
-        return {
-          method:
-            'Sequential Playwright ArrowDown; await each expected focused visible card and two paint opportunities before the next key',
-          durationMs: performance.now() - begin,
-          frames,
-          frameCount: frames.length,
-          frameP95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1],
-          maxFrameMs: sorted.at(-1),
-          framesOver50Ms: frames.filter((value) => value > 50).length,
-          maxDomCards,
-          uniqueRendered: visited.size,
-          uniqueVisible: visible.size,
-          loadingFrames,
-          lastVisible: [...visible].at(-1),
-        };
-      });
-    });
+    await page.evaluate(installScrollObserver);
     let focusedCards = 0;
     let scrollStop: string | null = null;
     const scrollStart = performance.now();

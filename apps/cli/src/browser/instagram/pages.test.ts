@@ -157,3 +157,46 @@ test('an unowned page racing an authorized creation is never mistaken for the cr
     boundary.dispose();
   }
 });
+
+test('C35 IG19 replaces only an explicitly owned page and forgets its old page identity', async () => {
+  const events = new EventEmitter();
+  const make = () => {
+    let closed = false;
+    return {
+      isClosed: () => closed,
+      close: async () => {
+        await Promise.resolve();
+        closed = true;
+      },
+    } as unknown as Page;
+  };
+  const initial = make(),
+    created: Page[] = [];
+  const context = Object.assign(events, {
+    pages: () => [initial],
+    newPage: async () => {
+      await Promise.resolve();
+      const page = make();
+      created.push(page);
+      events.emit('page', page);
+      return page;
+    },
+  }) as unknown as BrowserContext;
+  const boundary = contextPages(context, () => {});
+  try {
+    const anchor = await boundary.startupPage();
+    const reading = await boundary.newPage();
+    const replacement = await boundary.replace(reading);
+    expect(reading.isClosed()).toBe(true);
+    expect(replacement.isClosed()).toBe(false);
+    expect(anchor.isClosed()).toBe(false);
+    expect(created).toHaveLength(3);
+    expect(await boundary.allowed(replacement)).toBe(true);
+    await expect(boundary.replace(make())).rejects.toThrow(
+      'CONTEXT_PAGE_NOT_OWNED',
+    );
+    expect(boundary.counts).toEqual({ startupClosed: 1, unexpectedOpened: 0 });
+  } finally {
+    boundary.dispose();
+  }
+});

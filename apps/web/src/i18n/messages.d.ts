@@ -431,6 +431,7 @@ declare global {
     'desktop.token.gone-check': Record<never, never>;
     'desktop.token.hidden': Record<never, never>;
     'desktop.token.http-429': Record<never, never>;
+    'desktop.token.list-image-only': Record<never, never>;
     'desktop.token.list-timeout': Record<never, never>;
     'desktop.token.locked': Record<never, never>;
     'desktop.token.login': Record<never, never>;

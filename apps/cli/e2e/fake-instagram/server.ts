@@ -27,6 +27,15 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let emptyFilteredLists = 0;
   let clientSidePosts = false;
   let filteredPlaceholders: { count: number; status: boolean } | undefined;
+  let imageOnlyList:
+    | {
+        indices: readonly number[];
+        busy: boolean;
+        mismatch: boolean;
+        lateText: boolean;
+        issue?: 'account' | 'language' | 'notice' | 'http-429';
+      }
+    | undefined;
   let imageShape: ImageCaseName | undefined;
   const candidates = new Map<
     number,
@@ -164,6 +173,45 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             `if(start&&end){chosen=[];for(let i=0;i<${filteredPlaceholders.count};i++)emptyImageButton();${filteredPlaceholders.status ? "const status=document.createElement('div');status.setAttribute('role','status');status.textContent='No generated comments in this window';list.append(status);" : "list.setAttribute('aria-busy','true');"}}` +
               anchor,
           );
+        }
+        if (imageOnlyList) {
+          const anchor = 'for(const [index,row]of chosen.entries())';
+          if (!html.includes(anchor))
+            throw new Error('Generated image-only anchor missing');
+          const windows = imageOnlyList.indices.map((index) => [
+            new Date(Date.parse(items[index]!.createdAt) - 86400000)
+              .toISOString()
+              .slice(0, 10),
+            new Date(Date.parse(items[index]!.createdAt) + 86400000)
+              .toISOString()
+              .slice(0, 10),
+          ]);
+          html = html.replace(
+            anchor,
+            `if(start&&end&&${JSON.stringify(windows)}.some(pair=>${imageOnlyList.mismatch ? 'pair[1]===end' : 'pair[0]===start&&pair[1]===end'})){chosen=[];const otherRow=document.createElement('div');otherRow.setAttribute('role','button');otherRow.setAttribute('aria-label','Generated readable decoration');otherRow.textContent=other.username+' '+other.text+' 1w';list.append(otherRow);for(let i=0;i<3;i++)emptyImageButton();${imageOnlyList.busy ? "list.setAttribute('aria-busy','true');" : ''}${imageOnlyList.lateText ? "setTimeout(()=>mutate(()=>{list.lastElementChild.append(document.createTextNode(handle+' '+rows[0].text+' 1w'));list.lastElementChild.setAttribute('aria-label','Comment row');list.lastElementChild.onclick=()=>location.href='/p/'+rows[0].code;}),250);" : ''}}` +
+              anchor,
+          );
+          if (imageOnlyList.issue) {
+            const issue =
+              imageOnlyList.issue === 'account'
+                ? "document.querySelector('nav a').setAttribute('href','/generated_changed_account/');const own=document.createElement('div');own.setAttribute('role','button');own.setAttribute('aria-label','Generated own nonmatch');own.innerHTML='<img>';own.append(document.createTextNode(handle+' Generated unrelated own comment 1w'));list.append(own);"
+                : imageOnlyList.issue === 'language'
+                  ? "document.documentElement.lang='de';"
+                  : imageOnlyList.issue === 'notice'
+                    ? "const notice=document.createElement('p');notice.textContent='Something went wrong';list.append(notice);"
+                    : "fetch('/api/v1/generated/post-notice/429/');";
+            html = html.replace(anchor, `if(start&&end){${issue}}` + anchor);
+          }
+          if (imageOnlyList.mismatch) {
+            const change = "const apply=document.createElement('div');";
+            if (!html.includes(change))
+              throw new Error('Generated combined readback anchor missing');
+            html = html.replace(
+              change,
+              "controls.end.day.addEventListener('change',()=>{const first=controls.start.day;first.selectedIndex=(first.selectedIndex+1)%first.options.length});" +
+                change,
+            );
+          }
         }
         response.end(html);
         return;
@@ -362,6 +410,25 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(count) || count < 0 || count > 20)
         throw new Error('Invalid generated placeholder count');
       filteredPlaceholders = { count, status };
+    },
+    filteredImageOnly(
+      indices: readonly number[],
+      options: {
+        busy?: boolean;
+        mismatch?: boolean;
+        lateText?: boolean;
+        issue?: 'account' | 'language' | 'notice' | 'http-429';
+      } = {},
+    ) {
+      if (indices.some((index) => !Number.isInteger(index) || !items[index]))
+        throw new Error('Invalid generated image-only indices');
+      imageOnlyList = {
+        indices,
+        busy: options.busy ?? false,
+        mismatch: options.mismatch ?? false,
+        lateText: options.lateText ?? false,
+        ...(options.issue ? { issue: options.issue } : {}),
+      };
     },
     setPostHidden(index: number) {
       if (!items[index])

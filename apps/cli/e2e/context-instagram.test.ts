@@ -1852,6 +1852,345 @@ test('C28 memory diagnostic covers the completed step and run peak without chang
     await h.close();
   }
 });
+test('C34 diagnosis image-only counts describe innerText containers not the absence of comment text', async () => {
+  const browser = await chromium.launch({
+    executablePath: chromium.executablePath(),
+    headless: true,
+  });
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`<html lang="en"><body><nav><div role="button" aria-label="generated navigation"><img alt="navigation"></div></nav><main>
+      <div role="button" aria-label="generated nested"><img><span><span>generated_person Generated comment 1w</span></span></div>
+      <div role="button" aria-label="generated_person Comment in accessible label 1w"><img alt="Comment in image alt"></div>
+      <div role="button" aria-label="generated lazy"><img><span hidden>generated_person Lazy comment 1w</span></div>
+      <div role="button" aria-label="generated sticker"><img alt="Generated GIF sticker"></div>
+      <div role="button" aria-label="generated reel"><img alt="Generated reel thumbnail"></div><span>Text outside the thumbnail button</span>
+    </main></body></html>`);
+    expect(await selectorHelpers.listTimeoutRows(page)).toMatchObject({
+      rowContainers: 6,
+      readableRows: 1,
+      imageOnlyRows: 5,
+    });
+    expect(await selectorHelpers.readRows(page)).toHaveLength(1);
+    await page
+      .locator('span[hidden]')
+      .evaluate((node) => node.removeAttribute('hidden'));
+    expect(await selectorHelpers.listTimeoutRows(page)).toMatchObject({
+      readableRows: 2,
+      imageOnlyRows: 4,
+    });
+    expect(await selectorHelpers.readRows(page)).toHaveLength(2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('C34 IG-18 settled image-only filtered list stays manual and the automatic canary confirms the next five', async () => {
+  const h = await harness('success', 6);
+  h.fake.filteredImageOnly([0]);
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      completed: 5,
+      steps: 6,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.find(
+        (attempt) =>
+          attempt.itemId === h.fixture.items[0]!.id && attempt.settles !== null,
+      ),
+    ).toMatchObject({ state: 'not-listed', code: 'list-image-only' });
+    const contexts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(contexts.map((record) => record.itemId)).not.toContain(
+      h.fixture.items[0]!.id,
+    );
+    expect(contexts).toHaveLength(5);
+    expect(await planContext(h.store, h.plan.accountKey)).toMatchObject({
+      rows: [],
+      excluded: { 'not-listed': 1 },
+    });
+    expect(
+      (
+        await planContext(
+          h.store,
+          h.plan.accountKey,
+          new Set([h.fixture.items[0]!.id]),
+        )
+      ).rows.map((row) => row.item.id),
+    ).toEqual([h.fixture.items[0]!.id]);
+    const run = journal.runs[0]!;
+    expect(run.canaryAcceptedAt).not.toBeNull();
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      rows: { imageOnlySkipped: 1 },
+      retries: { used: 0, entries: [] },
+      steps: [
+        { result: 'list-image-only', candidates: 0, confirmed: false },
+        {},
+        {},
+        {},
+        {},
+        {},
+      ],
+    });
+    expect((JSON.parse(text) as { steps: unknown[] }).steps[0]).toMatchObject({
+      listTimeout: {
+        rowContainers: 4,
+        readableRows: 1,
+        imageOnlyRows: 3,
+        filter: {
+          applied: true,
+          readbackObserved: true,
+          startMatches: true,
+          endMatches: true,
+        },
+        observationFailed: false,
+      },
+    });
+    expect(h.waits).not.toContain(60000);
+    expect(
+      h.fake.requests.some(
+        (request) => request.path === `/p/${IG_FIXTURE.code}`,
+      ),
+    ).toBe(false);
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 180000);
+
+test('C34 IG-18 main run skips one opaque list without reopening and records the next comment', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  h.fake.filteredImageOnly([0]);
+  h.setLimit(2);
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 1,
+      steps: 2,
+    });
+    const journal = await h.store.browserJournal();
+    const run = journal.runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    expect(
+      journal.attempts.find(
+        (attempt) =>
+          attempt.runId === run.runId &&
+          attempt.itemId === h.fixture.items[0]!.id &&
+          attempt.settles !== null,
+      ),
+    ).toMatchObject({ state: 'not-listed', code: 'list-image-only' });
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as unknown;
+    expect(report).toMatchObject({
+      rows: { imageOnlySkipped: 1 },
+      retries: { used: 0, entries: [] },
+    });
+    expect(h.waits).not.toContain(60000);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+
+test('C34 IG-18 a lazy row that becomes readable follows the normal candidate path instead of the manual class', async () => {
+  const h = await harness('success', 1);
+  h.fake.filteredImageOnly([0], { lateText: true });
+  const browser = await chromium.launch({
+    executablePath: chromium.executablePath(),
+    headless: true,
+  });
+  const page = await browser.newPage();
+  try {
+    const result = await driverHelpers.loadList(
+      page,
+      h.fixture.items[0]!,
+      h.plan.handle,
+      {
+        ...productionContext,
+        origin: h.fake.origin,
+        responseMs: 1500,
+        sleep: async () => {
+          await page.waitForTimeout(300);
+        },
+      },
+      () => {},
+      false,
+      new Date(IG_FIXTURE.now),
+    );
+    expect(result.manualReason).toBeUndefined();
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]!.text).toBe(h.fixture.items[0]!.text);
+  } finally {
+    await browser.close();
+    await h.close();
+  }
+}, 30000);
+
+test.each([
+  'busy',
+  'mismatch',
+  'observer',
+  'dom-change',
+  'account',
+  'language',
+  'notice',
+  'http-429',
+  'extension',
+] as const)(
+  'C34 IG-18 opaque filtered rows retain the %s stop',
+  async (mode) => {
+    const h = await harness('success', 6);
+    h.fake.filteredImageOnly([0], {
+      busy: mode === 'busy',
+      mismatch: mode === 'mismatch',
+      ...(['account', 'language', 'notice', 'http-429'].includes(mode)
+        ? { issue: mode as 'account' | 'language' | 'notice' | 'http-429' }
+        : {}),
+    });
+    const observer =
+      mode === 'observer'
+        ? vi.spyOn(selectorHelpers, 'observeListDomChanges').mockResolvedValue({
+            applied() {},
+            summary: () => ({
+              observed: false,
+              changes: 0,
+              lastChangeAfterApplyMs: null,
+              observedForMs: 0,
+            }),
+            failed: true,
+            async dispose() {},
+          })
+        : undefined;
+    if (mode === 'dom-change') {
+      const original = selectorHelpers.listTimeoutRows;
+      let reads = 0;
+      vi.spyOn(selectorHelpers, 'listTimeoutRows').mockImplementation(
+        async (page) => {
+          if (++reads === 2) {
+            await page
+              .locator('main')
+              .evaluate((node) =>
+                node.setAttribute('data-generated-late-change', 'yes'),
+              );
+            await page.waitForTimeout(600);
+          }
+          return original(page);
+        },
+      );
+    }
+    if (mode === 'extension') {
+      const original = selectorHelpers.listTimeoutRows;
+      let fired = false;
+      vi.spyOn(selectorHelpers, 'listTimeoutRows').mockImplementation(
+        async (page) => {
+          if (!fired) {
+            fired = true;
+            const directory = join(
+              h.profile,
+              'Default',
+              'Extensions',
+              'generated_added_extension',
+            );
+            await mkdir(directory, { recursive: true });
+            await writeFile(join(directory, 'manifest.json'), '{}');
+          }
+          return original(page);
+        },
+      );
+    }
+    try {
+      const result = await h.start(true);
+      expect(result).toMatchObject(
+        mode === 'account'
+          ? { code: 'ACCOUNT_MISMATCH', token: 'account-changed' }
+          : mode === 'language'
+            ? { code: 'PAGE_LANGUAGE', token: 'page-language' }
+            : mode === 'notice'
+              ? { code: 'PLATFORM_CHECK', token: 'notice-error' }
+              : mode === 'http-429'
+                ? { code: 'PLATFORM_CHECK', token: 'http-429' }
+                : mode === 'extension'
+                  ? { code: 'CANARY_CHECK_FAILED', token: 'extensions-added' }
+                  : { code: 'PLATFORM_CHECK', token: 'list-timeout' },
+      );
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(0);
+      expect(
+        (await h.store.browserJournal()).attempts.some(
+          (attempt) => attempt.code === 'list-image-only',
+        ),
+      ).toBe(false);
+      if (mode === 'mismatch') {
+        const run = (await h.store.browserJournal()).runs[0]!;
+        const report = JSON.parse(
+          await readFile(
+            join(
+              h.directory,
+              'context',
+              'instagram',
+              `canary-${run.runId}.json`,
+            ),
+            'utf8',
+          ),
+        ) as { steps: unknown[] };
+        expect(report.steps[0]).toMatchObject({
+          result: 'list-timeout',
+          listTimeout: {
+            rowContainers: 4,
+            readableRows: 1,
+            imageOnlyRows: 3,
+            filter: {
+              applied: true,
+              readbackObserved: true,
+              startMatches: false,
+              endMatches: true,
+            },
+          },
+        });
+      }
+    } finally {
+      observer?.mockRestore();
+      vi.restoreAllMocks();
+      await h.close();
+    }
+  },
+  120000,
+);
+
+test('C34 IG-18 canary still refuses after fifteen opaque comments with no confirmations', async () => {
+  const h = await harness('success', 17);
+  h.fake.filteredImageOnly(Array.from({ length: 17 }, (_, index) => index));
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'CANARY_CHECK_FAILED',
+      token: 'canary-check',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.filter((attempt) => attempt.state === 'sending'),
+    ).toHaveLength(15);
+    expect(
+      journal.attempts.filter((attempt) => attempt.code === 'list-image-only'),
+    ).toHaveLength(15);
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(0);
+    expect(journal.runs[0]!.canaryAcceptedAt).toBeNull();
+  } finally {
+    await h.close();
+  }
+}, 180000);
+
 test('C27 readable nonmatching rows reach no-row without list-timeout diagnostics or a reopen', async () => {
   const h = await harness('no-row', 2);
   await fullRunReady(h);

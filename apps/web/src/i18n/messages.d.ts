@@ -312,6 +312,9 @@ declare global {
     'desktop.token.FIXTURE_NOT_ALLOWED': Record<never, never>;
     'desktop.token.GUIDE_UNAVAILABLE': Record<never, never>;
     'desktop.token.HTML_EXPORT': Record<never, never>;
+    'desktop.token.IG_WARNING_CARD_REQUIRED': Record<never, never>;
+    'desktop.token.IG_WARNING_DAY': Record<never, never>;
+    'desktop.token.IG_WARNING_RESTORE_BLOCKED': Record<never, never>;
     'desktop.token.IMPORT_FAILED': Record<never, never>;
     'desktop.token.IMPORT_INCOMPLETE': Record<never, never>;
     'desktop.token.INSTAGRAM_ACCOUNT_NAME_MISSING': Record<never, never>;
@@ -411,6 +414,7 @@ declare global {
     'desktop.token.confirmed': Record<never, never>;
     'desktop.token.count': Record<never, never>;
     'desktop.token.daily-cap': Record<never, never>;
+    'desktop.token.delete-comment': Record<never, never>;
     'desktop.token.delete-post': Record<never, never>;
     'desktop.token.deleted': Record<never, never>;
     'desktop.token.disk-low': Record<never, never>;

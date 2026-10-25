@@ -335,7 +335,7 @@ The delivered harness hash after that report-only addition is `d1a42d61e48bad28e
 
 No application repair follows from those incomplete causal traces. A conditional callsite plan for H is returned outside Git, not applied to its held files: inspect duplicate `scrollToIndex` requests across a retention rebase and focus retry, and compare ResizeObserver measurements with the `offsetHeight` fallback only if the quiet trace confirms that path. Existing focus/visibility acknowledgement, 50-card responses, 300-card retained windows and variable-height cards must remain intact. This is a hypothesis plan, not a claim that the current focus path is defective. The 50 ms target remains open and the feed is not accepted at this scale.
 
-For the independent host, `.github/workflows/scale-measure.yml` produces one Firefox and one WebKit job on `ubuntu-latest`, triggered by pushes to `measure/**` or `workflow_dispatch`. The parent-owned branch is `measure/adr032-s11-frame-attribution`. Jobs use pinned actions, read-only contents, frozen dependencies and no configured secrets, deployment or `ci.yml` change. Each job validates the known-work control, runs the plain production scale procedure, then captures the attribution-only 6,000-entry phase separately. Artifacts named `feed-scale-firefox-<commit SHA>` and `feed-scale-webkit-<commit SHA>` are retained even on failure. Their consumers are the parent and this evidence record: read `renderer`, `scope`, `host`, `sourceHash`, `harnessHash`, `completed`, `framePhaseOnly`, `targetResults` or `frameTargetResults` before comparing any number. Linux memory reporting is summed owned-tree `VmRSS`, not Windows private bytes, and the original 12 GiB admission is retained. The workflow has not been pushed or executed by this lane; a hosted artifact readback is still required before any quiet-host conclusion.
+For the independent host, the S11 version of `.github/workflows/scale-measure.yml` prepared one Firefox and one WebKit job on `ubuntu-latest`, triggered by pushes to `measure/**` or `workflow_dispatch`. The parent-owned branch is `measure/adr032-s11-frame-attribution`. Jobs use pinned actions, read-only contents, frozen dependencies and no configured secrets, deployment or `ci.yml` change. Each job validates the known-work control, runs the plain production scale procedure, then captures the attribution-only 6,000-entry phase separately. Artifacts named `feed-scale-firefox-<commit SHA>` and `feed-scale-webkit-<commit SHA>` are retained even on failure. Their consumers are the parent and this evidence record: read `renderer`, `scope`, `host`, `sourceHash`, `harnessHash`, `completed`, `framePhaseOnly`, `targetResults` or `frameTargetResults` before comparing any number. Linux memory reporting is summed owned-tree `VmRSS`, not Windows private bytes, and the original 12 GiB admission is retained. S11 ended before the parent pushed it; the executed run and personal artifact readback follow below.
 
 The evidence producer changed here is test-only instrumentation and host reporting. The downstream AGENTS status sentence is proposed to the parent, not edited by this lane, and must continue to name the unresolved frame target rather than imply a repair. No criterion, worker/client behavior, decision semantics, architecture target or UI CSS changed.
 
@@ -343,3 +343,97 @@ The evidence producer changed here is test-only instrumentation and host reporti
 |---|---|
 | `firefox-2026-10-25T10-39-48-623Z.json` | `fb7db57c02d74364555673fb3107eb681e0802f991497437f36d8c75267d5ba1` |
 | `webkit-2026-10-25T11-33-06-468Z.json` | `4bb3828481f31f6a24199bec8286dd53e7de08aea3642b6f98a7f45b7f350e5f` |
+
+### Quiet Linux runner and production outlier positions, 2026-10-25
+
+The parent committed S11 as `deb3e2b` and corrected the artifact output path in `cf653cb74dc36a9c6f39007f5120e8b0c8cbc462`. [Run 40193782563](https://github.com/socialprune/socialprune/actions/runs/40193782563) completed both jobs on `ubuntu-latest`. The following values were read from the downloaded JSON, not inferred from a green job. A job's success means the procedure completed; its `noScrollFrameOver50` target is false in both production reports.
+
+Both VMs report Linux `7.0.0-1017-azure`, four logical CPUs and Node `v24.21.0`. Firefox's CPU is AMD EPYC 9V74, with 16,759,443,456 total and 15,060,742,144 free physical bytes at admission; WebKit's is AMD EPYC 9V45, with 16,759,439,360 total and 14,998,138,880 free. Both record zero percent CPU load in the short admission sample, not continuous idle during traversal. This is an independent quiet-host sample, not a controlled host-load-only comparison with Windows. Browser, OS and scheduling differences remain confounders. The measured Linux source hash is `6937946e60368469f0aedac4255798a23ba3668e280ba37b6769605a7ec0ec70`; the common harness hash is `d1a42d61e48bad28e488b7e8a9a8f5120a74e605b068e468c8f3e4307d20b3c1`.
+
+| Measured production observation, run 40193782563 | Firefox 155.0 | WebKit 26.6 |
+|---|---:|---:|
+| Start, UTC | 12:36:12.762 | 12:36:21.701 |
+| End, UTC | 12:44:24.135 | 12:42:26.228 |
+| Frame intervals | 14,427 | 13,329 |
+| Frame p95, ms | 17.10 | 17 |
+| Maximum interval, ms | 50.26 | 81 |
+| Intervals above 50 ms | 1 | 1 |
+| Consecutive focused and visible cards | 6,000 | 6,000 |
+| Mounted-card maximum | 23 | 23 |
+| Tab first-card maximum, ms | 181 | 114 |
+| Configuration-cold count p95, ms | 31 | 11 |
+| First count after restored revision, ms | 3,356 | 1,465 |
+
+All reported targets except the strict frame maximum pass. The count p95 is the nineteenth sorted sample of twenty; it does not erase the multi-second first projection or establish a fresh-revision p95. The separate attribution builds reached 6,000 cards with maxima of 34.22 ms in Firefox and 40 ms in WebKit, zero intervals above 50 ms and empty `frameDiagnostics.frames`. They do not attribute either production outlier. The much smaller quiet-runner miss count compared with the loaded-desktop diagnostic 63/36 supports host sensitivity, but does not prove that load caused a particular interval or that the app cannot produce one.
+
+The old production arrays permit only derived positions: Firefox interval index 5,744 is 50.26 ms, after 96,049.40 ms of summed recorded deltas, with 16.08/17.10 ms neighbors; WebKit index 101 is 81 ms, after 1,718 ms, with 31/18 ms neighbors. These sums omit the initial unsampled rAF and are not measured scroll-start timestamps. No focused-card or pending-request state was captured for those old intervals.
+
+| Raw file from run 40193782563 | SHA-256 |
+|---|---|
+| `firefox-2026-10-25T12-36-12-762Z.json`, production | `8fe6d8e7e01fa22307c8b1439e4cf9afcfbd790c071de7f89ea421f8d46e6c90` |
+| `webkit-2026-10-25T12-36-21-701Z.json`, production | `82319122994bc58b800a3e8c36b6cce4b3885c96bacc9581fb467a8e9da458b1` |
+| `firefox-2026-10-25T12-44-29-148Z.json`, attribution | `8486896d2825c8e9bc24a22c51992cdd8e019888f1a49fc6b4d75602988c4a2e` |
+| `webkit-2026-10-25T12-42-29-537Z.json`, attribution | `6d4301cd0d86053a2f9100312cdb88e3d27b16685be88780b7b916ad45cd039d` |
+
+The S12 follow-up adds content-free interval context in Playwright's page evaluation only. It records zero-based frame and focused-card indexes before and after each interval above 50 ms, elapsed time from scroll start, endpoint loading flags, feed-window and actual worker-message pending flags, any request-lifetime overlap since the preceding rAF, and the preceding/following durations. Null means no focused article or no adjacent frame at the capture boundary. A reply arriving before the next rAF still leaves overlap evidence; neither a pending flag nor overlap measures main-thread work. GC, renderer work and OS preemption are not separated by this observer. Build readback rejects these observer markers in the production bundle; no application module imports them.
+
+The measurement workflow now has three independent VM jobs per engine, with the same generated input, caps, targets, one browser/worker per job, pinned actions, read-only permissions and no configured secrets. The branch is `measure/w-s12-production-outliers`, measurement commit `472ab58d9720d515069385485cc0bdb2b181ec98`. Each job runs the plain production scale procedure and checks the built bundle, without attribution wrappers. Artifact names include the engine, repetition and commit. Added observers can change sampling cost, so old and new harnesses are not treated as byte-identical. Repetitions are retained together, never selected to replace a miss.
+
+[Run 40198692212](https://github.com/socialprune/socialprune/actions/runs/40198692212) completed all six jobs successfully. Personal readback checks every reported outlier's index, duration and neighbors against the complete raw frame array. All six use source hash `6937946e60368469f0aedac4255798a23ba3668e280ba37b6769605a7ec0ec70` and new harness hash `8de99b9accc17b2ae13b9bd8cd79c5bc05ea2042ef5ee8f15f37f5bc72c97975`. Each restores the same 5,433,211-byte 6,000-entry input, SHA-256 `c698798c9703080b37b45e0680e7ff0f8e12e856c91c7c3ad6cf50c67e0895cc`, and 88,124,025-byte 100,000-entry input, SHA-256 `7dace3b02d7b0ce9ed769f1987a320bf3c6b33c9e35168f691519faea06a5362`. These are the Linux-generated bytes for these jobs; earlier Windows input hashes are not silently substituted.
+
+All jobs report Linux `7.0.0-1017-azure`, Node `v24.21.0`, four logical CPUs, Firefox `155.0` or WebKit `26.6`, with the unchanged 1,440 by 1,000 desktop viewport. Five VMs report AMD EPYC 7763; Firefox repetition 3 reports Intel Xeon Platinum 8370C at 2.80 GHz. Admission CPU load below is a roughly 100 ms sample, not proof of no later VM contention. Total physical bytes are 16,759,435,264 for Firefox 1, 16,758,403,072 for Firefox 3 and 16,759,443,456 for the other four.
+
+| Engine/repetition | Job ID | Start/end UTC | Free physical bytes at admission | Admission CPU, percent |
+|---|---|---|---:|---:|
+| Firefox 1 | 121185017071 | 13:41:10.765 / 13:50:13.247 | 14,981,328,896 | 0 |
+| Firefox 2 | 121185016914 | 13:41:10.914 / 13:49:47.070 | 14,701,584,384 | 2.50 |
+| Firefox 3 | 121185017085 | 13:41:13.659 / 13:49:08.893 | 14,713,950,208 | 2.44 |
+| WebKit 1 | 121185017091 | 13:41:24.573 / 13:50:03.555 | 14,909,693,952 | 0 |
+| WebKit 2 | 121185017056 | 13:41:24.702 / 13:49:50.814 | 14,960,214,016 | 2.50 |
+| WebKit 3 | 121185016844 | 13:41:19.723 / 13:49:46.835 | 14,918,238,208 | 2.63 |
+
+| Measured production repetition | Frames | Frame p95, ms | Maximum, ms | Above 50 ms | Count p95, ms | First revision count, ms | Tab maximum, ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Firefox 1 | 15,560 | 17.12 | 66.54 | 3 | 32 | 3,603 | 462 |
+| Firefox 2 | 14,477 | 17.12 | 34.18 | 0 | 31 | 3,336 | 196 |
+| Firefox 3 | 14,334 | 17.10 | 34.18 | 0 | 30 | 3,530 | 167 |
+| WebKit 1 | 14,324 | 19 | 151 | 4 | 62 | 2,321 | 156 |
+| WebKit 2 | 14,188 | 19 | 138 | 4 | 58 | 2,209 | 167 |
+| WebKit 3 | 14,210 | 19 | 135 | 2 | 50 | 2,180 | 158 |
+
+Every repetition reaches all 6,000 consecutive focused/visible cards, mounts at most 23 DOM cards and returns at most 50 cards per feed response. Every count-p95 and tab target passes, with zero observed page errors or off-origin requests. The strict frame target passes only in Firefox repetitions 2 and 3. The other four misses remain misses despite successful workflow jobs. A percentile is not substituted for the maximum.
+
+The following is the complete measured outlier set. Card indexes and frame indexes are zero-based. Loading, pending-window and pending-worker flags are endpoint snapshots; the two overlap flags record any lifetime overlap during that interval. Loading before/after distinguishes an interval that ends just after a request completes. All times are rounded to at most two decimal places; the JSON retains full precision.
+
+| Engine/repetition | Frame index | Elapsed, ms | Card before/after | Interval, ms | Previous/next, ms | Loading before/after | Window pending / overlap | Worker pending / overlap |
+|---|---:|---:|---|---:|---|---|---|---|
+| Firefox 1 | 3,520 | 59,063.82 | 1,449 / 1,449 | 50.28 | 16.08 / 16.12 | yes / no | no / yes | yes / yes |
+| Firefox 1 | 6,180 | 103,714.06 | 2,550 / 2,550 | 50.40 | 16.20 / 16.10 | yes / yes | yes / yes | yes / yes |
+| Firefox 1 | 13,599 | 228,064 | 5,349 / 5,350 | 66.54 | 17.06 / 49.34 | yes / yes | yes / yes | yes / yes |
+| WebKit 1 | 102 | 1,838 | 48 / 48 | 151 | 40 / 19 | yes / yes | yes / yes | yes / yes |
+| WebKit 1 | 5,078 | 82,816 | 2,148 / 2,148 | 58 | 16 / 26 | yes / yes | yes / yes | yes / yes |
+| WebKit 1 | 13,290 | 217,040 | 5,584 / 5,584 | 53 | 21 / 10 | no / no | no / no | no / no |
+| WebKit 1 | 14,115 | 230,648 | 5,920 / 5,920 | 51 | 20 / 11 | no / no | no / no | no / no |
+| WebKit 2 | 102 | 1,849 | 48 / 48 | 138 | 41 / 15 | yes / yes | yes / yes | yes / yes |
+| WebKit 2 | 5,076 | 82,716 | 2,148 / 2,148 | 65 | 16 / 23 | yes / yes | yes / yes | yes / yes |
+| WebKit 2 | 6,324 | 103,040 | 2,689 / 2,689 | 57 | 16 / 19 | no / no | no / no | no / no |
+| WebKit 2 | 12,945 | 210,573 | 5,476 / 5,476 | 54 | 19 / 11 | no / no | no / no | no / no |
+| WebKit 3 | 103 | 1,843 | 48 / 48 | 135 | 47 / 16 | yes / yes | yes / yes | yes / yes |
+| WebKit 3 | 12,924 | 210,367 | 5,466 / 5,466 | 51 | 20 / 12 | no / no | no / no | no / no |
+
+WebKit reproduces a first-window outlier at card index 48 in all three jobs, at 1,838 to 1,849 ms after scroll sampling starts, with 135 to 151 ms duration. The earlier run's frame index 101 and derived 1,718 ms position are also near the beginning, but its missing card context prevents claiming an exact matching card. WebKit also repeats card index 2,148 in two of three jobs. Its later nonloading outliers occur at different positions with no observed window/worker overlap. Firefox has three outliers in one job and none in the other two, so these do not establish a deterministic Firefox card position. The result is a mixed pattern, not one random interval per engine per run.
+
+Source readback maps the first pending-window boundary to `ReviewFeed.tsx:353-359` near-end paging, `FeedWorkspace.tsx:233-247` anchor capture and `FeedSession.load` at `session.ts:101-147`. The session publishes loading before its 50-card request; the workspace passes loading as `busy` to mounted cards through `ReviewFeed.tsx:160-175,535-549`. That identifies a plausible loading/render/layout path, not the CPU cause of the measured interval. The pending flags cannot distinguish work before the request, structured cloning, worker reply processing, busy-card rerenders, browser layout, GC or scheduler preemption. The previous attribution build did not reproduce the interval. No product repair or exact repair patch is justified by these artifacts, and H's files remain untouched. The precise remaining investigation is the first offset-50 loading transition in WebKit, not another broad loaded-desktop run.
+
+The strict 50 ms target and full slice 8 acceptance remain open. The condition for a noise-only target-choice card is not met because WebKit's first-window miss repeats. No percentile amendment is recommended from this evidence. Wheel, touch, scrollbar gestures, Instagram/media/original-rich feeds, small screens, fresh-revision count distributions and causal CPU/GC attribution remain unmeasured here. The mounted-card count is not a new measurement of the separate 300-card retained-window heap bound.
+
+Raw baseline and six-repeat artifacts, personally executed reader/consistency checks and the H investigation handoff are retained outside Git under `phase2/w-s12/` in the maintainer's evidence archive. No local browser was launched. No product code, decisions, target or architecture record changed.
+
+| Raw repetition file | SHA-256 |
+|---|---|
+| `firefox-2026-10-25T13-41-10-765Z.json` | `e89896ba6dd88b024eb1ec1271141943d8c9e69f0a640d3a1e34abaa5de9ae70` |
+| `firefox-2026-10-25T13-41-10-914Z.json` | `6ef2104a5972a4a5c3a5940ec67b60e57324662288b9f7fc6ed854a7c1e793e3` |
+| `firefox-2026-10-25T13-41-13-659Z.json` | `b85eda5cd5c662a199e93bd224fb71798d4c9ef6dce636c1ac26393b4f419fab` |
+| `webkit-2026-10-25T13-41-24-573Z.json` | `d99af6998466526df6b5488bd16d61bf62298d8f1cc2a513759465ca1adeaf27` |
+| `webkit-2026-10-25T13-41-24-702Z.json` | `b0e22c34614454d9743b88c8e0c9f88acb184dab64d44216465c9d6e75aecfd6` |
+| `webkit-2026-10-25T13-41-19-723Z.json` | `87de1efa2aede5e182a790667f000c3f86980476879cb3564c1a6efe013e5287` |

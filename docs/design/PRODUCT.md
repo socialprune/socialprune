@@ -58,11 +58,23 @@ The repository has generated export fixtures in `fixtures/synthetic/demo/`, exam
 
 WCAG 2.2 AA is the target. The feed uses labelled articles and scoped, switchable keys. Buttons remain visible without shortcuts. Labels, icons and text accompany every state. Layout reflows at 320 px; post text stays at least 16 px, consequential targets at least 44 px. Dialogs trap and return focus. Reduced motion, forced colors and German text expansion are part of visual verification. NVDA and VoiceOver remain manual acceptance gates, not claims made by screenshots.
 
-## Design A, accepted by the maintainer
+## Design A, accepted by the maintainer on 2026-10-22
 
-- A1: The preferred desktop review is one continuous reading column with a small contextual side summary, not a dense moderation table. Recommended because his task is reading and keeping exceptions.
+- A1, superseded in part by DESIGN-H C below: The preferred desktop review is one continuous reading column with a small contextual side summary, not a dense moderation table. Recommended because his task is reading and keeping exceptions.
 - A2: Keep is the visually leading per-entry action; the counted final mark is the leading page action. Recommended because exceptions, rather than thousands of individual marks, drive his flow.
 - A3: Criteria and rules open as an ordinary full-width editing surface rather than a narrow modal. Recommended so descriptions, own criteria and numerical controls stay readable on a phone.
 - A4: A quiet in-place decided state is preferable to removing the card immediately. Recommended to preserve position and focus.
 
 The maintainer accepted A1 to A4 as Design A and ordered slice 3 on 2026-10-22. The feed now connects these choices to the existing workspace contract; full rule and own-criterion editing remain slice 4. No Impeccable launcher or live mode is part of the implementation.
+
+## Design C, accepted by the maintainer on 2026-10-24
+
+Amended 2026-10-24 by the maintainer's decision DESIGN-H C. The maintainer chose the Fokus direction from the three generated-data studies. It applies to the web and desktop renderer UI in separately reviewable steps, each with a before-and-after gallery checked by the accountable parent before the maintainer sees it. The original A1 wording above remains as decision history.
+
+- C1 replaces A1's side summary with one focused reading surface beneath a dark header. Criteria remain beside their change action, held counts remain in the tabs and final mark, and keyboard help stays available from the feed toolbar. The continuous post column, not a moderation table, remains.
+- C2 preserves A2 to A4: Keep leads on an entry, the counted final mark leads on the page, criteria and rules use a full-width editor, and decided entries stay in place. K/L/M/U, focus behavior, virtualized windows and all data contracts remain unchanged.
+- C3 uses system fonts, distinct text roles, one control-radius and primary/secondary/help button grammar, fewer nested borders, and independently tuned light and dark colors. No remote font, image, dependency or Impeccable runtime is introduced.
+- C4 preserves DESIGN-IG A: the Instagram post header precedes its large card-width image, up to about 470 px, then its caption and the person's comment. Earlier decision access must come from a compact header, less supporting text or an adjacent/sticky decision bar, never from a thumbnail replacement.
+- C5 preserves UPD-1 A's desktop labels "Nach Updates suchen" and "Check for updates". The alternative label in the study was a proposal, not an accepted change.
+
+The implementation order is foundation/shell/X feed, criteria and keep rules, Instagram, then remaining web and desktop renderer screens. A completed step does not authorize changing the next step's data, transport, platform actions or other owners' work.

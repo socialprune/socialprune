@@ -1,8 +1,7 @@
 @layer components {
   .shell {
-    max-width: var(--shell-width);
-    margin: auto;
-    padding: var(--space-4);
+    min-height: 100dvh;
+    margin: 0 auto;
   }
   .header,
   .navigation,
@@ -15,8 +14,10 @@
   .header {
     flex-wrap: nowrap;
     justify-content: space-between;
-    border-bottom: var(--border-width) solid var(--color-divider);
-    padding-bottom: var(--space-4);
+    min-height: 64px;
+    padding: var(--space-2) max(var(--space-6), calc((100vw - 1056px) / 2));
+    background: var(--color-header);
+    color: var(--color-header-text);
   }
   .brand {
     display: inline-flex;
@@ -25,10 +26,10 @@
     text-decoration: none;
     font-size: var(--type-lg);
     font-weight: var(--weight-heading);
-    color: var(--color-text);
+    color: var(--color-header-text);
   }
   .brand svg {
-    color: var(--color-action);
+    color: var(--color-header-text);
   }
   .local {
     color: var(--color-text-secondary);
@@ -57,13 +58,13 @@
     gap: var(--space-2);
     padding-inline: var(--space-3);
     text-decoration: none;
-    color: var(--color-text-secondary);
+    color: var(--color-header-text);
     font-size: var(--type-sm);
     border-radius: var(--radius-panel);
   }
   .navigation a[aria-current='page'] {
-    color: var(--color-action);
-    background: var(--color-selected-bg);
+    color: var(--color-header-text);
+    background: var(--color-header-selected);
     font-weight: var(--weight-heading);
   }
   .menuArea {
@@ -75,7 +76,17 @@
     align-items: center;
     min-width: var(--target-size);
     padding: var(--space-2);
-    border-color: var(--color-boundary);
+    border-color: transparent;
+    color: var(--color-header-text);
+    background: transparent;
+  }
+  .menuTrigger:hover:not(:disabled) {
+    background: var(--color-header-selected);
+  }
+  .header > :focus-visible,
+  .navigation a:focus-visible,
+  .menuTrigger:focus-visible {
+    outline-color: var(--color-header-text);
   }
   .menuPanel {
     position: absolute;
@@ -121,21 +132,33 @@
   }
   .main {
     max-width: var(--shell-width);
-    padding-block: var(--space-4);
+    margin-inline: auto;
+    padding: var(--space-5) var(--space-6);
     overflow-wrap: anywhere;
   }
   .main > h1 {
-    max-width: 1004px;
-    margin: 0 auto var(--space-2);
+    max-width: var(--reading-width);
+    margin: 0 auto var(--space-4);
     font-size: var(--type-2xl);
+  }
+  .main[data-reading='true'] {
+    height: calc(100dvh - 64px);
+    min-height: 480px;
+    display: flex;
+    flex-direction: column;
+  }
+  .main[data-reading='true'] > h1,
+  .main[data-reading='true'] > .demoBanner {
+    flex: none;
+    width: 100%;
   }
   .main > section:not(.demoBanner) > p:first-child {
     max-width: 1004px;
     margin-inline: auto;
   }
   .demoBanner {
-    max-width: 1004px;
-    margin: var(--space-4) auto var(--space-5);
+    max-width: var(--reading-width);
+    margin: var(--space-2) auto var(--space-3);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
     background: var(--color-social-cover);
@@ -153,7 +176,7 @@
     font-size: var(--type-xs);
     border: 0;
     background: transparent;
-    min-height: 32px;
+    min-height: var(--target-size);
     padding: var(--space-1) var(--space-2);
     color: var(--color-action);
   }
@@ -209,14 +232,13 @@
     z-index: 10;
   }
   @media (max-width: 520px) {
-    .shell {
-      padding: var(--space-3);
-    }
     .local {
       display: none;
     }
     .header {
       gap: var(--space-1);
+      min-height: 56px;
+      padding: 0 var(--space-3);
     }
     .navigation {
       flex: 1 1 0;
@@ -250,10 +272,15 @@
       justify-content: center;
     }
     .main {
-      padding-top: var(--space-2);
+      padding: var(--space-3);
     }
     .main > h1 {
       font-size: var(--type-xl);
+      margin-bottom: var(--space-3);
+    }
+    .main[data-reading='true'] {
+      height: calc(100dvh - 56px);
+      min-height: 480px;
     }
     .demoBanner {
       align-items: start;
@@ -265,5 +292,21 @@
     margin-top: var(--space-6);
     color: var(--color-text-secondary);
     font-size: var(--type-sm);
+  }
+  @media (forced-colors: active) {
+    .header {
+      background: Canvas;
+      color: CanvasText;
+      border-bottom: var(--border-width) solid CanvasText;
+    }
+    .brand,
+    .brand svg,
+    .navigation a,
+    .menuTrigger {
+      color: LinkText;
+    }
+    .navigation a[aria-current='page'] {
+      outline: var(--border-width) solid Highlight;
+    }
   }
 }

@@ -15,12 +15,12 @@ test('W0 shell keyboard routes, 320px German layout, dark mode and reduced motio
     await page
       .getByRole('button', { name: 'Open export', exact: true })
       .evaluate((button) => getComputedStyle(button).backgroundColor),
-  ).toBe('rgb(29, 78, 216)');
+  ).toBe('rgb(35, 78, 137)');
   expect(
     await page
       .getByRole('heading', { name: 'SocialPrune', exact: true })
       .evaluate((heading) => getComputedStyle(heading).fontSize),
-  ).toBe('30px');
+  ).toBe('29px');
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('combobox', { name: 'Language' }).selectOption('de');
   await page

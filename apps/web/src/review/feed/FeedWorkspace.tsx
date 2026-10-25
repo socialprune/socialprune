@@ -46,7 +46,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const [dialog, setDialog] = useState(false);
   const [help, setHelp] = useState(false);
   const [editor, setEditor] = useState(false);
-  const [editorCounts, setEditorCounts] = useState<PlanCounts | null>(null);
+  const [, setEditorCounts] = useState<PlanCounts | null>(null);
   const [originals, setOriginals] = useState<ReadonlyMap<string, Original>>(
     new Map(),
   );
@@ -514,20 +514,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             }
           />
         )}
-        <aside className={styles.side}>
-          <h2>{t('reviewFeed.planHeading')}</h2>
-          <p>
-            {criteria.selected
-              .map((id) => criterionLabel(id, summary, t))
-              .join(', ') || t('reviewFeed.emptyStart')}
-          </p>
-          <p>
-            {t('reviewFeed.heldCount', {
-              count: (editor ? editorCounts : state.counts)?.tabs.held ?? 0,
-            })}
-          </p>
-          <p>{t('reviewFeed.keys')}</p>
-        </aside>
       </div>
       <MarkPreview
         busy={state.busy}

@@ -14,7 +14,6 @@ import {
   Repeat2,
   ShieldCheck,
   Undo2,
-  WandSparkles,
 } from 'lucide-react';
 import { useT } from '../../i18n/index.ts';
 import type {
@@ -346,7 +345,6 @@ export function FeedCard({
           {card.suggestions.map((suggestion) => (
             <div key={suggestion.id} className={styles.suggestion}>
               <div className={styles.suggestionLine}>
-                <WandSparkles size={16} aria-hidden="true" />
                 <strong>
                   {t(
                     suggestion.unclear

@@ -353,7 +353,14 @@ function Content({
               </button>
             </div>
           )}
-        <main id="main">
+        <main
+          id="main"
+          className={
+            screen === 'review' && hash !== '#/review/list'
+              ? styles.reviewMain
+              : undefined
+          }
+        >
           <h1 tabIndex={-1} ref={heading}>
             {t(titles[screen])}
           </h1>

@@ -151,7 +151,10 @@ for (const lang of ['de', 'en'] as const)
   for (const theme of ['light', 'dark'] as const)
     for (const width of [320, 390, 1280])
       test(`connected geometry ${lang} ${theme} ${width}`, async ({ page }) => {
-        test.setTimeout(120_000);
+        // The complete generated matrix took108s for one viewport on the loaded
+        // Windows host of2026-10-25. Preserve every geometry assertion and allow
+        // three minutes of headroom for all tabs, platforms and screenshots.
+        test.setTimeout(360_000);
         const findings: string[] = [];
         await page.setViewportSize({ width, height: width < 600 ? 844 : 800 });
         await page.emulateMedia({

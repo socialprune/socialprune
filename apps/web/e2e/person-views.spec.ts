@@ -324,7 +324,7 @@ test('archive joins only own thread, keeps deleted item, year jumps/search inclu
   await audit.assert();
 });
 
-test('three primary destinations and one keyboard-operable menu reflow at 320px with danger contrast in both themes', async ({
+test('three primary destinations and one keyboard-operable menu reflow at 320px with text-style mark contrast in both themes', async ({
   page,
   context,
 }) => {
@@ -357,6 +357,8 @@ test('three primary destinations and one keyboard-operable menu reflow at 320px 
   await expect(
     page.getByRole('button', { name: 'Menu', exact: true }),
   ).toBeFocused();
+  // Sample settled theme colors, not an interpolated CSS transition frame.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const theme of ['light', 'dark']) {
     await page.evaluate((value) => {
       document.documentElement.dataset.theme = value;
@@ -385,7 +387,9 @@ test('three primary destinations and one keyboard-operable menu reflow at 320px 
       (Math.max(luminance(a), luminance(b)) + 0.05) /
       (Math.min(luminance(a), luminance(b)) + 0.05);
     expect(ratio(colors[0]!, colors[1]!)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(colors[2]!, colors[1]!)).toBeGreaterThanOrEqual(3);
+    // DESIGN-H C makes Mark a named text action, with the shared focus ring
+    // rather than a decorative enclosing border.
+    expect(colors[2]).toBe('rgba(0, 0, 0, 0)');
   }
   await page.setViewportSize({ width: 320, height: 800 });
   expect(

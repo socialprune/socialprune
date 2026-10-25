@@ -325,7 +325,12 @@ function Content({
             {updateError && <p role="alert">{t('update.failed')}</p>}
           </section>
         )}
-        <main id="main" className={styles.main} data-gate={gateState}>
+        <main
+          id="main"
+          className={styles.main}
+          data-gate={gateState}
+          data-reading={route === '/review' || route === '/demo'}
+        >
           <h1
             tabIndex={-1}
             ref={heading}

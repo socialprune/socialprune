@@ -224,8 +224,10 @@ test('a virtual keyboard destination is acknowledged only after focus survives i
 test('sequential keyboard traversal crosses generated fifty-card window boundaries without losing visibility', async ({
   page,
 }) => {
-  // 600 real keys and two paint opportunities per key need more than the default30s.
-  test.setTimeout(120_000);
+  // On the loaded Windows host of 2026-10-25, the unchanged baseline needed
+  // 108s and the new geometry reached card499 at120s. The per-card visibility
+  // budget stays5s; this is the total budget for600 real keys and two frames each.
+  test.setTimeout(360_000);
   const data = liveFeedFixture(650);
   data.settings.keepRules = [];
   const expected = data.items
@@ -235,24 +237,63 @@ test('sequential keyboard traversal crosses generated fifty-card window boundari
   await page.getByRole('feed').locator('article').first().focus();
   for (const [index, id] of expected.slice(0, 600).entries()) {
     if (index) await page.keyboard.press('ArrowDown');
-    await page.waitForFunction(
-      (id) => {
-        const article = document.activeElement;
-        const panel = document.querySelector('[role="tabpanel"]');
-        if (!(article instanceof HTMLElement) || !panel) return false;
-        const box = article.getBoundingClientRect(),
-          bounds = panel.getBoundingClientRect();
-        return (
-          article.dataset['cardId'] === id &&
-          box.bottom > bounds.top &&
-          box.top < bounds.bottom &&
-          document.querySelector('[role="feed"]')?.getAttribute('aria-busy') ===
-            'false'
+    await page
+      .waitForFunction(
+        (id) => {
+          const article = document.activeElement;
+          const panel = document.querySelector('[role="tabpanel"]');
+          if (!(article instanceof HTMLElement) || !panel) return false;
+          const box = article.getBoundingClientRect(),
+            bounds = panel.getBoundingClientRect();
+          return (
+            article.dataset['cardId'] === id &&
+            box.bottom > bounds.top &&
+            box.top < bounds.bottom &&
+            document
+              .querySelector('[role="feed"]')
+              ?.getAttribute('aria-busy') === 'false'
+          );
+        },
+        id,
+        { timeout: 5000 },
+      )
+      .catch(async (error: unknown) => {
+        console.log(
+          'FEED_KEYBOARD_GEOMETRY',
+          JSON.stringify(
+            await page.evaluate((expected) => {
+              const panel = document.querySelector('[role="tabpanel"]')!;
+              const active = document.activeElement as HTMLElement | null;
+              const box = (element: Element | null) => {
+                const value = element?.getBoundingClientRect();
+                return value
+                  ? {
+                      top: value.top,
+                      bottom: value.bottom,
+                      height: value.height,
+                    }
+                  : null;
+              };
+              const target = [
+                ...document.querySelectorAll<HTMLElement>('article'),
+              ].find((article) => article.dataset['cardId'] === expected);
+              return {
+                expected,
+                activeId: active?.dataset['cardId'],
+                active: box(active),
+                target: box(target ?? null),
+                panel: box(panel),
+                scrollTop: panel.scrollTop,
+                scrollHeight: panel.scrollHeight,
+                busy: document
+                  .querySelector('[role="feed"]')
+                  ?.getAttribute('aria-busy'),
+              };
+            }, id),
+          ),
         );
-      },
-      id,
-      { timeout: 5000 },
-    );
+        throw error;
+      });
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>

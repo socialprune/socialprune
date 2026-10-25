@@ -167,6 +167,7 @@ function ReadyReview({
           className={styles.main}
           data-gate="ready"
           data-router-started="true"
+          data-reading={route === '/review'}
         >
           <h1 tabIndex={-1} ref={heading}>
             {title}

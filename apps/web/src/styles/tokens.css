@@ -3,56 +3,65 @@
   :root {
     --font-family:
       system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --type-xs: 13px;
-    --line-xs: 1.4;
+    --type-xs: 12px;
+    --line-xs: 1.5;
     --type-sm: 14px;
-    --line-sm: 1.45;
+    --line-sm: 1.5;
     --type-md: 16px;
     --line-md: 1.5;
-    --type-lg: 20px;
+    --type-lg: 18px;
     --line-lg: 1.35;
     --type-xl: 24px;
     --line-xl: 1.3;
-    --type-2xl: 30px;
-    --line-2xl: 1.25;
+    --type-2xl: 29px;
+    --line-2xl: 1.2;
+    --type-post: 18px;
+    --line-post: 1.6;
     --weight-regular: 400;
-    --weight-heading: 600;
+    --weight-heading: 650;
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
     --space-4: 16px;
     --space-5: 24px;
     --space-6: 32px;
-    --radius-control: 6px;
-    --radius-panel: 8px;
+    --space-7: 40px;
+    --radius-control: 12px;
+    --radius-panel: 12px;
+    --radius-workspace: 12px;
     --border-width: 1px;
     --focus-width: 3px;
     --focus-offset: 2px;
     --target-size: 44px;
     --shell-width: 72rem;
-    --color-canvas: #f8fafc;
+    --reading-width: 760px;
+    --color-canvas: #eaf0f4;
     --color-surface: #ffffff;
-    --color-text: #172033;
-    --color-text-secondary: #475569;
-    --color-action: #1d4ed8;
+    --color-text: #202e37;
+    --color-text-secondary: #526572;
+    --color-action: #234e89;
     --color-on-action: #ffffff;
-    --color-boundary: #64748b;
-    --color-divider: #cbd5e1;
-    --color-selected-bg: #dbeafe;
+    --color-boundary: #758997;
+    --color-divider: #d2dde4;
+    --color-selected-bg: #e6eef8;
+    --color-header: #213b4b;
+    --color-header-text: #f0f5f8;
+    --color-header-selected: #385665;
+    --color-header-boundary: #91aab8;
     --color-marked: #92400e;
     --color-marked-bg: #fef3c7;
     --color-outcome: #166534;
     --color-outcome-bg: #dcfce7;
-    --color-error: #b91c1c;
-    --color-error-bg: #fee2e2;
+    --color-error: #b33332;
+    --color-error-bg: #fceeed;
     --color-danger: var(--color-error);
     --color-danger-bg: var(--color-error-bg);
-    --color-suggestion: #5b21b6;
-    --color-evidence-bg: #e0e7ff;
+    --color-suggestion: #6b4791;
+    --color-evidence-bg: #e9e1f2;
     --radius-social: 12px;
-    --color-social-divider: #dce5eb;
-    --color-social-cover: #e8f1f6;
-    --color-social-hint: #f6f9fc;
+    --color-social-divider: var(--color-divider);
+    --color-social-cover: #e6eef3;
+    --color-social-hint: #f0f4f7;
     --profile-height: 160px;
     --profile-avatar: 96px;
     --profile-overlap: -44px;
@@ -70,50 +79,54 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
-      --color-canvas: #111827;
-      --color-surface: #1f2937;
-      --color-text: #f8fafc;
-      --color-text-secondary: #cbd5e1;
-      --color-action: #93c5fd;
-      --color-on-action: #111827;
-      --color-boundary: #94a3b8;
-      --color-divider: #475569;
-      --color-selected-bg: #1e3a8a;
+      --color-canvas: #0f1d26;
+      --color-surface: #1a2a35;
+      --color-text: #f0f4f7;
+      --color-text-secondary: #b8cad6;
+      --color-action: #abd0ff;
+      --color-on-action: #142333;
+      --color-boundary: #87a1b2;
+      --color-divider: #3e5564;
+      --color-selected-bg: #294962;
+      --color-header: #142833;
+      --color-header-text: #eff5f9;
+      --color-header-selected: #385665;
       --color-marked: #fbbf24;
       --color-marked-bg: #451a03;
       --color-outcome: #86efac;
       --color-outcome-bg: #052e16;
-      --color-error: #fca5a5;
-      --color-error-bg: #450a0a;
-      --color-suggestion: #c4b5fd;
-      --color-evidence-bg: #312e81;
-      --color-social-divider: #475569;
-      --color-social-cover: #1e3a5a;
-      --color-social-hint: #172338;
+      --color-error: #ffa6a1;
+      --color-error-bg: #42272b;
+      --color-suggestion: #d1b8ed;
+      --color-evidence-bg: #4b3b61;
+      --color-social-cover: #29404e;
+      --color-social-hint: #253844;
       color-scheme: dark;
     }
   }
   :root[data-theme='dark'] {
-    --color-canvas: #111827;
-    --color-surface: #1f2937;
-    --color-text: #f8fafc;
-    --color-text-secondary: #cbd5e1;
-    --color-action: #93c5fd;
-    --color-on-action: #111827;
-    --color-boundary: #94a3b8;
-    --color-divider: #475569;
-    --color-selected-bg: #1e3a8a;
+    --color-canvas: #0f1d26;
+    --color-surface: #1a2a35;
+    --color-text: #f0f4f7;
+    --color-text-secondary: #b8cad6;
+    --color-action: #abd0ff;
+    --color-on-action: #142333;
+    --color-boundary: #87a1b2;
+    --color-divider: #3e5564;
+    --color-selected-bg: #294962;
+    --color-header: #142833;
+    --color-header-text: #eff5f9;
+    --color-header-selected: #385665;
     --color-marked: #fbbf24;
     --color-marked-bg: #451a03;
     --color-outcome: #86efac;
     --color-outcome-bg: #052e16;
-    --color-error: #fca5a5;
-    --color-error-bg: #450a0a;
-    --color-suggestion: #c4b5fd;
-    --color-evidence-bg: #312e81;
-    --color-social-divider: #475569;
-    --color-social-cover: #1e3a5a;
-    --color-social-hint: #172338;
+    --color-error: #ffa6a1;
+    --color-error-bg: #42272b;
+    --color-suggestion: #d1b8ed;
+    --color-evidence-bg: #4b3b61;
+    --color-social-cover: #29404e;
+    --color-social-hint: #253844;
     color-scheme: dark;
   }
   :root[data-density='compact'] {
@@ -145,13 +158,17 @@
     line-height: var(--line-md);
     color: var(--color-text);
     background: var(--color-canvas);
+    caret-color: var(--color-action);
+    scrollbar-color: var(--color-boundary) var(--color-surface);
   }
   a {
     color: var(--color-action);
+    text-underline-offset: 3px;
   }
   button,
   input,
-  select {
+  select,
+  textarea {
     font: inherit;
   }
   button,
@@ -166,6 +183,17 @@
     color: var(--color-text);
     background: var(--color-surface);
     cursor: pointer;
+    font-weight: var(--weight-heading);
+    transition:
+      background-color var(--motion-duration),
+      color var(--motion-duration),
+      border-color var(--motion-duration);
+  }
+  button:hover:not(:disabled) {
+    background: var(--color-social-hint);
+  }
+  button:active:not(:disabled) {
+    background: var(--color-selected-bg);
   }
   button:disabled {
     cursor: default;
@@ -187,6 +215,12 @@
   h2,
   h3 {
     font-weight: var(--weight-heading);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  ::selection {
+    color: var(--color-text);
+    background: var(--color-evidence-bg);
   }
   .base-ui-disable-scrollbar {
     scrollbar-width: none;

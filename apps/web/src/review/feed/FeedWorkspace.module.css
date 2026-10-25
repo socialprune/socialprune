@@ -1,18 +1,20 @@
 @layer components {
   .workspace {
     min-width: 0;
-    max-width: 1004px;
+    max-width: var(--reading-width);
     margin-inline: auto;
     overflow-wrap: normal;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
   }
   .layout {
-    height: calc(100dvh - 150px);
-    min-height: 440px;
-    max-width: 1004px;
+    height: 100%;
+    min-height: 0;
+    max-width: var(--reading-width);
     margin-inline: auto;
     display: grid;
-    grid-template-columns: minmax(0, 680px) minmax(0, 276px);
-    gap: var(--space-6);
+    grid-template-columns: minmax(0, 1fr);
   }
   .layout > section {
     min-height: 0;
@@ -22,11 +24,12 @@
     align-items: center;
     flex-wrap: nowrap;
     gap: var(--space-2);
-    padding: 7px var(--space-4);
+    padding: var(--space-2) var(--space-5);
     border-bottom: var(--border-width) solid var(--color-social-divider);
     font-size: var(--type-sm);
     justify-content: space-between;
     min-height: 60px;
+    padding-block: 7px;
   }
   .accountField {
     position: relative;
@@ -43,10 +46,10 @@
     flex: 1;
     min-height: var(--target-size);
     width: 100%;
-    background: var(--color-social-hint);
+    background: transparent;
     color: var(--color-text);
-    border: 1px solid var(--color-divider);
-    border-radius: 999px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
     padding: 8px 36px 8px 14px;
     appearance: none;
     font: inherit;
@@ -97,29 +100,6 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .side {
-    align-self: start;
-    padding: var(--space-5);
-    font-size: var(--type-sm);
-    line-height: 1.6;
-    background: var(--color-social-hint);
-    border: 1px solid var(--color-social-divider);
-    border-radius: var(--radius-social);
-  }
-  .side h2 {
-    margin-top: 0;
-    margin-bottom: var(--space-4);
-    font-size: var(--type-md);
-  }
-  .side p {
-    margin: 0;
-    color: var(--color-text-secondary);
-  }
-  .side p + p {
-    margin-top: var(--space-5);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-social-divider);
-  }
   .editor {
     min-height: 0;
     overflow: auto;
@@ -158,20 +138,7 @@
     background: var(--color-surface);
     z-index: 11;
   }
-  @media (max-width: 900px) {
-    .layout {
-      grid-template-columns: minmax(0, 1fr);
-      max-width: 680px;
-    }
-    .side {
-      display: none;
-    }
-  }
   @media (max-width: 540px) {
-    .layout {
-      height: calc(100dvh - 120px);
-      min-height: 440px;
-    }
     .toolbar {
       padding-inline: var(--space-3);
     }

@@ -313,7 +313,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
   }, [props.tab, hasCriteria]);
   const active = tabs.find(([key]) => key === props.tab)!;
   return (
-    <section className={styles.review}>
+    <section className={styles.review} aria-label={t('reviewFeed.planHeading')}>
       {props.header}
       {hasCriteria && (
         <header className={styles.feedHeader}>
@@ -490,6 +490,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
           {!hasCriteria && props.tab === 'suggested' ? (
             <div className={styles.empty}>
               <h2>{t('reviewFeed.noCriteria')}</h2>
+              <p>{t('reviewFeed.emptyStart')}</p>
               <button className={controls.primary} onClick={props.onCriteria}>
                 {t('reviewFeed.chooseCriteria')}
               </button>

@@ -120,7 +120,7 @@ test.each(['en', 'de'] as const)(
   },
 );
 test.each(['en', 'de'] as const)(
-  'all X post kinds and decision states render byte-identically to bf8843f in %s',
+  'all X post kinds and decision states retain bf8843f markup except the DESIGN-H C decorative icon removal in %s',
   (locale) => {
     for (const kind of ['post', 'reply', 'quote', 'repost'] as const)
       for (const decision of [
@@ -165,9 +165,15 @@ test.each(['en', 'de'] as const)(
           platform: 'x' as const,
           onDecision: () => undefined,
         };
-        expect(render(<FeedCard {...props} />, locale)).toBe(
-          render(<BeforeFeedCard {...props} />, locale),
-        );
+        const current = render(<FeedCard {...props} />, locale);
+        const before = render(<BeforeFeedCard {...props} />, locale);
+        // DESIGN-H C removes only the suggestion's decorative wand. Keep the
+        // historical component intact and compare every other byte and ARIA role.
+        const decorativeIcon =
+          /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>/gu;
+        expect(before.match(decorativeIcon)).toHaveLength(1);
+        expect(current).not.toContain('lucide-wand-sparkles');
+        expect(current).toBe(before.replace(decorativeIcon, ''));
       }
   },
 );

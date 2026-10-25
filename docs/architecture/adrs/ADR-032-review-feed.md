@@ -65,6 +65,16 @@ We chose **Option 1**, because it is the only option that lets him pick criteria
 **Decision made by:** maintainer
 **Approved on:** 2026-10-20
 
+### Amended 2026-10-24 by the maintainer's decision DESIGN-H C
+
+The maintainer chose the Fokus visual direction for the whole web and desktop renderer UI, delivered in separately checked layers with a before-and-after gallery for each. This amends only the presentation of this record and [PRODUCT.md](../../design/PRODUCT.md), not its criteria, rules, human decisions, preview, persistence or source contract.
+
+The former Design A1 remains visible in PRODUCT.md as superseded history. Its small contextual side summary is removed; one focused reading surface sits beneath a dark header. Selected criteria and their change action remain visible, held counts remain in the tabs and the counted final action, and keyboard help stays in the feed toolbar. A2 to A4, K/L/M/U, focus, the bounded card window and the virtualizer stay unchanged.
+
+Two earlier maintainer choices remain binding. DESIGN-IG A keeps the Instagram post header, large card-width image up to about 470 px, caption, then the person's comment. Earlier decision access may use less surrounding text or an adjacent/sticky bar, not a smaller image. UPD-1 A keeps the desktop labels "Nach Updates suchen" and "Check for updates"; the different wording in the direction study was not accepted.
+
+The foundation uses existing CSS Modules and token files, system fonts, semantic color roles in both themes, shared control styles and fewer nested frames. No remote resources, data/worker/protocol changes or Impeccable program are part of this decision. The original decision and contract below remain in force where not explicitly amended here.
+
 ### 1. Tabs and where an entry belongs
 
 The feed replaces the "All" mode; "One at a time" stays and walks the first tab. Each entry belongs to exactly one tab, checked in this order: decision `delete` is **Marked**; `keep` is **Kept**; `later` is **Unclear**; a criterion hit that an enabled rule holds is **Held back by your rules**; any other hit is **Suggested for deletion**; an `unclear` suggestion is **Unclear**; the rest appears only in **All**, every entry newest first.

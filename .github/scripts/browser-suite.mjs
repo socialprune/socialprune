@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
-import { spawn, execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
-import { setTimeout, clearTimeout } from 'node:timers';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Console } from 'node:console';
 import { promisify } from 'node:util';
+import { runProcess } from './suite-process.mjs';
 
 const console = new Console(process.stdout, process.stderr);
 export const suites = Object.freeze({
@@ -38,6 +45,7 @@ export function suiteArguments(name, report) {
       ? [
           '--maxWorkers=1',
           '--reporter=default',
+          `--reporter=${join(root, '.github/scripts/suite-progress.mjs')}`,
           '--reporter=junit',
           `--outputFile=${report}`,
         ]
@@ -94,6 +102,13 @@ export async function resolvePnpm(
   }
   throw Object.assign(new Error('PNPM_NOT_FOUND'), { code: 'PNPM_NOT_FOUND' });
 }
+export async function suiteEnvironment(environment = process.env) {
+  const temporary =
+    environment.RUNNER_TEMP ?? environment.TEMP ?? environment.TMP;
+  if (!temporary) return { ...environment };
+  const canonical = await realpath(temporary);
+  return { ...environment, TEMP: canonical, TMP: canonical };
+}
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export async function runSuite(
   name,
@@ -109,12 +124,6 @@ export async function runSuite(
   await rm(report, { force: true });
   const networkFailure = join(directory, 'network-failures.log');
   await rm(networkFailure, { force: true });
-  const environment = {
-    ...launchEnvironment,
-    PLAYWRIGHT_JUNIT_OUTPUT_FILE: report,
-    SP_SUITE_NETWORK_FAILURE: networkFailure,
-    NODE_OPTIONS: `${launchEnvironment.NODE_OPTIONS ?? ''} --require=${JSON.stringify(join(root, '.github/scripts/loopback-only.cjs'))}`,
-  };
   const args = suiteArguments(name, report);
   // Suite names and scripts are closed above; no shell text comes from dispatch.
   // These are the same package scripts used in a terminal, with reporters added.
@@ -145,7 +154,15 @@ export async function runSuite(
   let timedOut = false;
   let code = null;
   let launch;
+  let termination = null;
+  let environment;
   try {
+    environment = {
+      ...(await suiteEnvironment(launchEnvironment)),
+      PLAYWRIGHT_JUNIT_OUTPUT_FILE: report,
+      SP_SUITE_NETWORK_FAILURE: networkFailure,
+      NODE_OPTIONS: `${launchEnvironment.NODE_OPTIONS ?? ''} --require=${JSON.stringify(join(root, '.github/scripts/loopback-only.cjs'))}`,
+    };
     launch = await resolvePnpm(launchEnvironment);
     // A broken shim/entry is a launch failure, not a test failure. This also
     // records Node's MODULE_NOT_FOUND output before a suite can be started.
@@ -165,52 +182,23 @@ export async function runSuite(
     log.write(`${launchError}\n${error.stderr ?? error.message}\n`);
   }
   if (!launchError) {
-    const child = spawn(launch.executable, [...launch.args, ...args], {
-      cwd: root,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: environment,
-    });
-    for (const [stream, destination] of [
-      [child.stdout, process.stdout],
-      [child.stderr, process.stderr],
-    ])
-      stream.on('data', (bytes) => {
-        log.write(bytes);
-        destination.write(bytes);
-      });
-    let termination = Promise.resolve();
-    const timeout = setTimeout(
-      () => {
-        timedOut = true;
-        // Terminate only the exact process tree this invocation started.
-        if (process.platform === 'win32')
-          termination = new Promise((done) => {
-            const killer = spawn(
-              'taskkill.exe',
-              ['/PID', String(child.pid), '/T', '/F'],
-              {
-                stdio: 'ignore',
-                windowsHide: true,
-              },
-            );
-            killer.once('error', done);
-            killer.once('close', done);
-          });
-        else child.kill('SIGTERM');
+    const execution = await runProcess(
+      launch.executable,
+      [...launch.args, ...args],
+      {
+        cwd: root,
+        env: environment,
+        timeoutMs: Math.max(1, suite.minutes * 60_000 - (Date.now() - started)),
+        onOutput(bytes, stream) {
+          log.write(bytes);
+          (stream === 'stdout' ? process.stdout : process.stderr).write(bytes);
+        },
       },
-      Math.max(1, suite.minutes * 60_000 - (Date.now() - started)),
     );
-    code = await new Promise((done) => {
-      child.once('error', (error) => {
-        launchError = error.code ?? 'SPAWN_FAILED';
-        log.write(`${launchError}\n${error.message}\n`);
-        done(null);
-      });
-      child.once('close', done);
-    });
-    clearTimeout(timeout);
-    await termination;
+    code = execution.exitCode;
+    timedOut = execution.timedOut;
+    launchError = execution.launchError;
+    termination = execution.termination;
   }
   await new Promise((done) => log.end(done));
   let reportPresent = false;
@@ -245,6 +233,7 @@ export async function runSuite(
               : 'report-missing',
     exitCode: code,
     launchError: launchError ?? null,
+    termination,
     resolvedCommand: launch
       ? [launch.executable, ...launch.args, ...args]
       : null,

@@ -27,8 +27,113 @@ interface Runner {
     environment?: NodeJS.ProcessEnv,
     platform?: string,
   ): Promise<{ executable: string; args: string[] }>;
+  suiteEnvironment(environment: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv>;
 }
 const runner = (await import(entry)) as Runner;
+
+test('suite temp paths are canonical before any generated profile or child process is created', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-suite-temp-'));
+  try {
+    const environment = await runner.suiteEnvironment({
+      TEMP: directory + '/.',
+      TMP: directory + '/.',
+      GENERATED_UNCHANGED: 'yes',
+    });
+    const { realpath } = await import('node:fs/promises');
+    expect(environment.TEMP).toBe(await realpath(directory));
+    expect(environment.TMP).toBe(await realpath(directory));
+    expect(environment.GENERATED_UNCHANGED).toBe('yes');
+    expect(runner.suiteArguments('delete', 'generated.xml')).toContain(
+      '--reporter=' + resolve(root, '.github/scripts/suite-progress.mjs'),
+    );
+    const workflow = await readFile(
+      resolve(root, '.github/workflows/browser-suites.yml'),
+      'utf8',
+    );
+    expect(workflow).toContain('"TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV');
+    expect(workflow).toContain('"TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('progress reporter emits a test start before the test has a result', async () => {
+  const launch = await runner.resolvePnpm();
+  const report = resolve(root, '.github/scripts/suite-progress.mjs');
+  const result = await promisify(execFile)(
+    launch.executable,
+    [
+      ...launch.args,
+      'exec',
+      'vitest',
+      'run',
+      '--project',
+      'lint-rules',
+      '--maxWorkers=1',
+      'tools/lint-rules/src/browser-suites.test.ts',
+      '-t',
+      'dispatch selection',
+      `--reporter=${report}`,
+    ],
+    { cwd: root },
+  );
+  const start = result.stdout.indexOf('SUITE_TEST_START dispatch selection');
+  const end = result.stdout.indexOf('SUITE_TEST_END dispatch selection');
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+});
+
+test('timeout kills only its generated process tree and releases its listening port before returning', async () => {
+  const { runProcess } = (await import(
+    resolve(root, '.github/scripts/suite-process.mjs')
+  )) as {
+    runProcess(
+      this: void,
+      executable: string,
+      args: string[],
+      options: {
+        timeoutMs: number;
+        onOutput(bytes: Buffer, stream: string): void;
+      },
+    ): Promise<{
+      timedOut: boolean;
+      termination: { exitCode: number | null } | null;
+    }>;
+  };
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-suite-timeout-'));
+  let output = '';
+  try {
+    const child = resolve(directory, 'listener.cjs');
+    const parent = resolve(directory, 'parent.cjs');
+    await writeFile(
+      child,
+      'const net=require("node:net");const s=net.createServer();s.listen(0,"127.0.0.1",()=>console.log("PORT="+s.address().port));',
+    );
+    await writeFile(
+      parent,
+      'require("node:child_process").spawn(process.execPath,[process.argv[2]],{stdio:["ignore","inherit","inherit"]});setInterval(()=>{},1000);',
+    );
+    const result = await runProcess(process.execPath, [parent, child], {
+      timeoutMs: 1500,
+      onOutput: (bytes) => {
+        output += bytes.toString();
+      },
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.termination).toMatchObject({ exitCode: 0 });
+    const port = Number(output.match(/PORT=(\d+)/)?.[1]);
+    expect(port).toBeGreaterThan(0);
+    const { createServer } = await import('node:net');
+    const server = createServer();
+    await new Promise<void>((done, fail) => {
+      server.once('error', fail);
+      server.listen(port, '127.0.0.1', done);
+    });
+    await new Promise<void>((done) => server.close(() => done()));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('pnpm resolution follows generated action-setup and npm-global layouts without a shell or inferred global path', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'sp-pnpm-layout-'));
@@ -112,6 +217,31 @@ test('missing pnpm is a retained launchError rather than a suite exit failure', 
     expect(
       await readFile(resolve(directory, 'engine/suite.log'), 'utf8'),
     ).toContain('PNPM_NOT_FOUND');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('an unavailable temp root retains a launch-failed summary and causal log', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-suite-temp-missing-'));
+  try {
+    expect(
+      await runner.runSuite('engine', directory, {
+        TEMP: resolve(directory, 'absent'),
+      }),
+    ).toBe(1);
+    expect(
+      JSON.parse(
+        await readFile(resolve(directory, 'engine/summary.json'), 'utf8'),
+      ),
+    ).toMatchObject({
+      state: 'launch-failed',
+      launchError: 'ENOENT',
+      exitCode: null,
+    });
+    expect(
+      await readFile(resolve(directory, 'engine/suite.log'), 'utf8'),
+    ).toContain('ENOENT');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

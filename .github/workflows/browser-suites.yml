@@ -67,7 +67,10 @@ jobs:
         timeout-minutes: 5
       - name: Setup complete
         id: ready
-        run: node --version
+        run: |
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          node --version
       # One job, no matrix: a failed suite cannot overlap the next one.
       - name: X deletion suite
         if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs.delete == 'true' }}

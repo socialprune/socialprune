@@ -114,6 +114,11 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
   if (
+    workspace.schemaVersion < 9 &&
+    workspace.browserRuns?.some((run) => run.warningKind !== undefined)
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
+  if (
     workspace.schemaVersion >= 7 &&
     (!workspace.settings.criteria ||
       !workspace.settings.keepRules ||

@@ -36,6 +36,8 @@ Decided by the maintainer after that, on cards he answered in the conversation:
 
 **Revision of 2026-10-15.** Spike S5 answered the questions this record set, and the answers changed the design. The record now decides the reading pass only. Deletion moves to a later record of its own, as IG-3 point 4 says. The text decided on 2026-10-11 that this revision replaces is kept, unchanged, under "Superseded on 2026-10-15" at the end. The Options keep their wording of 2026-10-11, and each carries a marked note on what S5 changed.
 
+**Workspace version amendment, 2026-10-24.** [ADR-030](ADR-030-instagram-context-record.md)'s version amendment carries these unchanged Instagram records in workspace, SQLite, IndexedDB and backup version 9. Readers accept portable versions 1 to 9. Version 8 remains the historical owner-check migration; 8 to 9 changes no Instagram evidence or confirmation rule and invents no warning classification.
+
 ## Context
 
 An Instagram comment in the export has three fields: the comment text (`Comment`), the time (`Time`) and the owner of the post it was written on (`Media Owner`). It has no link to the post and no post ID (`packages/adapter-instagram/src`). Some records have no post owner, and some have empty text, for example comments that were only a GIF. The click list therefore groups comments by day and tells the person to find them with Instagram's own date filter.

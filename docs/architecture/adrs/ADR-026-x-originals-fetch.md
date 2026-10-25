@@ -12,6 +12,8 @@
 
 Revision of 2026-10-24, based on `bf8843f` and the D6 corrections. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting its behavior and code alignment, not this record at that time. The dated `209c895` checks remain historical evidence; the current model pointer below uses schema 8. At 19:28:04Z he separately accepted this record as written at `c4700552ea56648780baf2bc1f2daccb33b82db2` on card ADR-026 v1 A. Acceptance authorizes no platform run by itself.
 
+Version follow-up, 2026-10-24: the dated schema-8 observations below remain historical. ADR-027's version-skew decision moves current workspaces, both stores and portable writers to version 9, with portable readers accepting versions 1 to 9; originals do not change in that step. This supersedes the current-writer statements in this record without rewriting their dated evidence.
+
 Decided by the maintainer on 2026-10-11: fetch the originals ("Ja, hole die originale accordingly").
 
 The local review has shown stored photos through its authenticated same-origin route since the build of 2026-10-11. It uses `img-src 'self'`, not `img-src blob:`. The former photo-display question was resolved in the implementation before this record's separate acceptance on 2026-10-24.

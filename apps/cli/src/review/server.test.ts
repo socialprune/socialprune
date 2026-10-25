@@ -84,7 +84,7 @@ test('D58 HTTP review view persists across server restart without revision, even
       });
       expect(await stored.read((tx) => tx.meta.get())).toEqual({
         format: fixture.initial.format,
-        schemaVersion: 8,
+        schemaVersion: 9,
         id: fixture.initial.id,
         kind: fixture.initial.kind,
         createdAt: fixture.initial.createdAt,

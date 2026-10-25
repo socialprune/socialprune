@@ -130,67 +130,109 @@ test('quota failure rolls back the real transaction and versionchange closes the
   });
 });
 
-test('v7 to v8 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen', async ({
+for (const legacyVersion of [7, 8] as const)
+  test(`v${legacyVersion} to v9 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
+    page,
+  }) => {
+    const store = createMemoryStore();
+    const receipts = JOURNAL_FIXTURE.attempts.map((attempt) => ({
+      ...attempt,
+      seq: attempt.seq + 2,
+      ...(attempt.state === 'ambiguous'
+        ? {
+            receipt: {
+              method: 'POST',
+              path: '/i/api/graphql/generated/DeleteTweet',
+              status: 200,
+              shape: ['data', 'data.delete_tweet'],
+            },
+          }
+        : {}),
+    }));
+    let current: WorkspaceV2;
+    try {
+      await writeInstagramContextContract(store);
+      await store.write(async (tx) => {
+        await tx.items.put({
+          item: contractWorkspace().items[0]!,
+          importId: '',
+          metadataImportId: '',
+        });
+        await tx.browserRuns.add(JOURNAL_FIXTURE.run);
+        for (const attempt of receipts) await tx.browserAttempts.add(attempt);
+      });
+      current = await store.read(readWorkspace);
+    } finally {
+      await store.close();
+    }
+    const legacy = structuredClone(current);
+    legacy.schemaVersion = legacyVersion;
+    if (legacyVersion === 7)
+      for (const record of legacy.instagramContext!)
+        Reflect.deleteProperty(record, 'ownerCheck');
+    await page.goto('/socialprune/icon.svg');
+    const result = (await page.evaluate(
+      async ({ input, legacyVersion }) => {
+        const module = (await import(
+          /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
+        )) as {
+          proveOwnerUpgrade(
+            value: WorkspaceV2,
+            fail: boolean,
+            version: 7 | 8,
+          ): Promise<unknown>;
+        };
+        return module.proveOwnerUpgrade(input, false, legacyVersion);
+      },
+      { input: legacy, legacyVersion },
+    )) as {
+      first: WorkspaceV2;
+      second: WorkspaceV2;
+      version: number;
+      duplicateRejected: boolean;
+      addOnly: boolean;
+    };
+    expect(result.version).toBe(9);
+    expect(result.first).toEqual(current);
+    expect(result.second).toEqual(current);
+    expect(
+      result.first.browserAttempts!.filter(
+        (attempt) => attempt.runId === JOURNAL_FIXTURE.run.runId,
+      ),
+    ).toEqual(receipts);
+    expect(result.duplicateRejected).toBe(true);
+    expect(result.addOnly).toBe(true);
+  });
+
+test('v8 to v9 IndexedDB metadata failure rolls back the version step and retains context', async ({
   page,
 }) => {
   const store = createMemoryStore();
-  const receipts = JOURNAL_FIXTURE.attempts.map((attempt) => ({
-    ...attempt,
-    seq: attempt.seq + 2,
-    ...(attempt.state === 'ambiguous'
-      ? {
-          receipt: {
-            method: 'POST',
-            path: '/i/api/graphql/generated/DeleteTweet',
-            status: 200,
-            shape: ['data', 'data.delete_tweet'],
-          },
-        }
-      : {}),
-  }));
-  let current: WorkspaceV2;
+  let legacy: WorkspaceV2;
   try {
     await writeInstagramContextContract(store);
-    await store.write(async (tx) => {
-      await tx.items.put({
-        item: contractWorkspace().items[0]!,
-        importId: '',
-        metadataImportId: '',
-      });
-      await tx.browserRuns.add(JOURNAL_FIXTURE.run);
-      for (const attempt of receipts) await tx.browserAttempts.add(attempt);
-    });
-    current = await store.read(readWorkspace);
+    legacy = await store.read(readWorkspace);
+    legacy.schemaVersion = 8;
   } finally {
     await store.close();
   }
-  const legacy = structuredClone(current);
-  legacy.schemaVersion = 7;
-  for (const record of legacy.instagramContext!)
-    Reflect.deleteProperty(record, 'ownerCheck');
   await page.goto('/socialprune/icon.svg');
-  const result = (await page.evaluate(async (input) => {
+  const result = await page.evaluate(async (input) => {
     const module = (await import(
       /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
     )) as {
-      proveOwnerUpgrade(value: WorkspaceV2, fail: boolean): Promise<unknown>;
+      proveOwnerUpgrade(
+        value: WorkspaceV2,
+        fail: boolean,
+        version: 8,
+      ): Promise<unknown>;
     };
-    return module.proveOwnerUpgrade(input, false);
-  }, legacy)) as {
-    first: WorkspaceV2;
-    second: WorkspaceV2;
-    version: number;
-    duplicateRejected: boolean;
-    addOnly: boolean;
-  };
-  expect(result.version).toBe(8);
-  expect(result.first).toEqual(current);
-  expect(result.second).toEqual(current);
-  expect(
-    result.first.browserAttempts!.filter(
-      (attempt) => attempt.runId === JOURNAL_FIXTURE.run.runId,
-    ),
-  ).toEqual(receipts);
-  expect(result.duplicateRejected).toBe(true);
-  expect(result.addOnly).toBe(true);
+    return module.proveOwnerUpgrade(input, true, 8);
+  }, legacy);
+  expect(result).toEqual({
+    rejected: true,
+    version: 8,
+    metaVersion: 8,
+    contexts: legacy.instagramContext,
+  });
 });

@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "format": { "type": "string", "const": "socialprune-workspace" },
-    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 8 },
+    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 9 },
     "id": { "type": "string", "minLength": 1 },
     "kind": { "type": "string", "enum": ["personal", "demo"] },
     "createdAt": {

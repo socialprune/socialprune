@@ -55,7 +55,7 @@ test('schema 6 to 7 copies before its first write, preserves both context kinds 
     await upgraded.close();
     expect(actual).toEqual({
       ...migrateReviewContract(legacy),
-      schemaVersion: 8,
+      schemaVersion: 9,
     });
     expect(
       actual.instagramContext!.map((record) => record.confirmedBy),
@@ -77,7 +77,7 @@ test('schema 6 to 7 copies before its first write, preserves both context kinds 
     ).toEqual(copies);
     const db = new DatabaseSync(file);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(8);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(9);
       expect(
         db
           .prepare(

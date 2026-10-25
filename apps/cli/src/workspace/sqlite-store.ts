@@ -51,6 +51,7 @@ import {
   BrowserOutcomeWriter,
   readJournal,
   BROWSER_JOURNAL_LAYOUT,
+  X_WARNING_LAYOUT,
 } from './browser-journal.ts';
 import { journalExists } from './browser-journal.ts';
 import {
@@ -59,7 +60,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 8;
+export const SQLITE_LAYOUT_VERSION = 9;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
@@ -158,6 +159,7 @@ ALTER TABLE originals ADD COLUMN data TEXT CHECK(data IS NULL OR json_valid(data
 ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;
 ${contextLayout}
 ${plansLayout}
+${X_WARNING_LAYOUT}
 PRAGMA user_version=${SQLITE_LAYOUT_VERSION};
 `;
 
@@ -391,6 +393,7 @@ export class SQLiteStore implements WorkspaceStore {
                 "CREATE TRIGGER submissions_no_update BEFORE UPDATE ON submissions BEGIN SELECT RAISE(ABORT,'append-only'); END;",
               );
             }
+            if (Number(version) < 9) db.exec(X_WARNING_LAYOUT);
             db.prepare('UPDATE meta SET data=?').run(
               JSON.stringify({
                 ...meta,

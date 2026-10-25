@@ -20,9 +20,13 @@ const done = (tx: IDBTransaction) =>
     tx.onabort = tx.onerror = () =>
       reject(tx.error ?? new Error('IndexedDB transaction failed'));
   });
-export async function proveOwnerUpgrade(legacy: WorkspaceV2, fail: boolean) {
-  const id = `owner-v7-${crypto.randomUUID()}`;
-  const opening = indexedDB.open(`sp-ws-${id}`, 7);
+export async function proveOwnerUpgrade(
+  legacy: WorkspaceV2,
+  fail: boolean,
+  legacyVersion: 7 | 8 = 7,
+) {
+  const id = `owner-v${legacyVersion}-${crypto.randomUUID()}`;
+  const opening = indexedDB.open(`sp-ws-${id}`, legacyVersion);
   opening.onupgradeneeded = () => {
     const db = opening.result;
     db.createObjectStore('meta');
@@ -101,6 +105,26 @@ export async function proveOwnerUpgrade(legacy: WorkspaceV2, fail: boolean) {
   await finished;
   raw.close();
   let upgraded: IndexedDBStore | undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(
+    IDBObjectStore.prototype,
+    'put',
+  );
+  if (fail && legacyVersion === 8) {
+    if (!descriptor) throw new Error('Test metadata write descriptor missing');
+    const original = descriptor.value as IDBObjectStore['put'];
+    Object.defineProperty(IDBObjectStore.prototype, 'put', {
+      ...descriptor,
+      value: function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (this.name === 'meta' && key === 'workspace')
+          throw new Error('Generated v9 metadata write failure');
+        return original.call(this, value, key);
+      },
+    });
+  }
   try {
     let rejected = false;
     try {
@@ -108,6 +132,8 @@ export async function proveOwnerUpgrade(legacy: WorkspaceV2, fail: boolean) {
     } catch {
       rejected = true;
     }
+    if (descriptor && fail && legacyVersion === 8)
+      Object.defineProperty(IDBObjectStore.prototype, 'put', descriptor);
     if (fail) {
       await upgraded?.close();
       upgraded = undefined;
@@ -162,6 +188,8 @@ export async function proveOwnerUpgrade(legacy: WorkspaceV2, fail: boolean) {
     check.close();
     return { first, second, version, duplicateRejected, addOnly };
   } finally {
+    if (descriptor && fail && legacyVersion === 8)
+      Object.defineProperty(IDBObjectStore.prototype, 'put', descriptor);
     await upgraded?.close();
     await deleteWorkspaceDatabase(id);
   }

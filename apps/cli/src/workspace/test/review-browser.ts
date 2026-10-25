@@ -62,13 +62,13 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
     }, legacy);
     assert.deepEqual(result.first, {
       ...migrateReviewContract(legacy),
-      schemaVersion: 8,
+      schemaVersion: 9,
     });
     assert.deepEqual(result.second, result.first);
-    assert.deepEqual(result.physical, { version: 8, plans: true });
+    assert.deepEqual(result.physical, { version: 9, plans: true });
     assert.equal(result.contextDuplicateRejected, true);
     console.log(
-      'PASS IndexedDB v6 to v8: post/list context, add-only context, reviewPlans, idempotent reopen',
+      'PASS IndexedDB v6 to v9: post/list context, add-only context, reviewPlans, idempotent reopen',
     );
     const cli = await SQLiteStore.open(join(directory, 'source.sqlite'), {
       initial: migrateReviewContract(legacy),
@@ -99,7 +99,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
       await restored.close();
     }
     console.log(
-      'PASS v8 backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal',
+      'PASS v9 backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal',
     );
     const v1 = JSON.parse(
       await readFile(
@@ -119,7 +119,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
         'utf8',
       ),
     ) as WorkspaceV2;
-    for (const version of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
       const document =
         version === 1
           ? v1
@@ -165,7 +165,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
           Reflect.deleteProperty(value, 'confirmedBy');
       }
       const copy = await roundTrip(JSON.stringify(document));
-      assert.equal(copy.workspace.schemaVersion, 8);
+      assert.equal(copy.workspace.schemaVersion, 9);
       assert.equal(copy.workspace.items.length, document.items.length);
       const sqlite = await SQLiteStore.open(
         join(directory, `v${version}.sqlite`),
@@ -181,7 +181,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
         await sqlite.close();
       }
       console.log(
-        `PASS backup v${version} restores into schema 8 in SQLite and Chromium IndexedDB`,
+        `PASS backup v${version} restores into schema 9 in SQLite and Chromium IndexedDB`,
       );
     }
   } finally {

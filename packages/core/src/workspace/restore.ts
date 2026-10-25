@@ -167,6 +167,7 @@ export async function restoreBackup(
   let provisionalVersion: number | undefined;
   let implicitInstagramConfirmation = false;
   let implicitInstagramOwner = false;
+  let warningClassification = false;
   let buffers: BufferedRecord[] = [];
   let pendingLegacyEvents = 0;
 
@@ -403,8 +404,11 @@ export async function restoreBackup(
       );
       rawCounts[name] = (rawCounts[name] ?? 0) + 1;
       counts[name] = (counts[name] ?? 0) + 1;
-      if (name === 'browserRuns') browserRuns.push(value as BrowserRun);
-      else browserAttempts.push(value as BrowserAttempt);
+      if (name === 'browserRuns') {
+        warningClassification ||=
+          (value as BrowserRun).warningKind !== undefined;
+        browserRuns.push(value as BrowserRun);
+      } else browserAttempts.push(value as BrowserAttempt);
     } else if (name === 'assessments') {
       const value =
         version === 1
@@ -561,6 +565,8 @@ export async function restoreBackup(
       version < 1 ||
       version > WORKSPACE_SCHEMA_VERSION
     )
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version < 9 && warningClassification)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     assertReviewVersion(
       version,

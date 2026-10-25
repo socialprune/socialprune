@@ -3220,7 +3220,7 @@ test.each(POST_NOTICE_FIXTURE.cases)(
       );
       try {
         expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
-          user_version: 8,
+          user_version: 9,
         });
       } finally {
         database.close();

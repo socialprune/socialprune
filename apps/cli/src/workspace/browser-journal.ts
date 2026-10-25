@@ -39,7 +39,7 @@ export function xWarningReason(
   if (error.reason === 'marker-locked') return 'warning-notice';
   return null;
 }
-const X_WARNING_LAYOUT = `
+export const X_WARNING_LAYOUT = `
 CREATE TABLE IF NOT EXISTS browser_x_warnings (
   seq INTEGER PRIMARY KEY, run_id TEXT NOT NULL UNIQUE,
   account_key TEXT NOT NULL, at TEXT NOT NULL, zone TEXT NOT NULL, day TEXT NOT NULL,

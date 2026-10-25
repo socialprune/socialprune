@@ -230,6 +230,8 @@ On 2026-10-12 the Windows Playwright WebKit build rejected a generated H.264 MP4
 
 Schema 4 introduced these records on 2026-10-12, after ADR-027's schema 3. Version 3 readers cannot read the changed original shape. At `bf8843f`, checked on 2026-10-24, the records remain in current schema 8: writers read `WORKSPACE_SCHEMA_VERSION`, readers accept backups from versions 1 to 8, and the later Instagram and review-feed migrations retain originals and their journal links. Version 4 here names this migration, not the version a current writer emits.
 
+Version follow-up, 2026-10-24: ADR-027's version-skew decision supersedes the current-writer ceiling above. Current workspace, SQLite, IndexedDB and portable writers use version 9; portable readers accept versions 1 to 9. Originals and the CLI-local written-order audit do not change. The optional `warningKind` of a browser run is admitted only in version 9, and a version-8 installed package refuses the migrated workspace and its backup rather than omit the warning gate.
+
 ```ts
 OriginalMedia = {
   n: 1 | 2 | 3 | 4,

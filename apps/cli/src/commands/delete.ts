@@ -64,6 +64,14 @@ export async function acknowledgeWarningCard(
     warning = await store.browserOutcomeWriter().xWarning(account);
   }
   if (
+    mirrored?.runId === runId &&
+    warning?.acknowledged &&
+    warning.runId !== runId
+  ) {
+    await store.browserOutcomeWriter().adoptXProfileWarning(account, mirrored);
+    warning = await store.browserOutcomeWriter().xWarning(account, runId);
+  }
+  if (
     (!warning && !mirrored) ||
     (warning && warning.runId !== runId) ||
     (mirrored && mirrored.runId !== runId)

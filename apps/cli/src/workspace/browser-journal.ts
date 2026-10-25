@@ -262,7 +262,10 @@ export class BrowserOutcomeWriter {
       });
     }
   }
-  async xWarning(accountKey: string): Promise<{
+  async xWarning(
+    accountKey: string,
+    runId?: string,
+  ): Promise<{
     runId: string;
     at: string;
     zone: string;
@@ -282,9 +285,9 @@ export class BrowserOutcomeWriter {
         return null;
       const row = this.db
         .prepare(
-          'SELECT w.*, a.at AS acknowledged_at FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE w.account_key=? ORDER BY w.at DESC,w.seq DESC LIMIT 1',
+          'SELECT w.*, a.at AS acknowledged_at FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE w.account_key=? AND (? IS NULL OR w.run_id=?) ORDER BY w.at DESC,w.seq DESC LIMIT 1',
         )
-        .get(accountKey);
+        .get(accountKey, runId ?? null, runId ?? null);
       return row
         ? {
             runId: String(row.run_id),
@@ -429,7 +432,7 @@ export class BrowserOutcomeWriter {
     at: string,
     zone: string,
   ): Promise<void> {
-    const warning = await this.xWarning(accountKey);
+    const warning = await this.xWarning(accountKey, runId);
     if (!warning || warning.runId !== runId)
       throw new CliError('X_WARNING_CARD_REQUIRED');
     if (
@@ -440,10 +443,16 @@ export class BrowserOutcomeWriter {
     await this.transact(async () => {
       const latest = this.db
         .prepare(
-          'SELECT run_id FROM browser_x_warnings WHERE account_key=? ORDER BY at DESC,seq DESC LIMIT 1',
+          'SELECT w.run_id, a.at AS acknowledged_at FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE w.account_key=? ORDER BY w.at DESC,w.seq DESC LIMIT 1',
         )
         .get(accountKey);
-      if (latest?.run_id !== runId)
+      // A profile can retain an older warning after this workspace's newer
+      // warning was acknowledged through another profile. Never let an
+      // outstanding newer warning be cleared by acknowledging that older one.
+      if (
+        !latest ||
+        (latest.run_id !== runId && latest.acknowledged_at === null)
+      )
         throw new CliError('X_WARNING_CARD_REQUIRED');
       this.db
         .prepare('INSERT OR IGNORE INTO browser_x_warning_ack VALUES(?,?)')

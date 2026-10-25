@@ -7,6 +7,7 @@ import { createBackup, restoreBackup } from './backup.ts';
 import { HttpReviewRequestSchema } from './protocol.ts';
 import { generatedItem, generatedLabel } from '../criteria/rules-fixture.ts';
 import { criterionHash } from '../criteria/presets.ts';
+import { WORKSPACE_SCHEMA_VERSION } from '../model/index.ts';
 
 test.each(['earlier-0', 'custom-1'])(
   'removing %s frees an active slot and keeps historical suggestions, plans and decisions through restore',
@@ -146,7 +147,7 @@ test.each(['earlier-0', 'custom-1'])(
       'reviewPlans',
     ] as const)
       expect(roundTrip[key]).toEqual(before[key]);
-    expect(roundTrip.schemaVersion).toBe(8);
+    expect(roundTrip.schemaVersion).toBe(WORKSPACE_SCHEMA_VERSION);
     const criteria = { ...changed.criteria, selected: ['toxic'] };
     await expect(service.setCriteria(criteria, ['toxic'])).rejects.toThrow(
       'INVALID_REQUEST',

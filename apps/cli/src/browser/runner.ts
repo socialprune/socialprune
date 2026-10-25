@@ -326,6 +326,7 @@ export async function runWithDependencies(
     checkStop();
     if (extensionsChanged(before, await profileSnapshot(options.profile)))
       throw new CliError('PLATFORM_CHECK');
+    checkStop();
     accountBefore = await browser.account();
     checkStop();
     if (accountBefore.toLowerCase() !== options.plan.handle.toLowerCase())

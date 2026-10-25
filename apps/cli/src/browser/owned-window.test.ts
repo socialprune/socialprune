@@ -63,6 +63,37 @@ test('an unowned page is refused before attaching CDP and an idle engine reports
   });
 });
 
+test('a launched browser without a registered exact window refuses current until registration, rather than claiming absence', async () => {
+  const f = fixture(),
+    owner = createWindowOwner();
+  let close!: () => void;
+  owner.started(
+    new Promise<void>((resolve) => {
+      close = resolve;
+    }),
+  );
+  expect(await owner.request({ type: 'current' })).toEqual({
+    type: 'unavailable',
+  });
+  owner.register(await captureOwnedWindow(f.context, f.page));
+  expect(await owner.request({ type: 'current' })).toMatchObject({
+    type: 'window',
+    value: { bounds: { x: 5000, y: 3000, width: 600, height: 400 } },
+  });
+  close();
+  await Promise.resolve();
+  expect(await owner.request({ type: 'current' })).toMatchObject({
+    type: 'window',
+    value: { bounds: { x: 5000 } },
+  });
+  f.close();
+  await Promise.resolve();
+  expect(await owner.request({ type: 'current' })).toEqual({
+    type: 'window',
+    value: null,
+  });
+});
+
 test('a replacement owner during a pending bounds read prevents the old geometry write', async () => {
   const f = fixture(),
     cap = await captureOwnedWindow(f.context, f.page),

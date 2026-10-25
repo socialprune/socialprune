@@ -96,7 +96,21 @@ test('runner-owned generated platform window recovers without activation, visibl
     };
     await action('acknowledge-warning');
     await action('start');
-    await expect.poll(() => owner(), { timeout: 30000 }).not.toBeNull();
+    // The engine deliberately refuses an active launch until its exact-window
+    // capability is registered. Retry that initial state, not later read errors.
+    await expect
+      .poll(
+        async () => {
+          try {
+            return await owner();
+          } catch (error) {
+            if (/OWNED_WINDOW_UNAVAILABLE/.test(String(error))) return null;
+            throw error;
+          }
+        },
+        { timeout: 30000 },
+      )
+      .not.toBeNull();
     const first = await owner();
     if (!first) throw new Error('NO_OWNER');
     await action('stop');

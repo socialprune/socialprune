@@ -24,6 +24,8 @@ async function harness() {
     waits: number[] = [],
     results: string[] = [];
   let now = Date.parse(FIXTURE.now);
+  const controller = new AbortController();
+  const account = vi.fn(() => Promise.resolve(FIXTURE.account.handle));
   const session: RunSession = {
     controls: new RunControls(
       () => new Date(now),
@@ -58,6 +60,8 @@ async function harness() {
     waits,
     results,
     session,
+    account,
+    stop: () => controller.abort(),
     setNow(value: string) {
       now = Date.parse(value);
     },
@@ -76,7 +80,7 @@ async function harness() {
           verify,
           list: '',
           lang: 'en',
-          signal: new AbortController().signal,
+          signal: controller.signal,
           now: () => new Date(now),
           notice: (text) => notices.push(text),
           session,
@@ -97,7 +101,7 @@ async function harness() {
           driver: () =>
             Promise.resolve({
               showConfirmation: () => Promise.resolve(),
-              account: () => Promise.resolve(FIXTURE.account.handle),
+              account,
               inspect: () => {
                 if (fail instanceof Error) throw fail;
                 if (fail)
@@ -134,6 +138,52 @@ async function harness() {
     },
   };
 }
+
+test('Stop during the pre-account profile read-back never starts account navigation afterwards', async () => {
+  const h = await harness();
+  const snapshot = profileReports.profileSnapshot;
+  let reads = 0;
+  let reached!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const spy = vi
+    .spyOn(profileReports, 'profileSnapshot')
+    .mockImplementation(async (directory) => {
+      if (++reads === 2) {
+        reached();
+        await blocked;
+      }
+      return snapshot(directory);
+    });
+  const task = h.run();
+  try {
+    await Promise.race([
+      entered,
+      task.then(() => {
+        throw new Error('RUN_FINISHED_BEFORE_PROFILE_READBACK');
+      }),
+    ]);
+    h.stop();
+    release();
+    await expect(task).resolves.toMatchObject({
+      endReason: 'stopped-by-person',
+    });
+    expect(h.account).not.toHaveBeenCalled();
+    expect((await h.store.browserJournal()).runs.at(-1)).toMatchObject({
+      endReason: 'stopped-by-person',
+    });
+  } finally {
+    release();
+    await task.catch(() => undefined);
+    spy.mockRestore();
+    await h.close();
+  }
+});
 
 test.each([false, true])(
   'D2 runner terminal and report preserve closed stop category, verify=%s',

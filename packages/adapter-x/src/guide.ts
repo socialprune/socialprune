@@ -30,7 +30,7 @@ const fact = (id: string, en: string, de: string): GuideFact => ({
   source,
   sourceDe,
   retrievedOn: '2026-10-25',
-  verifiedOn: null,
+  verifiedOn: '2026-10-25',
 });
 
 export const xGuide: PlatformGuide<'x'> = {

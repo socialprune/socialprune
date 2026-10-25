@@ -21,7 +21,7 @@ Import the platform's official data export, read each entry, and record Keep, La
 
 The desktop app is Windows x64. The browser app and the CLI share the review model, but the platform-reading and X-deletion helpers belong to the CLI and desktop app, not the static browser app. The interface is available in English and German.
 
-The parsers, review, backups and packaged desktop paths have tests using generated data. X deletion has been exercised against a generated fake X, not a real X deletion flow. Instagram context retries and confirmation checks have generated-page tests; those do not establish that every current Instagram page will work. No real endpoint quality evaluation or end-to-end use by an external agent is accepted yet. The export guide still has 22 facts awaiting a person's check, so release checks refuse to publish it. The maintainer's complete own-export review is also not accepted yet. Nothing is published or deployed.
+The parsers, review, backups and packaged desktop paths have tests using generated data. X deletion has been exercised against a generated fake X, not a real X deletion flow. Instagram context retries and confirmation checks have generated-page tests; those do not establish that every current Instagram page will work. A Kilo agent completed the CLI run on the generated demo export with only the skill and the packed CLI ([evidence](docs/evidence/G2.md)); no model endpoint's suggestion quality has been measured yet. The maintainer confirmed the 22 export guide facts on 2026-10-25, and the release checks ask for a new check 120 days later. The maintainer's complete own-export review is not accepted yet. Nothing is published or deployed.
 
 > Screenshot placeholder: the six review tabs on a generated X account, with a rule holding one entry and a human Keep decision on another.
 >
@@ -45,7 +45,7 @@ pnpm -s socialprune review --workspace ../socialprune-demo
 
 `review` starts a local server and attempts to open your browser. You make decisions on that page. Close the server when you finish. For your own data, request the export yourself using `guide x` or `guide instagram`, keep Instagram's JSON version, and replace the example path with your export ZIP. Keep exports and workspaces outside the repository.
 
-If a maintainer supplies an unpublished packed CLI tarball, install that file into an empty folder with `npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz`. Run `node node_modules/socialprune/bin/socialprune.mjs --help` there. Its review page is included, so it needs no build. A missing entry file is a reason to stop, not to fetch a package by name. See the [CLI command guide](AGENTS.md#commands) and [agent setup](docs/agent-setup.md).
+If a maintainer supplies an unpublished packed CLI tarball, install it into an empty folder together with the `playwright-core` tarball it depends on: `npm install --offline --no-audit --no-fund --prefix . ./playwright-core-<driver-version>.tgz ./socialprune-<version>.tgz`. Run `node node_modules/socialprune/bin/socialprune.mjs --help` there. Its review page is included, so it needs no build. A missing entry file is a reason to stop, not to fetch a package by name. See the [CLI command guide](AGENTS.md#commands) and [agent setup](docs/agent-setup.md).
 
 Before trying platform helpers, export a backup:
 

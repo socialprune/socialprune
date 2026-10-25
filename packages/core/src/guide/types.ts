@@ -6,7 +6,7 @@ export interface GuideFact {
   sourceDe?: { url: string; publisher: string; title: string };
   /** YYYY-MM-DD, the day the source was read or its access failure recorded. */
   retrievedOn: string;
-  /** YYYY-MM-DD, the day a person checked the fact in a browser. */
+  /** YYYY-MM-DD, the day the maintainer confirmed the fact. */
   verifiedOn: string | null;
 }
 

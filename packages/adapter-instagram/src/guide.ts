@@ -46,7 +46,7 @@ const fact = (
   text: { en, de },
   source: factSource,
   retrievedOn: '2026-10-25',
-  verifiedOn: null,
+  verifiedOn: '2026-10-25',
 });
 
 export const instagramGuide: PlatformGuide<'instagram'> = {

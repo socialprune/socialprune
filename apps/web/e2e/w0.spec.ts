@@ -313,7 +313,7 @@ test('W0 pre-control demo workers are terminated before real export input is ena
   }
 });
 
-test('W0 unverified guide and in-place locale switching make no external requests', async ({
+test('W0 confirmed guide and in-place locale switching make no external requests', async ({
   page,
   context,
 }) => {
@@ -330,7 +330,7 @@ test('W0 unverified guide and in-place locale switching make no external request
   );
   await page.getByRole('link', { name: en['guide.x'], exact: true }).click();
   await expect(page.getByTestId('guide-verification')).toHaveText(
-    en['guide.notChecked'],
+    en['guide.checked'].replace('{date}', '25 October 2026'),
   );
   const document = await page.evaluate(() => performance.timeOrigin);
   const requests: string[] = [];
@@ -343,7 +343,7 @@ test('W0 unverified guide and in-place locale switching make no external request
   await page.keyboard.press('Escape');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   await expect(page.getByTestId('guide-verification')).toHaveText(
-    de['guide.notChecked'],
+    de['guide.checked'].replace('{date}', '25. Oktober 2026'),
   );
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(document);
   expect(requests).toEqual([]);

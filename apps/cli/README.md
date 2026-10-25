@@ -4,7 +4,7 @@ SocialPrune reads X and Instagram data exports on your computer. Agents can sugg
 
 The npm package is not published yet. There is no npm release to install. Use Node.js **24.15.0 or newer**.
 
-From a local tarball you supplied, install with `npm install --offline --no-audit --no-fund --prefix . ./socialprune-<version>.tgz` (`--prefix .` keeps npm out of a parent folder's project), then run `node node_modules/socialprune/bin/socialprune.mjs …` in that folder. The review page is included, with no build needed. If the entry file is missing, stop. Until a release exists, do not use npx, npm exec, a named registry install or a global install; they can fetch an unrelated package of the same name.
+From local tarballs you supplied, the CLI and its `playwright-core` dependency in the version its `package.json` names, install with `npm install --offline --no-audit --no-fund --prefix . ./playwright-core-<driver-version>.tgz ./socialprune-<version>.tgz` (`--prefix .` keeps npm out of a parent folder's project; without the driver file the offline install stops with `ENOTCACHED`), then run `node node_modules/socialprune/bin/socialprune.mjs …` in that folder. The review page is included, with no build needed. If the entry file is missing, stop. Until a release exists, do not use npx, npm exec, a named registry install or a global install; they can fetch an unrelated package of the same name.
 
 From a checkout of [the repository](https://github.com/socialprune/socialprune), use pnpm 10.33.0:
 

@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
-import { checkGuides } from '@socialprune/core/guide/check';
+import { checkGuides, guideFacts } from '@socialprune/core/guide/check';
 import { xGuide } from '@socialprune/adapter-x/guide';
 
 test('X guide data passes ordinary checks without pretending to be human-verified', () => {
   expect(
     checkGuides([xGuide], {
-      today: '2026-10-08',
+      today: '2026-10-25',
       maxAgeDays: 120,
       release: false,
     }),
@@ -21,9 +21,14 @@ test('X guide data passes ordinary checks without pretending to be human-verifie
     'So lädst du dein X Archiv herunter | X Hilfe-Center',
   );
   expect(xGuide.startUrl.verifiedOn).toBeNull();
+  expect(guideFacts(xGuide)).toHaveLength(13);
+  for (const fact of guideFacts(xGuide)) {
+    expect(fact.retrievedOn, fact.id).toBe('2026-10-25');
+    expect(fact.verifiedOn, fact.id).toBeNull();
+  }
   expect(
     checkGuides([xGuide], {
-      today: '2026-10-08',
+      today: '2026-10-25',
       maxAgeDays: 120,
       release: true,
     }).every(({ code }) => code === 'unverified'),
@@ -47,4 +52,51 @@ test('X guide text contains no fetch-conversion artifacts', () => {
       expect(text, fact.id).not.toContain('&gt;');
     }
   }
+});
+
+test('X computer guide preserves the differing public EN and DE help paths', () => {
+  const desktop = xGuide.paths!.desktop[0]!;
+  expect(desktop.id).toBe('x.desktop-missing');
+  expect(desktop.source.url).toBe(
+    'https://help.x.com/en/managing-your-account/accessing-your-x-data',
+  );
+  expect(desktop.sourceDe).toEqual({
+    url: 'https://help.x.com/de/managing-your-account/accessing-your-x-data',
+    publisher: 'X',
+    title: 'Auf X Daten zugreifen und herunterladen | X Hilfe-Center',
+  });
+  for (const [de, en] of [
+    ['Mehr', 'More'],
+    ['Einstellungen und Datenschutz', 'Settings and privacy'],
+    ['Einstellungen', 'Settings'],
+    ['Daten und Berechtigungen', 'Data and permissions'],
+    ['Deine X Daten', 'Your X data'],
+    ['Archiv anfordern', 'Request archive'],
+  ]) {
+    const label = `„${de}“ („${en}“)`;
+    expect(desktop.text.de).toContain(label);
+    expect(desktop.text.de.split(label)).toHaveLength(2);
+  }
+  expect(desktop.text.de).toContain('„Account“');
+  expect(desktop.text.de).toContain('„Daten und Berechtigungen“');
+  expect(desktop.text.de).toContain('„Deine X Daten“');
+  expect(desktop.text.de).toContain('öffentlichen englischen Archivhilfe');
+  expect(desktop.text.de).toContain(
+    'deutschen Downloadanleitung nicht gelesen',
+  );
+  expect(desktop.text.de).toContain('Bestätige dein Passwort');
+  for (const label of [
+    'Your account',
+    'Download an archive of your data',
+    'Request archive',
+  ])
+    expect(desktop.text.en).toContain(label);
+  expect(desktop.text.en).toContain('Confirm your password');
+  expect(desktop.text.en).toContain(
+    'German help page describes a different route',
+  );
+  for (const text of Object.values(desktop.text)) {
+    expect(text).not.toMatch(/observed|beobachtet|25 October|25\. Oktober/);
+  }
+  expect(desktop.verifiedOn).toBeNull();
 });

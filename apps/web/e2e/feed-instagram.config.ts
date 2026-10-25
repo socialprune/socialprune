@@ -13,7 +13,7 @@ export default defineConfig({
   ...base,
   globalSetup: './build-identity-setup.ts',
   testDir: '.',
-  testMatch: 'feed-instagram.spec.ts',
+  testMatch: ['feed-instagram.spec.ts', 'focus-instagram.spec.ts'],
   testIgnore: [],
   use: { ...base.use, baseURL: origin },
   webServer: {

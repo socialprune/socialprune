@@ -5,6 +5,9 @@
   .context {
     margin-bottom: var(--space-4);
   }
+  .context > p:first-child {
+    margin-top: 0;
+  }
   .missing {
     color: var(--color-text-secondary);
     font-size: var(--type-xs);

@@ -174,7 +174,18 @@ for (const lang of ['de', 'en'])
             name: messages['keepRules.title'],
             exact: true,
           })
-          .scrollIntoViewIfNeeded();
+          .evaluate(async (node) => {
+            const scroller = node.closest('[data-criteria-scroll]')!;
+            scroller.scrollTop +=
+              node.getBoundingClientRect().top -
+              scroller.getBoundingClientRect().top -
+              16;
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            );
+          });
         await shot('rules');
         const help = page.getByText(
           messages['keepRules.how'] ??

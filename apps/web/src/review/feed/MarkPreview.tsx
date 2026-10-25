@@ -1,4 +1,5 @@
 import { Dialog } from '@base-ui/react/dialog';
+import { useRef } from 'react';
 import { Info } from 'lucide-react';
 import { useIntl } from 'react-intl';
 import { useT } from '../../i18n/index.ts';
@@ -22,7 +23,8 @@ export function MarkPreview({
   busy?: boolean;
 }) {
   const t = useT(),
-    intl = useIntl();
+    intl = useIntl(),
+    titleRef = useRef<HTMLHeadingElement>(null);
   const pending =
     busy || preview.state === 'loading' || preview.state === 'error';
   return (
@@ -34,13 +36,13 @@ export function MarkPreview({
     >
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
-        <Dialog.Popup className={styles.dialog}>
+        <Dialog.Popup className={styles.dialog} initialFocus={titleRef}>
+          <div className={styles.dialogHeading}>
+            <Dialog.Title ref={titleRef} tabIndex={-1}>
+              {t('markPreview.title', { count: preview.count })}
+            </Dialog.Title>
+          </div>
           <div className={styles.previewBody}>
-            <div className={styles.dialogHeading}>
-              <Dialog.Title>
-                {t('markPreview.title', { count: preview.count })}
-              </Dialog.Title>
-            </div>
             <Dialog.Description>
               {t('markPreview.account', { account: preview.account })}
             </Dialog.Description>

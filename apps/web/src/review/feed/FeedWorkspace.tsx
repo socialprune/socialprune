@@ -389,6 +389,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       className={styles.workspace}
       data-testid="card-review"
       data-editor={editor}
+      data-platform={platform === 'instagram' ? platform : undefined}
     >
       <div className={styles.layout} data-testid="review-card">
         {editor ? (

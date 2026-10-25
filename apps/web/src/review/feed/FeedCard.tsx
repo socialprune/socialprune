@@ -182,6 +182,9 @@ export function FeedCard({
       data-card-id={card.id}
       data-item-id={card.id}
       data-testid="feed-card"
+      data-instagram-card={
+        platform === 'instagram' && card.kind === 'comment' ? '' : undefined
+      }
       tabIndex={0}
       aria-labelledby={`${id}-byline`}
       aria-describedby={

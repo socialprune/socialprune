@@ -192,14 +192,11 @@ export async function restoreLiveFeed(
   const records = contextRecords.filter((record) =>
     data.items.some((item) => item.id === record.itemId),
   );
-  if (records.length) {
-    await page.evaluate((records) => {
-      window.workspace.getInstagramContext = (ids) =>
-        Promise.resolve(
-          records.filter((record) => ids.includes(record.itemId)),
-        );
-    }, records);
-  }
+  // Clear a preceding injected answer too when generated states share a page.
+  await page.evaluate((records) => {
+    window.workspace.getInstagramContext = (ids) =>
+      Promise.resolve(records.filter((record) => ids.includes(record.itemId)));
+  }, records);
   await page.goto('/socialprune/#/review');
   await expect(page.getByRole('feed')).toBeVisible();
   await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
@@ -207,11 +204,12 @@ export async function restoreLiveFeed(
 }
 
 /** Test-only preview. No production config imports this fixture entrypoint. */
-async function previewGeneratedFeed(port: number) {
+async function previewGeneratedFeed(port: number, outDir?: string) {
   if (!Number.isInteger(port) || port < 1024 || port >= 65535)
     throw new Error('Invalid feed preview port.');
   const { preview } = await import('vite');
   const app = await preview({
+    ...(outDir ? { build: { outDir } } : {}),
     preview: { host: '127.0.0.1', port: port + 1, strictPort: true },
   });
   const server = createServer((request, response) => {
@@ -265,4 +263,4 @@ if (
   process.argv[1] === fileURLToPath(import.meta.url) &&
   process.argv[2] === '--preview'
 )
-  await previewGeneratedFeed(Number(process.argv[3]));
+  await previewGeneratedFeed(Number(process.argv[3]), process.argv[4]);

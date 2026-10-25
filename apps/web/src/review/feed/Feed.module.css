@@ -319,6 +319,49 @@
   .reviewBody {
     margin-left: 48px;
   }
+  .card[data-instagram-card] {
+    padding-block: var(--space-4);
+    display: block;
+  }
+  .card[data-instagram-card] > .reviewBody {
+    margin-left: 0;
+    display: contents;
+  }
+  .card[data-instagram-card] .actions {
+    position: sticky;
+    bottom: calc(-1 * var(--feed-footer-clearance, 0px));
+    z-index: 1;
+    padding-block: var(--space-3);
+    background: var(--color-surface);
+    border-top: var(--border-width) solid var(--color-social-divider);
+  }
+  @media (min-width: 1080px) {
+    .card[data-instagram-card] {
+      display: grid;
+      grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
+      gap: var(--space-6);
+      align-items: start;
+      padding-inline: var(--space-6);
+    }
+    .card[data-instagram-card] > .reviewBody {
+      display: block;
+      position: sticky;
+      top: var(--space-4);
+      bottom: auto;
+      min-width: 0;
+    }
+    .card[data-instagram-card] .suggestions {
+      margin-top: 0;
+    }
+    .card[data-instagram-card] .actions {
+      gap: var(--space-1);
+      position: static;
+      border-top: 0;
+    }
+    .card[data-instagram-card] .actions .markButton {
+      margin-left: 0;
+    }
+  }
   .suggestions {
     margin-top: var(--space-5);
   }
@@ -554,6 +597,8 @@
   }
   .dialogHeading {
     align-items: flex-start;
+    flex: none;
+    padding: var(--space-6) var(--space-6) 0;
   }
   .dialogHeading svg {
     flex: none;
@@ -656,6 +701,9 @@
   @media (max-width: 540px) {
     .previewBody {
       padding: var(--space-5) var(--space-4);
+    }
+    .dialogHeading {
+      padding: var(--space-5) var(--space-4) 0;
     }
     .dialogActions {
       padding: var(--space-3) var(--space-4);

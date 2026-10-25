@@ -302,6 +302,10 @@ export function ReviewFeed(props: ReviewFeedProps) {
     if (!panel || !footer) return;
     const update = () => {
       panel.style.paddingBottom = `${Math.ceil(footer.getBoundingClientRect().height)}px`;
+      panel.style.setProperty(
+        '--feed-footer-clearance',
+        panel.style.paddingBottom,
+      );
     };
     update();
     const observer = new ResizeObserver(update);
@@ -309,6 +313,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
     return () => {
       observer.disconnect();
       panel.style.paddingBottom = '';
+      panel.style.removeProperty('--feed-footer-clearance');
     };
   }, [props.tab, hasCriteria]);
   const active = tabs.find(([key]) => key === props.tab)!;

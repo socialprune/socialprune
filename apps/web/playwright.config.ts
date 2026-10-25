@@ -10,7 +10,12 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
   // The review and desktop builds have their own configs and servers.
-  testIgnore: ['review-mode.spec.ts', 'desktop/**', 'feed-instagram.spec.ts'],
+  testIgnore: [
+    'review-mode.spec.ts',
+    'desktop/**',
+    'feed-instagram.spec.ts',
+    'focus-instagram.spec.ts',
+  ],
   timeout: 30_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

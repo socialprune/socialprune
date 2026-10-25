@@ -17,7 +17,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .workspace[data-editor='true'],
-  .workspace[data-editor='true'] .layout {
+  .workspace[data-editor='true'] .layout,
+  .workspace[data-platform='instagram'],
+  .workspace[data-platform='instagram'] .layout {
     max-width: 1064px;
   }
   .layout > section {

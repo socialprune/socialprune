@@ -1,21 +1,40 @@
 import type { GuideFact, PlatformGuide } from '@socialprune/core/guide/types';
 
-// Public help evidence supplied from read-only research on 2026-10-11.
-// Only English labels were recorded; do not invent German button names.
+// EN help re-read through public-page search excerpts on 2026-10-25.
+// German article quotes supplied by the same-day independent reading (R2).
+// This lane's GETs returned HTTP 200 but no article (fail_bad_preloaders).
 const source = {
-  url: 'https://www.facebook.com/help/instagram/181231772500920/',
+  url: 'https://www.facebook.com/help/instagram/181231772500920',
   publisher: 'Meta',
-  title: 'Instagram export help (page title not recorded)',
+  title:
+    'Review and export a copy of your Instagram information | Instagram Help Center',
 };
 const androidSource = {
   url: 'https://www.facebook.com/help/instagram/android-app/181231772500920',
   publisher: 'Meta',
-  title: 'Instagram Android export help (page title not recorded)',
+  title:
+    'Review and export a copy of your Instagram information | Instagram Help Center',
+};
+const sourceGb = {
+  url: 'https://www.facebook.com/help/instagram/181231772500920?locale=en_GB',
+  publisher: 'Meta',
+  title:
+    'Review and export a copy of your Instagram information | Instagram Help Centre',
+};
+const sourceDe = {
+  url: 'https://www.facebook.com/help/instagram/181231772500920/?locale=de_DE',
+  publisher: 'Meta',
+  title:
+    'Eine Kopie deiner Instagram-Informationen überprüfen und exportieren | Instagram-Hilfebereich',
+};
+const androidSourceDe = {
+  ...sourceDe,
+  url: 'https://www.facebook.com/help/instagram/android-app/181231772500920?locale=de_DE',
 };
 const editsSource = {
   url: 'https://www.facebook.com/help/instagram/7130835797039956?locale=en_GB',
   publisher: 'Meta',
-  title: 'Edits export help (page title not recorded)',
+  title: 'View and export your Edits information | Instagram Help Centre',
 };
 const fact = (
   id: string,
@@ -26,28 +45,35 @@ const fact = (
   id: `instagram.${id}`,
   text: { en, de },
   source: factSource,
-  retrievedOn: '2026-10-11',
+  retrievedOn: '2026-10-25',
   verifiedOn: null,
 });
 
 export const instagramGuide: PlatformGuide<'instagram'> = {
   platform: 'instagram',
-  startUrl: fact(
-    'start',
-    'On a computer, Meta says to click "More" at the bottom left, then "Settings", "Meta Account" and "Your information and permissions". Customize the export options, then click "Start export". Follow these steps yourself in Instagram; SocialPrune does not open or operate the platform.',
-    'Am Computer sollst du laut Meta unten links "More" und dann "Settings", "Meta Account" und "Your information and permissions" anklicken. Passe die Exportoptionen an und klicke auf "Start export". Die zitierten Menü- und Schaltflächennamen stammen aus englischen Hilfeseiten; die deutschen Namen sind noch nicht bestätigt. Führe die Schritte selbst in Instagram aus. SocialPrune öffnet oder bedient die Plattform nicht.',
-  ),
-  steps: [
-    fact(
-      'request',
-      'On Android, Meta says to tap "Meta Account", "Your information and permissions", "Export your information" and "Create export". Select the profile, tap "Next" and choose "Export to device". Customize the options, then tap "Start export". Meta notes that some accounts still show "Accounts Center" during the rollout.',
-      'Unter Android sollst du laut Meta auf "Meta Account", "Your information and permissions", "Export your information" und "Create export" tippen. Wähle das Profil, tippe auf "Next" und wähle "Export to device". Passe die Optionen an und tippe auf "Start export". Meta weist darauf hin, dass manche Accounts während der Umstellung noch "Accounts Center" anzeigen.',
-      androidSource,
+  startUrl: {
+    ...fact(
+      'start',
+      'On a computer, Meta says to click "More" at the bottom left, then "Settings", "Meta Account", "Your information and permissions", "Export your information" and "Create export". Meta describes "More" as a hamburger icon (≡). Select the profile, click "Next" and choose "Export to device". Customize the export options, then click "Start export". Meta says some accounts show "Accounts Center" instead of "Meta Account" during the rollout. Follow these steps yourself in Instagram; this guide does not operate the platform.',
+      'Am Computer sollst du laut Meta unten links „Mehr“ („More“) und dann „Einstellungen“ („Settings“), „Meta-Konto“ („Meta Account“), „Deine Informationen und Berechtigungen“ („Your information and permissions“), „Deine Informationen exportieren“ („Export your information“) und „Export erstellen“ („Create export“) anklicken. Meta beschreibt den ersten Menüpunkt als Hamburger-Symbol (≡). Wähle das Profil, klicke auf „Weiter“ („Next“) und wähle „Zu Gerät exportieren“ („Export to device“). Passe die Optionen an und klicke auf „Export starten“ („Start export“). Laut Meta kann während der Umstellung statt des Meta-Kontos die „Kontenübersicht“ („Accounts Center“) erscheinen. Führe die Schritte selbst in Instagram aus. Diese Anleitung bedient die Plattform nicht.',
     ),
+    sourceDe,
+  },
+  steps: [
+    {
+      ...fact(
+        'request',
+        'On Android, Meta’s device-specific help says to tap "Accounts Center", "Your information and permissions", "Export your information" and "Create export". Select the profile, tap "Next" and choose "Export to device". Customize the options, then tap "Start export". The general help also uses "Meta Account" during the rollout; check the help if your menus differ.',
+        'Unter Android nennt Meta während der Umstellung die „Kontenübersicht“ („Accounts Center“) oder „Meta-Konto“ („Meta Account“). Tippe dort auf „Deine Informationen und Berechtigungen“ („Your information and permissions“), „Deine Informationen exportieren“ („Export your information“) und „Export erstellen“ („Create export“). Wähle das Profil, tippe auf „Weiter“ („Next“) und wähle „Zu Gerät exportieren“ („Export to device“). Passe die Optionen an und tippe auf „Export starten“ („Start export“). Prüfe die Hilfe, wenn deine Menüs abweichen.',
+        androidSource,
+      ),
+      sourceDe: androidSourceDe,
+    },
     fact(
       'delivery',
-      'Meta says that an export to your device brings both an email notification and a notification on Instagram when it is ready. The help pages do not state whether the download can have several parts.',
-      'Meta gibt an, dass du bei einem fertigen Export auf dein Gerät sowohl eine E-Mail als auch eine Benachrichtigung in Instagram erhältst. Die Hilfeseiten sagen nicht, ob der Download mehrere Teile haben kann.',
+      'Meta says that an export to your device brings both an email notification and a notification on Instagram when it is ready. The help-page excerpts read for this guide do not establish whether the download can have several parts.',
+      'Meta gibt an, dass du bei einem fertigen Export auf dein Gerät sowohl eine E-Mail als auch eine Benachrichtigung in Instagram erhältst. Die für diese Anleitung gelesenen Auszüge der Hilfeseite belegen nicht, ob der Download mehrere Teile haben kann.',
+      sourceGb,
     ),
   ],
   options: [
@@ -59,29 +85,32 @@ export const instagramGuide: PlatformGuide<'instagram'> = {
     ),
     fact(
       'range',
-      'Meta says you can select specific information, a date range and the notification email. For a review of all your old comments, include the relevant information and the whole time range. The help page does not name the whole-range option.',
-      'Meta gibt an, dass du bestimmte Informationen, einen Zeitraum und die E-Mail-Adresse für die Benachrichtigung auswählen kannst. Nimm für eine Durchsicht aller alten Kommentare die passenden Informationen und den gesamten Zeitraum auf. Die Hilfeseite nennt keinen Namen für die Auswahl des gesamten Zeitraums.',
+      'Meta says you can select specific information, a date range and the notification email. For a review of all your old comments, include the relevant information and the whole time range. The help-page excerpts read for this guide do not establish the whole-range option’s label.',
+      'Meta gibt an, dass du bestimmte Informationen, einen Zeitraum und die E-Mail-Adresse für die Benachrichtigung auswählen kannst. Nimm für eine Durchsicht aller alten Kommentare die passenden Informationen und den gesamten Zeitraum auf. Die gelesenen Auszüge der Hilfeseite belegen den Namen dieser Zeitraumoption nicht.',
     ),
     fact(
       'media',
-      'Meta says the selected information and media quality can change the file size. SocialPrune does not show export media, so choose the lowest media quality if offered. The help page does not name the quality levels.',
-      'Meta gibt an, dass die ausgewählten Informationen und die Medienqualität die Dateigröße beeinflussen. SocialPrune zeigt keine Medien aus dem Export, also wähle die niedrigste Medienqualität, falls sie angeboten wird. Die Hilfeseite nennt keine Qualitätsstufen.',
+      'Meta says the selected information and media quality can change the file size. SocialPrune does not show export media, so choose the lowest media quality if offered. The help-page excerpts read for this guide do not establish the quality-level labels.',
+      'Meta gibt an, dass die ausgewählten Informationen und die Medienqualität die Dateigröße beeinflussen. SocialPrune zeigt keine Medien aus dem Export, also wähle die niedrigste Medienqualität, falls sie angeboten wird. Die gelesenen Auszüge der Hilfeseite belegen die Namen der Qualitätsstufen nicht.',
     ),
   ],
   waiting: {
     ...fact(
       'waiting',
-      'Meta says it may take up to 30 days to email you an export link. It gives no minimum or typical duration. The calendar date you choose is a reminder, not a promised delivery date.',
-      'Meta gibt an, dass es bis zu 30 Tage dauern kann, bis du einen Exportlink per E-Mail erhältst. Meta nennt keine Mindestdauer oder typische Wartezeit. Dein gewählter Kalendertermin ist eine Erinnerung, kein zugesagter Bereitstellungstermin.',
+      'Meta says it may take up to 30 days to email you an export link. The help-page excerpts read for this guide give no minimum or typical duration. The calendar date you choose is a reminder, not a promised delivery date.',
+      'Meta gibt an, dass es bis zu 30 Tage dauern kann, bis du einen Exportlink per E-Mail erhältst. Die gelesenen Auszüge der Hilfeseite nennen keine Mindestdauer oder typische Wartezeit. Dein gewählter Kalendertermin ist eine Erinnerung, kein zugesagter Bereitstellungstermin.',
+      sourceGb,
     ),
     typicalDays: null,
   },
   downloadWindow: {
     ...fact(
       'download-window',
-      'Meta says that once the export is ready, you have 4 days to download it from "Available downloads" in the "Export your information" tool in "Accounts Center".',
-      'Meta gibt an, dass du nach der Bereitstellung 4 Tage Zeit hast, den Export unter "Available downloads" im Werkzeug "Export your information" in "Accounts Center" herunterzuladen.',
+      'Meta says that once the export is ready, you have 4 days to download it from "Available downloads" in the "Export your information" tool in "Accounts Centre" (the UK English help page’s spelling).',
+      'Meta gibt an, dass du nach der Bereitstellung 4 Tage Zeit hast, den Export unter „Verfügbare Downloads“ („Available downloads“) im Werkzeug „Deine Informationen exportieren“ („Export your information“) in der „Kontenübersicht“ („Accounts Centre“ in der britisch-englischen Quelle) herunterzuladen.',
+      sourceGb,
     ),
+    sourceDe,
     days: 4,
   },
   htmlExportHint: fact(

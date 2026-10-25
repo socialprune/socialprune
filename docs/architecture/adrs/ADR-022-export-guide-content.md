@@ -101,6 +101,10 @@ For each platform, the reader records for each fact the URL, the page title and 
 5. What the platform says about how long the download link stays valid.
 6. Whether the export arrives by email, in-app notification or both, and whether it can arrive in several parts.
 
+**Amended 2026-10-25 by the maintainer's decision GUIDE-OK A** (card GUIDE-OK v1 A; 13:37:56Z, "überall ... nach deiner Empfehlung"). The original browser-check wording above remains visible. The maintainer may also confirm a fact on the basis of a check the parent made for him that same day: every fact's public source was re-read that day with the retrieval route recorded, and the parent captured screenshots of the steps in the maintainer's own signed-in accounts. Those screenshots stay outside the repository; no account content enters it. The maintainer confirms the fact on that same day after seeing those readings and images. This changes only who may perform the browser steps before his confirmation, not who verifies the fact.
+
+For `GuideFact.verifiedOn`, the operative meaning is the day the maintainer confirmed the fact, either through his own browser check or by confirming that same-day parent check; it remains null until he does. This supersedes the shape comment and the verification paragraphs above only on that point. His accepted card said: "Du bestätigst auf Grundlage dieser Lesungen und Bilder. ADR-022 erlaubt das danach ausdrücklich. Alle 120 Tage wird neu geprüft." Public platform help pages remain the only sources a guide fact may cite. A signed-in settings page or private screenshot is verification evidence, never a replacement source URL. The 120-day limit and release/deployment refusal for unchecked or stale facts stay unchanged. This amendment records the permitted verification method; it does not itself set any fact's date.
+
 Where a page gives no number, `typicalDays` or `days` is `null` and the copy says that the platform does not say. Values from earlier planning are starting points to check, not facts to copy.
 
 ### Copy rules

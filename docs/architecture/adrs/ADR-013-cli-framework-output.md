@@ -1,6 +1,9 @@
 # ADR-013: CLI framework, command tree and machine output contract
 
 - **Status:** Accepted
+- Rule Command tree for Phase 2 changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`browser setup`, `browser forget` and human-started `delete x`, with outcomes but never decision events).
+- Rule Execution adapter changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (interactive browser runs and their confirmation listener are named exceptions; deletion dry runs remain without network or browser).
+- Rule Exit codes changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (a daily-cap end exits 0 and names its reason).
 - Rule Command tree for Phase 2 changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (`context instagram` is added).
 - Rule Execution adapter changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-10-16 (Instagram context dry runs stay without network; runs follow its signed-in reading rules).
 - Rule Command tree for Phase 2 changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (`originals fetch` is added).

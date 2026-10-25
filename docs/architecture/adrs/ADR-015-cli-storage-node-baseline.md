@@ -1,6 +1,8 @@
 # ADR-015: CLI workspace storage on node:sqlite and the Node baseline
 
 - **Status:** Accepted
+- Rule Database settings changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`STRICT` browser journal tables, append-only attempts and transactional pre-click checks).
+- Rule Migration, backup and restore changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (schema-3 journal migration and current version-9 warning/acknowledgement layout, copy-before-migration and warning-gated restore).
 - Rule Workspace folder changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the `originals/` media folder sits beside `socialprune.sqlite`).
 - Rule Database settings changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the non-append-only `STRICT` table `originals` is added).
 - Rule Migration, backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (a layout migration adds `originals`).

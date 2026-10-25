@@ -1,16 +1,17 @@
 # ADR-027: Deleting the person's own X entries through their signed-in browser session
 
-- **Status:** Proposed
+- **Status:** Accepted
+- **Accepted on:** 2026-10-25 by the maintainer's decision ADR-027 v1 A (13:37:56Z, "überall ... nach deiner Empfehlung").
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (the second action [ADR-023](ADR-023-acting-in-own-account.md) allows), 3 (only the person's own delete decisions; outcomes record their source), 1 (no developer account, no key; the installed browser), 5 (the warning makes no promise), 6 (tests use a local fake site, never X)
-- **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-011](ADR-011-internationalization.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" gives the new wording. How a partial change is recorded is an open question in ADR-023.
+- **Supersedes in part:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-011](ADR-011-internationalization.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-018](ADR-018-cli-distribution.md). The section "Changes to accepted records" names each changed rule and gives the new wording. [ADR-016](ADR-016-local-review-server.md) is reused, not changed. Partial supersession follows [ADR-001](ADR-001-decision-records.md)'s amendment of 2026-10-24 (ADR-TEIL v1 A).
 - **Related:** [ADR-002](ADR-002-dependency-licenses.md), [ADR-012](ADR-012-time-zone-grouping.md), [ADR-023](ADR-023-acting-in-own-account.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-028](ADR-028-instagram-signed-in-session.md), [ADR-029](ADR-029-signed-in-originals-pass.md), [ADR-031](ADR-031-desktop-app.md)
 
-Revision candidate of 2026-10-24. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting the four points and code alignment below. V2 supersedes v1. The source baseline is `bf8843f`, including DEL-1, D2 and D5, plus D6 and D7's one targeted warning/restore revision. This behavior decision does not accept the record or authorize a platform run; a separate acceptance card is still required.
+Revision candidate of 2026-10-24. The maintainer chose ADR-DEL v2 A at 10:31:43Z, accepting the four points and code alignment below. V2 supersedes v1. The source baseline is `bf8843f`, including DEL-1, D2 and D5, plus D6 and D7's one targeted warning/restore revision. That behavior decision did not accept the record or authorize a platform run. The separate ADR-027 v1 A decision of 2026-10-25 accepts this record; it starts no platform run.
 
 Decided by the maintainer on 2026-10-11: automated deletion of his own X entries, with the risk of a locked or suspended account accepted ("Probier's auch dann ... das mit den automatischen ... auch mit dem Risiko, das ist mir klar"), and without X's paid developer API.
 
-Needs the maintainer's decision: this record's separate acceptance and the remaining questions below. ADR-DEL v2 A's behavior is decided; the record stays Proposed.
+Decided by the maintainer on 2026-10-25: accept this record on card ADR-027 v1 A, including page clicks rather than own requests, undoing reposts the same way, read-back after seven days, DEL-1 A's staged pace, ADR-DEL v2 A's batch pause and warning gate, and the version-9 boundary. The questions and their answers remain below.
 
 ## Context
 
@@ -307,23 +308,23 @@ The new outcome value did not fit version 2's enum. Version 3 introduced the jou
 
 ### Changes to accepted records
 
-| Record | New wording |
-|---|---|
-| ADR-005 | Two IndexedDB stores, `browserRuns` and `browserAttempts`, introduced in version 3 and carried from restores through current version 9. |
-| ADR-006 | Outcome value `deleted-via-browser`, source `{ kind: 'human', via: 'browser-x' }` linked through `action.id` to the settling attempt, and the journal with its version 3 migration and current version 9 types; the outcome is final except for a verified reappearance. |
-| ADR-007 | The outcome enum and filters gain the value; `outcome` rejects a change to a final outcome with `OUTCOME_FINAL`. |
-| ADR-011 | Catalog keys for the badge, the confirmation page and the warning of ADR-023 in both languages, under the catalog and copy checks. |
-| ADR-013 | The command tree gains `browser setup`, `browser forget` and `delete x`. There is no approve, decide or mark command. Deletion acts only on human delete decisions, starts after human Start on the loopback page or in ADR-031's desktop app, and never writes a decision event. The network rule follows ADR-026. A daily-cap end exits 0 and names the reason. |
-| ADR-014 | Agents may run `delete x --dry-run --json`. They never run `delete x` without `--dry-run`, `browser setup` or `browser forget`, never read the profile folder, never edit run or attempt records. The skill says so. The MCP server in 0.2 gets no deletion tool. |
-| ADR-015 | `STRICT` tables `browser_runs` and `browser_attempts` as above; the check before each entry in one `BEGIN IMMEDIATE` transaction; a layout migration for schema version 3. |
-| ADR-016 | The confirmation page reuses its request controls and page policy. The review server and its opener do not change; the confirmation page is opened by `playwright-core` in the dedicated window. |
-| ADR-017 | `ReviewService` appends human review decisions and outcomes; the CLI's `BrowserOutcomeWriter` appends only `deleted-via-browser` and verified-reappearance `unknown` outcomes with `via: 'browser-x'`, plus journal records, never decision events. CLI and desktop runs share it. |
-| ADR-018 | The package gains the runtime dependency `playwright-core` 1.63.0 (Apache-2.0, no dependencies of its own), kept outside the bundle and loaded only by the browser commands; the package files gain the confirmation page assets; the packed smoke test runs `delete x --dry-run --json` and never a run. |
+| Record | Rules or sections changed | New wording |
+|---|---|---|
+| ADR-005 | 2, Object stores per workspace | Two IndexedDB stores, `browserRuns` and `browserAttempts`, introduced in version 3 and carried from restores through current version 9. |
+| ADR-006 | Outcome events; Workspace document, version 2; Backup and restore | Outcome value `deleted-via-browser`, source `{ kind: 'human', via: 'browser-x' }` linked through `action.id` to the settling attempt, and the journal with its version 3 migration and current version 9 types; the outcome is final except for a verified reappearance. Portable validation checks the journal and outcome graph, and CLI restore enforces the warning gate described above. |
+| ADR-007 | Projection; Protocol; Queries | The outcome enum and filters gain the value; `outcome` rejects a change to a final outcome with `OUTCOME_FINAL`. |
+| ADR-011 | Catalogs and types; Locale choice | Catalog keys for the badge, the confirmation page and the warning of ADR-023 in both languages, under the catalog and copy checks. The browser commands' confirmation and status messages support German through `--lang de` as well as English. |
+| ADR-013 | Command tree for Phase 2; Execution adapter; Exit codes | The command tree gains `browser setup`, `browser forget` and `delete x`. There is no approve, decide or mark command. Deletion acts only on human delete decisions, starts after human Start on the loopback page or in ADR-031's desktop app, and never writes a decision event. The network rule follows ADR-026; interactive browser runs are the named exception to prompt-free execution, and the confirmation listener is separate from review. A daily-cap end exits 0 and names the reason. |
+| ADR-014 | Agent Skill; Decision Drivers | Agents may run `delete x --dry-run --json`. They never run `delete x` without `--dry-run`, set up or forget a deletion profile, read the profile folder or edit run or attempt records. The separately accepted Instagram adoption exception remains [ADR-028](ADR-028-instagram-signed-in-session.md)'s. The narrow outcome writer is not an agent capability. The MCP in 0.2 rule already forbids a delete tool and is unchanged. |
+| ADR-015 | Database settings; Migration, backup and restore | `STRICT` tables `browser_runs` and `browser_attempts` as above; the check before each entry in one `BEGIN IMMEDIATE` transaction; the schema-3 journal migration and current version-9 warning/acknowledgement layout, copy-before-migration and warning-gated restore. |
+| ADR-016 | none, reused | The confirmation page reuses its request controls and page policy. The review server and its opener do not change; the confirmation page is opened by `playwright-core` in the dedicated window. This adds no rule change to ADR-016. |
+| ADR-017 | Capability split | `ReviewService` appends human review decisions and outcomes; the CLI's `BrowserOutcomeWriter` appends only `deleted-via-browser` and verified-reappearance `unknown` outcomes with `via: 'browser-x'`, plus journal records, never decision events. CLI and desktop runs share it. |
+| ADR-018 | Build; Package contents; Checks | The package gains the runtime dependency `playwright-core` 1.63.0 (Apache-2.0, no dependencies of its own), kept outside the bundle and loaded only by the browser commands; the package files gain the confirmation page assets; the packed smoke test runs `delete x --dry-run --json` and never a run. |
 
 [ADR-002](ADR-002-dependency-licenses.md) needs no exception: `playwright-core` is Apache-2.0, and the browser is the one already installed, so rule 6 on downloaded artifacts does not apply.
 
 **Decision made by:** maintainer
-**Approved on:** pending
+**Approved on:** 2026-10-25
 
 ## Consequences
 
@@ -346,9 +347,13 @@ The new outcome value did not fit version 2's enum. Version 3 introduced the jou
 ## Open questions for the maintainer
 
 - Delete by clicking through X's own pages, slower but without imitating X's app, instead of sending X's internal requests directly like the other tools do? Answer "clicks" or "requests".
+  - **Decided by the maintainer on 2026-10-25, ADR-027 v1 A:** clicks, Option B. X's own page sends every request; SocialPrune builds none of its own.
 - Accept this corrected record separately from the behavior already chosen as ADR-DEL v2 A? The warning-card mechanism and its CLI-local storage limits are stated above; choosing A on v2 did not accept the document.
+  - **Decided by the maintainer on 2026-10-25, ADR-027 v1 A:** accepted, including DEL-1 A's pace, ADR-DEL v2 A's batch pause and warning gate, and version 9. No platform run starts from this acceptance.
 - Undo your reposts the same way, on the original post's page? Answer yes or no.
+  - **Decided by the maintainer on 2026-10-25, ADR-027 v1 A:** yes, through the page's repost and Undo repost controls. The real-page focal-selection uncertainty above still needs the watched undo-repost canary.
 - Check again 7 days after deleting, because one report says deleted posts can come back? Answer yes or no.
+  - **Decided by the maintainer on 2026-10-25, ADR-027 v1 A:** yes, read back confirmed deletions after at least seven days; unresolved effects are reconciled read-only and never resent while unresolved.
 
 ## Evidence
 

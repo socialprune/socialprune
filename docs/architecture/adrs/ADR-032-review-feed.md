@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-20
 - **Hard constraints touched:** 2 (criteria text, and context if chosen, go to the source the person set up), 3 (only the person's clicks decide), 5 (own criteria say "not measured"), 6 (generated data only). 1 and 4 stay as they are: no paid path, and deletion on X runs only through ADR-027's run.
-- **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-008](ADR-008-review-ui-primitives.md), [ADR-009](ADR-009-navigation.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-020](ADR-020-demo-suggestions.md). It also changes the proposed [ADR-027](ADR-027-x-deletion-browser.md) and the [design specification](../../design/README.md); see "Changes to accepted records".
+- **Supersedes in part, on acceptance:** [ADR-005](ADR-005-browser-storage.md), [ADR-006](ADR-006-workspace-event-log.md), [ADR-007](ADR-007-review-data-worker.md), [ADR-008](ADR-008-review-ui-primitives.md), [ADR-009](ADR-009-navigation.md), [ADR-014](ADR-014-agent-interface.md), [ADR-015](ADR-015-cli-storage-node-baseline.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-020](ADR-020-demo-suggestions.md). It also changes [ADR-027](ADR-027-x-deletion-browser.md), accepted on 2026-10-25, and the [design specification](../../design/README.md); see "Changes to accepted records".
 - **Related:** [ADR-012](ADR-012-time-zone-grouping.md), [ADR-021](ADR-021-archive-media.md), [ADR-031](ADR-031-desktop-app.md), [spike S2](../../spikes/S2.md)
 
 ## Context
@@ -332,7 +332,7 @@ Order: 1, 2, 3, 4; 5 beside 3; 6 after 2; 7 once he accepts the presets; 8 befor
 | ADR-016 | "`setTimeZone` and `setReviewView`", the end of the HTTP API list, becomes "`setTimeZone`, `setReviewView`, `planCounts`, `feedWindow`, `previewPlan`, `setCriteria` and `setKeepRules`"; ADR-025 gets the same if accepted first. |
 | ADR-017 | "`ReviewService` is the only code that appends decision or outcome events" gains "and the only code that writes a `reviewPlans` record, in the transaction of its bulk"; the module table gains `packages/core/src/criteria/` (presets, keep rules, tab membership; pure functions). |
 | ADR-020 | "At least four are `unclear`, at least ten items have none, and one item has two suggestions with different categories" becomes: at least four are `unclear`, ten have none, ten have two suggestions in different categories, and five suggested posts reach the default keep rule. Like every new workspace (Q1), the demo starts with nothing ticked and opens the picker; once a visitor ticks a default, the held-back tab has entries. It has no example or invented post in the four new categories. |
-| ADR-027, proposed | The dry-run list's "whether it came from a single or a bulk action" names, for a final mark, its plan's criteria and rules. |
+| ADR-027, accepted 2026-10-25 | The dry-run list's "whether it came from a single or a bulk action" names, for a final mark, its plan's criteria and rules. |
 
 [ADR-013](ADR-013-cli-framework-output.md) and [ADR-031](ADR-031-desktop-app.md) stay: no command, flag or exit code is added, and the new failure codes travel inside `INVALID_LABELS`; ADR-031 section 3 already names the media route, and its bridge carries the request union above. ADR-021 stays until the record of Q5.
 

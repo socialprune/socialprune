@@ -40,6 +40,7 @@ import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
 import { chooseFilterDate } from './filter.ts';
+import { listImageOnlyManual } from './list-image-only.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -134,9 +135,10 @@ async function listTimeoutDiagnostic(
   page: Page,
   filter: ListTimeoutDiagnostic['filter'],
   dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined,
+  dispose = true,
 ): Promise<ListTimeoutDiagnostic> {
   const rows = await listTimeoutRows(page);
-  await dom?.dispose();
+  if (dispose) await dom?.dispose();
   return ListTimeoutDiagnosticSchema.parse({
     ...rows,
     emptyStateClassKnown: false,
@@ -266,10 +268,14 @@ export async function loadList(
     endMatches: false,
   };
   let dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined;
+  let initialAccount: string | undefined;
+  let oldestWithinWeek: boolean | null = null;
   try {
     let navigation = await navigateList(page, expected, deps, guard, rowCounts);
     let accountRows = navigation.entries;
-    let oldestWithinWeek: boolean | null = null;
+    initialAccount = accountRows.find(
+      (row) => row.username.toLowerCase() === expected.toLowerCase(),
+    )?.username;
     if (oldest) {
       await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
       await clickAllowed(
@@ -374,10 +380,59 @@ export async function loadList(
       scrollLoads,
       full,
       oldestWithinWeek,
+      manualReason: undefined as 'list-image-only' | undefined,
     };
   } catch (error) {
-    if (error instanceof ContextStop && error.token === 'list-timeout')
-      rowCounts.listTimeout = await listTimeoutDiagnostic(page, filter, dom);
+    if (error instanceof ContextStop && error.token === 'list-timeout') {
+      rowCounts.listTimeout = await listTimeoutDiagnostic(
+        page,
+        filter,
+        dom,
+        false,
+      );
+      if (
+        error instanceof FilteredListTimeout &&
+        initialAccount &&
+        listImageOnlyManual(rowCounts.listTimeout)
+      ) {
+        const firstDom = rowCounts.listTimeout.dom;
+        guard();
+        await checkPage(page);
+        const paths = await outsideProfilePaths(page);
+        const classification = accountClass(expected, paths);
+        deps.accountObserved?.(classification);
+        const current = await readAccountRows(page, expected, rowCounts);
+        const candidates = current.filter(
+          (row) =>
+            row.username.toLowerCase() === expected.toLowerCase() &&
+            rowCandidate(row.text, item.text),
+        );
+        rowCounts.listTimeout = await listTimeoutDiagnostic(page, filter, dom);
+        guard();
+        await checkPage(page);
+        if (
+          classification === 'expected' &&
+          candidates.length === 0 &&
+          listImageOnlyManual(rowCounts.listTimeout) &&
+          rowCounts.listTimeout.dom.changes === firstDom.changes &&
+          rowCounts.listTimeout.dom.lastChangeAfterApplyMs ===
+            firstDom.lastChangeAfterApplyMs
+        )
+          return {
+            candidates,
+            account: initialAccount,
+            rowCount: current.length,
+            emptySkipped: rowCounts.emptySkipped,
+            otherName: rowCounts.otherName,
+            scrollLoads: 0,
+            full: false,
+            oldestWithinWeek,
+            manualReason: 'list-image-only' as const,
+          };
+      }
+      await dom?.dispose();
+      if (dom?.failed) rowCounts.listTimeout.observationFailed = true;
+    }
     throw error;
   } finally {
     await dom?.dispose();

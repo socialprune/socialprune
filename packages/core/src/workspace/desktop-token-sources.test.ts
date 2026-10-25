@@ -854,7 +854,9 @@ test('journal producer codes and model action/state enums are all admitted, neve
   codes.push(
     ...nodes(run, ts.isStringLiteral)
       .map((node) => node.text)
-      .filter((value) => ['no-row', 'window-full'].includes(value)),
+      .filter((value) =>
+        ['no-row', 'window-full', 'list-image-only'].includes(value),
+      ),
   );
   assertCovered(codes, RunJournalCodeSchema.options);
   expect(RunJournalCodeSchema.safeParse('generated-unknown-code').success).toBe(

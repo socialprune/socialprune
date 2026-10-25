@@ -209,7 +209,7 @@ export async function runContextWithDependencies(
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: { startupClosed: number; unexpectedOpened: number };
-    rows: { emptySkipped: number; otherName: number };
+    rows: { emptySkipped: number; otherName: number; imageOnlySkipped: number };
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -218,7 +218,7 @@ export async function runContextWithDependencies(
     confirmations: { post: 0, list: 0 },
     retries: { used: 0, entries: [] },
     pace: paceSummary(pace),
-    rows: { emptySkipped: 0, otherName: 0 },
+    rows: { emptySkipped: 0, otherName: 0, imageOnlySkipped: 0 },
     runtime: {
       pageCrashes: 0,
       browserDisconnects: 0,
@@ -793,8 +793,10 @@ export async function runContextWithDependencies(
           fields: {},
           listPairing: answers.bodies.some(pairedCode),
           oldestWithinWeek: list.oldestWithinWeek,
+          ...(list.manualReason ? { listTimeout: rowCounts.listTimeout } : {}),
         };
         report.steps.push(stepReport);
+        if (list.manualReason) await checkpoint();
         activeStep = stepReport;
         answers.reset(true);
         answerReport = options.plan.canary
@@ -806,17 +808,19 @@ export async function runContextWithDependencies(
           : undefined;
         answerReport?.();
         profileNames.push(list.account);
-        if (list.full || !list.candidates[candidate]) {
+        if (list.manualReason || list.full || !list.candidates[candidate]) {
           stage = 'settlement';
           await writer.settle({
             attemptId,
             state: 'not-listed',
-            code: list.full ? 'window-full' : 'no-row',
+            code: list.manualReason ?? (list.full ? 'window-full' : 'no-row'),
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
           settled = true;
-          stepReport.result = list.full ? 'window-full' : 'no-row';
+          stepReport.result =
+            list.manualReason ?? (list.full ? 'window-full' : 'no-row');
+          if (list.manualReason) report.rows.imageOnlySkipped++;
           break;
         }
         stage = 'post-open';

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { POST_PATH_CLASSES } from './signals.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { listImageOnlyManual } from './list-image-only.ts';
 
 const count = z.number().int().nonnegative();
 const sourceCountSchema = z.strictObject({
@@ -229,19 +230,29 @@ const StepImageSchema = z
         source: value.source,
       }).success,
   );
-export const ContextStepReportSchema = z.looseObject({
-  image: StepImageSchema.optional(),
-  memory: MemorySampleSchema.optional(),
-  listTimeout: ListTimeoutDiagnosticSchema.optional(),
-  ready: z.strictObject({ postMs: count }).optional(),
-  postRequests: PostRequestsSchema.optional(),
-  secondSource: SecondSourceReportSchema.optional(),
-  otherName: z.number().int().nonnegative().optional(),
-  confirmedBy: z.enum(['post', 'list']).optional(),
-  ownerLinksOneAccount: z.boolean().optional(),
-  ownerEqualsExport: z.boolean().optional(),
-  firstProfileNamesOwner: z.boolean().optional(),
-});
+export const ContextStepReportSchema = z
+  .looseObject({
+    image: StepImageSchema.optional(),
+    memory: MemorySampleSchema.optional(),
+    listTimeout: ListTimeoutDiagnosticSchema.optional(),
+    ready: z.strictObject({ postMs: count }).optional(),
+    postRequests: PostRequestsSchema.optional(),
+    secondSource: SecondSourceReportSchema.optional(),
+    otherName: z.number().int().nonnegative().optional(),
+    confirmedBy: z.enum(['post', 'list']).optional(),
+    ownerLinksOneAccount: z.boolean().optional(),
+    ownerEqualsExport: z.boolean().optional(),
+    firstProfileNamesOwner: z.boolean().optional(),
+  })
+  .refine(
+    (value) =>
+      value['result'] !== 'list-image-only' ||
+      (value['confirmed'] === false &&
+        value['candidates'] === 0 &&
+        value.image?.status === 'not-attempted' &&
+        value.listTimeout !== undefined &&
+        listImageOnlyManual(value.listTimeout)),
+  );
 
 export const CONTEXT_STOP_TOKENS = [
   'login',

@@ -919,5 +919,6 @@
   "desktop.token.several": "More than one comment matched.",
   "desktop.token.not-shown": "The comment was not shown under the expected account.",
   "desktop.token.no-row": "No matching comment row was found.",
-  "desktop.token.window-full": "The inspected list window ended before the comment was found."
+  "desktop.token.window-full": "The inspected list window ended before the comment was found.",
+  "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review."
 }

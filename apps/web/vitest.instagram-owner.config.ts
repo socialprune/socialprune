@@ -4,7 +4,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   root: import.meta.dirname,
   test: {
-    include: ['src/workspace/instagram-owner-migration.proof.ts'],
+    include: [
+      'src/workspace/instagram-owner-migration.proof.ts',
+      'src/workspace/instagram-deletion-migration.proof.ts',
+    ],
     environment: 'node',
     fileParallelism: false,
     maxWorkers: 1,

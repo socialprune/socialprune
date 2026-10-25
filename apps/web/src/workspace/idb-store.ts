@@ -12,6 +12,7 @@ import {
   SubmissionSchema,
   WorkspaceMetaSchema,
   BrowserRunSchema,
+  validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
   WORKSPACE_SCHEMA_VERSION,
@@ -82,7 +83,7 @@ export class IndexedDBStore implements WorkspaceStore {
           db.createObjectStore('reviewPlans', { keyPath: 'actionId' });
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 9) {
+        if (oldVersion >= 1 && oldVersion < 10) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
@@ -333,6 +334,18 @@ export class IndexedDBStore implements WorkspaceStore {
       },
       async put(value: R) {
         guard(true);
+        if (name === 'browserRuns') {
+          const prior = (await request(
+            native
+              .objectStore(name)
+              .get((value as import('@socialprune/core').BrowserRun).runId),
+          )) as import('@socialprune/core').BrowserRun | undefined;
+          if (!prior) throw new Error('RUN_WRITE_ONCE');
+          validateBrowserRunUpdate(
+            prior,
+            value as import('@socialprune/core').BrowserRun,
+          );
+        }
         await request(native.objectStore(name).put(validate(value)));
       },
       async add(value: R) {

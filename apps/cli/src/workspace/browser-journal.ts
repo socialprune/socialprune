@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import {
   BrowserRunSchema,
+  validateBrowserRunUpdate,
   BrowserAttemptSchema,
   WORKSPACE_SCHEMA_VERSION,
 } from '@socialprune/core';
@@ -12,6 +13,10 @@ import type {
 import type { WriteTransaction } from '@socialprune/core/workspace/store';
 import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
 import { CliError, CLI_ERRORS } from '../cli/errors.ts';
+import {
+  INSTAGRAM_DELETE_PACE,
+  instagramDeletionState,
+} from './instagram-delete-pace.ts';
 function warningDay(at: string, zone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: zone,
@@ -55,8 +60,35 @@ CREATE TRIGGER IF NOT EXISTS browser_x_warning_ack_no_update BEFORE UPDATE ON br
 CREATE TRIGGER IF NOT EXISTS browser_x_warning_ack_no_delete BEFORE DELETE ON browser_x_warning_ack BEGIN SELECT RAISE(ABORT,'append-only'); END;
 `;
 const warningProfiles = new WeakMap<DatabaseSync, string>();
+const instagramWarningProfiles = new WeakMap<DatabaseSync, string>();
+type WarningPlatform = 'x' | 'instagram';
+export const INSTAGRAM_WARNING_LAYOUT = X_WARNING_LAYOUT.replaceAll(
+  'browser_x_',
+  'browser_instagram_',
+);
+const warningTables = (platform: WarningPlatform) =>
+  platform === 'x'
+    ? {
+        warnings: 'browser_x_warnings',
+        ack: 'browser_x_warning_ack',
+        layout: X_WARNING_LAYOUT,
+      }
+    : {
+        warnings: 'browser_instagram_warnings',
+        ack: 'browser_instagram_warning_ack',
+        layout: INSTAGRAM_WARNING_LAYOUT,
+      };
+const warningCode = (platform: WarningPlatform, day = false) =>
+  platform === 'x'
+    ? day
+      ? 'X_WARNING_DAY'
+      : 'X_WARNING_CARD_REQUIRED'
+    : day
+      ? 'IG_WARNING_DAY'
+      : 'IG_WARNING_CARD_REQUIRED';
 
-export type BrowserAction = 'delete-post' | 'undo-repost' | 'verify';
+export type BrowserAction =
+  'delete-post' | 'undo-repost' | 'delete-comment' | 'verify';
 export type AttemptState =
   | 'withdrawn'
   | 'sending'
@@ -97,6 +129,9 @@ export interface ProfileReport {
   unexpectedRequests: BrowserRequest[];
 }
 export interface BrowserRun {
+  instagramWarning?: import('@socialprune/core').BrowserRun['instagramWarning'];
+  pageDays?: Record<string, number>;
+  pageZone?: string;
   warningKind?: import('@socialprune/core').BrowserRun['warningKind'];
   startedBy?: 'agent-on-order';
   orderSha256?: string;
@@ -117,15 +152,17 @@ export interface BrowserRun {
     | 'stopped-by-person'
     | 'error'
     | 'platform-check'
+    | 'canary'
     | null;
   bodyShapes: Record<string, string[]>;
   profileReport: ProfileReport | null;
   ownerPid?: number;
 }
 export interface PlannedEntry {
+  context?: import('@socialprune/core').InstagramContext;
   item: Item;
   decision: DecisionEvent;
-  action: 'delete-post' | 'undo-repost';
+  action: 'delete-post' | 'undo-repost' | 'delete-comment';
 }
 
 export const BROWSER_JOURNAL_LAYOUT = `
@@ -152,7 +189,7 @@ CREATE TABLE IF NOT EXISTS browser_order_audit (
   accepted_by TEXT CHECK(accepted_by='automatic-check'), data TEXT NOT NULL CHECK(json_valid(data))
 ) STRICT;
 CREATE TRIGGER IF NOT EXISTS browser_runs_finish_once BEFORE UPDATE ON browser_runs
-WHEN (OLD.ended_at IS NOT NULL AND NOT (json_extract(OLD.data,'$.mode') IN ('fill','context') AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1)) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
+WHEN (OLD.ended_at IS NOT NULL AND NOT ((json_extract(OLD.data,'$.mode') IN ('fill','context') OR (json_extract(OLD.data,'$.platform')='instagram' AND json_extract(OLD.data,'$.mode')='delete')) AND json_extract(OLD.data,'$.endReason')='canary' AND json_extract(OLD.data,'$.canaryAcceptedAt') IS NULL AND json_extract(NEW.data,'$.canaryAcceptedAt') IS NOT NULL AND NEW.ended_at=OLD.ended_at AND json_remove(NEW.data,'$.canaryAcceptedAt')=json_remove(OLD.data,'$.canaryAcceptedAt'))) OR (NEW.ended_at IS NULL AND NOT (OLD.ended_at IS NULL AND ((json_remove(NEW.data,'$.pageOpens','$.lastPageOpenedAt','$.pageDays','$.pageZone')=json_remove(OLD.data,'$.pageOpens','$.lastPageOpenedAt','$.pageDays','$.pageZone') AND json_extract(NEW.data,'$.pageOpens')=coalesce(json_extract(OLD.data,'$.pageOpens'),0)+1) OR (json_extract(OLD.data,'$.platform')='instagram' AND json_extract(OLD.data,'$.instagramWarning') IS NULL AND json_extract(NEW.data,'$.instagramWarning') IS NOT NULL AND json_remove(NEW.data,'$.instagramWarning')=OLD.data)))) OR NEW.run_id != OLD.run_id OR NEW.account_key != OLD.account_key
 OR json_extract(NEW.data,'$.startedAt') != json_extract(OLD.data,'$.startedAt')
 OR json_extract(NEW.data,'$.mode') != json_extract(OLD.data,'$.mode')
 OR json_extract(NEW.data,'$.planHash') IS NOT json_extract(OLD.data,'$.planHash')
@@ -215,8 +252,11 @@ export function readJournal(db: DatabaseSync): {
 
 /** CLI-only capability. It cannot create decisions or choose other outcome values. */
 export class BrowserOutcomeWriter {
-  bindXWarningProfile(profile: string): void {
-    warningProfiles.set(this.db, profile);
+  bindXWarningProfile(profile: string, platform: WarningPlatform = 'x'): void {
+    (platform === 'x' ? warningProfiles : instagramWarningProfiles).set(
+      this.db,
+      profile,
+    );
   }
   private readonly db: DatabaseSync;
   private readonly transact: <T>(
@@ -237,32 +277,54 @@ export class BrowserOutcomeWriter {
     at: string,
     zone: string,
     reason: string,
+    platform: WarningPlatform = 'x',
   ): Promise<void> {
+    const tables = warningTables(platform);
     if (!X_WARNING_REASONS.some((value) => value === reason))
       throw new CliError('WORKSPACE_INVALID');
     await this.transact(async (tx) => {
-      this.db.exec(X_WARNING_LAYOUT);
+      this.db.exec(tables.layout);
       const run = await tx.browserRuns.get(runId);
-      if (!run || run.platform !== 'x') throw new CliError('WORKSPACE_INVALID');
+      if (!run || run.platform !== platform)
+        throw new CliError('WORKSPACE_INVALID');
       this.db
         .prepare(
-          'INSERT OR IGNORE INTO browser_x_warnings(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)',
+          `INSERT OR IGNORE INTO ${tables.warnings}(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)`,
         )
         .run(runId, run.accountKey, at, zone, warningDay(at, zone), reason);
+      if (platform === 'instagram' && !run.endedAt && !run.instagramWarning)
+        await tx.browserRuns.put(
+          BrowserRunSchema.parse({
+            ...run,
+            instagramWarning: { kind: reason, at, zone },
+          }),
+        );
+      const runtime = await tx.runtime.get();
+      await tx.runtime.set({ revision: runtime.revision + 1 });
     });
-    const warningProfile = warningProfiles.get(this.db);
+    const warningProfile = (
+      platform === 'x' ? warningProfiles : instagramWarningProfiles
+    ).get(this.db);
     if (warningProfile) {
       const { writeXWarningFile } = await import('./x-warning-file.ts');
-      await writeXWarningFile(warningProfile, {
-        runId,
-        kind: reason as 'http-429' | 'limit-notice' | 'warning-notice',
-        day: warningDay(at, zone),
-        zone,
-        createdAt: at,
-      });
+      await writeXWarningFile(
+        warningProfile,
+        {
+          runId,
+          kind: reason as 'http-429' | 'limit-notice' | 'warning-notice',
+          day: warningDay(at, zone),
+          zone,
+          createdAt: at,
+        },
+        platform,
+      );
     }
   }
-  async xWarning(accountKey: string): Promise<{
+  async xWarning(
+    accountKey: string,
+    runId?: string,
+    platform: WarningPlatform = 'x',
+  ): Promise<{
     runId: string;
     at: string;
     zone: string;
@@ -270,21 +332,22 @@ export class BrowserOutcomeWriter {
     kind: string;
     acknowledged: boolean;
   } | null> {
+    const tables = warningTables(platform);
     return this.transact(async () => {
       await Promise.resolve();
       if (
         !this.db
           .prepare(
-            "SELECT name FROM sqlite_schema WHERE name='browser_x_warnings'",
+            `SELECT name FROM sqlite_schema WHERE name='${tables.warnings}'`,
           )
           .get()
       )
         return null;
       const row = this.db
         .prepare(
-          'SELECT w.*, a.at AS acknowledged_at FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE w.account_key=? ORDER BY w.at DESC,w.seq DESC LIMIT 1',
+          `SELECT w.*, a.at AS acknowledged_at FROM ${tables.warnings} w LEFT JOIN ${tables.ack} a ON a.run_id=w.run_id WHERE w.account_key=? AND (? IS NULL OR w.run_id=?) ORDER BY w.at DESC,w.seq DESC LIMIT 1`,
         )
-        .get(accountKey);
+        .get(accountKey, runId ?? null, runId ?? null);
       return row
         ? {
             runId: String(row.run_id),
@@ -305,12 +368,30 @@ export class BrowserOutcomeWriter {
         Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
     for (const run of runs)
-      if (run.warningKind && run.endedAt && run.endReason === 'platform-check')
+      if (
+        run.platform === 'x' &&
+        run.warningKind &&
+        run.endedAt &&
+        run.endReason === 'platform-check'
+      )
         await this.recordXWarning(
           run.runId,
           run.endedAt,
           zone,
           run.warningKind,
+        );
+    for (const run of runs)
+      if (
+        run.platform === 'instagram' &&
+        run.instagramWarning &&
+        (!run.endedAt || run.endReason === 'platform-check')
+      )
+        await this.recordXWarning(
+          run.runId,
+          run.instagramWarning.at,
+          run.instagramWarning.zone,
+          run.instagramWarning.kind,
+          'instagram',
         );
   }
   async warningKind(
@@ -332,8 +413,12 @@ export class BrowserOutcomeWriter {
       return row?.reason as import('@socialprune/core').BrowserRun['warningKind'];
     });
   }
-  async mirrorXWarning(accountKey: string, profile: string): Promise<void> {
-    const warning = await this.xWarning(accountKey);
+  async mirrorXWarning(
+    accountKey: string,
+    profile: string,
+    platform: WarningPlatform = 'x',
+  ): Promise<void> {
+    const warning = await this.xWarning(accountKey, undefined, platform);
     if (!warning || warning.acknowledged) return;
     const { lstat } = await import('node:fs/promises');
     const exists = await lstat(profile).catch((error: unknown) => {
@@ -348,37 +433,43 @@ export class BrowserOutcomeWriter {
     });
     if (!exists) return;
     const { writeXWarningFile } = await import('./x-warning-file.ts');
-    await writeXWarningFile(profile, {
-      runId: warning.runId,
-      kind: warning.kind as 'http-429' | 'limit-notice' | 'warning-notice',
-      day: warning.day,
-      zone: warning.zone,
-      createdAt: warning.at,
-    });
+    await writeXWarningFile(
+      profile,
+      {
+        runId: warning.runId,
+        kind: warning.kind as 'http-429' | 'limit-notice' | 'warning-notice',
+        day: warning.day,
+        zone: warning.zone,
+        createdAt: warning.at,
+      },
+      platform,
+    );
   }
   async adoptXProfileWarning(
     accountKey: string,
     warning: import('./x-warning-file.ts').XWarningFile,
+    platform: WarningPlatform = 'x',
   ): Promise<void> {
+    const tables = warningTables(platform);
     await this.transact(async (tx) => {
       let account = false;
       for await (const imported of tx.imports.iterate())
         if (
-          imported.platform === 'x' &&
+          imported.platform === platform &&
           imported.accounts.some((value) => value.key === accountKey)
         )
           account = true;
       if (!account)
         for await (const { item } of tx.items.iterate())
-          if (item.account.key === accountKey && item.platform === 'x') {
+          if (item.account.key === accountKey && item.platform === platform) {
             account = true;
             break;
           }
       if (!account) throw new CliError('ACCOUNT_REQUIRED');
-      this.db.exec(X_WARNING_LAYOUT);
+      this.db.exec(tables.layout);
       this.db
         .prepare(
-          'INSERT OR IGNORE INTO browser_x_warnings(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)',
+          `INSERT OR IGNORE INTO ${tables.warnings}(run_id,account_key,at,zone,day,reason) VALUES(?,?,?,?,?,?)`,
         )
         .run(
           warning.runId,
@@ -390,11 +481,12 @@ export class BrowserOutcomeWriter {
         );
     });
   }
-  hasUnacknowledgedXWarning(): boolean {
+  hasUnacknowledgedXWarning(platform: WarningPlatform = 'x'): boolean {
+    const tables = warningTables(platform);
     if (
       !this.db
         .prepare(
-          "SELECT name FROM sqlite_schema WHERE name='browser_x_warnings'",
+          `SELECT name FROM sqlite_schema WHERE name='${tables.warnings}'`,
         )
         .get()
     )
@@ -402,7 +494,7 @@ export class BrowserOutcomeWriter {
     return Boolean(
       this.db
         .prepare(
-          'SELECT 1 FROM browser_x_warnings w LEFT JOIN browser_x_warning_ack a ON a.run_id=w.run_id WHERE a.run_id IS NULL AND w.run_id=(SELECT recent.run_id FROM browser_x_warnings recent WHERE recent.account_key=w.account_key ORDER BY recent.at DESC,recent.seq DESC LIMIT 1) LIMIT 1',
+          `SELECT 1 FROM ${tables.warnings} w LEFT JOIN ${tables.ack} a ON a.run_id=w.run_id WHERE a.run_id IS NULL AND w.run_id=(SELECT recent.run_id FROM ${tables.warnings} recent WHERE recent.account_key=w.account_key ORDER BY recent.at DESC,recent.seq DESC LIMIT 1) LIMIT 1`,
         )
         .get(),
     );
@@ -411,8 +503,9 @@ export class BrowserOutcomeWriter {
     accountKey: string,
     at: string,
     zone: string,
+    platform: WarningPlatform = 'x',
   ): Promise<void> {
-    const warning = await this.xWarning(accountKey);
+    const warning = await this.xWarning(accountKey, undefined, platform);
     if (!warning) return;
     // Retain the warned day's original zone as well as the current zone: changing
     // a setting must not shorten the wait already imposed by a warning.
@@ -420,33 +513,41 @@ export class BrowserOutcomeWriter {
       warningDay(at, warning.zone) <= warning.day ||
       warningDay(at, zone) <= warningDay(warning.at, zone)
     )
-      throw new CliError('X_WARNING_DAY');
-    if (!warning.acknowledged) throw new CliError('X_WARNING_CARD_REQUIRED');
+      throw new CliError(warningCode(platform, true));
+    if (!warning.acknowledged) throw new CliError(warningCode(platform));
   }
   async acknowledgeXWarning(
     accountKey: string,
     runId: string,
     at: string,
     zone: string,
+    platform: WarningPlatform = 'x',
   ): Promise<void> {
-    const warning = await this.xWarning(accountKey);
+    const tables = warningTables(platform);
+    const warning = await this.xWarning(accountKey, runId, platform);
     if (!warning || warning.runId !== runId)
-      throw new CliError('X_WARNING_CARD_REQUIRED');
+      throw new CliError(warningCode(platform));
     if (
       warningDay(at, warning.zone) <= warning.day ||
       warningDay(at, zone) <= warningDay(warning.at, zone)
     )
-      throw new CliError('X_WARNING_DAY');
+      throw new CliError(warningCode(platform, true));
     await this.transact(async () => {
       const latest = this.db
         .prepare(
-          'SELECT run_id FROM browser_x_warnings WHERE account_key=? ORDER BY at DESC,seq DESC LIMIT 1',
+          `SELECT w.run_id, a.at AS acknowledged_at FROM ${tables.warnings} w LEFT JOIN ${tables.ack} a ON a.run_id=w.run_id WHERE w.account_key=? ORDER BY w.at DESC,w.seq DESC LIMIT 1`,
         )
         .get(accountKey);
-      if (latest?.run_id !== runId)
-        throw new CliError('X_WARNING_CARD_REQUIRED');
+      // A profile can retain an older warning after this workspace's newer
+      // warning was acknowledged through another profile. Never let an
+      // outstanding newer warning be cleared by acknowledging that older one.
+      if (
+        !latest ||
+        (latest.run_id !== runId && latest.acknowledged_at === null)
+      )
+        throw new CliError(warningCode(platform));
       this.db
-        .prepare('INSERT OR IGNORE INTO browser_x_warning_ack VALUES(?,?)')
+        .prepare(`INSERT OR IGNORE INTO ${tables.ack} VALUES(?,?)`)
         .run(runId, at);
       await Promise.resolve();
     });
@@ -542,7 +643,7 @@ export class BrowserOutcomeWriter {
       const recovered = {
         ...active,
         endedAt: at,
-        endReason: 'error',
+        endReason: active.instagramWarning ? 'platform-check' : 'error',
       };
       this.db
         .prepare('UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?')
@@ -558,25 +659,37 @@ export class BrowserOutcomeWriter {
       );
       run = {
         ...run,
+        ...(prior?.instagramWarning
+          ? { instagramWarning: prior.instagramWarning }
+          : {}),
         ...(prior?.pageOpens !== undefined
           ? {
               pageOpens: prior.pageOpens,
               lastPageOpenedAt: prior.lastPageOpenedAt,
+              ...(prior.pageDays
+                ? { pageDays: prior.pageDays, pageZone: prior.pageZone }
+                : {}),
             }
           : {}),
       };
+      if (!prior) throw new CliError('WORKSPACE_INVALID');
+      validateBrowserRunUpdate(prior, BrowserRunSchema.parse(run));
       const result = this.db
         .prepare(
           'UPDATE browser_runs SET ended_at=?, data=? WHERE run_id=? AND ended_at IS NULL',
         )
-        .run(run.endedAt, JSON.stringify(run), run.runId);
+        .run(
+          run.endedAt,
+          JSON.stringify(BrowserRunSchema.parse(run)),
+          run.runId,
+        );
       if (Number(result.changes) !== 1) throw new CliError('WORKSPACE_INVALID');
       const runtime = await tx.runtime.get();
       await tx.runtime.set({ revision: runtime.revision + 1 });
       await Promise.resolve();
     });
   }
-  async pageOpen(runId: string, at: string): Promise<void> {
+  async pageOpen(runId: string, at: string, zone?: string): Promise<void> {
     await this.transact(async (tx) => {
       const run = await tx.browserRuns.get(runId);
       if (!run || run.endedAt) throw new CliError('WORKSPACE_INVALID');
@@ -584,9 +697,48 @@ export class BrowserOutcomeWriter {
         ...run,
         pageOpens: (run.pageOpens ?? 0) + 1,
         lastPageOpenedAt: at,
+        ...(run.platform === 'instagram' && zone
+          ? {
+              pageZone: zone,
+              pageDays: {
+                ...run.pageDays,
+                [warningDay(at, zone)]:
+                  (run.pageDays?.[warningDay(at, zone)] ?? 0) + 1,
+              },
+            }
+          : {}),
       });
       const runtime = await tx.runtime.get();
       await tx.runtime.set({ revision: runtime.revision + 1 });
+    });
+  }
+  async acceptInstagramDeleteCanary(runId: string, at: string): Promise<void> {
+    await this.transact(async (tx) => {
+      const run = await tx.browserRuns.get(runId);
+      const attempts = [];
+      for await (const a of tx.browserAttempts.iterate())
+        if (a.runId === runId) attempts.push(a);
+      if (
+        run?.platform !== 'instagram' ||
+        run.mode !== 'delete' ||
+        run.endReason !== 'canary' ||
+        !run.endedAt ||
+        run.canaryAcceptedAt ||
+        attempts.filter(
+          (a) => a.action === 'delete-comment' && a.state === 'sending',
+        ).length !== 1 ||
+        attempts.filter(
+          (a) =>
+            a.action === 'delete-comment' &&
+            a.state === 'deleted' &&
+            a.receipt?.status === 200,
+        ).length !== 1 ||
+        attempts.some((a) => ['ambiguous', 'failed'].includes(a.state))
+      )
+        throw new CliError('CANARY_CHECK_FAILED');
+      await tx.browserRuns.put(
+        BrowserRunSchema.parse({ ...run, canaryAcceptedAt: at }),
+      );
     });
   }
   private append(input: Omit<BrowserAttempt, 'seq'>): BrowserAttempt {
@@ -624,7 +776,13 @@ export class BrowserOutcomeWriter {
     return Boolean(
       item &&
       imported?.status === 'complete' &&
-      item.item.platform === 'x' &&
+      item.item.platform ===
+        (row.action === 'delete-comment' ? 'instagram' : 'x') &&
+      (row.action !== 'delete-comment' ||
+        (row.context?.confirmedBy === 'post' &&
+          row.context.ownerCheck === 'matched-export' &&
+          JSON.stringify(await tx.instagramContext.get(row.item.id)) ===
+            JSON.stringify(row.context))) &&
       item.item.account.key === row.item.account.key &&
       item.item.kind === row.item.kind &&
       item.item.createdAt === row.item.createdAt &&
@@ -643,6 +801,30 @@ export class BrowserOutcomeWriter {
     sending: boolean,
   ): Promise<BrowserAttempt | null> {
     return this.transact(async (tx) => {
+      const run = await tx.browserRuns.get(runId);
+      if (
+        !run ||
+        run.endedAt ||
+        run.mode !== 'delete' ||
+        run.accountKey !== row.item.account.key ||
+        run.platform !== row.item.platform
+      )
+        throw new CliError('RUN_STOPPED');
+      if (row.action === 'delete-comment' && sending) {
+        const zone =
+          (await tx.meta.get()).settings.timeZone ??
+          Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const attempts = [];
+        for await (const a of tx.browserAttempts.iterate())
+          if (a.action === 'delete-comment') {
+            const owner = await tx.browserRuns.get(a.runId);
+            if (owner?.accountKey === run.accountKey && owner.mode === 'delete')
+              attempts.push(a);
+          }
+        const budget = instagramDeletionState(attempts, new Date(at), zone);
+        if (budget.used >= INSTAGRAM_DELETE_PACE.perDay || budget.wait > 0)
+          throw new CliError('RUN_STOPPED');
+      }
       const input = {
         attemptId: crypto.randomUUID(),
         runId,
@@ -672,6 +854,12 @@ export class BrowserOutcomeWriter {
       return this.append({ ...input, state: 'sending' });
     });
   }
+  async requireInstagramDecision(row: PlannedEntry): Promise<void> {
+    await this.transact(async (tx) => {
+      if (row.action !== 'delete-comment' || !(await this.eligible(tx, row)))
+        throw new CliError('RUN_STOPPED');
+    });
+  }
   async record(input: Omit<BrowserAttempt, 'seq'>): Promise<BrowserAttempt> {
     if (
       input.settles ||
@@ -694,6 +882,64 @@ export class BrowserOutcomeWriter {
     outcome?: 'deleted-via-browser' | 'unknown',
   ): Promise<BrowserAttempt> {
     return this.transact(async (tx) => {
+      if (input.itemId?.startsWith('instagram:')) {
+        const run = await tx.browserRuns.get(input.runId);
+        const item = (await tx.items.get(input.itemId))?.item;
+        if (
+          !run ||
+          run.platform !== 'instagram' ||
+          !item ||
+          item.account.key !== run.accountKey ||
+          !['delete', 'verify'].includes(run.mode) ||
+          !['delete-comment', 'verify'].includes(input.action)
+        )
+          throw new CliError('WORKSPACE_INVALID');
+        if (input.state === 'deleted') {
+          const record = await tx.instagramContext.get(input.itemId);
+          if (
+            run.mode !== 'delete' ||
+            run.endedAt !== null ||
+            input.action !== 'delete-comment' ||
+            record?.confirmedBy !== 'post' ||
+            record.ownerCheck !== 'matched-export' ||
+            !input.settles ||
+            input.receipt?.method !== 'POST' ||
+            input.receipt.status !== 200 ||
+            input.receipt.shape?.join(',') !== 'status' ||
+            !new RegExp(
+              `^(?:/api/v1)?/web/comments/\\d{1,40}/delete/${record.comment.id}/$`,
+            ).test(input.receipt.path)
+          )
+            throw new CliError('WORKSPACE_INVALID');
+        }
+        if (
+          input.state === 'reappeared' &&
+          (run.mode !== 'verify' ||
+            run.endedAt !== null ||
+            input.action !== 'verify')
+        )
+          throw new CliError('WORKSPACE_INVALID');
+        if (input.state === 'not-deleted') {
+          const resolvedIn = readJournal(this.db).runs.find(
+            (r) =>
+              r.platform === 'instagram' &&
+              r.accountKey === run.accountKey &&
+              r.mode === 'verify' &&
+              !r.endedAt,
+          );
+          if (
+            !resolvedIn ||
+            !readJournal(this.db).attempts.some(
+              (a) =>
+                a.runId === resolvedIn.runId &&
+                a.itemId === input.itemId &&
+                a.action === 'verify' &&
+                a.state === 'not-deleted',
+            )
+          )
+            throw new CliError('WORKSPACE_INVALID');
+        }
+      }
       if (
         (outcome === 'deleted-via-browser' && input.state !== 'deleted') ||
         (outcome === 'unknown' && input.state !== 'reappeared')
@@ -739,7 +985,12 @@ export class BrowserOutcomeWriter {
             value: outcome,
             previous: state.outcome,
             recordedAt: input.at,
-            source: { kind: 'human', via: 'browser-x' },
+            source: {
+              kind: 'human',
+              via: input.itemId.startsWith('instagram:')
+                ? 'browser-instagram'
+                : 'browser-x',
+            },
             action: {
               id: input.attemptId,
               kind: 'single',

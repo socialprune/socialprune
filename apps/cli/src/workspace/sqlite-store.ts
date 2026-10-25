@@ -14,6 +14,7 @@ import {
   WorkspaceMetaSchema,
   WorkspaceV2Schema,
   BrowserRunSchema,
+  validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
   migrateInstagramContext,
@@ -52,6 +53,7 @@ import {
   readJournal,
   BROWSER_JOURNAL_LAYOUT,
   X_WARNING_LAYOUT,
+  INSTAGRAM_WARNING_LAYOUT,
 } from './browser-journal.ts';
 import { journalExists } from './browser-journal.ts';
 import {
@@ -60,7 +62,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 9;
+export const SQLITE_LAYOUT_VERSION = 10;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
@@ -160,6 +162,7 @@ ALTER TABLE browser_attempts ADD COLUMN originalId TEXT;
 ${contextLayout}
 ${plansLayout}
 ${X_WARNING_LAYOUT}
+${INSTAGRAM_WARNING_LAYOUT}
 PRAGMA user_version=${SQLITE_LAYOUT_VERSION};
 `;
 
@@ -394,6 +397,11 @@ export class SQLiteStore implements WorkspaceStore {
               );
             }
             if (Number(version) < 9) db.exec(X_WARNING_LAYOUT);
+            if (Number(version) < 10) {
+              db.exec(INSTAGRAM_WARNING_LAYOUT);
+              db.exec('DROP TRIGGER IF EXISTS browser_runs_finish_once;');
+              db.exec(BROWSER_JOURNAL_LAYOUT);
+            }
             db.prepare('UPDATE meta SET data=?').run(
               JSON.stringify({
                 ...meta,
@@ -609,13 +617,23 @@ export class SQLiteStore implements WorkspaceStore {
               'SELECT data FROM outcome_events WHERE item_id=? ORDER BY seq DESC LIMIT 1',
               event.itemId,
             );
+            const expectedVia = event.itemId.startsWith('instagram:')
+              ? 'browser-instagram'
+              : 'browser-x';
+            if (
+              (event.source.via === 'browser-instagram' &&
+                !event.itemId.startsWith('instagram:')) ||
+              (event.source.via === 'browser-x' &&
+                !event.itemId.startsWith('x:'))
+            )
+              throw new CliError('OUTCOME_FINAL');
             if (state && prior?.value === 'deleted-via-browser') {
               const attempt = readJournal(db).attempts.find(
                 (attempt) => attempt.attemptId === event.action.id,
               );
               if (
                 event.value !== 'unknown' ||
-                event.source.via !== 'browser-x' ||
+                event.source.via !== expectedVia ||
                 attempt?.state !== 'reappeared' ||
                 attempt.itemId !== event.itemId
               )
@@ -624,7 +642,7 @@ export class SQLiteStore implements WorkspaceStore {
             if (
               state &&
               event.value === 'deleted-via-browser' &&
-              (event.source.via !== 'browser-x' ||
+              (event.source.via !== expectedVia ||
                 readJournal(db).attempts.find(
                   (attempt) => attempt.attemptId === event.action.id,
                 )?.state !== 'deleted')
@@ -881,6 +899,12 @@ export class SQLiteStore implements WorkspaceStore {
         async put(input) {
           guard(true);
           const value = BrowserRunSchema.parse(input);
+          const prior = get<BrowserRun>(
+            'SELECT data FROM browser_runs WHERE run_id=?',
+            value.runId,
+          );
+          if (!prior) throw new CliError('WORKSPACE_INVALID');
+          validateBrowserRunUpdate(prior, value);
           run(
             'UPDATE browser_runs SET ended_at=?,data=? WHERE run_id=?',
             value.endedAt,

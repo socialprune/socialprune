@@ -1029,6 +1029,7 @@ async function deleteOne(
   now: () => Date,
 ) {
   let answer: Awaited<ReturnType<BrowserDriver['delete']>>;
+  if (row.action === 'delete-comment') throw new CliError('WORKSPACE_INVALID');
   try {
     answer = await browser.delete(row.item.id.slice(2), row.action);
   } catch (error) {

@@ -540,6 +540,12 @@ export async function restoreWorkspace(input: RestoreCall) {
           await current.checkExclusive();
           if (current.browserOutcomeWriter().hasUnacknowledgedXWarning())
             throw new CliError('X_WARNING_RESTORE_BLOCKED');
+          if (
+            current
+              .browserOutcomeWriter()
+              .hasUnacknowledgedXWarning('instagram')
+          )
+            throw new CliError('IG_WARNING_RESTORE_BLOCKED');
         } finally {
           await current.close();
         }

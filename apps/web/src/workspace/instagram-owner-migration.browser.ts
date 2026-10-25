@@ -23,7 +23,7 @@ const done = (tx: IDBTransaction) =>
 export async function proveOwnerUpgrade(
   legacy: WorkspaceV2,
   fail: boolean,
-  legacyVersion: 7 | 8 = 7,
+  legacyVersion: 7 | 8 | 9 = 7,
 ) {
   const id = `owner-v${legacyVersion}-${crypto.randomUUID()}`;
   const opening = indexedDB.open(`sp-ws-${id}`, legacyVersion);
@@ -109,7 +109,7 @@ export async function proveOwnerUpgrade(
     IDBObjectStore.prototype,
     'put',
   );
-  if (fail && legacyVersion === 8) {
+  if (fail && legacyVersion >= 8) {
     if (!descriptor) throw new Error('Test metadata write descriptor missing');
     const original = descriptor.value as IDBObjectStore['put'];
     Object.defineProperty(IDBObjectStore.prototype, 'put', {
@@ -132,7 +132,7 @@ export async function proveOwnerUpgrade(
     } catch {
       rejected = true;
     }
-    if (descriptor && fail && legacyVersion === 8)
+    if (descriptor && fail && legacyVersion >= 8)
       Object.defineProperty(IDBObjectStore.prototype, 'put', descriptor);
     if (fail) {
       await upgraded?.close();

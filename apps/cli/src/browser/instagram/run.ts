@@ -8,6 +8,7 @@ import type {
 import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
 import { SQLiteStore } from '../../workspace/sqlite-store.ts';
 import { CliError } from '../../cli/errors.ts';
+import { instagramWarningKind } from './warning.ts';
 import { startConfirmation } from '../confirmation.ts';
 import {
   validateProfile,
@@ -278,6 +279,8 @@ export async function runContextWithDependencies(
     accountBefore: string | null = null,
     accountAfter: string | null = null;
   let pendingAttempt: string | undefined;
+  let deletionWarning: BrowserRun['instagramWarning'];
+  const deletionWarningWrites = new Set<Promise<void>>();
   let stage: ContextCauseStage = 'run';
   const recordCause = (caught: unknown, at: ContextCauseStage) => {
     if (!(caught instanceof CliError) && !report.cause)
@@ -333,6 +336,32 @@ export async function runContextWithDependencies(
       );
   };
   const platformStop = (caught: ContextStop) => {
+    const kind = instagramWarningKind(caught);
+    if (kind && !deletionWarning)
+      deletionWarning = {
+        kind,
+        at: options.now().toISOString(),
+        zone: options.plan.timeZone,
+      };
+    if (kind && began && deletionWarning) {
+      const writing = options.store
+        .browserOutcomeWriter()
+        .recordXWarning(
+          runId,
+          deletionWarning.at,
+          deletionWarning.zone,
+          deletionWarning.kind,
+          'instagram',
+        );
+      deletionWarningWrites.add(writing);
+      void writing.then(
+        () => deletionWarningWrites.delete(writing),
+        (caught: unknown) => {
+          deletionWarningWrites.delete(writing);
+          error ??= caught;
+        },
+      );
+    }
     networkFailure ??= caught;
     waits.abort();
     interrupt();
@@ -428,6 +457,9 @@ export async function runContextWithDependencies(
           if (alive) throw new CliError('WORKSPACE_BUSY');
         }
     });
+    await options.store
+      .browserOutcomeWriter()
+      .recover(options.plan.accountKey, options.now().toISOString());
     await writer.startRun({
       runId,
       accountKey: options.plan.accountKey,
@@ -436,6 +468,9 @@ export async function runContextWithDependencies(
       canary: options.plan.canary,
       ownerPid: process.pid,
     });
+    options.store
+      .browserOutcomeWriter()
+      .bindXWarningProfile(options.profile, 'instagram');
     began = true;
     if (options.order)
       await options.store
@@ -730,7 +765,11 @@ export async function runContextWithDependencies(
         }
         await controls?.checkpoint(resumeChecks, waits.signal);
         stage = 'attempt';
-        await writer.step(runId, options.now().toISOString());
+        await writer.step(
+          runId,
+          options.now().toISOString(),
+          options.plan.timeZone,
+        );
         if (candidate === 0 && !reopening) commentsTried++;
         steps++;
         used++;
@@ -1436,12 +1475,33 @@ export async function runContextWithDependencies(
         });
       if (!ended)
         ended = await finalize('end-run', async () => {
+          await Promise.all([...deletionWarningWrites]);
+          const kind = network?.warning ?? instagramWarningKind(error);
+          if (!deletionWarning && kind)
+            deletionWarning = {
+              kind,
+              at: options.now().toISOString(),
+              zone: options.plan.timeZone,
+            };
+          if (deletionWarning) {
+            endReason = 'platform-check';
+            await options.store
+              .browserOutcomeWriter()
+              .recordXWarning(
+                runId,
+                deletionWarning.at,
+                deletionWarning.zone,
+                deletionWarning.kind,
+                'instagram',
+              );
+          }
           await writer.endRun({
             runId,
             endedAt: options.now().toISOString(),
             endReason,
             bodyShapes,
             profileReport,
+            ...(deletionWarning ? { instagramWarning: deletionWarning } : {}),
           });
         });
       if (

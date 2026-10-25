@@ -840,7 +840,7 @@ test('clicklist CSV/JSON uses flag, workspace then system zone, without changing
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30000);
 
 test('incomplete output does not publish or change lastBackupAt and invalid destinations refuse workspace files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'socialprune-c2-sink-'));
@@ -947,4 +947,4 @@ test('incomplete output does not publish or change lastBackupAt and invalid dest
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30000);

@@ -16,7 +16,7 @@ export * from './original.ts';
 import { InstagramContextSchema } from './instagram-context.ts';
 export * from './instagram-context.ts';
 
-export const WORKSPACE_SCHEMA_VERSION = 9;
+export const WORKSPACE_SCHEMA_VERSION = 10;
 
 export {
   PlatformIdSchema,
@@ -105,7 +105,13 @@ export const OutcomeEventSchema = z.strictObject({
   previous: OutcomeValueSchema,
   recordedAt: v1.UtcTimestampSchema,
   source: HumanSourceSchema.extend({
-    via: z.enum(['web-review', 'local-review', 'v1-unrecorded', 'browser-x']),
+    via: z.enum([
+      'web-review',
+      'local-review',
+      'v1-unrecorded',
+      'browser-x',
+      'browser-instagram',
+    ]),
   }),
   action: ActionSchema,
 });

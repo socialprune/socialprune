@@ -64,7 +64,7 @@ test('C29 SQLite v7 readonly projects both kinds without writes; upgrade copies 
       expect(value.instagramContext).toEqual(expected.instagramContext);
       expect(
         (await readBackup(createBackup(readonly).chunks)).schemaVersion,
-      ).toBe(9);
+      ).toBe(10);
     } finally {
       await readonly.close();
     }
@@ -101,7 +101,7 @@ test('C29 SQLite v7 readonly projects both kinds without writes; upgrade copies 
     expect(copied).toBe(true);
     const raw = new DatabaseSync(file);
     try {
-      expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(9);
+      expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(10);
       for (const sql of [
         "UPDATE instagram_context SET data='{}'",
         'DELETE FROM instagram_context',

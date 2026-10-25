@@ -7,7 +7,7 @@ compatibility: Requires Node.js 24.15 or newer and the socialprune CLI on a loca
 
 # SocialPrune
 
-SocialPrune reads an export and records suggestions. The person decides what to keep or remove in the review page. They can delete manually or start SocialPrune's X deletion in their own visible browser. You never decide for them, start deletion or acknowledge a warning card for them.
+SocialPrune reads an export and records suggestions. The person decides what to keep or remove in the review page. They can delete manually or start SocialPrune's X or Instagram deletion in their own visible browser. You never decide for them, start deletion or acknowledge a warning card for them.
 
 The npm package is not published yet. Use Node.js 24.15 or newer and read [the command contract](references/commands.md). Choose the mode that matches the files the person supplied:
 
@@ -26,6 +26,8 @@ The npm package is not published yet. Use Node.js 24.15 or newer and read [the c
 Until a release exists, never run `npx socialprune`, `npm exec socialprune`, `npm install socialprune` or any global install; these can fetch an unrelated package of the same name from the registry.
 
 ## Workflow
+
+`delete instagram --dry-run --json` plans only human-marked comments with post-confirmed comment ID, time and exported-owner evidence. List-only and missing-export-owner confirmations stay manual. Agents never run its deletion mode, press Start or Continue, or enter its run-named warning acknowledgement. The first real one-comment canary needs the person's separate exact-scope written order; an order for `context-instagram` never authorizes deletion. The CLI implementation is tested with generated data only until that separately ordered canary proves the supported page and receipt shapes.
 
 `originals fetch --dry-run` sends nothing. Before running the anonymous `originals fetch` without `--dry-run`, ask whether X may see the person's IP address and the referenced, parent and quoted post IDs. Run it only after their yes in the current conversation. Running the command is that order; no `--allow-network` flag exists. Never infer it from permission to import, label or review.
 

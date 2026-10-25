@@ -25,13 +25,20 @@ export const suites = Object.freeze({
   // 25% headroom, rounded up: 70 min outer budget, no test deadline changes.
   context: { script: 'test:context', minutes: 70, runner: 'vitest' },
   fill: { script: 'test:fill', minutes: 25, runner: 'playwright' },
+  // Generated matrix measured 142 s on Windows, 2026-10-25. Allow 3x
+  // (426 s), rounded to 8 min; workflow adds 2 min termination/upload margin.
+  'delete-instagram': {
+    script: 'test:delete:instagram',
+    minutes: 8,
+    runner: 'vitest',
+  },
 });
 export function selection(value = 'all') {
   if (value === 'all') return Object.keys(suites);
   const names = value.split(',').map((name) => name.trim());
   assert(
     names.length > 0 && names.every((name) => Object.hasOwn(suites, name)),
-    'Choose all or a comma-separated subset of delete,engine,context,fill.',
+    'Choose all or a comma-separated subset of delete,engine,context,fill,delete-instagram.',
   );
   assert.equal(new Set(names).size, names.length, 'Duplicate suite.');
   return Object.keys(suites).filter((name) => names.includes(name));

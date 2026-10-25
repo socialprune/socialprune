@@ -84,6 +84,24 @@ export function rateSignal(body: unknown): boolean {
   }
   return walk(body, 0);
 }
+export function restrictionSignal(body: unknown): boolean {
+  let visits = 0;
+  function walk(input: unknown, depth: number): boolean {
+    if (++visits > 100000 || depth > 40) return false;
+    if (Array.isArray(input))
+      return input.some((value) => walk(value, depth + 1));
+    if (!input || typeof input !== 'object') return false;
+    return Object.entries(input).some(
+      ([key, value]) =>
+        ((key === 'status' || key === 'message') &&
+          ['feedback_required', 'please_wait', 'spam'].some(
+            (signal) => value === signal,
+          )) ||
+        (value !== null && typeof value === 'object' && walk(value, depth + 1)),
+    );
+  }
+  return walk(body, 0);
+}
 export class LimitSignals {
   private readonly responses = new Map<
     string,

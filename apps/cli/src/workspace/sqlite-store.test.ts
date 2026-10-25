@@ -29,7 +29,7 @@ test('literal layout 5 and schema 5 remain readable through SQLiteStore.open aft
       const opened = await SQLiteStore.open(file, { readOnly });
       try {
         expect((await opened.read(readWorkspace)).schemaVersion).toBe(
-          readOnly ? 6 : 9,
+          readOnly ? 6 : 10,
         );
       } finally {
         await opened.close();
@@ -122,7 +122,7 @@ test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real'
     expect(statement.get('bound-input')).toEqual({ value: 'bound-input' });
     expect(statement.all(7)).toEqual([{ value: 7 }]);
     expect(() => db.enableLoadExtension(true)).toThrow();
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(9);
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(10);
     expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe(
       'delete',
     );

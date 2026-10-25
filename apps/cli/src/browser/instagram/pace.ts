@@ -59,7 +59,15 @@ export async function instagramDailyCount(
       last = 0;
     for await (const run of tx.browserRuns.iterate())
       if (run.platform === 'instagram' && run.accountKey === account) {
-        if (dateInZone(run.startedAt, zone) === day) used += run.pageOpens ?? 0;
+        if (run.pageDays && run.pageZone === zone)
+          used += run.pageDays[day] ?? 0;
+        else if (
+          dateInZone(run.startedAt, zone) <= day &&
+          dateInZone(run.lastPageOpenedAt ?? run.startedAt, zone) >= day
+        )
+          // Old/other-zone aggregates cannot be split honestly. Count their
+          // whole total only on days intersecting their observed open interval.
+          used += run.pageOpens ?? 0;
         if (run.lastPageOpenedAt)
           last = Math.max(last, Date.parse(run.lastPageOpenedAt));
       }

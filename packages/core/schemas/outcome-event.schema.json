@@ -28,7 +28,13 @@
         "kind": { "type": "string", "const": "human" },
         "via": {
           "type": "string",
-          "enum": ["web-review", "local-review", "v1-unrecorded", "browser-x"]
+          "enum": [
+            "web-review",
+            "local-review",
+            "v1-unrecorded",
+            "browser-x",
+            "browser-instagram"
+          ]
         }
       },
       "required": ["kind", "via"],

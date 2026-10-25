@@ -337,6 +337,200 @@ test('D7 B profile gate survives an older or fresh workspace and acknowledgement
   }
 });
 
+test('D8 an acknowledged newer warning in another workspace cannot strand an older profile gate', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sp-d8-profile-ack-'));
+  const { createProfile } = await import('../browser/profile.ts');
+  const { readXWarningFile, requireXWarningFileClear } =
+    await import('./x-warning-file.ts');
+  const profiles = [join(directory, 'profile-a'), join(directory, 'profile-b')];
+  const stores: SQLiteStore[] = [];
+  try {
+    for (const [index, profile] of profiles.entries()) {
+      await createProfile(profile);
+      const store = await SQLiteStore.open(join(directory, `${index}.sqlite`), {
+        initial: fixtureWorkspace(['1001']),
+      });
+      stores.push(store);
+      const writer = store.browserOutcomeWriter();
+      writer.bindXWarningProfile(profile);
+      const run = {
+        runId: `warning-${index}`,
+        platform: 'x' as const,
+        accountKey: FIXTURE.account.key,
+        mode: 'delete' as const,
+        planHash: 'a'.repeat(64),
+        startedAt: `2026-10-${11 + index}T12:00:00.000Z`,
+        endedAt: null,
+        endReason: null,
+        bodyShapes: {},
+        profileReport: null,
+      };
+      await writer.begin(run);
+      await writer.recordXWarning(run.runId, run.startedAt, 'UTC', 'http-429');
+      await writer.finish({
+        ...run,
+        endedAt: run.startedAt,
+        endReason: 'platform-check',
+        warningKind: 'http-429',
+      });
+    }
+    const other = stores[1]!;
+    const before = await readXWarningFile(profiles[0]!);
+    const noPrompt = vi.fn(() =>
+      Promise.resolve('I read the card for warning-0'),
+    );
+    await expect(
+      acknowledgeWarningCard(
+        other,
+        FIXTURE.account.key,
+        'warning-0',
+        '2026-10-13T12:00:00.000Z',
+        'UTC',
+        'en',
+        noPrompt,
+        profiles[0],
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    expect(noPrompt).not.toHaveBeenCalled();
+    // Mirroring the newer unacknowledged warning can only strengthen P's gate.
+    expect(await readXWarningFile(profiles[0]!)).toMatchObject({
+      runId: 'warning-1',
+    });
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(
+      join(profiles[0]!, 'socialprune-x-warning.json'),
+      JSON.stringify(before),
+    );
+    await acknowledgeWarningCard(
+      other,
+      FIXTURE.account.key,
+      'warning-1',
+      '2026-10-13T12:00:00.000Z',
+      'UTC',
+      'en',
+      () => Promise.resolve('I read the card for warning-1'),
+      profiles[1],
+    );
+    expect(await readXWarningFile(profiles[1]!)).toBeNull();
+    await expect(
+      requireXWarningFileClear(profiles[0]!, '2026-10-13T12:00:00.000Z', 'UTC'),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    const wrong = vi.fn(() => Promise.resolve('I read the card for warning-1'));
+    await expect(
+      acknowledgeWarningCard(
+        other,
+        FIXTURE.account.key,
+        'warning-0',
+        '2026-10-13T12:00:00.000Z',
+        'UTC',
+        'en',
+        wrong,
+        profiles[0],
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    expect(await readXWarningFile(profiles[0]!)).toMatchObject({
+      runId: 'warning-0',
+    });
+    const race = vi.fn(async () => {
+      const writer = other.browserOutcomeWriter();
+      writer.bindXWarningProfile(profiles[0]!);
+      const run = {
+        runId: 'warning-during-prompt',
+        platform: 'x' as const,
+        accountKey: FIXTURE.account.key,
+        mode: 'delete' as const,
+        planHash: 'a'.repeat(64),
+        startedAt: '2026-10-13T12:00:00.000Z',
+        endedAt: null,
+        endReason: null,
+        bodyShapes: {},
+        profileReport: null,
+      };
+      await writer.begin(run);
+      await writer.recordXWarning(run.runId, run.startedAt, 'UTC', 'http-429');
+      await writer.finish({
+        ...run,
+        endedAt: run.startedAt,
+        endReason: 'platform-check',
+        warningKind: 'http-429',
+      });
+      return 'I read the card for warning-0';
+    });
+    await expect(
+      acknowledgeWarningCard(
+        other,
+        FIXTURE.account.key,
+        'warning-0',
+        '2026-10-13T12:00:00.000Z',
+        'UTC',
+        'en',
+        race,
+        profiles[0],
+      ),
+    ).rejects.toMatchObject({ code: 'X_WARNING_CARD_REQUIRED' });
+    expect(race).toHaveBeenCalledOnce();
+    expect(await readXWarningFile(profiles[0]!)).toMatchObject({
+      runId: 'warning-during-prompt',
+    });
+    await expect(
+      requireXWarningFileClear(profiles[0]!, '2026-10-13T12:00:00.000Z', 'UTC'),
+    ).rejects.toMatchObject({ code: 'X_WARNING_DAY' });
+    await acknowledgeWarningCard(
+      other,
+      FIXTURE.account.key,
+      'warning-during-prompt',
+      '2026-10-14T12:00:00.000Z',
+      'UTC',
+      'en',
+      () => Promise.resolve('I read the card for warning-during-prompt'),
+      profiles[0],
+    );
+    // Restore the independent W1 marker to exercise its ordinary acknowledgement
+    // after the newer warning has also been acknowledged, never by clearing it.
+    await writeFile(
+      join(profiles[0]!, 'socialprune-x-warning.json'),
+      JSON.stringify(before),
+    );
+    await acknowledgeWarningCard(
+      other,
+      FIXTURE.account.key,
+      'warning-0',
+      '2026-10-14T12:00:00.000Z',
+      'UTC',
+      'en',
+      () => Promise.resolve('I read the card for warning-0'),
+      profiles[0],
+    );
+    expect(await readXWarningFile(profiles[0]!)).toBeNull();
+    expect(
+      await other.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+    ).toMatchObject({ runId: 'warning-during-prompt', acknowledged: true });
+    await expect(
+      other
+        .browserOutcomeWriter()
+        .requireXWarningClear(
+          FIXTURE.account.key,
+          '2026-10-14T12:00:00.000Z',
+          'UTC',
+        ),
+    ).resolves.toBeUndefined();
+    // The other workspace's marker cannot clear A's independent database gate.
+    expect(
+      await stores[0]!.browserOutcomeWriter().xWarning(FIXTURE.account.key),
+    ).toMatchObject({ runId: 'warning-0', acknowledged: false });
+    await stores[1]!.close();
+    stores[1] = await SQLiteStore.open(join(directory, '1.sqlite'));
+    expect(
+      await stores[1]
+        .browserOutcomeWriter()
+        .xWarning(FIXTURE.account.key, 'warning-0'),
+    ).toMatchObject({ runId: 'warning-0', acknowledged: true });
+  } finally {
+    for (const store of stores) await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test.each(['delete', 'verify'] as const)(
   'D2 %s starts after a positively dead fill run and preserves the read identity',
   async (mode) => {

@@ -62,10 +62,10 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
     }, legacy);
     assert.deepEqual(result.first, {
       ...migrateReviewContract(legacy),
-      schemaVersion: 9,
+      schemaVersion: 10,
     });
     assert.deepEqual(result.second, result.first);
-    assert.deepEqual(result.physical, { version: 9, plans: true });
+    assert.deepEqual(result.physical, { version: 10, plans: true });
     assert.equal(result.contextDuplicateRejected, true);
     console.log(
       'PASS IndexedDB v6 to v9: post/list context, add-only context, reviewPlans, idempotent reopen',
@@ -165,7 +165,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
           Reflect.deleteProperty(value, 'confirmedBy');
       }
       const copy = await roundTrip(JSON.stringify(document));
-      assert.equal(copy.workspace.schemaVersion, 9);
+      assert.equal(copy.workspace.schemaVersion, 10);
       assert.equal(copy.workspace.items.length, document.items.length);
       const sqlite = await SQLiteStore.open(
         join(directory, `v${version}.sqlite`),

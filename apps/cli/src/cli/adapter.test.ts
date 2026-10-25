@@ -95,6 +95,7 @@ test('machine help uses the command registry and includes no decision capability
     ['browser', 'setup'],
     ['browser', 'forget'],
     ['delete', 'x'],
+    ['delete', 'instagram'],
     ['originals', 'fetch'],
     ['guide'],
     ['structure'],

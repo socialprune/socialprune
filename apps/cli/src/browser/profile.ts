@@ -10,6 +10,7 @@ import {
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { CliError } from '../cli/errors.ts';
+import { canonicalProfileDirectory } from '../workspace/profile-path.ts';
 export const PROFILE_MARKER = 'socialprune-profile.json';
 export async function profileInUse(directory: string): Promise<boolean> {
   const stat = async (name: string) =>
@@ -48,13 +49,8 @@ export async function validateProfile(
   directory: string,
   platform: ProfilePlatform = 'x',
 ): Promise<void> {
-  const stat = await lstat(directory).catch(() => null);
-  if (
-    !stat?.isDirectory() ||
-    stat.isSymbolicLink() ||
-    resolve(directory) !== (await realpath(directory))
-  )
-    throw new CliError('PROFILE_INVALID');
+  directory = await canonicalProfileDirectory(directory);
+  if (inDefaultProfile(directory)) throw new CliError('PROFILE_INVALID');
   const markerStat = await lstat(join(directory, PROFILE_MARKER)).catch(
     () => null,
   );

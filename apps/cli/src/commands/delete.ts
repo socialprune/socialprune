@@ -50,42 +50,47 @@ export async function acknowledgeWarningCard(
   lang: 'en' | 'de',
   read: (prompt: string) => Promise<string>,
   profile?: string,
+  platform: 'x' | 'instagram' = 'x',
 ): Promise<void> {
-  if (profile)
-    await store.browserOutcomeWriter().mirrorXWarning(account, profile);
-  let warning = await store.browserOutcomeWriter().xWarning(account);
-  const mirrored = profile ? await readXWarningFile(profile) : null;
+  const gate = store.browserOutcomeWriter();
+  const code =
+    platform === 'x' ? 'X_WARNING_CARD_REQUIRED' : 'IG_WARNING_CARD_REQUIRED';
+  if (profile) await gate.mirrorXWarning(account, profile, platform);
+  let warning = await gate.xWarning(account, undefined, platform);
+  const mirrored = profile ? await readXWarningFile(profile, platform) : null;
   if (
     mirrored &&
     (!warning ||
       (warning.at <= mirrored.createdAt && warning.runId !== mirrored.runId))
   ) {
-    await store.browserOutcomeWriter().adoptXProfileWarning(account, mirrored);
-    warning = await store.browserOutcomeWriter().xWarning(account);
+    await gate.adoptXProfileWarning(account, mirrored, platform);
+    warning = await gate.xWarning(account, undefined, platform);
+  }
+  if (
+    mirrored?.runId === runId &&
+    warning?.acknowledged &&
+    warning.runId !== runId
+  ) {
+    await gate.adoptXProfileWarning(account, mirrored, platform);
+    warning = await gate.xWarning(account, runId, platform);
   }
   if (
     (!warning && !mirrored) ||
     (warning && warning.runId !== runId) ||
     (mirrored && mirrored.runId !== runId)
   )
-    throw new CliError('X_WARNING_CARD_REQUIRED');
+    throw new CliError(code);
   // Check the day before asking for input, without recording acknowledgement.
   try {
-    await store.browserOutcomeWriter().requireXWarningClear(account, at, zone);
+    await gate.requireXWarningClear(account, at, zone, platform);
   } catch (error) {
-    if (!(
-      error instanceof CliError && error.code === 'X_WARNING_CARD_REQUIRED'
-    ))
-      throw error;
+    if (!(error instanceof CliError && error.code === code)) throw error;
   }
   if (profile) {
     try {
-      await requireXWarningFileClear(profile, at, zone);
+      await requireXWarningFileClear(profile, at, zone, platform);
     } catch (error) {
-      if (!(
-        error instanceof CliError && error.code === 'X_WARNING_CARD_REQUIRED'
-      ))
-        throw error;
+      if (!(error instanceof CliError && error.code === code)) throw error;
     }
   }
   const phrase =
@@ -99,11 +104,11 @@ export async function acknowledgeWarningCard(
       )
     ).trim() !== phrase
   )
-    throw new CliError('X_WARNING_CARD_REQUIRED');
+    throw new CliError(code);
   await store
     .browserOutcomeWriter()
-    .acknowledgeXWarning(account, runId, at, zone);
-  if (profile) await clearXWarningFile(profile, runId);
+    .acknowledgeXWarning(account, runId, at, zone, platform);
+  if (profile) await clearXWarningFile(profile, runId, platform);
 }
 export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
   const flagHandle = parseHandle(flags.handle);

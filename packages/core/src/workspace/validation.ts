@@ -14,6 +14,7 @@ import {
 import { deriveState } from './state.ts';
 import {
   validateBrowserJournal,
+  validateInstagramDeletionEvidence,
   validateBrowserOutcomes,
 } from '../model/browser.ts';
 
@@ -114,6 +115,22 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
   if (
+    workspace.schemaVersion < 10 &&
+    (workspace.browserRuns?.some(
+      (run) =>
+        run.instagramWarning ||
+        run.pageDays ||
+        (run.platform === 'instagram' && run.mode !== 'context'),
+    ) ||
+      workspace.browserAttempts?.some(
+        (attempt) => attempt.action === 'delete-comment',
+      ) ||
+      workspace.outcomeEvents.some(
+        (event) => event.source.via === 'browser-instagram',
+      ))
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
+  if (
     workspace.schemaVersion < 9 &&
     workspace.browserRuns?.some((run) => run.warningKind !== undefined)
   )
@@ -191,6 +208,10 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
       new Map(workspace.items.map((item) => [item.id, item])),
       workspace.browserRuns ?? [],
       workspace.browserAttempts ?? [],
+    );
+    validateInstagramDeletionEvidence(
+      workspace.browserAttempts ?? [],
+      workspace.instagramContext ?? [],
     );
     if (workspace.schemaVersion >= 3)
       validateBrowserOutcomes(

@@ -360,6 +360,7 @@ export function accountClass(
   return profiles.length ? 'other' : 'absent';
 }
 export class ContextStop extends CliError {
+  warningKind?: 'http-429' | 'limit-notice' | 'warning-notice';
   readonly token: ContextStopToken;
   readonly accountCheck?: AccountCheck;
   constructor(

@@ -172,14 +172,35 @@ export class InstagramContextWriter {
     });
   }
 
-  async step(runId: string, at: string): Promise<number> {
+  async step(runId: string, at: string, zone?: string): Promise<number> {
     UtcTimestampSchema.parse(at);
     return this.store.write(async (tx) => {
       const run = await activeRun(tx, runId);
       if (Date.parse(at) < Date.parse(run.lastPageOpenedAt ?? run.startedAt))
         throw new Error('INVALID_CONTEXT_STEP');
       const pageOpens = (run.pageOpens ?? 0) + 1;
-      await tx.browserRuns.put({ ...run, pageOpens, lastPageOpenedAt: at });
+      const day = zone
+        ? new Intl.DateTimeFormat('en-CA', {
+            timeZone: zone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date(at))
+        : undefined;
+      await tx.browserRuns.put({
+        ...run,
+        pageOpens,
+        lastPageOpenedAt: at,
+        ...(zone && day
+          ? {
+              pageZone: zone,
+              pageDays: {
+                ...run.pageDays,
+                [day]: (run.pageDays?.[day] ?? 0) + 1,
+              },
+            }
+          : {}),
+      });
       await revision(tx, at);
       return pageOpens;
     });
@@ -242,6 +263,7 @@ export class InstagramContextWriter {
     endReason: NonNullable<BrowserRun['endReason']>;
     bodyShapes: Record<string, string[]>;
     profileReport: BrowserProfileReport;
+    instagramWarning?: BrowserRun['instagramWarning'];
   }): Promise<void> {
     await this.store.write(async (tx) => {
       const run = await activeRun(tx, input.runId);

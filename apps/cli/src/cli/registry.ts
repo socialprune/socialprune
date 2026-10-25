@@ -18,6 +18,7 @@ import { originalsFetchCommand } from '../commands/originals-fetch.ts';
 import { originalsFillCommand } from '../commands/originals-fill.ts';
 import { contextInstagramCommand } from '../commands/context-instagram.ts';
 import { deleteXCommand } from '../commands/delete.ts';
+import { deleteInstagramCommand } from '../commands/delete-instagram.ts';
 import {
   browserSetupCommand,
   browserForgetCommand,
@@ -91,6 +92,16 @@ export function commandRegistry(): readonly RegistryEntry[] {
     {
       path: ['delete', 'x'],
       command: deleteXCommand,
+      writes: true,
+      dryRun: true,
+      available: true,
+      envelope: true,
+      outputSchemaIds: [CLI_SCHEMA_IDS.result],
+      failureCode: 'DELETE_FAILED',
+    },
+    {
+      path: ['delete', 'instagram'],
+      command: deleteInstagramCommand,
       writes: true,
       dryRun: true,
       available: true,

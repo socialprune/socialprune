@@ -31,6 +31,46 @@ interface Runner {
 }
 const runner = (await import(entry)) as Runner;
 
+test('Instagram deletion is serial, independently uploaded and bounded from its measured 142-second matrix', async () => {
+  expect(runner.suites['delete-instagram']).toEqual({
+    script: 'test:delete:instagram',
+    minutes: 8,
+    runner: 'vitest',
+  });
+  expect(runner.selection('delete-instagram,delete')).toEqual([
+    'delete',
+    'delete-instagram',
+  ]);
+  expect(
+    runner.suiteArguments('delete-instagram', 'generated.xml').slice(0, 3),
+  ).toEqual(['--filter', 'socialprune', 'test:delete:instagram']);
+  const workflow = await readFile(
+    resolve(root, '.github/workflows/browser-suites.yml'),
+    'utf8',
+  );
+  expect(workflow).toContain('timeout-minutes: 180');
+  expect(workflow).toContain(
+    "steps.selected.outputs['delete-instagram'] == 'true'",
+  );
+  expect(workflow).toMatch(
+    /name: Instagram deletion suite[\s\S]*?timeout-minutes: 10\s+run: node \.github\/scripts\/browser-suite\.mjs run delete-instagram/,
+  );
+  expect(workflow).toContain(
+    'browser-suite-delete-instagram-${{ github.run_attempt }}',
+  );
+  expect(workflow).toContain(
+    'path: apps/cli/test-results/browser-suites/delete-instagram/',
+  );
+  expect(
+    workflow.indexOf(
+      'run: node .github/scripts/browser-suite.mjs run delete-instagram',
+    ),
+  ).toBeGreaterThan(
+    workflow.indexOf('run: node .github/scripts/browser-suite.mjs run fill'),
+  );
+  expect(workflow).not.toMatch(/^\s*matrix:/m);
+});
+
 test('single-file context receives its measured outer budget without changing test or hook deadlines', async () => {
   expect(runner.suites.context!.minutes).toBe(70);
   expect(runner.suites.delete!.minutes).toBe(25);
@@ -52,7 +92,7 @@ test('single-file context receives its measured outer budget without changing te
   expect(workflow).toMatch(
     /name: Instagram context suite[\s\S]*?timeout-minutes: 72\s+run: node \.github\/scripts\/browser-suite\.mjs run context/,
   );
-  expect(workflow).toContain('timeout-minutes: 170');
+  expect(workflow).toContain('timeout-minutes: 180');
   expect(workflow).toContain('browser-suite-context-${{ github.run_attempt }}');
   expect(workflow).toContain(
     'path: apps/cli/test-results/browser-suites/context/',
@@ -351,7 +391,13 @@ test('pnpm startup failure retains its causal log and launchError before a suite
 });
 
 test('dispatch selection is closed, deduplicated and canonical before shell use', () => {
-  expect(runner.selection()).toEqual(['delete', 'engine', 'context', 'fill']);
+  expect(runner.selection()).toEqual([
+    'delete',
+    'engine',
+    'context',
+    'fill',
+    'delete-instagram',
+  ]);
   expect(runner.selection('fill, engine')).toEqual(['engine', 'fill']);
   for (const value of [
     '',
@@ -376,6 +422,10 @@ test('the workflow runner calls the real local package scripts, changing only wo
     engine: ['test:engine', 'e2e/engine-controls.vitest.config.ts'],
     context: ['test:context', 'e2e/context.vitest.config.ts'],
     fill: ['test:fill', 'e2e/fill.playwright.config.ts'],
+    'delete-instagram': [
+      'test:delete:instagram',
+      'e2e/delete-instagram.vitest.config.ts',
+    ],
   };
   for (const [name, [script, config]] of Object.entries(expected)) {
     const args = runner.suiteArguments(name, 'generated.xml');
@@ -389,7 +439,7 @@ test('the workflow runner calls the real local package scripts, changing only wo
   }
 });
 
-test('the standalone workflow keeps all four suites serial, bounded and independently uploaded', async () => {
+test('the standalone workflow keeps all five suites serial, bounded and independently uploaded', async () => {
   const workflow = await readFile(
     resolve(root, '.github/workflows/browser-suites.yml'),
     'utf8',
@@ -402,12 +452,20 @@ test('the standalone workflow keeps all four suites serial, bounded and independ
   expect(workflow).not.toMatch(
     /^\s*matrix:|\bsecrets\b|pull_request_target|\bdeploy\b|continue-on-error/m,
   );
-  for (const name of ['delete', 'engine', 'context', 'fill']) {
+  for (const name of [
+    'delete',
+    'engine',
+    'context',
+    'fill',
+    'delete-instagram',
+  ]) {
     expect(workflow).toContain(
       `run: node .github/scripts/browser-suite.mjs run ${name}`,
     );
     expect(workflow).toContain(
-      `always() && steps.selected.outputs.${name} == 'true'`,
+      name === 'delete-instagram'
+        ? `always() && steps.selected.outputs['delete-instagram'] == 'true'`
+        : `always() && steps.selected.outputs.${name} == 'true'`,
     );
     expect(workflow).toContain(
       `path: apps/cli/test-results/browser-suites/${name}/`,
@@ -415,8 +473,8 @@ test('the standalone workflow keeps all four suites serial, bounded and independ
   }
   expect(
     workflow.match(/run: node .github\/scripts\/browser-suite.mjs run /g),
-  ).toHaveLength(4);
-  expect(workflow.match(/timeout-minutes: (?:27|12|72)\n/g)).toHaveLength(4);
+  ).toHaveLength(5);
+  expect(workflow.match(/timeout-minutes: (?:27|12|72|10)\n/g)).toHaveLength(5);
   const pins = [...workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/g)];
   expect(pins.length).toBeGreaterThan(5);
   for (const [, , pin] of pins) expect(pin).toMatch(/^[a-f0-9]{40}$/);

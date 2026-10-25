@@ -403,7 +403,7 @@ test('browser capability import graph excludes tests/fakes and all other command
       expect(staticDriver, path).toBe(false);
       for (const specifier of specifiers) {
         expect(specifier, path).not.toMatch(
-          /(?:^|\/)(?:test|e2e|fake-x)(?:\/|$)/,
+          /(?:^|\/)(?:test|e2e|fake-x|fake-instagram)(?:\/|$)/,
         );
         if (
           specifier.includes('/browser/') &&
@@ -417,6 +417,7 @@ test('browser capability import graph excludes tests/fakes and all other command
   expect([...new Set(browserImports)].sort()).toEqual([
     'commands/browser.ts',
     'commands/context-instagram.ts',
+    'commands/delete-instagram.ts',
     'commands/delete.ts',
     'commands/originals-fill.ts',
     'engine/dependencies.ts',

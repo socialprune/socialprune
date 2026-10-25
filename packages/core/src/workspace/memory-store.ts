@@ -9,6 +9,7 @@ import {
   SubmissionSchema,
   WorkspaceMetaSchema,
   BrowserRunSchema,
+  validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
   ReviewPlanSchema,
@@ -186,6 +187,14 @@ export function createMemoryStore(
         put(record) {
           guard(true);
           const value = validate(record);
+          if (map === db.browserRuns) {
+            const prior = db.browserRuns.get(key(value));
+            if (!prior) throw new Error('RUN_WRITE_ONCE');
+            validateBrowserRunUpdate(
+              prior,
+              value as import('../model/index.ts').BrowserRun,
+            );
+          }
           map.set(key(value), structuredClone(value));
           iterationCache.delete(map);
           return Promise.resolve();

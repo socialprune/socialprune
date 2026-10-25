@@ -96,7 +96,7 @@ test.each([false, true])(
         expect(result).toEqual({
           first: current,
           second: current,
-          version: 9,
+          version: 10,
           duplicateRejected: true,
           addOnly: true,
         });

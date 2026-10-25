@@ -192,7 +192,7 @@ for (const legacyVersion of [7, 8] as const)
       duplicateRejected: boolean;
       addOnly: boolean;
     };
-    expect(result.version).toBe(9);
+    expect(result.version).toBe(10);
     expect(result.first).toEqual(current);
     expect(result.second).toEqual(current);
     expect(

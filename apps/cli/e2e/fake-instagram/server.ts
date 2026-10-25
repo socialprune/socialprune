@@ -6,6 +6,8 @@ import { listPage, postPage, postAnswer, answerResponse } from './pages.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { imageCase, imageCasePage, imageCasePng } from './image-cases.ts';
 import type { ImageCaseName } from './image-cases.ts';
+import { deletionPost } from './delete-page.ts';
+import type { DeleteCase } from './delete-page.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
@@ -37,6 +39,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       }
     | undefined;
   let imageShape: ImageCaseName | undefined;
+  let deletion: DeleteCase | undefined;
+  const deletedComments = new Set<string>();
+  const deleteAttempts: string[] = [];
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -54,6 +59,50 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         path = url.pathname;
       requests.push({ method: request.method!, path });
       response.setHeader('Cache-Control', 'no-store');
+      if (deletion) {
+        const deletePost = /^\/p\/(GeneratedDelete_(\d+))\/(?:c\/\d+\/)?$/.exec(
+          path,
+        );
+        if (deletePost && items[Number(deletePost[2])]) {
+          const index = Number(deletePost[2]);
+          response.setHeader('Content-Type', 'text/html');
+          response.end(
+            deletionPost(
+              items[index]!,
+              index,
+              deletePost[1]!,
+              deletion,
+              deletedComments.has(String(191919191919191919n + BigInt(index))),
+            ),
+          );
+          return;
+        }
+        const deleteComment =
+          /^\/api\/v1\/web\/comments\/987\/delete\/(\d+)\/$/.exec(path);
+        if (deleteComment) {
+          deleteAttempts.push(deleteComment[1]!);
+          response.setHeader('Content-Type', 'application/json');
+          if (deletion === 'http-429') response.statusCode = 429;
+          const status = [
+            'feedback_required',
+            'please_wait',
+            'spam',
+            'checkpoint_required',
+          ].includes(deletion)
+            ? deletion
+            : [
+                  'http-429',
+                  'Action Blocked',
+                  'Try again later',
+                  'generic-error',
+                ].includes(deletion)
+              ? 'fail'
+              : 'ok';
+          if (status === 'ok') deletedComments.add(deleteComment[1]!);
+          response.end(JSON.stringify({ status }));
+          return;
+        }
+      }
       if (path === '/events') {
         let text = '';
         for await (const part of request) text += String(part);
@@ -378,6 +427,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   return {
     origin: `http://127.0.0.1:${port}`,
     requests,
+    deleteAttempts,
+    deletionCase(value: DeleteCase) {
+      deletion = value;
+    },
     events,
     get listening() {
       return server.listening;

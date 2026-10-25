@@ -81,6 +81,13 @@ export async function checkPage(page: Page): Promise<void> {
   ] as const)
     if (await page.getByText(text, { exact: true }).count())
       throw new ContextStop('PLATFORM_CHECK', token);
+  for (const text of [
+    'Action Blocked',
+    'Try again later',
+    'We restrict certain activity',
+  ])
+    if (await page.getByText(text, { exact: false }).count())
+      throw new ContextStop('PLATFORM_CHECK', 'rate-limit');
 }
 const AGE_UNITS =
   '(?:y|w|d|h|m|s|years?|weeks?|days?|hours?|minutes?|seconds?)';
@@ -407,10 +414,15 @@ export function utcWindow(at: string): [string, string] {
 export function postAddress(
   input: string,
   origin: string,
+  commentId?: string,
 ): { kind: 'p' | 'reel'; code: string } | null {
   try {
     const url = new URL(input),
-      match = /^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/?$/.exec(url.pathname);
+      match = (
+        commentId && /^\d{1,40}$/.test(commentId)
+          ? new RegExp(`^/(p|reel)/([A-Za-z0-9_-]{1,64})/c/${commentId}/$`)
+          : /^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/?$/
+      ).exec(url.pathname);
     return url.origin === origin && input === origin + url.pathname && match
       ? { kind: match[1] as 'p' | 'reel', code: match[2]! }
       : null;
@@ -438,11 +450,12 @@ function timestamp(value: string | null): string | null {
 export async function readPost(
   page: Page,
   origin: string,
+  commentId?: string,
 ): Promise<PostProjection> {
-  const address = postAddress(page.url(), origin);
+  const address = postAddress(page.url(), origin, commentId);
   if (!address)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const element = await postElement(page, origin);
+  const element = await postElement(page, origin, commentId);
   if (!element)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   const ownLinks = await postLinks(element, address);
@@ -647,8 +660,9 @@ async function postLinks(
 export async function postElement(
   page: Page,
   origin: string,
+  commentId?: string,
 ): Promise<Locator | null> {
-  const address = postAddress(page.url(), origin);
+  const address = postAddress(page.url(), origin, commentId);
   const element = page.locator('main');
   if (!address || (await element.count()) !== 1) return null;
   const links = await postLinks(element, address);
@@ -658,11 +672,12 @@ export async function scrollPostComments(
   page: Page,
   origin: string,
   before: () => void,
+  commentId?: string,
 ): Promise<boolean> {
   before();
   await checkPage(page);
-  const element = await postElement(page, origin);
-  const address = postAddress(page.url(), origin);
+  const element = await postElement(page, origin, commentId);
+  const address = postAddress(page.url(), origin, commentId);
   if (!element || !address) return false;
   let permalink: Locator | undefined;
   let href: string | null = null;

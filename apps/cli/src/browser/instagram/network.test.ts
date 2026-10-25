@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page, Request } from 'playwright-core';
+import type { Route } from 'playwright-core';
+import { InstagramDeletePermission } from './delete-permission.ts';
 import {
   allowedInstagramURL,
   allowedInstagramHost,
@@ -23,6 +25,128 @@ import {
   IG_FIXTURE,
   POST_NOTICE_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+test.each(['reading', 'delete', 'verify'] as const)(
+  'D10 %s network guard only permits one explicitly armed comment request and refuses other writes',
+  async (mode) => {
+    let routeHandler!: (route: Route) => Promise<void>;
+    const context = Object.assign(new EventEmitter(), {
+      route: (_: string, handler: typeof routeHandler) => {
+        routeHandler = handler;
+        return Promise.resolve();
+      },
+      routeWebSocket: () => Promise.resolve(),
+    });
+    const page = {
+      url: () => 'https://www.instagram.com/p/Generated/c/123/',
+    } as Page;
+    const capability = new InstagramDeletePermission(),
+      fail = vi.fn();
+    const network = await guardInstagramNetwork(
+      context as unknown as BrowserContext,
+      'http://127.0.0.1:4582',
+      () => Promise.resolve(),
+      {
+        platform: (input) =>
+          new URL(input).origin === 'https://www.instagram.com',
+        image: () => false,
+      },
+      undefined,
+      fail,
+      () => Promise.resolve(true),
+      mode === 'delete' ? capability : undefined,
+      mode !== 'reading',
+    );
+    try {
+      capability.arm({
+        page,
+        origin: 'https://www.instagram.com',
+        account: 'generated',
+        postCode: 'Generated',
+        commentId: '123',
+        attemptId: 'sending',
+      });
+      const request = {
+        url: () =>
+          'https://www.instagram.com/api/v1/web/comments/987/delete/123/',
+        method: () => 'POST',
+        headers: () => ({}),
+        postData: () => '',
+        frame: () => ({ page: () => page, parentFrame: () => null }),
+      };
+      const proceed = vi.fn().mockResolvedValue(undefined),
+        abort = vi.fn().mockResolvedValue(undefined);
+      await routeHandler({
+        request: () => request,
+        continue: proceed,
+        abort,
+      } as unknown as Route);
+      expect(proceed).toHaveBeenCalledTimes(mode === 'delete' ? 1 : 0);
+      expect(abort).toHaveBeenCalledTimes(mode === 'delete' ? 0 : 1);
+      if (mode === 'delete') {
+        await routeHandler({
+          request: () => request,
+          continue: proceed,
+          abort,
+        } as unknown as Route);
+        expect(proceed).toHaveBeenCalledOnce();
+        expect(abort).toHaveBeenCalledOnce();
+      }
+      expect(fail).toHaveBeenCalled();
+    } finally {
+      network.dispose();
+    }
+  },
+);
+test.each([
+  '/api/v1/web/likes/1/like/',
+  '/api/v1/friendships/1/follow/',
+  '/api/v1/web/comments/1/add/',
+  '/unknown-write',
+])(
+  'D10 deletion mode rejects unbound write %s before sending it',
+  async (path) => {
+    let routeHandler!: (route: Route) => Promise<void>;
+    const context = Object.assign(new EventEmitter(), {
+      route: (_: string, handler: typeof routeHandler) => {
+        routeHandler = handler;
+        return Promise.resolve();
+      },
+      routeWebSocket: () => Promise.resolve(),
+    });
+    const page = {} as Page;
+    const network = await guardInstagramNetwork(
+      context as unknown as BrowserContext,
+      'http://127.0.0.1:4582',
+      () => Promise.resolve(),
+      { platform: () => true, image: () => false },
+      undefined,
+      undefined,
+      () => Promise.resolve(true),
+      new InstagramDeletePermission(),
+      true,
+    );
+    const abort = vi.fn().mockResolvedValue(undefined),
+      proceed = vi.fn().mockResolvedValue(undefined);
+    try {
+      await routeHandler({
+        request: () => ({
+          url: () => `https://www.instagram.com${path}`,
+          method: () => 'POST',
+          headers: () => ({}),
+          postData: () => '',
+          frame: () => ({ page: () => page }),
+        }),
+        abort,
+        continue: proceed,
+      } as unknown as Route);
+      expect(abort).toHaveBeenCalledOnce();
+      expect(proceed).not.toHaveBeenCalled();
+      expect(() => network.check()).toThrow();
+    } finally {
+      network.dispose();
+    }
+  },
+);
 const generatedMemoryMetrics = (used: number, nodes = 12) => [
   { name: 'JSHeapUsedSize', value: used * 1024 ** 2 },
   { name: 'JSHeapTotalSize', value: 8 * 1024 ** 2 },

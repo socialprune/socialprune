@@ -9,6 +9,24 @@ export const EXIT_MEANINGS = {
 } as const;
 
 export const CLI_ERRORS = {
+  IG_WARNING_RESTORE_BLOCKED: {
+    message:
+      'Restore cannot replace a workspace with an unacknowledged Instagram warning. Read the card and use delete instagram --acknowledge-warning <runId> --profile <dir>.',
+    exitCode: 2,
+    retryable: false,
+  },
+  IG_WARNING_DAY: {
+    message:
+      'An Instagram warning blocks deletion until the next workspace day. Read the card before acknowledging the warned run.',
+    exitCode: 2,
+    retryable: false,
+  },
+  IG_WARNING_CARD_REQUIRED: {
+    message:
+      'A person must read the Instagram warning card and acknowledge that exact run before deletion can start.',
+    exitCode: 2,
+    retryable: false,
+  },
   X_WARNING_RESTORE_BLOCKED: {
     message:
       'Restore cannot replace a workspace with an unacknowledged X warning. Read the parent card, then use delete x --acknowledge-warning <runId> --profile <dir> before restoring.',

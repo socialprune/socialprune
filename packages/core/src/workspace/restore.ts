@@ -37,6 +37,7 @@ import type {
 import * as v1 from '../model/v1.ts';
 import {
   validateBrowserJournal,
+  validateInstagramDeletionEvidence,
   validateBrowserOutcomes,
 } from '../model/browser.ts';
 import { throwIfAborted } from '../archive/limits.ts';
@@ -168,6 +169,7 @@ export async function restoreBackup(
   let implicitInstagramConfirmation = false;
   let implicitInstagramOwner = false;
   let warningClassification = false;
+  let instagramDeletion = false;
   let buffers: BufferedRecord[] = [];
   let pendingLegacyEvents = 0;
 
@@ -405,10 +407,20 @@ export async function restoreBackup(
       rawCounts[name] = (rawCounts[name] ?? 0) + 1;
       counts[name] = (counts[name] ?? 0) + 1;
       if (name === 'browserRuns') {
+        instagramDeletion ||= Boolean(
+          (value as BrowserRun).instagramWarning ||
+          (value as BrowserRun).pageDays ||
+          ((value as BrowserRun).platform === 'instagram' &&
+            (value as BrowserRun).mode !== 'context'),
+        );
         warningClassification ||=
           (value as BrowserRun).warningKind !== undefined;
         browserRuns.push(value as BrowserRun);
-      } else browserAttempts.push(value as BrowserAttempt);
+      } else {
+        instagramDeletion ||=
+          (value as BrowserAttempt).action === 'delete-comment';
+        browserAttempts.push(value as BrowserAttempt);
+      }
     } else if (name === 'assessments') {
       const value =
         version === 1
@@ -490,9 +502,16 @@ export async function restoreBackup(
       checkEvent(value, name === 'decisionEvents' ? 'decision' : 'outcome');
       if (
         name === 'outcomeEvents' &&
-        (value as OutcomeEvent).source.via === 'browser-x'
+        ['browser-x', 'browser-instagram'].includes(
+          (value as OutcomeEvent).source.via,
+        )
       )
         browserOutcomes.push(value as OutcomeEvent);
+      if (
+        name === 'outcomeEvents' &&
+        (value as OutcomeEvent).source.via === 'browser-instagram'
+      )
+        instagramDeletion = true;
       counts[name]++;
       await buffered(name, index, value);
     }
@@ -567,6 +586,8 @@ export async function restoreBackup(
     )
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     if (version < 9 && warningClassification)
+      throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
+    if (version < 10 && instagramDeletion)
       throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
     assertReviewVersion(
       version,
@@ -769,6 +790,7 @@ export async function restoreBackup(
           browserAttempts,
         );
         validateBrowserOutcomes(browserAttempts, browserOutcomes);
+        validateInstagramDeletionEvidence(browserAttempts, instagramContext);
         const accountedReads = new Set<string>();
         for (const original of originalRecords)
           if (original.signedIn) {

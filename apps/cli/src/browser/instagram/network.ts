@@ -29,6 +29,7 @@ import {
   pathClass,
   postPathClass,
   rateSignal,
+  restrictionSignal,
 } from './signals.ts';
 
 /** Closed Performance metrics only; never inspect page state or remote objects. */
@@ -385,6 +386,8 @@ export async function guardInstagramNetwork(
   limitSignals = new LimitSignals(),
   onStop: (error: ContextStop) => void = () => {},
   pageAllowed: (page: Page) => Promise<boolean> = () => Promise.resolve(true),
+  deletion?: import('./delete-permission.ts').InstagramDeletePermission,
+  deletionMode = false,
 ) {
   const abortedHosts: Record<string, number> = {};
   const requests: BrowserRequest[] = [];
@@ -407,9 +410,12 @@ export async function guardInstagramNetwork(
     }
   };
   let failure: ContextStop | undefined;
+  let warning: 'http-429' | 'limit-notice' | 'warning-notice' | undefined;
   let disposed = false;
   const work = interruptibleWork();
   const fail = (error: ContextStop) => {
+    if (error.token === 'http-429') warning = 'http-429';
+    else if (!warning && error.warningKind) warning = error.warningKind;
     if (!failure) {
       failure = error;
       work.interrupt();
@@ -453,6 +459,18 @@ export async function guardInstagramNetwork(
       await route.continue();
       return;
     }
+    if (
+      deletionMode &&
+      !policy.platform(url.href) &&
+      policy.image(url.href) &&
+      request.method() === 'GET' &&
+      !request.isNavigationRequest() &&
+      ['image', 'media'].includes(request.resourceType())
+    ) {
+      if (failure) await route.abort();
+      else await route.continue();
+      return;
+    }
     if (!policy.platform(url.href)) {
       abortHost(url);
       await route.abort();
@@ -464,6 +482,54 @@ export async function guardInstagramNetwork(
     }
     const name = request.headers()['x-fb-friendly-name'];
     const operation = name && /^[A-Za-z0-9_]{1,256}$/.test(name) ? name : null;
+    if (deletionMode && !['GET', 'HEAD'].includes(request.method())) {
+      const form = new URLSearchParams(request.postData() ?? '');
+      const namedQuery =
+        operation?.endsWith('Query') &&
+        form.get('fb_api_req_friendly_name') === operation &&
+        /^\d{1,40}$/.test(form.get('doc_id') ?? '') &&
+        (() => {
+          try {
+            const variables: unknown = JSON.parse(form.get('variables') ?? '');
+            return Boolean(
+              variables &&
+              typeof variables === 'object' &&
+              !Array.isArray(variables) &&
+              !JSON.stringify(variables).toLowerCase().includes('mutation'),
+            );
+          } catch {
+            return false;
+          }
+        })();
+      const knownRead =
+        (url.pathname === '/graphql/query' ||
+          url.pathname === '/graphql/query/' ||
+          url.pathname === '/api/graphql') &&
+        namedQuery;
+      const expectedDelete =
+        /^(?:\/api\/v1)?\/web\/comments\/\d{1,40}\/delete\/\d{1,40}\/$/.test(
+          url.pathname,
+        );
+      if (!knownRead && !expectedDelete) {
+        const record: BrowserRequest = {
+          requestId: crypto.randomUUID(),
+          method: request.method(),
+          host: url.hostname,
+          path: url.pathname,
+          status: null,
+          operation,
+        };
+        requests.push(record);
+        try {
+          await persist(record);
+        } catch {
+          /* persist records the closed journal failure and this request remains aborted. */
+        }
+        fail(new ContextStop('UNEXPECTED_ACTION', 'unexpected-action'));
+        await route.abort();
+        return;
+      }
+    }
     if (request.method() !== 'GET') {
       const value: BrowserRequest = {
         requestId: crypto.randomUUID(),
@@ -482,7 +548,21 @@ export async function guardInstagramNetwork(
         return;
       }
     }
-    if (mutation(request.method(), url.href, name)) {
+    if (
+      mutation(request.method(), url.href, name) ||
+      /\/web\/comments\/[^/]+\/delete\//.test(url.pathname)
+    ) {
+      if (deletion?.admit(request)) {
+        try {
+          await deletion.beforeRequest();
+        } catch {
+          fail(new ContextStop('PLATFORM_CHECK', 'account-changed'));
+          await route.abort();
+          return;
+        }
+        await route.continue();
+        return;
+      }
       fail(new ContextStop('UNEXPECTED_ACTION', 'unexpected-action'));
       await route.abort();
       return;
@@ -494,19 +574,32 @@ export async function guardInstagramNetwork(
     await socket.close();
   });
   const onResponse = (response: Response) => {
-    if (disposed || !policy.platform(response.url())) return;
+    if (
+      disposed ||
+      (!policy.platform(response.url()) && !policy.image(response.url()))
+    )
+      return;
     const ownWindow = postWindows.get(response.request());
     const status = response.status();
     const headers = response.headers();
+    if (deletion) {
+      const inspection = deletion.response(response).catch(() => {
+        fail(new ContextStop('PLATFORM_CHECK', 'post-structure'));
+      });
+      inspections.add(inspection);
+      void inspection.finally(() => inspections.delete(inspection));
+    }
     const inspectRate = (bytes: Buffer) => {
       if (disposed || bytes.length > 5 * 1024 ** 2) return;
       try {
-        if (
-          rateSignal(
-            JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)),
-          )
-        )
-          fail(new ContextStop('PLATFORM_CHECK', 'rate-signal'));
+        const body: unknown = JSON.parse(
+          new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+        );
+        if (rateSignal(body)) {
+          const stop = new ContextStop('PLATFORM_CHECK', 'rate-signal');
+          if (restrictionSignal(body)) stop.warningKind = 'warning-notice';
+          fail(stop);
+        }
       } catch {
         /* Invalid or absent JSON is not an enumerated limit signal. */
       }
@@ -641,6 +734,9 @@ export async function guardInstagramNetwork(
     },
     abortedHosts,
     requests,
+    get warning() {
+      return warning;
+    },
     stop: fail,
     check,
     async flush() {

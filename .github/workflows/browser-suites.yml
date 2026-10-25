@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       suites:
-        description: all or a comma-separated subset of delete,engine,context,fill
+        description: all or a comma-separated subset of delete,engine,context,fill,delete-instagram
         type: string
         required: true
         default: all
@@ -22,8 +22,8 @@ concurrency:
 jobs:
   suites:
     runs-on: windows-latest
-    # 130 min runner bounds, 8 min step termination margins, plus setup/uploads.
-    timeout-minutes: 170
+    # 138 min runner bounds, 10 min step termination margins, plus setup/uploads.
+    timeout-minutes: 180
     env:
       CI: 'true'
       # Generated fakes only. Setup downloads finish before any suite starts.
@@ -116,5 +116,18 @@ jobs:
         with:
           name: browser-suite-fill-${{ github.run_attempt }}
           path: apps/cli/test-results/browser-suites/fill/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Instagram deletion suite
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' && steps.selected.outputs['delete-instagram'] == 'true' }}
+        # 142 s locally on 2026-10-25; 3x rounded to 8 min in the runner,
+        # plus 2 min to terminate children and retain its independent artifacts.
+        timeout-minutes: 10
+        run: node .github/scripts/browser-suite.mjs run delete-instagram
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && steps.selected.outputs['delete-instagram'] == 'true' }}
+        with:
+          name: browser-suite-delete-instagram-${{ github.run_attempt }}
+          path: apps/cli/test-results/browser-suites/delete-instagram/
           if-no-files-found: warn
           retention-days: 7

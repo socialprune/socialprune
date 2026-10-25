@@ -4,6 +4,48 @@
     {
       "type": "object",
       "properties": {
+        "code": { "type": "string", "const": "IG_WARNING_RESTORE_BLOCKED" },
+        "message": {
+          "type": "string",
+          "const": "Restore cannot replace a workspace with an unacknowledged Instagram warning. Read the card and use delete instagram --acknowledge-warning <runId> --profile <dir>."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "IG_WARNING_DAY" },
+        "message": {
+          "type": "string",
+          "const": "An Instagram warning blocks deletion until the next workspace day. Read the card before acknowledging the warned run."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "const": "IG_WARNING_CARD_REQUIRED" },
+        "message": {
+          "type": "string",
+          "const": "A person must read the Instagram warning card and acknowledge that exact run before deletion can start."
+        },
+        "exitCode": { "type": "number", "const": 2 },
+        "retryable": { "type": "boolean", "const": false }
+      },
+      "required": ["code", "message", "exitCode", "retryable"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "code": { "type": "string", "const": "X_WARNING_RESTORE_BLOCKED" },
         "message": {
           "type": "string",

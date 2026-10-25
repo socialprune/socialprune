@@ -14,6 +14,7 @@
     "test:e2e": "pnpm --filter @socialprune/web build:review && playwright test",
     "test:delete": "vitest run --config e2e/delete.vitest.config.ts",
     "test:context": "vitest run --config e2e/context.vitest.config.ts",
+    "test:delete:instagram": "vitest run --config e2e/delete-instagram.vitest.config.ts",
     "test:engine": "vitest run --config e2e/engine-controls.vitest.config.ts",
     "test:fill": "playwright test --config e2e/fill.playwright.config.ts",
     "build:release": "node release/release.ts",

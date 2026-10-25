@@ -57,12 +57,13 @@ Product phases, gates and spikes live in the maintainer's `PLAN.md`. This file h
 - **Trigger:** before the maintainer starts deciding on his X entries in the review, or a report from a person who sees the entities.
 - **Partly done on 2026-10-16:** the review now decodes `&amp;`, `&lt;` and `&gt;` once, as text, for every original, and leaves out the leading mentions and a trailing media or quote link when the stored anonymous answer proves them through its display range and link lists. On the maintainer's workspace the anonymous answers count that range and the link positions on the escaped text (19 of 19 range ends and 45 of 45 link positions), which is the order the review uses. Originals read only by the signed-in pass still show their mentions and links, because that pass does not store the display range or the hidden short links. Storing them needs a field in the signed-in record, so a schema change. Trigger for that rest: the maintainer finds those parts in the way while he reviews.
 
-### BL-008: The fill and deletion browser suites run only in the local gate
+### BL-008: Browser-suite coverage in the pull-request gate
 
 - **Added:** 2026-10-15
-- **What:** `pnpm --filter socialprune test:delete` and the fill suite (`apps/cli/e2e/fill.playwright.config.ts`) drive the generated fake X in Chromium. CI runs neither, so they run only in the parent's gate on Windows, and Linux is not covered for that code.
+- **Original gap (2026-10-15):** `pnpm --filter socialprune test:delete` and the fill suite (`apps/cli/e2e/fill.playwright.config.ts`) drive the generated fake X in Chromium. CI ran neither, so they ran only in the parent's gate on Windows, and Linux was not covered for that code.
 - **Why deferred:** together they take about 20 minutes, and nothing is published yet.
 - **Trigger:** before `NPM_PUBLISH_ENABLED` is set, or the first change to `apps/cli/src/browser/**` from outside the maintainer's own runs.
+- **Updated on 2026-10-25:** `.github/workflows/browser-suites.yml` adds an opt-in serial Windows job for deletion, engine controls, Instagram context and originals fill, on pushes to `suites/**` and manual selection. It calls the local package scripts through `.github/scripts/browser-suite.mjs` and retains per-suite logs, JUnit and source/duration summaries as artifacts after success or failure. `test:fill` now names the existing fill Playwright config. This removes the local-only execution gap once the workflow is pushed, not the pull-request gate gap: `ci.yml` is unchanged, no hosted run is claimed here, and Linux remains outside this workflow. The maintainer still chooses whether these checks should run on every affected pull request after the first hosted durations are available.
 
 ### BL-009: Timing failures that pass on rerun
 

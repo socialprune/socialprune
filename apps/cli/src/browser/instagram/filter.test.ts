@@ -184,7 +184,12 @@ test('C5 removed calendar controls never reach a click even when their names app
   const page = {
     isClosed: () => false,
     url: () => 'https://www.instagram.com/your_activity/interactions/comments',
-    locator: () => ({ getAttribute: () => Promise.resolve('en') }),
+    locator: () => ({
+      getAttribute: () => Promise.resolve('en'),
+      filter: () => ({
+        getByText: () => ({ count: () => Promise.resolve(0) }),
+      }),
+    }),
     getByText: () => ({ count: () => Promise.resolve(0) }),
     getByRole: () => ({
       count: () => Promise.resolve(1),

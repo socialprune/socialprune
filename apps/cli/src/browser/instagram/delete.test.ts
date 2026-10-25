@@ -7,6 +7,7 @@ import { SQLiteStore } from '../../workspace/sqlite-store.ts';
 import {
   planInstagramDeletion,
   INSTAGRAM_DELETION_PROTOCOL,
+  instagramDeleteSummary,
 } from './delete-plan.ts';
 import {
   instagramDeleteBudget,
@@ -20,11 +21,21 @@ import {
 } from '../../workspace/x-warning-file.ts';
 import { ContextStop } from './report.ts';
 import { instagramWarningKind } from './warning.ts';
-import { InstagramDeleteStop } from './delete-driver.ts';
+import {
+  InstagramDeleteStop,
+  checkInstagramDeletePage,
+  instagramDeleteIdentity,
+  clickInstagramDelete,
+  instagramDeleteUiConfirmed,
+  verifyInstagramComment,
+  expandInstagramDeleteComment,
+} from './delete-driver.ts';
 import { executeCli } from '../../cli/adapter.ts';
 import { createNodeContext } from '../../cli/node-context.ts';
 import { networkRecorder } from '../../cli/test/network-recorder.ts';
-import { verificationRows } from './delete-run.ts';
+import { verificationRows, runInstagramDeletion } from './delete-run.ts';
+import { productionContext } from './driver.ts';
+import type { ConfirmationView } from '../confirmation-state.ts';
 import {
   createBackup,
   restoreBackup,
@@ -64,6 +75,10 @@ test('D10 plan binds post identity, human decisions, canary and workspace day wi
       h.workspace.items.map((i) => i.id),
     );
     expect(a.canary).toBe(true);
+    expect(instagramDeleteSummary(a, 'en')).toHaveProperty(
+      'canaryItemId',
+      a.rows[0]!.item.id,
+    );
     expect(
       (
         await planInstagramDeletion(
@@ -80,6 +95,55 @@ test('D10 plan binds post identity, human decisions, canary and workspace day wi
     await h.close();
   }
 });
+test.each(['en', 'de'] as const)(
+  'D12 E %s start page names the hash-bound watched comment before launch',
+  async (lang) => {
+    const h = await harness(2);
+    let view: Omit<ConfirmationView, 'version'> | undefined;
+    try {
+      const profile = join(h.directory, 'profile');
+      await createProfile(profile, 'instagram');
+      const now = () => new Date('2026-10-25T12:00:00Z');
+      const plan = await planInstagramDeletion(h.store, h.account, now());
+      await runInstagramDeletion(
+        {
+          store: h.store,
+          workspace: h.directory,
+          plan,
+          profile,
+          executablePath: 'not-opened',
+          lang,
+          list: '',
+          verify: false,
+          now,
+          signal: new AbortController().signal,
+          notice: () => {},
+        },
+        {
+          ...productionContext,
+          checkPage: checkInstagramDeletePage,
+          identity: instagramDeleteIdentity,
+          click: clickInstagramDelete,
+          uiConfirmed: instagramDeleteUiConfirmed,
+          verify: verifyInstagramComment,
+          expand: expandInstagramDeleteComment,
+          confirmation: (initial) => {
+            view = initial;
+            return Promise.reject(new Error('Generated stop before launch'));
+          },
+        },
+      );
+      expect(view?.result).toContain(plan.rows[0]!.item.id);
+      expect(view?.rows[0]).toMatchObject({
+        itemId: plan.rows[0]!.item.id,
+        watchedCanary: true,
+      });
+      expect(view?.rows[1]).toMatchObject({ watchedCanary: false });
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('D10 list confirmations and owner-not-in-export never enter a deletion plan', async () => {
   const workspace = await instagramDeleteFixture(2);
   workspace.instagramContext![0] = {
@@ -737,6 +801,10 @@ test('D10 watched canary accepts only one confirmed receipt and never selects an
     ).resolves.toBeUndefined();
     const next = await planInstagramDeletion(h.store, h.account, new Date(at));
     expect(next.canary).toBe(false);
+    expect(instagramDeleteSummary(next, 'en')).toHaveProperty(
+      'canaryItemId',
+      null,
+    );
     expect(next.hash).not.toBe(plan.hash);
     expect(next.rows.map((r) => r.item.id)).toEqual([plan.rows[1]!.item.id]);
     expect(
@@ -778,6 +846,101 @@ test('D10 watched canary accepts only one confirmed receipt and never selects an
     await h.close();
   }
 });
+
+test.each([['status', 'x'], ['status']] as const)(
+  'D12 A unrecognized receipt/UI after accepted canary re-arms the next plan (%j)',
+  async (...shape) => {
+    const h = await harness(3);
+    try {
+      const at = '2026-10-25T12:00:00.000Z';
+      const writer = h.store.browserOutcomeWriter();
+      const plan = await planInstagramDeletion(
+        h.store,
+        h.account,
+        new Date(at),
+      );
+      const run = {
+        runId: 'accepted',
+        platform: 'instagram' as const,
+        mode: 'delete' as const,
+        accountKey: h.account,
+        planHash: plan.hash,
+        startedAt: at,
+        endedAt: null,
+        endReason: null,
+        bodyShapes: { 'deletion-protocol': [INSTAGRAM_DELETION_PROTOCOL] },
+        profileReport: null,
+      };
+      await writer.begin(run);
+      const first = (await writer.check(plan.rows[0]!, run.runId, at, true))!;
+      await writer.settle(
+        {
+          ...first,
+          attemptId: 'confirmed',
+          settles: first.attemptId,
+          state: 'deleted',
+          code: null,
+          receipt: {
+            method: 'POST',
+            path: `/api/v1/web/comments/987/delete/${plan.rows[0]!.context.comment.id}/`,
+            status: 200,
+            shape: ['status'],
+          },
+        },
+        'deleted-via-browser',
+      );
+      await writer.finish({ ...run, endedAt: at, endReason: 'canary' });
+      await writer.acceptInstagramDeleteCanary(run.runId, at);
+      const main = await planInstagramDeletion(
+        h.store,
+        h.account,
+        new Date('2026-10-25T12:01:00Z'),
+      );
+      expect(main.canary).toBe(false);
+      const later = {
+        ...run,
+        runId: 'main-unconfirmed',
+        planHash: main.hash,
+        startedAt: '2026-10-25T12:01:00.000Z',
+      };
+      await writer.begin(later);
+      const send = (await writer.check(
+        main.rows[0]!,
+        later.runId,
+        later.startedAt,
+        true,
+      ))!;
+      await writer.settle({
+        ...send,
+        attemptId: 'unconfirmed',
+        settles: send.attemptId,
+        state: 'ambiguous',
+        code: 'PLATFORM_CHECK',
+        receipt: {
+          method: 'POST',
+          path: `/api/v1/web/comments/987/delete/${main.rows[0]!.context.comment.id}/`,
+          status: 200,
+          shape,
+        },
+      });
+      await writer.finish({
+        ...later,
+        endedAt: later.startedAt,
+        endReason: 'platform-check',
+        bodyShapes: { stop: ['PLATFORM_CHECK'] },
+      });
+      const next = await planInstagramDeletion(
+        h.store,
+        h.account,
+        new Date('2026-10-25T12:02:00Z'),
+      );
+      expect(next.rows).toHaveLength(1);
+      expect(next.canary).toBe(true);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test('D10 ambiguous attempts survive portable restore and only read-only same-ID evidence can reconcile them', async () => {
   const h = await harness(1);

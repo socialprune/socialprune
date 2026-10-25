@@ -21,6 +21,7 @@ socialprune scan run --workspace <dir> --source <file> [--account <key>] --plan 
 socialprune review --workspace <dir> [--dry-run] [--json]
 socialprune export clicklist --workspace <dir> --account <key> --out <file> [--format csv|json] [--time-zone <IANA>] [--dry-run] [--json]
 socialprune schemas --json
+socialprune delete instagram --workspace <dir> --account <key> --dry-run [--json]
 socialprune <command> --help --json
 ```
 
@@ -29,6 +30,8 @@ Only export a click list when the person asks, after their review decisions. A c
 Deletion and `delete x --acknowledge-warning <runId> --profile <dir>` are not agent commands. The person starts deletion and types any warning-card acknowledgement themselves. Under the pace decision of 2026-10-24, every stage pauses after 20 confirmed deletions; opened pages and verification do not fill that batch. Only warning signs set the next-workspace-day deletion gate. Reading and verification stay available. Never type the card statement, pass its acknowledgement or treat a dry-run request as permission to delete. See [the setup guide](../../../docs/agent-setup.md#x-deletion-remains-your-action).
 
 With `--json`, stdout contains exactly one envelope with `schemaVersion: 1`, the dotted command name, `status`, `data` or `error`, and `warnings`. Workspace results also include its ID and revision. Progress and notices use stderr. Exit codes are 0 for success, 1 for a runtime error, 2 for wrong usage, 3 for a format or schema this version cannot read, and 4 for a partial import. Do not treat a partial import as complete.
+
+`delete instagram` is dry-run only for agents. Its JSON summary gives counts, the plan hash and `canaryItemId`, an ID or null, never comment text. Only post-confirmed comments with an exact comment ID/time and a matched exported owner qualify; list confirmations and comments without an exported owner stay manual. The person starts the watched one-comment canary and presses Start and Continue themselves. A real run needs their separate written order naming that comment. Never run deletion, verification or `delete instagram --acknowledge-warning`, click those controls, or treat the plan hash as permission. The person-run pace is 30 seconds, a 15-minute pause after ten attempts and at most 50 attempts per workspace day. An ambiguous attempt is not resent; a warning needs the next day and the person's run-named acknowledgement. See [Instagram deletion](../../../docs/agent-setup.md#instagram-deletion-remains-your-action).
 
 ## Batches
 

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { EXTENSION_NOTICE } from './copy.ts';
 import {
   endText,
   endReason,
@@ -6,6 +7,7 @@ import {
   FILL_RELOAD_NOTICE,
 } from './copy.ts';
 import type { DisplayEndReason } from './copy.ts';
+import { readFile } from 'node:fs/promises';
 import {
   CliError,
   errorObject,
@@ -34,6 +36,21 @@ test('D6 warning refusals name the run and prior card in German and English', ()
   expect(fillPaceNotice(10, 300, false, 'de', 'UTC')).toContain(
     'Kalendertag (UTC)',
   );
+});
+test.each(['en', 'de'] as const)(
+  'D12 C %s pre-run lists both platform-owned warning markers',
+  (lang) => {
+    expect(EXTENSION_NOTICE[lang]).toContain('socialprune-x-warning.json');
+    expect(EXTENSION_NOTICE[lang]).toContain(
+      'socialprune-instagram-warning.json',
+    );
+  },
+);
+test('D12 C CLI reading and desktop preparation consume the same marker disclosure', async () => {
+  for (const path of ['./instagram/run.ts', '../engine/facade.ts']) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    expect(source).toContain('EXTENSION_NOTICE[options.lang]');
+  }
 });
 
 const reasons: DisplayEndReason[] = [

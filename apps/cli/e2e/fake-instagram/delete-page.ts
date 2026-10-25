@@ -4,6 +4,10 @@ import { postPage } from './pages.ts';
 export type DeleteCase =
   | 'success'
   | 'ambiguous'
+  | 'extra-field'
+  | 'notice-caption'
+  | 'notice-comment'
+  | 'notice-dialog'
   | 'http-429'
   | 'feedback_required'
   | 'please_wait'
@@ -37,8 +41,18 @@ export function deletionPost(
   );
   html = html.replace(
     '<body>',
-    `<body><nav><a href="/${item.account.handle}/">Profile</a></nav>`,
+    `<body><nav><a href="/${item.account.handle}/">Profile</a></nav>${scenario === 'notice-dialog' ? '<div role="dialog">I will try again later! my action blocked the door</div>' : ''}`,
   );
+  if (scenario === 'notice-caption')
+    html = html.replace(
+      '<section>',
+      '<section><div data-generated="caption">I will try again later! my action blocked the door</div>',
+    );
+  if (scenario === 'notice-comment')
+    html = html.replace(
+      '<div id="comment-rows">',
+      '<div id="comment-rows"><div data-generated="comment">I will try again later! my action blocked the door</div>',
+    );
   html = html.replace(
     '</body>',
     `<script>
@@ -58,7 +72,7 @@ export function deletionPost(
         if(body.status==='ok'&&${JSON.stringify(scenario)}!=='ambiguous'){
           row.remove();menu.remove();const status=document.createElement('div');status.setAttribute('role','status');status.textContent='Comment deleted';document.body.append(status);
         }else if(${JSON.stringify(scenario)}==='Action Blocked'||${JSON.stringify(scenario)}==='Try again later'){
-          const message=document.createElement('h2');message.textContent=${JSON.stringify(scenario)};document.body.append(message);
+          const message=document.createElement('h2');message.setAttribute('role','alert');message.textContent=${JSON.stringify(scenario)};document.body.append(message);
         }else if(${JSON.stringify(scenario)}==='generic-error'){
           const message=document.createElement('h2');message.textContent='Something went wrong';document.body.append(message);
         }

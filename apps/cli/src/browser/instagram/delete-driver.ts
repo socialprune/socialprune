@@ -9,6 +9,7 @@ import {
   postElement,
   scrollPostComments,
   clickAllowed,
+  instagramNoticeContainers,
 } from './selectors.ts';
 import { ownerName } from './plan.ts';
 export class InstagramDeleteStop extends CliError {
@@ -31,9 +32,17 @@ export async function checkInstagramDeletePage(
     'Your account has been suspended',
     'Your account has been locked',
   ])
-    if (await page.getByText(marker, { exact: false }).count())
+    if (
+      await instagramNoticeContainers(page)
+        .getByText(marker, { exact: false })
+        .count()
+    )
       throw new InstagramDeleteStop('limit-notice');
-  if (await page.getByText('Try deleting it again', { exact: false }).count())
+  if (
+    await instagramNoticeContainers(page)
+      .getByText('Try deleting it again', { exact: false })
+      .count()
+  )
     throw new InstagramDeleteStop('delete-error');
   await checkPage(page);
   const paths = await outsideProfilePaths(page);

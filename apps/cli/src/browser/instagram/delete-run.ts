@@ -332,6 +332,7 @@ export async function runInstagramDeletion(
         list: options.list,
         rows: plan.rows.slice(0, 20).map((r) => ({
           itemId: r.item.id,
+          watchedCanary: !options.verify && plan.canary && r === plan.rows[0],
           date: r.item.createdAt,
           firstLine: r.item.text.split(/\r?\n/, 1)[0],
         })),
@@ -350,8 +351,8 @@ export async function runInstagramDeletion(
             : 'Read-only verification. No deletion clicks.'
           : plan.canary
             ? options.lang === 'de'
-              ? 'Genau ein Kommentar zum Zuschauen. Weiter bestätigt deine Kontrolle und beendet den Lauf. Es startet kein Hauptlauf.'
-              : 'One watched comment only. Continue ends this canary; it does not start a main run.'
+              ? `Kommentar zum Zuschauen: ${plan.rows[0]?.item.id ?? ''}. Weiter bestätigt deine Kontrolle und beendet den Lauf. Es startet kein Hauptlauf.`
+              : `Watched comment: ${plan.rows[0]?.item.id ?? ''}. Continue ends this canary; it does not start a main run.`
             : options.lang === 'de'
               ? 'Starte den angezeigten Löschplan.'
               : 'Start the displayed deletion plan.',
@@ -594,14 +595,9 @@ export async function runInstagramDeletion(
         if (!confirmed) throw new InstagramDeleteStop('receipt-unconfirmed');
         await network.flush();
         await checkpoint();
-        const shape = permission.result()!.shape;
-        if (
-          run.bodyShapes['delete-comment'] &&
-          JSON.stringify(run.bodyShapes['delete-comment']) !==
-            JSON.stringify(shape)
-        )
-          throw new CliError('SHAPE_CHANGED');
-        run.bodyShapes['delete-comment'] = shape;
+        // Receipt admission accepts only the exact {status:'ok'} shape.
+        // Any unconfirmed attempt re-arms the next watched canary in the plan.
+        run.bodyShapes['delete-comment'] = permission.result()!.shape;
         await settle('deleted', null);
         permission.disarm();
         finalClick = false;

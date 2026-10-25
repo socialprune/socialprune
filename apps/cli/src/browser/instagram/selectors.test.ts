@@ -13,11 +13,63 @@ import {
   listTimeoutRows,
   filterWindowMatches,
   observeListDomChanges,
+  checkPage,
 } from './selectors.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+import { checkInstagramDeletePage } from './delete-driver.ts';
+
+test.each(['caption', 'comment', 'dialog', 'alertdialog', 'alert'])(
+  'D12 B ordinary warning phrases in %s only stop in owned notice containers',
+  async (kind) => {
+    const texts = [
+      'I will try again later!',
+      'my action blocked the door',
+      'Your account has been locked in a story',
+    ];
+    const byText =
+      (scoped: boolean) => (needle: string, options: { exact: boolean }) => ({
+        count: () =>
+          Promise.resolve(
+            texts.filter(
+              (text) =>
+                (!scoped ||
+                  ['dialog', 'alertdialog', 'alert'].includes(kind)) &&
+                (options.exact
+                  ? text === needle
+                  : text.toLowerCase().includes(needle.toLowerCase())),
+            ).length,
+          ),
+      });
+    const page = {
+      isClosed: () => false,
+      url: () => 'https://www.instagram.com/p/generated/',
+      getByText: byText(false),
+      locator: (selector: string) =>
+        selector === 'html'
+          ? { getAttribute: () => Promise.resolve('en') }
+          : selector.includes('role=')
+            ? { filter: () => ({ getByText: byText(true) }) }
+            : {
+                all: () =>
+                  Promise.resolve([
+                    { getAttribute: () => Promise.resolve('/generated/') },
+                  ]),
+              },
+    } as unknown as Page;
+    for (const check of [
+      () => checkPage(page),
+      () => checkInstagramDeletePage(page, 'generated'),
+    ]) {
+      if (['caption', 'comment'].includes(kind))
+        await expect(check()).resolves.toBeUndefined();
+      else
+        await expect(check()).rejects.toMatchObject({ code: 'PLATFORM_CHECK' });
+    }
+  },
+);
 
 test.each([false, true])(
   'C27 generated row markup read failure=%s emits counts or an explicit failed observation without values',

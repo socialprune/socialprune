@@ -15,8 +15,8 @@ export function profileWarning(
     : `Signed in as @${handle}, a program can do anything the website can: post, like, follow, send messages, change settings and delete. It can also change this browser profile's cookies, site data, cache, history and settings. SocialPrune's code only does the steps listed for this run.`;
 }
 export const EXTENSION_NOTICE = {
-  en: "Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile. An X warning also writes socialprune-x-warning.json beside socialprune-profile.json; only the person's warning-card acknowledgement removes it.",
-  de: 'Erweiterungen sind für diesen Lauf ausgeschaltet. SocialPrune erfasst ihre Kennungen und schreibt seine eigene Profilkontrolle als JSON-Datei in dieses eigene Profil. Eine X-Warnung schreibt außerdem socialprune-x-warning.json neben socialprune-profile.json; nur die persönliche Bestätigung der Warnkarte entfernt sie.',
+  en: "Extensions are disabled for this run. SocialPrune records their ID sets and writes its own read-back JSON file in this dedicated profile. A platform warning also writes socialprune-x-warning.json for X or socialprune-instagram-warning.json for Instagram beside socialprune-profile.json; only the person's warning-card acknowledgement removes it.",
+  de: 'Erweiterungen sind für diesen Lauf ausgeschaltet. SocialPrune erfasst ihre Kennungen und schreibt seine eigene Profilkontrolle als JSON-Datei in dieses eigene Profil. Eine Plattformwarnung schreibt außerdem socialprune-x-warning.json für X oder socialprune-instagram-warning.json für Instagram neben socialprune-profile.json; nur die persönliche Bestätigung der Warnkarte entfernt sie.',
 };
 export const FILL_STEPS = {
   en: 'Open each listed post by its address and keep what X sends. No clicks, typing or scrolling in the X tab. Download media anonymously. Pages change history, cache, cookies and site data.',

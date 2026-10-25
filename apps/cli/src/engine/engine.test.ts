@@ -400,6 +400,9 @@ test('Stop is dispatched while a slow review operation still owns the command qu
     });
     if (prepared.type !== 'runStarted' || prepared.view.phase === 'idle')
       throw new Error(JSON.stringify(prepared));
+    expect(prepared.view.profile.canChange.join('\n')).toContain(
+      'socialprune-instagram-warning.json',
+    );
     const spy = vi
       .spyOn(EngineReviewDispatch.prototype, 'run')
       .mockImplementation(async () => {

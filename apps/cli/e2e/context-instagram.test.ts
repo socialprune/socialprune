@@ -1378,6 +1378,31 @@ async function harness(
   };
 }
 let cleanupLease: Awaited<ReturnType<typeof harness>> | undefined;
+test.each(['caption', 'comment', 'dialog'] as const)(
+  'D12 B reading %s never promotes ordinary content to a deletion warning',
+  async (slot) => {
+    const h = await harness('success', 5);
+    h.fake.decorateList(slot);
+    try {
+      const result = await h.start(true);
+      const warning = await h.store
+        .browserOutcomeWriter()
+        .xWarning(h.plan.accountKey, undefined, 'instagram');
+      if (slot === 'dialog') {
+        expect(result).toMatchObject({ code: 'PLATFORM_CHECK' });
+        expect(warning?.acknowledged).toBe(false);
+      } else {
+        expect(result, h.notices.join('')).toMatchObject({
+          completed: 5,
+          endReason: 'canary',
+        });
+        expect(warning).toBeNull();
+      }
+    } finally {
+      await h.close();
+    }
+  },
+);
 test.each(IMAGE_CASES)(
   'IG-IMAGE $name uses real responses and current-source capture before automatic acceptance',
   async (entry) => {

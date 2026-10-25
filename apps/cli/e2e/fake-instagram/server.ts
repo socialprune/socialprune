@@ -40,6 +40,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     | undefined;
   let imageShape: ImageCaseName | undefined;
   let deletion: DeleteCase | undefined;
+  let listDecoration: 'caption' | 'comment' | 'dialog' | undefined;
   const deletedComments = new Set<string>();
   const deleteAttempts: string[] = [];
   const candidates = new Map<
@@ -99,7 +100,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
               ? 'fail'
               : 'ok';
           if (status === 'ok') deletedComments.add(deleteComment[1]!);
-          response.end(JSON.stringify({ status }));
+          response.end(
+            JSON.stringify(
+              deletion === 'extra-field' ? { status, x: 1 } : { status },
+            ),
+          );
           return;
         }
       }
@@ -206,6 +211,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           postVariants,
           clientSidePosts,
         );
+        if (listDecoration === 'dialog')
+          html = html.replace(
+            '<body>',
+            '<body><div role="dialog">I will try again later! my action blocked the door</div>',
+          );
         if (emptyFilteredLists > 0) {
           emptyFilteredLists--;
           const anchor = 'for(const [index,row]of chosen.entries())';
@@ -304,13 +314,23 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           await delay(6500);
         }
         response.writeHead(200, { 'Content-Type': 'text/html' });
-        const html = postPage(
+        let html = postPage(
           items[Math.max(0, index)]!,
           Math.max(0, index),
           postVariants.get(index) ?? variant,
           undefined,
           hiddenPosts.has(index),
         );
+        if (listDecoration === 'caption')
+          html = html.replace(
+            '<section>',
+            '<section><div data-generated="caption">I will try again later! my action blocked the door</div>',
+          );
+        if (listDecoration === 'comment')
+          html = html.replace(
+            '<div id="comment-rows">',
+            '<div id="comment-rows"><div data-generated="comment">I will try again later! my action blocked the door</div>',
+          );
         response.end(
           imageShape
             ? imageCasePage(
@@ -430,6 +450,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     deleteAttempts,
     deletionCase(value: DeleteCase) {
       deletion = value;
+    },
+    decorateList(value: 'caption' | 'comment' | 'dialog') {
+      listDecoration = value;
     },
     events,
     get listening() {

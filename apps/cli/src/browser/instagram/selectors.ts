@@ -86,8 +86,21 @@ export async function checkPage(page: Page): Promise<void> {
     'Try again later',
     'We restrict certain activity',
   ])
-    if (await page.getByText(text, { exact: false }).count())
+    if (
+      await instagramNoticeContainers(page)
+        .getByText(text, { exact: false })
+        .count()
+    )
       throw new ContextStop('PLATFORM_CHECK', 'rate-limit');
+}
+export function instagramNoticeContainers(page: Page): Locator {
+  return page
+    .locator(
+      'xpath=//*[@role="dialog" or @role="alertdialog" or @role="alert"][not(ancestor::main or ancestor::article or ancestor::*[@dir="auto"])]',
+    )
+    .filter({
+      hasNot: page.locator('main, article, a[href*="/c/"]'),
+    });
 }
 const AGE_UNITS =
   '(?:y|w|d|h|m|s|years?|weeks?|days?|hours?|minutes?|seconds?)';

@@ -1,6 +1,6 @@
 # Use SocialPrune through your agent
 
-SocialPrune can give your own agent batches of posts or comments to label. The agent records suggestions, then opens review for you. You decide in the review page. You can delete manually from the click list, or start SocialPrune's X deletion in your own visible browser. The agent never starts deletion or acknowledges a warning card for you.
+SocialPrune can give your own agent batches of posts or comments to label. The agent records suggestions, then opens review for you. You decide in the review page. You can delete manually from the click list, or start SocialPrune's X or eligible Instagram-comment deletion in your own visible browser. The agent never starts deletion or acknowledges a warning card for you.
 
 ## Install the skill
 
@@ -67,6 +67,14 @@ The agent first runs `review --dry-run` through the chosen command to check the 
 The agent must never run `review --no-open`, obtain a token or call the review API. If your browser does not open, run `review` yourself in your own terminal. The token can appear in the browser's process arguments, and a failed opener can print a fallback token when stderr is a terminal. Software running as you may read those surfaces; the local server does not protect against that software.
 
 Keep the workspace on a local disk. Avoid network shares, and pause any sync client copying the folder while a command or review runs. The agent must never repair or edit the SQLite file. Read the skill's [command contract](../skills/socialprune/references/commands.md), [label reference](../skills/socialprune/references/labels.md), [error table](../skills/socialprune/references/errors.md) and [privacy boundary](../skills/socialprune/references/privacy.md) for the exact flow.
+
+## Instagram deletion remains your action
+
+The agent may run only `socialprune delete instagram --workspace "<dir>" --account "<key>" --dry-run --json`. It opens no browser, writes nothing and returns counts, a plan hash and `canaryItemId`. That ID names the watched comment; it is not permission to delete it. Only comments confirmed on their post with exact comment ID/time and a matched exported owner qualify. List-confirmed comments and comments without an exported owner stay manual.
+
+You start the run in your own terminal, watch the named one-comment canary and press Start and Continue yourself. The first real run requires your separate written order for that exact comment. Agents never start deletion or verification, click those controls, or acknowledge an Instagram warning. The pace is 30 seconds between starts, 15 minutes after ten attempts and at most 50 attempts per workspace day. An ambiguous attempt blocks a resend; a missing comment is not deletion proof. An unrecognized response or missing confirmation requires another watched canary.
+
+An Instagram warning blocks deletion until the next workspace day and your run-named acknowledgement. Read the card, then use `socialprune delete instagram --workspace "<dir>" --account "<key>" --profile "<dir>" --acknowledge-warning "<runId>"` yourself and type the displayed statement. The agent must never do this. The workspace and `socialprune-instagram-warning.json` in the dedicated profile retain the gate; restore refuses an outstanding warning. These paths have generated-data proof only, not a real-account deletion result.
 
 ## X deletion remains your action
 

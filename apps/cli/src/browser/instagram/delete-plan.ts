@@ -64,12 +64,14 @@ export async function planInstagramDeletion(
       attempts.push(attempt);
     let acceptedAt = 0,
       invalidatedAt = 0;
+    const deletionRuns = new Set<string>();
     for await (const run of tx.browserRuns.iterate())
       if (
         run.accountKey === accountKey &&
         run.platform === 'instagram' &&
         run.mode === 'delete'
       ) {
+        deletionRuns.add(run.runId);
         if (
           run.endReason === 'canary' &&
           run.canaryAcceptedAt &&
@@ -87,6 +89,14 @@ export async function planInstagramDeletion(
             Date.parse(run.endedAt ?? run.startedAt),
           );
       }
+    for (const attempt of attempts)
+      if (
+        deletionRuns.has(attempt.runId) &&
+        attempt.action === 'delete-comment' &&
+        ['sending', 'ambiguous'].includes(attempt.state) &&
+        !attempts.some((settlement) => settlement.settles === attempt.attemptId)
+      )
+        invalidatedAt = Math.max(invalidatedAt, Date.parse(attempt.at));
     const canary = acceptedAt === 0 || invalidatedAt >= acceptedAt;
     const manual = {
       noContext: 0,
@@ -201,6 +211,7 @@ export function instagramDeleteSummary(
     planned: plan.rows.length,
     manual: plan.manual,
     canary: plan.canary,
+    canaryItemId: plan.canary ? (plan.rows[0]?.item.id ?? null) : null,
     planHash: plan.hash,
     timeZone: plan.timeZone,
     secondsPerStep: 30,

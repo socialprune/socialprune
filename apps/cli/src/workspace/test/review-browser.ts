@@ -68,7 +68,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
     assert.deepEqual(result.physical, { version: 10, plans: true });
     assert.equal(result.contextDuplicateRejected, true);
     console.log(
-      'PASS IndexedDB v6 to v9: post/list context, add-only context, reviewPlans, idempotent reopen',
+      'PASS IndexedDB v6 to v10: post/list context, add-only context, reviewPlans, idempotent reopen',
     );
     const cli = await SQLiteStore.open(join(directory, 'source.sqlite'), {
       initial: migrateReviewContract(legacy),
@@ -99,7 +99,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
       await restored.close();
     }
     console.log(
-      'PASS v9 backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal',
+      'PASS v10 backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal',
     );
     const v1 = JSON.parse(
       await readFile(

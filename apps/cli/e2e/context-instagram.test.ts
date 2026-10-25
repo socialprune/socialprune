@@ -58,6 +58,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as captureHelpers from '../src/browser/instagram/capture.ts';
 import * as profileHelpers from '../src/browser/profile.ts';
 import * as networkHelpers from '../src/browser/instagram/network.ts';
+import * as pagesHelpers from '../src/browser/instagram/pages.ts';
 import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
@@ -1658,8 +1659,11 @@ test('C29 ownerless canary counts five post confirmations only after every uncha
 // Opt-in measurement only, never part of the default context-suite duration.
 // eslint-disable-next-line no-restricted-properties -- Test-only generated benchmark selection, never credentials.
 const memoryBenchmark = process.env['SP_CONTEXT_MEMORY_BENCHMARK'] === '1';
-test.each(memoryBenchmark ? [60] : [3])(
-  'C28 %s generated steps record one reused-session memory sample per step and optional attributed browser working sets',
+const memoryStepCount =
+  // eslint-disable-next-line no-restricted-properties -- Generated benchmark step count only, never credentials.
+  process.env['SP_CONTEXT_MEMORY_STEPS'] === '200' ? 200 : 60;
+test.each(memoryBenchmark ? [memoryStepCount] : [3])(
+  'C28 %s generated steps record per-page reused-session memory samples and optional attributed browser working sets',
   async (stepCount) => {
     const h = await harness('success', stepCount + 1);
     await fullRunReady(h);
@@ -1675,10 +1679,57 @@ test.each(memoryBenchmark ? [60] : [3])(
       largestRendererMB: number | null;
       processCount: number;
       processesObserved: boolean;
+      node: {
+        rssMB: number;
+        heapUsedMB: number;
+        externalMB: number;
+        arrayBuffersMB: number;
+      };
+      listeners: { request: number; response: number };
+      nodeGC?: {
+        rssMB: number;
+        heapUsedMB: number;
+        externalMB: number;
+        arrayBuffersMB: number;
+      };
+      cdp: { active: number; peak: number; attached: number; detached: number };
     }[] = [];
+    const cdp = { active: 0, peak: 0, attached: 0, detached: 0 };
+    h.afterLaunch(async () => {
+      await Promise.resolve();
+      const context = h.context!;
+      const create = context.newCDPSession.bind(context);
+      context.newCDPSession = async (target) => {
+        const session = await create(target);
+        cdp.attached++;
+        cdp.active++;
+        cdp.peak = Math.max(cdp.peak, cdp.active);
+        const detach = session.detach.bind(session);
+        let active = true;
+        session.detach = async () => {
+          try {
+            await detach();
+          } finally {
+            if (active) {
+              active = false;
+              cdp.active--;
+              cdp.detached++;
+            }
+          }
+        };
+        return session;
+      };
+    });
     const startedAt = performance.now();
     let garbageControl:
       { before: MemorySample; after: MemorySample } | undefined;
+    const gcCalls = await import('node:v8');
+    const vm = await import('node:vm');
+    // Test-only Node reachability controls, never used by the reading run.
+    if (memoryBenchmark) gcCalls.setFlagsFromString('--expose_gc');
+    const collectNode = memoryBenchmark
+      ? (vm.runInNewContext('gc') as () => void)
+      : () => {};
     const original = networkHelpers.observePageMemory;
     const observer = vi
       .spyOn(networkHelpers, 'observePageMemory')
@@ -1688,6 +1739,9 @@ test.each(memoryBenchmark ? [60] : [3])(
           ...memory,
           async sample() {
             const value = await memory.sample();
+            // Vitest call/results history otherwise retains every retired Page
+            // through the observer closure and turns the benchmark into an owner.
+            observer.mockClear();
             let browserWorkingSetMB: number | null = null,
               largestRendererMB: number | null = null,
               processCount = 0,
@@ -1725,8 +1779,47 @@ test.each(memoryBenchmark ? [60] : [3])(
               largestRendererMB,
               processCount,
               processesObserved,
+              node: (() => {
+                const value = process.memoryUsage();
+                return {
+                  rssMB: Math.round(value.rss / 1024 ** 2),
+                  heapUsedMB: Math.round(value.heapUsed / 1024 ** 2),
+                  externalMB: Math.round(value.external / 1024 ** 2),
+                  arrayBuffersMB: Math.round(value.arrayBuffers / 1024 ** 2),
+                };
+              })(),
+              listeners: (() => {
+                const observed = page as unknown as {
+                  listenerCount(event: string): number;
+                };
+                return {
+                  request: observed.listenerCount('request'),
+                  response: observed.listenerCount('response'),
+                };
+              })(),
+              cdp: { ...cdp },
             });
             console.info('C28_MEMORY', JSON.stringify(samples.at(-1)));
+            if (memoryBenchmark && samples.length % 20 === 0) {
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              collectNode();
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              collectNode();
+              const value = process.memoryUsage();
+              samples.at(-1)!.nodeGC = {
+                rssMB: Math.round(value.rss / 1024 ** 2),
+                heapUsedMB: Math.round(value.heapUsed / 1024 ** 2),
+                externalMB: Math.round(value.external / 1024 ** 2),
+                arrayBuffersMB: Math.round(value.arrayBuffers / 1024 ** 2),
+              };
+              console.info(
+                'C35_NODE_GC',
+                JSON.stringify({
+                  step: samples.length,
+                  ...samples.at(-1)!.nodeGC,
+                }),
+              );
+            }
             return value;
           },
           async dispose() {
@@ -1753,6 +1846,27 @@ test.each(memoryBenchmark ? [60] : [3])(
           },
         };
       });
+    const nodeAfterRun = [] as {
+      label: string;
+      rssMB: number;
+      heapUsedMB: number;
+      externalMB: number;
+      arrayBuffersMB: number;
+    }[];
+    const nodeControl = async (label: string) => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      collectNode();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      collectNode();
+      const value = process.memoryUsage();
+      nodeAfterRun.push({
+        label,
+        rssMB: Math.round(value.rss / 1024 ** 2),
+        heapUsedMB: Math.round(value.heapUsed / 1024 ** 2),
+        externalMB: Math.round(value.external / 1024 ** 2),
+        arrayBuffersMB: Math.round(value.arrayBuffers / 1024 ** 2),
+      });
+    };
     try {
       expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
         completed: stepCount,
@@ -1768,6 +1882,7 @@ test.each(memoryBenchmark ? [60] : [3])(
         ),
       ) as { steps: { memory: MemorySample }[]; memory: unknown };
       expect(samples).toHaveLength(stepCount);
+      expect(cdp.active).toBe(0);
       expect(samples.every((sample) => sample.memory.observed)).toBe(true);
       expect(report.steps.map((step) => step.memory)).toEqual(
         samples.map((sample) => sample.memory),
@@ -1778,11 +1893,20 @@ test.each(memoryBenchmark ? [60] : [3])(
         sessionAttached: true,
         observationFailed: false,
       });
-      // eslint-disable-next-line no-restricted-properties -- Test-only generated measurement output, never credentials.
-      const output = process.env['SP_C28_MEASUREMENT_OUT'];
+      if (memoryBenchmark) {
+        await nodeControl('after-run-before-spy-release');
+        observer.mockRestore();
+        await nodeControl('after-observer-spy-release');
+      }
+      const output =
+        // eslint-disable-next-line no-restricted-properties -- Test-only generated measurement output, never credentials.
+        process.env['SP_C28_MEASUREMENT_OUT'] ??
+        // eslint-disable-next-line no-restricted-properties -- Test-only generated measurement output, never credentials.
+        process.env['SP_C35_MEASUREMENT_OUT'];
       if (output) {
         expect(
-          output.startsWith(join(tmpdir(), 'kilo', 'phase2', 'c28') + '\\'),
+          output.startsWith(join(tmpdir(), 'kilo', 'phase2', 'c28') + '\\') ||
+            output.startsWith(join(tmpdir(), 'kilo', 'phase2', 'c35') + '\\'),
         ).toBe(true);
         await writeFile(
           output,
@@ -1793,6 +1917,8 @@ test.each(memoryBenchmark ? [60] : [3])(
               maxWorkers: 1,
               samples,
               garbageControl,
+              cdp,
+              nodeAfterRun,
               peak: report.memory,
               elapsedMs: Math.round(performance.now() - startedAt),
             },
@@ -1810,6 +1936,183 @@ test.each(memoryBenchmark ? [60] : [3])(
   },
   1200000,
 );
+test('C35 IG19 recycles once between20 and21 in the same context without additional platform navigation', async () => {
+  const h = await harness('success', 23);
+  await fullRunReady(h);
+  h.setLimit(21);
+  h.setMaxSteps(21);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+  let pagesCreated = 0,
+    activeBeforeClose = 0;
+  const originalPages = pagesHelpers.contextPages;
+  const create = vi
+    .spyOn(pagesHelpers, 'contextPages')
+    .mockImplementation((...args) => {
+      const boundary = originalPages(...args);
+      const make = boundary.newPage.bind(boundary);
+      boundary.newPage = async () => {
+        pagesCreated++;
+        const page = await make();
+        if (pagesCreated === 3)
+          activeBeforeClose = page.context().pages().length;
+        return page;
+      };
+      return boundary;
+    });
+  const memory = vi.spyOn(networkHelpers, 'observePageMemory');
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 21,
+      steps: 21,
+    });
+    expect(pagesCreated).toBe(3);
+    expect(memory).toHaveBeenCalledTimes(2);
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as unknown;
+    expect(report).toMatchObject({
+      recycling: {
+        intervalSteps: 20,
+        count: 1,
+        events: [
+          {
+            afterStep: 20,
+            nextStep: 21,
+            reason: 'step-interval',
+            checks: 'next-list',
+          },
+        ],
+      },
+      memory: { samples: 21, failedSamples: 0 },
+      runtime: { unexpectedPageCloses: 0 },
+    });
+    expect(activeBeforeClose).toBe(2);
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === networkHelpers.COMMENTS_PATH,
+      ),
+    ).toHaveLength(21);
+    expect(
+      h.fake.requests.filter((request) => /^\/p\//.test(request.path)),
+    ).toHaveLength(21);
+    const counts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(counts.filter((record) => record.runId === run.runId)).toHaveLength(
+      21,
+    );
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    memory.mockRestore();
+    create.mockRestore();
+    await h.close();
+  }
+}, 180000);
+
+test.each(['account', 'language', 'extension', 'http-429'] as const)(
+  'C35 IG19 recycle retains the %s guard before next comment confirmation',
+  async (mode) => {
+    const h = await harness('success', 22);
+    await fullRunReady(h);
+    h.setLimit(21);
+    h.setMaxSteps(21);
+    h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+    h.fake.filteredImageOnly(Array.from({ length: 20 }, (_, index) => index));
+    const original = pagesHelpers.contextPages;
+    vi.spyOn(pagesHelpers, 'contextPages').mockImplementation((...args) => {
+      const boundary = original(...args),
+        replace = boundary.replace.bind(boundary);
+      boundary.replace = async (page) => {
+        const next = await replace(page);
+        if (mode === 'extension') {
+          const folder = join(
+            h.profile,
+            'Default',
+            'Extensions',
+            'generated_recycle_extension',
+          );
+          await mkdir(folder, { recursive: true });
+          await writeFile(join(folder, 'manifest.json'), '{}');
+        } else if (mode === 'account') h.fake.setVariant('account-mismatch');
+        else if (mode === 'language') h.fake.setVariant('de');
+        else h.fake.setVariant('429');
+        return next;
+      };
+      return boundary;
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject(
+        mode === 'account'
+          ? { code: 'ACCOUNT_MISMATCH', token: 'account-changed' }
+          : mode === 'language'
+            ? { code: 'PAGE_LANGUAGE', token: 'page-language' }
+            : mode === 'extension'
+              ? { code: 'PLATFORM_CHECK', token: 'extensions-added' }
+              : { code: 'PLATFORM_CHECK', token: 'http-429' },
+      );
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(
+        contexts.filter((record) => record.runId !== 'generated-prior-canary'),
+      ).toHaveLength(0);
+      expect(
+        contexts
+          .filter((record) => record.runId !== 'generated-prior-canary')
+          .some((record) => record.itemId === h.fixture.items[20]!.id),
+      ).toBe(false);
+      const journal = await h.store.browserJournal();
+      const run = journal.runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      expect(
+        JSON.parse(
+          await readFile(
+            join(
+              h.directory,
+              'context',
+              'instagram',
+              `canary-${run.runId}.json`,
+            ),
+            'utf8',
+          ),
+        ) as unknown,
+      ).toMatchObject({
+        recycling: {
+          count: 1,
+          events: [
+            {
+              afterStep: 20,
+              nextStep: 21,
+              reason: 'step-interval',
+              checks: 'next-list',
+            },
+          ],
+        },
+      });
+      expect(
+        journal.attempts.filter(
+          (attempt) =>
+            attempt.runId === run.runId &&
+            String(attempt.state) === 'confirmed',
+        ),
+      ).toHaveLength(0);
+      expect(
+        journal.attempts.filter(
+          (attempt) =>
+            attempt.runId === run.runId && attempt.code === 'list-image-only',
+        ),
+      ).toHaveLength(20);
+    } finally {
+      vi.restoreAllMocks();
+      await h.close();
+    }
+  },
+  180000,
+);
+
 test('C28 memory diagnostic covers the completed step and run peak without changing its result', async () => {
   const h = await harness('success', 2);
   await fullRunReady(h);

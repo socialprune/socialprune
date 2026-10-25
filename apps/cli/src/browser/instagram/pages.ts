@@ -88,6 +88,12 @@ export function contextPages(
       startup = false;
       return confirmation;
     },
+    async replace(page: Page): Promise<Page> {
+      if (!owned.has(page)) throw new Error('CONTEXT_PAGE_NOT_OWNED');
+      await page.close({ runBeforeUnload: false });
+      owned.delete(page);
+      return this.newPage();
+    },
     allowed: classify,
     check() {
       if (failure) throw failure;

@@ -244,6 +244,13 @@ export function observeContextRuntime(
     closing() {
       closing = true;
     },
+    forget(page: Page) {
+      const listeners = owned.get(page);
+      if (!listeners) return;
+      page.off('crash', listeners.crash);
+      page.off('close', listeners.close);
+      owned.delete(page);
+    },
     summary(): RuntimeReport {
       return RuntimeReportSchema.parse({
         ...counts,

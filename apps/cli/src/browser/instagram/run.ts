@@ -39,6 +39,8 @@ import {
   accountClass,
   RuntimeReportSchema,
   RunMemorySchema,
+  combineRunMemory,
+  PageRecyclingSchema,
   PostRetriesSchema,
   errorClass,
   keyPaths,
@@ -100,6 +102,7 @@ import { launchRunBrowser } from '../launch.ts';
 import type { WindowPlacement } from '../launch.ts';
 import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
+import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
 
 export interface ContextOptions {
   session?: RunSession;
@@ -213,12 +216,23 @@ export async function runContextWithDependencies(
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
+    recycling: {
+      intervalSteps: 20;
+      count: number;
+      events: {
+        afterStep: number;
+        nextStep: number;
+        reason: 'step-interval';
+        checks: 'next-list';
+      }[];
+    };
   } = {
     steps: [],
     confirmations: { post: 0, list: 0 },
     retries: { used: 0, entries: [] },
     pace: paceSummary(pace),
     rows: { emptySkipped: 0, otherName: 0, imageOnlySkipped: 0 },
+    recycling: { intervalSteps: PAGE_RECYCLE_INTERVAL, count: 0, events: [] },
     runtime: {
       pageCrashes: 0,
       browserDisconnects: 0,
@@ -241,12 +255,17 @@ export async function runContextWithDependencies(
   let runtime: ReturnType<typeof observeContextRuntime> | undefined;
   let memory: ReturnType<typeof observePageMemory> | undefined;
   let activeStep: Record<string, unknown> | undefined;
+  const retiredMemory: ReturnType<
+    ReturnType<typeof observePageMemory>['summary']
+  >[] = [];
+  const memorySummary = () =>
+    combineRunMemory([...retiredMemory, ...(memory ? [memory.summary()] : [])]);
   const sampleMemory = async () => {
     if (!memory || !activeStep) return;
     const step = activeStep;
     activeStep = undefined;
     step.memory = await memory.sample();
-    report.memory = memory.summary();
+    report.memory = memorySummary();
   };
   let began = false,
     stopped = false,
@@ -480,7 +499,8 @@ export async function runContextWithDependencies(
       throw new CliError('STALE_PLAN');
     stage = 'checkpoint';
     await checkpoint();
-    const page = options.session ? local : await pages.newPage();
+    // Keep the window-identity anchor open; only this separate reading page may recycle.
+    let page = await pages.newPage();
     runtime.own(page);
     memory = observePageMemory(page);
     answers = pageAnswers(page, deps.policy);
@@ -495,6 +515,7 @@ export async function runContextWithDependencies(
       last = prior.last,
       batch = prior.used ? ((prior.used - 1) % pace.batch) + 1 : 0;
     const controls = options.session?.controls;
+    let lastRecycleAt = 0;
     const resumeChecks = async () => {
       // The next counted, paced list step verifies account and language before
       // opening a post. Resume itself must not navigate an uncounted page.
@@ -595,6 +616,39 @@ export async function runContextWithDependencies(
       }
       stage = 'checkpoint';
       await checkpoint();
+      if (
+        pageRecycleDue(
+          steps,
+          lastRecycleAt,
+          options.plan.canary,
+          pendingAttempt !== undefined,
+        )
+      ) {
+        await sampleMemory();
+        postRequests?.close();
+        postRequests = undefined;
+        answerReport = undefined;
+        await answers.flush(deps.responseMs);
+        answers.dispose();
+        await memory.dispose();
+        retiredMemory.push(memory.summary());
+        runtime.forget(page);
+        page = await pages.replace(page);
+        runtime.own(page);
+        memory = observePageMemory(page);
+        answers = pageAnswers(page, deps.policy);
+        lastRecycleAt = steps;
+        report.recycling.count++;
+        report.recycling.events.push({
+          afterStep: steps,
+          nextStep: steps + 1,
+          reason: 'step-interval',
+          checks: 'next-list',
+        });
+        PageRecyclingSchema.parse(report.recycling);
+        report.memory = memorySummary();
+        await checkpoint();
+      }
       options.session?.entry(entryView(row.item, 'confirm-comment'));
       const attemptId = crypto.randomUUID();
       stage = 'attempt';
@@ -1118,7 +1172,7 @@ export async function runContextWithDependencies(
   } finally {
     await sampleMemory();
     await memory?.dispose();
-    if (memory) report.memory = RunMemorySchema.parse(memory.summary());
+    if (memory) report.memory = RunMemorySchema.parse(memorySummary());
     let matches = false,
       reportPath: string | undefined;
     let persistedCause: ReturnType<typeof contextCause> | undefined;

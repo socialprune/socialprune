@@ -190,6 +190,47 @@ export const RunMemorySchema = z
       (value.failedSamples === 0 || value.observationFailed) &&
       (value.peak !== null) === value.samples > value.failedSamples,
   );
+export type RunMemory = z.infer<typeof RunMemorySchema>;
+export function combineRunMemory(values: readonly RunMemory[]): RunMemory {
+  let peak: MemoryValues | null = null;
+  for (const value of values)
+    if (value.peak) {
+      if (!peak) peak = { ...value.peak };
+      else
+        for (const key of Object.keys(memoryFields) as (keyof MemoryValues)[])
+          peak[key] = Math.max(peak[key], value.peak[key]);
+    }
+  return RunMemorySchema.parse({
+    samples: values.reduce((n, value) => n + value.samples, 0),
+    failedSamples: values.reduce((n, value) => n + value.failedSamples, 0),
+    sessionAttached: values.some((value) => value.sessionAttached),
+    observationFailed: values.some((value) => value.observationFailed),
+    peak,
+  });
+}
+export const PageRecyclingSchema = z
+  .strictObject({
+    intervalSteps: z.literal(20),
+    count: count,
+    events: z.array(
+      z.strictObject({
+        afterStep: count,
+        nextStep: count,
+        reason: z.literal('step-interval'),
+        checks: z.literal('next-list'),
+      }),
+    ),
+  })
+  .refine(
+    (value) =>
+      value.count === value.events.length &&
+      value.events.every(
+        (event, index) =>
+          event.nextStep === event.afterStep + 1 &&
+          event.afterStep >=
+            (index ? value.events[index - 1]!.afterStep : 0) + 20,
+      ),
+  );
 const imageDiagnosticFields = {
   qualifyingObjects: count,
   matchingLists: count,

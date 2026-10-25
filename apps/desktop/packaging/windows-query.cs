@@ -20,6 +20,7 @@ public static class DesktopQuery {
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetLongPathNameW(string path,StringBuilder output,uint size);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("iphlpapi.dll")] static extern uint GetExtendedTcpTable(IntPtr table, ref uint size, bool order, uint family, int kind, uint reserved);
   [DllImport("iphlpapi.dll")] static extern uint GetExtendedUdpTable(IntPtr table, ref uint size, bool order, uint family, int kind, uint reserved);
   static string Json(string text) {
@@ -196,8 +197,22 @@ public static class DesktopQuery {
       default: throw new Exception("QUERY_OPERATION_INVALID");
     }
   }
+  static string ForegroundWatch(string ready,string stop) {
+    var initial=GetForegroundWindow();
+    if(initial==IntPtr.Zero) throw new Exception("FOREGROUND_WINDOW_MISSING");
+    var signal="{\"version\":1,\"state\":\"ready\",\"handle\":"+Json(initial.ToInt64().ToString())+",\"sampleIntervalMs\":5,\"maximumWatchMs\":10000}";
+    File.WriteAllText(ready+".tmp",signal); File.Move(ready+".tmp",ready);
+    var clock=System.Diagnostics.Stopwatch.StartNew();
+    bool changed=false; int samples=0;
+    while(!File.Exists(stop)&&clock.ElapsedMilliseconds<10000) {
+      if(GetForegroundWindow()!=initial) changed=true;
+      samples++; System.Threading.Thread.Sleep(5);
+    }
+    return "{\"handle\":"+Json(initial.ToInt64().ToString())+",\"changed\":"+(changed?"true":"false")+",\"samples\":"+samples+",\"final\":"+Json(GetForegroundWindow().ToInt64().ToString())+",\"elapsedMs\":"+clock.ElapsedMilliseconds+"}";
+  }
   public static int Main(string[] args) {
     try {
+      if(args.Length==3&&args[0]=="foreground-watch") { Console.WriteLine(ForegroundWatch(args[1],args[2])); return 0; }
       if(args.Length!=2) throw new Exception("QUERY_ARGUMENTS_INVALID");
       Console.WriteLine(Query(args[0], args[1])); return 0;
     } catch(Exception error) { Console.Error.WriteLine(error); return 1; }

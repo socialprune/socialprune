@@ -1,4 +1,6 @@
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { dist } from '../packaging/paths.ts';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SQLiteStore } from '../../cli/src/workspace/sqlite-store.ts';
@@ -6,7 +8,7 @@ import { createProfile } from '../../cli/src/browser/profile.ts';
 import { fakeX } from '../../cli/e2e/fake-x/server.ts';
 import { fixtureWorkspace, FIXTURE } from '../../cli/e2e/fake-x/fixture.ts';
 import { launch, call } from './helpers.ts';
-import { runPowerShell } from '../packaging/windows-powershell.ts';
+import { startForegroundWatch } from './foreground-watch.ts';
 
 test('runner-owned generated platform window recovers without activation, visible neighbor stays and ownership survives ended until close', async () => {
   const fake = await fakeX(4656);
@@ -56,6 +58,16 @@ test('runner-owned generated platform window recovers without activation, visibl
         p.engine.child.postMessage(value);
       });
     }, command);
+  let watching: Awaited<ReturnType<typeof startForegroundWatch>> | undefined;
+  const timeline: unknown[] = [];
+  const started = performance.now();
+  const mark = (event: string, value?: unknown) =>
+    timeline.push({
+      event,
+      elapsedMs: Math.ceil(performance.now() - started),
+      value,
+    });
+  let outcome = 'failed';
   try {
     expect(await owner()).toBeNull();
     const plan = await call(app, {
@@ -112,6 +124,7 @@ test('runner-owned generated platform window recovers without activation, visibl
       )
       .not.toBeNull();
     const first = await owner();
+    mark('owner', first);
     if (!first) throw new Error('NO_OWNER');
     await action('stop');
     await expect
@@ -124,6 +137,7 @@ test('runner-owned generated platform window recovers without activation, visibl
       })
       .toBe('ended');
     expect((await owner())?.id).toBe(first.id);
+    mark('ended', await owner());
     const areas = await app.application.evaluate(({ screen }) =>
       screen.getAllDisplays().map((d) => d.workArea),
     );
@@ -137,6 +151,7 @@ test('runner-owned generated platform window recovers without activation, visibl
       await control({ type: 'displayPosition', bounds: off }),
     ).toMatchObject({ positioned: true });
     await expect.poll(async () => (await owner())?.bounds.x).toBe(off.x);
+    mark('offscreen', { target: await owner(), areas });
     await app.application.evaluate(({ BrowserWindow }) => {
       const neighbor = new BrowserWindow({
         width: 350,
@@ -155,35 +170,19 @@ test('runner-owned generated platform window recovers without activation, visibl
       ) as Electron.BrowserWindow;
       return { bounds: w.getBounds(), focused: w.isFocused() };
     });
-    const ready = join(app.data, 'foreground.ready'),
-      stop = join(app.data, 'foreground.stop');
-    const watching = runPowerShell(
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-File',
-        join(import.meta.dirname, 'foreground-probe.ps1'),
-        '-Ready',
-        ready,
-        '-Stop',
-        stop,
-      ],
-      { windowsHide: true },
-    );
-    await expect
-      .poll(() =>
-        stat(ready).then(
-          () => true,
-          () => false,
-        ),
-      )
-      .toBe(true);
+    watching = await startForegroundWatch(app.data);
+    mark('foreground-ready', {
+      readyMs: watching.readyMs,
+      signal: watching.signal,
+      target: await owner(),
+    });
     await app.application.evaluate(({ screen }) => {
       screen.emit('display-metrics-changed');
     });
     await expect
       .poll(async () => {
         const value = await owner();
+        mark('recovery-poll', value);
         return (
           value &&
           areas.some(
@@ -196,13 +195,8 @@ test('runner-owned generated platform window recovers without activation, visibl
         );
       })
       .toBe(true);
-    await writeFile(stop, 'stop');
-    const observed = JSON.parse((await watching).stdout) as {
-      handle: string;
-      final: string;
-      changed: boolean;
-      samples: number;
-    };
+    const observed = await watching.stop();
+    watching = undefined;
     expect(observed.changed).toBe(false);
     expect(observed.samples).toBeGreaterThan(0);
     expect(observed.final).toBe(observed.handle);
@@ -233,7 +227,30 @@ test('runner-owned generated platform window recovers without activation, visibl
     await control({ type: 'displayClose' });
     await expect.poll(owner).toBeNull();
     expect(app.errors).toEqual([]);
+    outcome = 'passed';
   } finally {
+    await watching?.stop();
+    mark(
+      'final-owner',
+      await owner().catch((error: unknown) => ({ failure: String(error) })),
+    );
+    const log = await readFile(
+      join(app.selectedData, 'logs', 'desktop.ndjson'),
+      'utf8',
+    ).catch(() => '');
+    const receipt = {
+      outcome,
+      timeline,
+      log,
+      currentAreas: await app.application.evaluate(({ screen }) =>
+        screen.getAllDisplays().map((display) => display.workArea),
+      ),
+    };
+    await writeFile(
+      join(dist, `release-display-producer-${randomUUID()}.json`),
+      JSON.stringify(receipt),
+    );
+    console.log('DISPLAY_PRODUCER_RECEIPT', JSON.stringify(receipt));
     await app.application
       .evaluate(() => {
         (

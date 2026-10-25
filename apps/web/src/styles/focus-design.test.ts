@@ -29,9 +29,9 @@ describe('DESIGN-H C foundation', () => {
     expect(feed).toContain('props.criteria');
   });
 
-  test('keeps suggestion metadata but removes decorative magic from a decision', async () => {
+  test('keeps the suggestion mark and metadata distinct from a human decision', async () => {
     const card = await source('../review/feed/FeedCard.tsx');
-    expect(card).not.toContain('WandSparkles');
+    expect(card).toContain('<WandSparkles size={16} aria-hidden="true" />');
     expect(card).toContain('sourceLabel(suggestion.source, t)');
     expect(card).toContain('suggestion.category');
     expect(card).toContain('suggestion.reason');

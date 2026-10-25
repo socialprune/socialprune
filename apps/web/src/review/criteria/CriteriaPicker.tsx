@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useIntl } from 'react-intl';
-import { Plus, X, ArrowRight } from 'lucide-react';
+import { Plus, X, ArrowRight, Info } from 'lucide-react';
 import { useT } from '../../i18n/index.ts';
 import type { CriteriaModel } from './types.ts';
 import styles from './Criteria.module.css';
@@ -17,6 +17,7 @@ export function CriteriaPicker({
   presetsOnly = false,
   onEdit,
   onCancelEdit,
+  showTotal = true,
 }: {
   model: CriteriaModel;
   onToggle: (id: string, selected: boolean) => void;
@@ -29,6 +30,7 @@ export function CriteriaPicker({
   presetsOnly?: boolean;
   onEdit?: (id: string) => void;
   onCancelEdit?: () => void;
+  showTotal?: boolean;
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -63,9 +65,6 @@ export function CriteriaPicker({
                     {intl.formatNumber(option.hits)}
                   </span>
                 </span>
-                <span className={styles.help} id={`${id}-${option.id}-help`}>
-                  {option.description}
-                </span>
                 {!!option.unchecked && (
                   <span className={styles.unchecked}>
                     {t('criteriaPicker.unchecked', { count: option.unchecked })}
@@ -86,6 +85,17 @@ export function CriteriaPicker({
                 )}
               </span>
             </label>
+            <details className={styles.definition}>
+              <summary>
+                <Info size={18} aria-hidden="true" />
+                <span className={styles.srOnly}>
+                  {t('criteriaPicker.definition', { label: option.label })}
+                </span>
+              </summary>
+              <p className={styles.help} id={`${id}-${option.id}-help`}>
+                {option.description}
+              </p>
+            </details>
             {(option.custom || option.earlier) && (
               <button
                 className={styles.iconButton}
@@ -111,6 +121,26 @@ export function CriteriaPicker({
       {model.selectionLimit && (
         <p className={styles.help}>{model.selectionLimit}</p>
       )}
+      <fieldset className={styles.level} disabled={model.busy}>
+        <legend>{t('criteriaPicker.level')}</legend>
+        {(
+          [
+            'criteriaPicker.every',
+            'criteriaPicker.low',
+            'criteriaPicker.medium',
+          ] as const
+        ).map((message, index) => (
+          <label key={message}>
+            <input
+              type="radio"
+              name={`${id}-level`}
+              checked={model.level === index}
+              onChange={() => onLevel(index as 0 | 1 | 2)}
+            />
+            {t(message)}
+          </label>
+        ))}
+      </fieldset>
       {!presetsOnly && (
         <section className={styles.own} aria-labelledby={`${id}-own-title`}>
           <h3 id={`${id}-own-title`}>{t('criteriaPicker.own')}</h3>
@@ -187,32 +217,14 @@ export function CriteriaPicker({
           )}
         </section>
       )}
-      <fieldset className={styles.level} disabled={model.busy}>
-        <legend>{t('criteriaPicker.level')}</legend>
-        {(
-          [
-            'criteriaPicker.every',
-            'criteriaPicker.low',
-            'criteriaPicker.medium',
-          ] as const
-        ).map((message, index) => (
-          <label key={message}>
-            <input
-              type="radio"
-              name={`${id}-level`}
-              checked={model.level === index}
-              onChange={() => onLevel(index as 0 | 1 | 2)}
-            />
-            {t(message)}
-          </label>
-        ))}
-      </fieldset>
-      <p className={styles.total}>
-        {t('criteriaPicker.total', {
-          count: model.suggested,
-          held: model.held,
-        })}
-      </p>
+      {showTotal && (
+        <p className={styles.total}>
+          {t('criteriaPicker.total', {
+            count: model.suggested,
+            held: model.held,
+          })}
+        </p>
+      )}
     </section>
   );
 }

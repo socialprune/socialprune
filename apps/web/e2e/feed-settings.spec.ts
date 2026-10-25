@@ -104,7 +104,12 @@ test('picker saves counts on tick and rules move entries without decisions', asy
     ),
   ).toBeVisible();
   await expect(
-    page.getByText('Your rules hold back 0 entries.', { exact: true }),
+    page
+      .locator('[data-criteria-footer]')
+      .getByText(
+        'Your criteria suggest 0 entries for deletion. Your rules hold back 0 of them.',
+        { exact: true },
+      ),
   ).toBeVisible();
   await political.check();
   await expect(

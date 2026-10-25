@@ -254,11 +254,17 @@ for (const lang of ['de', 'en'] as const)
         await page.locator('footer button').click();
         await expect(page.getByRole('dialog')).toBeVisible();
         await inspect('preview');
-        await page.getByRole('dialog').evaluate((node) => {
-          node.scrollTop = node.scrollHeight;
-        });
+        await page
+          .getByRole('dialog')
+          .locator('[class*="previewBody"]')
+          .evaluate((node) => {
+            node.scrollTop = node.scrollHeight;
+          });
         await inspect('preview-bottom');
-        await page.getByRole('dialog').getByRole('button').last().click();
+        await page
+          .getByRole('dialog')
+          .getByRole('button', { name: messages['bulk.cancel'], exact: true })
+          .click();
         const empty = liveFeedFixture();
         empty.settings.criteria!.selected = [];
         await restoreLiveFeed(page, empty);
@@ -291,15 +297,7 @@ for (const lang of ['de', 'en'] as const)
             findings.push(`section heading inset: ${name} (${difference}px)`);
         }
         await inspectSectionHeading(messages['criteriaPicker.title']!);
-        const editor = page
-          .locator('section')
-          .filter({
-            has: page.getByRole('heading', {
-              name: messages['criteriaPicker.title'],
-              exact: true,
-            }),
-          })
-          .first();
+        const editor = page.locator('[data-criteria-scroll]');
         await page
           .getByRole('heading', {
             name: messages['keepRules.title'],

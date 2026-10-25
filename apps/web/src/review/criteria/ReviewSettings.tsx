@@ -249,109 +249,129 @@ export function ReviewSettings({
     ...(!storedRules([rule]) ? { error: t('keepRules.invalid') } : {}),
   }));
   return (
-    <>
-      <CriteriaPicker
-        model={{
-          options,
-          level: criteria.level,
-          ownLabel,
-          ownDescription,
-          editingId,
-          ownRoom:
-            categories.length < 32 &&
-            criteria.selected.length < CRITERIA_SELECTED_MAX,
-          busy,
-          suggested: currentCounts.tabs.suggested,
-          held: currentCounts.tabs.held,
-          limitOffer: offer ? t('keepRules.add') : undefined,
-          selectionLimit:
-            criteria.selected.length >= CRITERIA_SELECTED_MAX
-              ? t('criteriaPicker.selectionLimit', {
-                  count: CRITERIA_SELECTED_MAX,
-                })
-              : undefined,
-        }}
-        onToggle={toggle}
-        onLevel={(level) => {
-          if (!lock.current) {
-            const next = { ...criteria, level };
-            setCriteria(next);
-            void persist(next);
-          }
-        }}
-        onOwnLabel={setOwnLabel}
-        onOwnDescription={setOwnDescription}
-        onAdd={() => void addOwn()}
-        onRemove={remove}
-        onEdit={(id) => {
-          const entry = criteria.custom.find((entry) => entry.id === id)!;
-          setEditing(id);
-          setOwnLabel(entry.label);
-          setOwnDescription(entry.description);
-        }}
-        onCancelEdit={() => {
-          setEditing(undefined);
-          setOwnLabel('');
-          setOwnDescription('');
-        }}
-        onOfferRule={() => {
-          if (offer) {
-            addRule(offer.kind, offer.value);
-            setOwnLabel('');
-            setOwnDescription('');
-          }
-        }}
-      />
-      {summary.kind === 'demo' && (
-        <aside className={styles.examples}>
-          <h3>{t('criteriaPicker.examples')}</h3>
-          <ul>
-            {demoCriteriaExamples.map((example) => (
-              <li key={example.id}>
-                <strong>{example.label[lang]}</strong> {example.text[lang]}
-              </li>
-            ))}
-          </ul>
-        </aside>
-      )}
-      <div ref={rulesRef}>
-        <RulesEditor
-          rules={models}
-          busy={busy}
-          onChange={(rule) =>
-            saveRules(
-              rules.map((entry) => (entry.id === rule.id ? rule : entry)),
-            )
-          }
-          onDraftChange={(rule) =>
-            setRules(
-              rules.map((entry) => (entry.id === rule.id ? rule : entry)),
-            )
-          }
-          onCommit={() => saveRules(rules)}
-          onAdd={addRule}
-          onRemove={(id) => saveRules(rules.filter((rule) => rule.id !== id))}
-        />
+    <div className={styles.settings}>
+      <div className={styles.settingsScroll} data-criteria-scroll>
+        <div className={styles.settingsGrid}>
+          <div>
+            <CriteriaPicker
+              showTotal={false}
+              model={{
+                options,
+                level: criteria.level,
+                ownLabel,
+                ownDescription,
+                editingId,
+                ownRoom:
+                  categories.length < 32 &&
+                  criteria.selected.length < CRITERIA_SELECTED_MAX,
+                busy,
+                suggested: currentCounts.tabs.suggested,
+                held: currentCounts.tabs.held,
+                limitOffer: offer ? t('keepRules.add') : undefined,
+                selectionLimit:
+                  criteria.selected.length >= CRITERIA_SELECTED_MAX
+                    ? t('criteriaPicker.selectionLimit', {
+                        count: CRITERIA_SELECTED_MAX,
+                      })
+                    : undefined,
+              }}
+              onToggle={toggle}
+              onLevel={(level) => {
+                if (!lock.current) {
+                  const next = { ...criteria, level };
+                  setCriteria(next);
+                  void persist(next);
+                }
+              }}
+              onOwnLabel={setOwnLabel}
+              onOwnDescription={setOwnDescription}
+              onAdd={() => void addOwn()}
+              onRemove={remove}
+              onEdit={(id) => {
+                const entry = criteria.custom.find((entry) => entry.id === id)!;
+                setEditing(id);
+                setOwnLabel(entry.label);
+                setOwnDescription(entry.description);
+              }}
+              onCancelEdit={() => {
+                setEditing(undefined);
+                setOwnLabel('');
+                setOwnDescription('');
+              }}
+              onOfferRule={() => {
+                if (offer) {
+                  addRule(offer.kind, offer.value);
+                  setOwnLabel('');
+                  setOwnDescription('');
+                }
+              }}
+            />
+            {summary.kind === 'demo' && (
+              <aside className={styles.examples}>
+                <h3>{t('criteriaPicker.examples')}</h3>
+                <ul>
+                  {demoCriteriaExamples.map((example) => (
+                    <li key={example.id}>
+                      <strong>{example.label[lang]}</strong>{' '}
+                      {example.text[lang]}
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            )}
+          </div>
+          <div ref={rulesRef} className={styles.rulesColumn}>
+            <RulesEditor
+              rules={models}
+              busy={busy}
+              onChange={(rule) =>
+                saveRules(
+                  rules.map((entry) => (entry.id === rule.id ? rule : entry)),
+                )
+              }
+              onDraftChange={(rule) =>
+                setRules(
+                  rules.map((entry) => (entry.id === rule.id ? rule : entry)),
+                )
+              }
+              onCommit={() => saveRules(rules)}
+              onAdd={addRule}
+              onRemove={(id) =>
+                saveRules(rules.filter((rule) => rule.id !== id))
+              }
+            />
+          </div>
+        </div>
       </div>
-      {error && (
-        <p role="alert" className={styles.error}>
-          {error}
-        </p>
-      )}
-      <div className={styles.saveStatus} role="status" aria-live="polite">
-        {busy
-          ? t('criteriaPicker.saving')
-          : !error &&
-            !models.some((rule) => rule.error) &&
-            t('criteriaPicker.saved')}
-      </div>
-      <button
-        className={styles.done}
-        disabled={busy || models.some((rule) => rule.error)}
-        onClick={onDone}
-      >
-        {t('reviewFeed.applyCriteria')}
-      </button>
-    </>
+      <footer className={styles.settingsFooter} data-criteria-footer>
+        <div className={styles.receipt}>
+          <p className={styles.liveTotal}>
+            {t('criteriaPicker.total', {
+              count: currentCounts.tabs.suggested,
+              held: currentCounts.tabs.held,
+            })}
+          </p>
+          {error && (
+            <p role="alert" className={styles.error}>
+              {error}
+            </p>
+          )}
+          <div className={styles.saveStatus} role="status" aria-live="polite">
+            {busy
+              ? t('criteriaPicker.saving')
+              : !error &&
+                !models.some((rule) => rule.error) &&
+                t('criteriaPicker.saved')}
+          </div>
+        </div>
+        <button
+          className={styles.done}
+          disabled={busy || models.some((rule) => rule.error)}
+          onClick={onDone}
+        >
+          {t('reviewFeed.applyCriteria')}
+        </button>
+      </footer>
+    </div>
   );
 }

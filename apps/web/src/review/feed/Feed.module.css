@@ -327,9 +327,15 @@
   }
   .suggestionLine {
     flex-wrap: wrap;
+    align-items: baseline;
     color: var(--color-suggestion);
     font-size: var(--type-xs);
     line-height: var(--line-xs);
+  }
+  .suggestionLine > svg {
+    position: relative;
+    top: 0.125em;
+    color: inherit;
   }
   .suggestionLine > span:not(.source) {
     border-left: var(--border-width) solid var(--color-divider);
@@ -348,11 +354,9 @@
     font-size: var(--type-xs);
   }
   .held {
-    padding: var(--space-3);
+    padding: var(--space-3) 0 var(--space-3) var(--space-3);
     margin-block: var(--space-3);
-    border: var(--border-width) solid var(--color-divider);
-    border-radius: var(--radius-control);
-    background: var(--color-social-hint);
+    border-left: 3px solid var(--color-boundary);
   }
   .held p {
     display: flex;
@@ -504,6 +508,15 @@
   }
   .empty p {
     color: var(--color-text-secondary);
+    max-width: 48ch;
+    font-size: var(--type-sm);
+    line-height: var(--line-md);
+    margin: var(--space-3) 0 var(--space-5);
+  }
+  .empty > button {
+    min-height: 48px;
+    padding-inline: var(--space-4);
+    font-size: var(--type-sm);
   }
   .skeleton {
     display: block;
@@ -526,12 +539,15 @@
     position: fixed;
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);
-    width: min(620px, calc(100% - var(--space-5)));
+    width: min(640px, calc(100% - var(--space-5)));
     max-height: calc(100dvh - var(--space-5));
-    overflow: auto;
-    padding: var(--space-5);
+    height: min(680px, calc(100dvh - var(--space-5)));
+    overflow: clip;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--color-surface);
-    border: var(--border-width) solid var(--color-boundary);
+    border: var(--border-width) solid var(--color-divider);
     border-radius: var(--radius-panel);
     z-index: 11;
     overflow-wrap: normal;
@@ -546,8 +562,17 @@
   }
   .dialogHeading h2 {
     margin: 0;
+    font-size: var(--type-xl);
+    line-height: var(--line-xl);
   }
-  .dialog > p {
+  .previewBody {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-6);
+    scrollbar-color: var(--color-boundary) var(--color-surface);
+  }
+  .previewBody > p {
     font-size: var(--type-sm);
     line-height: var(--line-sm);
   }
@@ -555,9 +580,8 @@
   .platformNotice {
     display: flex;
     gap: var(--space-3);
-    padding: var(--space-4);
-    background: var(--color-social-hint);
-    border-radius: var(--radius-control);
+    padding: var(--space-4) 0;
+    border-block: var(--border-width) solid var(--color-divider);
   }
   .exclusions p {
     margin: 0;
@@ -567,8 +591,10 @@
     margin-top: var(--space-2);
   }
   .platformNotice {
-    background: var(--color-marked-bg);
-    color: var(--color-marked);
+    border: 0;
+    color: var(--color-text);
+    line-height: var(--line-sm);
+    align-items: flex-start;
   }
   .sample {
     font-size: var(--type-sm);
@@ -598,7 +624,17 @@
   }
   .dialogActions {
     flex-wrap: wrap;
-    margin-top: var(--space-4);
+    justify-content: flex-end;
+    flex: none;
+    margin-top: 0;
+    padding: var(--space-4) var(--space-6);
+    border-top: var(--border-width) solid var(--color-divider);
+    background: var(--color-surface);
+  }
+  .dialogActions > button {
+    min-height: 48px;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--type-sm);
   }
   .srOnly {
     position: absolute;
@@ -618,6 +654,20 @@
     scrollbar-color: var(--color-boundary) var(--color-surface);
   }
   @media (max-width: 540px) {
+    .previewBody {
+      padding: var(--space-5) var(--space-4);
+    }
+    .dialogActions {
+      padding: var(--space-3) var(--space-4);
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .dialogActions > button {
+      width: 100%;
+    }
+    .dialogActions > button:first-child {
+      order: 0;
+    }
     .feedHeader {
       padding: var(--space-1) var(--space-3);
     }

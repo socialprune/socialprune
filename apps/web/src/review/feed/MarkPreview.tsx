@@ -1,5 +1,5 @@
 import { Dialog } from '@base-ui/react/dialog';
-import { Bookmark, Info, ShieldCheck } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useIntl } from 'react-intl';
 import { useT } from '../../i18n/index.ts';
 import type { MarkPreviewModel } from './types.ts';
@@ -35,94 +35,94 @@ export function MarkPreview({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Popup className={styles.dialog}>
-          <div className={styles.dialogHeading}>
-            <Bookmark size={24} aria-hidden="true" />
-            <Dialog.Title>
-              {t('markPreview.title', { count: preview.count })}
-            </Dialog.Title>
-          </div>
-          <Dialog.Description>
-            {t('markPreview.account', { account: preview.account })}
-          </Dialog.Description>
-          {preview.state === 'changed' && (
-            <p role="status" className={styles.unchecked}>
-              {t('markPreview.changed')}
-            </p>
-          )}
-          {preview.state === 'loading' && (
-            <p role="status">{t('bulk.preparing')}</p>
-          )}
-          {preview.state === 'error' && (
-            <p role="alert">{t('markPreview.error')}</p>
-          )}
-          <p>
-            {t('markPreview.criteria', {
-              criteria: preview.criteria,
-              level: preview.level,
-            })}
-          </p>
-          {!!preview.rules?.length && (
-            <ul className={styles.ruleSummary}>
-              {preview.rules.map((rule, index) => (
-                <li key={index}>{rule}</li>
-              ))}
-            </ul>
-          )}
-          <div className={styles.exclusions}>
-            <ShieldCheck size={20} aria-hidden="true" />
-            <div>
-              <p>{t('markPreview.held', { count: preview.held })}</p>
-              <p>{t('markPreview.kept', { count: preview.kept })}</p>
-              <p>
-                {t(
-                  preview.laterExcluded === false
-                    ? 'markPreview.unclearIncluded'
-                    : 'markPreview.unclear',
-                  { count: preview.unclear },
-                )}
-              </p>
+          <div className={styles.previewBody}>
+            <div className={styles.dialogHeading}>
+              <Dialog.Title>
+                {t('markPreview.title', { count: preview.count })}
+              </Dialog.Title>
             </div>
-          </div>
-          <p className={styles.meta}>
-            {t('markPreview.sources', {
-              sources: intl.formatList(
-                preview.sources.map((source) =>
-                  t('markPreview.sourceCount', source),
+            <Dialog.Description>
+              {t('markPreview.account', { account: preview.account })}
+            </Dialog.Description>
+            {preview.state === 'changed' && (
+              <p role="status" className={styles.unchecked}>
+                {t('markPreview.changed')}
+              </p>
+            )}
+            {preview.state === 'loading' && (
+              <p role="status">{t('bulk.preparing')}</p>
+            )}
+            {preview.state === 'error' && (
+              <p role="alert">{t('markPreview.error')}</p>
+            )}
+            <p>
+              {t('markPreview.criteria', {
+                criteria: preview.criteria,
+                level: preview.level,
+              })}
+            </p>
+            {!!preview.rules?.length && (
+              <ul className={styles.ruleSummary}>
+                {preview.rules.map((rule, index) => (
+                  <li key={index}>{rule}</li>
+                ))}
+              </ul>
+            )}
+            <div className={styles.exclusions}>
+              <div>
+                <p>{t('markPreview.held', { count: preview.held })}</p>
+                <p>{t('markPreview.kept', { count: preview.kept })}</p>
+                <p>
+                  {t(
+                    preview.laterExcluded === false
+                      ? 'markPreview.unclearIncluded'
+                      : 'markPreview.unclear',
+                    { count: preview.unclear },
+                  )}
+                </p>
+              </div>
+            </div>
+            <p className={styles.meta}>
+              {t('markPreview.sources', {
+                sources: intl.formatList(
+                  preview.sources.map((source) =>
+                    t('markPreview.sourceCount', source),
+                  ),
                 ),
-              ),
-            })}
-          </p>
-          <p className={styles.platformNotice}>
-            <Info size={20} aria-hidden="true" />
-            <span>
-              {t(
-                preview.platform === 'instagram'
-                  ? 'markPreview.nextInstagram'
-                  : 'markPreview.nextX',
-              )}
-            </span>
-          </p>
-          <details className={styles.sample}>
-            <summary>
-              {t('bulk.sample', { count: preview.sample.length })}
-            </summary>
-            <ol>
-              {preview.sample.map((post) => (
-                <li key={post.id}>
-                  <time dateTime={post.createdAt}>
-                    {intl.formatDate(post.createdAt, {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                      timeZone: zone,
-                    })}
-                  </time>
-                  <p dir="auto">{post.text}</p>
-                </li>
-              ))}
-            </ol>
-          </details>
-          <div className={styles.dialogActions}>
+              })}
+            </p>
+            <p className={styles.platformNotice}>
+              <Info size={20} aria-hidden="true" />
+              <span>
+                {t(
+                  preview.platform === 'instagram'
+                    ? 'markPreview.nextInstagram'
+                    : 'markPreview.nextX',
+                )}
+              </span>
+            </p>
+            <details className={styles.sample}>
+              <summary>
+                {t('bulk.sample', { count: preview.sample.length })}
+              </summary>
+              <ol>
+                {preview.sample.map((post) => (
+                  <li key={post.id}>
+                    <time dateTime={post.createdAt}>
+                      {intl.formatDate(post.createdAt, {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        timeZone: zone,
+                      })}
+                    </time>
+                    <p dir="auto">{post.text}</p>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          </div>
+          <div className={styles.dialogActions} data-preview-actions>
             <button
               disabled={pending || !preview.count}
               className={controls.danger}

@@ -88,6 +88,7 @@ declare global {
     'criteriaPicker.add': Record<never, never>;
     'criteriaPicker.cancelEdit': Record<never, never>;
     'criteriaPicker.customCount': { count: number };
+    'criteriaPicker.definition': { label: string };
     'criteriaPicker.description': Record<never, never>;
     'criteriaPicker.earlier': Record<never, never>;
     'criteriaPicker.edit': { label: string };
@@ -570,6 +571,7 @@ declare global {
     'keepRules.date': Record<never, never>;
     'keepRules.dateValue': Record<never, never>;
     'keepRules.held': { count: number };
+    'keepRules.how': Record<never, never>;
     'keepRules.instagram': Record<never, never>;
     'keepRules.intro': Record<never, never>;
     'keepRules.invalid': Record<never, never>;

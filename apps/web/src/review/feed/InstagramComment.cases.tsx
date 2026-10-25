@@ -120,7 +120,7 @@ test.each(['en', 'de'] as const)(
   },
 );
 test.each(['en', 'de'] as const)(
-  'all X post kinds and decision states retain bf8843f markup except the DESIGN-H C decorative icon removal in %s',
+  'all X post kinds and decision states retain bf8843f markup including the suggestion mark in %s',
   (locale) => {
     for (const kind of ['post', 'reply', 'quote', 'repost'] as const)
       for (const decision of [
@@ -167,13 +167,73 @@ test.each(['en', 'de'] as const)(
         };
         const current = render(<FeedCard {...props} />, locale);
         const before = render(<BeforeFeedCard {...props} />, locale);
-        // DESIGN-H C removes only the suggestion's decorative wand. Keep the
-        // historical component intact and compare every other byte and ARIA role.
-        const decorativeIcon =
+        // S1b restores the suggestion mark. No historical-markup exception remains.
+        const suggestionIcon =
           /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>/gu;
-        expect(before.match(decorativeIcon)).toHaveLength(1);
-        expect(current).not.toContain('lucide-wand-sparkles');
-        expect(current).toBe(before.replace(decorativeIcon, ''));
+        expect(before.match(suggestionIcon)).toHaveLength(1);
+        expect(current.match(suggestionIcon)).toHaveLength(1);
+        expect(current).toBe(before);
+      }
+  },
+);
+test.each(['en', 'de'] as const)(
+  'each X and Instagram suggestion keeps its 16px hidden mark before its label in %s',
+  (locale) => {
+    for (const platform of ['x', 'instagram'] as const)
+      for (const decision of [
+        'undecided',
+        'keep',
+        'later',
+        'delete',
+      ] as const) {
+        const html = render(
+          <FeedCard
+            card={{
+              ...card,
+              kind: platform === 'instagram' ? 'comment' : 'post',
+              decision,
+              suggestions: [
+                {
+                  id: 'delete',
+                  category: 'Political',
+                  level: 2,
+                  source: { kind: 'example' },
+                  reason: 'Generated reason.',
+                },
+                {
+                  id: 'unclear',
+                  category: 'Unclear',
+                  level: 1,
+                  source: { kind: 'example' },
+                  reason: 'Generated uncertainty.',
+                  unclear: true,
+                },
+                {
+                  id: 'harmless',
+                  category: 'Harmless',
+                  level: 0,
+                  source: { kind: 'example' },
+                  reason: 'Generated harmless example.',
+                  harmless: true,
+                },
+              ],
+            }}
+            platform={platform}
+            position={1}
+            total={1}
+            onDecision={() => undefined}
+          />,
+          locale,
+        );
+        const marks = html.match(
+          /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>(?=<strong>)/gu,
+        );
+        expect(marks).toHaveLength(3);
+        for (const mark of marks ?? []) {
+          expect(mark).toContain('width="16"');
+          expect(mark).toContain('height="16"');
+          expect(mark).toContain('aria-hidden="true"');
+        }
       }
   },
 );

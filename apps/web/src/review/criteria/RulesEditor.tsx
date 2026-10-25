@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { ShieldCheck, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useT } from '../../i18n/index.ts';
 import type { KeepRuleModel } from './types.ts';
 import styles from './Criteria.module.css';
@@ -33,10 +33,7 @@ export function RulesEditor({
   }
   return (
     <section className={styles.rules} aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>
-        <ShieldCheck size={22} aria-hidden="true" />
-        {t('keepRules.title')}
-      </h2>
+      <h2 id={`${id}-title`}>{t('keepRules.title')}</h2>
       <p className={styles.intro}>{t('keepRules.intro')}</p>
       {rules.map((rule) => (
         <div className={styles.rule} key={rule.id}>
@@ -145,8 +142,11 @@ export function RulesEditor({
           </select>
         </label>
       </div>
-      <p className={styles.help}>{t('keepRules.combine')}</p>
-      <p className={styles.help}>{t('keepRules.instagram')}</p>
+      <details className={styles.ruleHelp}>
+        <summary>{t('keepRules.how')}</summary>
+        <p className={styles.help}>{t('keepRules.combine')}</p>
+        <p className={styles.help}>{t('keepRules.instagram')}</p>
+      </details>
     </section>
   );
 }

@@ -16,6 +16,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
+  .workspace[data-editor='true'],
+  .workspace[data-editor='true'] .layout {
+    max-width: 1064px;
+  }
   .layout > section {
     min-height: 0;
   }
@@ -102,11 +106,16 @@
   }
   .editor {
     min-height: 0;
-    overflow: auto;
+    overflow: clip;
     background: var(--color-surface);
+    border-radius: var(--radius-workspace);
+    display: flex;
+    flex-direction: column;
   }
   .editor > h2 {
-    padding-inline: var(--space-5);
+    margin: 0;
+    padding: var(--space-5) var(--space-6) 0;
+    font-size: var(--type-xl);
   }
   .editorFooter {
     padding: var(--space-4);
@@ -141,6 +150,10 @@
   @media (max-width: 540px) {
     .toolbar {
       padding-inline: var(--space-3);
+    }
+    .editor > h2 {
+      padding: var(--space-4) var(--space-4) 0;
+      font-size: var(--type-lg);
     }
   }
 }

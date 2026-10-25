@@ -384,7 +384,12 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     ? allModels.slice(singleIndex, singleIndex + 1)
     : allModels;
   return (
-    <div ref={root} className={styles.workspace} data-testid="card-review">
+    <div
+      ref={root}
+      className={styles.workspace}
+      data-testid="card-review"
+      data-editor={editor}
+    >
       <div className={styles.layout} data-testid="review-card">
         {editor ? (
           <section className={styles.editor}>

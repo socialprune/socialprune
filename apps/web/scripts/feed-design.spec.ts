@@ -265,6 +265,7 @@ for (const theme of ['light', 'dark'])
       await page.screenshot({
         path: `${folder}/criteria-middle-de-${theme}-${width}x${height}.png`,
       });
+      await page.getByText('So wirken deine Regeln', { exact: true }).click();
       await editor.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
       });

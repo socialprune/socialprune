@@ -56,6 +56,26 @@ describe('controlled criteria and rules', () => {
     expect(html).toContain('1 entry for deletion');
     expect(html).toContain('disabled=""');
   });
+  it('keeps the definition complete and described when it is visually disclosed', () => {
+    const html = render(<CriteriaPicker model={model} {...handlers} />);
+    expect(html).toContain('Definition for Invented criterion');
+    expect(html).toContain('An invented content definition.');
+    expect(html).toMatch(/<details[^>]*><summary>/u);
+    expect(html).toMatch(/aria-describedby="[^"]+-generated-help"/u);
+    expect(html).toMatch(/<p[^>]*id="[^"]+-generated-help"/u);
+    expect(html.match(/<label>[\s\S]*?<\/label>/u)?.[0]).not.toContain(
+      'An invented content definition.',
+    );
+  });
+  it('retains the presets-only component without own creation or changing its level', () => {
+    const html = render(
+      <CriteriaPicker model={model} {...handlers} presetsOnly />,
+    );
+    expect(html).not.toContain('maxLength="60"');
+    expect(html).toContain('Invented criterion');
+    expect(html.match(/type="radio"/gu)).toHaveLength(3);
+    expect(html).toContain('Definition for Invented criterion');
+  });
   it('shows an offered deterministic rule and blocks adding it as content', () => {
     const html = render(
       <CriteriaPicker

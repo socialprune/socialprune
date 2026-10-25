@@ -5,6 +5,7 @@ import {
   restoreLiveFeed,
   liveFeedFixture,
   liveExpected,
+  generatedReadPost,
 } from '../e2e/feed-fixture.ts';
 import { checkAccessibility } from '../e2e/accessibility.ts';
 import { readFile } from 'node:fs/promises';
@@ -43,7 +44,9 @@ for (const lang of ['de', 'en'] as const)
           ),
         ) as Record<string, string>;
         await page.goto('/socialprune/');
-        await restoreLiveFeed(page);
+        await restoreLiveFeed(page, liveFeedFixture(), undefined, [
+          generatedReadPost(),
+        ]);
         for (const [platform, account] of [
           ['x', liveExpected.account],
           ['instagram', liveExpected.instagram],
@@ -130,7 +133,9 @@ for (const lang of ['de', 'en'] as const)
           path: join(folder, `preview-${lang}-${theme}-${width}.png`),
         });
         await checkAccessibility(page, context);
-        await dialog.getByRole('button').last().click();
+        await dialog
+          .getByRole('button', { name: messages['bulk.cancel'], exact: true })
+          .click();
         const empty = liveFeedFixture();
         empty.settings.criteria!.selected = [];
         await page.goto('/socialprune/');

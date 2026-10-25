@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { restoreLiveFeed } from './feed-fixture.ts';
+import { liveExpected, restoreLiveFeed } from './feed-fixture.ts';
 import { observeImport } from './helpers.ts';
 
 for (const width of [320, 390, 1280])
@@ -69,4 +69,63 @@ for (const width of [320, 390, 1280])
       await page.keyboard.press('u');
       await expect(first).toHaveAttribute('data-decision', 'undecided');
       await audit.assert();
+    });
+
+for (const lang of ['de', 'en'])
+  for (const theme of ['light', 'dark'] as const)
+    test(`S1b suggestion mark ${lang} ${theme}: X and Instagram across every tab`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+      await page.addInitScript(
+        (lang) => localStorage.setItem('sp-locale', lang),
+        lang,
+      );
+      await restoreLiveFeed(page);
+      for (const account of [liveExpected.account, liveExpected.instagram]) {
+        await page
+          .getByRole('combobox', {
+            name: lang === 'de' ? 'Konto' : 'Account',
+            exact: true,
+          })
+          .selectOption(account);
+        for (const tab of await page.getByRole('tab').all()) {
+          await tab.click();
+          await expect(page.getByRole('feed')).toHaveAttribute(
+            'aria-busy',
+            'false',
+          );
+          const lines = page
+            .getByRole('feed')
+            .locator('[class*="suggestionLine"]');
+          for (const line of await lines.all()) {
+            const mark = line.locator(':scope > svg.lucide-wand-sparkles');
+            await expect(mark).toHaveCount(1);
+            await expect(mark).toHaveAttribute('aria-hidden', 'true');
+            const shape = await mark.evaluate((svg) => {
+              const label = svg.nextElementSibling!;
+              const iconBox = svg.getBoundingClientRect(),
+                labelBox = label.getBoundingClientRect();
+              return {
+                width: iconBox.width,
+                height: iconBox.height,
+                color: getComputedStyle(svg).color,
+                labelColor: getComputedStyle(label).color,
+                labelTag: label.tagName,
+                before: iconBox.right <= labelBox.left,
+                aligned: Math.abs(iconBox.bottom - labelBox.bottom) <= 4,
+              };
+            });
+            expect(shape).toMatchObject({
+              width: 16,
+              height: 16,
+              labelTag: 'STRONG',
+              before: true,
+              aligned: true,
+            });
+            expect(shape.color).toBe(shape.labelColor);
+          }
+        }
+      }
     });

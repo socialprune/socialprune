@@ -57,6 +57,8 @@ test('feed K L M U preserve in-place human decisions, ignore J and repeat events
 }) => {
   const audit = await observeImport(context, page);
   await restorePerson(page);
+  await page.getByRole('tab', { name: /^All,/ }).click();
+  await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
   const region = page.getByRole('feed');
   const first = region.locator('article').first(),
     second = region.locator('article').nth(1);

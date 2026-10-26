@@ -50,22 +50,27 @@ test('all six real-service tabs, local decision states and counted human plan un
   await page.keyboard.press('u');
   await expect(heldInAll).toHaveAttribute('data-decision', 'undecided');
   await page.getByRole('tab', { name: /^Suggested for deletion,/ }).click();
+  await expect(feed).toHaveAttribute('aria-busy', 'false');
   const first = feed.locator('article').first();
+  const firstId = await first.getAttribute('data-card-id');
+  const nextId = await feed
+    .locator('article')
+    .nth(1)
+    .getAttribute('data-card-id');
   await first.focus();
   await page.keyboard.press('j');
   await expect(first).toHaveAttribute('data-decision', 'undecided');
   await page.keyboard.press('k');
-  await expect(first).toHaveAttribute('data-decision', 'keep');
-  await expect(first).toBeFocused();
+  await expect(feed.locator(`article[data-card-id="${firstId}"]`)).toHaveCount(
+    0,
+  );
+  await expect(feed.locator(`article[data-card-id="${nextId}"]`)).toBeFocused();
   await expect(
     page.getByRole('tab', { name: /^Suggested for deletion,/ }),
   ).toHaveAccessibleName('Suggested for deletion, 2 entries');
-  await feed.locator('article').nth(1).focus();
+  await feed.locator('article').first().focus();
   await page.keyboard.press('l');
-  await expect(feed.locator('article').nth(1)).toHaveAttribute(
-    'data-decision',
-    'later',
-  );
+  await expect(feed.locator('article[data-card-id="x:feed-2"]')).toHaveCount(0);
   await page
     .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
     .click();
@@ -372,8 +377,9 @@ test('a second page makes the plan stale; the changed preview requires another h
   await second.getByRole('feed').locator('article').first().focus();
   await second.keyboard.press('k');
   await expect(
-    second.getByRole('feed').locator('article').first(),
-  ).toHaveAttribute('data-decision', 'keep');
+    second.getByRole('feed').locator('article[data-card-id="x:feed-1"]'),
+  ).toHaveCount(0);
+  await second.evaluate(() => window.workspace.flushCommands());
   await dialog
     .getByRole('button', { name: 'Mark 3 entries', exact: true })
     .click();
@@ -451,8 +457,12 @@ test('feed undo and keyboard-only final mark retain human decisions in German da
   await checkAccessibility(page, context);
   await card.focus();
   await page.keyboard.press('k');
-  await expect(card).toHaveAttribute('data-decision', 'keep');
+  await expect(
+    page.getByRole('feed').locator('article[data-card-id="x:feed-1"]'),
+  ).toHaveCount(0);
   await page.keyboard.press('Control+z');
+  await page.evaluate(() => window.workspace.flushCommands());
+  await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
   const restored = page.getByRole('feed').locator('article').first();
   await expect(restored).toHaveAttribute('data-decision', 'undecided');
   await expect(page.getByRole('tab', { selected: true })).toHaveAccessibleName(

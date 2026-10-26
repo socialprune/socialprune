@@ -141,7 +141,8 @@ export interface ReviewFeedProps {
   onPreview: () => void;
   onDelete: () => void;
   onConversation?: (id: string) => void;
-  onUndo?: () => void;
+  onUndo?: (redo?: boolean) => void;
+  onDrain?: () => Promise<void>;
   onKeyboardHelp?: () => void;
   header?: React.ReactNode;
   context?: (card: FeedCardModel) => React.ReactNode;
@@ -179,6 +180,22 @@ export function ReviewFeed(props: ReviewFeedProps) {
     id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || props.virtualized !== false) return;
+    const measure = () =>
+      panel.style.setProperty(
+        '--feed-single-height',
+        `${Math.max(300, panel.clientHeight - 4)}px`,
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    return () => {
+      observer.disconnect();
+      panel.style.removeProperty('--feed-single-height');
+    };
+  }, [props.virtualized]);
   const virtualizer = useVirtualizer({
     count: props.cards.length,
     getScrollElement: () => panelRef.current,
@@ -416,8 +433,17 @@ export function ReviewFeed(props: ReviewFeedProps) {
               else {
                 const footerButton =
                   footerRef.current?.querySelector<HTMLButtonElement>('button');
-                if (footerButton) footerButton.focus();
-                else {
+                if (footerButton) {
+                  footerButton.focus();
+                  if (footerButton.disabled)
+                    void props
+                      .onDrain?.()
+                      .then(() =>
+                        requestAnimationFrame(() =>
+                          requestAnimationFrame(() => footerButton.focus()),
+                        ),
+                      );
+                } else {
                   panelRef.current?.focus({ preventScroll: true });
                   if (panelRef.current)
                     panelRef.current.scrollTop = panelRef.current.scrollHeight;
@@ -432,7 +458,16 @@ export function ReviewFeed(props: ReviewFeedProps) {
               props.onUndo
             ) {
               event.preventDefault();
-              props.onUndo();
+              props.onUndo(event.shiftKey);
+              return;
+            }
+            if (
+              event.ctrlKey &&
+              event.key.toLowerCase() === 'y' &&
+              props.onUndo
+            ) {
+              event.preventDefault();
+              props.onUndo(true);
               return;
             }
             if (
@@ -554,6 +589,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
                     props.virtualized ? virtualizer.measureElement : undefined
                   }
                   virtualIndex={props.virtualized ? index : undefined}
+                  single={props.virtualized === false}
                 />
               ))}
               {props.virtualized && !!virtualItems.length && (

@@ -317,17 +317,19 @@ function Content({
               key={value}
               aria-current={screen === value ? 'page' : undefined}
               onClick={() => {
-                setScreen(value);
-                setError(null);
-                if (
-                  value === 'review' ||
-                  value === 'archive' ||
-                  value === 'clicklist'
-                ) {
-                  location.hash =
-                    value === 'clicklist' ? '#/clicklist/x' : `#/${value}`;
-                  void client.open().catch(failed);
-                }
+                void client.flushCommands().then(() => {
+                  setScreen(value);
+                  setError(null);
+                  if (
+                    value === 'review' ||
+                    value === 'archive' ||
+                    value === 'clicklist'
+                  ) {
+                    location.hash =
+                      value === 'clicklist' ? '#/clicklist/x' : `#/${value}`;
+                    void client.open().catch(failed);
+                  }
+                });
               }}
             >
               {t(titles[value])}

@@ -63,9 +63,17 @@ for (const width of [320, 390, 1280])
       expect(geometry.footerBottom).toBeLessThanOrEqual(geometry.height);
       expect(geometry.overflow).toBe(false);
       await first.focus();
+      const decidedId = await first.getAttribute('data-card-id');
       await page.keyboard.press('k');
       await expect(first).toBeFocused();
-      await expect(first).toHaveAttribute('data-decision', 'keep');
+      await expect(
+        page.locator(`article[data-card-id="${decidedId}"]`),
+      ).toHaveCount(0);
+      await page.keyboard.press('Control+z');
+      await expect(
+        page.locator(`article[data-card-id="${decidedId}"]`),
+      ).toHaveAttribute('data-decision', 'undecided');
+      await page.locator(`article[data-card-id="${decidedId}"]`).focus();
       await page.keyboard.press('u');
       await expect(first).toHaveAttribute('data-decision', 'undecided');
       await audit.assert();

@@ -6,6 +6,7 @@ import type {
   PlanCounts,
 } from '@socialprune/core/workspace/protocol';
 import type { WorkspaceClient } from '../../workspace/client.ts';
+import { CommandQueue } from '../../workspace/command-queue.ts';
 
 export interface FeedSnapshot {
   accountKey: string;
@@ -21,10 +22,13 @@ export interface FeedSnapshot {
   error: boolean;
   preview: BulkPreview | null;
   previewState: 'ready' | 'loading' | 'changed' | 'error';
+  pending: number;
+  saveFailure: { itemId: string; sequence: number } | null;
 }
 const id = () => crypto.randomUUID();
 
-/** Owns UI windows and command lifetimes, never derives feed membership. */
+/** Owns bounded UI windows, provisional presentation and human command lifetimes.
+ * The server's receipt, card readback and counts remain authoritative. */
 export class FeedSession {
   snapshot: FeedSnapshot = {
     accountKey: '',
@@ -40,6 +44,8 @@ export class FeedSession {
     error: false,
     preview: null,
     previewState: 'ready',
+    pending: 0,
+    saveFailure: null,
   };
   private epoch = 0;
   private windowEpoch = 0;
@@ -48,8 +54,17 @@ export class FeedSession {
   private membershipChanged = false;
   private listeners = new Set<() => void>();
   private readonly client: WorkspaceClient;
+  private readonly commands: CommandQueue;
+  private optimistic = new Map<string, { card: FeedCard; leaves: boolean }>();
+  private failedItems = new Set<string>();
+  private confirmedCards = new Map<string, FeedCard>();
+  private confirmedLeaves = new Set<string>();
+  private prefetching: Promise<void> | null = null;
+  private failureSequence = 0;
+  private history: Promise<unknown> = Promise.resolve();
   constructor(client: WorkspaceClient) {
     this.client = client;
+    this.commands = client.commands ?? new CommandQueue();
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -67,10 +82,16 @@ export class FeedSession {
     tab: FeedTab,
     anchor?: string,
     sort: FeedSort = this.snapshot.sort,
+    keepPreview = false,
   ) {
+    this.update({ loading: true });
+    if (this.commands.pending) await this.commands.flush();
     const epoch = ++this.epoch;
+    this.confirmedLeaves.clear();
+    this.confirmedCards.clear();
+    this.failedItems.clear();
     ++this.windowEpoch;
-    this.cancelPreview();
+    if (!keepPreview) this.cancelPreview();
     this.membershipChanged = false;
     this.update({
       accountKey,
@@ -85,6 +106,7 @@ export class FeedSession {
       loading: true,
       busy: false,
       error: false,
+      saveFailure: null,
     });
     try {
       const [counts, window] = await Promise.all([
@@ -107,6 +129,7 @@ export class FeedSession {
         start: window.anchorIndex ?? 0,
         sortOptions: window.sortOptions ?? ['newest', 'oldest'],
       });
+      void this.prefetch();
     } catch {
       if (epoch === this.epoch) this.update({ error: true });
     } finally {
@@ -152,6 +175,13 @@ export class FeedSession {
           next = next.slice(-300);
         } else next = next.slice(0, 300);
       }
+      next = next
+        .filter(
+          (card) =>
+            !this.confirmedLeaves.has(card.item.id) &&
+            !this.optimistic.get(card.item.id)?.leaves,
+        )
+        .map((card) => this.optimistic.get(card.item.id)?.card ?? card);
       this.update({ cards: next, start: first, total: result.total });
       if (replace) this.membershipChanged = false;
     } catch {
@@ -170,6 +200,8 @@ export class FeedSession {
       Math.max(0, index),
       Math.max(0, this.snapshot.total - 1),
     );
+    if (destination >= this.snapshot.start + this.snapshot.cards.length - 25)
+      void this.prefetch();
     if (
       this.snapshot.loading ||
       !this.snapshot.cards[destination - this.snapshot.start]
@@ -186,77 +218,230 @@ export class FeedSession {
     if (epoch === this.epoch && counts.type === 'planCounts')
       this.update({ counts });
   }
-  async undo(anchor?: string) {
-    if (this.snapshot.busy || this.snapshot.loading) return null;
-    const epoch = this.epoch;
-    const { accountKey, tab } = this.snapshot;
-    this.update({ busy: true, error: false });
-    try {
-      const result = await this.client.request({
-        type: 'undo',
-        requestId: id(),
-        commandId: id(),
-      });
-      if (epoch !== this.epoch) return null;
-      if (result.type !== 'committed') throw new Error('Undo rejected');
-      await this.open(accountKey, tab, anchor);
-      return result;
-    } catch {
-      if (epoch === this.epoch) this.update({ error: true });
-      return null;
-    } finally {
-      if (epoch === this.epoch) this.update({ busy: false });
+  undo(anchor?: string, kind: 'undo' | 'redo' = 'undo') {
+    const work = this.reverse(anchor, kind);
+    this.history = work;
+    return work;
+  }
+  private async reverse(anchor?: string, kind: 'undo' | 'redo' = 'undo') {
+    if (this.snapshot.busy) return null;
+    const result = await this.commands.enqueue(async () => {
+      try {
+        const reply = await this.client.request({
+          type: kind,
+          requestId: id(),
+          commandId: id(),
+        });
+        return reply.type === 'committed' ? reply : null;
+      } catch {
+        return null;
+      }
+    });
+    if (result) {
+      const { accountKey, tab, sort } = this.snapshot;
+      await this.open(accountKey, tab, anchor, sort, true);
     }
+    return result;
+  }
+  private belongs(card: FeedCard, value: DecisionValue) {
+    const tab = this.snapshot.tab;
+    if (tab === 'all') return true;
+    if (value === 'keep') return tab === 'kept';
+    if (value === 'delete') return tab === 'marked';
+    if (value === 'later') return tab === 'unclear';
+    const criteria = this.client.summary?.criteria;
+    const hit = card.suggestions.some(
+      (a) =>
+        a.risk >= (criteria?.level ?? 1) &&
+        (criteria?.selected.includes(a.category) ?? true) &&
+        !['harmless', 'unclear'].includes(a.category),
+    );
+    return (
+      tab ===
+      (hit
+        ? card.holdingRules.length
+          ? 'held'
+          : 'suggested'
+        : card.suggestions.some((a) => a.category === 'unclear')
+          ? 'unclear'
+          : 'all')
+    );
+  }
+  async prefetch(force = false) {
+    if (
+      this.prefetching ||
+      !this.snapshot.cards.length ||
+      (!force && this.snapshot.cards.length >= 200) ||
+      this.snapshot.start + this.snapshot.cards.length >= this.snapshot.total
+    )
+      return;
+    const epoch = this.epoch;
+    const { accountKey, tab, sort } = this.snapshot;
+    const anchor = this.snapshot.cards.at(-1)!.item.id;
+    this.prefetching = (async () => {
+      try {
+        const result = await this.client.feedWindow({
+          accountKey,
+          tab,
+          sort,
+          anchor,
+          limit: 50,
+        });
+        if (epoch !== this.epoch || result.type !== 'feedCards') return;
+        const existing = new Set(
+          this.snapshot.cards.map((card) => card.item.id),
+        );
+        const next = result.cards
+          .filter(
+            (card) =>
+              !existing.has(card.item.id) &&
+              !this.confirmedLeaves.has(card.item.id) &&
+              !this.optimistic.get(card.item.id)?.leaves,
+          )
+          .map((card) => this.optimistic.get(card.item.id)?.card ?? card);
+        const cards = [...this.snapshot.cards, ...next];
+        const trim = Math.max(0, cards.length - 300);
+        this.update({
+          cards: cards.slice(trim),
+          start: this.snapshot.start + trim,
+        });
+      } catch {
+        if (epoch === this.epoch) this.update({ error: true });
+      }
+    })().finally(() => {
+      this.prefetching = null;
+    });
+    await this.prefetching;
   }
   async decide(itemId: string, value: DecisionValue) {
     const card = this.snapshot.cards.find((card) => card.item.id === itemId);
-    if (!card || this.snapshot.busy || this.snapshot.loading) return false;
-    const epoch = this.epoch;
-    this.update({ busy: true, error: false });
-    try {
-      const result = await this.client.request({
-        type: 'decide',
-        requestId: id(),
-        commandId: id(),
-        itemIds: [itemId],
-        value,
-        expected: { [itemId]: card.decision },
-      });
-      if (epoch !== this.epoch) return false;
-      if (result.type !== 'committed') throw new Error('Decision rejected');
-      const updated = await this.client.feedWindow({
-        accountKey: this.snapshot.accountKey,
-        tab: 'all',
-        sort: this.snapshot.sort,
-        anchor: itemId,
-        limit: 1,
-      });
-      if (epoch !== this.epoch) return false;
-      if (updated.type !== 'feedCards' || updated.cards[0]?.item.id !== itemId)
-        throw new Error('Decision readback rejected');
-      await this.refreshCounts();
-      if (epoch !== this.epoch) return false;
-      this.update({
-        busy: false,
-        cards: this.snapshot.cards.map((entry) =>
-          entry.item.id === itemId ? updated.cards[0]! : entry,
-        ),
-      });
-      this.membershipChanged = true;
-      return true;
-    } catch {
-      if (epoch === this.epoch) this.update({ error: true });
-      return false;
-    } finally {
-      if (epoch === this.epoch) this.update({ busy: false });
-    }
+    if (!card || this.snapshot.busy) return false;
+    if (card.decision === value) return true;
+    const index = this.snapshot.cards.indexOf(card),
+      epoch = this.epoch;
+    if (!this.commands.pending) this.failedItems.delete(itemId);
+    if (!this.optimistic.has(itemId)) this.confirmedCards.set(itemId, card);
+    const updated = { ...card, decision: value };
+    const leaves = !this.belongs(card, value);
+    const operation = { card: updated, leaves };
+    this.optimistic.set(itemId, operation);
+    this.update({
+      cards: leaves
+        ? this.snapshot.cards.filter((entry) => entry.item.id !== itemId)
+        : this.snapshot.cards.map((entry) =>
+            entry.item.id === itemId ? updated : entry,
+          ),
+      total: Math.max(0, this.snapshot.total - (leaves ? 1 : 0)),
+      pending: this.snapshot.pending + 1,
+      saveFailure: null,
+    });
+    if (this.snapshot.cards.length < 50) void this.prefetch();
+    return this.commands.enqueue(async () => {
+      let saved = false;
+      try {
+        if (this.failedItems.has(itemId))
+          throw Error('Earlier decision failed');
+        const result = await this.client.request({
+          type: 'decide',
+          requestId: id(),
+          commandId: id(),
+          itemIds: [itemId],
+          value,
+          expected: { [itemId]: card.decision },
+        });
+        if (
+          result.type !== 'committed' ||
+          result.changed !== 1 ||
+          result.skipped
+        )
+          throw Error('Decision not saved');
+        saved = true;
+        if (leaves) this.confirmedLeaves.add(itemId);
+        this.confirmedCards.set(itemId, updated);
+        this.membershipChanged = true;
+        if (epoch === this.epoch) {
+          const readback = await this.client.feedWindow({
+            accountKey: this.snapshot.accountKey,
+            tab: 'all',
+            sort: this.snapshot.sort,
+            anchor: itemId,
+            limit: 1,
+          });
+          if (
+            readback.type !== 'feedCards' ||
+            readback.cards[0]?.item.id !== itemId
+          )
+            throw Error('Saved decision readback failed');
+          const confirmed = readback.cards[0];
+          this.confirmedCards.set(itemId, confirmed);
+          if (this.optimistic.get(itemId) === operation) {
+            const remains = this.belongs(confirmed, confirmed.decision);
+            const cards = this.snapshot.cards.filter(
+              (entry) => entry.item.id !== itemId,
+            );
+            if (remains)
+              cards.splice(Math.min(index, cards.length), 0, confirmed);
+            this.update({ cards: cards.slice(0, 300) });
+          }
+          await this.refreshCounts();
+          if (this.snapshot.counts)
+            this.update({
+              total: Math.max(
+                0,
+                this.snapshot.counts.tabs[this.snapshot.tab] -
+                  [...this.optimistic.entries()].filter(
+                    ([key, entry]) => key !== itemId && entry.leaves,
+                  ).length,
+              ),
+            });
+        }
+      } catch {
+        if (!saved) {
+          this.failedItems.add(itemId);
+          this.optimistic.delete(itemId);
+          if (epoch === this.epoch) {
+            const cards = this.snapshot.cards.filter(
+              (entry) => entry.item.id !== itemId,
+            );
+            cards.splice(
+              Math.min(index, cards.length),
+              0,
+              this.confirmedCards.get(itemId) ?? card,
+            );
+            this.update({
+              cards: cards.slice(0, 300),
+              total: this.snapshot.total + (leaves ? 1 : 0),
+              saveFailure: { itemId, sequence: ++this.failureSequence },
+            });
+          }
+        } else if (epoch === this.epoch) this.update({ error: true });
+      } finally {
+        if (saved && this.optimistic.get(itemId) === operation) {
+          this.optimistic.delete(itemId);
+          this.confirmedCards.delete(itemId);
+        }
+        if (epoch === this.epoch)
+          this.update({ pending: Math.max(0, this.snapshot.pending - 1) });
+      }
+      return saved;
+    });
+  }
+  async flush() {
+    await this.history;
+    await this.commands.flush();
   }
   async preview(replacement = false) {
-    const epoch = this.epoch;
     const previewEpoch = ++this.previewEpoch;
     this.update({ previewState: 'loading', error: false });
+    if (this.commands.pending) {
+      await this.history;
+      await this.commands.flush();
+    }
+    if (previewEpoch !== this.previewEpoch) return;
+    const epoch = this.epoch;
     const previewId = id();
     try {
+      if (epoch !== this.epoch || previewEpoch !== this.previewEpoch) return;
       const reply = await this.client.previewPlan({
         pageId: this.page,
         previewId,
@@ -292,6 +477,7 @@ export class FeedSession {
     const epoch = this.epoch;
     this.update({ busy: true });
     try {
+      await this.commands.flush();
       const result = await this.client.request({
         type: 'confirmBulk',
         requestId: id(),

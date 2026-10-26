@@ -123,6 +123,7 @@ export function FeedCard({
   context,
   measure,
   virtualIndex,
+  single = false,
 }: {
   card: FeedCardModel;
   position: number;
@@ -136,6 +137,7 @@ export function FeedCard({
   context?: React.ReactNode;
   measure?: (element: HTMLElement | null) => void;
   virtualIndex?: number;
+  single?: boolean;
 }) {
   const t = useT(),
     intl = useIntl(),
@@ -407,7 +409,7 @@ export function FeedCard({
                 <strong>{card.handle}</strong> {card.text || t('review.noText')}
               </p>
             )}
-            {decided && card.decision !== 'later' ? (
+            {decided && card.decision !== 'later' && !single ? (
               <button
                 className={controls.button}
                 disabled={card.busy}
@@ -422,34 +424,35 @@ export function FeedCard({
                 <button
                   data-keep-action
                   className={`${controls.primary} ${styles.keepButton}`}
-                  disabled={card.busy}
+                  disabled={card.busy || card.decision === 'keep'}
                   onClick={() => onDecision(card.id, 'keep')}
                 >
                   <Check size={18} aria-hidden="true" />
                   {t('review.keep')}
                   <kbd>K</kbd>
                 </button>
-                {showLater &&
-                  card.decision !== 'later' &&
-                  !card.heldBy.length && (
-                    <button
-                      data-later-action
-                      className={controls.quiet}
-                      disabled={card.busy}
-                      onClick={() => onDecision(card.id, 'later')}
-                    >
-                      <Pause size={18} aria-hidden="true" />
-                      {t('review.later')}
-                      <kbd>L</kbd>
-                    </button>
-                  )}
+                {(single ||
+                  (showLater &&
+                    card.decision !== 'later' &&
+                    !card.heldBy.length)) && (
+                  <button
+                    data-later-action
+                    className={controls.quiet}
+                    disabled={card.busy || card.decision === 'later'}
+                    onClick={() => onDecision(card.id, 'later')}
+                  >
+                    <Pause size={18} aria-hidden="true" />
+                    {t('review.later')}
+                    <kbd>L</kbd>
+                  </button>
+                )}
               </>
             )}
-            {canMark && (
+            {(canMark || single) && (
               <button
                 data-mark-action
                 className={`${controls.quiet} ${styles.markButton}`}
-                disabled={card.busy}
+                disabled={card.busy || card.decision === 'delete'}
                 aria-describedby={`${id}-mark-help`}
                 onClick={() => onDecision(card.id, 'delete')}
               >
@@ -460,6 +463,18 @@ export function FeedCard({
                     : 'reviewFeed.mark',
                 )}
                 <kbd>M</kbd>
+              </button>
+            )}
+            {single && decided && (
+              <button
+                data-reset-action
+                className={controls.quiet}
+                disabled={card.busy}
+                onClick={() => onDecision(card.id, 'undecided')}
+              >
+                <Undo2 size={18} aria-hidden="true" />
+                {t('reviewFeed.reset')}
+                <kbd>U</kbd>
               </button>
             )}
             <span className={styles.srOnly} id={`${id}-mark-help`}>

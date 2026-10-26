@@ -892,6 +892,7 @@ declare global {
     'reviewFeed.keptNotice': { count: number };
     'reviewFeed.keys': Record<never, never>;
     'reviewFeed.list': Record<never, never>;
+    'reviewFeed.listMode': Record<never, never>;
     'reviewFeed.localOnly': { platform: string };
     'reviewFeed.looking': { criteria: string };
     'reviewFeed.mark': Record<never, never>;
@@ -899,6 +900,7 @@ declare global {
     'reviewFeed.markRest': { count: number };
     'reviewFeed.marked': { date: string; method: string };
     'reviewFeed.missingContext': Record<never, never>;
+    'reviewFeed.mode': Record<never, never>;
     'reviewFeed.nextTabs': Record<never, never>;
     'reviewFeed.nextWindow': Record<never, never>;
     'reviewFeed.noCriteria': Record<never, never>;
@@ -916,6 +918,8 @@ declare global {
     'reviewFeed.retry': Record<never, never>;
     'reviewFeed.ruleLikes': { count: number };
     'reviewFeed.ruleReposts': { count: number };
+    'reviewFeed.saveFailed': Record<never, never>;
+    'reviewFeed.saving': { count: number };
     'reviewFeed.shortHeld': Record<never, never>;
     'reviewFeed.shortSuggested': Record<never, never>;
     'reviewFeed.sort': Record<never, never>;

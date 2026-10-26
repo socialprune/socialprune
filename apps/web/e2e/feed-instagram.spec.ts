@@ -218,6 +218,16 @@ for (const lang of ['de', 'en'] as const)
         expect(
           await read.evaluate((node) => getComputedStyle(node).outlineWidth),
         ).toBe('3px');
+        await page
+          .getByRole('tab', {
+            name: new RegExp(`^${catalogs[lang]['reviewFeed.tab.all']},`),
+          })
+          .click();
+        await expect(page.getByRole('feed')).toHaveAttribute(
+          'aria-busy',
+          'false',
+        );
+        await read.focus();
         for (const [key, value] of [
           ['k', 'keep'],
           ['u', 'undecided'],

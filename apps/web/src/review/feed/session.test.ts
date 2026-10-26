@@ -102,10 +102,14 @@ test('late cards from another account never replace the current account window',
     session.snapshot.cards.some((entry) => entry.item.id === 'x:999'),
   ).toBe(false);
 });
-test('decide uses a single guarded command, refreshes counts and keeps the decided card in place', async () => {
+test('decide uses a single guarded command, refreshes counts and removes a card leaving the tab', async () => {
   const port = client(),
     session = new FeedSession(port as unknown as WorkspaceClient);
   await session.open('x:contract', 'suggested');
+  await session.prefetch();
+  await vi.waitFor(() =>
+    expect(session.snapshot.cards.length).toBeGreaterThan(50),
+  );
   const id = session.snapshot.cards[0]!.item.id;
   port.feedWindow.mockResolvedValueOnce({
     type: 'feedCards',
@@ -121,7 +125,9 @@ test('decide uses a single guarded command, refreshes counts and keeps the decid
     value: 'keep',
     expected: { [id]: 'undecided' },
   });
-  expect(session.snapshot.cards[0]?.decision).toBe('keep');
+  expect(session.snapshot.cards.some((card) => card.item.id === id)).toBe(
+    false,
+  );
   expect(port.planCounts).toHaveBeenCalledTimes(2);
 });
 test('stale confirmation gets a replacement preview and never confirms it automatically', async () => {
@@ -168,7 +174,7 @@ test('undo uses one real command and reopens the service tab and anchor with res
   expect(port.request).toHaveBeenCalledWith(
     expect.objectContaining({ type: 'undo' }),
   );
-  expect(port.feedWindow).toHaveBeenLastCalledWith(
+  expect(port.feedWindow).toHaveBeenCalledWith(
     expect.objectContaining({
       accountKey: 'x:contract',
       tab: 'suggested',
@@ -199,10 +205,13 @@ test('canceling a pending preview releases its late response and never reopens i
     expect.objectContaining({ type: 'releasePreview' }),
   );
 });
-test('switching tabs during decision count readback clears busy and ignores the old decision result', async () => {
+test('switching tabs drains pending decisions before loading the next account/tab window', async () => {
   const port = client();
   const session = new FeedSession(port as unknown as WorkspaceClient);
   await session.open('x:contract', 'suggested');
+  await vi.waitFor(() =>
+    expect(session.snapshot.cards.length).toBeGreaterThan(50),
+  );
   port.feedWindow.mockResolvedValueOnce({
     type: 'feedCards',
     requestId: 'readback',
@@ -219,10 +228,11 @@ test('switching tabs during decision count readback clears busy and ignores the 
   );
   const decision = session.decide('x:0', 'keep');
   await vi.waitFor(() => expect(release).toBeDefined());
-  await session.open('x:contract', 'all');
+  const opening = session.open('x:contract', 'all');
   expect(session.snapshot.busy).toBe(false);
   release({ type: 'planCounts', requestId: 'late-counts', ...counts });
-  expect(await decision).toBe(false);
+  expect(await decision).toBe(true);
+  await opening;
   expect(session.snapshot.tab).toBe('all');
   expect(session.snapshot.cards[0]?.decision).toBe('undecided');
 });

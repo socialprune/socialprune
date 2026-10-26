@@ -60,8 +60,18 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     id: string;
     sequence: number;
   } | null>(null);
-  const [oneAtATime, setOneAtATime] = useState(false);
+  const [oneAtATime, setOneAtATime] = useState(
+    () => feedChoice(views.current, accountKey, tab).single ?? false,
+  );
   const [singleIndex, setSingleIndex] = useState(0);
+  const singleStart = useRef(state.start);
+  useLayoutEffect(() => {
+    if (state.start !== singleStart.current) {
+      const delta = state.start - singleStart.current;
+      singleStart.current = state.start;
+      if (oneAtATime) setSingleIndex((index) => Math.max(0, index - delta));
+    }
+  }, [state.start, oneAtATime]);
   const anchors = useRef<Partial<Record<FeedTab, string>>>({
     ...client.summary?.review?.feed?.anchors,
   });
@@ -182,6 +192,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       setTab(summary.review?.feed?.tab ?? 'suggested');
       anchors.current = { ...summary.review?.feed?.anchors };
       setSort(feedChoice(views.current, key, tab).sort);
+      setOneAtATime(feedChoice(views.current, key, tab).single ?? false);
     }
   }, [accountKey, summary]);
   useEffect(() => {
@@ -200,7 +211,12 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }, [session, accountKey, tab, sort]);
   useEffect(() => {
     const stop = client.subscribe((notice) => {
-      if (notice.type !== 'changed' || localCommand.current || !opened.current)
+      if (
+        notice.type !== 'changed' ||
+        localCommand.current ||
+        client.commands.pending ||
+        !opened.current
+      )
         return;
       if (previewOpen.current) {
         void session.refreshCounts();
@@ -210,6 +226,33 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       void session.open(accountKey, tab, activeAnchor.current);
     });
     return stop;
+  }, [client, session]);
+  useEffect(() => {
+    const failure = state.saveFailure;
+    if (!failure) return;
+    setNotice(t('reviewFeed.saveFailed'));
+    const index = state.cards.findIndex(
+      (card) => card.item.id === failure.itemId,
+    );
+    if (index >= 0) setSingleIndex(index);
+    setFocusTarget({ id: failure.itemId, sequence: ++focusSequence.current });
+  }, [state.saveFailure]);
+  useEffect(() => {
+    const navigate = (event: MouseEvent) => {
+      const anchor = (event.target as Element).closest<HTMLAnchorElement>(
+        'a[href^="#/"]',
+      );
+      if (!anchor || !client.commands.pending || event.ctrlKey || event.metaKey)
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      const href = anchor.getAttribute('href')!;
+      void client.flushCommands().then(() => {
+        if (!session.snapshot.saveFailure) window.location.hash = href;
+      });
+    };
+    document.addEventListener('click', navigate, true);
+    return () => document.removeEventListener('click', navigate, true);
   }, [client, session]);
   useEffect(() => {
     const generation = ++lifecycle.current;
@@ -287,9 +330,29 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const decide = useCallback(
     async (id: string, value: DecisionValue) => {
       localCommand.current = true;
-      pendingFocus.current = id;
+      const before = session.snapshot.cards;
+      const index = before.findIndex((card) => card.item.id === id);
+      const saving = session.decide(id, value);
+      const next =
+        session.snapshot.cards.find(
+          (card) => card.item.id === before[index + 1]?.item.id,
+        ) ??
+        session.snapshot.cards[
+          Math.min(index, session.snapshot.cards.length - 1)
+        ];
+      if (oneAtATime && next)
+        setSingleIndex(session.snapshot.cards.indexOf(next));
+      pendingFocus.current = next?.item.id ?? id;
+      if (
+        next &&
+        (oneAtATime ||
+          !session.snapshot.cards.some((card) => card.item.id === id))
+      )
+        setFocusTarget({ id: next.item.id, sequence: ++focusSequence.current });
+      if (oneAtATime && index >= session.snapshot.cards.length - 30)
+        void session.prefetch(true);
       try {
-        const saved = await session.decide(id, value);
+        const saved = await saving;
         if (saved)
           setNotice(
             value === 'keep'
@@ -302,7 +365,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         localCommand.current = false;
       }
     },
-    [session, translate],
+    [session, translate, oneAtATime],
   );
   const onDecision = useCallback(
     (id: string, value: DecisionValue) => {
@@ -342,11 +405,11 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     },
     [state.cards, client, zone, originals],
   );
-  async function undo() {
-    if (state.busy || state.loading) return;
+  async function undo(kind: 'undo' | 'redo' = 'undo') {
+    if (state.busy) return;
     localCommand.current = true;
     try {
-      const reply = await session.undo(activeAnchor.current);
+      const reply = await session.undo(activeAnchor.current, kind);
       if (!reply) {
         setNotice(t('review.noHistory'));
         return;
@@ -409,6 +472,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       data-testid="card-review"
       data-editor={editor}
       data-platform={platform === 'instagram' ? platform : undefined}
+      data-single={oneAtATime}
     >
       <div className={styles.layout} data-testid="review-card">
         {editor ? (
@@ -445,7 +509,13 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             total={state.total}
             busy={state.busy || state.loading}
             error={state.error || openError}
-            notice={notice}
+            notice={
+              state.saveFailure
+                ? t('reviewFeed.saveFailed')
+                : state.pending
+                  ? t('reviewFeed.saving', { count: state.pending })
+                  : notice
+            }
             zone={zone}
             singleKeys={
               localStorage.getItem('sp-single-keys') !== 'off' &&
@@ -458,7 +528,21 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               void session.open(accountKey, tab, activeAnchor.current);
             }}
             onTab={(next) => {
-              setOneAtATime(false);
+              if (client.commands.pending) {
+                void session.flush().then(() => {
+                  if (session.snapshot.saveFailure) return;
+                  setOneAtATime(
+                    feedChoice(views.current, accountKey, next).single ?? false,
+                  );
+                  setTab(next);
+                  setSort(feedChoice(views.current, accountKey, next).sort);
+                  persist(next);
+                });
+                return;
+              }
+              setOneAtATime(
+                feedChoice(views.current, accountKey, next).single ?? false,
+              );
               setTab(next);
               setSort(feedChoice(views.current, accountKey, next).sort);
               persist(next);
@@ -469,14 +553,17 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               void session.preview();
             }}
             onDelete={() => {
-              location.hash =
-                platform === 'instagram'
-                  ? '#/clicklist/instagram/go'
-                  : '#/delete';
+              void session.flush().then(() => {
+                location.hash =
+                  platform === 'instagram'
+                    ? '#/clicklist/instagram/go'
+                    : '#/delete';
+              });
             }}
-            onUndo={() => {
-              void undo();
+            onUndo={(redo) => {
+              void undo(redo ? 'redo' : 'undo');
             }}
+            onDrain={() => session.flush()}
             onKeyboardHelp={() => setHelp(true)}
             onMove={(index) => {
               void move(index);
@@ -489,7 +576,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 ...views.current,
                 [accountKey]: {
                   ...views.current[accountKey],
-                  [tab]: { sort, anchor: id },
+                  [tab]: { sort, anchor: id, single: oneAtATime },
                 },
               };
               clearTimeout(persistenceTimer.current);
@@ -534,11 +621,10 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                   );
                   delete anchors.current[tab];
                   activeAnchor.current = undefined;
-                  setOneAtATime(false);
                   setSort(next);
                   persist();
                 }}
-                busy={state.busy}
+                busy={state.busy || state.pending > 0}
                 single={oneAtATime}
                 previousDisabled={state.start + singleIndex === 0}
                 nextDisabled={state.start + singleIndex >= state.total - 1}
@@ -554,16 +640,27 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                   setAccount(key);
                   setTab('suggested');
                   setSort(feedChoice(views.current, key, 'suggested').sort);
+                  setOneAtATime(
+                    feedChoice(views.current, key, 'suggested').single ?? false,
+                  );
                   setNotice('');
                   persist('suggested', key);
                 }}
                 onSingle={() => {
-                  setOneAtATime((value) => !value);
-                  setTab('suggested');
-                  setSort(
-                    feedChoice(views.current, accountKey, 'suggested').sort,
-                  );
+                  const single = !oneAtATime;
+                  views.current = {
+                    ...views.current,
+                    [accountKey]: {
+                      ...views.current[accountKey],
+                      [tab]: {
+                        ...feedChoice(views.current, accountKey, tab),
+                        single,
+                      },
+                    },
+                  };
+                  setOneAtATime(single);
                   setSingleIndex(0);
+                  persist();
                 }}
                 onMove={(direction) => {
                   void move(state.start + singleIndex + direction);

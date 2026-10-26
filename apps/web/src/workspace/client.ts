@@ -12,6 +12,7 @@ import type {
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
 import type { InstagramContext, Original } from '@socialprune/core';
+import { CommandQueue } from './command-queue.ts';
 
 export type WorkspacePort = Pick<
   Worker,
@@ -23,6 +24,13 @@ export type WorkspacePort = Pick<
 >;
 
 export class WorkspaceClient {
+  readonly commands = new CommandQueue();
+  private readonly leaveWarning = (event: BeforeUnloadEvent) => {
+    if (this.commands.pending) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  };
   readonly worker: WorkspacePort;
   rows: readonly ReviewRow[] = [];
   summary: WorkspaceSummary | null = null;
@@ -58,6 +66,8 @@ export class WorkspaceClient {
   constructor(worker: WorkspacePort, workspaceId = 'active') {
     this.worker = worker;
     this.workspaceId = workspaceId;
+    if (typeof window !== 'undefined')
+      window.addEventListener('beforeunload', this.leaveWarning);
     worker.addEventListener('message', (event: MessageEvent<unknown>) => {
       const notice = WorkspaceNotificationSchema.safeParse(event.data);
       if (notice.success) {
@@ -268,6 +278,16 @@ export class WorkspaceClient {
     input: WorkspaceRequest,
     transfer: Transferable[] = [],
   ): Promise<WorkspaceReply> {
+    if (
+      this.commands.pending &&
+      [
+        'clickListOpen',
+        'clickListWindow',
+        'clickListExport',
+        'backup',
+      ].includes(input.type)
+    )
+      return this.commands.flush().then(() => this.request(input, transfer));
     const value = WorkspaceRequestSchema.parse(input);
     if (value.type === 'query')
       this.generations.set(value.queryId, value.generation);
@@ -297,7 +317,8 @@ export class WorkspaceClient {
     return result;
   }
   async flushCommands(): Promise<void> {
-    await Promise.all([...this.pendingWrites]);
+    await this.commands.flush();
+    while (this.pendingWrites.size) await Promise.all([...this.pendingWrites]);
   }
   parseReviewView(value: unknown) {
     const result = ReviewViewSchema.safeParse(value);
@@ -421,6 +442,12 @@ export class WorkspaceClient {
     );
   }
   dispose() {
+    if (this.commands.pending) {
+      void this.commands.flush().then(() => this.dispose());
+      return;
+    }
+    if (typeof window !== 'undefined')
+      window.removeEventListener('beforeunload', this.leaveWarning);
     this.worker.terminate();
     this.rows = [];
     this.listeners.clear();

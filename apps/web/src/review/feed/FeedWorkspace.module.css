@@ -70,7 +70,7 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-    flex: 0 1 290px;
+    flex: 0 1 240px;
   }
   .sortField > span {
     font-size: var(--type-sm);
@@ -120,6 +120,20 @@
     background: var(--color-selected-bg);
   }
   .mobileSort {
+    display: none;
+  }
+  .modeSwitch {
+    display: flex;
+    flex: none;
+  }
+  .modeSwitch button {
+    padding-inline: 8px;
+  }
+  .modeSwitch [aria-pressed='true'] {
+    background: var(--color-selected-bg);
+    color: var(--color-text);
+  }
+  .menu .mobileMode {
     display: none;
   }
   .sortHeading {
@@ -188,6 +202,12 @@
     z-index: 11;
   }
   @media (max-width: 540px) {
+    .modeSwitch {
+      display: none;
+    }
+    .menu .mobileMode {
+      display: flex;
+    }
     .toolbar {
       padding-inline: var(--space-3);
     }

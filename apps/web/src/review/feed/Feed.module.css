@@ -21,6 +21,46 @@
     overflow-anchor: none;
     scrollbar-color: var(--color-boundary) var(--color-surface);
   }
+  :global([data-single='true']) .card {
+    min-height: var(--feed-single-height, 400px);
+    position: relative;
+    padding-bottom: 100px;
+    display: flex;
+    flex-direction: column;
+  }
+  :global([data-single='true']) .reviewBody {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  :global([data-single='true']) .card .actions {
+    position: absolute;
+    inset: auto 36px 24px;
+    margin: 0;
+    padding-block: 12px;
+    background: var(--color-surface);
+    display: flex;
+    flex-wrap: wrap;
+  }
+  :global([data-single='true']) .actions button {
+    min-height: 52px;
+    flex: 1;
+    justify-content: center;
+  }
+  :global([data-single='true']) .card[data-instagram-card] .actions {
+    position: absolute;
+    inset: auto 24px 20px;
+  }
+  :global([data-single='true']) .card[data-instagram-card] > .reviewBody {
+    position: static;
+  }
+  :global([data-single='true']) .actions [data-mark-action] {
+    margin-left: 0;
+  }
+  :global([data-single='true']) .actions [data-reset-action] {
+    flex: 1 0 100%;
+    min-height: 44px;
+  }
   .ruleSummary {
     font-size: var(--type-sm);
     padding-left: var(--space-4);
@@ -728,6 +768,10 @@
     scrollbar-color: var(--color-boundary) var(--color-surface);
   }
   @media (max-width: 540px) {
+    :global([data-single='true']) .card .actions {
+      left: 16px;
+      right: 16px;
+    }
     .previewBody {
       padding: var(--space-5) var(--space-4);
     }

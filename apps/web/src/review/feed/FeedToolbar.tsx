@@ -77,6 +77,30 @@ export function FeedToolbar({
         </select>
         <ChevronDown size={16} aria-hidden="true" />
       </label>
+      <div
+        className={styles.modeSwitch}
+        role="group"
+        aria-label={t('reviewFeed.mode')}
+      >
+        <button
+          className={controls.quiet}
+          aria-pressed={single}
+          onClick={() => {
+            if (!single) onSingle();
+          }}
+        >
+          {t('feed.single')}
+        </button>
+        <button
+          className={controls.quiet}
+          aria-pressed={!single}
+          onClick={() => {
+            if (single) onSingle();
+          }}
+        >
+          {t('reviewFeed.listMode')}
+        </button>
+      </div>
       <label className={styles.sortField}>
         <span>{t('reviewFeed.sort')}</span>
         <select
@@ -156,7 +180,7 @@ export function FeedToolbar({
                 <List size={18} aria-hidden="true" />
                 {t('reviewFeed.list')}
               </Menu.Item>
-              <Menu.Item onClick={onSingle}>
+              <Menu.Item className={styles.mobileMode} onClick={onSingle}>
                 <Rows3 size={18} aria-hidden="true" />
                 {t(single ? 'feed.all' : 'feed.single')}
               </Menu.Item>

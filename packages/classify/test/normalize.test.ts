@@ -103,3 +103,53 @@ test('truncation retains complete result objects but never an incomplete object'
   expect(completeResults(input)).toEqual([{ id: 'e1', labels: [] }]);
   expect(completeResults('not JSON')).toEqual([]);
 });
+
+test.each([
+  [null, 'LABEL_SHAPE'],
+  [{ ...label, category: 'not-selected' }, 'CATEGORY_INVALID'],
+  [{ ...label, risk: 1.5 }, 'RISK_INVALID'],
+  [{ ...label, reason: 'x'.repeat(301) }, 'REASON_TOO_LONG'],
+  [{ ...label, reason: 'Generated\nreason' }, 'REASON_FORMAT'],
+  [{ ...label, quote: 123 }, 'QUOTE_TYPE'],
+  [{ ...label, quote: null }, 'QUOTE_MISSING'],
+  [{ ...label, quote: 'Gen' }, 'QUOTE_TOO_SHORT'],
+  [{ ...label, quote: 'not in this entry' }, 'QUOTE_NOT_EXACT'],
+] as const)(
+  'closed reason %# does not weaken the existing validator',
+  (input, detail) => {
+    const result = normalize(request, answer([{ id: 'e1', labels: [input] }]));
+    expect(result.details.get('e1')).toBe(detail);
+    expect(result.valid.size).toBe(0);
+    expect(result.invalid.size).toBe(1);
+  },
+);
+
+test('short exact whole quotes and a correctly supported unclear answer stay first-pass valid', () => {
+  for (const text of ['x', '?!', '🙂', 'short', '']) {
+    const short = { ...request, entries: [{ ...request.entries[0]!, text }] };
+    expect(
+      normalize(
+        short,
+        answer([{ id: 'e1', labels: [{ ...label, quote: text }] }]),
+      ).invalid.size,
+    ).toBe(0);
+  }
+  const result = normalize(
+    request,
+    answer([
+      {
+        id: 'e1',
+        labels: [
+          {
+            category: 'unclear',
+            risk: 1,
+            quote: null,
+            reason: 'The reply needs its unavailable original.',
+          },
+        ],
+      },
+    ]),
+  );
+  expect(result.invalid.size).toBe(0);
+  expect(result.valid.get('e1')?.[0]?.category).toBe('unclear');
+});

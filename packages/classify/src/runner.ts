@@ -5,6 +5,8 @@ import { definitionHash } from '@socialprune/core/criteria';
 import { normalize, fallback } from './normalize.ts';
 import { RUBRIC_VERSION } from './prompt.ts';
 import { ScanError, stopped, emptyUsage } from './source.ts';
+import { emptyDiagnostics, addDiagnosticUsage } from './diagnostics.ts';
+import type { ScanDiagnostics } from './diagnostics.ts';
 import type {
   CheckAnswer,
   CheckRequest,
@@ -32,6 +34,7 @@ export interface RunEntry {
   }[];
 }
 export interface RunProgress {
+  diagnostics: ScanDiagnostics;
   stored: number;
   remaining: number;
   requests: number;
@@ -150,6 +153,7 @@ export async function runBatches(options: RunOptions) {
     groups.set(key, group);
   }
   const progress: RunProgress = {
+    diagnostics: emptyDiagnostics(),
     stored: 0,
     remaining: planned,
     requests: 0,
@@ -179,6 +183,30 @@ export async function runBatches(options: RunOptions) {
         if (answer.answeredBy !== options.answeringModel)
           throw new ScanError('MODEL_CHANGED');
         addUsage(progress.tokens, answer.usage);
+        const diagnostic = second
+          ? progress.diagnostics.secondPass
+          : progress.diagnostics.firstPass;
+        diagnostic.answers++;
+        addDiagnosticUsage(diagnostic.tokens, answer.usage);
+        if (answer.usage.completionTokens !== null) {
+          diagnostic.completionTokensReported++;
+          const tokens = answer.usage.completionTokens;
+          diagnostic.completionTokenBuckets[
+            tokens < 1024
+              ? 'under1024'
+              : tokens < 4096
+                ? 'from1024To4095'
+                : tokens < 8192
+                  ? 'from4096To8191'
+                  : tokens < 16384
+                    ? 'from8192To16383'
+                    : 'atLeast16384'
+          ]++;
+          diagnostic.maxCompletionTokens = Math.max(
+            diagnostic.maxCompletionTokens ?? 0,
+            answer.usage.completionTokens,
+          );
+        }
         return answer;
       } catch (error) {
         if (!(error instanceof ScanError)) {
@@ -317,6 +345,31 @@ export async function runBatches(options: RunOptions) {
       return;
     }
     const normalized = normalize(request, answer);
+    const diagnostic = second
+      ? progress.diagnostics.secondPass
+      : progress.diagnostics.firstPass;
+    diagnostic.entryChecks += request.entries.length;
+    diagnostic.unknownIds += normalized.unknownIds;
+    diagnostic.truncatedAnswers += answer.truncated ? 1 : 0;
+    diagnostic.invalidJsonAnswers += answer.format === 'invalid-json' ? 1 : 0;
+    diagnostic.invalidEnvelopeAnswers +=
+      answer.format === 'invalid-envelope' ? 1 : 0;
+    for (const entry of request.entries) {
+      const kind = diagnostic.byKind[entry.kind];
+      kind.entries++;
+      const code = normalized.invalid.get(entry.id);
+      const detail = normalized.details.get(entry.id);
+      if (code) {
+        diagnostic.failures[code]++;
+        kind.failures[code]++;
+        if (answer.truncated) diagnostic.failuresInTruncatedAnswers[code]++;
+      }
+      if (detail) diagnostic.details[detail]++;
+    }
+    if (second) {
+      diagnostic.recoveredEntries += normalized.valid.size;
+      diagnostic.fallbackEntries += normalized.invalid.size;
+    }
     progress.unknownIds += normalized.unknownIds;
     progress.missingIds += [...normalized.invalid.values()].filter(
       (code) => code === 'MISSING_ID',
@@ -331,6 +384,7 @@ export async function runBatches(options: RunOptions) {
     }
     invalidStreak = normalized.valid.size ? 0 : invalidStreak + 1;
     if (invalidStreak >= 5) {
+      options.progress?.(structuredClone(progress));
       runController.abort();
       throw new ScanError('ANSWERS_INVALID');
     }

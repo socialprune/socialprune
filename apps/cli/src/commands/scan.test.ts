@@ -8,6 +8,139 @@ import { networkRecorder } from '../cli/test/network-recorder.ts';
 import { scanFixture } from './scan-fixture.test-support.ts';
 import { commandRegistry } from '../cli/registry.ts';
 
+test('scan JSON records first-pass quote failure and its recovery as closed counts', async () => {
+  let entryRequests = 0;
+  const h = await scanFixture({
+    answer: (entries, body) => {
+      const raw = JSON.parse(
+        (body.messages as { content: string }[])[1]!.content.split(
+          '\nValidation failures:',
+        )[0]!,
+      ) as { text: string }[];
+      if (raw[0]?.text === 'An invented museum note for the endpoint check.')
+        return {
+          entries: entries.map((entry) => ({ id: entry.id, labels: [] })),
+        };
+      entryRequests++;
+      return {
+        entries: entries.map((entry) => ({
+          id: entry.id,
+          labels:
+            entryRequests === 1
+              ? [
+                  {
+                    category: 'political',
+                    risk: 2,
+                    quote: null,
+                    reason: 'Generated reason.',
+                  },
+                ]
+              : [],
+        })),
+      };
+    },
+  });
+  try {
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    entryRequests = 0;
+    const result = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      'generated-model',
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.data.data).toMatchObject({
+      normalization: {
+        schemaVersion: 1,
+        firstPass: {
+          failures: { MISSING_QUOTE: 1 },
+          details: { QUOTE_MISSING: 1 },
+        },
+        secondPass: { recoveredEntries: 1, fallbackEntries: 0 },
+      },
+    });
+    expect(JSON.stringify(result.data.data!.normalization)).not.toMatch(
+      /Generated reason|political|contract|e1/,
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test('scan JSON keeps accumulated normalization evidence when later responses stop the run', async () => {
+  let calls = 0;
+  const h = await scanFixture({
+    entries: 6,
+    answer: (entries) => ({
+      entries:
+        ++calls <= 2
+          ? entries.map((entry) => ({ id: entry.id, labels: [] }))
+          : [],
+    }),
+  });
+  try {
+    const config = JSON.parse(await readFile(h.source, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    await writeFile(
+      h.source,
+      JSON.stringify({ ...config, entriesPerRequest: 1 }),
+    );
+    await h.invoke(['scan', 'check', '--source', h.source]);
+    const preview = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--dry-run',
+    ]);
+    const result = await h.invoke([
+      'scan',
+      'run',
+      '--workspace',
+      h.workspace,
+      '--source',
+      h.source,
+      '--plan',
+      preview.data.data!.plan as string,
+      '--confirm-endpoint',
+      h.origin,
+      '--confirm-model',
+      'generated-model',
+    ]);
+    expect(result.data.data).toMatchObject({
+      stopDetail: 'ANSWERS_INVALID',
+      normalization: {
+        firstPass: { failures: { MISSING_ID: 3 } },
+        secondPass: { failures: { MISSING_ID: 2 }, fallbackEntries: 2 },
+      },
+    });
+  } finally {
+    await h.close();
+  }
+});
+
 test('scan check declares that it writes the explicitly named source file', () => {
   expect(
     commandRegistry().find((entry) => entry.path.join('.') === 'scan.check'),

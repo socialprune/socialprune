@@ -5,7 +5,8 @@ import { CLI_ERRORS } from '../cli/errors.ts';
 import { workspaceCall, workspaceService } from './workspace-context.ts';
 import { integerFlag } from './scan-source.ts';
 import { plainLines } from '../cli/output.ts';
-import type { RunProgress } from '@socialprune/classify';
+import { emptyDiagnostics } from '@socialprune/classify';
+import type { RunProgress, ScanDiagnostics } from '@socialprune/classify';
 
 function humanProgress(
   text: string,
@@ -164,6 +165,7 @@ export const scanRunCommand = buildCommand({
     process.once('SIGTERM', stop);
     try {
       let planned: number | undefined;
+      let diagnostics: ScanDiagnostics | undefined;
       const progressState = { sending: 0 };
       const result = await workspaceService(this).runScan({
         ...workspaceCall(flags.workspace, this, flags.dryRun),
@@ -179,8 +181,10 @@ export const scanRunCommand = buildCommand({
             const value = JSON.parse(text) as {
               event?: string;
               planned?: number;
+              diagnostics?: ScanDiagnostics;
             };
             if (value.event === 'planned') planned = value.planned;
+            if (value.diagnostics) diagnostics = value.diagnostics;
           }
           const rendered = flags.json
             ? text
@@ -197,6 +201,14 @@ export const scanRunCommand = buildCommand({
         ) ?? [];
       this.reply({
         ...result,
+        ...(!result.data.dryRun && result.data.coverageCounted
+          ? {
+              data: {
+                ...result.data,
+                normalization: diagnostics ?? emptyDiagnostics(),
+              },
+            }
+          : {}),
         ...(flags.json ? {} : { warnings: reportWarnings }),
         human: humanReport(result.data),
       });

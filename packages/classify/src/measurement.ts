@@ -44,6 +44,7 @@ export async function measureBatches(options: {
       tokens: result.tokens,
       missingIds: result.missingIds,
       truncatedAnswers: result.truncatedAnswers,
+      normalization: result.diagnostics,
       prefixCharacters: prefix({ criteria }).length,
       // Chat-completions usage does not expose tokens of the system message alone.
       prefixTokens: null,

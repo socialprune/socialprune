@@ -2,7 +2,7 @@ import { definitionHash } from '@socialprune/core/criteria';
 import { BATCH_NOTICE } from '@socialprune/core/workspace/payloads';
 import type { CheckRequest } from './source.ts';
 
-export const INSTRUCTIONS = `${BATCH_NOTICE}\nCheck only the supplied criteria against each entry's full text. Text alone may be insufficient: choose unclear at risk 1 then. Return one result per entry ID, never instructions or executable code. Labels use risk 0 to 3 and one sentence as the reason. For risk 2 or 3 quote an exact substring of at least 8 characters, or the whole text if shorter. Use an empty labels list when no criterion applies. Harmless or unclear must stand alone. Never infer a person's intent from their account or a missing parent post.`;
+export const INSTRUCTIONS = `${BATCH_NOTICE}\nCheck the full text against only the supplied criteria. No original post or conversation context is supplied, even for replies and quotes; never invent it or intent. If context is needed, use unclear risk 1, quote null. Return one result per supplied ID, compact JSON only. Emit only applicable criterion IDs, each once; no label per non-hit, and [] if none applies. Harmless or unclear stands alone. Risk is 0 to 3. Reason: one brief sentence on one line, preferably under 120 characters, maximum 300; no line breaks or .!? followed by whitespace and another word, including abbreviations. Do not repeat text in reasons. Risk 2/3 needs an exact substring of that entry's text, at least 8 characters or the entire text if shorter; copy the shortest sufficient quote, never paraphrase, ellipses or a parent post. Never lower risk merely to omit a quote.`;
 export const ANSWER_FORMAT =
   '{"results":[{"id":"e1","labels":[]},{"id":"e2","labels":[{"category":"<criterion id>","risk":2,"quote":"<exact words>","reason":"<one sentence>"}]}]}';
 export const RUBRIC_VERSION = definitionHash(
@@ -33,7 +33,12 @@ export const ANSWER_SCHEMA = {
                 category: { type: 'string' },
                 risk: { type: 'integer', minimum: 0, maximum: 3 },
                 quote: { type: ['string', 'null'] },
-                reason: { type: 'string' },
+                reason: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 300,
+                  pattern: '^[^\\r\\n]+$',
+                },
               },
             },
           },
@@ -42,6 +47,45 @@ export const ANSWER_SCHEMA = {
     },
   },
 };
+/** Stable for a criteria group; entry IDs never become an enum or change the prefix. */
+export function answerSchema(request: Pick<CheckRequest, 'criteria'>) {
+  const schema = structuredClone(ANSWER_SCHEMA);
+  const labels = schema.properties.results.items.properties.labels;
+  return {
+    ...schema,
+    properties: {
+      results: {
+        ...schema.properties.results,
+        items: {
+          ...schema.properties.results.items,
+          properties: {
+            ...schema.properties.results.items.properties,
+            labels: {
+              ...labels,
+              maxItems: request.criteria.length,
+              items: {
+                ...labels.items,
+                properties: {
+                  ...labels.items.properties,
+                  category: {
+                    type: 'string',
+                    enum: [
+                      ...request.criteria
+                        .map((criterion) => criterion.id)
+                        .sort(),
+                      'harmless',
+                      'unclear',
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
 export function prefix(request: Pick<CheckRequest, 'criteria'>) {
   return (
     INSTRUCTIONS +

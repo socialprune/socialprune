@@ -69,6 +69,7 @@ export function completeResults(raw: string): unknown[] {
 export function normalize(request: CheckRequest, answer: CheckAnswer) {
   const valid = new Map<string, RawLabel[]>();
   const invalid = new Map<string, FailureCode>();
+  const details = new Map<string, FailureDetail>();
   const expected = new Map(request.entries.map((entry) => [entry.id, entry]));
   const groups = new Map<string, Record<string, unknown>[]>();
   let unknownIds = 0;
@@ -86,15 +87,18 @@ export function normalize(request: CheckRequest, answer: CheckAnswer) {
     const group = groups.get(entry.id);
     if (!group?.length) {
       invalid.set(entry.id, 'MISSING_ID');
+      details.set(entry.id, 'MISSING_ID');
       continue;
     }
     if (group.length !== 1) {
       invalid.set(entry.id, 'DUPLICATE_ID');
+      details.set(entry.id, 'DUPLICATE_ID');
       continue;
     }
     const raw = group[0]!.labels;
     if (!Array.isArray(raw)) {
       invalid.set(entry.id, 'INVALID_LABEL');
+      details.set(entry.id, 'LABELS_NOT_ARRAY');
       continue;
     }
     if (!raw.length) {
@@ -106,25 +110,38 @@ export function normalize(request: CheckRequest, answer: CheckAnswer) {
     let failure: FailureCode | null = null;
     for (const input of raw as unknown[]) {
       const label = object(input);
-      if (
-        !label ||
-        typeof label.category !== 'string' ||
-        seen.has(label.category) ||
-        ![...request.criteria.map((c) => c.id), 'harmless', 'unclear'].includes(
-          label.category,
-        ) ||
-        ((label.category === 'harmless' || label.category === 'unclear') &&
-          raw.length !== 1) ||
-        !AssessmentSchema.shape.risk.safeParse(label.risk).success ||
-        !AssessmentSchema.shape.reason.safeParse(label.reason).success ||
-        !(label.quote === null || typeof label.quote === 'string')
-      ) {
+      const detail: FailureDetail | null = !label
+        ? 'LABEL_SHAPE'
+        : typeof label.category !== 'string' ||
+            ![
+              ...request.criteria.map((c) => c.id),
+              'harmless',
+              'unclear',
+            ].includes(label.category)
+          ? 'CATEGORY_INVALID'
+          : seen.has(label.category)
+            ? 'CATEGORY_DUPLICATE'
+            : (label.category === 'harmless' || label.category === 'unclear') &&
+                raw.length !== 1
+              ? 'EXCLUSIVE_LABEL_MIXED'
+              : !AssessmentSchema.shape.risk.safeParse(label.risk).success
+                ? 'RISK_INVALID'
+                : typeof label.reason === 'string' && label.reason.length > 300
+                  ? 'REASON_TOO_LONG'
+                  : !AssessmentSchema.shape.reason.safeParse(label.reason)
+                        .success
+                    ? 'REASON_FORMAT'
+                    : !(label.quote === null || typeof label.quote === 'string')
+                      ? 'QUOTE_TYPE'
+                      : null;
+      if (detail) {
         failure = 'INVALID_LABEL';
+        details.set(entry.id, detail);
         break;
       }
-      seen.add(label.category);
-      const risk = label.risk as number;
-      const quote = label.quote;
+      seen.add(label!.category as string);
+      const risk = label!.risk as number;
+      const quote = label!.quote as string | null;
       if (
         risk >= 2 &&
         (quote === null ||
@@ -133,17 +150,46 @@ export function normalize(request: CheckRequest, answer: CheckAnswer) {
           (entry.text.length < 8 && quote !== entry.text))
       ) {
         failure = 'MISSING_QUOTE';
+        details.set(
+          entry.id,
+          quote === null
+            ? 'QUOTE_MISSING'
+            : quote.length < Math.min(8, entry.text.length)
+              ? 'QUOTE_TOO_SHORT'
+              : !entry.text.includes(quote)
+                ? 'QUOTE_NOT_EXACT'
+                : 'QUOTE_NOT_WHOLE',
+        );
         break;
       }
       labels.push({
-        category: label.category,
+        category: label!.category as string,
         risk,
         quote: quote !== null && entry.text.includes(quote) ? quote : null,
-        reason: label.reason as string,
+        reason: label!.reason as string,
       });
     }
     if (failure) invalid.set(entry.id, failure);
     else valid.set(entry.id, labels);
   }
-  return { valid, invalid, unknownIds };
+  return { valid, invalid, unknownIds, details };
 }
+
+export const FAILURE_DETAILS = [
+  'MISSING_ID',
+  'DUPLICATE_ID',
+  'LABELS_NOT_ARRAY',
+  'LABEL_SHAPE',
+  'CATEGORY_INVALID',
+  'CATEGORY_DUPLICATE',
+  'EXCLUSIVE_LABEL_MIXED',
+  'RISK_INVALID',
+  'REASON_TOO_LONG',
+  'REASON_FORMAT',
+  'QUOTE_TYPE',
+  'QUOTE_MISSING',
+  'QUOTE_TOO_SHORT',
+  'QUOTE_NOT_EXACT',
+  'QUOTE_NOT_WHOLE',
+] as const;
+export type FailureDetail = (typeof FAILURE_DETAILS)[number];

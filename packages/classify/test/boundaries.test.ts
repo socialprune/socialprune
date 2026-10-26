@@ -192,7 +192,32 @@ test.each(['openai-compatible', 'llama-server', 'openrouter'] as const)(
       );
       const body = fake.requests[0]!.body!;
       expect(body.stream).toBe(false);
-      expect(JSON.stringify(body.response_format)).not.toContain('enum');
+      const format = body.response_format as {
+        schema?: unknown;
+        json_schema?: { schema: unknown };
+      };
+      const schema = (format.schema ?? format.json_schema?.schema) as {
+        properties: {
+          results: {
+            items: {
+              properties: {
+                id: Record<string, unknown>;
+                labels: {
+                  items: { properties: { category: { enum: string[] } } };
+                };
+              };
+            };
+          };
+        };
+      };
+      // Criterion enums are stable for the group; IDs stay generic across batches.
+      expect(schema.properties.results.items.properties.id).not.toHaveProperty(
+        'enum',
+      );
+      expect(
+        schema.properties.results.items.properties.labels.items.properties
+          .category.enum,
+      ).toEqual(['political', 'harmless', 'unclear']);
       if (profile === 'openrouter') {
         expect(body.provider).toMatchObject({
           allow_fallbacks: false,

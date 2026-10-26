@@ -35,6 +35,7 @@ export interface CheckAnswer {
   entries: unknown[];
   // Original JSON text may be incomplete when finish_reason is length.
   rawContent?: string;
+  format?: 'json' | 'invalid-json' | 'invalid-envelope' | 'truncated-json';
 }
 export interface SuggestionSource {
   readonly kind: 'model' | 'rules';

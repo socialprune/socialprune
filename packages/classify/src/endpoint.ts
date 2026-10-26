@@ -2,7 +2,7 @@ import { CRITERIA_SELECTED_MAX } from '@socialprune/core/criteria';
 import type { SourceConfig } from './config.ts';
 import { parseSource } from './config.ts';
 import { object, completeResults } from './normalize.ts';
-import { ANSWER_SCHEMA, prefix } from './prompt.ts';
+import { answerSchema, prefix } from './prompt.ts';
 import { ScanError, emptyUsage, stopped } from './source.ts';
 import type { CheckRequest, CheckAnswer, SuggestionSource } from './source.ts';
 
@@ -27,13 +27,20 @@ function count(value: unknown): number | null {
     ? value
     : null;
 }
-function answerResults(raw: string, truncated: boolean): unknown[] {
+function answerResults(raw: string, truncated: boolean) {
+  const cleaned = raw.replace(/^\s*<think>\s*<\/think>\s*/, '');
   try {
-    const cleaned = raw.replace(/^\s*<think>\s*<\/think>\s*/, '');
     const value = object(JSON.parse(cleaned));
-    return Array.isArray(value?.results) ? (value.results as unknown[]) : [];
+    return Array.isArray(value?.results)
+      ? { entries: value.results as unknown[], format: 'json' as const }
+      : { entries: [], format: 'invalid-envelope' as const };
   } catch {
-    return truncated ? completeResults(raw) : [];
+    return {
+      entries: truncated ? completeResults(cleaned) : [],
+      format: truncated
+        ? ('truncated-json' as const)
+        : ('invalid-json' as const),
+    };
   }
 }
 export function rejectRemoteModel(input: unknown) {
@@ -189,13 +196,13 @@ export class EndpointSource implements SuggestionSource {
               this.config.structuredOutput === 'json_object'
                 ? { type: 'json_object' }
                 : this.config.profile === 'llama-server'
-                  ? { type: 'json_schema', schema: ANSWER_SCHEMA }
+                  ? { type: 'json_schema', schema: answerSchema(request) }
                   : {
                       type: 'json_schema',
                       json_schema: {
                         name: 'socialprune_labels',
                         strict: true,
-                        schema: ANSWER_SCHEMA,
+                        schema: answerSchema(request),
                       },
                     },
           };
@@ -243,10 +250,9 @@ export class EndpointSource implements SuggestionSource {
     return {
       answeredBy: typeof data?.model === 'string' ? data.model : null,
       truncated: choice?.finish_reason === 'length',
-      entries:
-        typeof content === 'string'
-          ? answerResults(content, choice?.finish_reason === 'length')
-          : [],
+      ...(typeof content === 'string'
+        ? answerResults(content, choice?.finish_reason === 'length')
+        : { entries: [], format: 'invalid-envelope' as const }),
       ...(typeof content === 'string' ? { rawContent: content } : {}),
       usage: usage
         ? {

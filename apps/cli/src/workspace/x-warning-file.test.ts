@@ -309,53 +309,95 @@ test.each(['x', 'instagram'] as const)(
     }
   },
 );
-test('D11 transient EPERM is retried without deleting the old marker and permanent failure remains observable', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'sp-d11-rename-'));
-  const actual =
-    await vi.importActual<typeof import('node:fs/promises')>(
-      'node:fs/promises',
-    );
-  const failure = Object.assign(new Error('Generated held destination'), {
-    code: 'EPERM',
-  });
-  try {
-    await createProfile(root);
-    await writeXWarningFile(root, warning);
-    const next = {
-      ...warning,
-      runId: 'generated-next',
-      day: '2026-10-12',
-      createdAt: '2026-10-12T12:00:00.000Z',
-    };
-    rename.mockImplementationOnce(async () => {
-      expect(await readFile(join(root, X_WARNING_FILE), 'utf8')).toBe(
-        JSON.stringify(warning),
+test.skipIf(process.platform === 'win32')(
+  'D11 EPERM outside Windows is not retried and leaves the old marker in place',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-d11-rename-posix-'));
+    const actual =
+      await vi.importActual<typeof import('node:fs/promises')>(
+        'node:fs/promises',
       );
-      throw failure;
+    const failure = Object.assign(new Error('Generated held destination'), {
+      code: 'EPERM',
     });
-    await expect(writeXWarningFile(root, next)).resolves.toBeUndefined();
-    expect(await readXWarningFile(root)).toEqual(next);
-    rename.mockImplementation(async () => {
-      await Promise.resolve();
-      throw failure;
+    try {
+      await createProfile(root);
+      await writeXWarningFile(root, warning);
+      let calls = 0;
+      rename.mockImplementation(async () => {
+        calls++;
+        await Promise.resolve();
+        throw failure;
+      });
+      await expect(
+        writeXWarningFile(root, {
+          ...warning,
+          runId: 'generated-next',
+          day: '2026-10-12',
+          createdAt: '2026-10-12T12:00:00.000Z',
+        }),
+      ).rejects.toBe(failure);
+      expect(calls).toBe(1);
+      expect(await readXWarningFile(root)).toEqual(warning);
+      expect(
+        (await readdir(root)).filter((name) => name.endsWith('.part')),
+      ).toEqual([]);
+    } finally {
+      rename.mockImplementation(actual.rename);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+test.skipIf(process.platform !== 'win32')(
+  'D11 transient EPERM is retried without deleting the old marker and permanent failure remains observable',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-d11-rename-'));
+    const actual =
+      await vi.importActual<typeof import('node:fs/promises')>(
+        'node:fs/promises',
+      );
+    const failure = Object.assign(new Error('Generated held destination'), {
+      code: 'EPERM',
     });
-    await expect(
-      writeXWarningFile(root, {
-        ...next,
-        runId: 'generated-permanent',
-        day: '2026-10-13',
-        createdAt: '2026-10-13T12:00:00.000Z',
-      }),
-    ).rejects.toBe(failure);
-    expect(await readXWarningFile(root)).toEqual(next);
-    expect(
-      (await readdir(root)).filter((name) => name.endsWith('.part')),
-    ).toEqual([]);
-  } finally {
-    rename.mockImplementation(actual.rename);
-    await rm(root, { recursive: true, force: true });
-  }
-});
+    try {
+      await createProfile(root);
+      await writeXWarningFile(root, warning);
+      const next = {
+        ...warning,
+        runId: 'generated-next',
+        day: '2026-10-12',
+        createdAt: '2026-10-12T12:00:00.000Z',
+      };
+      rename.mockImplementationOnce(async () => {
+        expect(await readFile(join(root, X_WARNING_FILE), 'utf8')).toBe(
+          JSON.stringify(warning),
+        );
+        throw failure;
+      });
+      await expect(writeXWarningFile(root, next)).resolves.toBeUndefined();
+      expect(await readXWarningFile(root)).toEqual(next);
+      rename.mockImplementation(async () => {
+        await Promise.resolve();
+        throw failure;
+      });
+      await expect(
+        writeXWarningFile(root, {
+          ...next,
+          runId: 'generated-permanent',
+          day: '2026-10-13',
+          createdAt: '2026-10-13T12:00:00.000Z',
+        }),
+      ).rejects.toBe(failure);
+      expect(await readXWarningFile(root)).toEqual(next);
+      expect(
+        (await readdir(root)).filter((name) => name.endsWith('.part')),
+      ).toEqual([]);
+    } finally {
+      rename.mockImplementation(actual.rename);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 test('D11 distinct warning writers retain newest evidence in either ordering and reject stale acknowledgement', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sp-d11-precedence-'));
   try {

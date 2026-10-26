@@ -99,7 +99,7 @@ import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
 import { commentLikes } from './likes.ts';
-import { openConfirmedPost } from './driver.ts';
+import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -799,6 +799,13 @@ export async function runContextWithDependencies(
         stage = 'list-read';
         const list = await (async () => {
           if (options.plan.refreshLikes) {
+            await navigateList(
+              page,
+              options.plan.handle,
+              deps,
+              guard,
+              rowCounts,
+            );
             return {
               account: options.plan.handle,
               manualReason: undefined,
@@ -885,12 +892,10 @@ export async function runContextWithDependencies(
           candidate--;
           continue;
         }
-        if (!options.plan.refreshLikes) {
-          if (accountBefore === null) accountBeforeClass = 'expected';
-          accountBefore ??= list.account;
-          accountAfter = list.account;
-          options.session?.before(before, accountBefore);
-        }
+        if (accountBefore === null) accountBeforeClass = 'expected';
+        accountBefore ??= list.account;
+        accountAfter = list.account;
+        options.session?.before(before, accountBefore);
         await network?.flush();
         stage = 'answers';
         await answers.flush(deps.responseMs);
@@ -937,7 +942,7 @@ export async function runContextWithDependencies(
             }
           : undefined;
         answerReport?.();
-        if (!options.plan.refreshLikes) profileNames.push(list.account);
+        profileNames.push(list.account);
         if (list.manualReason || list.full || !list.candidates[candidate]) {
           stage = 'settlement';
           await writer.settle({
@@ -978,7 +983,7 @@ export async function runContextWithDependencies(
         try {
           opened =
             options.plan.refreshLikes && row.context
-              ? await openConfirmedPost(
+              ? await reopenCandidate(
                   page,
                   `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
                   deps,
@@ -1045,20 +1050,6 @@ export async function runContextWithDependencies(
           break;
         }
         stage = 'post-read';
-        if (options.plan.refreshLikes) {
-          const value = accountClass(
-            options.plan.handle,
-            await outsideProfilePaths(page),
-          );
-          accountBeforeClass ??= value;
-          accountAfterClass = value;
-          if (value !== 'expected')
-            throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
-          accountBefore ??= options.plan.handle;
-          accountAfter = options.plan.handle;
-          profileNames.push(options.plan.handle);
-          options.session?.before(before, accountBefore);
-        }
         const read = await confirmOnPost(
           page,
           row.item,

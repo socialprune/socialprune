@@ -492,25 +492,6 @@ export async function reopenCandidate(
   });
   return postReady(page, navigationStart, deps, guard);
 }
-/** Initial likes-only navigation starts on an empty owned reading page. */
-export async function openConfirmedPost(
-  page: Page,
-  target: string,
-  deps: ContextDependencies,
-  guard: () => void,
-): Promise<boolean> {
-  guard();
-  if (page.url() !== 'about:blank') await checkPage(page);
-  const address = postReopenTarget(target, deps.origin);
-  if (!address)
-    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const started = performance.now();
-  await page.goto(address, {
-    waitUntil: 'domcontentloaded',
-    timeout: deps.responseMs,
-  });
-  return postReady(page, started, deps, guard);
-}
 /** The observed main-frame address may change without a document request. */
 export function postReopenTarget(input: string, origin: string): string | null {
   const address = postAddress(input, origin);

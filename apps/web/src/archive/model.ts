@@ -1,8 +1,10 @@
-import type { Item, OutcomeValue } from '@socialprune/core';
+import type { Item, OutcomeValue, InstagramContext } from '@socialprune/core';
+import { effectiveEngagement } from '@socialprune/core/workspace/effective-engagement';
 
 export interface ArchivedItem {
   item: Item;
   outcome: OutcomeValue;
+  instagramContext?: InstagramContext;
 }
 
 /** Deleted on the platform, by the person's hand or by a run in their browser. */
@@ -82,12 +84,13 @@ export function recap(
   let oldest: string | null = null,
     likes: number | null = null,
     lols = 0;
-  for (const { item } of entries) {
+  for (const { item, instagramContext } of entries) {
     if (!oldest || item.createdAt < oldest) oldest = item.createdAt;
     const year = yearFormat.format(new Date(item.createdAt));
     years.set(year, (years.get(year) ?? 0) + 1);
-    if (item.engagement.likes !== null)
-      likes = Math.max(likes ?? 0, item.engagement.likes);
+    const engagement = effectiveEngagement(item, instagramContext);
+    if (engagement.likes !== null)
+      likes = Math.max(likes ?? 0, engagement.likes);
     lols += (item.text.match(/\blol\b/giu) ?? []).length;
   }
   const active = [...years].sort(

@@ -217,6 +217,9 @@ export const RunJournalCodeSchema = z.enum([
   'no-row',
   'window-full',
   'list-image-only',
+  'post-unavailable',
+  'comment-not-shown',
+  'daily-cap',
 ]);
 
 /** signals.ts keeps these identities separate from host names and URLs. */

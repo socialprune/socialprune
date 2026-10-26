@@ -31,7 +31,9 @@ export function evaluateKeepRules(
         rule.kind === 'likes-at-least'
           ? item.engagement.likes
           : item.engagement.reposts;
-      return value === null ? rule.alsoWhenUnknown : value >= rule.count;
+      return value === null
+        ? item.platform === 'x' && rule.alsoWhenUnknown
+        : value >= rule.count;
     })
     .map((rule) => rule.id);
 }

@@ -16,6 +16,7 @@ import {
 } from '@socialprune/core/workspace/backup';
 import { SQLiteStore } from '../sqlite-store.ts';
 import type { WorkspaceV2 } from '@socialprune/core';
+import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
 import type { Workspace as WorkspaceV1 } from '@socialprune/core/model/v1';
 
 interface BrowserProof {
@@ -62,13 +63,16 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
     }, legacy);
     assert.deepEqual(result.first, {
       ...migrateReviewContract(legacy),
-      schemaVersion: 11,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
     });
     assert.deepEqual(result.second, result.first);
-    assert.deepEqual(result.physical, { version: 11, plans: true });
+    assert.deepEqual(result.physical, {
+      version: WORKSPACE_SCHEMA_VERSION,
+      plans: true,
+    });
     assert.equal(result.contextDuplicateRejected, true);
     console.log(
-      'PASS IndexedDB v6 to v10: post/list context, add-only context, reviewPlans, idempotent reopen',
+      `PASS IndexedDB v6 to v${WORKSPACE_SCHEMA_VERSION}: post/list context, add-only context, reviewPlans, idempotent reopen`,
     );
     const cli = await SQLiteStore.open(join(directory, 'source.sqlite'), {
       initial: migrateReviewContract(legacy),
@@ -99,7 +103,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
       await restored.close();
     }
     console.log(
-      'PASS v10 backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal',
+      `PASS v${WORKSPACE_SCHEMA_VERSION} backup SQLite -> Chromium IndexedDB -> SQLite retains context, hashes, selections and journal`,
     );
     const v1 = JSON.parse(
       await readFile(
@@ -165,7 +169,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
           Reflect.deleteProperty(value, 'confirmedBy');
       }
       const copy = await roundTrip(JSON.stringify(document));
-      assert.equal(copy.workspace.schemaVersion, 10);
+      assert.equal(copy.workspace.schemaVersion, WORKSPACE_SCHEMA_VERSION);
       assert.equal(copy.workspace.items.length, document.items.length);
       const sqlite = await SQLiteStore.open(
         join(directory, `v${version}.sqlite`),
@@ -181,7 +185,7 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
         await sqlite.close();
       }
       console.log(
-        `PASS backup v${version} restores into schema 9 in SQLite and Chromium IndexedDB`,
+        `PASS backup v${version} restores into schema ${WORKSPACE_SCHEMA_VERSION} in SQLite and Chromium IndexedDB`,
       );
     }
   } finally {

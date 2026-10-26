@@ -276,7 +276,9 @@ export class CompactFeed {
       rule.kind === 'likes-at-least'
         ? this.likes[index]!
         : this.reposts[index]!;
-    return value < 0 ? rule.alsoWhenUnknown : value >= rule.count;
+    return value < 0
+      ? !(this.flags[index]! & 2) && rule.alsoWhenUnknown
+      : value >= rule.count;
   }
   sortOptions(accountKey: string): FeedSort[] {
     return [

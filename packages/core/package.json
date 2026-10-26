@@ -25,6 +25,7 @@
     "./workspace/labels": "./src/workspace/labels.ts",
     "./workspace/query": "./src/workspace/query.ts",
     "./workspace/time": "./src/workspace/time.ts",
+    "./workspace/effective-engagement": "./src/workspace/effective-engagement.ts",
     "./workspace/merge": "./src/workspace/merge.ts",
     "./workspace/payloads": "./src/workspace/payloads.ts",
     "./workspace/backup": "./src/workspace/backup.ts",

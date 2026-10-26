@@ -173,7 +173,7 @@
   "criteriaPicker.total": "Deine Kriterien schlagen {count, number} {count, plural, one {Eintrag} other {Einträge}} zum Löschen vor. Deine Regeln halten {held, number} davon zurück.",
   "keepRules.title": "Deine Regeln",
   "keepRules.how": "So wirken deine Regeln",
-  "keepRules.intro": "SocialPrune prüft sie an den Zahlen aus deinem Export. Kein Modell und kein Agent liest sie.",
+  "keepRules.intro": "SocialPrune prüft die Zahlen aus deinem Export und gespeicherte Likes bestätigter Instagram-Kommentare. Kein Modell und kein Agent liest sie.",
   "keepRules.top": "Nie mein meistgeliktes Zehntel löschen",
   "keepRules.likes": "Nie löschen ab dieser Gefällt-mir-Zahl",
   "keepRules.reposts": "Nie löschen ab dieser Repost-Zahl",
@@ -189,7 +189,7 @@
   "keepRules.choose": "Regel wählen",
   "keepRules.invalid": "Gib eine ganze Zahl ab null oder ein gültiges Datum ein.",
   "keepRules.combine": "Eine passende Regel reicht zum Zurückhalten. Die Zahlen können sich überschneiden.",
-  "keepRules.instagram": "Reposts und Instagram-Kommentare haben hier keine eigene Gefällt-mir- oder Repost-Zahl. Diese Zahlenregeln halten sie deshalb nie zurück.",
+  "keepRules.instagram": "Zahlenregeln halten Instagram-Kommentare nur mit gespeicherter Gefällt-mir-Zahl zurück. Unbekannte Zahlen halten sie nie zurück, auch wenn du die Option wählst. Diese Option gilt nur für X. Reposts bleiben von Zahlenregeln ausgenommen.",
   "nav.start": "Start",
   "nav.guide": "Export anfordern",
   "nav.demo": "Demo ausprobieren",
@@ -974,5 +974,7 @@
   "desktop.token.not-shown": "Der Kommentar wurde nicht unter dem erwarteten Konto gezeigt.",
   "desktop.token.no-row": "Keine passende Kommentarzeile wurde gefunden.",
   "desktop.token.window-full": "Der geprüfte Listenteil endete, bevor der Kommentar gefunden wurde.",
-  "desktop.token.list-image-only": "Die geprüfte Liste zeigte Bildelemente ohne lesbaren Kommentartext. Der Kommentar bleibt zur manuellen Prüfung."
+  "desktop.token.list-image-only": "Die geprüfte Liste zeigte Bildelemente ohne lesbaren Kommentartext. Der Kommentar bleibt zur manuellen Prüfung.",
+  "desktop.token.post-unavailable": "Der Beitrag war beim Ergänzen der Likes nicht verfügbar. Nur auf deine Auswahl erneut prüfen.",
+  "desktop.token.comment-not-shown": "Der bestätigte Kommentar wurde beim Ergänzen der Likes nicht angezeigt. Nur auf deine Auswahl erneut prüfen."
 }

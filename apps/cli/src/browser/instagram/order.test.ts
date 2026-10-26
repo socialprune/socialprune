@@ -49,6 +49,41 @@ test('P1 pace order accepts the upper scoped limits and retains defaults without
     );
 });
 
+test.each([false, true])(
+  'F2 explicit likes order is bound to run mode=%s while absent covers both',
+  (mode) => {
+    const base = {
+      value: {
+        scope: 'context-instagram' as const,
+        account: 'generated_person',
+        givenAt: '2026-10-26T00:00:00Z',
+        words: 'Generated scope.',
+        acceptCanary: true,
+      },
+      sha256: 'a'.repeat(64),
+    };
+    expect(() =>
+      validateContextOrder(base, base.value.account, false, mode),
+    ).not.toThrow();
+    expect(() =>
+      validateContextOrder(
+        { ...base, value: { ...base.value, refreshLikes: mode } },
+        base.value.account,
+        false,
+        mode,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateContextOrder(
+        { ...base, value: { ...base.value, refreshLikes: !mode } },
+        base.value.account,
+        false,
+        mode,
+      ),
+    ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+  },
+);
+
 test.each([{ secondsPerStep: 9 }, { stepsPerDay: 601 }])(
   'P1 refuses out-of-range order %j independently',
   (fields) => {

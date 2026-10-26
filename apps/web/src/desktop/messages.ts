@@ -239,6 +239,8 @@ const tokenIds = [
   'desktop.token.no-row',
   'desktop.token.window-full',
   'desktop.token.list-image-only',
+  'desktop.token.post-unavailable',
+  'desktop.token.comment-not-shown',
 ] as const satisfies readonly (keyof MessageArguments)[];
 const tokenMessages = new Map<string, (typeof tokenIds)[number]>(
   tokenIds.map((id) => [id.slice('desktop.token.'.length), id]),

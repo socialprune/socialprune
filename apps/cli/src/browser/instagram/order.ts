@@ -43,12 +43,15 @@ export function validateContextOrder(
   order: ContextOrder | undefined,
   handle: string,
   canary: boolean,
+  refreshLikes = false,
 ): void {
   if (!order) return;
   const parsed = ContextOrderSchema.safeParse(order.value);
   if (
     !parsed.success ||
     parsed.data.account.toLowerCase() !== handle.toLowerCase() ||
+    (parsed.data.refreshLikes !== undefined &&
+      parsed.data.refreshLikes !== refreshLikes) ||
     !/^[a-f0-9]{64}$/.test(order.sha256)
   )
     throw new CliError('CONTEXT_ORDER_INVALID');

@@ -7,6 +7,10 @@ import {
   recap,
 } from '../src/archive/model.ts';
 import { personExpected, personFixture } from './person-fixture.ts';
+import {
+  instagramContractItem,
+  instagramContractRecord,
+} from '@socialprune/core/workspace/store-contract';
 
 const item = (
   id: string,
@@ -34,6 +38,25 @@ const item = (
 const entry = (value: Item) => ({ item: value, outcome: 'unknown' as const });
 
 describe('private archive groups and count-only recap', () => {
+  it('archive recap displays effective comment likes, retaining export precedence and unknown', () => {
+    const item = instagramContractItem();
+    const context = {
+      ...instagramContractRecord(item),
+      likes: { count: 17, source: 'answer' as const },
+    };
+    expect(recap([{ ...entry(item), instagramContext: context }]).likes).toBe(
+      17,
+    );
+    expect(
+      recap([
+        {
+          ...entry({ ...item, engagement: { likes: 4, reposts: null } }),
+          instagramContext: context,
+        },
+      ]).likes,
+    ).toBe(4);
+    expect(recap([entry(item)]).likes).toBeNull();
+  });
   it('matches the generated fixture thread, separate foreign reply and declared recap oracle', () => {
     const entries = personFixture()
       .items.filter((item) => item.account.key === personExpected.accountKey)

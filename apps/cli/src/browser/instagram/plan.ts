@@ -133,6 +133,7 @@ export async function planContext(
       }
     }
     const last = new Map<string, string>();
+    const settledRefresh = new Set<string>();
     const runs = [];
     for await (const run of tx.browserRuns.iterate())
       if (
@@ -143,8 +144,16 @@ export async function planContext(
         runs.push(run);
     const runIds = new Set(runs.map((run) => run.runId));
     for await (const attempt of tx.browserAttempts.iterate())
-      if (runIds.has(attempt.runId) && attempt.itemId && attempt.settles)
+      if (runIds.has(attempt.runId) && attempt.itemId && attempt.settles) {
         last.set(attempt.itemId, attempt.state);
+        if (
+          attempt.action === 'refresh-comment-likes' &&
+          attempt.state === 'failed' &&
+          (attempt.code === 'post-unavailable' ||
+            attempt.code === 'comment-not-shown')
+        )
+          settledRefresh.add(attempt.itemId);
+      }
     const manual = { emptyText: 0, noOwner: 0, closeTwin: 0 },
       excluded = { unconfirmed: 0, 'not-listed': 0, unavailable: 0 };
     let confirmed = 0;
@@ -169,6 +178,7 @@ export async function planContext(
         if (
           context?.confirmedBy === 'post' &&
           context.likes === undefined &&
+          (!settledRefresh.has(item.id) || include.has(item.id)) &&
           !personExcludes(item.id)
         )
           rows.push({ item, context, marked: false });

@@ -86,6 +86,60 @@ test('IG-LIKES refresh plan binds only post records with absent observations and
     await h.close();
   }
 });
+
+test.each(['post-unavailable', 'comment-not-shown'])(
+  'F4 settled refresh %s stays out until explicitly included',
+  async (code) => {
+    const h = await excludeFixture();
+    try {
+      const record = await writeInstagramContextContract(
+        h.store,
+        h.fixture.items[0],
+      );
+      const writer = new InstagramContextWriter(h.store),
+        at = '2026-10-26T00:00:00.000Z';
+      await writer.startRun({
+        runId: 'generated-failed-refresh',
+        accountKey: h.accountKey,
+        planHash: 'a'.repeat(64),
+        startedAt: at,
+      });
+      await writer.sending({
+        attemptId: 'generated-failed-refresh-send',
+        runId: 'generated-failed-refresh',
+        itemId: record.itemId,
+        at,
+        refreshLikes: true,
+      });
+      await writer.settle({
+        attemptId: 'generated-failed-refresh-send',
+        state: 'failed',
+        code,
+        at,
+      });
+      expect(
+        (await planContext(h.store, h.accountKey, new Set(), new Set(), true))
+          .rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await planContext(
+            h.store,
+            h.accountKey,
+            new Set([record.itemId]),
+            new Set(),
+            true,
+          )
+        ).rows.map((row) => row.item.id),
+      ).toEqual([record.itemId]);
+      expect(
+        await h.store.read((tx) => tx.instagramContext.get(record.itemId)),
+      ).toEqual(record);
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('C18 exclude removes exactly named planned and manual entries before canary selection and counts unmatched IDs', async () => {
   const h = await excludeFixture();
   const manual = h.fixture.items[4]!;

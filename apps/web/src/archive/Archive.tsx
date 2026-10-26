@@ -83,6 +83,23 @@ export function Archive({ client }: { client: WorkspaceClient }) {
               return { item: detail.item, outcome: row.outcome };
             }),
           );
+          const contextIds = batch
+            .filter(
+              (entry) =>
+                entry.item.platform === 'instagram' &&
+                entry.item.kind === 'comment',
+            )
+            .map((entry) => entry.item.id);
+          const contexts = new Map(
+            (contextIds.length
+              ? await client.getInstagramContext(contextIds)
+              : []
+            ).map((record) => [record.itemId, record]),
+          );
+          for (const entry of batch) {
+            const context = contexts.get(entry.item.id);
+            if (context) Object.assign(entry, { instagramContext: context });
+          }
           all.push(...batch);
         }
       }

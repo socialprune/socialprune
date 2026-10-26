@@ -95,3 +95,70 @@ test('Instagram known effective likes use tenth ties and floor while unknown and
       .popularThreshold,
   ).toBe(12);
 });
+
+test('F1 unknown numeric rule is X-only even when alsoWhenUnknown is enabled', () => {
+  const rule = {
+    id: 'likes-unknown',
+    enabled: true,
+    kind: 'likes-at-least' as const,
+    count: 10,
+    alsoWhenUnknown: true,
+  };
+  const comment = {
+    ...instagramContractItem(),
+    engagement: { likes: null, reposts: null },
+  };
+  expect(evaluateKeepRules(comment, [rule], 'UTC', null)).toEqual([]);
+  expect(
+    evaluateKeepRules(
+      { ...comment, platform: 'x', kind: 'reply' },
+      [rule],
+      'UTC',
+      null,
+    ),
+  ).toEqual(['likes-unknown']);
+});
+
+test('F1 compact rule parity distinguishes absent, null and known Instagram observations from X unknown', () => {
+  const rule = {
+    id: 'likes-unknown',
+    enabled: true,
+    kind: 'likes-at-least' as const,
+    count: 10,
+    alsoWhenUnknown: true,
+  };
+  for (const count of [undefined, null, 0, 9, 10] as const) {
+    const item = {
+      ...instagramContractItem(),
+      engagement: { likes: null, reposts: null },
+    };
+    const workspace = createWorkspace();
+    workspace.items = [item];
+    if (count !== undefined)
+      workspace.instagramContext = [
+        {
+          ...instagramContractRecord(item),
+          likes: { count, source: count === null ? null : 'answer' },
+        },
+      ];
+    const compact = new CompactFeed(workspace);
+    const effective = {
+      ...item,
+      engagement: effectiveEngagement(item, workspace.instagramContext?.[0]),
+    };
+    const expected = count === 10;
+    expect(evaluateKeepRules(effective, [rule], 'UTC', null).length > 0).toBe(
+      expected,
+    );
+    expect(compact['holds'](0, rule, 'UTC')).toBe(expected);
+  }
+  const workspace = createWorkspace();
+  const item = {
+    ...instagramContractItem(),
+    platform: 'x' as const,
+    kind: 'reply' as const,
+    engagement: { likes: null, reposts: null },
+  };
+  workspace.items = [item];
+  expect(new CompactFeed(workspace)['holds'](0, rule, 'UTC')).toBe(true);
+});

@@ -99,6 +99,7 @@ import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
 import { commentLikes } from './likes.ts';
+import { refreshOutcome } from './refresh.ts';
 import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
@@ -130,7 +131,12 @@ export async function runContextWithDependencies(
   options: ContextOptions,
   deps: ContextDependencies,
 ) {
-  validateContextOrder(options.order, options.plan.handle, options.plan.canary);
+  validateContextOrder(
+    options.order,
+    options.plan.handle,
+    options.plan.canary,
+    Boolean(options.plan.refreshLikes),
+  );
   const pace = contextPace(options.order, options.plan.canary, {
     ...CONTEXT_PACE,
     ...deps.pace,
@@ -693,7 +699,14 @@ export async function runContextWithDependencies(
         report.memory = memorySummary();
         await checkpoint();
       }
-      options.session?.entry(entryView(row.item, 'confirm-comment'));
+      options.session?.entry(
+        entryView(
+          row.item,
+          options.plan.refreshLikes
+            ? 'refresh-comment-likes'
+            : 'confirm-comment',
+        ),
+      );
       const attemptId = crypto.randomUUID();
       stage = 'attempt';
       await writer.sending({
@@ -707,8 +720,6 @@ export async function runContextWithDependencies(
       let settled = false;
       let reopening: ReturnType<PostOpenRetries['begin']> = null;
       let reopenTarget: string | null = null;
-      let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
-        'not-shown';
       for (let candidate = 0; candidate < 3; candidate++) {
         await sampleMemory();
         postRequests?.close();
@@ -724,8 +735,12 @@ export async function runContextWithDependencies(
           stage = 'settlement';
           await writer.settle({
             attemptId,
-            state: 'unconfirmed',
-            code: lastUnconfirmed,
+            state: 'failed',
+            code:
+              used >= pace.perDay ||
+              dateInZone(options.now(), options.plan.timeZone) !== day
+                ? 'daily-cap'
+                : 'INTERRUPTED',
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
@@ -764,8 +779,8 @@ export async function runContextWithDependencies(
           stage = 'settlement';
           await writer.settle({
             attemptId,
-            state: 'unconfirmed',
-            code: lastUnconfirmed,
+            state: 'failed',
+            code: 'daily-cap',
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
@@ -1035,18 +1050,20 @@ export async function runContextWithDependencies(
           page.off('request', navigation);
         }
         if (!opened) {
-          if (options.plan.refreshLikes)
-            throw new ContextStop('PLATFORM_CHECK', 'post-structure');
           stage = 'settlement';
           await writer.settle({
             attemptId,
-            state: 'unavailable',
-            code: null,
+            state: options.plan.refreshLikes ? 'failed' : 'unavailable',
+            code: options.plan.refreshLikes
+              ? refreshOutcome({ opened: false, context: row.context })
+              : null,
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
           settled = true;
-          stepReport.result = 'unavailable';
+          stepReport.result = options.plan.refreshLikes
+            ? 'post-unavailable'
+            : 'unavailable';
           break;
         }
         stage = 'post-read';
@@ -1072,14 +1089,26 @@ export async function runContextWithDependencies(
         }
         await checkpoint();
         if (options.plan.refreshLikes) {
-          if (
-            read.result.state !== 'confirmed' ||
-            !row.context ||
-            read.result.comment.id !== row.context.comment.id ||
-            read.result.comment.createdAt !== row.context.comment.createdAt ||
-            ownerName(read.post.owner) !== ownerName(row.context.post.owner) ||
-            read.post.code !== row.context.post.code
-          )
+          const outcome = refreshOutcome({
+            opened: true,
+            context: row.context,
+            post: read.post,
+            result: read.result,
+          });
+          if (outcome) {
+            stage = 'settlement';
+            await writer.settle({
+              attemptId,
+              state: 'failed',
+              code: outcome,
+              at: options.now().toISOString(),
+            });
+            pendingAttempt = undefined;
+            settled = true;
+            stepReport.result = outcome;
+            break;
+          }
+          if (read.result.state !== 'confirmed')
             throw new ContextStop('PLATFORM_CHECK', 'post-structure');
           const likes = await commentLikes(page, answers.bodies, {
             ...read.result.comment,
@@ -1107,7 +1136,6 @@ export async function runContextWithDependencies(
           ownerName(read.post.owner) ===
             ownerName(row.item.reference.ownerHandle ?? '');
         if (read.result.state !== 'confirmed' && !fromList) {
-          lastUnconfirmed = read.result.code;
           stepReport.result = read.result.code;
           if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
           const code =

@@ -6360,6 +6360,126 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
     await h.close();
   }
 });
+
+test.each(['unavailable', 'not-shown'] as const)(
+  'F4 refresh %s among three settles once, fills the later two and excludes the failed record until include',
+  async (variant) => {
+    const h = await harness('success', 5);
+    h.fake.likes('answer');
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      const originals = await h.store.read((tx) =>
+        records(tx.instagramContext),
+      );
+      const selected = new Set(
+        h.fixture.items.slice(0, 3).map((item) => item.id),
+      );
+      const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+      raw.exec('DROP TRIGGER instagram_context_no_update');
+      for (const id of selected)
+        raw
+          .prepare(
+            "UPDATE instagram_context SET data=json_remove(data,'$.likes') WHERE item_id=?",
+          )
+          .run(id);
+      raw.close();
+      h.fake.setPostVariant(0, variant);
+      const stepStarts: number[] = [];
+      h.fake.beforeList(async () => {
+        stepStarts.push(
+          Date.parse(
+            (await h.store.browserJournal()).runs.at(-1)!.lastPageOpenedAt!,
+          ),
+        );
+      });
+      expect(await h.start({ refreshLikes: true })).toMatchObject({
+        completed: 2,
+        steps: 3,
+        endReason: 'done',
+      });
+      const journal = await h.store.browserJournal();
+      const run = journal.runs.at(-1)!;
+      const attempts = journal.attempts.filter(
+        (attempt) => attempt.runId === run.runId && attempt.settles,
+      );
+      expect(
+        attempts.map((attempt) => [
+          attempt.action,
+          attempt.state,
+          attempt.code,
+        ]),
+      ).toEqual([
+        [
+          'refresh-comment-likes',
+          'failed',
+          variant === 'unavailable' ? 'post-unavailable' : 'comment-not-shown',
+        ],
+        ['refresh-comment-likes', 'read', null],
+        ['refresh-comment-likes', 'read', null],
+      ]);
+      for (const original of originals) {
+        const { likes, ...confirmation } = original;
+        const current = await h.store.read((tx) =>
+          tx.instagramContext.get(original.itemId),
+        );
+        expect(current).toEqual(
+          original.itemId === h.fixture.items[0]!.id
+            ? confirmation
+            : { ...confirmation, likes },
+        );
+      }
+      expect(stepStarts).toHaveLength(3);
+      expect(
+        stepStarts.slice(1).map((start, index) => start - stepStarts[index]!),
+      ).toEqual([30000, 30000]);
+      expect(
+        (await planContext(h.store, run.accountKey, new Set(), new Set(), true))
+          .rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await planContext(
+            h.store,
+            run.accountKey,
+            new Set([h.fixture.items[0]!.id]),
+            new Set(),
+            true,
+          )
+        ).rows.map((row) => row.item.id),
+      ).toEqual([h.fixture.items[0]!.id]);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test.each(['owner', 'time', 'edited'] as const)(
+  'F4 refresh %s mismatch still stops before later records',
+  async (variant) => {
+    const h = await harness('success', 5);
+    h.fake.likes('answer');
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+      raw.exec('DROP TRIGGER instagram_context_no_update');
+      raw.exec("UPDATE instagram_context SET data=json_remove(data,'$.likes')");
+      raw.close();
+      const before = await h.store.read((tx) => records(tx.instagramContext));
+      h.fake.setPostVariant(0, variant);
+      expect(await h.start({ refreshLikes: true })).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'post-structure',
+      });
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      expect(run.pageOpens).toBe(1);
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        before,
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('P1 secondsPerStep 10 controls two full-run step starts and records the effective pace', async () => {
   const h = await harness('success', 3);
   await fullRunReady(h, 20);

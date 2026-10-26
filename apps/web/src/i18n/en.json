@@ -173,7 +173,7 @@
   "criteriaPicker.total": "Your criteria suggest {count, number} {count, plural, one {entry} other {entries}} for deletion. Your rules hold back {held, number} of them.",
   "keepRules.title": "Your rules",
   "keepRules.how": "How your rules work",
-  "keepRules.intro": "SocialPrune checks them against the numbers in your export. No model and no agent reads them.",
+  "keepRules.intro": "SocialPrune checks the numbers in your export and stored likes of confirmed Instagram comments. No model and no agent reads them.",
   "keepRules.top": "Never delete my most liked tenth",
   "keepRules.likes": "Never delete with this many likes or more",
   "keepRules.reposts": "Never delete with this many reposts or more",
@@ -189,7 +189,7 @@
   "keepRules.choose": "Choose a rule",
   "keepRules.invalid": "Enter a whole number from zero or a valid date.",
   "keepRules.combine": "One matching rule is enough to hold an entry back. Counts can overlap.",
-  "keepRules.instagram": "Reposts and Instagram comments have no own like or repost count here. These number rules never hold them back.",
+  "keepRules.instagram": "Number rules hold Instagram comments only with a stored like count. Unknown counts never hold them, even when you select that option. That option applies only to X. Number rules do not hold reposts.",
   "nav.start": "Start",
   "nav.guide": "Get your export",
   "nav.demo": "Try the demo",
@@ -974,5 +974,7 @@
   "desktop.token.not-shown": "The comment was not shown under the expected account.",
   "desktop.token.no-row": "No matching comment row was found.",
   "desktop.token.window-full": "The inspected list window ended before the comment was found.",
-  "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review."
+  "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review.",
+  "desktop.token.post-unavailable": "The post was unavailable while adding likes. Recheck only when you select it.",
+  "desktop.token.comment-not-shown": "The confirmed comment was not shown while adding likes. Recheck only when you select it."
 }

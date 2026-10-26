@@ -409,6 +409,7 @@ declare global {
     'desktop.token.canary-mismatch': Record<never, never>;
     'desktop.token.challenge': Record<never, never>;
     'desktop.token.checkpoint': Record<never, never>;
+    'desktop.token.comment-not-shown': Record<never, never>;
     'desktop.token.comment-structure': Record<never, never>;
     'desktop.token.confirm-comment': Record<never, never>;
     'desktop.token.confirmed': Record<never, never>;
@@ -463,6 +464,7 @@ declare global {
     'desktop.token.platform-check': Record<never, never>;
     'desktop.token.post-structure': Record<never, never>;
     'desktop.token.post-timeout': Record<never, never>;
+    'desktop.token.post-unavailable': Record<never, never>;
     'desktop.token.rate-limit': Record<never, never>;
     'desktop.token.rate-signal': Record<never, never>;
     'desktop.token.read': Record<never, never>;

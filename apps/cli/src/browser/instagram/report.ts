@@ -133,6 +133,7 @@ export const ListRegionsSchema = z.strictObject({
   distinctParents: count,
   ignoredTextMatches: count,
   ignoredDatedWindowMatches: count,
+  ignoredDatedWindowRows: count,
   afterApply: z.strictObject({
     readbackObserved: z.boolean(),
     startMatches: z.boolean(),

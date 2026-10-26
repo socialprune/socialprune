@@ -1,6 +1,7 @@
 import type { Page } from 'playwright-core';
 import type { InstagramContext } from '@socialprune/core';
 import { normalize } from './plan.ts';
+import { readPost } from './selectors.ts';
 
 interface MatchedComment {
   id: string;
@@ -89,6 +90,17 @@ export async function commentLikes(
       ? { count: answer.count, source: 'answer' }
       : { count: null, source: null };
   try {
+    const post = await readPost(page, new URL(page.url()).origin);
+    if (
+      post.comments.filter(
+        (comment) =>
+          comment.id === match.id &&
+          comment.createdAt === match.createdAt &&
+          comment.username.toLowerCase() === match.username.toLowerCase() &&
+          normalize(comment.text) === normalize(match.text),
+      ).length !== 1
+    )
+      return { count: null, source: null };
     const links = page.locator(`main a[href$="/c/${match.id}/"]`);
     if ((await links.count()) !== 1) return { count: null, source: null };
     const times = links.locator('time[datetime]');
@@ -99,7 +111,7 @@ export async function commentLikes(
     )
       return { count: null, source: null };
     // Only the exact permalink's own comment block; no ancestor post-like lookup.
-    const block = links.locator('xpath=ancestor::*[3]/parent::*');
+    const block = links.locator('xpath=ancestor::*[3]');
     if ((await block.locator('a[href*="/c/"]').count()) !== 1)
       return { count: null, source: null };
     const values: number[] = [];

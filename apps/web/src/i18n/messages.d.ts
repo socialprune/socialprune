@@ -468,6 +468,7 @@ declare global {
     'desktop.token.read': Record<never, never>;
     'desktop.token.read-post': Record<never, never>;
     'desktop.token.reappeared': Record<never, never>;
+    'desktop.token.refresh-comment-likes': Record<never, never>;
     'desktop.token.render-timeout': Record<never, never>;
     'desktop.token.request-journal': Record<never, never>;
     'desktop.token.row-structure': Record<never, never>;

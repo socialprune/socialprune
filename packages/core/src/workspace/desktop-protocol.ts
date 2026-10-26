@@ -509,7 +509,7 @@ export const RunViewSchema = z
       });
     const actions =
       view.mode === 'context'
-        ? ['confirm-comment']
+        ? ['confirm-comment', 'refresh-comment-likes']
         : view.mode === 'fill'
           ? ['read-post']
           : view.mode === 'verify'

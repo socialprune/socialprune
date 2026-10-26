@@ -10,6 +10,7 @@ import type { RowReadCounts } from '../src/browser/instagram/selectors.ts';
 import { listFreshness } from '../src/browser/instagram/list-freshness.ts';
 import { CONTEXT_PORTS } from './fake-instagram/ports.ts';
 import { FilteredListTimeout } from '../src/browser/instagram/retry.ts';
+import { listRegions } from '../src/browser/instagram/list-regions.ts';
 
 test.each(['retained', 'sibling'] as const)(
   'C-list matching dropdowns with %s rows must stop, not exclude the comment',
@@ -57,6 +58,7 @@ test.each(['retained', 'sibling'] as const)(
         distinctParents: 1,
         ignoredTextMatches: mode === 'sibling' ? 1 : 0,
         ignoredDatedWindowMatches: mode === 'sibling' ? 1 : 0,
+        ignoredDatedWindowRows: mode === 'sibling' ? 1 : 0,
         afterApply: {
           readbackObserved: false,
           startMatches: false,
@@ -101,7 +103,7 @@ test('list-region correct refresh counts the selected main rows without ignored 
     expect(result.candidates).toHaveLength(1);
     expect(counts.regions).toMatchObject({
       observed: true,
-      main: 1,
+      main: 2,
       dialog: 0,
       elsewhere: 0,
       distinctParents: 1,
@@ -111,6 +113,45 @@ test('list-region correct refresh counts the selected main rows without ignored 
   } finally {
     await browser.close();
     await fake.close();
+  }
+});
+
+test('list-region reports main/dialog/elsewhere and post-Apply dropdown equality separately', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      `<main><div><div role="button" aria-label="Generated row">Generated target</div></div><div role="dialog"><button role="button" aria-label="Oldest to newest">Oldest to newest</button><span>Start date</span><select><option>Jan</option></select><select><option>1</option></select><select><option>2025</option></select><span>End date</span><select><option>Jan</option></select><select><option>3</option></select><select><option>2025</option></select></div></main><nav><div role="button" aria-label="Generated other row"></div></nav>`,
+    );
+    expect(
+      await listRegions(page, 'Generated target', '2025-01-02T12:00:00.000Z'),
+    ).toMatchObject({
+      observed: true,
+      main: 1,
+      dialog: 1,
+      elsewhere: 1,
+      distinctParents: 3,
+      afterApply: {
+        readbackObserved: true,
+        startMatches: true,
+        endMatches: true,
+      },
+    });
+    await page.locator('select').first().selectOption({ label: 'Jan' });
+    expect(
+      await listRegions(page, 'Generated target', '2025-02-02T12:00:00.000Z'),
+    ).toMatchObject({
+      afterApply: {
+        readbackObserved: true,
+        startMatches: false,
+        endMatches: false,
+      },
+    });
+  } finally {
+    await browser.close();
   }
 });
 

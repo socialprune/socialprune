@@ -942,6 +942,7 @@
   "desktop.token.verify": "Check whether the entry is still gone.",
   "desktop.token.read-post": "Read the original post.",
   "desktop.token.confirm-comment": "Check the exported comment on its post.",
+  "desktop.token.refresh-comment-likes": "Add the likes of this already confirmed comment.",
   "desktop.token.withdrawn": "The entry was withdrawn from this run.",
   "desktop.token.sending": "The attempt is in progress, not settled.",
   "desktop.token.deleted": "The platform confirmed the deletion.",

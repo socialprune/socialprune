@@ -3,7 +3,7 @@ import { popularIds, popularityThreshold } from '@socialprune/core';
 import { feedExpected, feedFixture } from './feed-fixture.ts';
 
 describe('own-account top-decile popularity', () => {
-  it('matches fixture cutoff eight and excludes high-like reposts and Instagram', () => {
+  it('matches fixture cutoff eight, excludes reposts and counts Instagram in its own account', () => {
     const data = feedFixture();
     expect(popularityThreshold(data.items, feedExpected.account)).toBe(
       feedExpected.threshold,
@@ -11,8 +11,12 @@ describe('own-account top-decile popularity', () => {
     expect([...popularIds(data.items, feedExpected.account, 8)].sort()).toEqual(
       [...feedExpected.popular].sort(),
     );
-    expect(popularityThreshold(data.items, 'synthetic-comment')).toBeNull();
-    expect([...popularIds(data.items, 'synthetic-comment', 3)]).toEqual([]);
+    expect(popularityThreshold(data.items, 'synthetic-comment')).toBe(9000);
+    expect([...popularIds(data.items, 'synthetic-comment', 3)]).toEqual(
+      data.items
+        .filter((item) => item.account.key === 'synthetic-comment')
+        .map((item) => item.id),
+    );
   });
   it('applies minimum three, includes threshold ties and ignores unknown likes', () => {
     const data = feedFixture().items.slice(0, 20);

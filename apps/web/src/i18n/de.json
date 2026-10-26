@@ -942,6 +942,7 @@
   "desktop.token.verify": "Prüfen, ob der Eintrag weiterhin fehlt.",
   "desktop.token.read-post": "Den Originalbeitrag lesen.",
   "desktop.token.confirm-comment": "Den exportierten Kommentar unter seinem Beitrag prüfen.",
+  "desktop.token.refresh-comment-likes": "Die Likes dieses bereits bestätigten Kommentars ergänzen.",
   "desktop.token.withdrawn": "Der Eintrag wurde aus diesem Lauf zurückgezogen.",
   "desktop.token.sending": "Der Versuch läuft und ist noch nicht abgeschlossen.",
   "desktop.token.deleted": "Die Plattform hat die Löschung bestätigt.",

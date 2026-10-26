@@ -6281,10 +6281,10 @@ async function fullRunReady(
 test.each(['answer', 'dom', 'unknown'] as const)(
   'IG-LIKES %s stores only the exact confirmed comment count',
   async (mode) => {
-    const h = await harness('success', 1);
+    const h = await harness('success', 5);
     h.fake.likes(mode);
     try {
-      expect(await h.start(true)).toMatchObject({ completed: 1 });
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
       const contexts = await h.store.read((tx) => records(tx.instagramContext));
       expect(contexts[0]!.likes).toEqual(
         mode === 'answer'
@@ -6300,7 +6300,7 @@ test.each(['answer', 'dom', 'unknown'] as const)(
 );
 
 test('IG-LIKES refresh reopens the confirmed post once and preserves the original confirmation', async () => {
-  const h = await harness('success', 1);
+  const h = await harness('success', 5);
   h.fake.likes('answer');
   try {
     await h.start(true);

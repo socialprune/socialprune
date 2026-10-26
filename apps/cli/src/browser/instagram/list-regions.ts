@@ -48,22 +48,26 @@ export async function listRegions(page: Page, text: string, at: string) {
         });
         const regions = regionCounts(root.root, counted.nodeIds);
         let ignoredTextMatches = 0,
-          ignoredDatedWindowMatches = 0;
-        // Read only the nearest image-button candidates, not arbitrary ancestor text.
-        const ignored = page
-          .locator('[role="button"]:not([aria-label])')
-          .filter({ has: page.locator('img') });
+          ignoredDatedWindowMatches = 0,
+          ignoredDatedWindowRows = 0;
+        // Closed candidate shapes only; never arbitrary ancestor text.
+        const ignored = page.locator(
+          'li:not([role="button"][aria-label]),[role="listitem"], [role="button"]:not([aria-label])',
+        );
         for (const row of await ignored.all()) {
-          if (!normalize(await row.innerText()).includes(normalize(text)))
-            continue;
-          ignoredTextMatches++;
+          const textMatches = normalize(await row.innerText()).includes(
+            normalize(text),
+          );
+          if (textMatches) ignoredTextMatches++;
           const times = await row.locator('time[datetime]').all();
           if (times.length === 1) {
             const time = await times[0]!.getAttribute('datetime');
             if (time && Number.isFinite(Date.parse(time))) {
               const day = new Date(time).toISOString().slice(0, 10);
-              if (day >= dates[0] && day <= dates[1])
-                ignoredDatedWindowMatches++;
+              if (day >= dates[0] && day <= dates[1]) {
+                ignoredDatedWindowRows++;
+                if (textMatches) ignoredDatedWindowMatches++;
+              }
             }
           }
         }
@@ -73,6 +77,7 @@ export async function listRegions(page: Page, text: string, at: string) {
           afterApply,
           ignoredTextMatches,
           ignoredDatedWindowMatches,
+          ignoredDatedWindowRows,
         };
       })(),
       new Promise<never>((_resolve, reject) => {
@@ -92,6 +97,7 @@ export async function listRegions(page: Page, text: string, at: string) {
       afterApply,
       ignoredTextMatches: 0,
       ignoredDatedWindowMatches: 0,
+      ignoredDatedWindowRows: 0,
     };
   } finally {
     clearTimeout(timer);

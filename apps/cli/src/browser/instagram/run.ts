@@ -1231,6 +1231,7 @@ export async function runContextWithDependencies(
         });
         stage = 'canary-check';
         if (options.order && options.plan.canary) automaticCanaryCheck(check);
+        await checkpoint();
         stage = 'settlement';
         await writer.confirm(record);
         if (automatic) {

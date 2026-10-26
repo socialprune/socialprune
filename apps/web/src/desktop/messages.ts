@@ -206,6 +206,7 @@ const tokenIds = [
   'desktop.token.verify',
   'desktop.token.read-post',
   'desktop.token.confirm-comment',
+  'desktop.token.refresh-comment-likes',
   'desktop.token.withdrawn',
   'desktop.token.sending',
   'desktop.token.deleted',

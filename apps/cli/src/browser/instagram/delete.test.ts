@@ -848,7 +848,7 @@ test('D10 watched canary accepts only one confirmed receipt and never selects an
 });
 
 test.each([['status', 'x'], ['status']] as const)(
-  'D12 A unrecognized receipt/UI after accepted canary re-arms the next plan (%j)',
+  'D12 A unrecognized receipt/UI keeps the canary armed after verification until a later canary is accepted (%j)',
   async (...shape) => {
     const h = await harness(3);
     try {
@@ -910,7 +910,7 @@ test.each([['status', 'x'], ['status']] as const)(
         later.startedAt,
         true,
       ))!;
-      await writer.settle({
+      const ambiguous = await writer.settle({
         ...send,
         attemptId: 'unconfirmed',
         settles: send.attemptId,
@@ -936,6 +936,101 @@ test.each([['status', 'x'], ['status']] as const)(
       );
       expect(next.rows).toHaveLength(1);
       expect(next.canary).toBe(true);
+      const verifiedAt = '2026-10-25T12:03:00.000Z';
+      const verify = {
+        ...run,
+        runId: 'verified-present',
+        mode: 'verify' as const,
+        planHash: next.hash,
+        startedAt: verifiedAt,
+      };
+      await writer.begin(verify);
+      await writer.record({
+        attemptId: 'same-comment-present',
+        runId: verify.runId,
+        itemId: ambiguous.itemId,
+        action: 'verify',
+        state: 'not-deleted',
+        settles: null,
+        at: verifiedAt,
+        code: null,
+      });
+      await writer.settle({
+        ...ambiguous,
+        attemptId: 'reconciled-present',
+        state: 'not-deleted',
+        settles: ambiguous.attemptId,
+        at: verifiedAt,
+        code: null,
+      });
+      await writer.finish({
+        ...verify,
+        endedAt: verifiedAt,
+        endReason: 'done',
+      });
+      const watchedAt = '2026-10-25T12:04:00.000Z';
+      const watched = await planInstagramDeletion(
+        h.store,
+        h.account,
+        new Date(watchedAt),
+      );
+      expect(watched.canary).toBe(true);
+      expect(watched.rows).toHaveLength(2);
+      expect(watched.rows[0]!.item.id).toBe(ambiguous.itemId);
+      expect(instagramDeleteSummary(watched, 'en').canaryItemId).toBe(
+        ambiguous.itemId,
+      );
+      const canary = {
+        ...run,
+        runId: 'replacement-canary',
+        planHash: watched.hash,
+        startedAt: watchedAt,
+      };
+      await writer.begin(canary);
+      const watchedSend = (await writer.check(
+        watched.rows[0]!,
+        canary.runId,
+        watchedAt,
+        true,
+      ))!;
+      await writer.settle(
+        {
+          ...watchedSend,
+          attemptId: 'watched-deleted',
+          settles: watchedSend.attemptId,
+          state: 'deleted',
+          code: null,
+          receipt: {
+            method: 'POST',
+            path: `/api/v1/web/comments/987/delete/${watched.rows[0]!.context.comment.id}/`,
+            status: 200,
+            shape: ['status'],
+          },
+        },
+        'deleted-via-browser',
+      );
+      await writer.finish({
+        ...canary,
+        endedAt: watchedAt,
+        endReason: 'canary',
+      });
+      expect(
+        (await planInstagramDeletion(h.store, h.account, new Date(watchedAt)))
+          .canary,
+      ).toBe(true);
+      await writer.acceptInstagramDeleteCanary(
+        canary.runId,
+        '2026-10-25T12:05:00.000Z',
+      );
+      const resumed = await planInstagramDeletion(
+        h.store,
+        h.account,
+        new Date('2026-10-25T12:06:00Z'),
+      );
+      expect(resumed.canary).toBe(false);
+      expect(resumed.rows).toHaveLength(1);
+      expect(resumed.rows[0]!.item.id).toBe(next.rows[0]!.item.id);
+      expect(instagramDeleteSummary(resumed, 'en').canaryItemId).toBeNull();
     } finally {
       await h.close();
     }

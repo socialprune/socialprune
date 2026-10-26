@@ -93,8 +93,11 @@ export async function planInstagramDeletion(
       if (
         deletionRuns.has(attempt.runId) &&
         attempt.action === 'delete-comment' &&
-        ['sending', 'ambiguous'].includes(attempt.state) &&
-        !attempts.some((settlement) => settlement.settles === attempt.attemptId)
+        (attempt.state === 'ambiguous' ||
+          (attempt.state === 'sending' &&
+            !attempts.some(
+              (settlement) => settlement.settles === attempt.attemptId,
+            )))
       )
         invalidatedAt = Math.max(invalidatedAt, Date.parse(attempt.at));
     const canary = acceptedAt === 0 || invalidatedAt >= acceptedAt;

@@ -718,6 +718,8 @@ export async function runContextWithDependencies(
       });
       pendingAttempt = attemptId;
       let settled = false;
+      let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
+        'not-shown';
       let reopening: ReturnType<PostOpenRetries['begin']> = null;
       let reopenTarget: string | null = null;
       for (let candidate = 0; candidate < 3; candidate++) {
@@ -735,12 +737,16 @@ export async function runContextWithDependencies(
           stage = 'settlement';
           await writer.settle({
             attemptId,
-            state: 'failed',
+            state:
+              used >= pace.perDay ||
+              dateInZone(options.now(), options.plan.timeZone) !== day
+                ? 'failed'
+                : 'unconfirmed',
             code:
               used >= pace.perDay ||
               dateInZone(options.now(), options.plan.timeZone) !== day
                 ? 'daily-cap'
-                : 'INTERRUPTED',
+                : lastUnconfirmed,
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
@@ -1136,6 +1142,7 @@ export async function runContextWithDependencies(
           ownerName(read.post.owner) ===
             ownerName(row.item.reference.ownerHandle ?? '');
         if (read.result.state !== 'confirmed' && !fromList) {
+          lastUnconfirmed = read.result.code;
           stepReport.result = read.result.code;
           if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
           const code =

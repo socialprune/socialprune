@@ -81,7 +81,7 @@ test.each([
               : await readBackup(createBackup(store).chunks);
             await memory?.close();
             expect(workspace.schemaVersion).toBe(
-              consumer === 'read-only backup reader' ? 10 : 6,
+              consumer === 'read-only backup reader' ? 11 : 6,
             );
             expect(workspace.instagramContext).toHaveLength(1);
             expect(workspace.instagramContext![0]).toHaveProperty(
@@ -179,7 +179,7 @@ test('C10 layout 5 to 6 copies first, rewrites existing records as post and rest
       expect(
         (await upgraded.read(readWorkspace)).instagramContext![0],
       ).toHaveProperty('confirmedBy', 'post');
-      expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(10);
+      expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(11);
     } finally {
       await upgraded.close();
     }
@@ -197,7 +197,7 @@ test('C10 layout 5 to 6 copies first, rewrites existing records as post and rest
       delete record.confirmedBy;
       delete record.ownerCheck;
       expect(record).toEqual(JSON.parse(String(old)));
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(10);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(11);
       expect(() =>
         db.exec(
           "UPDATE instagram_context SET data=json_set(data,'$.post.caption','changed')",
@@ -311,7 +311,7 @@ test('layout 4 -> 6 preserves X originals and journal JSON byte for byte and cop
     await readonly.close();
     expect(await readFile(path)).toEqual(bytes);
     const upgraded = await SQLiteStore.open(path);
-    expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(10);
+    expect((await upgraded.read(readWorkspace)).schemaVersion).toBe(11);
     expect(
       (await upgraded.read(readWorkspace)).instagramContext,
     ).toBeUndefined();
@@ -444,7 +444,7 @@ test('v2 SQLite additive migration preserves original bytes, copies first and re
     expect(await readFile(join(directory, copy))).toEqual(bytes);
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(10);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(11);
       expect(
         db
           .prepare("SELECT name FROM sqlite_schema WHERE name='originals'")

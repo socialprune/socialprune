@@ -17,6 +17,7 @@ import {
   validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  validateInstagramLikesFill,
   migrateInstagramContext,
   WORKSPACE_SCHEMA_VERSION,
   ReviewPlanSchema,
@@ -62,7 +63,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 10;
+export const SQLITE_LAYOUT_VERSION = 11;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
@@ -74,7 +75,11 @@ const contextLayout = `
 CREATE TABLE instagram_context (
   item_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))
 ) STRICT;
-CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
+CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
+  json_extract(OLD.data,'$.confirmedBy')!='post' OR json_type(OLD.data,'$.likes') IS NOT NULL OR
+  json_type(NEW.data,'$.likes') IS NOT 'object' OR
+  json_remove(OLD.data,'$.likes')!=json_remove(NEW.data,'$.likes')
+BEGIN SELECT RAISE(ABORT,'write-once'); END;
 CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
 `;
 
@@ -408,6 +413,15 @@ export class SQLiteStore implements WorkspaceStore {
                 schemaVersion: WORKSPACE_SCHEMA_VERSION,
               }),
             );
+            if (Number(version) < 11)
+              db.exec(`
+              DROP TRIGGER instagram_context_no_update;
+              CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
+                json_extract(OLD.data,'$.confirmedBy')!='post' OR json_type(OLD.data,'$.likes') IS NOT NULL OR
+                json_type(NEW.data,'$.likes') IS NOT 'object' OR
+                json_remove(OLD.data,'$.likes')!=json_remove(NEW.data,'$.likes')
+              BEGIN SELECT RAISE(ABORT,'write-once'); END;
+            `);
             db.exec(`PRAGMA user_version=${SQLITE_LAYOUT_VERSION};`);
           }
           db.exec('COMMIT;');
@@ -832,6 +846,21 @@ export class SQLiteStore implements WorkspaceStore {
         },
       },
       instagramContext: {
+        fillLikes: (value) => {
+          const prior = get<InstagramContext>(
+            'SELECT data FROM instagram_context WHERE item_id=?',
+            value.itemId,
+          );
+          if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+          validateInstagramLikesFill(prior, value);
+          // Preserve stored key ordering as well as all confirmation fields.
+          run(
+            "UPDATE instagram_context SET data=json_set(data,'$.likes',json(?)) WHERE item_id=?",
+            JSON.stringify(value.likes),
+            value.itemId,
+          );
+          return Promise.resolve();
+        },
         get: (id) => {
           const value = hasContext
             ? get<unknown>(

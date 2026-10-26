@@ -219,6 +219,47 @@ async function withStore(
 }
 export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
   {
+    name: 'Instagram likes supplement is fill-once, confirmation-preserving and transactional',
+    run: (factory) =>
+      withStore(factory, async (harness) => {
+        const prior = await writeInstagramContextContract(harness.store);
+        const next = { ...prior, likes: { count: 17, source: 'dom' as const } };
+        await rejects(() =>
+          harness.store.write(async (tx) => {
+            await tx.instagramContext.fillLikes(next);
+            throw new Error('Generated likes rollback');
+          }),
+        );
+        equal(
+          await harness.store.read((tx) =>
+            tx.instagramContext.get(prior.itemId),
+          ),
+          prior,
+          'likes rollback changed confirmation',
+        );
+        await rejects(() =>
+          harness.store.write((tx) =>
+            tx.instagramContext.fillLikes({
+              ...next,
+              post: { ...next.post, code: 'Changed' },
+            }),
+          ),
+        );
+        await harness.store.write((tx) => tx.instagramContext.fillLikes(next));
+        await rejects(() =>
+          harness.store.write((tx) => tx.instagramContext.fillLikes(next)),
+        );
+        harness.store = await harness.reopen();
+        equal(
+          await harness.store.read((tx) =>
+            tx.instagramContext.get(prior.itemId),
+          ),
+          next,
+          'likes supplement lost on reopen',
+        );
+      }),
+  },
+  {
     name: 'Instagram context writer confirms atomically, preserves decisions and retains records through reopen and backup',
     run: (factory) =>
       withStore(factory, async (harness) => {

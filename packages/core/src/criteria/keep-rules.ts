@@ -17,7 +17,16 @@ export function evaluateKeepRules(
         return dayKey(item.createdAt, timeZone) >= rule.date;
       if (rule.kind === 'top-liked-tenth')
         return isPopular(item, item.account.key, popularThreshold);
-      if (item.platform !== 'x' || item.kind === 'repost') return false;
+      if (
+        item.kind === 'repost' ||
+        (item.platform !== 'x' &&
+          !(
+            item.platform === 'instagram' &&
+            item.kind === 'comment' &&
+            rule.kind === 'likes-at-least'
+          ))
+      )
+        return false;
       const value =
         rule.kind === 'likes-at-least'
           ? item.engagement.likes

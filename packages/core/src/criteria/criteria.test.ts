@@ -150,7 +150,7 @@ test('keep rules distinguish zero, unknown and inapplicable counts, combine with
       'UTC',
       null,
     ),
-  ).toEqual([]);
+  ).toEqual(['likes']);
   expect(
     evaluateKeepRules(
       { ...item('1'), engagement: { likes: 10, reposts: 5 } },

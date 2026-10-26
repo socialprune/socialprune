@@ -20,7 +20,7 @@ import type {
   WorkspaceReply,
   WorkspaceSummary,
 } from '@socialprune/core/workspace/protocol';
-import { ItemSchema } from '@socialprune/core';
+import { ItemSchema, withEffectiveEngagement } from '@socialprune/core';
 import type { Item, ImportRecord, ImportSummary } from '@socialprune/core';
 import { IndexedDBStore, deleteWorkspaceDatabase } from './idb-store.ts';
 import {
@@ -416,7 +416,14 @@ async function handle(input: WorkspaceRequest) {
           for await (const event of log.iterate())
             if (event.itemId === input.itemId) events.push(event);
         events.sort((a, b) => a.seq - b.seq);
-        return { item: stored.item, assessments, events };
+        return {
+          item: withEffectiveEngagement(
+            stored.item,
+            await tx.instagramContext.get(stored.item.id),
+          ),
+          assessments,
+          events,
+        };
       });
       post({ type: 'itemDetail', requestId, ...result });
       break;

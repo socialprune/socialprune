@@ -40,6 +40,7 @@ describe('canonical own-account popularity', () => {
     const instagram = {
       ...extra('instagram:comment'),
       platform: 'instagram' as const,
+      account: { key: 'instagram:generated', handle: 'generated' },
       kind: 'comment' as const,
     };
     const unknown = {

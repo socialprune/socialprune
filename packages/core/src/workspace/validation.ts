@@ -115,6 +115,14 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
   if (
+    workspace.schemaVersion < 11 &&
+    (workspace.instagramContext?.some((record) => record.likes !== undefined) ||
+      workspace.browserAttempts?.some(
+        (attempt) => attempt.action === 'refresh-comment-likes',
+      ))
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
+  if (
     workspace.schemaVersion < 10 &&
     (workspace.browserRuns?.some(
       (run) =>

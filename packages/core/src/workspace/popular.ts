@@ -15,7 +15,8 @@ export function eligibleForPopularity(
 ): boolean {
   return (
     item.account.key === accountKey &&
-    item.platform === 'x' &&
+    (item.platform === 'x' ||
+      (item.platform === 'instagram' && item.kind === 'comment')) &&
     item.kind !== 'repost' &&
     item.engagement.likes !== null
   );

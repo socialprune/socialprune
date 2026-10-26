@@ -15,6 +15,7 @@ import {
   validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  validateInstagramLikesFill,
   WORKSPACE_SCHEMA_VERSION,
   ReviewPlanSchema,
 } from '@socialprune/core';
@@ -83,7 +84,7 @@ export class IndexedDBStore implements WorkspaceStore {
           db.createObjectStore('reviewPlans', { keyPath: 'actionId' });
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 10) {
+        if (oldVersion >= 1 && oldVersion < 11) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();
@@ -469,6 +470,12 @@ export class IndexedDBStore implements WorkspaceStore {
           get: (id) => context.get(id),
           iterate: (options) => context.iterate(options),
           add: (value) => context.add(value),
+          async fillLikes(value) {
+            const prior = await context.get(value.itemId);
+            if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+            validateInstagramLikesFill(prior, value);
+            await request(native.objectStore('instagramContext').put(value));
+          },
         };
       })(),
       browserAttempts: table('browserAttempts', (value) =>

@@ -125,6 +125,20 @@ export const RowSignatureDiagnosticSchema = z
 export type RowSignatureDiagnostic = z.infer<
   typeof RowSignatureDiagnosticSchema
 >;
+export const ListRegionsSchema = z.strictObject({
+  observed: z.boolean(),
+  main: count,
+  dialog: count,
+  elsewhere: count,
+  distinctParents: count,
+  ignoredTextMatches: count,
+  ignoredDatedWindowMatches: count,
+  afterApply: z.strictObject({
+    readbackObserved: z.boolean(),
+    startMatches: z.boolean(),
+    endMatches: z.boolean(),
+  }),
+});
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -150,6 +164,7 @@ export const ListTimeoutDiagnosticSchema = z
     }),
     observationFailed: z.boolean(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),
+    regions: ListRegionsSchema.optional(),
   })
   .refine(
     (value) =>
@@ -294,6 +309,7 @@ export const ContextStepReportSchema = z
     memory: MemorySampleSchema.optional(),
     listTimeout: ListTimeoutDiagnosticSchema.optional(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),
+    listRegions: ListRegionsSchema.optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

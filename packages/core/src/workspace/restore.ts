@@ -385,6 +385,8 @@ export async function restoreBackup(
             : InstagramContextSchema.parse(record.value);
       acceptUnique(name, value.itemId);
       instagramContext.push(value);
+      if (version < 11 && value.likes !== undefined)
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       rawCounts.instagramContext = (rawCounts.instagramContext ?? 0) + 1;
       counts.instagramContext = (counts.instagramContext ?? 0) + 1;
     } else if (name === 'browserRuns' || name === 'browserAttempts') {
@@ -417,6 +419,11 @@ export async function restoreBackup(
           (value as BrowserRun).warningKind !== undefined;
         browserRuns.push(value as BrowserRun);
       } else {
+        if (
+          (version ?? 0) < 11 &&
+          (value as BrowserAttempt).action === 'refresh-comment-likes'
+        )
+          throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
         instagramDeletion ||=
           (value as BrowserAttempt).action === 'delete-comment';
         browserAttempts.push(value as BrowserAttempt);

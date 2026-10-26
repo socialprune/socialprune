@@ -1,4 +1,5 @@
 import { QueryEngine } from '@socialprune/core/workspace/query';
+import { withEffectiveEngagement } from '@socialprune/core';
 import { ReviewService } from '@socialprune/core/workspace/review';
 import { LabelService } from '@socialprune/core/workspace/labels';
 import { ClickListService } from '@socialprune/core/workspace/clicklist';
@@ -207,7 +208,14 @@ export class ReviewRuntime {
             ]
               .filter((e) => e.itemId === input.itemId)
               .sort((a, b) => a.seq - b.seq);
-            return { item: stored.item, assessments, events };
+            return {
+              item: withEffectiveEngagement(
+                stored.item,
+                await tx.instagramContext.get(stored.item.id),
+              ),
+              assessments,
+              events,
+            };
           });
           post({ type: 'itemDetail', requestId, ...detail });
           break;

@@ -130,7 +130,7 @@ test('quota failure rolls back the real transaction and versionchange closes the
   });
 });
 
-for (const legacyVersion of [7, 8] as const)
+for (const legacyVersion of [7, 8, 10] as const)
   test(`v${legacyVersion} to v9 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
     page,
   }) => {
@@ -179,7 +179,7 @@ for (const legacyVersion of [7, 8] as const)
           proveOwnerUpgrade(
             value: WorkspaceV2,
             fail: boolean,
-            version: 7 | 8,
+            version: 7 | 8 | 10,
           ): Promise<unknown>;
         };
         return module.proveOwnerUpgrade(input, false, legacyVersion);
@@ -192,7 +192,7 @@ for (const legacyVersion of [7, 8] as const)
       duplicateRejected: boolean;
       addOnly: boolean;
     };
-    expect(result.version).toBe(10);
+    expect(result.version).toBe(11);
     expect(result.first).toEqual(current);
     expect(result.second).toEqual(current);
     expect(
@@ -204,35 +204,39 @@ for (const legacyVersion of [7, 8] as const)
     expect(result.addOnly).toBe(true);
   });
 
-test('v8 to v9 IndexedDB metadata failure rolls back the version step and retains context', async ({
-  page,
-}) => {
-  const store = createMemoryStore();
-  let legacy: WorkspaceV2;
-  try {
-    await writeInstagramContextContract(store);
-    legacy = await store.read(readWorkspace);
-    legacy.schemaVersion = 8;
-  } finally {
-    await store.close();
-  }
-  await page.goto('/socialprune/icon.svg');
-  const result = await page.evaluate(async (input) => {
-    const module = (await import(
-      /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
-    )) as {
-      proveOwnerUpgrade(
-        value: WorkspaceV2,
-        fail: boolean,
-        version: 8,
-      ): Promise<unknown>;
-    };
-    return module.proveOwnerUpgrade(input, true, 8);
-  }, legacy);
-  expect(result).toEqual({
-    rejected: true,
-    version: 8,
-    metaVersion: 8,
-    contexts: legacy.instagramContext,
+for (const legacyVersion of [8, 10] as const)
+  test(`v${legacyVersion} to v11 IndexedDB metadata failure rolls back the version step and retains context`, async ({
+    page,
+  }) => {
+    const store = createMemoryStore();
+    let legacy: WorkspaceV2;
+    try {
+      await writeInstagramContextContract(store);
+      legacy = await store.read(readWorkspace);
+      legacy.schemaVersion = legacyVersion;
+    } finally {
+      await store.close();
+    }
+    await page.goto('/socialprune/icon.svg');
+    const result = await page.evaluate(
+      async ({ input, version }) => {
+        const module = (await import(
+          /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
+        )) as {
+          proveOwnerUpgrade(
+            value: WorkspaceV2,
+            fail: boolean,
+            version: 8 | 10,
+          ): Promise<unknown>;
+        };
+        return module.proveOwnerUpgrade(input, true, version);
+      },
+      { input: legacy, version: legacyVersion },
+    );
+    expect(result).toEqual({
+      rejected: true,
+      version: legacyVersion,
+      metaVersion: legacyVersion,
+      contexts: legacy.instagramContext,
+    });
   });
-});

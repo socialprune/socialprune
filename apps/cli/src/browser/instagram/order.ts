@@ -5,6 +5,7 @@ import { CliError } from '../../cli/errors.ts';
 
 export const ContextOrderSchema = z.strictObject({
   scope: z.literal('context-instagram'),
+  refreshLikes: z.boolean().optional(),
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
   words: z.string().trim().min(1).max(10000),

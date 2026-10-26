@@ -26,7 +26,7 @@ async function generatedV8(file: string) {
     "DROP TABLE IF EXISTS browser_x_warning_ack; DROP TABLE IF EXISTS browser_x_warnings; UPDATE meta SET data=json_set(data,'$.schemaVersion',8); PRAGMA user_version=8;",
   );
   db.close();
-  return { ...expected, schemaVersion: 10 };
+  return { ...expected, schemaVersion: 11 };
 }
 
 test('C32 layout 8 to 9 copies under exclusive lock, preserves records without inventing warnings and retains write-once guards', async () => {
@@ -70,7 +70,7 @@ test('C32 layout 8 to 9 copies under exclusive lock, preserves records without i
     expect(copied).toBe(true);
     const db = new DatabaseSync(file);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(10);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(11);
       for (const table of ['browser_x_warnings', 'browser_x_warning_ack'])
         expect(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n).toBe(
           0,
@@ -129,7 +129,7 @@ test('C32 failed layout 8 to 9 step rolls back metadata, layout and gate tables'
     const spy = vi
       .spyOn(DatabaseSync.prototype, 'exec')
       .mockImplementation(function (this: DatabaseSync, sql: string) {
-        if (sql.includes('PRAGMA user_version=10'))
+        if (sql.includes('PRAGMA user_version=11'))
           throw new Error('Generated migration failure');
         return original.call(this, sql);
       });
@@ -202,7 +202,7 @@ test('C32 version step preserves an existing D7 warning gate and its acknowledge
     const migrated = await SQLiteStore.open(file);
     try {
       const value = await migrated.read(readWorkspace);
-      expect(value.schemaVersion).toBe(10);
+      expect(value.schemaVersion).toBe(11);
       expect(
         value.browserRuns!.every((run) => !Object.hasOwn(run, 'warningKind')),
       ).toBe(true);

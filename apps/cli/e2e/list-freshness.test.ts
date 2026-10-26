@@ -49,6 +49,20 @@ test.each(['retained', 'sibling'] as const)(
         expect(
           await page.locator('#generated-filter-result').innerText(),
         ).toContain(fixture.items[0]!.text);
+      expect(counts.regions).toMatchObject({
+        observed: true,
+        main: 4,
+        dialog: 0,
+        elsewhere: 0,
+        distinctParents: 1,
+        ignoredTextMatches: mode === 'sibling' ? 1 : 0,
+        ignoredDatedWindowMatches: mode === 'sibling' ? 1 : 0,
+        afterApply: {
+          readbackObserved: false,
+          startMatches: false,
+          endMatches: false,
+        },
+      });
       expect(outcome).toMatchObject({
         code: 'PLATFORM_CHECK',
         token: 'list-timeout',
@@ -63,6 +77,42 @@ test.each(['retained', 'sibling'] as const)(
     }
   },
 );
+
+test('list-region correct refresh counts the selected main rows without ignored candidates', async () => {
+  const fixture = await instagramFixture(1);
+  const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+    const result = await loadList(
+      page,
+      fixture.items[0]!,
+      fixture.items[0]!.account.handle!,
+      { ...productionContext, origin: fake.origin, responseMs: 1500 },
+      () => {},
+      false,
+      undefined,
+      counts,
+    );
+    expect(result.candidates).toHaveLength(1);
+    expect(counts.regions).toMatchObject({
+      observed: true,
+      main: 1,
+      dialog: 0,
+      elsewhere: 0,
+      distinctParents: 1,
+      ignoredTextMatches: 0,
+      ignoredDatedWindowMatches: 0,
+    });
+  } finally {
+    await browser.close();
+    await fake.close();
+  }
+});
 
 test('C-list a repeated opaque result for a different window stops on the second step', async () => {
   const fixture = await instagramFixture(2);

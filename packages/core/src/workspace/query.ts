@@ -13,6 +13,7 @@ import { currentAssessments } from '../criteria/suggestions.ts';
 import { records } from './store.ts';
 import { FeedQuery } from './feed-query.ts';
 import type { FeedTab, FeedSort } from '../criteria/schema.ts';
+import { withEffectiveEngagement } from './effective-engagement.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -352,7 +353,10 @@ export class QueryEngine implements ReviewQuery {
       }
       for await (const stored of tx.items.iterate())
         result.upsert(
-          stored.item,
+          withEffectiveEngagement(
+            stored.item,
+            await tx.instagramContext.get(stored.item.id),
+          ),
           !stored.importId || complete.has(stored.importId),
         );
       // Event logs remain the canonical decisions/outcomes. Derived backend

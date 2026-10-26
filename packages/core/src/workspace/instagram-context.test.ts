@@ -91,7 +91,7 @@ test.each([2, 3] as const)(
         const restored = await store.read(readWorkspace);
         expect(validateWorkspace(restored)).toEqual({
           ...migrateReviewContract(legacy),
-          schemaVersion: 10,
+          schemaVersion: 11,
         });
       } finally {
         await store.close();
@@ -124,7 +124,7 @@ test('C10 v5 context backups gain post confirmation in both readers and streamin
     try {
       await restoreBackup(target, chunks(input), { batchSize: 1 });
       const restored = await target.read(readWorkspace);
-      expect(restored.schemaVersion).toBe(10);
+      expect(restored.schemaVersion).toBe(11);
       expect(restored.instagramContext![0]).toHaveProperty(
         'confirmedBy',
         'post',
@@ -311,11 +311,11 @@ test('C10 readers accept version six and refuse later headers as unsupported', a
   const target = createMemoryStore();
   try {
     await restoreBackup(target, chunks(value));
-    expect((await target.read(readWorkspace)).schemaVersion).toBe(10);
+    expect((await target.read(readWorkspace)).schemaVersion).toBe(11);
   } finally {
     await target.close();
   }
-  const later = { ...value, schemaVersion: 11 };
+  const later = { ...value, schemaVersion: 12 };
   await expect(readBackup(chunks(later))).rejects.toMatchObject({
     code: 'BACKUP_SCHEMA_UNSUPPORTED',
   });
@@ -706,6 +706,7 @@ test('writer interruption settles failed before the next run, counts steps apart
         'settle',
         'confirm',
         'endRun',
+        'fillLikes',
         'acceptCanary',
       ].sort(),
     );
@@ -793,7 +794,7 @@ test('version four restores as ten without contexts; eleven refuses explicitly; 
   const store = createMemoryStore();
   try {
     await restoreBackup(store, chunks(old));
-    expect((await store.read(readWorkspace)).schemaVersion).toBe(10);
+    expect((await store.read(readWorkspace)).schemaVersion).toBe(11);
     const text: Uint8Array[] = [];
     for await (const chunk of createBackup(store).chunks) text.push(chunk);
     const backup = JSON.parse(
@@ -801,7 +802,7 @@ test('version four restores as ten without contexts; eleven refuses explicitly; 
     ) as Record<string, unknown>;
     expect(backup).not.toHaveProperty('instagramContext');
     expect(backup.counts).not.toHaveProperty('instagramContext');
-    const future = { ...old, schemaVersion: 11 };
+    const future = { ...old, schemaVersion: 12 };
     await expect(readBackup(chunks(future))).rejects.toMatchObject({
       code: 'BACKUP_SCHEMA_UNSUPPORTED',
     });

@@ -14,6 +14,7 @@ import { FeedSortSchema } from '../criteria/schema.ts';
 import type { FeedTab, FeedSort } from '../criteria/schema.ts';
 import { WorkspaceError } from './errors.ts';
 import { CompactFeed } from './feed-compact.ts';
+import { withEffectiveEngagement } from './effective-engagement.ts';
 
 /** Feed queries never need originals, context media or browser journals. */
 export async function feedWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
@@ -32,6 +33,7 @@ export async function feedWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
     // Visibility follows the first accepted import, not winning metadata provenance.
     imports: [],
     items,
+    instagramContext: await records(tx.instagramContext),
     assessments: (await records(tx.assessments)).filter((record) =>
       visible.has(record.itemId),
     ),
@@ -285,7 +287,10 @@ export class FeedQuery {
           }
           const plan = origin && (await tx.reviewPlans.get(origin.action.id));
           cards.push({
-            item: stored.item,
+            item: withEffectiveEngagement(
+              stored.item,
+              await tx.instagramContext.get(id),
+            ),
             suggestions: [
               ...new Map(
                 (checks.get(id) ?? []).flatMap((check) =>

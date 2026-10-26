@@ -51,6 +51,41 @@ async function invokeContext(args: string[]) {
   const code = await executeCli(['context', 'instagram', ...args], context);
   return { code, stdout: stdout.join(''), stderr: stderr.join('') };
 }
+
+test('IG-LIKES refresh plan binds only post records with absent observations and has its own mode hash', async () => {
+  const h = await excludeFixture();
+  try {
+    const record = await writeInstagramContextContract(
+      h.store,
+      h.fixture.items[0],
+    );
+    const baseline = await planContext(h.store, h.accountKey);
+    const plan = await planContext(
+      h.store,
+      h.accountKey,
+      new Set(),
+      new Set(),
+      true,
+    );
+    expect(plan.refreshLikes).toBe(true);
+    expect(plan.rows.map((row) => row.item.id)).toEqual([record.itemId]);
+    expect(plan.hash).not.toBe(baseline.hash);
+    expect(contextSummary(plan).refreshLikes).toBe(true);
+    expect(plan.canary).toBe(false);
+    await h.store.write((tx) =>
+      tx.instagramContext.fillLikes({
+        ...record,
+        likes: { count: null, source: null },
+      }),
+    );
+    expect(
+      (await planContext(h.store, h.accountKey, new Set(), new Set(), true))
+        .rows,
+    ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
 test('C18 exclude removes exactly named planned and manual entries before canary selection and counts unmatched IDs', async () => {
   const h = await excludeFixture();
   const manual = h.fixture.items[4]!;

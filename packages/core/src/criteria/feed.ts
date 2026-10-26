@@ -8,6 +8,7 @@ import { evaluateKeepRules } from './keep-rules.ts';
 import { migrateReviewContract } from './migration.ts';
 import { FeedTabCountsSchema } from './schema.ts';
 import type { FeedTab } from './schema.ts';
+import { withEffectiveEngagement } from '../workspace/effective-engagement.ts';
 
 /** Definition/data-bound work shared by configurations of one account. */
 export function prepareFeedCounts(input: WorkspaceV2, accountKey?: string) {
@@ -22,19 +23,24 @@ export function prepareFeedCounts(input: WorkspaceV2, accountKey?: string) {
   const complete = workspace.imports.filter(
     (value) => value.status === 'complete',
   );
-  const items = workspace.items.filter(
-    (item) =>
-      (!accountKey || item.account.key === accountKey) &&
-      (!workspace.imports.length ||
-        complete.some(
-          (record) =>
-            record.platform === item.platform &&
-            record.accounts.some(
-              (account) => account.key === item.account.key,
-            ) &&
-            record.archives.includes(item.provenance.archive),
-        )),
+  const contexts = new Map(
+    (workspace.instagramContext ?? []).map((record) => [record.itemId, record]),
   );
+  const items = workspace.items
+    .map((item) => withEffectiveEngagement(item, contexts.get(item.id)))
+    .filter(
+      (item) =>
+        (!accountKey || item.account.key === accountKey) &&
+        (!workspace.imports.length ||
+          complete.some(
+            (record) =>
+              record.platform === item.platform &&
+              record.accounts.some(
+                (account) => account.key === item.account.key,
+              ) &&
+              record.archives.includes(item.provenance.archive),
+          )),
+    );
   const thresholds = new Map(
     [...new Set(items.map((item) => item.account.key))].map((key) => [
       key,

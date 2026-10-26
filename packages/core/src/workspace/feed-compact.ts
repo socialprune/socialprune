@@ -4,6 +4,7 @@ import { currentChecks } from '../criteria/suggestions.ts';
 import { deriveState } from './state.ts';
 import { dayKey, resolveTimeZone } from './time.ts';
 import type { StoredState } from './store.ts';
+import { withEffectiveEngagement } from './effective-engagement.ts';
 
 const TABS: readonly FeedTab[] = [
   'all',
@@ -38,7 +39,15 @@ export class CompactFeed {
   private readonly checkValue: Uint8Array;
   private readonly thresholds: (number | null)[];
   constructor(workspace: WorkspaceV2) {
-    const items = workspace.items;
+    const contexts = new Map(
+      (workspace.instagramContext ?? []).map((record) => [
+        record.itemId,
+        record,
+      ]),
+    );
+    const items = workspace.items.map((item) =>
+      withEffectiveEngagement(item, contexts.get(item.id)),
+    );
     this.ids = items.map((item) => item.id);
     this.indices = new Map(this.ids.map((id, index) => [id, index]));
     this.account = new Uint32Array(items.length);
@@ -76,8 +85,15 @@ export class CompactFeed {
         options.push('likes');
       if (item.engagement.reposts !== null && !options.includes('reposts'))
         options.push('reposts');
-      const eligible = item.platform === 'x' && item.kind !== 'repost';
-      this.flags[index] = eligible ? 1 : 0;
+      const eligible =
+        (item.platform === 'x' ||
+          (item.platform === 'instagram' && item.kind === 'comment')) &&
+        item.kind !== 'repost';
+      this.flags[index] = eligible
+        ? item.platform === 'instagram'
+          ? 3
+          : 1
+        : 0;
       if (eligible && item.engagement.likes !== null)
         likes[account]!.push(item.engagement.likes);
       this.decisions[index] = DECISIONS.indexOf(states.get(item.id)!.decision);
@@ -254,6 +270,8 @@ export class CompactFeed {
       const threshold = this.thresholds[this.account[index]!]!;
       return threshold !== null && this.likes[index]! >= threshold;
     }
+    if (rule.kind === 'reposts-at-least' && this.flags[index]! & 2)
+      return false;
     const value =
       rule.kind === 'likes-at-least'
         ? this.likes[index]!

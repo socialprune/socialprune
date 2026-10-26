@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "format": { "type": "string", "const": "socialprune-workspace" },
-    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 10 },
+    "schemaVersion": { "type": "integer", "minimum": 2, "maximum": 11 },
     "id": { "type": "string", "minLength": 1 },
     "kind": { "type": "string", "enum": ["personal", "demo"] },
     "createdAt": {
@@ -1582,7 +1582,8 @@
               "verify",
               "read-post",
               "confirm-comment",
-              "delete-comment"
+              "delete-comment",
+              "refresh-comment-likes"
             ]
           },
           "state": {
@@ -1650,6 +1651,29 @@
           {
             "type": "object",
             "properties": {
+              "likes": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "source": {
+                    "anyOf": [
+                      { "type": "string", "enum": ["answer", "dom"] },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": ["count", "source"],
+                "additionalProperties": false
+              },
               "itemId": {
                 "type": "string",
                 "maxLength": 512,
@@ -1814,6 +1838,29 @@
           {
             "type": "object",
             "properties": {
+              "likes": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "source": {
+                    "anyOf": [
+                      { "type": "string", "enum": ["answer", "dom"] },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": ["count", "source"],
+                "additionalProperties": false
+              },
               "itemId": {
                 "type": "string",
                 "maxLength": 512,

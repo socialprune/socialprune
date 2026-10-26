@@ -35,6 +35,12 @@ export const contextInstagramCommand = buildCommand({
         brief: 'Instagram account name when the export has none',
       },
       dryRun: dryRunFlag,
+      'refresh-likes': {
+        kind: 'boolean',
+        default: false,
+        brief:
+          'Reopen post-confirmed comments only to fill unobserved comment likes',
+      },
       json: jsonFlag,
       include: {
         kind: 'parsed',
@@ -107,6 +113,7 @@ export const contextInstagramCommand = buildCommand({
       account: string;
       handle?: string;
       dryRun: boolean;
+      'refresh-likes': boolean;
       json: boolean;
       include?: string;
       exclude?: string;
@@ -150,7 +157,13 @@ export const contextInstagramCommand = buildCommand({
     const path = await workspacePath(flags.workspace, false),
       store = await SQLiteStore.open(path.path, { readOnly: flags.dryRun });
     try {
-      const plan = await planContext(store, flags.account, include, exclude);
+      const plan = await planContext(
+        store,
+        flags.account,
+        include,
+        exclude,
+        flags['refresh-likes'],
+      );
       if (
         plan.handle &&
         handle &&

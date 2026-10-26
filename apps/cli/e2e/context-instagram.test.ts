@@ -1162,7 +1162,7 @@ async function harness(
   let running: Promise<unknown> | undefined;
   const controller = new AbortController();
   const start = (
-    order: boolean | 'no-canary' = false,
+    order: boolean | 'no-canary' | { refreshLikes: true } = false,
     lang: 'en' | 'de' = 'en',
   ) => {
     const written: ContextOrder | undefined = order
@@ -1179,74 +1179,84 @@ async function harness(
           sha256: 'a'.repeat(64),
         }
       : undefined;
-    running = runContextWithDependencies(
-      {
-        store,
-        plan,
-        workspace: directory,
-        profile,
-        executablePath: chromium.executablePath(),
-        list: 'generated-list',
-        include: new Set(),
-        exclude,
-        limit,
-        order: written,
-        signal: controller.signal,
-        lang,
-        now: () => new Date(now),
-        notice: (text) => notices.push(text),
-      },
-      {
-        origin: fake.origin,
-        port: CONTEXT_PORTS.confirmation,
-        responseMs,
-        pace: {
-          intervalMs: 30000,
-          batch: 20,
-          pauseMs: 900000,
-          scrollMs: 2000,
-          expandMs: 3000,
+    running = (async () =>
+      runContextWithDependencies(
+        {
+          store,
+          plan:
+            typeof order === 'object'
+              ? await planContext(
+                  store,
+                  plan.accountKey,
+                  new Set(),
+                  exclude,
+                  true,
+                )
+              : plan,
+          workspace: directory,
+          profile,
+          executablePath: chromium.executablePath(),
+          list: 'generated-list',
+          include: new Set(),
+          exclude,
+          limit,
+          order: written,
+          signal: controller.signal,
+          lang,
+          now: () => new Date(now),
+          notice: (text) => notices.push(text),
         },
-        policy: {
-          platform: (url) => new URL(url).origin === fake.origin,
-          image: (url) =>
-            new URL(url).origin === fake.origin &&
-            new URL(url).pathname.startsWith('/media/'),
+        {
+          origin: fake.origin,
+          port: CONTEXT_PORTS.confirmation,
+          responseMs,
+          pace: {
+            intervalMs: 30000,
+            batch: 20,
+            pauseMs: 900000,
+            scrollMs: 2000,
+            expandMs: 3000,
+          },
+          policy: {
+            platform: (url) => new URL(url).origin === fake.origin,
+            image: (url) =>
+              new URL(url).origin === fake.origin &&
+              new URL(url).pathname.startsWith('/media/'),
+          },
+          capture: captureOverride,
+          async launch(path, executablePath) {
+            context = await chromium.launchPersistentContext(path, {
+              executablePath,
+              headless: true,
+              offline: true,
+              chromiumSandbox: true,
+              args: ['--enable-automation'],
+              ignoreDefaultArgs: ['--disable-infobars'],
+              serviceWorkers: 'block',
+            });
+            diagnostics.observe(context);
+            const probe = await context.newCDPSession(context.pages()[0]!);
+            const command = await probe.send('Browser.getBrowserCommandLine');
+            expect(command.arguments).toContain('--disable-extensions');
+            expect(command.arguments).toContain('--enable-automation');
+            expect(command.arguments).not.toContain('--no-sandbox');
+            expect(command.arguments).not.toContain('--disable-infobars');
+            await probe.detach();
+            await onLaunch?.();
+            started();
+            return context;
+          },
+          async sleep(ms) {
+            waits.push(ms);
+            now += ms;
+            await onSleep?.(ms);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          },
+          async close(_context, automatic) {
+            if (automatic) await _context.close();
+          },
         },
-        capture: captureOverride,
-        async launch(path, executablePath) {
-          context = await chromium.launchPersistentContext(path, {
-            executablePath,
-            headless: true,
-            offline: true,
-            chromiumSandbox: true,
-            args: ['--enable-automation'],
-            ignoreDefaultArgs: ['--disable-infobars'],
-            serviceWorkers: 'block',
-          });
-          diagnostics.observe(context);
-          const probe = await context.newCDPSession(context.pages()[0]!);
-          const command = await probe.send('Browser.getBrowserCommandLine');
-          expect(command.arguments).toContain('--disable-extensions');
-          expect(command.arguments).toContain('--enable-automation');
-          expect(command.arguments).not.toContain('--no-sandbox');
-          expect(command.arguments).not.toContain('--disable-infobars');
-          await probe.detach();
-          await onLaunch?.();
-          started();
-          return context;
-        },
-        async sleep(ms) {
-          waits.push(ms);
-          now += ms;
-          await onSleep?.(ms);
-          await new Promise((resolve) => setTimeout(resolve, 30));
-        },
-        async close(_context, automatic) {
-          if (automatic) await _context.close();
-        },
-      },
-    ).catch((error: unknown) => error);
+      ))().catch((error: unknown) => error);
     return running;
   };
   const local = async () => {
@@ -3935,7 +3945,7 @@ test.each(POST_NOTICE_FIXTURE.cases)(
       );
       try {
         expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
-          user_version: 10,
+          user_version: 11,
         });
       } finally {
         database.close();
@@ -6267,6 +6277,74 @@ async function fullRunReady(
   }
   await h.refresh();
 }
+
+test.each(['answer', 'dom', 'unknown'] as const)(
+  'IG-LIKES %s stores only the exact confirmed comment count',
+  async (mode) => {
+    const h = await harness('success', 1);
+    h.fake.likes(mode);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 1 });
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(contexts[0]!.likes).toEqual(
+        mode === 'answer'
+          ? { count: 23, source: 'answer' }
+          : mode === 'dom'
+            ? { count: 17, source: 'dom' }
+            : { count: null, source: null },
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test('IG-LIKES refresh reopens the confirmed post once and preserves the original confirmation', async () => {
+  const h = await harness('success', 1);
+  h.fake.likes('answer');
+  try {
+    await h.start(true);
+    const prior = (
+      await h.store.read((tx) => records(tx.instagramContext))
+    )[0]!;
+    // Generated version-10 record, never a production mutation entrypoint.
+    const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+    raw.exec('DROP TRIGGER instagram_context_no_update');
+    raw
+      .prepare(
+        "UPDATE instagram_context SET data=json_remove(data,'$.likes') WHERE item_id=?",
+      )
+      .run(prior.itemId);
+    raw.close();
+    const before = (
+      await h.store.read((tx) => records(tx.instagramContext))
+    )[0]!;
+    const plan = await planContext(
+      h.store,
+      prior.accountKey,
+      new Set(),
+      new Set(),
+      true,
+    );
+    expect(plan.refreshLikes).toBe(true);
+    expect(plan.rows).toHaveLength(1);
+    expect(plan.hash).not.toBe(
+      (await planContext(h.store, prior.accountKey)).hash,
+    );
+    // Harness runner options are injected from a generated plan below.
+    const result = await h.start({ refreshLikes: true });
+    expect(result).toMatchObject({ completed: 1, steps: 1 });
+    expect(
+      await h.store.read((tx) => tx.instagramContext.get(prior.itemId)),
+    ).toEqual({ ...before, likes: { count: 23, source: 'answer' } });
+    expect(
+      (await planContext(h.store, prior.accountKey, new Set(), new Set(), true))
+        .rows,
+    ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
 test('P1 secondsPerStep 10 controls two full-run step starts and records the effective pace', async () => {
   const h = await harness('success', 3);
   await fullRunReady(h, 20);

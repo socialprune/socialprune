@@ -98,6 +98,7 @@ import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
 import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
+import { commentLikes } from './likes.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -157,6 +158,7 @@ export async function runContextWithDependencies(
         options.plan.accountKey,
         options.include,
         options.exclude,
+        Boolean(options.plan.refreshLikes),
       )
     ).hash !== options.plan.hash
   )
@@ -196,8 +198,11 @@ export async function runContextWithDependencies(
       marked,
     })),
     completed: 0,
-    result:
-      options.lang === 'de'
+    result: options.plan.refreshLikes
+      ? options.lang === 'de'
+        ? 'Dieser Lauf ergänzt nur die Likes bereits bestätigter Kommentare. Frühere Bestätigungen bleiben unverändert.'
+        : 'This run only adds likes to already confirmed comments. Earlier confirmations stay unchanged.'
+      : options.lang === 'de'
         ? 'Dieser Lauf liest nur. Die erste Stichprobe endet vor einem vollständigen Lauf.'
         : 'This run only reads. The first canary ends before a full run.',
   });
@@ -530,6 +535,7 @@ export async function runContextWithDependencies(
           options.plan.accountKey,
           options.include,
           options.exclude,
+          Boolean(options.plan.refreshLikes),
         )
       ).hash !== options.plan.hash
     )
@@ -694,6 +700,7 @@ export async function runContextWithDependencies(
         attemptId,
         itemId: row.item.id,
         at: options.now().toISOString(),
+        refreshLikes: options.plan.refreshLikes,
       });
       pendingAttempt = attemptId;
       let settled = false;
@@ -790,6 +797,26 @@ export async function runContextWithDependencies(
         const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
         stage = 'list-read';
         const list = await (async () => {
+          if (options.plan.refreshLikes) {
+            return {
+              account: options.plan.handle,
+              manualReason: undefined,
+              candidates: [
+                {
+                  index: 0,
+                  username: options.plan.handle,
+                  text: row.item.text,
+                  age: '',
+                },
+              ],
+              rowCount: 0,
+              emptySkipped: 0,
+              otherName: 0,
+              scrollLoads: 0,
+              full: false,
+              oldestWithinWeek: false,
+            };
+          }
           try {
             const result = await loadList(
               page,
@@ -822,6 +849,7 @@ export async function runContextWithDependencies(
                 filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
                 listTimeout: rowCounts.listTimeout,
                 rowSignature: rowCounts.rowSignature,
+                listRegions: rowCounts.regions,
                 rows: 0,
                 emptySkipped: rowCounts.emptySkipped,
                 otherName: rowCounts.otherName,
@@ -856,10 +884,12 @@ export async function runContextWithDependencies(
           candidate--;
           continue;
         }
-        if (accountBefore === null) accountBeforeClass = 'expected';
-        accountBefore ??= list.account;
-        accountAfter = list.account;
-        options.session?.before(before, accountBefore);
+        if (!options.plan.refreshLikes) {
+          if (accountBefore === null) accountBeforeClass = 'expected';
+          accountBefore ??= list.account;
+          accountAfter = list.account;
+          options.session?.before(before, accountBefore);
+        }
         await network?.flush();
         stage = 'answers';
         await answers.flush(deps.responseMs);
@@ -870,8 +900,9 @@ export async function runContextWithDependencies(
             ...imageDiagnostic(null, null, []),
           },
           ready: { postMs: 0 },
-          filterByLists: true,
+          filterByLists: !options.plan.refreshLikes,
           rowSignature: rowCounts.rowSignature,
+          listRegions: rowCounts.regions,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
           otherName: list.otherName,
@@ -905,7 +936,7 @@ export async function runContextWithDependencies(
             }
           : undefined;
         answerReport?.();
-        profileNames.push(list.account);
+        if (!options.plan.refreshLikes) profileNames.push(list.account);
         if (list.manualReason || list.full || !list.candidates[candidate]) {
           stage = 'settlement';
           await writer.settle({
@@ -945,14 +976,21 @@ export async function runContextWithDependencies(
         page.on('request', navigation);
         try {
           opened =
-            reopening && reopenTarget
-              ? await reopenCandidate(page, reopenTarget, deps, guard)
-              : await openCandidate(
+            options.plan.refreshLikes && row.context
+              ? await reopenCandidate(
                   page,
-                  list.candidates[candidate]!.index,
+                  `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
                   deps,
                   guard,
-                );
+                )
+              : reopening && reopenTarget
+                ? await reopenCandidate(page, reopenTarget, deps, guard)
+                : await openCandidate(
+                    page,
+                    list.candidates[candidate]!.index,
+                    deps,
+                    guard,
+                  );
           if (reopening) reopening.outcome = 'ready';
           reopening = null;
           reopenTarget = null;
@@ -991,6 +1029,8 @@ export async function runContextWithDependencies(
           page.off('request', navigation);
         }
         if (!opened) {
+          if (options.plan.refreshLikes)
+            throw new ContextStop('PLATFORM_CHECK', 'post-structure');
           stage = 'settlement';
           await writer.settle({
             attemptId,
@@ -1004,6 +1044,20 @@ export async function runContextWithDependencies(
           break;
         }
         stage = 'post-read';
+        if (options.plan.refreshLikes) {
+          const value = accountClass(
+            options.plan.handle,
+            await outsideProfilePaths(page),
+          );
+          accountBeforeClass ??= value;
+          accountAfterClass = value;
+          if (value !== 'expected')
+            throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+          accountBefore ??= options.plan.handle;
+          accountAfter = options.plan.handle;
+          profileNames.push(options.plan.handle);
+          options.session?.before(before, accountBefore);
+        }
         const read = await confirmOnPost(
           page,
           row.item,
@@ -1025,6 +1079,29 @@ export async function runContextWithDependencies(
           stepReport.secondSource = answers.summary(read.post.code);
         }
         await checkpoint();
+        if (options.plan.refreshLikes) {
+          if (
+            read.result.state !== 'confirmed' ||
+            !row.context ||
+            read.result.comment.id !== row.context.comment.id ||
+            read.result.comment.createdAt !== row.context.comment.createdAt ||
+            ownerName(read.post.owner) !== ownerName(row.context.post.owner) ||
+            read.post.code !== row.context.post.code
+          )
+            throw new ContextStop('PLATFORM_CHECK', 'post-structure');
+          const likes = await commentLikes(page, answers.bodies, {
+            ...read.result.comment,
+            username: options.plan.handle,
+            text: row.item.text,
+          });
+          await checkpoint();
+          await writer.fillLikes(attemptId, likes, options.now().toISOString());
+          pendingAttempt = undefined;
+          settled = true;
+          completed++;
+          stepReport.result = 'likes-refreshed';
+          break;
+        }
         const fromList =
           Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
           read.result.state === 'unconfirmed' &&
@@ -1072,6 +1149,15 @@ export async function runContextWithDependencies(
           deps.policy,
         );
         const record: InstagramContext = {
+          ...(read.result.state === 'confirmed'
+            ? {
+                likes: await commentLikes(page, answers.bodies, {
+                  ...read.result.comment,
+                  username: options.plan.handle,
+                  text: row.item.text,
+                }),
+              }
+            : {}),
           itemId: row.item.id,
           accountKey: options.plan.accountKey,
           ...(read.result.state === 'confirmed'

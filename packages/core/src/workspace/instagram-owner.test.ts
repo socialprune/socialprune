@@ -53,10 +53,10 @@ test.each([1, 2, 3, 4])(
       const parsed = await readBackup(chunks());
       await restoreBackup(target, chunks());
       const current = await target.read(readWorkspace);
-      expect(current.schemaVersion).toBe(10);
+      expect(current.schemaVersion).toBe(11);
       expect(current.items).toEqual(parsed.items);
       const portable = await readBackup(createBackup(target).chunks);
-      expect(portable.schemaVersion).toBe(10);
+      expect(portable.schemaVersion).toBe(11);
       expect(portable.items).toEqual(parsed.items);
     } finally {
       await target.close();
@@ -159,8 +159,8 @@ test('C29 ownerless post evidence round trips v8 and refuses downgraded evidence
 });
 
 test('C29 model requires an owner check and permits only post evidence when the export has no owner', () => {
-  expect(WORKSPACE_SCHEMA_VERSION).toBe(10);
-  expect(createWorkspace().schemaVersion).toBe(10);
+  expect(WORKSPACE_SCHEMA_VERSION).toBe(11);
+  expect(createWorkspace().schemaVersion).toBe(11);
   const item = instagramContractItem();
   item.reference.ownerHandle = null;
   const record = {
@@ -262,7 +262,7 @@ test.each([5, 6, 7, 8, 9, 10])(
         try {
           if (stream) await restoreBackup(target, chunks());
           else await applyBackup(target, parsed);
-          expect((await target.read(readWorkspace)).schemaVersion).toBe(10);
+          expect((await target.read(readWorkspace)).schemaVersion).toBe(11);
           const again = await readBackup(createBackup(target).chunks);
           expect(again.instagramContext![0]).toHaveProperty(
             'ownerCheck',

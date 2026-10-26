@@ -135,6 +135,9 @@ export interface RowReadCounts {
   otherName: number;
   listTimeout?: ListTimeoutDiagnostic;
   rowSignature?: RowSignatureDiagnostic;
+  regions?: import('zod').z.infer<
+    typeof import('./report.ts').ListRegionsSchema
+  >;
 }
 export function accountMatches(
   expected: string,

@@ -12,6 +12,7 @@ import {
   validateBrowserRunUpdate,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  validateInstagramLikesFill,
   ReviewPlanSchema,
 } from '../model/index.ts';
 import type {
@@ -327,11 +328,22 @@ export function createMemoryStore(
             return value;
           },
         ),
-        instagramContext: table(
-          db.instagramContext,
-          (record) => record.itemId,
-          (record) => InstagramContextSchema.parse(record),
-        ),
+        instagramContext: {
+          ...table(
+            db.instagramContext,
+            (record) => record.itemId,
+            (record) => InstagramContextSchema.parse(record),
+          ),
+          fillLikes(value) {
+            guard(true);
+            const prior = db.instagramContext.get(value.itemId);
+            if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+            validateInstagramLikesFill(prior, value);
+            db.instagramContext.set(value.itemId, structuredClone(value));
+            iterationCache.delete(db.instagramContext);
+            return Promise.resolve();
+          },
+        },
         browserRuns: table(
           db.browserRuns,
           (record) => record.runId,

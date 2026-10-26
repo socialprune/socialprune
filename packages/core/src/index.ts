@@ -6,3 +6,4 @@ export * from './adapter/index.ts';
 export * from './import/index.ts';
 export * from './structure/index.ts';
 export * from './workspace/popular.ts';
+export * from './workspace/effective-engagement.ts';

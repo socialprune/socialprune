@@ -44,6 +44,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const deletedComments = new Set<string>();
   const deleteAttempts: string[] = [];
   let listFreshness: 'retained' | 'sibling' | 'repeated' | undefined;
+  let likesCase: 'answer' | 'dom' | 'unknown' | undefined;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -296,7 +297,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             );
             html = html.replace(
               'outer.remove();loads=0;render()',
-              `outer.remove();loads=0;if(!start||!end)render();${listFreshness === 'sibling' ? "else{const sibling=document.createElement('section');sibling.id='generated-filter-result';for(const row of rows.filter(row=>row.at.slice(0,10)>=start&&row.at.slice(0,10)<=end)){const node=document.createElement('div');node.setAttribute('role','button');node.innerHTML='<img>';node.append(document.createTextNode(row.username+' '+row.text+' 1w'));sibling.append(node)}list.after(sibling)}" : ''}`,
+              `outer.remove();loads=0;if(!start||!end)render();${listFreshness === 'sibling' ? "else{const sibling=document.createElement('section');sibling.id='generated-filter-result';for(const row of rows.filter(row=>row.at.slice(0,10)>=start&&row.at.slice(0,10)<=end)){const node=document.createElement('div');node.setAttribute('role','button');node.innerHTML='<img>';node.append(document.createTextNode(row.username+' '+row.text+' 1w'));const time=document.createElement('time');time.dateTime=row.at;node.append(time);sibling.append(node)}list.after(sibling)}" : ''}`,
             );
           }
         }
@@ -349,6 +350,24 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           undefined,
           hiddenPosts.has(index),
         );
+        if (likesCase) {
+          html = html.replace(
+            '<div role="button">Reply</div>',
+            '<div role="button">999 likes</div><div role="button">Reply</div>',
+          );
+          if (likesCase !== 'unknown') {
+            const marker = `/c/${BigInt(IG_FIXTURE.commentId) + BigInt(index)}/`;
+            const at = html.indexOf(marker);
+            html =
+              html.slice(0, at) +
+              html
+                .slice(at)
+                .replace(
+                  '<div role="button">Reply</div>',
+                  '<div role="button">17 likes</div><div role="button">Reply</div>',
+                );
+          }
+        }
         if (listDecoration === 'caption')
           html = html.replace(
             '<section>',
@@ -430,12 +449,15 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         }
         response.end(
           JSON.stringify(
-            postAnswer(
-              items[Math.max(0, index)]!,
+            withLikes(
+              postAnswer(
+                items[Math.max(0, index)]!,
+                Math.max(0, index),
+                postVariants.get(index) ?? variant,
+                `http://127.0.0.1:${port}`,
+                url.searchParams.has('different'),
+              ),
               Math.max(0, index),
-              postVariants.get(index) ?? variant,
-              `http://127.0.0.1:${port}`,
-              url.searchParams.has('different'),
             ),
           ),
         );
@@ -471,6 +493,22 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolve);
   });
+  function withLikes(answer: unknown, index: number) {
+    if (likesCase !== 'answer') return answer;
+    const item = items[index]!;
+    return {
+      ...(answer as object),
+      comments: [
+        {
+          pk: String(BigInt(IG_FIXTURE.commentId) + BigInt(index)),
+          created_at: Date.parse(item.createdAt) / 1000,
+          user: { username: item.account.handle },
+          text: item.text,
+          comment_like_count: 23,
+        },
+      ],
+    };
+  }
   let closing: Promise<void> | undefined;
   return {
     origin: `http://127.0.0.1:${port}`,
@@ -499,6 +537,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     listFreshness(value: 'retained' | 'sibling' | 'repeated') {
       listFreshness = value;
+    },
+    likes(value: 'answer' | 'dom' | 'unknown') {
+      likesCase = value;
     },
     slowPostOpens(index: number, count: number) {
       if (!items[index] || !Number.isInteger(count) || count < 0)

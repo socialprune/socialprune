@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { UtcTimestampSchema } from './v1.ts';
 import type { Item } from './index.ts';
 import type { BrowserAttempt, BrowserRun } from './browser.ts';
+import { canonicalJson } from '../workspace/canonical.ts';
 
 export const InstagramItemIdSchema = z
   .string()
@@ -11,6 +12,13 @@ export const InstagramPostCodeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/);
 const ContextFieldsSchema = z.strictObject({
+  likes: z
+    .strictObject({
+      count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+      source: z.enum(['answer', 'dom']).nullable(),
+    })
+    .refine((value) => (value.count === null) === (value.source === null))
+    .optional(),
   itemId: InstagramItemIdSchema,
   accountKey: z
     .string()
@@ -75,6 +83,11 @@ export const InstagramContextSchema = z
         code: 'custom',
         message: 'List confirmation requires an exported owner.',
       });
+    if (value.confirmedBy === 'list' && value.likes !== undefined)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'List confirmations have no comment likes.',
+      });
     if (
       (value.image.status === 'stored') !== (value.image.file !== null) ||
       (value.screenshot.status === 'stored') !==
@@ -88,6 +101,25 @@ export const InstagramContextSchema = z
       });
   });
 export type InstagramContext = z.infer<typeof InstagramContextSchema>;
+
+/** The sole permitted supplement: fill previously unobserved post-comment likes once. */
+export function validateInstagramLikesFill(
+  prior: InstagramContext,
+  next: InstagramContext,
+): void {
+  InstagramContextSchema.parse(next);
+  const { likes: _prior, ...before } = prior;
+  const { likes: _next, ...after } = next;
+  void _prior;
+  void _next;
+  if (
+    prior.confirmedBy !== 'post' ||
+    prior.likes !== undefined ||
+    next.likes === undefined ||
+    canonicalJson(before) !== canonicalJson(after)
+  )
+    throw new Error('CONTEXT_WRITE_ONCE');
+}
 
 /** Only version-5 readers/migrations may supply the formerly implicit kind. */
 export const LegacyInstagramContextSchema = ContextFieldsSchema.extend({

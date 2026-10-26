@@ -43,6 +43,7 @@ import { chooseFilterDate } from './filter.ts';
 import { listImageOnlyManual } from './list-image-only.ts';
 import { listFreshness } from './list-freshness.ts';
 import type { ListFreshness } from './list-freshness.ts';
+import { listRegions } from './list-regions.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -158,7 +159,7 @@ async function listTimeoutDiagnostic(
       (filter.applied && !filter.readbackObserved),
   });
 }
-async function navigateList(
+export async function navigateList(
   page: Page,
   expected: string,
   deps: ContextDependencies,
@@ -366,6 +367,7 @@ export async function loadList(
       true,
     );
     rowCounts.rowSignature = await freshness.inspect(page);
+    rowCounts.regions = await listRegions(page, item.text, item.createdAt);
     return {
       candidates: entries.filter(
         (row) =>
@@ -397,6 +399,8 @@ export async function loadList(
       );
       rowCounts.rowSignature = await freshness.inspect(page);
       rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
+      rowCounts.regions = await listRegions(page, item.text, item.createdAt);
+      rowCounts.listTimeout.regions = rowCounts.regions;
       if (
         error instanceof FilteredListTimeout &&
         initialAccount &&
@@ -417,6 +421,7 @@ export async function loadList(
         rowCounts.listTimeout = await listTimeoutDiagnostic(page, filter, dom);
         rowCounts.rowSignature = await freshness.inspect(page);
         rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
+        rowCounts.listTimeout.regions = rowCounts.regions;
         guard();
         await checkPage(page);
         if (

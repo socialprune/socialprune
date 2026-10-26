@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Item } from '@socialprune/core';
+import type { Item, InstagramContext } from '@socialprune/core';
 import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import { CliError } from '../../cli/errors.ts';
 import { plainLines } from '../../cli/output.ts';
@@ -22,10 +22,12 @@ export function instagramHandle(value: string | undefined): string | undefined {
   return name;
 }
 export interface ContextRow {
+  context?: InstagramContext;
   item: Item;
   marked: boolean;
 }
 export interface ContextPlan {
+  refreshLikes?: boolean;
   accountKey: string;
   handle: string;
   timeZone: string;
@@ -43,6 +45,7 @@ export async function planContext(
   accountKey: string,
   include: ReadonlySet<string> = new Set(),
   exclude: ReadonlySet<string> = new Set(),
+  refreshLikes = false,
 ): Promise<ContextPlan> {
   if ([...exclude].some((id) => include.has(id)))
     throw new CliError('INVALID_ARGUMENTS');
@@ -161,6 +164,16 @@ export async function planContext(
         event.value === 'delete' && event.source.kind === 'human',
       );
     for (const item of items) {
+      if (refreshLikes) {
+        const context = await tx.instagramContext.get(item.id);
+        if (
+          context?.confirmedBy === 'post' &&
+          context.likes === undefined &&
+          !personExcludes(item.id)
+        )
+          rows.push({ item, context, marked: false });
+        continue;
+      }
       if (!normalize(item.text)) {
         if (!personExcludes(item.id)) manual.emptyText++;
         continue;
@@ -205,9 +218,19 @@ export async function planContext(
     const hash = createHash('sha256')
       .update(
         JSON.stringify(
-          exclude.size
-            ? { rows: selected, exclude: [...exclude].sort() }
-            : selected,
+          refreshLikes
+            ? {
+                mode: 'refresh-likes',
+                rows: selected.map((row) => ({
+                  ...row,
+                  context: rows.find((entry) => entry.item.id === row.itemId)!
+                    .context,
+                })),
+                exclude: [...exclude].sort(),
+              }
+            : exclude.size
+              ? { rows: selected, exclude: [...exclude].sort() }
+              : selected,
         ),
       )
       .digest('hex');
@@ -218,6 +241,7 @@ export async function planContext(
       if (run.canaryAcceptedAt) accepted = true;
     }
     return {
+      ...(refreshLikes ? { refreshLikes: true } : {}),
       accountKey,
       handle: handle ?? '',
       timeZone:
@@ -225,7 +249,7 @@ export async function planContext(
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       rows,
       hash,
-      canary: !accepted,
+      canary: refreshLikes ? false : !accepted,
       manual,
       confirmed,
       excluded,
@@ -241,6 +265,7 @@ export function contextSummary(
 ) {
   return {
     dryRun: true,
+    refreshLikes: Boolean(plan.refreshLikes),
     planned: plan.rows.length,
     marked: plan.rows.filter((row) => row.marked).length,
     manual: plan.manual,

@@ -21,7 +21,7 @@ const run = {
   profileReport: null,
 };
 test('D10 schema 10 admits Instagram deletion and its own outcome source, not an X warning on Instagram', () => {
-  expect(WORKSPACE_SCHEMA_VERSION).toBe(10);
+  expect(WORKSPACE_SCHEMA_VERSION).toBe(11);
   expect(BrowserRunSchema.safeParse(run).success).toBe(true);
   expect(
     BrowserRunSchema.safeParse({ ...run, warningKind: 'http-429' }).success,

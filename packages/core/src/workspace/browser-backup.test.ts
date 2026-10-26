@@ -47,7 +47,7 @@ test('v3 journal round trip preserves unresolved ambiguity with reordered proper
     await restoreBackup(target, chunks(reversed), { batchSize: 1 });
     const result = await target.read(readWorkspace);
     expect(result.browserAttempts).toEqual(JOURNAL_FIXTURE.attempts);
-    expect(result.schemaVersion).toBe(10);
+    expect(result.schemaVersion).toBe(11);
     expect(
       await readBackup(chunks(JSON.stringify(contractWorkspace()))),
     ).toEqual(contractWorkspace());
@@ -109,7 +109,7 @@ test('writer promotes an old v2 document to v3 without changing its entries or d
     for await (const chunk of createBackup(store, { batchSize: 1 }).chunks)
       text += new TextDecoder().decode(chunk);
     const result = await readBackup(chunks(text));
-    expect(result.schemaVersion).toBe(10);
+    expect(result.schemaVersion).toBe(11);
     expect(result.browserRuns).toEqual([]);
     expect(result.browserAttempts).toEqual([]);
     expect(result.counts).toEqual({

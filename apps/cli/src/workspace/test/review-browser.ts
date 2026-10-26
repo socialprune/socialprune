@@ -62,10 +62,10 @@ export async function runBrowserMigrationProof(origin: string | undefined) {
     }, legacy);
     assert.deepEqual(result.first, {
       ...migrateReviewContract(legacy),
-      schemaVersion: 10,
+      schemaVersion: 11,
     });
     assert.deepEqual(result.second, result.first);
-    assert.deepEqual(result.physical, { version: 10, plans: true });
+    assert.deepEqual(result.physical, { version: 11, plans: true });
     assert.equal(result.contextDuplicateRejected, true);
     console.log(
       'PASS IndexedDB v6 to v10: post/list context, add-only context, reviewPlans, idempotent reopen',

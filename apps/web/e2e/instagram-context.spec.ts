@@ -49,7 +49,7 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
       });
       return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
     });
-    expect(before.schemaVersion).toBe(10);
+    expect(before.schemaVersion).toBe(11);
     expect(
       before.instagramContext!.every(
         (record) =>
@@ -203,7 +203,7 @@ test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites ever
         workspace: JSON.parse(text) as import('@socialprune/core').WorkspaceV2,
       };
     }, id);
-    expect(after.version).toBe(10);
+    expect(after.version).toBe(11);
     expect(after.workspace.instagramContext).toEqual(before.instagramContext);
     expect(after.workspace.items).toEqual(before.items);
     expect(after.workspace.browserRuns).toEqual(before.browserRuns);

@@ -57,7 +57,10 @@ export class FeedSession {
   private listeners = new Set<() => void>();
   private readonly client: WorkspaceClient;
   private readonly commands: CommandQueue;
-  private optimistic = new Map<string, { card: FeedCard; leaves: boolean }>();
+  private optimistic = new Map<
+    string,
+    { card: FeedCard; leaves: boolean; generation: number }
+  >();
   private failedItems = new Map<string, number>();
   private confirmedCards = new Map<string, FeedCard>();
   private confirmedLeaves = new Set<string>();
@@ -341,7 +344,7 @@ export class FeedSession {
     if (!this.optimistic.has(itemId)) this.confirmedCards.set(itemId, card);
     const updated = { ...card, decision: value };
     const leaves = !this.belongs(card, value);
-    const operation = { card: updated, leaves };
+    const operation = { card: updated, leaves, generation: failureGeneration };
     this.optimistic.set(itemId, operation);
     this.update({
       cards: leaves
@@ -410,15 +413,17 @@ export class FeedSession {
                   });
             if (membership.type !== 'feedCards')
               throw Error('Saved membership readback failed');
-            const remains = membership.cards[0]?.item.id === itemId;
-            if (remains) this.confirmedLeaves.delete(itemId);
-            else this.confirmedLeaves.add(itemId);
-            const cards = this.snapshot.cards.filter(
-              (entry) => entry.item.id !== itemId,
-            );
-            if (remains)
-              cards.splice(Math.min(index, cards.length), 0, confirmed);
-            this.update({ cards: cards.slice(0, 300) });
+            if (this.optimistic.get(itemId) === operation) {
+              const remains = membership.cards[0]?.item.id === itemId;
+              if (remains) this.confirmedLeaves.delete(itemId);
+              else this.confirmedLeaves.add(itemId);
+              const cards = this.snapshot.cards.filter(
+                (entry) => entry.item.id !== itemId,
+              );
+              if (remains)
+                cards.splice(Math.min(index, cards.length), 0, confirmed);
+              this.update({ cards: cards.slice(0, 300), error: false });
+            }
           }
           await this.refreshCounts();
           if (this.snapshot.counts)
@@ -434,32 +439,40 @@ export class FeedSession {
         }
       } catch {
         if (!saved) {
-          if (attempted)
+          if (attempted) {
             this.failedItems.set(
               itemId,
               (this.failedItems.get(itemId) ?? 0) + 1,
             );
-          const recovery = {
-            itemId,
-            accountKey: this.snapshot.accountKey,
-            sequence: ++this.failureSequence,
-          };
-          this.commands.recovery = recovery;
-          this.optimistic.delete(itemId);
-          if (epoch === this.epoch) {
-            const cards = this.snapshot.cards.filter(
-              (entry) => entry.item.id !== itemId,
-            );
-            cards.splice(
-              Math.min(index, cards.length),
-              0,
-              this.confirmedCards.get(itemId) ?? card,
-            );
-            this.update({
-              cards: cards.slice(0, 300),
-              total: this.snapshot.total + (leaves ? 1 : 0),
-              saveFailure: recovery,
-            });
+            // An actual failed write invalidates its dependent, pre-failure
+            // intents. It owns their rollback; an unsent stale intent never
+            // takes ownership from a fresh click made after this failure.
+            if (this.optimistic.get(itemId)?.generation === failureGeneration)
+              this.optimistic.set(itemId, operation);
+          }
+          if (this.optimistic.get(itemId) === operation) {
+            const recovery = {
+              itemId,
+              accountKey: this.snapshot.accountKey,
+              sequence: ++this.failureSequence,
+            };
+            this.commands.recovery = recovery;
+            this.optimistic.delete(itemId);
+            if (epoch === this.epoch) {
+              const cards = this.snapshot.cards.filter(
+                (entry) => entry.item.id !== itemId,
+              );
+              cards.splice(
+                Math.min(index, cards.length),
+                0,
+                this.confirmedCards.get(itemId) ?? card,
+              );
+              this.update({
+                cards: cards.slice(0, 300),
+                total: this.snapshot.total + (leaves ? 1 : 0),
+                saveFailure: recovery,
+              });
+            }
           }
         } else if (epoch === this.epoch) this.update({ error: true });
       } finally {

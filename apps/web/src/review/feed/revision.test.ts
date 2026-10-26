@@ -195,6 +195,114 @@ test('F3 canceled dependent intents do not invalidate a fresh retry enqueued aft
   expect(await retry).toBe(true);
   expect(f.values.get('x:0')).toBe('keep');
 });
+test('F3 stale intent queued before a failure cannot replace a newer click or its readback', async () => {
+  const f = fixture((_input, n) => n === 0);
+  await f.session.open('x:contract', 'all');
+  let releaseX!: () => void, releaseY!: () => void;
+  const heldX = new Promise<void>((resolve) => {
+    releaseX = resolve;
+  });
+  const heldY = new Promise<void>((resolve) => {
+    releaseY = resolve;
+  });
+  const request = f.port.request.getMockImplementation()!;
+  f.port.request.mockImplementation(async (input) => {
+    const id = (input['itemIds'] as string[] | undefined)?.[0];
+    if (id === 'x:0') await heldX;
+    if (id === 'x:1') await heldY;
+    return request(input);
+  });
+  const w1 = f.session.decide('x:0', 'keep');
+  const other = f.session.decide('x:1', 'keep');
+  const w2 = f.session.decide('x:0', 'later');
+  releaseX();
+  expect(await w1).toBe(false);
+  const shown = () =>
+    f.session.snapshot.cards.find((card) => card.item.id === 'x:0')?.decision;
+  expect(shown()).toBe('undecided');
+  const w3 = f.session.decide('x:0', 'delete');
+  expect(shown()).toBe('delete');
+  releaseY();
+  expect([await other, await w2, await w3]).toEqual([true, false, true]);
+  await f.port.commands.flush();
+  expect(f.requests.filter((input) => input['value'] === 'later')).toHaveLength(
+    0,
+  );
+  expect(f.values.get('x:0')).toBe('delete');
+  expect(shown()).toBe('delete');
+  expect(f.session.snapshot.saveFailure).toBeNull();
+  expect(f.port.commands.recovery).toBeNull();
+  expect(await f.session.decide('x:0', 'keep')).toBe(true);
+  expect(f.values.get('x:0')).toBe('keep');
+  expect(shown()).toBe('keep');
+});
+test('a membership readback resolving after a newer intent cannot overwrite that intent', async () => {
+  const f = fixture(() => false);
+  await f.session.open('x:contract', 'kept');
+  const read = f.port.feedWindow.getMockImplementation()!;
+  const request = f.port.request.getMockImplementation()!;
+  let releaseWrite!: () => void;
+  const heldWrite = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  f.port.request.mockImplementation(async (input) => {
+    if (input['value'] === 'delete') await heldWrite;
+    return request(input);
+  });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reading = false;
+  f.port.feedWindow.mockImplementation(async (input) => {
+    if (input.tab === 'kept' && input.limit === 1 && !reading) {
+      reading = true;
+      await held;
+    }
+    return read(input);
+  });
+  const first = f.session.decide('x:0', 'keep');
+  await vi.waitFor(() => expect(reading).toBe(true));
+  const next = f.session.decide('x:0', 'delete');
+  expect(f.session.snapshot.cards.some((card) => card.item.id === 'x:0')).toBe(
+    false,
+  );
+  release();
+  expect(await first).toBe(true);
+  // The next write is held so only the old membership response has settled.
+  expect(f.session.snapshot.cards.some((card) => card.item.id === 'x:0')).toBe(
+    false,
+  );
+  releaseWrite();
+  expect(await next).toBe(true);
+  expect(f.values.get('x:0')).toBe('delete');
+});
+test('a superseded write readback failure cannot hide the newer pending card', async () => {
+  const f = fixture(() => false);
+  await f.session.open('x:contract', 'all');
+  const read = f.port.feedWindow.getMockImplementation()!;
+  let reject!: () => void;
+  const held = new Promise<void>((_resolve, rejectRead) => {
+    reject = () => rejectRead(new Error('Readback failed'));
+  });
+  let reading = false;
+  f.port.feedWindow.mockImplementation(async (input) => {
+    if (input.limit === 1 && !reading) {
+      reading = true;
+      await held;
+    }
+    return read(input);
+  });
+  const first = f.session.decide('x:0', 'keep');
+  await vi.waitFor(() => expect(reading).toBe(true));
+  const next = f.session.decide('x:0', 'delete');
+  reject();
+  expect(await first).toBe(true);
+  expect(await next).toBe(true);
+  expect(f.session.snapshot.error).toBe(false);
+  expect(f.session.snapshot.cards[0]?.decision).toBe('delete');
+  expect(f.values.get('x:0')).toBe('delete');
+});
 test('F2 recovery reopens at a failed card outside the first service window', async () => {
   const f = fixture(() => true);
   await f.session.open('x:contract', 'all');

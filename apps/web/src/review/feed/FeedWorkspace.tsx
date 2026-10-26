@@ -50,6 +50,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     () => feedChoice(views.current, accountKey, tab).sort,
   );
   const [notice, setNotice] = useState('');
+  const [tabPending, setTabPending] = useState(false);
   const [dialog, setDialog] = useState(false);
   const [help, setHelp] = useState(false);
   const [editor, setEditor] = useState(false);
@@ -79,7 +80,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const root = useRef<HTMLDivElement>(null);
   const activeAnchor = useRef<string | undefined>(anchors.current[tab]);
   const persistence = useRef<Promise<unknown>>(Promise.resolve());
-  const pendingFocus = useRef<string | null>(null);
   const focusSequence = useRef(0);
   const [decisionKeysBlockedUntil, setDecisionKeysBlockedUntil] = useState(0);
   const scrollAnchor = useRef<{ id: string; top: number } | null>(null);
@@ -269,20 +269,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       });
     };
   }, [session]);
-  useEffect(() => {
-    if (state.loading) return;
-    const targetId = pendingFocus.current;
-    if (!targetId) return;
-    const target = [
-      ...(root.current?.querySelectorAll<HTMLElement>(
-        'article[data-card-id]',
-      ) ?? []),
-    ].find((article) => article.dataset['cardId'] === targetId);
-    if (target) {
-      target.focus();
-      pendingFocus.current = null;
-    }
-  }, [state.cards, state.loading]);
   useLayoutEffect(() => {
     if (state.loading) return;
     const anchor = scrollAnchor.current;
@@ -314,7 +300,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
 
   async function move(index: number) {
     const sequence = ++focusSequence.current;
-    pendingFocus.current = null;
     const { accountKey, tab } = current.current;
     const id = await session.seek(index);
     if (
@@ -345,7 +330,6 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         ];
       if (oneAtATime && next)
         setSingleIndex(session.snapshot.cards.indexOf(next));
-      pendingFocus.current = next?.item.id ?? id;
       if (
         next &&
         (oneAtATime ||
@@ -465,6 +449,11 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const unchecked = Object.entries(state.counts?.unchecked ?? {}).filter(
     ([id, count]) => criteria.selected.includes(id) && count > 0,
   );
+  const viewPending =
+    tabPending ||
+    state.accountKey !== accountKey ||
+    state.tab !== tab ||
+    state.sort !== sort;
   const models = oneAtATime
     ? allModels.slice(singleIndex, singleIndex + 1)
     : allModels;
@@ -510,7 +499,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             onVisible={visibleOriginals}
             focusTarget={focusTarget}
             total={state.total}
-            busy={state.busy || state.loading}
+            busy={state.busy || state.loading || viewPending}
             error={state.error || openError}
             notice={
               state.historyBlocked
@@ -534,7 +523,9 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             }}
             onTab={(next) => {
               if (client.commands.pending) {
+                setTabPending(true);
                 void session.flush().then(() => {
+                  setTabPending(false);
                   if (session.snapshot.saveFailure) return;
                   setOneAtATime(
                     singleMode(summary?.workspaceId ?? '', accountKey, next),

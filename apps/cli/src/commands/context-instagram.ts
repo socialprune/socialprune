@@ -181,7 +181,12 @@ export const contextInstagramCommand = buildCommand({
             plan.hash,
           )
         : undefined;
-      validateContextOrder(order, plan.handle, !flags.dryRun && plan.canary);
+      validateContextOrder(
+        order,
+        plan.handle,
+        !flags.dryRun && plan.canary,
+        Boolean(plan.refreshLikes),
+      );
       const pace = contextPace(order, plan.canary);
       const data = contextSummary(plan, flags.lang, pace),
         text = contextList(plan);

@@ -87,6 +87,68 @@ test('IG-LIKES refresh plan binds only post records with absent observations and
   }
 });
 
+test.each([
+  { refresh: false, field: undefined, ok: true },
+  { refresh: false, field: false, ok: true },
+  { refresh: false, field: true, ok: false },
+  { refresh: true, field: undefined, ok: true },
+  { refresh: true, field: true, ok: true },
+  { refresh: true, field: false, ok: false },
+])(
+  'F2 the command binds the order refreshLikes field to its mode, refresh=$refresh field=$field',
+  async ({ refresh, field, ok }) => {
+    const h = await excludeFixture();
+    try {
+      await writeInstagramContextContract(h.store, h.fixture.items[0]);
+      const plan = await planContext(
+        h.store,
+        h.accountKey,
+        new Set(),
+        new Set(),
+        refresh,
+      );
+      const order = join(h.directory, 'order.json');
+      await writeFile(
+        order,
+        JSON.stringify({
+          scope: 'context-instagram',
+          account: plan.handle,
+          givenAt: '2026-10-26T00:00:00Z',
+          words: 'Generated reading order',
+          acceptCanary: true,
+          ...(field === undefined ? {} : { refreshLikes: field }),
+        }),
+      );
+      const result = await invokeContext([
+        '--workspace',
+        h.directory,
+        '--account',
+        h.accountKey,
+        ...(refresh ? ['--refresh-likes'] : []),
+        '--order',
+        order,
+        '--plan',
+        plan.hash,
+        '--dry-run',
+        '--json',
+      ]);
+      if (ok) {
+        expect(result.code, result.stdout + result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          data: { planHash: plan.hash },
+        });
+      } else {
+        expect(result.code).toBe(2);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          error: { code: 'CONTEXT_ORDER_INVALID' },
+        });
+      }
+    } finally {
+      await h.close();
+    }
+  },
+);
+
 test.each(['post-unavailable', 'comment-not-shown'])(
   'F4 settled refresh %s stays out until explicitly included',
   async (code) => {

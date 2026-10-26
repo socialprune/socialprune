@@ -4,7 +4,10 @@ export default defineConfig({
   root: fileURLToPath(new URL('../../../', import.meta.url)),
   test: {
     environment: 'node',
-    include: ['apps/cli/e2e/context-instagram.test.ts'],
+    include: [
+      'apps/cli/e2e/context-instagram.test.ts',
+      'apps/cli/e2e/list-freshness.test.ts',
+    ],
     fileParallelism: false,
     maxWorkers: 2,
     retry: 0,

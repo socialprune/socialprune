@@ -109,6 +109,22 @@ export const PostRetriesSchema = z
   })
   .refine((value) => value.used === value.entries.length);
 
+export const RowSignatureDiagnosticSchema = z
+  .strictObject({
+    observed: z.boolean(),
+    sameAsBeforeApply: z.boolean().nullable(),
+    sameAsPreviousStep: z.boolean().nullable(),
+    previousWindowDifferent: z.boolean().nullable(),
+  })
+  .refine(
+    (value) =>
+      value.observed === (value.sameAsBeforeApply !== null) &&
+      (value.sameAsPreviousStep === null ||
+        value.previousWindowDifferent !== null),
+  );
+export type RowSignatureDiagnostic = z.infer<
+  typeof RowSignatureDiagnosticSchema
+>;
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -133,6 +149,7 @@ export const ListTimeoutDiagnosticSchema = z
       observedForMs: count,
     }),
     observationFailed: z.boolean(),
+    rowSignature: RowSignatureDiagnosticSchema.optional(),
   })
   .refine(
     (value) =>
@@ -276,6 +293,7 @@ export const ContextStepReportSchema = z
     image: StepImageSchema.optional(),
     memory: MemorySampleSchema.optional(),
     listTimeout: ListTimeoutDiagnosticSchema.optional(),
+    rowSignature: RowSignatureDiagnosticSchema.optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

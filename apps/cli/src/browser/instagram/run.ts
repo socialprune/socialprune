@@ -97,6 +97,7 @@ import {
 import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
 import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
+import { listFreshness } from './list-freshness.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -202,6 +203,7 @@ export async function runContextWithDependencies(
   });
   const writer = new InstagramContextWriter(options.store),
     runId = crypto.randomUUID();
+  const freshness = listFreshness();
   const report: {
     steps: unknown[];
     confirmations: { post: number; list: number };
@@ -798,6 +800,7 @@ export async function runContextWithDependencies(
               options.plan.canary && steps === 1,
               options.now(),
               rowCounts,
+              freshness,
             );
             if (reopening?.stage === 'list') {
               reopening.outcome = 'ready';
@@ -818,6 +821,7 @@ export async function runContextWithDependencies(
                 ready: { postMs: 0 },
                 filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
                 listTimeout: rowCounts.listTimeout,
+                rowSignature: rowCounts.rowSignature,
                 rows: 0,
                 emptySkipped: rowCounts.emptySkipped,
                 otherName: rowCounts.otherName,
@@ -867,6 +871,7 @@ export async function runContextWithDependencies(
           },
           ready: { postMs: 0 },
           filterByLists: true,
+          rowSignature: rowCounts.rowSignature,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
           otherName: list.otherName,

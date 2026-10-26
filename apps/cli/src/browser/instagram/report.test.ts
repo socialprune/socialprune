@@ -141,6 +141,25 @@ test('C27 list-timeout diagnostic rejects raw values and malformed counts rather
       filter: { ...diagnostic.filter, start: IG_FIXTURE.other.time },
     },
     { ...diagnostic, dom: { ...diagnostic.dom, lastChangeAfterApplyMs: 1501 } },
+    {
+      ...diagnostic,
+      rowSignature: {
+        observed: true,
+        sameAsBeforeApply: false,
+        sameAsPreviousStep: null,
+        previousWindowDifferent: null,
+        text: IG_FIXTURE.other.text,
+      },
+    },
+    {
+      ...diagnostic,
+      rowSignature: {
+        observed: true,
+        sameAsBeforeApply: null,
+        sameAsPreviousStep: null,
+        previousWindowDifferent: null,
+      },
+    },
   ])
     expect(
       ContextStepReportSchema.safeParse({ listTimeout: invalid }).success,

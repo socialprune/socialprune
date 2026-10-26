@@ -2329,6 +2329,54 @@ test('C34 IG-18 main run skips one opaque list without reopening and records the
   }
 }, 120000);
 
+test('C-list main run stops on retained rows without a reopen or a not-listed settlement', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  const before = await h.store.read((tx) => records(tx.instagramContext));
+  h.fake.listFreshness('retained');
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.some((attempt) => attempt.code === 'list-image-only'),
+    ).toBe(false);
+    expect(h.waits).not.toContain(60000);
+    const run = journal.runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    expect(run.pageOpens).toBe(1);
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      before,
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test('C-list run-wide signature stops a repeated opaque window on the next canary comment', async () => {
+  const h = await harness('success', 6);
+  h.fake.listFreshness('repeated');
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.filter((attempt) => attempt.code === 'list-image-only'),
+    ).toHaveLength(1);
+    expect(journal.runs[0]!.pageOpens).toBe(2);
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
+
 test('C34 IG-18 a lazy row that becomes readable follows the normal candidate path instead of the manual class', async () => {
   const h = await harness('success', 1);
   h.fake.filteredImageOnly([0], { lateText: true });

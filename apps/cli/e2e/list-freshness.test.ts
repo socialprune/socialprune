@@ -1,0 +1,120 @@
+import { expect, test } from 'vitest';
+import { chromium } from 'playwright-core';
+import { fakeInstagram } from './fake-instagram/server.ts';
+import { instagramFixture } from './fake-instagram/fixture.ts';
+import {
+  loadList,
+  productionContext,
+} from '../src/browser/instagram/driver.ts';
+import type { RowReadCounts } from '../src/browser/instagram/selectors.ts';
+import { listFreshness } from '../src/browser/instagram/list-freshness.ts';
+import { CONTEXT_PORTS } from './fake-instagram/ports.ts';
+import { FilteredListTimeout } from '../src/browser/instagram/retry.ts';
+
+test.each(['retained', 'sibling'] as const)(
+  'C-list matching dropdowns with %s rows must stop, not exclude the comment',
+  async (mode) => {
+    const fixture = await instagramFixture();
+    const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.listFreshness(mode);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    const page = await browser.newPage();
+    const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+    try {
+      const outcome = await loadList(
+        page,
+        fixture.items[0]!,
+        fixture.items[0]!.account.handle!,
+        { ...productionContext, origin: fake.origin, responseMs: 1500 },
+        () => {},
+        false,
+        undefined,
+        counts,
+      ).catch((error: unknown) => error);
+      expect(counts.listTimeout, String(outcome)).toMatchObject({
+        rowContainers: 4,
+        readableRows: 1,
+        imageOnlyRows: 3,
+        filter: {
+          applied: true,
+          readbackObserved: true,
+          startMatches: true,
+          endMatches: true,
+        },
+      });
+      if (mode === 'sibling')
+        expect(
+          await page.locator('#generated-filter-result').innerText(),
+        ).toContain(fixture.items[0]!.text);
+      expect(outcome).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'list-timeout',
+      });
+      expect(outcome).not.toBeInstanceOf(FilteredListTimeout);
+      expect(
+        fake.requests.some((request) => request.path.startsWith('/p/')),
+      ).toBe(false);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+
+test('C-list a repeated opaque result for a different window stops on the second step', async () => {
+  const fixture = await instagramFixture(2);
+  fixture.items[1]!.createdAt = new Date(
+    Date.parse(fixture.items[0]!.createdAt) + 100 * 86400000,
+  ).toISOString();
+  const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+  fake.setToday('2026-10-25');
+  fake.listFreshness('repeated');
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  const page = await browser.newPage();
+  const freshness = listFreshness();
+  const counts: RowReadCounts[] = [];
+  try {
+    const outcomes: unknown[] = [];
+    for (const item of fixture.items) {
+      const count: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+      counts.push(count);
+      outcomes.push(
+        await loadList(
+          page,
+          item,
+          item.account.handle!,
+          { ...productionContext, origin: fake.origin, responseMs: 1500 },
+          () => {},
+          false,
+          undefined,
+          count,
+          freshness,
+        ).catch((error: unknown) => error),
+      );
+    }
+    expect(outcomes[0]).toMatchObject({ manualReason: 'list-image-only' });
+    expect(outcomes[1]).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    expect(outcomes[1]).not.toBeInstanceOf(FilteredListTimeout);
+    expect(counts[1]!.rowSignature).toEqual({
+      observed: true,
+      sameAsBeforeApply: false,
+      sameAsPreviousStep: true,
+      previousWindowDifferent: true,
+    });
+    expect(
+      fake.requests.some((request) => request.path.startsWith('/p/')),
+    ).toBe(false);
+  } finally {
+    await browser.close();
+    await fake.close();
+  }
+});

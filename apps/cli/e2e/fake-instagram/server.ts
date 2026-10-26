@@ -43,6 +43,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let listDecoration: 'caption' | 'comment' | 'dialog' | undefined;
   const deletedComments = new Set<string>();
   const deleteAttempts: string[] = [];
+  let listFreshness: 'retained' | 'sibling' | 'repeated' | undefined;
   const candidates = new Map<
     number,
     readonly { code: string; variant: Variant }[]
@@ -247,7 +248,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           ]);
           html = html.replace(
             anchor,
-            `if(start&&end&&${JSON.stringify(windows)}.some(pair=>${imageOnlyList.mismatch ? 'pair[1]===end' : 'pair[0]===start&&pair[1]===end'})){chosen=[];const otherRow=document.createElement('div');otherRow.setAttribute('role','button');otherRow.setAttribute('aria-label','Generated readable decoration');otherRow.textContent=other.username+' '+other.text+' 1w';list.append(otherRow);for(let i=0;i<3;i++)emptyImageButton();${imageOnlyList.busy ? "list.setAttribute('aria-busy','true');" : ''}${imageOnlyList.lateText ? "setTimeout(()=>mutate(()=>{list.lastElementChild.append(document.createTextNode(handle+' '+rows[0].text+' 1w'));list.lastElementChild.setAttribute('aria-label','Comment row');list.lastElementChild.onclick=()=>location.href='/p/'+rows[0].code;}),250);" : ''}}` +
+            `if(start&&end&&${JSON.stringify(windows)}.some(pair=>${imageOnlyList.mismatch ? 'pair[1]===end' : 'pair[0]===start&&pair[1]===end'})){chosen=[];const otherRow=document.createElement('div');otherRow.setAttribute('role','button');otherRow.setAttribute('aria-label','Generated readable decoration');otherRow.textContent=other.username+' '+other.text+' 1w';list.append(otherRow);for(let i=0;i<3;i++){emptyImageButton();list.lastElementChild.setAttribute('aria-label','Generated window '+start+' '+i);}${imageOnlyList.busy ? "list.setAttribute('aria-busy','true');" : ''}${imageOnlyList.lateText ? "setTimeout(()=>mutate(()=>{list.lastElementChild.append(document.createTextNode(handle+' '+rows[0].text+' 1w'));list.lastElementChild.setAttribute('aria-label','Comment row');list.lastElementChild.onclick=()=>location.href='/p/'+rows[0].code;}),250);" : ''}}` +
               anchor,
           );
           if (imageOnlyList.issue) {
@@ -269,6 +270,33 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
               change,
               "controls.end.day.addEventListener('change',()=>{const first=controls.start.day;first.selectedIndex=(first.selectedIndex+1)%first.options.length});" +
                 change,
+            );
+          }
+        }
+        if (listFreshness) {
+          const opaque =
+            "function opaque(){list.replaceChildren();const decoration=document.createElement('div');decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.append(document.createTextNode(other.username+' '+other.text+' 1w'));list.append(decoration);for(let i=0;i<3;i++)emptyImageButton();}";
+          html = html.replace(
+            'function render(){',
+            opaque + 'function render(){',
+          );
+          html = html.replace(
+            "const apply=document.createElement('div');",
+            "const dialogDecoy=document.createElement('div');dialogDecoy.setAttribute('role','button');dialogDecoy.setAttribute('aria-label','Generated filter decoration');dialogDecoy.innerHTML='<img>';dialog.append(dialogDecoy);const apply=document.createElement('div');",
+          );
+          if (listFreshness === 'repeated') {
+            html = html.replace(
+              'for(const [index,row]of chosen.entries())',
+              'if(start&&end){opaque();chosen=[];}for(const [index,row]of chosen.entries())',
+            );
+          } else {
+            html = html.replace(
+              'dirty[side]=true;',
+              'dirty[side]=true;if(dirty.start&&dirty.end)opaque();',
+            );
+            html = html.replace(
+              'outer.remove();loads=0;render()',
+              `outer.remove();loads=0;if(!start||!end)render();${listFreshness === 'sibling' ? "else{const sibling=document.createElement('section');sibling.id='generated-filter-result';for(const row of rows.filter(row=>row.at.slice(0,10)>=start&&row.at.slice(0,10)<=end)){const node=document.createElement('div');node.setAttribute('role','button');node.innerHTML='<img>';node.append(document.createTextNode(row.username+' '+row.text+' 1w'));sibling.append(node)}list.after(sibling)}" : ''}`,
             );
           }
         }
@@ -468,6 +496,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     setImageCase(value: ImageCaseName) {
       imageShape = value;
+    },
+    listFreshness(value: 'retained' | 'sibling' | 'repeated') {
+      listFreshness = value;
     },
     slowPostOpens(index: number, count: number) {
       if (!items[index] || !Number.isInteger(count) || count < 0)

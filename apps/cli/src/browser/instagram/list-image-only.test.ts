@@ -25,6 +25,12 @@ const observed = (): ListTimeoutDiagnostic => ({
     observedForMs: 30200,
   },
   observationFailed: false,
+  rowSignature: {
+    observed: true,
+    sameAsBeforeApply: false,
+    sameAsPreviousStep: null,
+    previousWindowDifferent: null,
+  },
 });
 
 test('C34 IG-18 manual report requires zero candidates, no confirmation/image and strict complete evidence', () => {
@@ -87,4 +93,31 @@ test('C34 IG-18 only complete settled matched-filter observations can stay manua
     { dom: { ...observed().dom, lastChangeAfterApplyMs: 30000 } },
   ])
     expect(listImageOnlyManual({ ...observed(), ...change })).toBe(false);
+});
+
+test('C-list equal rows for a repeated date window are not mistaken for a stale different window', () => {
+  expect(
+    listImageOnlyManual({
+      ...observed(),
+      rowSignature: {
+        ...observed().rowSignature!,
+        sameAsPreviousStep: true,
+        previousWindowDifferent: false,
+      },
+    }),
+  ).toBe(true);
+});
+
+test('C-list missing or stale row signatures must not classify an opaque list as manual', () => {
+  for (const rowSignature of [
+    undefined,
+    { ...observed().rowSignature!, sameAsBeforeApply: true },
+    { ...observed().rowSignature!, observed: false, sameAsBeforeApply: null },
+    {
+      ...observed().rowSignature!,
+      sameAsPreviousStep: true,
+      previousWindowDifferent: true,
+    },
+  ])
+    expect(listImageOnlyManual({ ...observed(), rowSignature })).toBe(false);
 });

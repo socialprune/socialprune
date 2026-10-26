@@ -41,6 +41,8 @@ import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
 import { chooseFilterDate } from './filter.ts';
 import { listImageOnlyManual } from './list-image-only.ts';
+import { listFreshness } from './list-freshness.ts';
+import type { ListFreshness } from './list-freshness.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -260,6 +262,7 @@ export async function loadList(
   oldest = false,
   now = new Date(),
   rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 },
+  freshness: ListFreshness = listFreshness(),
 ) {
   const filter = {
     applied: false,
@@ -302,6 +305,7 @@ export async function loadList(
         Object.assign(filter, value);
       },
       async beforeApply() {
+        await freshness.beforeApply(page, utcWindow(item.createdAt));
         dom = await observeListDomChanges(page);
       },
       applied() {
@@ -361,6 +365,7 @@ export async function loadList(
       deps.accountObserved,
       true,
     );
+    rowCounts.rowSignature = await freshness.inspect(page);
     return {
       candidates: entries.filter(
         (row) =>
@@ -390,6 +395,8 @@ export async function loadList(
         dom,
         false,
       );
+      rowCounts.rowSignature = await freshness.inspect(page);
+      rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
       if (
         error instanceof FilteredListTimeout &&
         initialAccount &&
@@ -408,6 +415,8 @@ export async function loadList(
             rowCandidate(row.text, item.text),
         );
         rowCounts.listTimeout = await listTimeoutDiagnostic(page, filter, dom);
+        rowCounts.rowSignature = await freshness.inspect(page);
+        rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
         guard();
         await checkPage(page);
         if (
@@ -432,9 +441,21 @@ export async function loadList(
       }
       await dom?.dispose();
       if (dom?.failed) rowCounts.listTimeout.observationFailed = true;
+      // A positively repeated result is not a transient empty-list read. Do not
+      // let a main-run reopen relabel that same result as a fresh same-window skip.
+      const signature = rowCounts.rowSignature;
+      if (
+        error instanceof FilteredListTimeout &&
+        signature?.observed &&
+        (signature.sameAsBeforeApply === true ||
+          (signature.sameAsPreviousStep === true &&
+            signature.previousWindowDifferent === true))
+      )
+        throw new ContextStop('PLATFORM_CHECK', 'list-timeout');
     }
     throw error;
   } finally {
+    freshness.finish();
     await dom?.dispose();
   }
 }

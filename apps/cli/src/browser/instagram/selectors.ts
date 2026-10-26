@@ -1,7 +1,10 @@
 import type { Locator, Page } from 'playwright-core';
 import type { Item } from '@socialprune/core';
 import { ContextStop } from './report.ts';
-import type { ListTimeoutDiagnostic } from './report.ts';
+import type {
+  ListTimeoutDiagnostic,
+  RowSignatureDiagnostic,
+} from './report.ts';
 import { normalize, ownerName } from './plan.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
@@ -131,6 +134,7 @@ export interface RowReadCounts {
   /** Maximum simultaneous other-name rows within one step's list loads. */
   otherName: number;
   listTimeout?: ListTimeoutDiagnostic;
+  rowSignature?: RowSignatureDiagnostic;
 }
 export function accountMatches(
   expected: string,

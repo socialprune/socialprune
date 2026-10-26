@@ -125,6 +125,8 @@ D3 leaves the source to a later record; what any source writes is decided here, 
 - Against today's "Mark suggested entries" the first tab differs in exactly four ways: Later entries sit in Unclear (Q7); `harmless` and `unclear` suggestions at Medium or High are no hits; Keep and Marked are never overwritten; the list review's filter and search no longer narrow it.
 - Slice 1 introduced SQLite layout 7, IndexedDB version 7 and backup version 7. IG-OWNER A subsequently introduced version 8 for the owner-check migration. The maintainer's ADR-DEL A version-skew decision of 2026-10-24 supersedes those current-version ceilings: both stores and portable writers use version 9, and backup readers accept versions 1 to 9. The 8 to 9 step changes no feed or Instagram record; SQLite copies before writing under `BEGIN EXCLUSIVE`, and IndexedDB updates its metadata atomically.
 
+Implementation follow-up, 2026-10-26: Since IG-DEL A (2026-10-25), [ADR-028 section 10](ADR-028-instagram-signed-in-session.md#10-what-later-deletion-gets-from-this-pass), current workspaces, both stores and portable writers use version 10, and portable readers accept versions 1 to 10. Feed records and human decisions are unchanged. Versions 7, 8 and 9 above remain their historical migration boundaries. Eligible post-confirmed own Instagram comments now have CLI deletion with generated-data proof only; the click list remains the manual route for other comments. The first real one-comment canary requires a separate written order.
+
 ### 7. Protocol and performance
 
 - `planCounts` (ADR-007 row below) comes from one projection pass per revision; a decision then moves one counter. The projection grows by 8 bytes per item.

@@ -238,6 +238,8 @@ The deletion journal introduced two record types and one outcome value in schema
 
 An older installed package refuses a version-9 workspace with `WORKSPACE_SCHEMA_UNSUPPORTED` and a version-9 backup with `BACKUP_SCHEMA_UNSUPPORTED`, so running that package over the migrated workspace cannot omit the warning gate. This does not close the separate cross-profile gap stated above.
 
+Implementation follow-up, 2026-10-26: Since IG-DEL A (2026-10-25), [ADR-028 section 10](ADR-028-instagram-signed-in-session.md#10-what-later-deletion-gets-from-this-pass), current workspaces, SQLite, IndexedDB and portable writers use version 10; portable readers accept versions 1 to 10. The preceding version-9 refusal remains the historical X warning boundary. A version-9 installed package now refuses a version-10 workspace or backup rather than omit the Instagram deletion gate. The summary below retains its earlier shape; version 10 additionally admits Instagram delete/verify runs, `delete-comment` attempts, portable `instagramWarning` and page-day evidence, and `browser-instagram` outcome provenance. The X warning and `browser-x` rules do not change.
+
 ```ts
 BrowserRun = {
   runId, platform: 'x' | 'instagram', accountKey,
@@ -276,6 +278,8 @@ BrowserAttempt = {
 - **Profile read-back.** The expected state-changing requests for X are the page's `DeleteTweet` and `DeleteRetweet` requests. Every other non-GET request to X's hosts during the run is listed in `unexpectedRequests` and shown to the person.
 
 ### Schema history and current version 9
+
+**Implementation follow-up, 2026-10-26:** This heading and the version-9 bullets below describe the historical X warning boundary. IG-DEL A (2026-10-25) now makes the current version 10, with portable readers accepting versions 1 to 10. Instagram deletion extends the existing journal and graph validation as described in [ADR-028 section 10](ADR-028-instagram-signed-in-session.md#10-what-later-deletion-gets-from-this-pass); `delete-comment` is now an admitted action, Instagram delete/verify attempts name Instagram comments, and their outcomes use `browser-instagram`, not `browser-x`. Context runs remain separate from deletion. The one-time canary-acceptance update also applies to Instagram deletion. SQLite copies before migration, and both stores retain existing records and unresolved resend blocks without inventing warning classifications.
 
 The new outcome value did not fit version 2's enum. Version 3 introduced the journal on 2026-10-11; version 4 added X fill, versions 5 and 6 Instagram context, version 7 the review-feed contract and version 8 Instagram's owner-check migration on 2026-10-23. Version 9 adds the compatibility boundary for the warning gate on 2026-10-24:
 
@@ -321,6 +325,8 @@ The new outcome value did not fit version 2's enum. Version 3 introduced the jou
 | ADR-017 | Capability split | `ReviewService` appends human review decisions and outcomes; the CLI's `BrowserOutcomeWriter` appends only `deleted-via-browser` and verified-reappearance `unknown` outcomes with `via: 'browser-x'`, plus journal records, never decision events. CLI and desktop runs share it. |
 | ADR-018 | Build; Package contents; Checks | The package gains the runtime dependency `playwright-core` 1.63.0 (Apache-2.0, no dependencies of its own), kept outside the bundle and loaded only by the browser commands; the package files gain the confirmation page assets; the packed smoke test runs `delete x --dry-run --json` and never a run. |
 
+Implementation follow-up, 2026-10-26: The table records ADR-027's accepted changes, including the version-9 ceiling in the ADR-005, ADR-006 and ADR-015 rows. Since IG-DEL A (2026-10-25), their current workspace, store and portable-writer ceiling is 10, with portable readers accepting versions 1 to 10. [ADR-028 section 10](ADR-028-instagram-signed-in-session.md#10-what-later-deletion-gets-from-this-pass) adds Instagram journal/outcome provenance and its separate warning/acknowledgement layout; it does not change the X deletion gate.
+
 [ADR-002](ADR-002-dependency-licenses.md) needs no exception: `playwright-core` is Apache-2.0, and the browser is the one already installed, so rule 6 on downloaded artifacts does not apply.
 
 **Decision made by:** maintainer
@@ -337,6 +343,8 @@ The new outcome value did not fit version 2's enum. Version 3 introduced the jou
 - The selectors module breaks with larger changes to X's pages; until it is updated, runs stop at the first entry.
 - The npm registry reported `playwright-core` 1.63.0 as 13,453,369 bytes unpacked on 2026-10-11; the person also needs Chrome or Edge.
 - The journal began in schema 3; current backups use schema 9 and the accepted records listed above need their stated amendments. Warning admission and acknowledgement stay CLI-local and must be kept with that workspace.
+
+  Implementation follow-up, 2026-10-26: Since IG-DEL A (2026-10-25), current backups use schema 10 and portable readers accept versions 1 to 10. The preceding schema-9 sentence remains historical. Classified Instagram warning evidence now travels in the journal; gate and acknowledgement storage remains CLI-local, with a separate Instagram profile marker, as [ADR-028 section 10](ADR-028-instagram-signed-in-session.md#10-what-later-deletion-gets-from-this-pass) specifies.
 
 ### Risks
 - **X locks or suspends the account.** Mitigation: ADR-023's rules, the documented pace and immediate warning stops. No measured relation between this website pace and restrictions is established; X can act regardless.

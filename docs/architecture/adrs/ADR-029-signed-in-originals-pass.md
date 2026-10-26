@@ -232,6 +232,8 @@ Schema 4 introduced these records on 2026-10-12, after ADR-027's schema 3. Versi
 
 Version follow-up, 2026-10-24: ADR-027's version-skew decision supersedes the current-writer ceiling above. Current workspace, SQLite, IndexedDB and portable writers use version 9; portable readers accept versions 1 to 9. Originals and the CLI-local written-order audit do not change. The optional `warningKind` of a browser run is admitted only in version 9, and a version-8 installed package refuses the migrated workspace and its backup rather than omit the warning gate.
 
+Implementation follow-up, 2026-10-26: Since IG-DEL A (2026-10-25), [ADR-028](ADR-028-instagram-signed-in-session.md), current workspaces, both stores and portable writers use version 10, and portable readers accept versions 1 to 10. Originals and the CLI-local written-order audit remain unchanged. Version 9 remains the historical introduction boundary for X `warningKind`; version 10 adds separate Instagram deletion and warning evidence without reclassifying older runs.
+
 ```ts
 OriginalMedia = {
   n: 1 | 2 | 3 | 4,

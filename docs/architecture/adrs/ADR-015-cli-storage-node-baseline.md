@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - Rule Database settings changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`STRICT` browser journal tables, append-only attempts and transactional pre-click checks).
 - Rule Migration, backup and restore changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (schema-3 journal migration and current version-9 warning/acknowledgement layout, copy-before-migration and warning-gated restore).
+- **Implementation follow-up, 2026-10-26:** Since IG-DEL A (2026-10-25), [ADR-028](ADR-028-instagram-signed-in-session.md), the current workspace, SQLite layout, IndexedDB and portable-writer version is 10; portable readers accept versions 1 to 10. The SQLite migration adds Instagram warning and acknowledgement tables, retains the separate X gate and existing journal and context evidence, and copies the file before writing under `BEGIN EXCLUSIVE`. The version-9 X warning boundary above remains historical. These migration paths have generated-data proof only.
 - Rule Workspace folder changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the `originals/` media folder sits beside `socialprune.sqlite`).
 - Rule Database settings changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (the non-append-only `STRICT` table `originals` is added).
 - Rule Migration, backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (a layout migration adds `originals`).

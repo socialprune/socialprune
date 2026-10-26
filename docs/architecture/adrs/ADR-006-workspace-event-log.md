@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - Rule Outcome events changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (`deleted-via-browser` and `browser-x` provenance link to a settling attempt; only verified reappearance reverses that outcome).
 - Rule Workspace document, version 2 changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (the schema-3 browser journal and current version-9 records and counts).
+- **Implementation follow-up, 2026-10-26:** Since IG-DEL A (2026-10-25), [ADR-028](ADR-028-instagram-signed-in-session.md), current workspace records, counts, both stores and portable writers use version 10; portable readers accept versions 1 to 10. Instagram deletion and verification extend the journal, and Instagram browser outcomes use `source: { kind: 'human', via: 'browser-instagram' }`, linked to the matching settlement or reappearance. X retains `browser-x`; the version-9 X warning boundary above remains historical.
 - Rule Backup and restore changed by [ADR-027](ADR-027-x-deletion-browser.md) on 2026-10-25 (journal/outcome graph validation and CLI warning-gated restore preserve unresolved effects and classified warnings).
 - Rule Workspace document, version 2 changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (optional `originals` and `counts.originals`, omitted when empty).
 - Rule Backup and restore changed by [ADR-026](ADR-026-x-originals-fetch.md) on 2026-10-24 (original IDs, records and counts are validated).

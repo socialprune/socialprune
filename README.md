@@ -17,7 +17,7 @@ Import the platform's official data export, read each entry, and record Keep, La
 | Platform | Read from export | Review and suggestions | Manual click list | Browser helpers |
 |---|---|---|---|---|
 | X | Posts, replies, quotes and reposts | Full-text cards, criteria, keep rules and human decisions | Links to individual entries | Fetch reply and quote originals; optionally fill missing context in a signed-in browser; delete human-marked entries |
-| Instagram | Comments in JSON exports; not captions or chats | Comment cards and, when separately confirmed, their post context | Grouped by day; no invented post link | Read comment context in a signed-in browser; no automated comment deletion implemented |
+| Instagram | Comments in JSON exports; not captions or chats | Comment cards and, when separately confirmed, their post context | Grouped by day; no invented post link | Read comment context in a signed-in browser; CLI deletion of human-marked, post-confirmed own comments with exact comment ID/time and an exported-owner match, tested on generated data only; other comments stay manual; first real run needs a separate written order |
 
 The desktop app is Windows x64. The browser app and the CLI share the review model, but the platform-reading and X-deletion helpers belong to the CLI and desktop app, not the static browser app. The interface is available in English and German.
 
@@ -86,7 +86,7 @@ Not affiliated with, endorsed by, or sponsored by X Corp. or Meta.
 
 Deletion is permanent. A model can be wrong, and rules can flag something you want to keep. Read the entries and decide yourself. Deleting a post does not remove screenshots, other people's archives or every copy elsewhere.
 
-The platforms prohibit this kind of browser automation and may lock or suspend your account. Optional platform runs use a dedicated profile you sign in to yourself, begin with watched checks and stop on an error. They do not hide automation or solve platform challenges. X deletion operates only on entries carrying your own delete decision. Instagram deletion automation is not implemented. The click lists remain available when you prefer to act by hand.
+The platforms prohibit this kind of browser automation and may lock or suspend your account. Optional platform runs use a dedicated profile you sign in to yourself, begin with watched checks and stop on an error. They do not hide automation or solve platform challenges. X deletion operates only on entries carrying your own delete decision. Instagram CLI deletion is limited to your human-marked, post-confirmed comments with exact comment ID and time and an exported-owner match, and is tested on generated data only. Other Instagram comments stay manual. The first real one-comment canary requires a separate written order naming the account, profile and exact marked comment. The click lists remain available when you prefer to act by hand.
 
 ## Contributing
 

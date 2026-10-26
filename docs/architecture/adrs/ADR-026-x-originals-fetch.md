@@ -14,6 +14,8 @@ Revision of 2026-10-24, based on `bf8843f` and the D6 corrections. The maintaine
 
 Version follow-up, 2026-10-24: the dated schema-8 observations below remain historical. ADR-027's version-skew decision moves current workspaces, both stores and portable writers to version 9, with portable readers accepting versions 1 to 9; originals do not change in that step. This supersedes the current-writer statements in this record without rewriting their dated evidence.
 
+Implementation follow-up, 2026-10-26: Since IG-DEL A (2026-10-25), [ADR-028](ADR-028-instagram-signed-in-session.md), current workspaces, both stores and portable writers use version 10, and portable readers accept versions 1 to 10. Originals are unchanged. The schema-8 observations and version-9 X warning boundary above remain historical.
+
 Decided by the maintainer on 2026-10-11: fetch the originals ("Ja, hole die originale accordingly").
 
 The local review has shown stored photos through its authenticated same-origin route since the build of 2026-10-11. It uses `img-src 'self'`, not `img-src blob:`. The former photo-display question was resolved in the implementation before this record's separate acceptance on 2026-10-24.

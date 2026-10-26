@@ -325,7 +325,14 @@ test('closing an active window can cancel, then confirm Stop and await engine se
     expect(h.app.process.exitCode).toBeNull();
     await expect(h.monitor).toHaveAttribute('data-phase', 'awaiting-continue');
     await h.rememberBrowsers();
+    await h.app.page.evaluate(() => {
+      window.addEventListener('beforeunload', (event) => {
+        event.preventDefault();
+        event.returnValue = '';
+      });
+    });
     await h.app.application.evaluate(({ dialog, BrowserWindow }) => {
+      dialog.showMessageBoxSync = () => 1;
       dialog.showMessageBox = () =>
         Promise.resolve({
           response: 0,

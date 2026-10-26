@@ -61,6 +61,22 @@ for (const variant of ['test', 'probe'] as const)
         replies: [{ type: 'opened', summary: { decisions: { keep: 1 } } }],
       });
       expect(await state()).toEqual(before);
+      // Durable state and renderer acknowledgement are separate; the latter
+      // disarms beforeunload before test teardown asks Electron to quit.
+      await app.settleDecisions();
+      await app.application.evaluate(({ dialog }) => {
+        Reflect.set(globalThis, 'unexpectedPendingQuit', 0);
+        dialog.showMessageBoxSync = () => {
+          Reflect.set(globalThis, 'unexpectedPendingQuit', 1);
+          return 1;
+        };
+      });
+      await app.page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        if (event.defaultPrevented)
+          throw new Error('DECISION_QUEUE_STILL_PENDING');
+      });
     } finally {
       await app.close();
     }

@@ -28,6 +28,7 @@ import {
 } from './policy.ts';
 import { launchEngine } from './engine.ts';
 import { loadReview } from './startup.ts';
+import { attachPendingQuit } from './pending-quit.ts';
 import { mainMethods, splitWorkArea } from './methods.ts';
 import { mediaResponse } from './media.ts';
 import type { DesktopRequest, RunView, DesktopScanView } from '../protocol.ts';
@@ -532,13 +533,26 @@ export async function startDesktop(options: DesktopOptions) {
   let quitting = false;
   let settled = false;
   let confirming = false;
+  let stopApproved = false;
+  let checkingWindowClose = false;
+  attachPendingQuit({
+    contents: window.webContents,
+    locale: () => appLanguage,
+    message: (box) => dialog.showMessageBoxSync(window, box),
+    wait: () => {
+      stopApproved = false;
+    },
+    record,
+  });
   window.on('close', (event) => {
-    if (removal.busy) {
+    if (removal.busy && !removalQuitting) {
       event.preventDefault();
       return;
     }
     if (
       quitting ||
+      stopApproved ||
+      checkingWindowClose ||
       (['idle', 'ended'].includes(runView.phase) && !scanActive())
     )
       return;
@@ -559,7 +573,10 @@ export async function startDesktop(options: DesktopOptions) {
       )
       .then(({ response }) => {
         confirming = false;
-        if (response === 0) app.quit();
+        if (response === 0) {
+          stopApproved = true;
+          window.close();
+        }
       });
   });
   app.on('before-quit', (event) => {
@@ -570,6 +587,18 @@ export async function startDesktop(options: DesktopOptions) {
     if (settled) return;
     event.preventDefault();
     if (quitting) return;
+    if (!window.isDestroyed()) {
+      // app.quit (menu, startup and data removal) must first allow the
+      // renderer to veto closing, while the engine can still save its queue.
+      if (checkingWindowClose) return;
+      checkingWindowClose = true;
+      try {
+        window.close();
+      } finally {
+        checkingWindowClose = false;
+      }
+      return;
+    }
     quitting = true;
     void (async () => {
       if (
@@ -629,6 +658,7 @@ export async function startDesktop(options: DesktopOptions) {
     });
   });
   app.on('window-all-closed', () => app.quit());
+  window.on('closed', () => app.quit());
   app.on('second-instance', () => {
     if (!window.isDestroyed()) {
       window.show();

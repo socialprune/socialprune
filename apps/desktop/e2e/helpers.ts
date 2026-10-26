@@ -95,12 +95,29 @@ export async function launch(
   const page = await test.step('receive first app window', () =>
     application.firstWindow());
   page.on('pageerror', (error) => errors.push(error.message));
+  page.on('dialog', (dialog) => {
+    // Main's native handler owns prevented unload; CDP must not dismiss it.
+    if (dialog.type() !== 'beforeunload') void dialog.dismiss();
+  });
   page.on('request', (request) => requests.push(request.url()));
   await test.step('wait for interactive navigation', () =>
     expect(
       page.getByRole('navigation', { name: 'SocialPrune' }),
     ).toBeVisible());
   const startupMs = performance.now() - started;
+  const settleDecisions = async () => {
+    if (page.isClosed()) return;
+    await test.step('wait until queued decisions no longer prevent renderer unload', () =>
+      expect
+        .poll(() =>
+          page.evaluate(() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+          }),
+        )
+        .toBe(false));
+  };
   return {
     data,
     selectedData,
@@ -111,13 +128,17 @@ export async function launch(
     errors,
     requests,
     startupMs,
+    settleDecisions,
     async close(browserProcesses?: ProcessIdentity[]) {
       await recordCleanup('electron', {
         timeoutMs: ELECTRON_CLEANUP_TIMEOUT_MS,
         close: async () => {
+          if (process.exitCode === null) await settleDecisions();
           if (process.exitCode === null)
             await test.step('close Electron and engine', () =>
-              application.close());
+              application.evaluate(({ app }) => {
+                setImmediate(() => app.quit());
+              }));
         },
         wait: async () => {
           await test.step('wait for owned Electron processes to exit', () =>

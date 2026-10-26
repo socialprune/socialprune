@@ -71,7 +71,9 @@ test('Instagram deletion is serial, independently uploaded and bounded from its 
   expect(workflow).not.toMatch(/^\s*matrix:/m);
 });
 
-test('single-file context receives its measured outer budget without changing test or hook deadlines', async () => {
+// The context suite runs the reading pass and the list-freshness pages; with
+// both files it took 57.8 minutes of its 70-minute budget in run 40301770727.
+test('the context suite keeps its measured outer budget without changing test or hook deadlines', async () => {
   expect(runner.suites.context!.minutes).toBe(70);
   expect(runner.suites.delete!.minutes).toBe(25);
   expect(runner.suites.engine!.minutes).toBe(10);
@@ -80,8 +82,8 @@ test('single-file context receives its measured outer budget without changing te
     resolve(root, 'apps/cli/e2e/context.vitest.config.ts'),
     'utf8',
   );
-  expect(config).toContain(
-    "include: ['apps/cli/e2e/context-instagram.test.ts']",
+  expect(config).toMatch(
+    /include: \[\s*'apps\/cli\/e2e\/context-instagram\.test\.ts',\s*'apps\/cli\/e2e\/list-freshness\.test\.ts',\s*\]/,
   );
   expect(config).toContain('testTimeout: 60000');
   expect(config).toContain('hookTimeout: 30000');

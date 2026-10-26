@@ -888,6 +888,7 @@ declare global {
     'reviewFeed.heldCount': { count: number };
     'reviewFeed.heldHelp': Record<never, never>;
     'reviewFeed.helpBody': Record<never, never>;
+    'reviewFeed.historyBlocked': Record<never, never>;
     'reviewFeed.kept': { date: string };
     'reviewFeed.keptNotice': { count: number };
     'reviewFeed.keys': Record<never, never>;

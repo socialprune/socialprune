@@ -11,6 +11,7 @@ import { parseReviewRoute } from '../app/router.ts';
 import type { ReviewSession } from './session.ts';
 import { Navigation } from '../app/Navigation.tsx';
 import styles from '../app/Shell.module.css';
+import { queuedHashNavigation } from '../app/queue-navigation.ts';
 
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
@@ -84,7 +85,10 @@ function ReadyReview({
   const focusPage = useRef({ route, locale });
   const navigationIntent = useRef(false);
   useEffect(() => {
-    const changed = () => setRoute(parseReviewRoute(location.hash));
+    const changed = queuedHashNavigation(
+      () => client,
+      (hash) => setRoute(parseReviewRoute(hash)),
+    );
     window.addEventListener('hashchange', changed);
     window.workspace = client;
     const stopSummary = client.subscribeSummary(setSummary);

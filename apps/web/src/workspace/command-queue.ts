@@ -3,6 +3,8 @@ export class CommandQueue {
   private tail: Promise<unknown> = Promise.resolve();
   pending = 0;
   failures = 0;
+  recovery: { itemId: string; accountKey: string; sequence: number } | null =
+    null;
   private listeners = new Set<() => void>();
   subscribe(listener: () => void) {
     this.listeners.add(listener);

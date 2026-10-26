@@ -20,12 +20,11 @@ export function changeFeedSort(
   tab: FeedTab,
   sort: FeedSort,
 ): FeedViews {
-  const single = views[account]?.[tab]?.single;
   return {
     ...views,
     [account]: {
       ...views[account],
-      [tab]: { sort, ...(single === undefined ? {} : { single }) },
+      [tab]: { sort },
     },
   };
 }

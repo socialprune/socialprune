@@ -72,6 +72,7 @@
   "reviewFeed.listMode": "List",
   "reviewFeed.saving": "{count, plural, one {One decision is still being saved. Please keep this page open.} other {# decisions are still being saved. Please keep this page open.}}",
   "reviewFeed.saveFailed": "The decision was not saved. The post is back. Please decide again.",
+  "reviewFeed.historyBlocked": "The decision was not saved. Nothing was undone or redone.",
   "reviewFeed.sortNewest": "Newest first",
   "reviewFeed.sortOldest": "Oldest first",
   "reviewFeed.sortLikes": "Most likes",

@@ -17,6 +17,7 @@ import { AppUpdates } from './updates.ts';
 import { Guide } from '../guide/Guide.tsx';
 import { DemoSession } from './demo.ts';
 import styles from './Shell.module.css';
+import { queuedHashNavigation } from './queue-navigation.ts';
 const Review = lazy(() =>
   import('../review/Review.tsx').then((module) => ({ default: module.Review })),
 );
@@ -94,12 +95,15 @@ function Content({
   const focusPage = useRef({ route, locale });
   const navigationIntent = useRef(false);
   useEffect(() => {
-    const changed = () => {
-      const next = parseRoute(location.hash);
-      setRoute(next);
-      if (next === '/demo') setDemoActive(true);
-      else if (next === '/' || next === '/import') setDemoActive(false);
-    };
+    const changed = queuedHashNavigation(
+      () => demo.current?.workspace ?? workspace.current,
+      (hash) => {
+        const next = parseRoute(hash);
+        setRoute(next);
+        if (next === '/demo') setDemoActive(true);
+        else if (next === '/' || next === '/import') setDemoActive(false);
+      },
+    );
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);

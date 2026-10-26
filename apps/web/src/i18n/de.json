@@ -72,6 +72,7 @@
   "reviewFeed.listMode": "Liste",
   "reviewFeed.saving": "{count, plural, one {Eine Entscheidung wird noch gespeichert. Bitte diese Seite offen lassen.} other {# Entscheidungen werden noch gespeichert. Bitte diese Seite offen lassen.}}",
   "reviewFeed.saveFailed": "Die Entscheidung wurde nicht gespeichert. Der Beitrag ist wieder da. Bitte erneut entscheiden.",
+  "reviewFeed.historyBlocked": "Die Entscheidung wurde nicht gespeichert. Es wurde nichts rückgängig gemacht oder wiederholt.",
   "reviewFeed.sortNewest": "Neueste zuerst",
   "reviewFeed.sortOldest": "Älteste zuerst",
   "reviewFeed.sortLikes": "Meiste Gefällt mir",

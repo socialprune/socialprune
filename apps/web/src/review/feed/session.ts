@@ -24,6 +24,7 @@ export interface FeedSnapshot {
   previewState: 'ready' | 'loading' | 'changed' | 'error';
   pending: number;
   saveFailure: { itemId: string; sequence: number } | null;
+  historyBlocked: 'undo' | 'redo' | null;
 }
 const id = () => crypto.randomUUID();
 
@@ -46,6 +47,7 @@ export class FeedSession {
     previewState: 'ready',
     pending: 0,
     saveFailure: null,
+    historyBlocked: null,
   };
   private epoch = 0;
   private windowEpoch = 0;
@@ -56,7 +58,7 @@ export class FeedSession {
   private readonly client: WorkspaceClient;
   private readonly commands: CommandQueue;
   private optimistic = new Map<string, { card: FeedCard; leaves: boolean }>();
-  private failedItems = new Set<string>();
+  private failedItems = new Map<string, number>();
   private confirmedCards = new Map<string, FeedCard>();
   private confirmedLeaves = new Set<string>();
   private prefetching: Promise<void> | null = null;
@@ -86,10 +88,11 @@ export class FeedSession {
   ) {
     this.update({ loading: true });
     if (this.commands.pending) await this.commands.flush();
+    if (this.commands.recovery?.accountKey === accountKey)
+      anchor = this.commands.recovery.itemId;
     const epoch = ++this.epoch;
     this.confirmedLeaves.clear();
     this.confirmedCards.clear();
-    this.failedItems.clear();
     ++this.windowEpoch;
     if (!keepPreview) this.cancelPreview();
     this.membershipChanged = false;
@@ -106,7 +109,10 @@ export class FeedSession {
       loading: true,
       busy: false,
       error: false,
-      saveFailure: null,
+      saveFailure:
+        this.commands.recovery?.accountKey === accountKey
+          ? this.commands.recovery
+          : null,
     });
     try {
       const [counts, window] = await Promise.all([
@@ -225,7 +231,12 @@ export class FeedSession {
   }
   private async reverse(anchor?: string, kind: 'undo' | 'redo' = 'undo') {
     if (this.snapshot.busy) return null;
+    const failures = this.commands.failures;
     const result = await this.commands.enqueue(async () => {
+      if (this.commands.failures !== failures) {
+        this.update({ historyBlocked: kind });
+        return null;
+      }
       try {
         const reply = await this.client.request({
           type: kind,
@@ -275,7 +286,8 @@ export class FeedSession {
       this.snapshot.start + this.snapshot.cards.length >= this.snapshot.total
     )
       return;
-    const epoch = this.epoch;
+    const epoch = this.epoch,
+      windowEpoch = this.windowEpoch;
     const { accountKey, tab, sort } = this.snapshot;
     const anchor = this.snapshot.cards.at(-1)!.item.id;
     this.prefetching = (async () => {
@@ -287,7 +299,12 @@ export class FeedSession {
           anchor,
           limit: 50,
         });
-        if (epoch !== this.epoch || result.type !== 'feedCards') return;
+        if (
+          epoch !== this.epoch ||
+          windowEpoch !== this.windowEpoch ||
+          result.type !== 'feedCards'
+        )
+          return;
         const existing = new Set(
           this.snapshot.cards.map((card) => card.item.id),
         );
@@ -306,7 +323,8 @@ export class FeedSession {
           start: this.snapshot.start + trim,
         });
       } catch {
-        if (epoch === this.epoch) this.update({ error: true });
+        if (epoch === this.epoch && windowEpoch === this.windowEpoch)
+          this.update({ error: true });
       }
     })().finally(() => {
       this.prefetching = null;
@@ -319,7 +337,7 @@ export class FeedSession {
     if (card.decision === value) return true;
     const index = this.snapshot.cards.indexOf(card),
       epoch = this.epoch;
-    if (!this.commands.pending) this.failedItems.delete(itemId);
+    const failureGeneration = this.failedItems.get(itemId) ?? 0;
     if (!this.optimistic.has(itemId)) this.confirmedCards.set(itemId, card);
     const updated = { ...card, decision: value };
     const leaves = !this.belongs(card, value);
@@ -334,13 +352,16 @@ export class FeedSession {
       total: Math.max(0, this.snapshot.total - (leaves ? 1 : 0)),
       pending: this.snapshot.pending + 1,
       saveFailure: null,
+      historyBlocked: null,
     });
     if (this.snapshot.cards.length < 50) void this.prefetch();
     return this.commands.enqueue(async () => {
       let saved = false;
+      let attempted = false;
       try {
-        if (this.failedItems.has(itemId))
+        if ((this.failedItems.get(itemId) ?? 0) !== failureGeneration)
           throw Error('Earlier decision failed');
+        attempted = true;
         const result = await this.client.request({
           type: 'decide',
           requestId: id(),
@@ -356,6 +377,8 @@ export class FeedSession {
         )
           throw Error('Decision not saved');
         saved = true;
+        if (this.commands.recovery?.itemId === itemId)
+          this.commands.recovery = null;
         if (leaves) this.confirmedLeaves.add(itemId);
         this.confirmedCards.set(itemId, updated);
         this.membershipChanged = true;
@@ -375,7 +398,21 @@ export class FeedSession {
           const confirmed = readback.cards[0];
           this.confirmedCards.set(itemId, confirmed);
           if (this.optimistic.get(itemId) === operation) {
-            const remains = this.belongs(confirmed, confirmed.decision);
+            const membership =
+              this.snapshot.tab === 'all'
+                ? readback
+                : await this.client.feedWindow({
+                    accountKey: this.snapshot.accountKey,
+                    tab: this.snapshot.tab,
+                    sort: this.snapshot.sort,
+                    anchor: itemId,
+                    limit: 1,
+                  });
+            if (membership.type !== 'feedCards')
+              throw Error('Saved membership readback failed');
+            const remains = membership.cards[0]?.item.id === itemId;
+            if (remains) this.confirmedLeaves.delete(itemId);
+            else this.confirmedLeaves.add(itemId);
             const cards = this.snapshot.cards.filter(
               (entry) => entry.item.id !== itemId,
             );
@@ -397,7 +434,17 @@ export class FeedSession {
         }
       } catch {
         if (!saved) {
-          this.failedItems.add(itemId);
+          if (attempted)
+            this.failedItems.set(
+              itemId,
+              (this.failedItems.get(itemId) ?? 0) + 1,
+            );
+          const recovery = {
+            itemId,
+            accountKey: this.snapshot.accountKey,
+            sequence: ++this.failureSequence,
+          };
+          this.commands.recovery = recovery;
           this.optimistic.delete(itemId);
           if (epoch === this.epoch) {
             const cards = this.snapshot.cards.filter(
@@ -411,7 +458,7 @@ export class FeedSession {
             this.update({
               cards: cards.slice(0, 300),
               total: this.snapshot.total + (leaves ? 1 : 0),
-              saveFailure: { itemId, sequence: ++this.failureSequence },
+              saveFailure: recovery,
             });
           }
         } else if (epoch === this.epoch) this.update({ error: true });
@@ -520,6 +567,10 @@ export class FeedSession {
     this.update({ preview: null, previewState: 'ready' });
   }
   dispose() {
+    if (this.commands.pending) {
+      void this.commands.flush().then(() => this.dispose());
+      return;
+    }
     ++this.epoch;
     ++this.windowEpoch;
     this.cancelPreview();

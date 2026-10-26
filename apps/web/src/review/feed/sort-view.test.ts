@@ -17,19 +17,6 @@ test('changing a sort resets only that account/tab anchor and retains other choi
   expect(feedChoice(changed, 'new', 'all')).toEqual({ sort: 'newest' });
 });
 
-test('FAST-1 mode remains per account/tab when sorting resets its anchor', () => {
-  const views = {
-    x: {
-      all: { sort: 'likes' as const, anchor: 'one', single: true },
-      kept: { sort: 'oldest' as const, single: false },
-    },
-    ig: { all: { sort: 'oldest' as const, single: true } },
-  };
-  expect(changeFeedSort(views, 'x', 'all', 'oldest')).toEqual({
-    ...views,
-    x: { ...views.x, all: { sort: 'oldest', single: true } },
-  });
-});
 test('legacy anchors migrate into the old account only and never replace new preferences', () => {
   const review = {
     accountKey: 'x',

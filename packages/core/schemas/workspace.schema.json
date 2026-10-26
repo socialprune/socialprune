@@ -266,7 +266,6 @@
                           "type": "string",
                           "enum": ["newest", "oldest", "likes", "reposts"]
                         },
-                        "single": { "type": "boolean" },
                         "anchor": { "type": "string", "minLength": 1 }
                       },
                       "required": ["sort"],

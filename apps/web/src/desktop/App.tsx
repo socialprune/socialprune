@@ -1,4 +1,5 @@
 import '../styles/tokens.css';
+import { queuedHashNavigation } from '../app/queue-navigation.ts';
 import {
   lazy,
   Suspense,
@@ -169,18 +170,20 @@ function Content({
     };
   }, [bridge, client, acceptView, failed]);
   useEffect(() => {
-    const changed = () => {
-      const value = location.hash;
-      setHash(value);
-      if (value.startsWith('#/review')) setScreen('review');
-      else if (value.startsWith('#/archive')) setScreen('archive');
-      else if (value.startsWith('#/clicklist')) setScreen('clicklist');
-      else if (value === '#/backup' || value === '#/settings')
-        setScreen('settings');
-    };
+    const changed = queuedHashNavigation(
+      () => client,
+      (value) => {
+        setHash(value);
+        if (value.startsWith('#/review')) setScreen('review');
+        else if (value.startsWith('#/archive')) setScreen('archive');
+        else if (value.startsWith('#/clicklist')) setScreen('clicklist');
+        else if (value === '#/backup' || value === '#/settings')
+          setScreen('settings');
+      },
+    );
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
-  }, []);
+  }, [client]);
   useEffect(() => {
     heading.current?.focus();
   }, [screen]);

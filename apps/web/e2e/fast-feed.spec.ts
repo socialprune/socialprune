@@ -3,6 +3,69 @@ import { restoreLiveFeed } from './feed-fixture.ts';
 import { headerFixture } from './header-style.ts';
 import { checkFastFeed } from './fast-feed-check.ts';
 import { join } from 'node:path';
+import { checkHistoryRecovery } from './fast-revision-check.ts';
+
+for (const direction of ['back', 'forward'] as const)
+  test(`F2/F5 ${direction} holds the feed and rejects carried decision keys after failure`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+    await restoreLiveFeed(page, headerFixture());
+    try {
+      await checkHistoryRecovery(page, direction);
+    } finally {
+      await page.evaluate(async () => {
+        (Reflect.get(window, '__revisionRelease') as (() => void) | null)?.();
+        await window.workspace.flushCommands();
+        window.workspace.dispose();
+      });
+      await page.goto('about:blank');
+    }
+  });
+test('F5 a decision key arriving immediately after recovery cannot mark the restored card', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+  await restoreLiveFeed(page, headerFixture());
+  try {
+    await page.getByRole('tab', { name: /^All,/ }).click();
+    await page.evaluate(() => {
+      const request = window.workspace.request.bind(window.workspace);
+      Reflect.set(window, '__restoreWrites', 0);
+      window.workspace.request = async (input, transfer) => {
+        if (input.type === 'decide') {
+          Reflect.set(
+            window,
+            '__restoreWrites',
+            Number(Reflect.get(window, '__restoreWrites')) + 1,
+          );
+          return {
+            type: 'failed',
+            requestId: input.requestId,
+            code: 'STORAGE',
+          };
+        }
+        return request(input, transfer);
+      };
+    });
+    const card = page.getByRole('feed').locator('article').first();
+    await card.locator('[data-keep-action]').click();
+    await expect(page.getByRole('status')).toContainText(
+      'The decision was not saved.',
+    );
+    await card.focus();
+    await page.keyboard.press('m');
+    expect(
+      await page.evaluate(() => Number(Reflect.get(window, '__restoreWrites'))),
+    ).toBe(1);
+  } finally {
+    await page.evaluate(async () => {
+      await window.workspace.flushCommands();
+      window.workspace.dispose();
+    });
+    await page.goto('about:blank');
+  }
+});
 
 test('FAST-1 instant next, rejected write recovery and leave warning', async ({
   page,

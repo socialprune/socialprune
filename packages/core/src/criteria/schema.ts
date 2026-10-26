@@ -94,7 +94,6 @@ export const FeedViewSchema = z.strictObject({
         FeedTabSchema,
         z.strictObject({
           sort: FeedSortSchema,
-          single: z.boolean().optional(),
           anchor: z.string().min(1).optional(),
         }),
       ),

@@ -28,6 +28,7 @@ import controls from './Controls.module.css';
 import type { FeedCardModel } from './types.ts';
 import styles from './FeedWorkspace.module.css';
 import { feedViews, feedChoice, changeFeedSort } from './sort-view.ts';
+import { singleMode, setSingleMode } from './single-view.ts';
 
 export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const t = useT();
@@ -60,8 +61,8 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     id: string;
     sequence: number;
   } | null>(null);
-  const [oneAtATime, setOneAtATime] = useState(
-    () => feedChoice(views.current, accountKey, tab).single ?? false,
+  const [oneAtATime, setOneAtATime] = useState(() =>
+    singleMode(summary?.workspaceId ?? '', accountKey, tab),
   );
   const [singleIndex, setSingleIndex] = useState(0);
   const singleStart = useRef(state.start);
@@ -80,6 +81,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const persistence = useRef<Promise<unknown>>(Promise.resolve());
   const pendingFocus = useRef<string | null>(null);
   const focusSequence = useRef(0);
+  const [decisionKeysBlockedUntil, setDecisionKeysBlockedUntil] = useState(0);
   const scrollAnchor = useRef<{ id: string; top: number } | null>(null);
   const localCommand = useRef(false);
   const lifecycle = useRef(0);
@@ -192,7 +194,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       setTab(summary.review?.feed?.tab ?? 'suggested');
       anchors.current = { ...summary.review?.feed?.anchors };
       setSort(feedChoice(views.current, key, tab).sort);
-      setOneAtATime(feedChoice(views.current, key, tab).single ?? false);
+      setOneAtATime(singleMode(summary.workspaceId, key, tab));
     }
   }, [accountKey, summary]);
   useEffect(() => {
@@ -227,9 +229,10 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     });
     return stop;
   }, [client, session]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const failure = state.saveFailure;
     if (!failure) return;
+    setDecisionKeysBlockedUntil(performance.now() + 500);
     setNotice(t('reviewFeed.saveFailed'));
     const index = state.cards.findIndex(
       (card) => card.item.id === failure.itemId,
@@ -510,11 +513,13 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             busy={state.busy || state.loading}
             error={state.error || openError}
             notice={
-              state.saveFailure
-                ? t('reviewFeed.saveFailed')
-                : state.pending
-                  ? t('reviewFeed.saving', { count: state.pending })
-                  : notice
+              state.historyBlocked
+                ? t('reviewFeed.historyBlocked')
+                : state.saveFailure
+                  ? t('reviewFeed.saveFailed')
+                  : state.pending
+                    ? t('reviewFeed.saving', { count: state.pending })
+                    : notice
             }
             zone={zone}
             singleKeys={
@@ -532,7 +537,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 void session.flush().then(() => {
                   if (session.snapshot.saveFailure) return;
                   setOneAtATime(
-                    feedChoice(views.current, accountKey, next).single ?? false,
+                    singleMode(summary?.workspaceId ?? '', accountKey, next),
                   );
                   setTab(next);
                   setSort(feedChoice(views.current, accountKey, next).sort);
@@ -541,13 +546,14 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 return;
               }
               setOneAtATime(
-                feedChoice(views.current, accountKey, next).single ?? false,
+                singleMode(summary?.workspaceId ?? '', accountKey, next),
               );
               setTab(next);
               setSort(feedChoice(views.current, accountKey, next).sort);
               persist(next);
             }}
             onDecision={onDecision}
+            decisionKeysBlockedUntil={decisionKeysBlockedUntil}
             onPreview={() => {
               setDialog(true);
               void session.preview();
@@ -577,7 +583,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 ...views.current,
                 [accountKey]: {
                   ...views.current[accountKey],
-                  [tab]: { sort, anchor: id, single: oneAtATime },
+                  [tab]: { sort, anchor: id },
                 },
               };
               clearTimeout(persistenceTimer.current);
@@ -642,23 +648,19 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                   setTab('suggested');
                   setSort(feedChoice(views.current, key, 'suggested').sort);
                   setOneAtATime(
-                    feedChoice(views.current, key, 'suggested').single ?? false,
+                    singleMode(summary?.workspaceId ?? '', key, 'suggested'),
                   );
                   setNotice('');
                   persist('suggested', key);
                 }}
                 onSingle={() => {
                   const single = !oneAtATime;
-                  views.current = {
-                    ...views.current,
-                    [accountKey]: {
-                      ...views.current[accountKey],
-                      [tab]: {
-                        ...feedChoice(views.current, accountKey, tab),
-                        single,
-                      },
-                    },
-                  };
+                  setSingleMode(
+                    summary?.workspaceId ?? '',
+                    accountKey,
+                    tab,
+                    single,
+                  );
                   setOneAtATime(single);
                   setSingleIndex(0);
                   persist();

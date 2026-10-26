@@ -143,6 +143,7 @@ export interface ReviewFeedProps {
   onConversation?: (id: string) => void;
   onUndo?: (redo?: boolean) => void;
   onDrain?: () => Promise<void>;
+  decisionKeysBlockedUntil?: number;
   onKeyboardHelp?: () => void;
   header?: React.ReactNode;
   context?: (card: FeedCardModel) => React.ReactNode;
@@ -408,6 +409,16 @@ export function ReviewFeed(props: ReviewFeedProps) {
           role="feed"
           aria-label={t(active[1])}
           aria-busy={!!props.busy}
+          onKeyDownCapture={(event) => {
+            if (
+              /^[kmlu]$/i.test(event.key) &&
+              (performance.now() < (props.decisionKeysBlockedUntil ?? 0) ||
+                event.repeat)
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
           onKeyDown={(event) => {
             if (
               !(event.target instanceof HTMLElement) ||

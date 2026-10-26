@@ -111,7 +111,7 @@ export async function commentLikes(
     )
       return { count: null, source: null };
     // Only the exact permalink's own comment block; no ancestor post-like lookup.
-    const block = links.locator('xpath=ancestor::*[3]');
+    const block = links.locator('xpath=ancestor::*[5]');
     if ((await block.locator('a[href*="/c/"]').count()) !== 1)
       return { count: null, source: null };
     const values: number[] = [];

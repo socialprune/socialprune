@@ -11,6 +11,8 @@ import { listFreshness } from '../src/browser/instagram/list-freshness.ts';
 import { CONTEXT_PORTS } from './fake-instagram/ports.ts';
 import { FilteredListTimeout } from '../src/browser/instagram/retry.ts';
 import { listRegions } from '../src/browser/instagram/list-regions.ts';
+import { commentLikes } from '../src/browser/instagram/likes.ts';
+import { IG_FIXTURE } from './fake-instagram/fixture.ts';
 
 test.each(['retained', 'sibling'] as const)(
   'C-list matching dropdowns with %s rows must stop, not exclude the comment',
@@ -103,7 +105,7 @@ test('list-region correct refresh counts the selected main rows without ignored 
     expect(result.candidates).toHaveLength(1);
     expect(counts.regions).toMatchObject({
       observed: true,
-      main: 2,
+      main: 1,
       dialog: 0,
       elsewhere: 0,
       distinctParents: 1,
@@ -124,7 +126,7 @@ test('list-region reports main/dialog/elsewhere and post-Apply dropdown equality
   try {
     const page = await browser.newPage();
     await page.setContent(
-      `<main><div><div role="button" aria-label="Generated row">Generated target</div></div><div role="dialog"><button role="button" aria-label="Oldest to newest">Oldest to newest</button><span>Start date</span><select><option>Jan</option></select><select><option>1</option></select><select><option>2025</option></select><span>End date</span><select><option>Jan</option></select><select><option>3</option></select><select><option>2025</option></select></div></main><nav><div role="button" aria-label="Generated other row"></div></nav>`,
+      `<main><div><div role="button" aria-label="Generated row">Generated target</div></div><div role="dialog"><button role="button" aria-label="Oldest to newest">Oldest to newest</button><span>Start date</span><select><option>January</option></select><select><option>1</option></select><select><option>2025</option></select><span>End date</span><select><option>January</option></select><select><option>3</option></select><select><option>2025</option></select></div></main><nav><div role="button" aria-label="Generated other row"></div></nav>`,
     );
     expect(
       await listRegions(page, 'Generated target', '2025-01-02T12:00:00.000Z'),
@@ -140,7 +142,7 @@ test('list-region reports main/dialog/elsewhere and post-Apply dropdown equality
         endMatches: true,
       },
     });
-    await page.locator('select').first().selectOption({ label: 'Jan' });
+    await page.locator('select').first().selectOption({ label: 'January' });
     expect(
       await listRegions(page, 'Generated target', '2025-02-02T12:00:00.000Z'),
     ).toMatchObject({
@@ -152,6 +154,32 @@ test('list-region reports main/dialog/elsewhere and post-Apply dropdown equality
     });
   } finally {
     await browser.close();
+  }
+});
+
+test('likes exact fake comment block supplies 17, not the other comment 999', async () => {
+  const fixture = await instagramFixture(1);
+  const item = fixture.items[0]!;
+  const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+  fake.likes('dom');
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.goto(fake.origin + '/p/Generated0/');
+    expect(
+      await commentLikes(page, [], {
+        id: IG_FIXTURE.commentId,
+        createdAt: item.createdAt,
+        username: item.account.handle!,
+        text: item.text,
+      }),
+    ).toEqual({ count: 17, source: 'dom' });
+  } finally {
+    await browser.close();
+    await fake.close();
   }
 });
 

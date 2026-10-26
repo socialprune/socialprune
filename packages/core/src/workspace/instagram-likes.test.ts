@@ -6,13 +6,53 @@ import { InstagramContextWriter } from './instagram-context-writer.ts';
 import { createBackup, readBackup, restoreBackup } from './backup.ts';
 import { validateWorkspace } from './validation.ts';
 import { InstagramContextSchema } from '../model/index.ts';
+import { QueryEngine } from './query.ts';
 
 test('likes refresh writes once, settles its own receipt, preserves confirmation and backup evidence', async () => {
   const store = createMemoryStore();
   const prior = await writeInstagramContextContract(store);
   const writer = new InstagramContextWriter(store);
   const at = '2026-10-26T00:00:00.000Z';
+  const query = new QueryEngine(store);
   try {
+    await store.write(async (tx) => {
+      await tx.assessments.append([
+        {
+          assessmentId: 'generated-likes-hit',
+          submissionId: null,
+          itemId: prior.itemId,
+          source: { kind: 'rules', name: 'generated', version: null },
+          category: 'political',
+          risk: 2,
+          reason: 'Generated political suggestion.',
+          evidence: null,
+          confidence: null,
+          createdAt: at,
+        },
+      ]);
+    });
+    await store.write(async (tx) => {
+      const meta = await tx.meta.get();
+      await tx.meta.set({
+        ...meta,
+        settings: {
+          ...meta.settings,
+          criteria: { ...meta.settings.criteria!, selected: ['political'] },
+          keepRules: [
+            {
+              id: 'generated-likes',
+              enabled: true,
+              kind: 'likes-at-least',
+              count: 10,
+              alsoWhenUnknown: false,
+            },
+          ],
+        },
+      });
+    });
+    expect(
+      (await query.planCounts(prior.accountKey)).held['generated-likes'],
+    ).toBe(0);
     await writer.startRun({
       runId: 'generated-refresh',
       accountKey: prior.accountKey,
@@ -35,6 +75,26 @@ test('likes refresh writes once, settles its own receipt, preserves confirmation
     expect(
       await store.read((tx) => tx.instagramContext.get(prior.itemId)),
     ).toEqual({ ...prior, likes: { count: 12, source: 'answer' } });
+    expect(
+      (await query.planCounts(prior.accountKey)).held['generated-likes'],
+    ).toBe(1);
+    const cards = await query.feedWindow({
+      accountKey: prior.accountKey,
+      tab: 'all',
+      offset: 0,
+      limit: 10,
+    });
+    expect(cards.cards[0]!.item.engagement.likes).toBe(12);
+    expect(cards.cards[0]!.holdingRules).toContain('generated-likes');
+    await query.query({
+      queryId: 'generated-likes-filter',
+      generation: 1,
+      accountKey: prior.accountKey,
+      filter: { likes: { min: 10, max: null, unknown: 'exclude' } },
+    });
+    expect(
+      query.window('generated-likes-filter', 1, 0, 10).map((row) => row.id),
+    ).toEqual([prior.itemId]);
     await expect(
       store.write((tx) =>
         tx.instagramContext.fillLikes({

@@ -6307,6 +6307,13 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
     const prior = (
       await h.store.read((tx) => records(tx.instagramContext))
     )[0]!;
+    const mediaPath = join(
+      h.directory,
+      'context',
+      'instagram',
+      Buffer.from(prior.post.code).toString('hex'),
+    );
+    const mediaBefore = await readdir(mediaPath);
     // Generated version-10 record, never a production mutation entrypoint.
     const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
     raw.exec('DROP TRIGGER instagram_context_no_update');
@@ -6328,12 +6335,20 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
     );
     expect(plan.refreshLikes).toBe(true);
     expect(plan.rows).toHaveLength(1);
+    const postRequestsBefore = h.fake.requests.filter((request) =>
+      /^\/p\//.test(request.path),
+    ).length;
     expect(plan.hash).not.toBe(
       (await planContext(h.store, prior.accountKey)).hash,
     );
     // Harness runner options are injected from a generated plan below.
     const result = await h.start({ refreshLikes: true });
     expect(result).toMatchObject({ completed: 1, steps: 1 });
+    expect(
+      h.fake.requests.filter((request) => /^\/p\//.test(request.path)).length -
+        postRequestsBefore,
+    ).toBe(1);
+    expect(await readdir(mediaPath)).toEqual(mediaBefore);
     expect(
       await h.store.read((tx) => tx.instagramContext.get(prior.itemId)),
     ).toEqual({ ...before, likes: { count: 23, source: 'answer' } });

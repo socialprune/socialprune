@@ -355,7 +355,10 @@ export class QueryEngine implements ReviewQuery {
         result.upsert(
           withEffectiveEngagement(
             stored.item,
-            await tx.instagramContext.get(stored.item.id),
+            stored.item.platform === 'instagram' &&
+              stored.item.kind === 'comment'
+              ? await tx.instagramContext.get(stored.item.id)
+              : undefined,
           ),
           !stored.importId || complete.has(stored.importId),
         );

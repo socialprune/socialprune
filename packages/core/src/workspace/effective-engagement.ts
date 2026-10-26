@@ -21,5 +21,8 @@ export function withEffectiveEngagement(
   item: Item,
   context?: InstagramContext,
 ): Item {
-  return { ...item, engagement: effectiveEngagement(item, context) };
+  const engagement = effectiveEngagement(item, context);
+  return engagement.likes === item.engagement.likes
+    ? item
+    : { ...item, engagement };
 }

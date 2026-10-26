@@ -99,6 +99,7 @@ import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
 import { commentLikes } from './likes.ts';
+import { openConfirmedPost } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
 import { launchRunBrowser } from '../launch.ts';
@@ -977,7 +978,7 @@ export async function runContextWithDependencies(
         try {
           opened =
             options.plan.refreshLikes && row.context
-              ? await reopenCandidate(
+              ? await openConfirmedPost(
                   page,
                   `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
                   deps,
@@ -1275,8 +1276,11 @@ export async function runContextWithDependencies(
       } else
         confirmation.update({
           completed,
-          result:
-            options.lang === 'de'
+          result: options.plan.refreshLikes
+            ? options.lang === 'de'
+              ? `${steps} Schritte gelesen, ${completed} Likes-Angaben ergänzt.`
+              : `${steps} steps read, ${completed} like observations added.`
+            : options.lang === 'de'
               ? `${steps} Schritte gelesen, ${completed} Kommentare bestätigt.`
               : `${steps} steps read, ${completed} comments confirmed.`,
         });

@@ -16,7 +16,7 @@ import { WorkspaceError } from './errors.ts';
 import { CompactFeed } from './feed-compact.ts';
 import { withEffectiveEngagement } from './effective-engagement.ts';
 
-/** Feed queries never need originals, context media or browser journals. */
+/** Feed queries need comment engagement context, not originals or browser journals. */
 export async function feedWorkspace(tx: ReadTransaction): Promise<WorkspaceV2> {
   const meta = await tx.meta.get();
   const complete = new Set(
@@ -289,7 +289,10 @@ export class FeedQuery {
           cards.push({
             item: withEffectiveEngagement(
               stored.item,
-              await tx.instagramContext.get(id),
+              stored.item.platform === 'instagram' &&
+                stored.item.kind === 'comment'
+                ? await tx.instagramContext.get(id)
+                : undefined,
             ),
             suggestions: [
               ...new Map(

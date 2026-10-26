@@ -101,7 +101,8 @@
     border-radius: 12px;
     background: var(--color-surface);
   }
-  .menu [role='menuitem'] {
+  .menu [role='menuitem'],
+  .menu [role='menuitemradio'] {
     min-height: 44px;
     min-width: 44px;
     display: flex;
@@ -117,6 +118,23 @@
   }
   .menu [data-highlighted] {
     background: var(--color-selected-bg);
+  }
+  .mobileSort {
+    display: none;
+  }
+  .sortHeading {
+    padding: 8px 12px;
+    font-size: var(--type-sm);
+    color: var(--color-text-secondary);
+  }
+  .sortIndicator {
+    display: inline-flex;
+    width: 18px;
+    flex: none;
+  }
+  .sortSeparator {
+    margin: 6px;
+    border-top: 1px solid var(--color-divider);
   }
   .srOnly {
     position: absolute;
@@ -172,15 +190,16 @@
   @media (max-width: 540px) {
     .toolbar {
       padding-inline: var(--space-3);
-      flex-wrap: wrap;
     }
     .accountField {
       max-width: none;
       flex: 1;
     }
     .sortField {
-      order: 2;
-      flex: 1 0 100%;
+      display: none;
+    }
+    .mobileSort {
+      display: block;
     }
     .editor > h2 {
       padding: var(--space-4) var(--space-4) 0;

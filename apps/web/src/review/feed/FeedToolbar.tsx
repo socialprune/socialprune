@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
+  Check,
   Ellipsis,
   Keyboard,
   List,
@@ -46,6 +47,18 @@ export function FeedToolbar({
   onHelp: () => void;
 }) {
   const t = useT();
+  const selectedSort = sortOptions.includes(sort) ? sort : 'newest';
+  const sortLabel = (option: FeedSort) =>
+    t(
+      (
+        {
+          newest: 'reviewFeed.sortNewest',
+          oldest: 'reviewFeed.sortOldest',
+          likes: 'reviewFeed.sortLikes',
+          reposts: 'reviewFeed.sortReposts',
+        } as const
+      )[option],
+    );
   return (
     <div className={styles.toolbar} data-feed-toolbar>
       <label className={styles.accountField}>
@@ -68,22 +81,13 @@ export function FeedToolbar({
         <span>{t('reviewFeed.sort')}</span>
         <select
           aria-label={t('reviewFeed.sort')}
-          value={sortOptions.includes(sort) ? sort : 'newest'}
+          value={selectedSort}
           disabled={busy}
           onChange={(event) => onSort(event.target.value as FeedSort)}
         >
           {sortOptions.map((option) => (
             <option key={option} value={option}>
-              {t(
-                (
-                  {
-                    newest: 'reviewFeed.sortNewest',
-                    oldest: 'reviewFeed.sortOldest',
-                    likes: 'reviewFeed.sortLikes',
-                    reposts: 'reviewFeed.sortReposts',
-                  } as const
-                )[option],
-              )}
+              {sortLabel(option)}
             </option>
           ))}
         </select>
@@ -122,6 +126,32 @@ export function FeedToolbar({
             className={styles.menuPositioner}
           >
             <Menu.Popup className={styles.menu}>
+              <Menu.RadioGroup
+                className={styles.mobileSort}
+                aria-label={t('reviewFeed.sort')}
+                value={selectedSort}
+                onValueChange={(value) => onSort(value as FeedSort)}
+              >
+                <Menu.GroupLabel className={styles.sortHeading}>
+                  {t('reviewFeed.sort')}
+                </Menu.GroupLabel>
+                {sortOptions.map((option) => (
+                  <Menu.RadioItem
+                    key={option}
+                    value={option}
+                    disabled={busy}
+                    closeOnClick
+                  >
+                    <span className={styles.sortIndicator}>
+                      <Menu.RadioItemIndicator>
+                        <Check size={16} aria-hidden="true" />
+                      </Menu.RadioItemIndicator>
+                    </span>
+                    {sortLabel(option)}
+                  </Menu.RadioItem>
+                ))}
+                <Menu.Separator className={styles.sortSeparator} />
+              </Menu.RadioGroup>
               <Menu.Item render={<a href="#/review/list" />}>
                 <List size={18} aria-hidden="true" />
                 {t('reviewFeed.list')}

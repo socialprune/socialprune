@@ -2,6 +2,7 @@
 export class CommandQueue {
   private tail: Promise<unknown> = Promise.resolve();
   pending = 0;
+  failures = 0;
   private listeners = new Set<() => void>();
   subscribe(listener: () => void) {
     this.listeners.add(listener);
@@ -15,7 +16,19 @@ export class CommandQueue {
   enqueue<T>(run: () => Promise<T>): Promise<T> {
     this.pending++;
     this.changed();
-    const result = this.tail.catch(() => undefined).then(run);
+    const result = this.tail
+      .catch(() => undefined)
+      .then(run)
+      .then(
+        (value) => {
+          if (value === false) this.failures++;
+          return value;
+        },
+        (error: unknown) => {
+          this.failures++;
+          throw error;
+        },
+      );
     this.tail = result.finally(() => {
       this.pending--;
       this.changed();

@@ -554,6 +554,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             }}
             onDelete={() => {
               void session.flush().then(() => {
+                if (session.snapshot.saveFailure) return;
                 location.hash =
                   platform === 'instagram'
                     ? '#/clicklist/instagram/go'

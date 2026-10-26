@@ -45,6 +45,15 @@ export async function checkFastFeed(page: Page) {
     return event.defaultPrevented;
   });
   expect(leave).toBe(true);
+  const desktopClickList = page
+    .getByRole('navigation')
+    .getByRole('button', { name: 'Click list', exact: true });
+  if (await desktopClickList.isVisible()) await desktopClickList.click();
+  else
+    await page
+      .getByRole('navigation', { name: 'Primary navigation', exact: true })
+      .getByRole('link', { name: 'Delete', exact: true })
+      .click();
   await page.evaluate(() => {
     Reflect.set(window, '__fastReject', true);
     (Reflect.get(window, '__fastRelease') as () => void)();

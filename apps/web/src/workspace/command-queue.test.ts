@@ -26,4 +26,12 @@ test('human queue preserves click order, drains after a failed write and include
   await queue.flush();
   expect(order).toEqual([1, 2]);
   expect(queue.pending).toBe(0);
+  expect(queue.failures).toBe(1);
+});
+test('not-saved receipts retain a failure generation for deferred navigation barriers', async () => {
+  const queue = new CommandQueue();
+  const before = queue.failures;
+  await queue.enqueue(() => Promise.resolve(false));
+  await queue.flush();
+  expect(queue.failures).toBe(before + 1);
 });

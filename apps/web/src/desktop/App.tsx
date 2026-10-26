@@ -317,7 +317,9 @@ function Content({
               key={value}
               aria-current={screen === value ? 'page' : undefined}
               onClick={() => {
+                const failures = client.commands.failures;
                 void client.flushCommands().then(() => {
+                  if (client.commands.failures !== failures) return;
                   setScreen(value);
                   setError(null);
                   if (

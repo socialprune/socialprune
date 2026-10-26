@@ -334,7 +334,7 @@ export class FeedSession {
     });
     await this.prefetching;
   }
-  async decide(itemId: string, value: DecisionValue) {
+  async decide(itemId: string, value: DecisionValue, retainInPlace = false) {
     const card = this.snapshot.cards.find((card) => card.item.id === itemId);
     if (!card || this.snapshot.busy) return false;
     if (card.decision === value) return true;
@@ -344,15 +344,20 @@ export class FeedSession {
     if (!this.optimistic.has(itemId)) this.confirmedCards.set(itemId, card);
     const updated = { ...card, decision: value };
     const leaves = !this.belongs(card, value);
-    const operation = { card: updated, leaves, generation: failureGeneration };
+    const removes = leaves && !retainInPlace;
+    const operation = {
+      card: updated,
+      leaves: removes,
+      generation: failureGeneration,
+    };
     this.optimistic.set(itemId, operation);
     this.update({
-      cards: leaves
+      cards: removes
         ? this.snapshot.cards.filter((entry) => entry.item.id !== itemId)
         : this.snapshot.cards.map((entry) =>
             entry.item.id === itemId ? updated : entry,
           ),
-      total: Math.max(0, this.snapshot.total - (leaves ? 1 : 0)),
+      total: Math.max(0, this.snapshot.total - (removes ? 1 : 0)),
       pending: this.snapshot.pending + 1,
       saveFailure: null,
       historyBlocked: null,
@@ -382,7 +387,7 @@ export class FeedSession {
         saved = true;
         if (this.commands.recovery?.itemId === itemId)
           this.commands.recovery = null;
-        if (leaves) this.confirmedLeaves.add(itemId);
+        if (removes) this.confirmedLeaves.add(itemId);
         this.confirmedCards.set(itemId, updated);
         this.membershipChanged = true;
         if (epoch === this.epoch) {
@@ -416,11 +421,11 @@ export class FeedSession {
             if (this.optimistic.get(itemId) === operation) {
               const remains = membership.cards[0]?.item.id === itemId;
               if (remains) this.confirmedLeaves.delete(itemId);
-              else this.confirmedLeaves.add(itemId);
+              else if (!retainInPlace) this.confirmedLeaves.add(itemId);
               const cards = this.snapshot.cards.filter(
                 (entry) => entry.item.id !== itemId,
               );
-              if (remains)
+              if (remains || retainInPlace)
                 cards.splice(Math.min(index, cards.length), 0, confirmed);
               this.update({ cards: cards.slice(0, 300), error: false });
             }
@@ -434,6 +439,9 @@ export class FeedSession {
                   [...this.optimistic.entries()].filter(
                     ([key, entry]) => key !== itemId && entry.leaves,
                   ).length,
+                ...(retainInPlace
+                  ? [this.snapshot.start + this.snapshot.cards.length]
+                  : []),
               ),
             });
         }
@@ -469,7 +477,7 @@ export class FeedSession {
               );
               this.update({
                 cards: cards.slice(0, 300),
-                total: this.snapshot.total + (leaves ? 1 : 0),
+                total: this.snapshot.total + (removes ? 1 : 0),
                 saveFailure: recovery,
               });
             }

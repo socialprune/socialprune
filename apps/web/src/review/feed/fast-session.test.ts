@@ -73,6 +73,33 @@ function fixture() {
   };
 }
 const saved = { type: 'committed', changed: 1 };
+test('ADR-032 list decisions stay in place before and after confirmation until refresh', async () => {
+  const f = fixture();
+  const read = f.port.feedWindow.getMockImplementation()!;
+  f.port.feedWindow.mockImplementation(async (input) => {
+    const result = await read(input);
+    return {
+      ...result,
+      cards: result.cards.filter((card) => card.decision === 'undecided'),
+    };
+  });
+  await f.session.open('x:contract', 'suggested');
+  await vi.waitFor(() => expect(f.session.snapshot.cards.length).toBe(99));
+  const before = f.session.snapshot.cards.map((card) => card.item.id);
+  const write = f.session.decide('x:0', 'keep', true);
+  expect(f.session.snapshot.cards.map((card) => card.item.id)).toEqual(before);
+  expect(f.session.snapshot.cards[0]?.decision).toBe('keep');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  f.release(saved);
+  expect(await write).toBe(true);
+  expect(f.session.snapshot.cards.map((card) => card.item.id)).toEqual(before);
+  expect(f.session.snapshot.cards[0]?.decision).toBe('keep');
+  expect(f.session.snapshot.pending).toBe(0);
+  await f.session.open('x:contract', 'suggested');
+  expect(f.session.snapshot.cards.some((card) => card.item.id === 'x:0')).toBe(
+    false,
+  );
+});
 test('FAST-1 card state and next card change before confirmation, serialized in click order', async () => {
   const f = fixture();
   await f.session.open('x:contract', 'suggested');

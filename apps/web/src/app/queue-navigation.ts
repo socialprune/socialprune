@@ -11,7 +11,9 @@ export function queuedHashNavigation(
       version = ++generation,
       active = client();
     if (!active?.commands.pending) {
-      accept(hash);
+      const target = active?.commands.recovery ? '#/review' : hash;
+      if (target !== location.hash) history.replaceState(null, '', target);
+      accept(target);
       return;
     }
     const failures = active.commands.failures;

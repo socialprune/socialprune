@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { restoreLiveFeed, liveExpected } from './feed-fixture.ts';
 import { observeImport } from './helpers.ts';
 
-test('successive decisions focus the next card after removing the focused card', async ({
+test('successive list decisions retain dimmed cards and focus the next card', async ({
   page,
   context,
 }) => {
@@ -48,7 +48,12 @@ test('successive decisions focus the next card after removing the focused card',
     'undecided',
   );
   await page.keyboard.press('k');
-  await expect(feed.locator('article[data-card-id="x:feed-1"]')).toHaveCount(0);
+  await expect(
+    feed.locator('article[data-card-id="x:feed-1"]'),
+  ).toHaveAttribute('data-decision', 'keep');
+  await expect(
+    feed.locator('article[data-card-id="x:feed-1"]'),
+  ).toHaveAttribute('data-decided', 'true');
   await expect(feed.locator('article[data-card-id="x:feed-2"]')).toBeFocused();
   await page.keyboard.press('k');
   await expect(feed.locator('article[data-card-id="x:feed-3"]')).toBeFocused();

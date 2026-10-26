@@ -65,11 +65,14 @@ for (const width of [320, 390, 1280])
       await first.focus();
       const decidedId = await first.getAttribute('data-card-id');
       await page.keyboard.press('k');
-      await expect(first).toBeFocused();
+      await expect(
+        page.getByRole('feed').locator('article').nth(1),
+      ).toBeFocused();
       await expect(
         page.locator(`article[data-card-id="${decidedId}"]`),
-      ).toHaveCount(0);
+      ).toHaveAttribute('data-decision', 'keep');
       await page.keyboard.press('Control+z');
+      await page.evaluate(() => window.workspace.flushCommands());
       await expect(
         page.locator(`article[data-card-id="${decidedId}"]`),
       ).toHaveAttribute('data-decision', 'undecided');

@@ -61,16 +61,18 @@ test('all six real-service tabs, local decision states and counted human plan un
   await page.keyboard.press('j');
   await expect(first).toHaveAttribute('data-decision', 'undecided');
   await page.keyboard.press('k');
-  await expect(feed.locator(`article[data-card-id="${firstId}"]`)).toHaveCount(
-    0,
-  );
+  await expect(
+    feed.locator(`article[data-card-id="${firstId}"]`),
+  ).toHaveAttribute('data-decision', 'keep');
   await expect(feed.locator(`article[data-card-id="${nextId}"]`)).toBeFocused();
   await expect(
     page.getByRole('tab', { name: /^Suggested for deletion,/ }),
   ).toHaveAccessibleName('Suggested for deletion, 2 entries');
-  await feed.locator('article').first().focus();
+  await feed.locator('article').nth(1).focus();
   await page.keyboard.press('l');
-  await expect(feed.locator('article[data-card-id="x:feed-2"]')).toHaveCount(0);
+  await expect(
+    feed.locator('article[data-card-id="x:feed-2"]'),
+  ).toHaveAttribute('data-decision', 'later');
   await page
     .getByRole('button', { name: 'Mark 1 entry for deletion', exact: true })
     .click();
@@ -378,7 +380,7 @@ test('a second page makes the plan stale; the changed preview requires another h
   await second.keyboard.press('k');
   await expect(
     second.getByRole('feed').locator('article[data-card-id="x:feed-1"]'),
-  ).toHaveCount(0);
+  ).toHaveAttribute('data-decision', 'keep');
   await second.evaluate(() => window.workspace.flushCommands());
   await dialog
     .getByRole('button', { name: 'Mark 3 entries', exact: true })
@@ -459,7 +461,7 @@ test('feed undo and keyboard-only final mark retain human decisions in German da
   await page.keyboard.press('k');
   await expect(
     page.getByRole('feed').locator('article[data-card-id="x:feed-1"]'),
-  ).toHaveCount(0);
+  ).toHaveAttribute('data-decision', 'keep');
   await page.keyboard.press('Control+z');
   await page.evaluate(() => window.workspace.flushCommands());
   await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');

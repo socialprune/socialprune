@@ -83,7 +83,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const focusSequence = useRef(0);
   const [decisionKeysBlockedUntil, setDecisionKeysBlockedUntil] = useState(0);
   const scrollAnchor = useRef<{ id: string; top: number } | null>(null);
-  const localCommand = useRef(false);
+  const localCommand = useRef(0);
   const lifecycle = useRef(0);
   const previewOpen = useRef(false);
   previewOpen.current = dialog;
@@ -317,10 +317,10 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }
   const decide = useCallback(
     async (id: string, value: DecisionValue) => {
-      localCommand.current = true;
+      localCommand.current++;
       const before = session.snapshot.cards;
       const index = before.findIndex((card) => card.item.id === id);
-      const saving = session.decide(id, value);
+      const saving = session.decide(id, value, !oneAtATime);
       const next =
         session.snapshot.cards.find(
           (card) => card.item.id === before[index + 1]?.item.id,
@@ -330,11 +330,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         ];
       if (oneAtATime && next)
         setSingleIndex(session.snapshot.cards.indexOf(next));
-      if (
-        next &&
-        (oneAtATime ||
-          !session.snapshot.cards.some((card) => card.item.id === id))
-      )
+      if (next)
         setFocusTarget({ id: next.item.id, sequence: ++focusSequence.current });
       if (oneAtATime && index >= session.snapshot.cards.length - 30)
         void session.prefetch(true);
@@ -349,7 +345,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               : translate('review.markNotice', { count: 1 }),
           );
       } finally {
-        localCommand.current = false;
+        localCommand.current--;
       }
     },
     [session, translate, oneAtATime],
@@ -394,9 +390,12 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   );
   async function undo(kind: 'undo' | 'redo' = 'undo') {
     if (state.busy) return;
-    localCommand.current = true;
+    localCommand.current++;
     try {
-      const reply = await session.undo(activeAnchor.current, kind);
+      const reply = await session.undo(
+        session.snapshot.cards[0]?.item.id ?? activeAnchor.current,
+        kind,
+      );
       if (!reply) {
         setNotice(t('review.noHistory'));
         return;
@@ -408,7 +407,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         }),
       );
     } finally {
-      localCommand.current = false;
+      localCommand.current--;
     }
   }
   function editCriteria() {
@@ -416,7 +415,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     setEditor(true);
   }
   async function saveCriteria() {
-    localCommand.current = true;
+    localCommand.current++;
     try {
       await client.open();
       setEditor(false);
@@ -429,7 +428,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     } catch {
       setNotice(t('review.storageError'));
     } finally {
-      localCommand.current = false;
+      localCommand.current--;
     }
   }
   if (!summary)
@@ -684,7 +683,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
           setDialog(false);
         }}
         onConfirm={() => {
-          localCommand.current = true;
+          localCommand.current++;
           void session
             .confirm()
             .then((result) => {
@@ -697,7 +696,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               }
             })
             .finally(() => {
-              localCommand.current = false;
+              localCommand.current--;
             });
         }}
       />

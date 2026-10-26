@@ -811,6 +811,7 @@ declare global {
     'review.replyHandle': { handle: string };
     'review.replyReference': { id: string };
     'review.repost': Record<never, never>;
+    'review.reposts': Record<never, never>;
     'review.repostsMaximum': Record<never, never>;
     'review.repostsMinimum': Record<never, never>;
     'review.risk': Record<never, never>;
@@ -914,6 +915,11 @@ declare global {
     'reviewFeed.ruleReposts': { count: number };
     'reviewFeed.shortHeld': Record<never, never>;
     'reviewFeed.shortSuggested': Record<never, never>;
+    'reviewFeed.sort': Record<never, never>;
+    'reviewFeed.sortLikes': Record<never, never>;
+    'reviewFeed.sortNewest': Record<never, never>;
+    'reviewFeed.sortOldest': Record<never, never>;
+    'reviewFeed.sortReposts': Record<never, never>;
     'reviewFeed.sourceLater': Record<never, never>;
     'reviewFeed.suggestDelete': Record<never, never>;
     'reviewFeed.tab.all': Record<never, never>;

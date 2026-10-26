@@ -12,7 +12,7 @@ import { currentRowSources } from './row-sources.ts';
 import { currentAssessments } from '../criteria/suggestions.ts';
 import { records } from './store.ts';
 import { FeedQuery } from './feed-query.ts';
-import type { FeedTab } from '../criteria/schema.ts';
+import type { FeedTab, FeedSort } from '../criteria/schema.ts';
 
 export interface QuerySelection {
   ids: string[];
@@ -99,6 +99,7 @@ export class QueryEngine implements ReviewQuery {
   feedWindow(input: {
     accountKey: string;
     tab: FeedTab;
+    sort?: FeedSort;
     offset?: number;
     anchor?: string;
     limit: number;

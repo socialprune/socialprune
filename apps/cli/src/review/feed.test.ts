@@ -94,6 +94,7 @@ test('real socket serves feed counts, final-mark preview and an atomic plan reco
         requestId: 'wire-feed',
         accountKey: 'x:generated',
         tab: 'all',
+        sort: 'reposts',
         offset: 0,
         limit: 50,
       },

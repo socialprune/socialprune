@@ -11,6 +11,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { useIntl } from 'react-intl';
 import { defaultCriteria } from '@socialprune/core/criteria';
 import type { FeedTab } from '@socialprune/core/criteria';
+import type { FeedSort } from '@socialprune/core/criteria';
 import type { DecisionValue, Original } from '@socialprune/core';
 import type { WorkspaceClient } from '../../workspace/client.ts';
 import type { PlanCounts } from '@socialprune/core/workspace/protocol';
@@ -26,6 +27,7 @@ import { FeedToolbar } from './FeedToolbar.tsx';
 import controls from './Controls.module.css';
 import type { FeedCardModel } from './types.ts';
 import styles from './FeedWorkspace.module.css';
+import { feedViews, feedChoice, changeFeedSort } from './sort-view.ts';
 
 export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   const t = useT();
@@ -41,6 +43,10 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   );
   const [tab, setTab] = useState<FeedTab>(
     client.summary?.review?.feed?.tab ?? 'suggested',
+  );
+  const views = useRef(feedViews(client.summary?.review));
+  const [sort, setSort] = useState<FeedSort>(
+    () => feedChoice(views.current, accountKey, tab).sort,
   );
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState(false);
@@ -134,6 +140,11 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   ) {
     const summary = client.summary;
     if (!summary || !nextAccount) return;
+    const feed = {
+      tab: nextTab,
+      anchors: { ...anchors.current },
+      views: structuredClone(views.current),
+    };
     persistence.current = persistence.current
       .catch(() => undefined)
       .then(async () => {
@@ -148,7 +159,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               sort: [{ by: 'createdAt', direction: 'desc' }],
             }),
             accountKey: nextAccount,
-            feed: { tab: nextTab, anchors: { ...anchors.current } },
+            feed,
           },
         });
         if (reply.type !== 'reviewViewChanged')
@@ -157,6 +168,12 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }
   useEffect(() => {
     if (!accountKey && summary?.accounts[0]) {
+      views.current = feedViews(summary.review);
+      const key =
+        summary.accounts.find(
+          (account) => account.key === summary.review?.accountKey,
+        )?.key ?? summary.accounts[0].key;
+      const tab = summary.review?.feed?.tab ?? 'suggested';
       setAccount(
         summary.accounts.find(
           (account) => account.key === summary.review?.accountKey,
@@ -164,21 +181,23 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       );
       setTab(summary.review?.feed?.tab ?? 'suggested');
       anchors.current = { ...summary.review?.feed?.anchors };
+      setSort(feedChoice(views.current, key, tab).sort);
     }
   }, [accountKey, summary]);
   useEffect(() => {
     if (!accountKey) return;
     setSingleIndex(0);
     setOriginals(new Map());
-    activeAnchor.current = anchors.current[tab];
+    activeAnchor.current =
+      feedChoice(views.current, accountKey, tab).anchor ?? anchors.current[tab];
     opened.current = false;
-    void session.open(accountKey, tab, activeAnchor.current).then(() => {
+    void session.open(accountKey, tab, activeAnchor.current, sort).then(() => {
       opened.current = true;
       const panel =
         root.current?.querySelector<HTMLElement>('[role="tabpanel"]');
       if (panel) panel.scrollTop = 0;
     });
-  }, [session, accountKey, tab]);
+  }, [session, accountKey, tab, sort]);
   useEffect(() => {
     const stop = client.subscribe((notice) => {
       if (notice.type !== 'changed' || localCommand.current || !opened.current)
@@ -441,6 +460,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             onTab={(next) => {
               setOneAtATime(false);
               setTab(next);
+              setSort(feedChoice(views.current, accountKey, next).sort);
               persist(next);
             }}
             onDecision={onDecision}
@@ -465,6 +485,13 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               if (id === activeAnchor.current) return;
               activeAnchor.current = id;
               anchors.current[tab] = id;
+              views.current = {
+                ...views.current,
+                [accountKey]: {
+                  ...views.current[accountKey],
+                  [tab]: { sort, anchor: id },
+                },
+              };
               clearTimeout(persistenceTimer.current);
               persistenceTimer.current = setTimeout(() => persist(), 250);
             }}
@@ -491,22 +518,51 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
               <FeedToolbar
                 accounts={summary.accounts}
                 accountKey={accountKey}
+                sort={sort}
+                sortOptions={
+                  state.accountKey === accountKey
+                    ? state.sortOptions
+                    : ['newest', 'oldest']
+                }
+                onSort={(next) => {
+                  clearTimeout(persistenceTimer.current);
+                  views.current = changeFeedSort(
+                    views.current,
+                    accountKey,
+                    tab,
+                    next,
+                  );
+                  delete anchors.current[tab];
+                  activeAnchor.current = undefined;
+                  setOneAtATime(false);
+                  setSort(next);
+                  persist();
+                }}
                 busy={state.busy}
                 single={oneAtATime}
                 previousDisabled={state.start + singleIndex === 0}
                 nextDisabled={state.start + singleIndex >= state.total - 1}
                 onAccount={(key) => {
-                  anchors.current = {};
+                  anchors.current = Object.fromEntries(
+                    Object.entries(views.current[key] ?? {}).flatMap(
+                      ([tab, choice]) =>
+                        choice?.anchor ? [[tab, choice.anchor]] : [],
+                    ),
+                  );
                   activeAnchor.current = undefined;
                   session.cancelPreview();
                   setAccount(key);
                   setTab('suggested');
+                  setSort(feedChoice(views.current, key, 'suggested').sort);
                   setNotice('');
                   persist('suggested', key);
                 }}
                 onSingle={() => {
                   setOneAtATime((value) => !value);
                   setTab('suggested');
+                  setSort(
+                    feedChoice(views.current, accountKey, 'suggested').sort,
+                  );
                   setSingleIndex(0);
                 }}
                 onMove={(direction) => {
@@ -545,6 +601,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 setDialog(false);
                 setNotice(t('reviewFeed.planSaved'));
                 setTab('marked');
+                setSort(feedChoice(views.current, accountKey, 'marked').sort);
                 persist('marked');
               }
             })

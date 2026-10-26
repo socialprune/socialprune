@@ -181,8 +181,20 @@ export class QueryProjection {
       for (const field of sort) {
         const a = this.sortValue(first, field.by),
           b = this.sortValue(second, field.by);
+        if (
+          (field.by === 'likes' || field.by === 'reposts') &&
+          (a === -1 || b === -1) &&
+          a !== b
+        )
+          return a === -1 ? 1 : -1;
         if (a !== b)
           return (a < b ? -1 : 1) * (field.direction === 'asc' ? 1 : -1);
+      }
+      if (
+        sort.some((field) => field.by === 'likes' || field.by === 'reposts')
+      ) {
+        const date = this.createdAt[second]! - this.createdAt[first]!;
+        if (date) return date;
       }
       return this.ids[first]! < this.ids[second]!
         ? -1

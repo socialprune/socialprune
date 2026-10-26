@@ -65,6 +65,26 @@
     right: 14px;
     pointer-events: none;
   }
+  .sortField {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 290px;
+  }
+  .sortField > span {
+    font-size: var(--type-sm);
+  }
+  .sortField select {
+    padding-inline: 8px;
+    min-width: 0;
+    width: auto;
+    appearance: auto;
+  }
+  .sortField option {
+    color: var(--color-text);
+    background: var(--color-surface);
+  }
   .singleNavigation {
     display: flex;
     flex: none;
@@ -152,6 +172,15 @@
   @media (max-width: 540px) {
     .toolbar {
       padding-inline: var(--space-3);
+      flex-wrap: wrap;
+    }
+    .accountField {
+      max-width: none;
+      flex: 1;
+    }
+    .sortField {
+      order: 2;
+      flex: 1 0 100%;
     }
     .editor > h2 {
       padding: var(--space-4) var(--space-4) 0;

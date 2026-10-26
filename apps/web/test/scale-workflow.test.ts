@@ -22,6 +22,7 @@ test('quiet measurement workflow has only bounded read-only engine jobs and arti
     expect(line).toMatch(/@[a-f0-9]{40}/);
   expect(file).toContain('if: always()');
   expect(file).toContain('SP_SCALE_OUTPUT:');
+  expect(file).toContain("SP_SCALE_SORT: ${{ inputs.sort || 'likes' }}");
   expect(file).toContain('e2e/scale.config.ts');
   expect(file).not.toContain('e2e/frame.config.ts');
   expect(file).toContain('scripts/frame-build-check.ts plain');

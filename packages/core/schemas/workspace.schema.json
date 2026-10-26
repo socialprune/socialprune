@@ -238,6 +238,40 @@
                     ]
                   },
                   "additionalProperties": { "type": "string", "minLength": 1 }
+                },
+                "views": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "suggested",
+                        "held",
+                        "kept",
+                        "unclear",
+                        "marked",
+                        "all"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "sort": {
+                          "type": "string",
+                          "enum": ["newest", "oldest", "likes", "reposts"]
+                        },
+                        "anchor": { "type": "string", "minLength": 1 }
+                      },
+                      "required": ["sort"],
+                      "additionalProperties": false
+                    }
+                  }
                 }
               },
               "required": ["tab", "anchors"],

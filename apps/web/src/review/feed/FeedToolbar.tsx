@@ -12,10 +12,14 @@ import {
 import { useT } from '../../i18n/index.ts';
 import controls from './Controls.module.css';
 import styles from './FeedWorkspace.module.css';
+import type { FeedSort } from '@socialprune/core/criteria';
 
 export function FeedToolbar({
   accounts,
   accountKey,
+  sort,
+  sortOptions,
+  onSort,
   busy,
   single,
   previousDisabled,
@@ -28,6 +32,9 @@ export function FeedToolbar({
 }: {
   accounts: readonly { key: string; handle: string | null }[];
   accountKey: string;
+  sort: FeedSort;
+  sortOptions: readonly FeedSort[];
+  onSort: (sort: FeedSort) => void;
   busy: boolean;
   single: boolean;
   previousDisabled: boolean;
@@ -56,6 +63,30 @@ export function FeedToolbar({
           ))}
         </select>
         <ChevronDown size={16} aria-hidden="true" />
+      </label>
+      <label className={styles.sortField}>
+        <span>{t('reviewFeed.sort')}</span>
+        <select
+          aria-label={t('reviewFeed.sort')}
+          value={sortOptions.includes(sort) ? sort : 'newest'}
+          disabled={busy}
+          onChange={(event) => onSort(event.target.value as FeedSort)}
+        >
+          {sortOptions.map((option) => (
+            <option key={option} value={option}>
+              {t(
+                (
+                  {
+                    newest: 'reviewFeed.sortNewest',
+                    oldest: 'reviewFeed.sortOldest',
+                    likes: 'reviewFeed.sortLikes',
+                    reposts: 'reviewFeed.sortReposts',
+                  } as const
+                )[option],
+              )}
+            </option>
+          ))}
+        </select>
       </label>
       {single && (
         <div className={styles.singleNavigation}>

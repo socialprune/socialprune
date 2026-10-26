@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { measurementIdentity } from '../tooling/measurement-identity.ts';
+import { FeedSortSchema } from '@socialprune/core/criteria';
 import { observeFeedFrames } from './frame-diagnostics.ts';
 import {
   installScaleActivity,
@@ -110,6 +111,8 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
   baseURL,
 }, info) => {
   scaleStop();
+  // eslint-disable-next-line no-restricted-properties -- Explicit test measurement parameter, never credentials.
+  const sort = FeedSortSchema.parse(process.env['SP_SCALE_SORT'] ?? 'newest');
   const host = await scaleHost();
   const sourceHash = await measurementIdentity();
   const harnessFiles = [
@@ -139,6 +142,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
   const report: Record<string, unknown> = {
     format: 'socialprune-feed-scale-v1',
     browserName,
+    sort,
     sourceHash,
     harnessHash: harnessHash.digest('hex'),
     startedAt,
@@ -251,7 +255,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       localStorage.setItem('sp-theme', 'light');
     });
     await sampleMemory('empty app');
-    const generated = await scaleWorkspace(SCALE_SUGGESTIONS);
+    const generated = await scaleWorkspace(SCALE_SUGGESTIONS, sort);
     report['scrollData'] = generated.manifest;
     report['restore6000'] = await restoreScale(
       page,
@@ -259,32 +263,36 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       SCALE_SUGGESTIONS,
     );
     await sampleMemory('restored 6000');
-    const cold6000 = await page.evaluate(async (accountKey) => {
-      const start = performance.now(),
-        counts = await window.workspace.planCounts(accountKey);
-      if (counts.type !== 'planCounts' || counts.tabs.suggested !== 6000)
-        throw new Error('Minimal connected count path failed.');
-      const countMs = performance.now() - start,
-        windowStart = performance.now();
-      const cards = await window.workspace.feedWindow({
-        accountKey,
-        tab: 'suggested',
-        offset: 0,
-        limit: 50,
-      });
-      if (
-        cards.type !== 'feedCards' ||
-        cards.cards.length !== 50 ||
-        cards.total !== 6000
-      )
-        throw new Error('Minimal connected window path failed.');
-      return {
-        countMs,
-        windowMs: performance.now() - windowStart,
-        count: counts.tabs.suggested,
-        returnedCards: cards.cards.length,
-      };
-    }, SCALE_ACCOUNT);
+    const cold6000 = await page.evaluate(
+      async ({ accountKey, sort }) => {
+        const start = performance.now(),
+          counts = await window.workspace.planCounts(accountKey);
+        if (counts.type !== 'planCounts' || counts.tabs.suggested !== 6000)
+          throw new Error('Minimal connected count path failed.');
+        const countMs = performance.now() - start,
+          windowStart = performance.now();
+        const cards = await window.workspace.feedWindow({
+          accountKey,
+          tab: 'suggested',
+          sort,
+          offset: 0,
+          limit: 50,
+        });
+        if (
+          cards.type !== 'feedCards' ||
+          cards.cards.length !== 50 ||
+          cards.total !== 6000
+        )
+          throw new Error('Minimal connected window path failed.');
+        return {
+          countMs,
+          windowMs: performance.now() - windowStart,
+          count: counts.tabs.suggested,
+          returnedCards: cards.cards.length,
+        };
+      },
+      { accountKey: SCALE_ACCOUNT, sort },
+    );
     report['foundation'] = cold6000;
     await save();
     const navigationStart = performance.now();
@@ -319,7 +327,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
       .focus();
     for (let index = 0; index < SCALE_SUGGESTIONS; index++) {
       scaleStop();
-      const id = `x:scale-${index.toString().padStart(6, '0')}`;
+      const id = generated.suggestionOrder[index]!;
       if (index) await page.keyboard.press('ArrowDown');
       try {
         await page.waitForFunction(
@@ -444,7 +452,7 @@ test('ADR-032 scale: connected 6000-suggestion scroll and 100k count timings', a
         .every((event) => event.cards! <= 50),
     ).toBe(true);
     await page.goto('/socialprune/#/settings');
-    const large = await scaleWorkspace(SCALE_COUNT_ITEMS);
+    const large = await scaleWorkspace(SCALE_COUNT_ITEMS, sort);
     report['countData'] = large.manifest;
     report['restore100000'] = await restoreScale(
       page,

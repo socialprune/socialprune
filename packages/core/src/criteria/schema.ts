@@ -82,9 +82,23 @@ export const FeedTabSchema = z.enum([
   'marked',
   'all',
 ]);
+export const FeedSortSchema = z.enum(['newest', 'oldest', 'likes', 'reposts']);
+export type FeedSort = z.infer<typeof FeedSortSchema>;
 export const FeedViewSchema = z.strictObject({
   tab: FeedTabSchema,
   anchors: z.partialRecord(FeedTabSchema, z.string().min(1)),
+  views: z
+    .record(
+      z.string().min(1).max(512),
+      z.partialRecord(
+        FeedTabSchema,
+        z.strictObject({
+          sort: FeedSortSchema,
+          anchor: z.string().min(1).optional(),
+        }),
+      ),
+    )
+    .optional(),
 });
 const count = z.number().int().nonnegative();
 export const FeedTabCountsSchema = z.strictObject({

@@ -4,6 +4,12 @@ on:
   push:
     branches: ['measure/**']
   workflow_dispatch:
+    inputs:
+      sort:
+        description: Feed ordering measured through every tab and keyboard window
+        type: choice
+        options: [newest, oldest, likes, reposts]
+        default: likes
 
 permissions:
   contents: read
@@ -23,6 +29,7 @@ jobs:
         run: [1, 2, 3]
     env:
       SP_SCALE_PORT: '4707'
+      SP_SCALE_SORT: ${{ inputs.sort || 'likes' }}
       # The runner context is not available in job-level env.
       SP_SCALE_OUTPUT: ${{ github.workspace }}/feed-scale-output/${{ matrix.engine }}-${{ matrix.run }}
     steps:

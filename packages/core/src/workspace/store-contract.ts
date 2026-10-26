@@ -728,7 +728,8 @@ export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
   {
     name: 'initial workspace and detached record reads',
     run: (factory) =>
-      withStore(factory, async ({ store }) => {
+      withStore(factory, async (harness) => {
+        const { store } = harness;
         equal(
           await store.read(readWorkspace),
           contractWorkspace(),
@@ -742,6 +743,42 @@ export const STORE_CONTRACT_CHECKS: readonly StoreContractCheck[] = [
           second?.item.text,
           'Generated contract input.',
           'read returned live mutable data',
+        );
+        const review = {
+          accountKey: 'x:contract',
+          filter: {},
+          search: '',
+          sort: [{ by: 'createdAt' as const, direction: 'desc' as const }],
+          feed: {
+            tab: 'all' as const,
+            anchors: {},
+            views: {
+              'x:contract': {
+                all: { sort: 'likes' as const },
+                kept: { sort: 'oldest' as const, anchor: 'x:1' },
+              },
+              'instagram:generated': { all: { sort: 'oldest' as const } },
+            },
+          },
+        };
+        await store.write(async (tx) => {
+          const meta = await tx.meta.get();
+          await tx.meta.set({
+            ...meta,
+            settings: { ...meta.settings, review },
+          });
+        });
+        const reopened = await harness.reopen();
+        const saved = await reopened.read(readWorkspace);
+        equal(
+          saved.settings.review,
+          review,
+          'SORT-1 per-account/tab sort lost on reopen',
+        );
+        equal(
+          saved.decisionEvents,
+          [],
+          'SORT-1 view persistence created decisions',
         );
       }),
   },

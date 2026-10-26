@@ -10,7 +10,8 @@ import { canonicalJson } from './canonical.ts';
 import { records } from './store.ts';
 import type { WorkspaceStore, StoredState, ReadTransaction } from './store.ts';
 import type { FeedCard, PlanCounts } from './protocol.ts';
-import type { FeedTab } from '../criteria/schema.ts';
+import { FeedSortSchema } from '../criteria/schema.ts';
+import type { FeedTab, FeedSort } from '../criteria/schema.ts';
 import { WorkspaceError } from './errors.ts';
 import { CompactFeed } from './feed-compact.ts';
 
@@ -222,11 +223,13 @@ export class FeedQuery {
   async window(input: {
     accountKey: string;
     tab: FeedTab;
+    sort?: FeedSort;
     offset?: number;
     anchor?: string;
     limit: number;
   }) {
     if (
+      !FeedSortSchema.safeParse(input.sort ?? 'newest').success ||
       !Number.isInteger(input.limit) ||
       input.limit < 1 ||
       input.limit > 50 ||
@@ -239,7 +242,11 @@ export class FeedQuery {
       const frozen = await this.current(input.accountKey);
       const projection = frozen.value;
       const revision = frozen.revision;
-      const ids = frozen.basis.window(projection, input.tab);
+      const sortOptions = frozen.basis.sortOptions(input.accountKey);
+      const sort = sortOptions.includes(input.sort ?? 'newest')
+        ? (input.sort ?? 'newest')
+        : 'newest';
+      const ids = frozen.basis.window(projection, input.tab, sort);
       const index = input.anchor === undefined ? -1 : ids.indexOf(input.anchor);
       const offset = input.offset ?? Math.max(index, 0);
       const result = await this.store.read(async (tx) => {
@@ -304,6 +311,7 @@ export class FeedQuery {
           total: ids.length,
           anchorIndex: index < 0 ? null : index,
           cards,
+          sortOptions,
         };
       });
       if (result) return result;

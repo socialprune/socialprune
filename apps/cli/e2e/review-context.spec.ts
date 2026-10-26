@@ -14,6 +14,46 @@ import {
   expectHeaderStyle,
   headerFixture,
 } from '../../web/e2e/header-style.ts';
+import { sortFixture, checkFeedSort } from '../../web/e2e/feed-sort-check.ts';
+
+test('SORT-1 local review server ordering and persisted account/tab choices', async ({
+  page,
+}) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'socialprune-sort-review-'));
+  const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'), {
+    initial: sortFixture(),
+  });
+  await store.close();
+  const options = {
+    workspace,
+    assetDirectory: reviewAssetDirectory(),
+    handleSignals: false,
+    // eslint-disable-next-line no-restricted-properties -- Test-only listener selection, never credentials.
+    port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
+  };
+  let server = await startReviewServer(options);
+  try {
+    await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+    await page.goto(server.launchUrl);
+    await page
+      .getByRole('navigation', { name: 'Primary navigation', exact: true })
+      .getByRole('link', { name: 'Review', exact: true })
+      .click();
+    await checkFeedSort(page, async () => {
+      await page.goto('about:blank');
+      await server.stop();
+      server = await startReviewServer(options);
+      await page.goto(server.launchUrl);
+      await page
+        .getByRole('navigation', { name: 'Primary navigation', exact: true })
+        .getByRole('link', { name: 'Review', exact: true })
+        .click();
+    });
+  } finally {
+    await server.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 for (const theme of ['light', 'dark'] as const)
   for (const width of [1280, 390])

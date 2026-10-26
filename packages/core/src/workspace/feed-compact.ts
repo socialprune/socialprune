@@ -1,5 +1,5 @@
 import type { WorkspaceMeta, WorkspaceV2 } from '../model/index.ts';
-import type { FeedTab, KeepRule } from '../criteria/schema.ts';
+import type { FeedTab, FeedSort, KeepRule } from '../criteria/schema.ts';
 import { currentChecks } from '../criteria/suggestions.ts';
 import { deriveState } from './state.ts';
 import { dayKey, resolveTimeZone } from './time.ts';
@@ -30,6 +30,8 @@ export class CompactFeed {
   private readonly flags: Uint8Array;
   private readonly decisions: Uint8Array;
   private readonly order: Uint32Array;
+  private readonly sortOrders = new Map<FeedSort, Uint32Array>();
+  private readonly accountSortOptions = new Map<string, FeedSort[]>();
   private readonly criteria: string[] = [];
   private readonly checkOffset: Uint32Array;
   private readonly checkCriterion: Uint8Array | Uint32Array;
@@ -64,6 +66,16 @@ export class CompactFeed {
       this.created[index] = Date.parse(item.createdAt);
       this.likes[index] = item.engagement.likes ?? -1;
       this.reposts[index] = item.engagement.reposts ?? -1;
+      let options = this.accountSortOptions.get(item.account.key);
+      if (!options)
+        this.accountSortOptions.set(
+          item.account.key,
+          (options = ['newest', 'oldest']),
+        );
+      if (item.engagement.likes !== null && !options.includes('likes'))
+        options.push('likes');
+      if (item.engagement.reposts !== null && !options.includes('reposts'))
+        options.push('reposts');
       const eligible = item.platform === 'x' && item.kind !== 'repost';
       this.flags[index] = eligible ? 1 : 0;
       if (eligible && item.engagement.likes !== null)
@@ -122,6 +134,12 @@ export class CompactFeed {
       }
     });
     this.checkOffset[items.length] = offset;
+    for (const options of this.accountSortOptions.values())
+      options.sort(
+        (a, b) =>
+          ['newest', 'oldest', 'likes', 'reposts'].indexOf(a) -
+          ['newest', 'oldest', 'likes', 'reposts'].indexOf(b),
+      );
   }
   update(states: readonly StoredState[]) {
     for (const state of states) {
@@ -242,10 +260,39 @@ export class CompactFeed {
         : this.reposts[index]!;
     return value < 0 ? rule.alsoWhenUnknown : value >= rule.count;
   }
-  window(projection: ReturnType<CompactFeed['project']>, tab: FeedTab) {
+  sortOptions(accountKey: string): FeedSort[] {
+    return [
+      ...(this.accountSortOptions.get(accountKey) ?? ['newest', 'oldest']),
+    ];
+  }
+  private sorted(sort: FeedSort) {
+    if (sort === 'newest') return this.order;
+    const cached = this.sortOrders.get(sort);
+    if (cached) return cached;
+    const order = Uint32Array.from(this.order).sort((a, b) => {
+      if (sort === 'oldest')
+        return (
+          this.created[a]! - this.created[b]! ||
+          this.ids[a]!.localeCompare(this.ids[b]!)
+        );
+      const column = sort === 'likes' ? this.likes : this.reposts;
+      return (
+        column[b]! - column[a]! ||
+        this.created[b]! - this.created[a]! ||
+        this.ids[a]!.localeCompare(this.ids[b]!)
+      );
+    });
+    this.sortOrders.set(sort, order);
+    return order;
+  }
+  window(
+    projection: ReturnType<CompactFeed['project']>,
+    tab: FeedTab,
+    sort: FeedSort = 'newest',
+  ) {
     const code = TABS.indexOf(tab),
       ids: string[] = [];
-    for (const index of this.order)
+    for (const index of this.sorted(sort))
       if (
         this.account[index] === projection.account &&
         (tab === 'all' || projection.membership[index] === code)

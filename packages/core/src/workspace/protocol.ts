@@ -40,6 +40,7 @@ import {
   CheckedCriteriaSchema,
   CriterionHashSchema,
   FeedTabSchema,
+  FeedSortSchema,
   FeedTabCountsSchema,
   ReviewPlanSchema,
 } from '../criteria/schema.ts';
@@ -230,6 +231,7 @@ export const FeedWindowRequestSchema = z
     type: z.literal('feedWindow'),
     accountKey: id,
     tab: FeedTabSchema,
+    sort: FeedSortSchema.optional(),
     offset: nonnegative.optional(),
     anchor: id.optional(),
     limit: z.number().int().min(1).max(50),
@@ -427,6 +429,7 @@ export const WorkspaceReplySchema = z.discriminatedUnion('type', [
     total: nonnegative,
     anchorIndex: nonnegative.nullable(),
     cards: z.array(FeedCardSchema).max(50),
+    sortOptions: z.array(FeedSortSchema).min(2).max(4).optional(),
   }),
   InstagramContextReplySchema,
   z.strictObject({

@@ -1,5 +1,5 @@
 import type { DecisionValue } from '@socialprune/core';
-import type { FeedTab } from '@socialprune/core/criteria';
+import type { FeedTab, FeedSort } from '@socialprune/core/criteria';
 import type {
   BulkPreview,
   FeedCard,
@@ -10,6 +10,8 @@ import type { WorkspaceClient } from '../../workspace/client.ts';
 export interface FeedSnapshot {
   accountKey: string;
   tab: FeedTab;
+  sort: FeedSort;
+  sortOptions: FeedSort[];
   start: number;
   total: number;
   cards: FeedCard[];
@@ -27,6 +29,8 @@ export class FeedSession {
   snapshot: FeedSnapshot = {
     accountKey: '',
     tab: 'suggested',
+    sort: 'newest',
+    sortOptions: ['newest', 'oldest'],
     start: 0,
     total: 0,
     cards: [],
@@ -58,7 +62,12 @@ export class FeedSession {
     this.snapshot = { ...this.snapshot, ...change };
     for (const listener of this.listeners) listener();
   }
-  async open(accountKey: string, tab: FeedTab, anchor?: string) {
+  async open(
+    accountKey: string,
+    tab: FeedTab,
+    anchor?: string,
+    sort: FeedSort = this.snapshot.sort,
+  ) {
     const epoch = ++this.epoch;
     ++this.windowEpoch;
     this.cancelPreview();
@@ -66,6 +75,10 @@ export class FeedSession {
     this.update({
       accountKey,
       tab,
+      sort,
+      ...(accountKey !== this.snapshot.accountKey
+        ? { sortOptions: ['newest', 'oldest'] as FeedSort[] }
+        : {}),
       cards: [],
       start: 0,
       counts: null,
@@ -79,6 +92,7 @@ export class FeedSession {
         this.client.feedWindow({
           accountKey,
           tab,
+          sort,
           ...(anchor ? { anchor } : { offset: 0 }),
           limit: 50,
         }),
@@ -91,6 +105,7 @@ export class FeedSession {
         cards: window.cards,
         total: window.total,
         start: window.anchorIndex ?? 0,
+        sortOptions: window.sortOptions ?? ['newest', 'oldest'],
       });
     } catch {
       if (epoch === this.epoch) this.update({ error: true });
@@ -116,6 +131,7 @@ export class FeedSession {
         accountKey,
         tab,
         offset: Math.max(0, offset),
+        sort: this.snapshot.sort,
         limit: 50,
       });
       if (epoch !== this.epoch || windowEpoch !== this.windowEpoch) return;
@@ -211,6 +227,7 @@ export class FeedSession {
       const updated = await this.client.feedWindow({
         accountKey: this.snapshot.accountKey,
         tab: 'all',
+        sort: this.snapshot.sort,
         anchor: itemId,
         limit: 1,
       });

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createDemo, createRandom } from '@socialprune/fixture-gen';
 import { createWorkspace } from '@socialprune/core/workspace/store';
 import { criterionHash } from '@socialprune/core/criteria';
+import type { FeedSort } from '@socialprune/core/criteria';
 
 export const SCALE_ACCOUNT = 'x:scale-generated';
 export const SCALE_SUGGESTIONS = 6_000;
@@ -9,7 +10,7 @@ export const SCALE_COUNT_ITEMS = 100_000;
 export const SCALE_SEED = 20261023;
 
 /** Expand only the existing synthetic demo generator, never platform data. */
-export async function scaleWorkspace(count: number) {
+export async function scaleWorkspace(count: number, sort: FeedSort = 'newest') {
   if (count < SCALE_SUGGESTIONS || count > SCALE_COUNT_ITEMS)
     throw new Error('Scale item count must be between 6,000 and 100,000.');
   const demo = await createDemo();
@@ -29,7 +30,17 @@ export async function scaleWorkspace(count: number) {
     filter: {},
     search: '',
     sort: [{ by: 'createdAt', direction: 'desc' }],
-    feed: { tab: 'suggested', anchors: {} },
+    feed: {
+      tab: 'suggested',
+      anchors: {},
+      views: {
+        [SCALE_ACCOUNT]: Object.fromEntries(
+          ['suggested', 'held', 'kept', 'unclear', 'marked', 'all'].map(
+            (tab) => [tab, { sort }],
+          ),
+        ),
+      },
+    },
   };
   workspace.items = Array.from({ length: count }, (_, index) => {
     const template = templates[Math.floor(random() * templates.length)]!;
@@ -97,8 +108,23 @@ export async function scaleWorkspace(count: number) {
   workspace.counts.assessments = count;
   workspace.counts.submissions = 1;
   const text = JSON.stringify(workspace);
+  const suggestionOrder = workspace.items
+    .slice(0, SCALE_SUGGESTIONS)
+    .sort((a, b) => {
+      if (sort === 'likes' || sort === 'reposts') {
+        const byCount = (b.engagement[sort] ?? -1) - (a.engagement[sort] ?? -1);
+        if (byCount) return byCount;
+      }
+      return (
+        (sort === 'oldest'
+          ? a.createdAt.localeCompare(b.createdAt)
+          : b.createdAt.localeCompare(a.createdAt)) || a.id.localeCompare(b.id)
+      );
+    })
+    .map((item) => item.id);
   return {
     text,
+    suggestionOrder,
     manifest: {
       generator: '@socialprune/fixture-gen createDemo + createRandom',
       seed: SCALE_SEED,
@@ -107,6 +133,7 @@ export async function scaleWorkspace(count: number) {
       bytes: Buffer.byteLength(text),
       sha256: createHash('sha256').update(text).digest('hex'),
       accountKey: SCALE_ACCOUNT,
+      sort,
       firstId: workspace.items[0]!.id,
       finalSuggestionId: workspace.items[SCALE_SUGGESTIONS - 1]!.id,
     },

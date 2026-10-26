@@ -99,6 +99,7 @@ test('all non-preview feed requests forward unchanged through the bridge', async
       requestId: 'window',
       accountKey: 'x:generated',
       tab: 'all',
+      sort: 'reposts',
       offset: 0,
       limit: 50,
     },

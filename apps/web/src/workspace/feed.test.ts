@@ -66,10 +66,16 @@ test('real worker switch and client carry all five feed requests, settings and p
       await client.feedWindow({
         accountKey: 'x:generated',
         tab: 'all',
+        sort: 'oldest',
         offset: 0,
         limit: 50,
       }),
-    ).toMatchObject({ type: 'feedCards', total: 0, cards: [] });
+    ).toMatchObject({
+      type: 'feedCards',
+      total: 0,
+      cards: [],
+      sortOptions: ['newest', 'oldest'],
+    });
     const changed = client.setCriteria({
       selected: ['political'],
       custom: [],

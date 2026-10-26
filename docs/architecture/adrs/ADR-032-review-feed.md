@@ -75,6 +75,16 @@ Two earlier maintainer choices remain binding. DESIGN-IG A keeps the Instagram p
 
 The foundation uses existing CSS Modules and token files, system fonts, semantic color roles in both themes, shared control styles and fewer nested frames. No remote resources, data/worker/protocol changes or Impeccable program are part of this decision. The original decision and contract below remain in force where not explicitly amended here.
 
+### Draft amendment 2026-10-26: SORT-1 v1 A
+
+The maintainer selected SORT-1 v1 A on 2026-10-26 at 00:19:54 UTC. This draft records that decision beside the original contract; it does not change this record's acceptance status or the tab membership below.
+
+Every feed tab offers a visible Sort control: Newest first, Oldest first, Most likes and Most reposts. The German options are Neueste zuerst, Älteste zuerst, Meiste Gefällt mir and Meiste Reposts. An engagement option is offered only when at least one visible entry of that account has a known value for it. Accounts with neither known likes nor known reposts offer only dates. Known zero remains a value; unknown counts follow every known value and retain the card's existing unknown explanation. Engagement ties use newest date first, then ID; equal dates use ID.
+
+`feedWindow` accepts a validated optional `sort` (`newest`, `oldest`, `likes`, `reposts`), defaulting to `newest`, and returns the account's available `sortOptions`. Unsupported engagement choices fall back to newest first. The compact server-side feed projection reuses its existing numeric columns and caches at most the four orders. Counts, membership, final-mark preview and decisions do not depend on this display order. The 50-card response, 300-card retained-window, DOM and keyboard bounds stay unchanged across the worker, HTTP review and desktop bridge.
+
+The existing review view gains optional per-account, per-tab `{ sort, anchor? }` entries under `feed.views`; old `tab` and `anchors` remain readable. Changing a sort removes only that account/tab's anchor, preserves other choices and never writes a decision. The shared view schema carries these entries through both stores, portable backups and all three transports without a datastore layout change. The list review also exposes its already supported `reposts` sort. A non-default hosted FRAME-1 B measurement must report its selected sort and traverse all 6,000 generated suggestions in that order before scale acceptance.
+
 ### 1. Tabs and where an entry belongs
 
 The feed replaces the "All" mode; "One at a time" stays and walks the first tab. Each entry belongs to exactly one tab, checked in this order: decision `delete` is **Marked**; `keep` is **Kept**; `later` is **Unclear**; a criterion hit that an enabled rule holds is **Held back by your rules**; any other hit is **Suggested for deletion**; an `unclear` suggestion is **Unclear**; the rest appears only in **All**, every entry newest first.

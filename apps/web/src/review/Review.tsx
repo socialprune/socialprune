@@ -1079,6 +1079,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
               <option value="createdAt">{t('review.date')}</option>
               <option value="risk">{t('review.risk')}</option>
               <option value="likes">{t('review.likes')}</option>
+              <option value="reposts">{t('review.reposts')}</option>
             </select>
           </label>
           <button

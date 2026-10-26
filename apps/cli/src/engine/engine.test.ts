@@ -110,6 +110,7 @@ test('engine opens a generated workspace, uses the review handlers and closes it
         requestId: 'cards',
         accountKey: 'x:generated',
         tab: 'all',
+        sort: 'likes',
         offset: 0,
         limit: 50,
       },

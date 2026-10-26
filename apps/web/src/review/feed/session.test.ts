@@ -64,6 +64,19 @@ test('window requests stay within 50 and retained card data within 300 after pag
   );
   expect(port.planCounts).toHaveBeenCalledWith('x:contract');
 });
+test('SORT-1 uses the selected server sort through paging, undo and guarded decision readback', async () => {
+  const port = client(),
+    session = new FeedSession(port as unknown as WorkspaceClient);
+  await session.open('x:contract', 'all', undefined, 'likes');
+  await session.load(50);
+  await session.undo();
+  await session.decide('x:0', 'keep');
+  expect(
+    port.feedWindow.mock.calls.every(
+      ([input]) => 'sort' in input && input.sort === 'likes',
+    ),
+  ).toBe(true);
+});
 test('late cards from another account never replace the current account window', async () => {
   const port = client();
   let release!: (reply: unknown) => void;

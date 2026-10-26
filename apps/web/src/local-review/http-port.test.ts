@@ -231,6 +231,7 @@ test('all non-preview feed requests forward unchanged through HTTP', async () =>
       requestId: 'window',
       accountKey: 'x:generated',
       tab: 'all',
+      sort: 'likes',
       anchor: 'x:generated-post',
       limit: 50,
     },

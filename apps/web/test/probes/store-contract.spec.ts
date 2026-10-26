@@ -131,7 +131,7 @@ test('quota failure rolls back the real transaction and versionchange closes the
 });
 
 for (const legacyVersion of [7, 8, 10] as const)
-  test(`v${legacyVersion} to v9 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
+  test(`v${legacyVersion} to v11 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
     page,
   }) => {
     const store = createMemoryStore();

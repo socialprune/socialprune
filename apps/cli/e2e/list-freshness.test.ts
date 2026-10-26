@@ -168,7 +168,7 @@ test('likes exact fake comment block supplies 17, not the other comment 999', as
   });
   try {
     const page = await browser.newPage();
-    await page.goto(fake.origin + '/p/Generated0/');
+    await page.goto(fake.origin + `/p/${IG_FIXTURE.code}/`);
     expect(
       await commentLikes(page, [], {
         id: IG_FIXTURE.commentId,

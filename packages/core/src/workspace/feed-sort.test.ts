@@ -8,6 +8,123 @@ import { ReviewService } from './review.ts';
 import { generatedLabel } from '../criteria/rules-fixture.ts';
 import { HttpReviewRequestSchema, WorkspaceRequestSchema } from './protocol.ts';
 import { DesktopRequestSchema } from './desktop-protocol.ts';
+import {
+  instagramContractItem,
+  writeInstagramContextContract,
+} from './store-contract.ts';
+import { InstagramContextWriter } from './instagram-context-writer.ts';
+
+test('IG-LIKES SORT-1 stored comment likes enable orders and share their column with rules, counts and filters', async () => {
+  const store = createMemoryStore();
+  const item = {
+    ...instagramContractItem(),
+    engagement: { likes: null, reposts: null },
+  };
+  const context = await writeInstagramContextContract(store, item);
+  const accountKey = item.account.key;
+  const query = new QueryEngine(store);
+  const request = {
+    accountKey,
+    tab: 'all' as const,
+    sort: 'likes' as const,
+    offset: 0,
+    limit: 50,
+  };
+  try {
+    expect((await query.feedWindow(request)).sortOptions).toEqual([
+      'newest',
+      'oldest',
+    ]);
+    const at = '2026-10-26T00:00:00.000Z';
+    const writer = new InstagramContextWriter(store);
+    await writer.startRun({
+      runId: 'generated-sort-refresh',
+      accountKey,
+      planHash: 'a'.repeat(64),
+      startedAt: at,
+    });
+    await writer.sending({
+      attemptId: 'generated-sort-likes',
+      runId: 'generated-sort-refresh',
+      itemId: item.id,
+      at,
+      refreshLikes: true,
+    });
+    await writer.step('generated-sort-refresh', at);
+    await writer.fillLikes(
+      'generated-sort-likes',
+      { count: 12, source: 'answer' },
+      at,
+    );
+    const after = await query.feedWindow(request);
+    expect(after.sortOptions).toEqual(['newest', 'oldest', 'likes']);
+    expect(after.cards[0]!.item.engagement.likes).toBe(12);
+    expect((await query.planCounts(accountKey)).popularThreshold).toBe(12);
+    await query.query({
+      queryId: 'effective-likes',
+      generation: 1,
+      accountKey,
+      sort: [{ by: 'likes', direction: 'desc' }],
+      filter: { likes: { min: 10, max: null, unknown: 'exclude' } },
+    });
+    expect(
+      query.window('effective-likes', 1, 0, 50).map((row) => row.id),
+    ).toEqual([item.id]);
+    const additions = [
+      ['instagram:a', '2025-08-01', 12],
+      ['instagram:b', '2025-08-01', 12],
+      ['instagram:zero', '2025-09-01', 0],
+      ['instagram:unknown', '2026-01-01', null],
+    ] as const;
+    const snapshot = await store.read(readWorkspace);
+    snapshot.items.push(
+      ...additions.map(([id, date, likes]) => ({
+        ...item,
+        id,
+        createdAt: date + 'T00:00:00.000Z',
+        engagement: { likes, reposts: null },
+      })),
+    );
+    snapshot.counts.items = snapshot.items.length;
+    const orderedStore = createMemoryStore(new MemoryStoreBacking(snapshot));
+    try {
+      const ordered = new QueryEngine(orderedStore);
+      const before = await ordered.planCounts(accountKey);
+      expect(
+        (await ordered.feedWindow(request)).cards.map((card) => card.item.id),
+      ).toEqual([
+        'instagram:a',
+        'instagram:b',
+        item.id,
+        'instagram:zero',
+        'instagram:unknown',
+      ]);
+      expect(await ordered.planCounts(accountKey)).toEqual(before);
+      snapshot.items.find((entry) => entry.id === item.id)!.engagement.likes =
+        3;
+      const exportStore = createMemoryStore(new MemoryStoreBacking(snapshot));
+      try {
+        const fromExport = await new QueryEngine(exportStore).feedWindow(
+          request,
+        );
+        expect(
+          fromExport.cards.find((card) => card.item.id === item.id)!.item
+            .engagement.likes,
+        ).toBe(3);
+      } finally {
+        await exportStore.close();
+      }
+    } finally {
+      await orderedStore.close();
+    }
+    expect(await store.read((tx) => tx.instagramContext.get(item.id))).toEqual({
+      ...context,
+      likes: { count: 12, source: 'answer' },
+    });
+  } finally {
+    await store.close();
+  }
+});
 
 function fixture() {
   const data = createWorkspace();

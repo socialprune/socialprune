@@ -1,6 +1,84 @@
 import { expect, test } from '@playwright/test';
 import { restoreLiveFeed } from './feed-fixture.ts';
 import { sortFixture, checkFeedSort, captureSort } from './feed-sort-check.ts';
+import {
+  createMemoryStore,
+  MemoryStoreBacking,
+} from '@socialprune/core/workspace/memory-store';
+import { writeInstagramContextContract } from '@socialprune/core/workspace/store-contract';
+import { readWorkspace } from '@socialprune/core/workspace/store';
+
+test('IG-LIKES SORT-1 Instagram stored likes offer Meiste Gefällt mir and order known before unknown', async ({
+  page,
+}) => {
+  const data = sortFixture();
+  const comments = data.items.filter((item) => item.platform === 'instagram');
+  const unknown = comments[0]!,
+    stored = comments[1]!;
+  stored.createdAt = '2025-07-31T00:00:00.000Z';
+  stored.reference.ownerHandle = 'synth_moss';
+  unknown.createdAt = '2026-01-01T00:00:00.000Z';
+  const exported = {
+    ...structuredClone(stored),
+    id: 'instagram:generated-export-likes',
+    engagement: { likes: 3, reposts: null },
+  };
+  data.items.push(exported);
+  data.counts.items = data.items.length;
+  data.settings.review!.accountKey = stored.account.key;
+  data.settings.review!.feed = { tab: 'all', anchors: {} };
+  const store = createMemoryStore(new MemoryStoreBacking(data));
+  let fixture;
+  try {
+    const context = await writeInstagramContextContract(store, stored);
+    await store.write((tx) =>
+      tx.instagramContext.fillLikes({
+        ...context,
+        likes: { count: 12, source: 'answer' },
+      }),
+    );
+    fixture = await store.read(readWorkspace);
+  } finally {
+    await store.close();
+  }
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'de'));
+  await restoreLiveFeed(page, fixture);
+  try {
+    const sort = page.getByRole('combobox', { name: 'Sortieren', exact: true });
+    await expect(sort.locator('option')).toHaveText([
+      'Neueste zuerst',
+      'Älteste zuerst',
+      'Meiste Gefällt mir',
+    ]);
+    await expect(
+      page.getByRole('feed').locator('article[data-card-id]').first(),
+    ).toHaveAttribute('data-card-id', unknown.id);
+    await sort.selectOption('likes');
+    const ids = page.getByRole('feed').locator('article[data-card-id]');
+    await expect(ids).toHaveCount(3);
+    await expect
+      .poll(() =>
+        ids.evaluateAll((nodes) =>
+          nodes.map((node) => node.getAttribute('data-card-id')),
+        ),
+      )
+      .toEqual([stored.id, exported.id, unknown.id]);
+    await page.reload();
+    await expect(sort).toHaveValue('likes');
+    await expect(
+      page.getByRole('feed').locator('article[data-card-id]').first(),
+    ).toHaveAttribute('data-card-id', stored.id);
+  } finally {
+    await page.evaluate(async () => {
+      await window.workspace.request({
+        type: 'shutdown',
+        requestId: crypto.randomUUID(),
+      });
+      window.workspace.dispose();
+    });
+    await page.goto('about:blank');
+  }
+});
 
 test('SORT-1 server order, unknown counts, account/tab choices and reload', async ({
   page,

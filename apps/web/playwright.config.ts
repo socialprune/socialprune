@@ -15,6 +15,7 @@ export default defineConfig({
     'desktop/**',
     'feed-instagram.spec.ts',
     'focus-instagram.spec.ts',
+    'fit-feed.spec.ts',
   ],
   timeout: 30_000,
   expect: { timeout: 15_000 },

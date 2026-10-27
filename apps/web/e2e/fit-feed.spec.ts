@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { join } from 'node:path';
 import { headerFixture } from './header-style.ts';
 import { generatedReadPost, restoreLiveFeed } from './feed-fixture.ts';
@@ -133,12 +133,33 @@ async function mode(page: Page, single: boolean) {
   }
 }
 
+async function expectStoredImage(image: Locator, pathname: string) {
+  await expect(image).toBeVisible();
+  await expect
+    .poll(() =>
+      image.evaluate((node, pathname) => {
+        const image = node as HTMLImageElement;
+        return (
+          image.isConnected &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          image.naturalHeight > 0 &&
+          new URL(image.currentSrc).pathname === pathname
+        );
+      }, pathname),
+    )
+    .toBe(true);
+}
+
 async function geometry(page: Page, expanded = false) {
   const card = page.getByRole('feed').locator('article').first();
   await expect(card.locator('[data-mark-action]')).toBeVisible();
   const media = card.locator('[data-testid="instagram-post"] img');
-  if (await media.count())
-    await media.evaluate((node) => (node as HTMLImageElement).decode());
+  if (await card.getByTestId('instagram-post').count())
+    await expectStoredImage(
+      media,
+      '/context/instagram/Generated_feed/image.png',
+    );
   const result = await card.evaluate((card) => {
     const root = document.scrollingElement!;
     const box = (node: Element) => {
@@ -210,8 +231,7 @@ for (const size of sizes)
       if (shape === 'image') {
         const original = page.getByTestId('stored-original');
         const image = original.locator('img');
-        await expect(image).toBeVisible();
-        await image.evaluate((node) => (node as HTMLImageElement).decode());
+        await expectStoredImage(image, '/originals/81001/1.png');
         expect((await image.boundingBox())!.height).toBeLessThanOrEqual(
           size.height * 0.28 + 1,
         );

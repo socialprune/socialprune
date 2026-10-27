@@ -469,6 +469,11 @@ for (const size of [sizes[3]!, sizes[1]!, sizes[4]!])
       await prepare(page, 'image');
       for (const single of [true, false]) {
         await mode(page, single);
+        if (!single)
+          await page
+            .getByTestId('stored-original')
+            .getByRole('link', { name: 'View original on X', exact: true })
+            .scrollIntoViewIfNeeded();
         await page.screenshot({
           path: join(
             folder!,

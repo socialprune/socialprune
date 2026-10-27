@@ -236,6 +236,10 @@ test('FIT-1 long text expands inside the card without moving its actions', async
       .evaluate((node) => node.scrollHeight > node.clientHeight),
   ).toBe(true);
   await expect(card.locator('mark').first()).toHaveText('generated');
+  await page.getByRole('tab', { name: /^Held back by your rules,/ }).click();
+  await expect(
+    page.getByRole('feed').getByText(/Held back: .*your rule/),
+  ).toBeVisible();
 });
 
 test('R1 ADR suggestion and held line stay visible without opening details', async ({

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { expect, test, vi } from 'vitest';
 import { HostCommandSchema, HostEventSchema } from '../src/host-protocol.ts';
 import { DesktopRequestSchema } from '../src/protocol.ts';
+import { createWindowOwner } from '../../cli/src/engine/window.ts';
 
 const mocks = vi.hoisted((): { child: unknown; port: unknown } => ({
   child: null,
@@ -15,6 +16,50 @@ vi.mock('electron', () => ({
   },
 }));
 const { launchEngine } = await import('../src/main/engine.ts');
+
+test('a one-millisecond main/utility clock difference cannot reject a fresh owned-window move', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(10000);
+  const f = fixture();
+  f.reply({ type: 'ready' });
+  const owner = createWindowOwner();
+  const bounds = { x: 5000, y: 5000, width: 600, height: 400 };
+  const id = crypto.randomUUID();
+  const move = vi.fn(() => Promise.resolve());
+  owner.register({
+    closed: new Promise(() => {}),
+    current: () => Promise.resolve({ id, bounds }),
+    move,
+  });
+  try {
+    const moved = f.engine.platformWindow.move(
+      id,
+      { ...bounds, x: 10 },
+      { activate: false, expected: bounds },
+    );
+    const sent = f.port.postMessage.mock.calls.at(-1)![0] as {
+      id: string;
+      message: Parameters<typeof owner.request>[0];
+    };
+    clock.mockReturnValue(9999);
+    const reply = await owner.request(sent.message);
+    f.reply({ type: 'window', id: sent.id, reply });
+    await expect(moved).resolves.toBeUndefined();
+    expect(move).toHaveBeenCalledExactlyOnceWith(
+      id,
+      bounds,
+      { ...bounds, x: 10 },
+      expect.any(Function),
+    );
+    if (sent.message.type !== 'move') throw new Error('MOVE_EXPECTED');
+    clock.mockReturnValue(sent.message.expiresAt);
+    expect(await owner.request(sent.message)).toEqual({ type: 'unavailable' });
+    expect(move).toHaveBeenCalledTimes(1);
+  } finally {
+    f.child.emit('exit', 0);
+    await f.engine.close();
+    clock.mockRestore();
+  }
+});
 function fixture() {
   const child = Object.assign(new EventEmitter(), {
     stdout: { resume: vi.fn() },

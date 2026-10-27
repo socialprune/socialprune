@@ -118,6 +118,63 @@ startEngine(async (options) => {
       await system.detach();
     },
   });
+  const windowRequest = engine.window.bind(engine);
+  engine.window = async (request) => {
+    const started = performance.now();
+    process.parentPort.postMessage({
+      type: 'windowBoundary',
+      phase: 'started',
+      request,
+      at: started,
+      now: Date.now(),
+    });
+    try {
+      const reply = await windowRequest(request);
+      if (reply.type === 'unavailable') {
+        try {
+          const context = contexts.at(-1)!;
+          const page = context.pages()[0]!;
+          const cdp = await context.newCDPSession(page);
+          const target = await cdp.send('Browser.getWindowForTarget');
+          const bounds = await cdp.send('Browser.getWindowBounds', {
+            windowId: target.windowId,
+          });
+          await cdp.detach();
+          process.parentPort.postMessage({
+            type: 'windowBoundary',
+            phase: 'unavailable-raw',
+            request,
+            target,
+            bounds,
+          });
+        } catch (error) {
+          process.parentPort.postMessage({
+            type: 'windowBoundary',
+            phase: 'unavailable-raw-failed',
+            error: String(error),
+          });
+        }
+      }
+      process.parentPort.postMessage({
+        type: 'windowBoundary',
+        phase: 'returned',
+        request,
+        reply,
+        elapsedMs: performance.now() - started,
+        now: Date.now(),
+      });
+      return reply;
+    } catch (error) {
+      process.parentPort.postMessage({
+        type: 'windowBoundary',
+        phase: 'failed',
+        request,
+        elapsedMs: performance.now() - started,
+        error: String(error),
+      });
+      throw error;
+    }
+  };
   return {
     ...engine,
     async close() {

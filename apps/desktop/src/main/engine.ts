@@ -208,7 +208,10 @@ export function launchEngine(
         expected: options.expected,
         bounds,
         activate: false,
-        expiresAt: Date.now() + 5000,
+        // Do not send at the receiver's maximum-future boundary. Main and
+        // utility wall clocks differed by 1 ms on a measured Windows runner.
+        // Keep the receiver's 5 s guard unchanged and shorten this capability.
+        expiresAt: Date.now() + 4000,
       });
       if (reply.type !== 'moved') throw new Error('OWNED_WINDOW_UNAVAILABLE');
     },

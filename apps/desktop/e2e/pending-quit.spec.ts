@@ -54,10 +54,31 @@ for (const locale of ['en', 'de'] as const)
             : /One decision is still being saved/,
         ),
       ).toBeVisible();
+      await app.page.evaluate(() => {
+        // Force the cross-process ordering: close() returns in main while the
+        // renderer is still dispatching its unload veto. No queue reply releases.
+        window.addEventListener('beforeunload', () => {
+          const until = performance.now() + 150;
+          while (performance.now() < until) {
+            /* test-only dispatch delay */
+          }
+        });
+      });
       await app.application.evaluate(({ BrowserWindow, app }, language) => {
         if (language === 'de') app.quit();
         else BrowserWindow.getAllWindows()[0]!.close();
       }, locale);
+      // close()/quit() returning in main is not an unload acknowledgement.
+      // The held decision cannot drain; await the native handler's event.
+      await expect
+        .poll(() =>
+          app.application.evaluate(
+            () =>
+              (Reflect.get(globalThis, 'pendingQuitDialogs') as unknown[])
+                .length,
+          ),
+        )
+        .toBe(1);
       const boxes = await app.application.evaluate(
         () => Reflect.get(globalThis, 'pendingQuitDialogs') as unknown[],
       );

@@ -69,6 +69,58 @@ test('runner-owned generated platform window recovers without activation, visibl
     });
   let outcome = 'failed';
   try {
+    await app.application.evaluate(() => {
+      const probe = Reflect.get(globalThis, 'desktopProbe') as {
+        engine: {
+          platformWindow: {
+            current(): Promise<unknown>;
+            move(...args: unknown[]): Promise<void>;
+          };
+        };
+      };
+      const traces: unknown[] = [];
+      Reflect.set(globalThis, 'displayBoundaryTrace', traces);
+      for (const name of ['current', 'move'] as const) {
+        const original: (...args: unknown[]) => Promise<unknown> =
+          probe.engine.platformWindow[name].bind(probe.engine.platformWindow);
+        const owner = probe.engine.platformWindow as unknown as Record<
+          string,
+          (...args: unknown[]) => Promise<unknown>
+        >;
+        owner[name] = async (...args) => {
+          const started = performance.now();
+          traces.push({ event: name + '-start', at: started, args });
+          try {
+            const reply = await original(...args);
+            traces.push({
+              event: name + '-returned',
+              at: performance.now(),
+              elapsedMs: performance.now() - started,
+              reply,
+            });
+            return reply;
+          } catch (error) {
+            traces.push({
+              event: name + '-failed',
+              at: performance.now(),
+              elapsedMs: performance.now() - started,
+              error: String(error),
+            });
+            throw error;
+          }
+        };
+      }
+      const child = (
+        probe.engine as unknown as {
+          child: {
+            on(event: string, callback: (value: unknown) => void): void;
+          };
+        }
+      ).child;
+      child.on('message', (value) =>
+        traces.push({ event: 'test-engine-message', value }),
+      );
+    });
     expect(await owner()).toBeNull();
     const plan = await call(app, {
       type: 'planRun',
@@ -244,6 +296,9 @@ test('runner-owned generated platform window recovers without activation, visibl
       log,
       currentAreas: await app.application.evaluate(({ screen }) =>
         screen.getAllDisplays().map((display) => display.workArea),
+      ),
+      boundary: await app.application.evaluate(
+        () => Reflect.get(globalThis, 'displayBoundaryTrace') as unknown,
       ),
     };
     await writeFile(

@@ -283,7 +283,20 @@ export function ReviewFeed(props: ReviewFeedProps) {
       keyboardOwnsFocus.current = false;
       completedFocus.current = sequence;
     };
+    const supersedeFocus = (event: FocusEvent) => {
+      // A newer focus choice, including assistive/programmatic focus, wins over
+      // this operation's remaining layout frames. Its own target is not a new
+      // choice, and a removed node dropping focus to body still needs retries.
+      if (
+        event.target !==
+        panel?.querySelector<HTMLElement>(
+          `article[data-card-id="${CSS.escape(props.focusTarget!.id)}"]`,
+        )
+      )
+        supersede();
+    };
     const document = panel?.ownerDocument;
+    document?.addEventListener('focusin', supersedeFocus, true);
     document?.addEventListener('pointerdown', supersede, {
       once: true,
       capture: true,
@@ -294,6 +307,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
     });
     return () => {
       cancel();
+      document?.removeEventListener('focusin', supersedeFocus, true);
       document?.removeEventListener('pointerdown', supersede, true);
       document?.removeEventListener('keydown', supersede, true);
     };

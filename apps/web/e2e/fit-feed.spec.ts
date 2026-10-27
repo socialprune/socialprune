@@ -193,6 +193,14 @@ for (const size of sizes)
     await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
     for (const shape of shapes) {
       await prepare(page, shape);
+      if (shape === 'reply') {
+        await page
+          .getByRole('tab', { name: /^Suggested for deletion,/ })
+          .click();
+        await page.getByRole('tab', { name: /^All,/ }).click();
+        const summary = page.getByTestId('stored-original').locator('summary');
+        expect((await summary.boundingBox())!.height).toBeLessThanOrEqual(64);
+      }
       await mode(page, true);
       await expect(page.getByRole('feed').locator('article')).toHaveCount(1);
       await geometry(page);

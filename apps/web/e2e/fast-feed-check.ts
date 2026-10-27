@@ -12,6 +12,31 @@ export async function checkFastFeed(page: Page) {
   });
   await single.click();
   await expect(feed.locator('article')).toHaveCount(1);
+  // FIT-1 targets web/local review; the desktop shell's geometry is unchanged.
+  if (await page.locator('main[data-reading="true"]').count()) {
+    const geometry = await feed.locator('article').evaluate((card) => {
+      const root = document.scrollingElement!;
+      return {
+        overflow: root.scrollHeight - root.clientHeight,
+        top: card.getBoundingClientRect().top,
+        bottom: card.getBoundingClientRect().bottom,
+        height: innerHeight,
+        actions: ['keep', 'later', 'mark'].map((action) => {
+          const box = card
+            .querySelector(`[data-${action}-action]`)!
+            .getBoundingClientRect();
+          return { top: box.top, bottom: box.bottom };
+        }),
+      };
+    });
+    expect(geometry.overflow).toBeLessThanOrEqual(0);
+    expect(geometry.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.height);
+    for (const action of geometry.actions) {
+      expect(action.top).toBeGreaterThanOrEqual(0);
+      expect(action.bottom).toBeLessThanOrEqual(geometry.height);
+    }
+  }
   await page.evaluate(() => {
     const request = window.workspace.request.bind(window.workspace);
     const releases: (() => void)[] = [];

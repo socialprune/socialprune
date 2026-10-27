@@ -421,7 +421,8 @@
   :global([data-single='true']) .thread img,
   :global([data-single='true']) .thread video {
     max-height: min(28dvh, 240px);
-    width: auto;
+    height: min(28dvh, 240px);
+    width: 100%;
     max-width: 100%;
     object-fit: contain;
   }

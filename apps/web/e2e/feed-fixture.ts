@@ -215,9 +215,10 @@ async function previewGeneratedFeed(port: number, outDir?: string) {
   const server = createServer((request, response) => {
     if (
       request.method === 'GET' &&
-      /^\/context\/instagram\/Generated_feed\/(?:image\.png|shot\.jpg)$/.test(
+      (/^\/context\/instagram\/Generated_feed\/(?:image\.png|shot\.jpg)$/.test(
         request.url ?? '',
-      )
+      ) ||
+        request.url === '/originals/81001/1.png')
     ) {
       response.writeHead(200, {
         'Content-Type': 'image/svg+xml',

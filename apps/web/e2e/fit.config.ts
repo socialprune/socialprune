@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import base from '../playwright.config.ts';
+import base from './feed-instagram.config.ts';
 
 /** FIT-1 uses generated media only; it never enters a production entrypoint. */
 export default defineConfig({

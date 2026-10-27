@@ -16,6 +16,8 @@ export default defineConfig({
     'feed-instagram.spec.ts',
     'focus-instagram.spec.ts',
     'fit-feed.spec.ts',
+    'polish.spec.ts',
+    'local-polish.spec.ts',
   ],
   timeout: 30_000,
   expect: { timeout: 15_000 },

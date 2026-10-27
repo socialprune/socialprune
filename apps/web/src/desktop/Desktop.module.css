@@ -80,6 +80,9 @@
     font-size: var(--type-2xl);
     flex: none;
   }
+  .reviewMain:has([data-platform='instagram']) > h1 {
+    max-width: 1064px;
+  }
   .shell:has([data-single='true']) {
     height: 100dvh;
     display: flex;

@@ -418,6 +418,10 @@
   .threadContent {
     padding-top: var(--space-2);
   }
+  .thread > a {
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
   :global([data-single='true']) .thread img,
   :global([data-single='true']) .thread video {
     max-height: 80px;

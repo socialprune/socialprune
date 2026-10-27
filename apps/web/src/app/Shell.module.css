@@ -201,6 +201,9 @@
     flex: none;
     width: 100%;
   }
+  .main[data-reading='true']:has([data-platform='instagram']) > h1 {
+    max-width: 1064px;
+  }
   .main > section:not(.demoBanner) > p:first-child {
     max-width: 1004px;
     margin-inline: auto;

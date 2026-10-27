@@ -7,6 +7,7 @@ import {
   liveFeedFixture,
   restoreLiveFeed,
 } from './feed-fixture.ts';
+import { toolbarIsOneRow } from './toolbar-geometry.ts';
 
 const tabs = ['suggested', 'held', 'kept', 'unclear', 'marked', 'all'] as const;
 const screens =
@@ -134,9 +135,6 @@ async function layoutFindings(page: Page, width: number) {
       )
         issues.push('overflowing tab strip has no visible scroll controls');
     }
-    const toolbar = document.querySelector('[data-feed-toolbar]');
-    if (toolbar && toolbar.getBoundingClientRect().height > 60)
-      issues.push('toolbar wraps beyond one line');
     const viewportHeight = document.documentElement.clientHeight;
     const footer = document
       .querySelector('footer button')
@@ -185,6 +183,8 @@ for (const lang of ['de', 'en'] as const)
             findings.push('initial load moves focus to page heading');
         });
         async function inspect(state: string) {
+          if (!(await toolbarIsOneRow(page)))
+            findings.push(`${state}: toolbar wraps beyond one line`);
           findings.push(
             ...(await layoutFindings(page, width)).map(
               (issue) => `${state}: ${issue}`,

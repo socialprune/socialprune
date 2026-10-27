@@ -2,6 +2,46 @@ import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
 import { fakeBridge } from './fake-bridge.ts';
 import { headerFixture } from '../header-style.ts';
+import { assertPolish } from '../polish-style.ts';
+
+for (const theme of ['light', 'dark'] as const)
+  for (const width of [1366, 1920])
+    for (const platform of ['x', 'instagram'] as const)
+      test(`polish desktop ${platform} ${theme} ${width}`, async ({
+        page,
+      }, info) => {
+        await page.setViewportSize({
+          width,
+          height: width === 1920 ? 900 : 768,
+        });
+        await page.addInitScript(
+          (theme) => localStorage.setItem('sp-theme', theme),
+          theme,
+        );
+        const data = headerFixture();
+        data.settings.review!.accountKey =
+          platform === 'instagram' ? 'instagram:feed' : 'x:feed';
+        data.settings.review!.feed!.tab = 'all';
+        const bridge = await fakeBridge(page, 'en', data);
+        try {
+          await page.goto('/desktop.html');
+          await page
+            .getByRole('navigation')
+            .getByRole('button', { name: 'Review', exact: true })
+            .click();
+          for (const single of [true, false]) {
+            await page
+              .getByRole('button', {
+                name: single ? 'One at a time' : 'List',
+                exact: true,
+              })
+              .click();
+            await assertPolish(page, info, platform);
+          }
+        } finally {
+          await bridge.close();
+        }
+      });
 import { checkFastFeed } from '../fast-feed-check.ts';
 import { checkHistoryRecovery } from '../fast-revision-check.ts';
 

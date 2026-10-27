@@ -3,6 +3,7 @@ import { evidenceSegments } from '../model.ts';
 import { useT } from '../../i18n/index.ts';
 import type { FeedCardModel } from './types.ts';
 import styles from './InstagramComment.module.css';
+import { ClampedText } from './ClampedText.tsx';
 
 /** The platform's reading grammar, without platform actions or invented counts. */
 export function InstagramComment({
@@ -30,7 +31,7 @@ export function InstagramComment({
           {card.handle.slice(0, 2).toLocaleUpperCase()}
         </span>
         <div className={styles.body}>
-          <p className={styles.text} data-primary-text dir="auto">
+          <ClampedText className={styles.text} primary>
             <strong id={bylineId} dir="ltr">
               {card.handle}
             </strong>{' '}
@@ -40,7 +41,7 @@ export function InstagramComment({
             ).map((part, index) =>
               part.highlight ? <mark key={index}>{part.text}</mark> : part.text,
             )}
-          </p>
+          </ClampedText>
           <div className={styles.metadata}>
             <time dateTime={card.createdAt}>
               {intl.formatDate(card.createdAt, {

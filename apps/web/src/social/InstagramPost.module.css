@@ -240,4 +240,51 @@
       flex: none;
     }
   }
+  :global([data-single='true']) .feedImage {
+    max-width: min(100%, var(--media-natural-width, 100%));
+    max-height: var(--media-natural-height, 100%);
+  }
+  :global([data-single='true']) .feedCaption {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+  @media (max-width: 1079px) {
+    :global([data-single='true']) .feedMedia {
+      flex: none;
+      height: 160px;
+      min-height: 160px;
+      align-items: center;
+    }
+    :global([data-single='true']) .feedImage {
+      height: 160px;
+      min-height: 0;
+      flex: none;
+      width: 100%;
+    }
+    :global([data-single='true']) .feedPreview {
+      flex: none;
+      gap: var(--space-1);
+    }
+    :global([data-single='true']) .feedPost {
+      flex: none;
+    }
+    :global([data-single='true']) .feedHeader {
+      font-size: var(--type-xs);
+      margin-bottom: var(--space-1);
+    }
+    :global([data-single='true']) .feedHeader .feedAvatar {
+      display: none;
+    }
+    :global([data-single='true']) .feedDetails summary {
+      min-height: 28px;
+      padding-block: 0;
+    }
+    :global([data-single='true']) .feedEvidence {
+      margin-top: 0;
+    }
+    :global([data-single='true']) .feedPost {
+      border-bottom: 0;
+    }
+  }
 }

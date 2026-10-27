@@ -80,6 +80,26 @@
     font-size: var(--type-2xl);
     flex: none;
   }
+  .shell:has([data-single='true']) {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+  .shell:has([data-single='true']) > .header,
+  .shell:has([data-single='true']) > .navigation {
+    flex: none;
+  }
+  .shell:has([data-single='true']) > .reviewMain {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
+  .shell:has([data-single='true']) .reviewMain > h1 {
+    margin-block: 0 var(--space-2);
+    font-size: var(--type-lg);
+    line-height: var(--line-lg);
+  }
   .panel {
     background: var(--color-surface);
     border: 0;

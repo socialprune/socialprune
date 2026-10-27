@@ -590,6 +590,39 @@
     top: 0.125em;
     color: var(--color-suggestion);
   }
+  .suggestionReason {
+    margin: var(--space-1) 0 0 24px;
+    font-size: var(--type-sm);
+    line-height: var(--line-sm);
+  }
+  :global([data-single='true']) .suggestions {
+    margin-top: var(--space-2);
+  }
+  :global([data-single='true']) .suggestionDetails summary {
+    min-height: 32px;
+  }
+  @media (max-width: 1079px) {
+    :global([data-single='true']) .card[data-instagram-card] {
+      padding: var(--space-2) var(--space-3);
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .cardContent
+      > .reviewBody {
+      margin-top: var(--space-1);
+    }
+    :global([data-single='true']) .card[data-instagram-card] .suggestions {
+      margin-top: 0;
+    }
+    :global([data-single='true']) .card[data-instagram-card] .suggestionLine {
+      font-size: var(--type-xs);
+      line-height: var(--line-xs);
+    }
+    :global([data-single='true']) .card[data-instagram-card] .suggestionReason {
+      font-size: var(--type-xs);
+      line-height: var(--line-xs);
+    }
+  }
   .suggestionLine > span:not(.source) {
     border-left: var(--border-width) solid var(--color-divider);
     padding-left: var(--space-2);

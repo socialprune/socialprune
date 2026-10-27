@@ -47,6 +47,7 @@
   "reviewFeed.sourceLater": "Choose a suggestion source after setting your criteria. This screen does not run a model.",
   "reviewFeed.list": "List view",
   "reviewFeed.expandText": "Show full text",
+  "reviewFeed.expandCaption": "Show full caption",
   "reviewFeed.collapseText": "Show less text",
   "reviewFeed.planHeading": "Your review",
   "reviewFeed.planSaved": "Marked. Nothing was deleted on the platform.",

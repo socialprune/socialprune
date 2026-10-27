@@ -171,8 +171,11 @@ test.each(['en', 'de'] as const)(
         expect(current).toContain('<mark>council</mark>');
         expect(current).toContain('Generated rule');
         expect(current).toContain(
-          '<strong>Political</strong> Generated reason.',
+          locale === 'en'
+            ? '<strong>Suggestion: delete</strong> · Political · Medium · Example'
+            : '<strong>Vorschlag: löschen</strong> · Political · Mittel · Beispiel',
         );
+        expect(current).toContain('>Generated reason.</p>');
         expect(current).toMatch(
           /<details[^>]*><summary>[^<]+<\/summary>[\s\S]*?Example|<details[^>]*><summary>[^<]+<\/summary>[\s\S]*?Beispiel/,
         );

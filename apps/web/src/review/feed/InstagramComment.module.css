@@ -54,6 +54,26 @@
     padding-block: var(--space-2);
     flex: none;
   }
+  @media (max-width: 1079px) {
+    :global([data-single='true']) .context {
+      flex: none;
+      margin-bottom: var(--space-1);
+    }
+    :global([data-single='true']) .content {
+      flex: none;
+      overflow: visible;
+    }
+    :global([data-single='true']) .comment {
+      grid-template-columns: minmax(0, 1fr);
+      padding-block: var(--space-1);
+    }
+    :global([data-single='true']) .comment .avatar {
+      display: none;
+    }
+    :global([data-single='true']) .metadata {
+      margin-top: 0;
+    }
+  }
   :global([data-single='true']) .text strong {
     font-size: var(--type-sm);
     font-weight: var(--weight-heading);

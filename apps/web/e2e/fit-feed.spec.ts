@@ -238,6 +238,92 @@ test('FIT-1 long text expands inside the card without moving its actions', async
   await expect(card.locator('mark').first()).toHaveText('generated');
 });
 
+test('R1 ADR suggestion and held line stay visible without opening details', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+  await prepare(page, 'short');
+  const card = page.getByRole('feed').locator('article').first();
+  await expect(
+    card.locator('strong').filter({ hasText: 'Suggestion: delete' }),
+  ).toBeVisible();
+  await expect(
+    card.locator('p').filter({
+      hasText:
+        /Suggestion: delete · Political · Medium · Agent: Synthetic reader/,
+    }),
+  ).toBeVisible();
+  await expect(card.locator('mark').first()).toHaveText('generated');
+});
+
+for (const size of [sizes[1]!, sizes[3]!])
+  test(`R2 no orphan text control ${size.width}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+    await prepare(page, 'tall');
+    await mode(page, true);
+    await geometry(page);
+    await expect(
+      page.getByRole('button', { name: /Show full|Show complete/ }),
+    ).toHaveCount(0);
+  });
+
+test('R3 phone Instagram keeps a readable uncropped image and reachable actions', async ({
+  page,
+}) => {
+  await page.setViewportSize(sizes[4]!);
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+  for (const shape of ['tall', 'wide'] as const) {
+    await prepare(page, shape);
+    await mode(page, true);
+    const card = await geometry(page);
+    const image = card.getByTestId('instagram-post').locator('img').first();
+    const rendered = await image.evaluate((node) => {
+      const image = node as HTMLImageElement,
+        box = image.getBoundingClientRect();
+      const scale = Math.min(
+        box.width / image.naturalWidth,
+        box.height / image.naturalHeight,
+      );
+      return {
+        paintedHeight: image.naturalHeight * scale,
+        scale,
+        fit: getComputedStyle(image).objectFit,
+      };
+    });
+    expect(rendered.paintedHeight).toBeGreaterThanOrEqual(
+      shape === 'tall' ? 160 : 110,
+    );
+    expect(rendered.scale).toBeLessThanOrEqual(1);
+    expect(rendered.fit).toBe('contain');
+  }
+});
+
+test('R2 clipped caption control belongs below that caption and expands internally', async ({
+  page,
+}) => {
+  await page.setViewportSize(sizes[1]!);
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+  await prepare(page, 'tall');
+  await mode(page, true);
+  // Use the real generated fixture's caption to prove scoped expansion at phone size.
+  await page.setViewportSize(sizes[4]!);
+  const caption = page.locator('[data-caption-text]').first();
+  const control = caption.getByRole('button', {
+    name: 'Show full caption',
+    exact: true,
+  });
+  await expect(control).toBeVisible();
+  const textBox = await caption.locator('p').boundingBox(),
+    buttonBox = await control.boundingBox();
+  expect(buttonBox!.y).toBeGreaterThanOrEqual(textBox!.y + textBox!.height - 1);
+  await control.click();
+  await expect(
+    caption.getByRole('button', { name: 'Show less text', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await geometry(page, true);
+});
+
 for (const size of [sizes[3]!, sizes[1]!, sizes[4]!])
   for (const theme of ['light', 'dark'] as const)
     for (const shape of ['280', 'tall'] as const)

@@ -6,6 +6,7 @@ import type { InstagramContext, Item } from '@socialprune/core';
 import type { WorkspaceClient } from '../workspace/client.ts';
 import { useT } from '../i18n/index.ts';
 import styles from './InstagramPost.module.css';
+import { ClampedText } from '../review/feed/ClampedText.tsx';
 
 export function InstagramPost({
   record,
@@ -79,6 +80,16 @@ export function InstagramPost({
                 src={base + record.image.file}
                 alt={t('review.post')}
                 loading="lazy"
+                onLoad={(event) => {
+                  event.currentTarget.style.setProperty(
+                    '--media-natural-width',
+                    `${event.currentTarget.naturalWidth}px`,
+                  );
+                  event.currentTarget.style.setProperty(
+                    '--media-natural-height',
+                    `${event.currentTarget.naturalHeight}px`,
+                  );
+                }}
                 onError={() => setMissingImage(true)}
               />
             ) : screenshotPreview ? (
@@ -121,9 +132,9 @@ export function InstagramPost({
           </div>
           <div data-instagram-caption>
             {record.post.caption && (
-              <p className={styles.feedCaption} dir="auto">
+              <ClampedText className={styles.feedCaption} caption>
                 <strong>{record.post.owner}</strong> {record.post.caption}
-              </p>
+              </ClampedText>
             )}
             {!record.post.captionComplete && (
               <p className={styles.note}>{t('instagramContext.captionCut')}</p>

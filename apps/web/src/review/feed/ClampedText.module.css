@@ -1,0 +1,49 @@
+@layer components {
+  .group {
+    min-width: 0;
+    min-height: 0;
+  }
+  .text {
+    margin: 0;
+  }
+  .control {
+    display: block;
+    min-height: var(--target-size);
+    padding: var(--space-1) 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-action);
+    font-size: var(--type-xs);
+  }
+  :global([data-single='true']) .group:not([data-text-expanded='true']) .text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+    overflow: hidden;
+  }
+  :global([data-single='true']) .group {
+    flex: none;
+  }
+  :global([data-single='true'])
+    .group[data-caption-text]:not([data-text-expanded='true'])
+    .text {
+    -webkit-line-clamp: 2;
+  }
+  .group[data-text-expanded='true'] .text {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
+  @media (max-width: 1079px) {
+    :global([data-single='true'])
+      .group:not([data-text-expanded='true'])
+      .text {
+      -webkit-line-clamp: 4;
+    }
+    :global([data-single='true'])
+      .group[data-caption-text]:not([data-text-expanded='true'])
+      .text {
+      -webkit-line-clamp: 1;
+    }
+  }
+}

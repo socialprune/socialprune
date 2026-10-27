@@ -884,6 +884,7 @@ declare global {
     'reviewFeed.emptyHelp': Record<never, never>;
     'reviewFeed.emptyStart': Record<never, never>;
     'reviewFeed.error': Record<never, never>;
+    'reviewFeed.expandCaption': Record<never, never>;
     'reviewFeed.expandText': Record<never, never>;
     'reviewFeed.finalHelp': { platform: string };
     'reviewFeed.heldBy': { rule: string; value: string };

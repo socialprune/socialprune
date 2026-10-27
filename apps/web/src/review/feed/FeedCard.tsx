@@ -27,6 +27,7 @@ import type {
 import styles from './Feed.module.css';
 import controls from './Controls.module.css';
 import { InstagramComment } from './InstagramComment.tsx';
+import { ClampedText } from './ClampedText.tsx';
 
 const levels = [
   'review.riskNone',
@@ -144,31 +145,20 @@ export function FeedCard({
     id = useId();
   const content = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
   useLayoutEffect(() => {
     if (!single || !content.current) return;
     const node = content.current;
-    const measure = () => {
-      if (!expanded)
-        setOverflowing(
-          node.scrollHeight > node.clientHeight + 1 ||
-            [...node.querySelectorAll('[data-primary-text]')].some(
-              (text) => text.scrollHeight > text.clientHeight + 1,
-            ),
-        );
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
     const revealDetails = (event: Event) => {
       if (event.target instanceof HTMLDetailsElement && event.target.open)
         setExpanded(true);
     };
+    const revealText = (event: Event) =>
+      setExpanded((event as CustomEvent<boolean>).detail);
     node.addEventListener('toggle', revealDetails, true);
-    observer.observe(node);
-    for (const child of node.children) observer.observe(child);
+    node.addEventListener('card-text-expansion', revealText);
     return () => {
-      observer.disconnect();
       node.removeEventListener('toggle', revealDetails, true);
+      node.removeEventListener('card-text-expansion', revealText);
     };
   }, [single, expanded, card.text, context]);
   const decided = card.decision !== 'undecided';
@@ -323,7 +313,7 @@ export function FeedCard({
                     {t('proto.reposts', { count: card.reposts ?? -1 })}
                   </span>
                 </div>
-                <p className={styles.postText} data-primary-text dir="auto">
+                <ClampedText className={styles.postText} primary>
                   {evidenceSegments(
                     card.text ||
                       t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
@@ -337,7 +327,7 @@ export function FeedCard({
                       part.text
                     ),
                   )}
-                </p>
+                </ClampedText>
                 {card.kind !== 'reply' && context}
                 {card.quote && (
                   <section
@@ -377,9 +367,24 @@ export function FeedCard({
                 <div className={styles.suggestionLine}>
                   <WandSparkles size={16} aria-hidden="true" />
                   <p dir="auto">
-                    <strong>{suggestion.category}</strong> {suggestion.reason}
+                    <strong>
+                      {t(
+                        suggestion.unclear
+                          ? 'review.categoryUnclear'
+                          : suggestion.harmless
+                            ? 'review.categoryHarmless'
+                            : 'reviewFeed.suggestDelete',
+                      )}
+                    </strong>
+                    {' · '}
+                    {suggestion.category}
+                    {' · '}
+                    {t(levels[suggestion.level])}
+                    {' · '}
+                    {sourceLabel(suggestion.source, t)}
                   </p>
                 </div>
+                <p className={styles.suggestionReason}>{suggestion.reason}</p>
               </div>
             ))}
             {!card.suggestions.length && (
@@ -393,15 +398,6 @@ export function FeedCard({
                     <p>
                       {suggestion.category} · {t(levels[suggestion.level])} ·{' '}
                       {sourceLabel(suggestion.source, t)}
-                    </p>
-                    <p>
-                      {t(
-                        suggestion.unclear
-                          ? 'review.categoryUnclear'
-                          : suggestion.harmless
-                            ? 'review.categoryHarmless'
-                            : 'reviewFeed.suggestDelete',
-                      )}
                     </p>
                     {suggestion.evidence && (
                       <p>
@@ -447,16 +443,6 @@ export function FeedCard({
           )}
         </div>
       </CardContent>
-      {single && (overflowing || expanded) && (
-        <button
-          className={styles.expandText}
-          aria-expanded={expanded}
-          aria-controls={`${id}-content`}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {t(expanded ? 'reviewFeed.collapseText' : 'reviewFeed.expandText')}
-        </button>
-      )}
       {single && (
         <FeedActions
           card={card}

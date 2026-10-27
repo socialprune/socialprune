@@ -37,6 +37,7 @@ test('Wait keeps unload prevented and resets active-run approval; a later draine
   attachPendingQuit({
     contents: contents as unknown as WebContents,
     locale: () => 'de',
+    removalQuitting: () => false,
     message,
     wait,
     record,
@@ -60,6 +61,7 @@ test('Quit anyway overrides only this prevented unload and leaves settlement to 
   attachPendingQuit({
     contents: contents as unknown as WebContents,
     locale: () => 'en',
+    removalQuitting: () => false,
     message,
     wait,
     record,
@@ -79,6 +81,7 @@ test('dialog failure or unrecognized response keeps the window open and records 
     attachPendingQuit({
       contents: contents as unknown as WebContents,
       locale: () => 'en',
+      removalQuitting: () => false,
       message: () => {
         if (response === 'throw') throw new Error('generated');
         return response;
@@ -92,4 +95,38 @@ test('dialog failure or unrecognized response keeps the window open and records 
     if (response === 'throw')
       expect(record).toHaveBeenCalledWith('PENDING_DECISIONS_DIALOG_FAILED');
   }
+});
+
+test('only the data-removal quit ignores an unload veto after its engine shutdown', () => {
+  const contents = new EventEmitter();
+  let removalQuitting = false;
+  const message = vi.fn(() => 0),
+    wait = vi.fn(),
+    record = vi.fn();
+  const options = {
+    contents: contents as unknown as WebContents,
+    locale: () => 'en' as const,
+    removalQuitting: () => removalQuitting,
+    message,
+    wait,
+    record,
+  };
+  attachPendingQuit(options);
+
+  const ordinaryClose = { preventDefault: vi.fn() };
+  contents.emit('will-prevent-unload', ordinaryClose);
+  expect(message).toHaveBeenCalledOnce();
+  expect(wait).toHaveBeenCalledOnce();
+  expect(ordinaryClose.preventDefault).not.toHaveBeenCalled();
+
+  message.mockClear();
+  wait.mockClear();
+  record.mockClear();
+  removalQuitting = true;
+  const removalClose = { preventDefault: vi.fn() };
+  contents.emit('will-prevent-unload', removalClose);
+  expect(removalClose.preventDefault).toHaveBeenCalledOnce();
+  expect(message).not.toHaveBeenCalled();
+  expect(wait).not.toHaveBeenCalled();
+  expect(record).not.toHaveBeenCalled();
 });

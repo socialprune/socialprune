@@ -23,11 +23,18 @@ export function pendingQuitMessage(locale: DialogLocale): MessageBoxOptions {
 export function attachPendingQuit(options: {
   contents: Pick<WebContents, 'on'>;
   locale: () => DialogLocale;
+  removalQuitting: () => boolean;
   message: (box: MessageBoxOptions) => number;
   wait: () => void;
   record: (code: string) => void;
 }) {
   options.contents.on('will-prevent-unload', (event) => {
+    // Confirmed data removal already closed the engine and reported what stays.
+    // No queued write can drain now; finish only that removal-owned quit.
+    if (options.removalQuitting()) {
+      event.preventDefault();
+      return;
+    }
     let response = 0;
     try {
       response = options.message(pendingQuitMessage(options.locale()));

@@ -160,11 +160,95 @@ test('data removal confirms generated managed data and quits with partial receip
       path: test.info().outputPath('candidate-removal-de.png'),
       fullPage: true,
     });
+    const quitTrace = test.info().outputPath('removal-quit-order.json');
+    await app.application.evaluate(({ app, dialog }, path) => {
+      const fs = process.getBuiltinModule('node:fs');
+      const probe = Reflect.get(globalThis, 'desktopProbe') as {
+        engine: { close(): Promise<void> };
+        window: import('electron').BrowserWindow;
+        removalReports: unknown[];
+      };
+      const events: string[] = [];
+      const dialogs: unknown[] = [];
+      const record = (event: string) => {
+        events.push(event);
+        fs.writeFileSync(
+          path,
+          JSON.stringify({ events, dialogs, reports: probe.removalReports }),
+        );
+      };
+      const close = probe.engine.close.bind(probe.engine);
+      probe.engine.close = async () => {
+        record('engine-close-started');
+        await close();
+        record('engine-closed');
+      };
+      dialog.showMessageBoxSync = (...args: unknown[]) => {
+        dialogs.push(args.at(-1));
+        record('pending-dialog');
+        return 0;
+      };
+      app.prependListener('before-quit', () => record('before-quit'));
+      probe.window.on('close', () => record('window-close'));
+      probe.window.webContents.on('will-prevent-unload', () =>
+        record('prevented-unload'),
+      );
+      app.on('will-quit', () => record('will-quit'));
+    }, quitTrace);
+    await app.page.evaluate(() => {
+      // Removal cannot have pending writes today. Force the renderer veto to
+      // exercise its already-shut-down quit without changing removal eligibility.
+      window.addEventListener('beforeunload', (event) => {
+        event.preventDefault();
+        event.returnValue = '';
+      });
+    });
     const closed = new Promise<void>((resolve) =>
       app.process.once('exit', () => resolve()),
     );
     await confirm.click();
     await closed;
+    expect(app.process.exitCode).toBe(0);
+    const trace = JSON.parse(await readFile(quitTrace, 'utf8')) as {
+      events: string[];
+      dialogs: unknown[];
+      reports: unknown[];
+    };
+    expect(trace.dialogs).toEqual([]);
+    expect(
+      trace.events.filter((event) => event === 'engine-close-started'),
+    ).toHaveLength(1);
+    const order = [
+      'engine-close-started',
+      'engine-closed',
+      'before-quit',
+      'window-close',
+      'prevented-unload',
+      'will-quit',
+    ].map((event) => trace.events.indexOf(event));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+    expect(trace.reports).toEqual([
+      expect.objectContaining({
+        failures: [
+          expect.objectContaining({
+            name: 'ui-language.json',
+            reason: 'locked',
+          }),
+        ],
+        retained: expect.arrayContaining([
+          expect.objectContaining({ name: 'unknown.txt', reason: 'unknown' }),
+          expect.objectContaining({
+            name: 'generated-backup.json',
+            reason: 'backup',
+          }),
+          expect.objectContaining({
+            name: 'workspace/originals',
+            reason: 'link',
+          }),
+        ]),
+      }),
+    ]);
     const receiptName = (await readdir(app.data)).find((name) =>
       name.startsWith('data-removal-receipt-'),
     );

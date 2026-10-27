@@ -538,6 +538,7 @@ export async function startDesktop(options: DesktopOptions) {
   attachPendingQuit({
     contents: window.webContents,
     locale: () => appLanguage,
+    removalQuitting: () => removalQuitting,
     message: (box) => dialog.showMessageBoxSync(window, box),
     wait: () => {
       stopApproved = false;
@@ -588,8 +589,8 @@ export async function startDesktop(options: DesktopOptions) {
     event.preventDefault();
     if (quitting) return;
     if (!window.isDestroyed()) {
-      // app.quit (menu, startup and data removal) must first allow the
-      // renderer to veto closing, while the engine can still save its queue.
+      // app.quit must pass through renderer unload before engine settlement.
+      // Only data removal, which already closed the engine, ignores its veto.
       if (checkingWindowClose) return;
       checkingWindowClose = true;
       try {

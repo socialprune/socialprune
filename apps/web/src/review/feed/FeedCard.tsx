@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { evidenceSegments } from '../model.ts';
 import { useIntl } from 'react-intl';
 import {
@@ -86,18 +86,21 @@ function Byline({
   zone: string;
 }) {
   const intl = useIntl();
+  const date = useMemo(
+    () =>
+      intl.formatDate(post.createdAt, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: zone,
+      }),
+    [intl, post.createdAt, zone],
+  );
   return (
     <div className={styles.byline} id={id}>
       <strong dir="auto">{post.name}</strong>
       <span dir="ltr">@{post.handle}</span>
-      <time dateTime={post.createdAt}>
-        {intl.formatDate(post.createdAt, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          timeZone: zone,
-        })}
-      </time>
+      <time dateTime={post.createdAt}>{date}</time>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export function InstagramComment({
           {card.handle.slice(0, 2).toLocaleUpperCase()}
         </span>
         <div className={styles.body}>
-          <p className={styles.text} dir="auto">
+          <p className={styles.text} data-primary-text dir="auto">
             <strong id={bylineId} dir="ltr">
               {card.handle}
             </strong>{' '}

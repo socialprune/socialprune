@@ -137,49 +137,49 @@ export function InstagramPost({
           <details className={styles.feedEvidence}>
             <summary>{t('instagramContext.evidence')}</summary>
             <p>{t(evidenceKey, { date })}</p>
-          </details>
-          <div className={styles.actions}>
-            <a
-              href={`https://www.instagram.com/${record.post.kind}/${record.post.code}/`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink size={16} aria-hidden="true" />
-              {t('instagramContext.open')}
-            </a>
-            {!screenshotPreview &&
-              record.screenshot.status === 'stored' &&
-              record.screenshot.file && (
-                <button
-                  type="button"
-                  aria-expanded={showScreenshot}
-                  aria-controls={screenshotId}
-                  onClick={() => setShowScreenshot((value) => !value)}
-                >
-                  {t(
-                    showScreenshot
-                      ? 'instagramContext.hideScreenshot'
-                      : 'instagramContext.showScreenshot',
-                  )}
-                </button>
-              )}
-          </div>
-          {!screenshotPreview && (
-            <div id={screenshotId}>
-              {showScreenshot &&
-                record.screenshot.file &&
-                (missingScreenshot ? (
-                  <p className={styles.note}>{t('originals.notInCopy')}</p>
-                ) : (
-                  <img
-                    className={styles.image}
-                    src={base + record.screenshot.file}
-                    alt={t('instagramContext.screenshot', { date })}
-                    onError={() => setMissingScreenshot(true)}
-                  />
-                ))}
+            <div className={styles.actions}>
+              <a
+                href={`https://www.instagram.com/${record.post.kind}/${record.post.code}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink size={16} aria-hidden="true" />
+                {t('instagramContext.open')}
+              </a>
+              {!screenshotPreview &&
+                record.screenshot.status === 'stored' &&
+                record.screenshot.file && (
+                  <button
+                    type="button"
+                    aria-expanded={showScreenshot}
+                    aria-controls={screenshotId}
+                    onClick={() => setShowScreenshot((value) => !value)}
+                  >
+                    {t(
+                      showScreenshot
+                        ? 'instagramContext.hideScreenshot'
+                        : 'instagramContext.showScreenshot',
+                    )}
+                  </button>
+                )}
             </div>
-          )}
+            {!screenshotPreview && (
+              <div id={screenshotId}>
+                {showScreenshot &&
+                  record.screenshot.file &&
+                  (missingScreenshot ? (
+                    <p className={styles.note}>{t('originals.notInCopy')}</p>
+                  ) : (
+                    <img
+                      className={styles.image}
+                      src={base + record.screenshot.file}
+                      alt={t('instagramContext.screenshot', { date })}
+                      onError={() => setMissingScreenshot(true)}
+                    />
+                  ))}
+              </div>
+            )}
+          </details>
         </div>
       </section>
     );

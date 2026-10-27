@@ -864,6 +864,7 @@ declare global {
     'reviewFeed.changeShort': Record<never, never>;
     'reviewFeed.checkNow': Record<never, never>;
     'reviewFeed.chooseCriteria': Record<never, never>;
+    'reviewFeed.collapseText': Record<never, never>;
     'reviewFeed.conversation': Record<never, never>;
     'reviewFeed.definition.drugs-illegal': Record<never, never>;
     'reviewFeed.definition.embarrassing': Record<never, never>;
@@ -883,6 +884,7 @@ declare global {
     'reviewFeed.emptyHelp': Record<never, never>;
     'reviewFeed.emptyStart': Record<never, never>;
     'reviewFeed.error': Record<never, never>;
+    'reviewFeed.expandText': Record<never, never>;
     'reviewFeed.finalHelp': { platform: string };
     'reviewFeed.heldBy': { rule: string; value: string };
     'reviewFeed.heldCount': { count: number };

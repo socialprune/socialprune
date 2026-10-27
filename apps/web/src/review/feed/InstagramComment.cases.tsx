@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import * as React from 'react';
@@ -11,7 +10,6 @@ import type { FeedCardModel } from './types.ts';
 import { InstagramPost } from '../../social/InstagramPost.tsx';
 import { instagramContractRecord } from '@socialprune/core/workspace/store-contract';
 import type { InstagramContext } from '@socialprune/core';
-import { BeforeFeedCard } from './design/BeforeFeedCard.tsx';
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return { ...actual, useState: vi.fn(actual.useState) };
@@ -120,7 +118,7 @@ test.each(['en', 'de'] as const)(
   },
 );
 test.each(['en', 'de'] as const)(
-  'all X post kinds and decision states retain bf8843f markup including the suggestion mark in %s',
+  'FIT-1 preserves X content, evidence, rule and decision state through the new hierarchy in %s',
   (locale) => {
     for (const kind of ['post', 'reply', 'quote', 'repost'] as const)
       for (const decision of [
@@ -166,13 +164,18 @@ test.each(['en', 'de'] as const)(
           onDecision: () => undefined,
         };
         const current = render(<FeedCard {...props} />, locale);
-        const before = render(<BeforeFeedCard {...props} />, locale);
-        // S1b restores the suggestion mark. No historical-markup exception remains.
         const suggestionIcon =
           /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>/gu;
-        expect(before.match(suggestionIcon)).toHaveLength(1);
         expect(current.match(suggestionIcon)).toHaveLength(1);
-        expect(current).toBe(before);
+        expect(current).toContain(`data-decision="${decision}"`);
+        expect(current).toContain('<mark>council</mark>');
+        expect(current).toContain('Generated rule');
+        expect(current).toContain(
+          '<strong>Political</strong> Generated reason.',
+        );
+        expect(current).toMatch(
+          /<details[^>]*><summary>[^<]+<\/summary>[\s\S]*?Example|<details[^>]*><summary>[^<]+<\/summary>[\s\S]*?Beispiel/,
+        );
       }
   },
 );
@@ -226,7 +229,7 @@ test.each(['en', 'de'] as const)(
           locale,
         );
         const marks = html.match(
-          /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>(?=<strong>)/gu,
+          /<svg\b[^>]*class="lucide lucide-wand-sparkles[^"]*"[^>]*>[\s\S]*?<\/svg>(?=<p dir="auto"><strong>)/gu,
         );
         expect(marks).toHaveLength(3);
         for (const mark of marks ?? []) {
@@ -247,7 +250,7 @@ function render(node: React.ReactNode, locale: 'en' | 'de') {
   );
 }
 test.each(['en', 'de'] as const)(
-  'X rendered bytes remain at base bf8843f in %s',
+  'FIT-1 X metadata and focal text stay present with unchanged decision keys in %s',
   (locale) => {
     const html = render(
       <FeedCard
@@ -259,11 +262,11 @@ test.each(['en', 'de'] as const)(
       />,
       locale,
     );
-    expect(createHash('sha256').update(html).digest('hex')).toBe(
-      locale === 'en'
-        ? '44ff1de4c4c5ba55e127e56127e5284bab354901ad9751f1635ab6879cee04af'
-        : '53dcef88a680d0522244513962b783bb8e3a6d42b5d7794d7ca7360ec0466b71',
-    );
+    expect(html).toContain('data-primary-text');
+    expect(html).toContain(card.text);
+    expect(html).toContain('<kbd>K</kbd>');
+    expect(html).toContain('<kbd>L</kbd>');
+    expect(html).toContain('<kbd>M</kbd>');
     expect(html).toContain(locale === 'en' ? '0 reposts' : '0 Reposts');
   },
 );

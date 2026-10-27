@@ -32,6 +32,38 @@
     font-size: var(--type-xs);
     font-weight: var(--weight-heading);
   }
+  :global([data-single='true']) .content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+  :global([data-single='true']) .context {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  :global([data-single='true']) [data-expanded='true'] .content,
+  :global([data-single='true']) [data-expanded='true'] .context {
+    overflow: visible;
+    flex: none;
+  }
+  :global([data-single='true']) .comment {
+    padding-block: var(--space-2);
+    flex: none;
+  }
+  :global([data-single='true']) .text strong {
+    font-size: var(--type-sm);
+    font-weight: var(--weight-heading);
+  }
+  @media (min-width: 1080px) {
+    :global([data-single='true']) .content {
+      display: contents;
+      overflow: visible;
+    }
+  }
   .body {
     min-width: 0;
   }

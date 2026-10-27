@@ -187,7 +187,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
     const measure = () =>
       panel.style.setProperty(
         '--feed-single-height',
-        `${Math.max(300, panel.clientHeight - 4)}px`,
+        `${Math.max(0, panel.clientHeight - 4)}px`,
       );
     measure();
     const observer = new ResizeObserver(measure);
@@ -317,7 +317,7 @@ export function ReviewFeed(props: ReviewFeedProps) {
   useLayoutEffect(() => {
     const panel = panelRef.current,
       footer = footerRef.current;
-    if (!panel || !footer) return;
+    if (!panel || !footer || props.virtualized === false) return;
     const update = () => {
       panel.style.paddingBottom = `${Math.ceil(footer.getBoundingClientRect().height)}px`;
       panel.style.setProperty(
@@ -333,10 +333,14 @@ export function ReviewFeed(props: ReviewFeedProps) {
       panel.style.paddingBottom = '';
       panel.style.removeProperty('--feed-footer-clearance');
     };
-  }, [props.tab, hasCriteria]);
+  }, [props.tab, hasCriteria, props.virtualized]);
   const active = tabs.find(([key]) => key === props.tab)!;
   return (
-    <section className={styles.review} aria-label={t('reviewFeed.planHeading')}>
+    <section
+      className={styles.review}
+      data-single-view={props.virtualized === false}
+      aria-label={t('reviewFeed.planHeading')}
+    >
       {props.header}
       {hasCriteria && (
         <header className={styles.feedHeader}>

@@ -46,6 +46,8 @@
   "reviewFeed.applyCriteria": "Use these criteria",
   "reviewFeed.sourceLater": "Choose a suggestion source after setting your criteria. This screen does not run a model.",
   "reviewFeed.list": "List view",
+  "reviewFeed.expandText": "Show full text",
+  "reviewFeed.collapseText": "Show less text",
   "reviewFeed.planHeading": "Your review",
   "reviewFeed.planSaved": "Marked. Nothing was deleted on the platform.",
   "reviewFeed.helpBody": "Focus a post to use these keys. Page Up and Page Down move between posts, Home goes to the first and End to the last. Ctrl+Z or Command+Z undoes the last action. Turn single-letter keys off in Settings.",

@@ -47,14 +47,19 @@ export function FeedContext({
     (original.signedIn?.status === 'read' ||
       (!original.signedIn && original.anonymous?.status === 'fetched'));
   return (
-    <section className={styles.thread} data-testid="stored-original">
-      <p className={styles.contextLabel}>
+    <details className={styles.thread} data-testid="stored-original">
+      <summary className={styles.contextLabel}>
         {t(
           item.kind === 'quote'
             ? 'reviewFeed.quoted'
             : 'reviewFeed.conversation',
         )}
-      </p>
+        {text && (
+          <span className={styles.contextTeaser} dir="auto">
+            {text}
+          </span>
+        )}
+      </summary>
       {original && text && (
         <>
           <strong>
@@ -112,6 +117,6 @@ export function FeedContext({
           {t('proto.viewOriginalX')}
         </a>
       )}
-    </section>
+    </details>
   );
 }

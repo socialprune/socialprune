@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { evidenceSegments } from '../model.ts';
 import { useIntl } from 'react-intl';
 import {
@@ -142,8 +142,36 @@ export function FeedCard({
   const t = useT(),
     intl = useIntl(),
     id = useId();
+  const content = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  useLayoutEffect(() => {
+    if (!single || !content.current) return;
+    const node = content.current;
+    const measure = () => {
+      if (!expanded)
+        setOverflowing(
+          node.scrollHeight > node.clientHeight + 1 ||
+            [...node.querySelectorAll('[data-primary-text]')].some(
+              (text) => text.scrollHeight > text.clientHeight + 1,
+            ),
+        );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    const revealDetails = (event: Event) => {
+      if (event.target instanceof HTMLDetailsElement && event.target.open)
+        setExpanded(true);
+    };
+    node.addEventListener('toggle', revealDetails, true);
+    observer.observe(node);
+    for (const child of node.children) observer.observe(child);
+    return () => {
+      observer.disconnect();
+      node.removeEventListener('toggle', revealDetails, true);
+    };
+  }, [single, expanded, card.text, context]);
   const decided = card.decision !== 'undecided';
-  const canMark = card.decision !== 'delete' && !card.deleted;
   const Icon = card.deleted
     ? CheckCheck
     : card.decision === 'keep'
@@ -223,268 +251,356 @@ export function FeedCard({
         }
       }}
     >
-      {platform === 'instagram' && card.kind === 'comment' ? (
-        <InstagramComment
-          card={card}
-          bylineId={`${id}-byline`}
-          zone={zone}
-          context={context}
-        />
-      ) : (
-        <>
-          {!!card.replyContext?.length && (
-            <details className={styles.thread}>
-              <summary className={styles.contextLabel}>
-                <MessageCircle size={16} aria-hidden="true" />
-                <span>{t('reviewFeed.conversation')}</span>
-                <span className={styles.contextTeaser} dir="auto">
-                  {card.replyContext.at(-1)!.text}
-                </span>
-              </summary>
-              <div className={styles.threadContent}>
-                {card.replyContext.slice(-2).map((post) => (
-                  <ContextPost key={post.id} post={post} zone={zone} />
-                ))}
-                {!!onConversation && (card.conversationCount ?? 0) > 2 && (
-                  <button
-                    className={styles.textButton}
-                    onClick={() => onConversation(card.id)}
-                  >
-                    {t('reviewFeed.thread', { count: card.conversationCount! })}
-                  </button>
-                )}
-              </div>
-            </details>
-          )}
-          {card.kind === 'reply' && context}
-          <div className={styles.post}>
-            <span className={styles.avatar} aria-hidden="true">
-              {avatarInitials(card.name, card.handle)}
-            </span>
-            <div className={styles.postBody}>
-              <Byline post={card} id={`${id}-byline`} zone={zone} />
-              {card.replyTo && (
-                <p className={styles.reply}>
-                  {t(
-                    card.kind === 'comment'
-                      ? 'proto.commentAt'
-                      : 'proto.replyTo',
-                    { handle: card.replyTo },
-                  )}
-                </p>
-              )}
-              {card.kind === 'repost' && (
-                <p className={styles.contextLabel}>
-                  <Repeat2 size={16} aria-hidden="true" />
-                  {t('review.repost')}
-                </p>
-              )}
-              <p className={styles.postText} dir="auto">
-                {evidenceSegments(
-                  card.text ||
-                    t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
-                  card.suggestions.map(
-                    (suggestion) => suggestion.evidence ?? null,
-                  ),
-                ).map((part, index) =>
-                  part.highlight ? (
-                    <mark key={index}>{part.text}</mark>
-                  ) : (
-                    part.text
-                  ),
-                )}
-              </p>
-              {card.kind !== 'reply' && context}
-              {card.quote && (
-                <section
-                  className={styles.quote}
-                  aria-label={t('reviewFeed.quoted')}
-                >
-                  <div className={styles.contextLabel}>
-                    <Quote size={16} aria-hidden="true" />
-                    {t('reviewFeed.quoted')}
-                  </div>
-                  <ContextPost post={card.quote} zone={zone} />
-                </section>
-              )}
-              {card.contextMissing && (
-                <p className={styles.meta}>
-                  {t(
-                    card.kind === 'comment'
-                      ? 'proto.instagramMissingPost'
-                      : 'reviewFeed.missingContext',
-                  )}
-                </p>
-              )}
-              {!!card.mediaCount && (
-                <p className={styles.media}>
-                  <Image size={20} aria-hidden="true" />
-                  {t('review.mediaCount', { count: card.mediaCount })}
-                </p>
-              )}
-              <div className={styles.engagement}>
-                <span>
+      <CardContent
+        single={single}
+        contentRef={content}
+        expanded={expanded}
+        id={`${id}-content`}
+      >
+        {platform === 'instagram' && card.kind === 'comment' ? (
+          <InstagramComment
+            card={card}
+            bylineId={`${id}-byline`}
+            zone={zone}
+            context={context}
+          />
+        ) : (
+          <>
+            {!!card.replyContext?.length && (
+              <details className={styles.thread}>
+                <summary className={styles.contextLabel}>
                   <MessageCircle size={16} aria-hidden="true" />
-                  {t(
-                    card.kind === 'reply'
-                      ? 'review.reply'
-                      : card.kind === 'comment'
-                        ? 'review.comment'
-                        : 'review.post',
+                  <span>{t('reviewFeed.conversation')}</span>
+                  <span className={styles.contextTeaser} dir="auto">
+                    {card.replyContext.at(-1)!.text}
+                  </span>
+                </summary>
+                <div className={styles.threadContent}>
+                  {card.replyContext.slice(-2).map((post) => (
+                    <ContextPost key={post.id} post={post} zone={zone} />
+                  ))}
+                  {!!onConversation && (card.conversationCount ?? 0) > 2 && (
+                    <button
+                      className={styles.textButton}
+                      onClick={() => onConversation(card.id)}
+                    >
+                      {t('reviewFeed.thread', {
+                        count: card.conversationCount!,
+                      })}
+                    </button>
                   )}
-                </span>
-                <span>
-                  <Repeat2 size={16} aria-hidden="true" />
-                  {t('proto.reposts', { count: card.reposts ?? -1 })}
-                </span>
-                <span>
-                  <Heart size={16} aria-hidden="true" />
-                  {t('review.likesValue', { count: card.likes ?? -1 })}
-                </span>
+                </div>
+              </details>
+            )}
+            {card.kind === 'reply' && context}
+            <div className={styles.post}>
+              <span className={styles.avatar} aria-hidden="true">
+                {avatarInitials(card.name, card.handle)}
+              </span>
+              <div className={styles.postBody}>
+                <div className={styles.metadataLine}>
+                  <Byline post={card} id={`${id}-byline`} zone={zone} />
+                  <span>
+                    {t(
+                      card.kind === 'reply'
+                        ? 'review.reply'
+                        : card.kind === 'quote'
+                          ? 'review.quote'
+                          : card.kind === 'repost'
+                            ? 'review.repost'
+                            : 'review.post',
+                    )}
+                  </span>
+                  {card.replyTo && (
+                    <span>{t('proto.replyTo', { handle: card.replyTo })}</span>
+                  )}
+                  <span>
+                    <Heart size={14} aria-hidden="true" />
+                    {t('review.likesValue', { count: card.likes ?? -1 })}
+                  </span>
+                  <span>
+                    <Repeat2 size={14} aria-hidden="true" />
+                    {t('proto.reposts', { count: card.reposts ?? -1 })}
+                  </span>
+                </div>
+                <p className={styles.postText} data-primary-text dir="auto">
+                  {evidenceSegments(
+                    card.text ||
+                      t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
+                    card.suggestions.map(
+                      (suggestion) => suggestion.evidence ?? null,
+                    ),
+                  ).map((part, index) =>
+                    part.highlight ? (
+                      <mark key={index}>{part.text}</mark>
+                    ) : (
+                      part.text
+                    ),
+                  )}
+                </p>
+                {card.kind !== 'reply' && context}
+                {card.quote && (
+                  <section
+                    className={styles.quote}
+                    aria-label={t('reviewFeed.quoted')}
+                  >
+                    <div className={styles.contextLabel}>
+                      <Quote size={16} aria-hidden="true" />
+                      {t('reviewFeed.quoted')}
+                    </div>
+                    <ContextPost post={card.quote} zone={zone} />
+                  </section>
+                )}
+                {card.contextMissing && (
+                  <p className={styles.meta}>
+                    {t(
+                      card.kind === 'comment'
+                        ? 'proto.instagramMissingPost'
+                        : 'reviewFeed.missingContext',
+                    )}
+                  </p>
+                )}
+                {!!card.mediaCount && (
+                  <p className={styles.media}>
+                    <Image size={20} aria-hidden="true" />
+                    {t('review.mediaCount', { count: card.mediaCount })}
+                  </p>
+                )}
               </div>
             </div>
+          </>
+        )}
+        <div className={styles.reviewBody}>
+          <div id={`${id}-suggestion`} className={styles.suggestions}>
+            {card.suggestions.map((suggestion) => (
+              <div key={suggestion.id} className={styles.suggestion}>
+                <div className={styles.suggestionLine}>
+                  <WandSparkles size={16} aria-hidden="true" />
+                  <p dir="auto">
+                    <strong>{suggestion.category}</strong> {suggestion.reason}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {!card.suggestions.length && (
+              <p className={styles.meta}>{t('review.noSuggestions')}</p>
+            )}
+            {!!card.suggestions.length && (
+              <details className={styles.suggestionDetails}>
+                <summary>{t('review.detail')}</summary>
+                {card.suggestions.map((suggestion) => (
+                  <div key={suggestion.id}>
+                    <p>
+                      {suggestion.category} · {t(levels[suggestion.level])} ·{' '}
+                      {sourceLabel(suggestion.source, t)}
+                    </p>
+                    <p>
+                      {t(
+                        suggestion.unclear
+                          ? 'review.categoryUnclear'
+                          : suggestion.harmless
+                            ? 'review.categoryHarmless'
+                            : 'reviewFeed.suggestDelete',
+                      )}
+                    </p>
+                    {suggestion.evidence && (
+                      <p>
+                        <q>{suggestion.evidence}</q>
+                      </p>
+                    )}
+                    {suggestion.ownCriterion && <p>{t('reviewFeed.own')}</p>}
+                  </div>
+                ))}
+              </details>
+            )}
           </div>
-        </>
-      )}
-      <div className={styles.reviewBody}>
-        <div id={`${id}-suggestion`} className={styles.suggestions}>
-          {card.suggestions.map((suggestion) => (
-            <div key={suggestion.id} className={styles.suggestion}>
-              <div className={styles.suggestionLine}>
-                <WandSparkles size={16} aria-hidden="true" />
-                <strong>
-                  {t(
-                    suggestion.unclear
-                      ? 'review.categoryUnclear'
-                      : suggestion.harmless
-                        ? 'review.categoryHarmless'
-                        : 'reviewFeed.suggestDelete',
-                  )}
-                </strong>
-                <span>{suggestion.category}</span>
-                <span>{t(levels[suggestion.level])}</span>
-                <span className={styles.source}>
-                  {sourceLabel(suggestion.source, t)}
-                </span>
-              </div>
-              <p dir="auto">{suggestion.reason}</p>
-              {suggestion.ownCriterion && (
-                <p className={styles.meta}>{t('reviewFeed.own')}</p>
-              )}
+          {!!card.heldBy.length && (
+            <div className={styles.held}>
+              {card.heldBy.map((rule) => (
+                <p key={rule.id}>
+                  <ShieldCheck size={18} aria-hidden="true" />
+                  <span>
+                    {t('reviewFeed.heldBy', {
+                      value: rule.value,
+                      rule: rule.rule,
+                    })}
+                  </span>
+                </p>
+              ))}
             </div>
-          ))}
-          {!card.suggestions.length && (
-            <p className={styles.meta}>{t('review.noSuggestions')}</p>
+          )}
+          {(decided || card.deleted) && (
+            <p className={styles.decision}>
+              <Icon size={18} aria-hidden="true" />
+              {state}
+            </p>
+          )}
+          {!single && (
+            <FeedActions
+              card={card}
+              single={false}
+              showLater={showLater}
+              platform={platform}
+              onDecision={onDecision}
+              id={id}
+            />
           )}
         </div>
-        {!!card.heldBy.length && (
-          <div className={styles.held}>
-            {card.heldBy.map((rule) => (
-              <p key={rule.id}>
-                <ShieldCheck size={18} aria-hidden="true" />
-                <span>
-                  {t('reviewFeed.heldBy', {
-                    value: rule.value,
-                    rule: rule.rule,
-                  })}
-                </span>
-              </p>
-            ))}
-          </div>
-        )}
-        {(decided || card.deleted) && (
-          <p className={styles.decision}>
-            <Icon size={18} aria-hidden="true" />
-            {state}
+      </CardContent>
+      {single && (overflowing || expanded) && (
+        <button
+          className={styles.expandText}
+          aria-expanded={expanded}
+          aria-controls={`${id}-content`}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {t(expanded ? 'reviewFeed.collapseText' : 'reviewFeed.expandText')}
+        </button>
+      )}
+      {single && (
+        <FeedActions
+          card={card}
+          single
+          showLater={showLater}
+          platform={platform}
+          onDecision={onDecision}
+          id={id}
+        />
+      )}
+    </article>
+  );
+}
+
+function CardContent({
+  single,
+  contentRef,
+  expanded,
+  id,
+  children,
+}: {
+  single: boolean;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+  expanded: boolean;
+  id: string;
+  children: React.ReactNode;
+}) {
+  return single ? (
+    <div
+      ref={contentRef}
+      className={styles.cardContent}
+      data-card-content
+      data-expanded={expanded}
+      id={id}
+    >
+      {children}
+    </div>
+  ) : (
+    <>{children}</>
+  );
+}
+
+function FeedActions({
+  card,
+  single,
+  showLater,
+  platform,
+  onDecision,
+  id,
+}: {
+  card: FeedCardModel;
+  single: boolean;
+  showLater: boolean;
+  platform: FeedPlatform;
+  onDecision: (id: string, value: FeedDecision) => void;
+  id: string;
+}) {
+  const t = useT();
+  const decided = card.decision !== 'undecided';
+  const canMark = card.decision !== 'delete' && !card.deleted;
+  return (
+    !card.deleted && (
+      <div className={styles.actions}>
+        {platform === 'instagram' && card.kind === 'comment' && (
+          <p
+            className={styles.commentExcerpt}
+            role="note"
+            aria-label={t('review.comment')}
+          >
+            <strong>{card.handle}</strong> {card.text || t('review.noText')}
           </p>
         )}
-        {!card.deleted && (
-          <div className={styles.actions}>
-            {platform === 'instagram' && card.kind === 'comment' && (
-              <p
-                className={styles.commentExcerpt}
-                role="note"
-                aria-label={t('review.comment')}
-              >
-                <strong>{card.handle}</strong> {card.text || t('review.noText')}
-              </p>
-            )}
-            {decided && card.decision !== 'later' && !single ? (
+        {decided && card.decision !== 'later' && !single ? (
+          <button
+            className={controls.button}
+            disabled={card.busy}
+            onClick={() => onDecision(card.id, 'undecided')}
+          >
+            <Undo2 size={18} aria-hidden="true" />
+            {t('reviewFeed.reset')}
+            <kbd>U</kbd>
+          </button>
+        ) : (
+          <>
+            <button
+              data-keep-action
+              className={`${controls.primary} ${styles.keepButton}`}
+              disabled={card.busy || card.decision === 'keep'}
+              onClick={() => onDecision(card.id, 'keep')}
+            >
+              <Check size={18} aria-hidden="true" />
+              {t('review.keep')}
+              <kbd>K</kbd>
+            </button>
+            {(single ||
+              (showLater &&
+                card.decision !== 'later' &&
+                !card.heldBy.length)) && (
               <button
-                className={controls.button}
-                disabled={card.busy}
-                onClick={() => onDecision(card.id, 'undecided')}
-              >
-                <Undo2 size={18} aria-hidden="true" />
-                {t('reviewFeed.reset')}
-                <kbd>U</kbd>
-              </button>
-            ) : (
-              <>
-                <button
-                  data-keep-action
-                  className={`${controls.primary} ${styles.keepButton}`}
-                  disabled={card.busy || card.decision === 'keep'}
-                  onClick={() => onDecision(card.id, 'keep')}
-                >
-                  <Check size={18} aria-hidden="true" />
-                  {t('review.keep')}
-                  <kbd>K</kbd>
-                </button>
-                {(single ||
-                  (showLater &&
-                    card.decision !== 'later' &&
-                    !card.heldBy.length)) && (
-                  <button
-                    data-later-action
-                    className={controls.quiet}
-                    disabled={card.busy || card.decision === 'later'}
-                    onClick={() => onDecision(card.id, 'later')}
-                  >
-                    <Pause size={18} aria-hidden="true" />
-                    {t('review.later')}
-                    <kbd>L</kbd>
-                  </button>
-                )}
-              </>
-            )}
-            {(canMark || single) && (
-              <button
-                data-mark-action
-                className={`${controls.quiet} ${styles.markButton}`}
-                disabled={card.busy || card.decision === 'delete'}
-                aria-describedby={`${id}-mark-help`}
-                onClick={() => onDecision(card.id, 'delete')}
-              >
-                <Bookmark size={18} aria-hidden="true" />
-                {t(
-                  card.heldBy.length
-                    ? 'reviewFeed.markAnyway'
-                    : 'reviewFeed.mark',
-                )}
-                <kbd>M</kbd>
-              </button>
-            )}
-            {single && decided && (
-              <button
-                data-reset-action
+                data-later-action
                 className={controls.quiet}
-                disabled={card.busy}
-                onClick={() => onDecision(card.id, 'undecided')}
+                disabled={card.busy || card.decision === 'later'}
+                onClick={() => onDecision(card.id, 'later')}
               >
-                <Undo2 size={18} aria-hidden="true" />
-                {t('reviewFeed.reset')}
-                <kbd>U</kbd>
+                <Pause size={18} aria-hidden="true" />
+                {t('review.later')}
+                <kbd>L</kbd>
               </button>
             )}
-            <span className={styles.srOnly} id={`${id}-mark-help`}>
-              {t('reviewFeed.localOnly', {
-                platform: platform === 'x' ? 'X' : 'Instagram',
-              })}
-            </span>
-          </div>
+          </>
         )}
+        {(canMark || single) && (
+          <button
+            data-mark-action
+            className={`${controls.quiet} ${styles.markButton}`}
+            disabled={card.busy || card.decision === 'delete'}
+            aria-describedby={`${id}-mark-help`}
+            onClick={() => onDecision(card.id, 'delete')}
+          >
+            <Bookmark size={18} aria-hidden="true" />
+            {t(
+              card.heldBy.length ? 'reviewFeed.markAnyway' : 'reviewFeed.mark',
+            )}
+            <kbd>M</kbd>
+          </button>
+        )}
+        {single && decided && (
+          <button
+            data-reset-action
+            className={controls.quiet}
+            disabled={card.busy}
+            onClick={() => onDecision(card.id, 'undecided')}
+          >
+            <Undo2 size={18} aria-hidden="true" />
+            {t('reviewFeed.reset')}
+            <kbd>U</kbd>
+          </button>
+        )}
+        <span className={styles.srOnly} id={`${id}-mark-help`}>
+          {t('reviewFeed.localOnly', {
+            platform: platform === 'x' ? 'X' : 'Instagram',
+          })}
+        </span>
       </div>
-    </article>
+    )
   );
 }

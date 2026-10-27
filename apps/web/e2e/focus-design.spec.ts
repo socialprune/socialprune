@@ -115,7 +115,7 @@ for (const lang of ['de', 'en'])
             await expect(mark).toHaveCount(1);
             await expect(mark).toHaveAttribute('aria-hidden', 'true');
             const shape = await mark.evaluate((svg) => {
-              const label = svg.nextElementSibling!;
+              const label = svg.nextElementSibling!.querySelector('strong')!;
               const iconBox = svg.getBoundingClientRect(),
                 labelBox = label.getBoundingClientRect();
               return {
@@ -125,7 +125,7 @@ for (const lang of ['de', 'en'])
                 labelColor: getComputedStyle(label).color,
                 labelTag: label.tagName,
                 before: iconBox.right <= labelBox.left,
-                aligned: Math.abs(iconBox.bottom - labelBox.bottom) <= 4,
+                aligned: Math.abs(iconBox.top - labelBox.top) <= 4,
               };
             });
             expect(shape).toMatchObject({

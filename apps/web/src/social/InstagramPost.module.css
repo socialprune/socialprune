@@ -51,7 +51,75 @@
     line-height: var(--line-md);
     white-space: pre-wrap;
   }
+  :global([data-single='true']) .feedPost {
+    padding-bottom: 0;
+    height: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  :global([data-single='true']) .feedMedia {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  :global([data-single='true']) .feedPreview {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: var(--space-2);
+  }
+  :global([data-single='true']) .feedHeader {
+    margin-bottom: var(--space-2);
+  }
+  :global([data-single='true']) .feedImage {
+    width: 100%;
+    height: 0;
+    min-height: 32px;
+    flex: 1;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: center;
+  }
+  :global([data-single='true']) .feedCaption {
+    font-size: var(--type-sm);
+    line-height: var(--line-sm);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  :global([data-single='true']) .feedDetails {
+    font-size: var(--type-xs);
+    flex: none;
+  }
+  :global([data-single='true']) .feedDetails summary {
+    padding-block: var(--space-2);
+  }
+  :global([data-single='true']) .feedCaption {
+    flex: none;
+  }
+  :global([data-single='true']) .feedDetails .actions {
+    margin-block: 0;
+  }
   @media (min-width: 1080px) {
+    :global([data-single='true']) [data-instagram-card] .feedPost,
+    :global([data-single='true']) [data-instagram-card] .feedPreview {
+      display: contents;
+    }
+    :global([data-single='true']) [data-instagram-card] .feedImage {
+      height: 100%;
+      max-width: 100%;
+      flex: none;
+    }
+    :global([data-single='true']) [data-instagram-card] .feedMedia {
+      min-height: 0;
+      height: 100%;
+      display: block;
+    }
     [data-instagram-card] .feedPost,
     [data-instagram-card] .feedPreview {
       display: contents;
@@ -153,5 +221,23 @@
   .actions button {
     max-width: 100%;
     overflow-wrap: anywhere;
+  }
+  :global([data-single='true']) .feedImage {
+    object-fit: contain;
+    object-position: center;
+    height: 0;
+    flex: 1;
+    max-height: 100%;
+  }
+  :global([data-single='true']) [data-expanded='true'] .feedCaption {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+  @media (min-width: 1080px) {
+    :global([data-single='true']) [data-instagram-card] .feedImage {
+      height: 100%;
+      flex: none;
+    }
   }
 }

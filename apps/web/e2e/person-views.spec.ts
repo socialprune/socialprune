@@ -436,6 +436,7 @@ test('shared cards expose fixture parent links and missing Instagram context wit
     ownFirst.getByRole('link', { name: 'View original on X', exact: true }),
   ).toHaveCount(0);
   const replyCard = card.locator(`article[data-item-id="${reply.id}"]`);
+  await replyCard.getByTestId('stored-original').locator('summary').click();
   const original = replyCard.getByRole('link', {
     name: 'View original on X',
     exact: true,
@@ -448,6 +449,7 @@ test('shared cards expose fixture parent links and missing Instagram context wit
   await expect(original).toHaveAttribute('target', '_blank');
   await expect(original).toHaveAttribute('rel', 'noopener noreferrer');
   const quoteCard = card.locator(`article[data-item-id="${quote.id}"]`);
+  await quoteCard.getByTestId('stored-original').locator('summary').click();
   const quoteLink = quoteCard.getByRole('link', {
     name: 'View original on X',
     exact: true,

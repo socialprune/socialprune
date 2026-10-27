@@ -21,35 +21,76 @@
     overflow-anchor: none;
     scrollbar-color: var(--color-boundary) var(--color-surface);
   }
-  :global([data-single='true']) .card {
-    min-height: var(--feed-single-height, 400px);
-    position: relative;
-    padding-bottom: 100px;
+  .cardContent {
+    display: contents;
+  }
+  .review[data-single-view='true'] .scrollPanel {
+    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
-  :global([data-single='true']) .reviewBody {
-    display: flex;
-    flex-direction: column;
+  .review[data-single-view='true'] .feed {
+    min-height: 0;
     flex: 1;
+    display: flex;
+    flex-direction: column;
   }
-  :global([data-single='true']) .card .actions {
-    position: absolute;
-    inset: auto 36px 24px;
+  :global([data-single='true']) .card {
+    min-height: 0;
+    height: 100%;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-5);
+  }
+  :global([data-single='true']) .cardContent {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+  :global([data-single='true']) .cardContent[data-expanded='true'] {
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  :global([data-single='true']) .cardContent:not([data-expanded='true']) .post,
+  :global([data-single='true'])
+    .cardContent:not([data-expanded='true'])
+    .postBody {
+    min-height: 0;
+    flex: 0 1 auto;
+  }
+  :global([data-single='true']) .postBody {
+    display: flex;
+    flex-direction: column;
+  }
+  :global([data-single='true'])
+    .cardContent:not([data-expanded='true'])
+    .postText {
+    min-height: 0;
+    overflow: hidden;
+    flex: 0 1 auto;
+  }
+  :global([data-single='true']) .metadataLine,
+  :global([data-single='true']) .reviewBody {
+    flex: none;
+  }
+  :global([data-single='true']) .card > .actions {
+    position: static;
+    flex: none;
     margin: 0;
-    padding-block: 12px;
+    padding-block: var(--space-3) 0;
     background: var(--color-surface);
     display: flex;
     flex-wrap: wrap;
+    border-top: 1px solid var(--color-divider);
   }
   :global([data-single='true']) .actions button {
     min-height: 52px;
     flex: 1;
     justify-content: center;
-  }
-  :global([data-single='true']) .card[data-instagram-card] .actions {
-    position: absolute;
-    inset: auto 24px 20px;
   }
   :global([data-single='true']) .card[data-instagram-card] > .reviewBody {
     position: static;
@@ -60,6 +101,55 @@
   :global([data-single='true']) .actions [data-reset-action] {
     flex: 1 0 100%;
     min-height: 44px;
+  }
+  .expandText {
+    align-self: flex-start;
+    flex: none;
+    background: transparent;
+    border: 0;
+    color: var(--color-action);
+    min-height: var(--target-size);
+    padding: var(--space-1) 0;
+    font-size: var(--type-sm);
+  }
+  .metadataLine {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .metadataLine > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .metadataLine .byline {
+    display: contents;
+  }
+  .metadataLine .byline strong {
+    font-size: inherit;
+  }
+  .metadataLine .byline > span {
+    display: none;
+  }
+  .metadataLine time {
+    margin-left: 0;
+  }
+  .suggestionDetails {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .suggestionDetails summary {
+    cursor: pointer;
+    min-height: var(--target-size);
+    align-content: center;
+  }
+  .suggestionDetails p {
+    margin-block: var(--space-1);
   }
   .ruleSummary {
     font-size: var(--type-sm);
@@ -241,6 +331,9 @@
     scroll-margin-block: var(--space-2);
     overflow-wrap: break-word;
   }
+  .card > .actions {
+    margin-left: 48px;
+  }
   .card:focus-visible {
     outline-offset: calc(-1 * var(--focus-width));
   }
@@ -325,6 +418,13 @@
   .threadContent {
     padding-top: var(--space-2);
   }
+  :global([data-single='true']) .thread img,
+  :global([data-single='true']) .thread video {
+    max-height: min(28dvh, 240px);
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+  }
   .contextLabel {
     gap: var(--space-2);
     margin: 0 0 var(--space-2);
@@ -367,6 +467,24 @@
     margin-left: 0;
     display: contents;
   }
+  .card[data-instagram-card] > .actions {
+    margin-left: 0;
+  }
+  :global([data-single='true']) .card[data-instagram-card] {
+    display: flex;
+    gap: 0;
+    padding: var(--space-4) var(--space-5);
+  }
+  :global([data-single='true'])
+    .card[data-instagram-card]
+    .cardContent
+    > .reviewBody {
+    display: block;
+    margin: var(--space-3) 0 0;
+  }
+  :global([data-single='true']) .card[data-instagram-card] .commentExcerpt {
+    display: none;
+  }
   .card[data-instagram-card] .actions {
     position: sticky;
     bottom: calc(-1 * var(--feed-footer-clearance, 0px));
@@ -391,6 +509,20 @@
     line-height: var(--line-xs);
   }
   @media (min-width: 1080px) {
+    :global([data-single='true']) .card[data-instagram-card] .cardContent {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      column-gap: var(--space-5);
+      align-content: start;
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .cardContent
+      > .reviewBody {
+      grid-column: 2;
+      grid-row: 4;
+    }
     .card[data-instagram-card] {
       display: grid;
       grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
@@ -440,14 +572,22 @@
   .suggestionLine {
     flex-wrap: wrap;
     align-items: baseline;
+    color: var(--color-text);
+    font-size: var(--type-sm);
+    line-height: var(--line-sm);
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+  .suggestions .suggestionLine p {
+    margin: 0;
+  }
+  .suggestionLine strong {
     color: var(--color-suggestion);
-    font-size: var(--type-xs);
-    line-height: var(--line-xs);
   }
   .suggestionLine > svg {
     position: relative;
     top: 0.125em;
-    color: inherit;
+    color: var(--color-suggestion);
   }
   .suggestionLine > span:not(.source) {
     border-left: var(--border-width) solid var(--color-divider);
@@ -466,9 +606,11 @@
     font-size: var(--type-xs);
   }
   .held {
-    padding: var(--space-3) 0 var(--space-3) var(--space-3);
+    padding: var(--space-2) var(--space-3);
     margin-block: var(--space-3);
-    border-left: 3px solid var(--color-boundary);
+    border: 1px solid var(--color-boundary);
+    border-radius: var(--radius-control);
+    width: fit-content;
   }
   .held p {
     display: flex;
@@ -484,6 +626,21 @@
     flex-wrap: wrap;
     padding-top: var(--space-4);
     gap: var(--space-2);
+  }
+  .review[data-single-view='true'] .notice {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .review[data-single-view='true'] .windowButton {
+    display: none;
+  }
+  .review[data-single-view='true'] .footer {
+    position: static;
+    flex: none;
+    padding-block: var(--space-2);
   }
   .actions button {
     display: inline-flex;
@@ -821,6 +978,9 @@
     .reviewBody {
       margin-left: 0;
     }
+    .card > .actions {
+      margin-left: 0;
+    }
     .byline time {
       margin-left: 0;
     }
@@ -954,6 +1114,31 @@
     .decision,
     .suggestionLine {
       color: CanvasText;
+    }
+  }
+  /* The fit layout owns its actions; list-only sticky/grid rules must not win. */
+  :global([data-single='true']) .card[data-instagram-card] {
+    display: flex;
+    flex-direction: column;
+  }
+  :global([data-single='true']) .card[data-instagram-card] > .actions {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-divider);
+  }
+  :global([data-single='true'])
+    .card[data-instagram-card]
+    .actions
+    .commentExcerpt {
+    display: none;
+  }
+  @media (min-width: 1080px) {
+    :global([data-single='true']) .card[data-instagram-card] .cardContent {
+      height: 0;
+      grid-template-rows: auto auto auto minmax(0, 1fr) 44px;
     }
   }
 }

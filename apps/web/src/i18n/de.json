@@ -46,6 +46,8 @@
   "reviewFeed.applyCriteria": "Diese Kriterien verwenden",
   "reviewFeed.sourceLater": "Wähle nach den Kriterien eine Vorschlagsquelle. Diese Ansicht startet kein Modell.",
   "reviewFeed.list": "Listenansicht",
+  "reviewFeed.expandText": "Ganzen Text zeigen",
+  "reviewFeed.collapseText": "Weniger Text zeigen",
   "reviewFeed.planHeading": "Deine Durchsicht",
   "reviewFeed.planSaved": "Vorgemerkt. Auf der Plattform wurde nichts gelöscht.",
   "reviewFeed.helpBody": "Fokussiere einen Beitrag für diese Tasten. Bild auf und Bild ab wechseln zwischen Beiträgen, Pos1 geht zum ersten und Ende zum letzten. Strg+Z oder Command+Z nimmt die letzte Aktion zurück. Einzelne Buchstabentasten kannst du in den Einstellungen ausschalten.",

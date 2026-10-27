@@ -76,7 +76,26 @@ jobs:
       # downloads took 12-16 s. Bound dependency setup separately from tests.
       - name: Install browser system dependencies
         timeout-minutes: 30
-        run: pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit
+        shell: bash
+        # Playwright does not support caching OS packages. Retry installation,
+        # not tests; 16m encloses the measured 14m09s success, with 10m recovery.
+        # Retain apt's mirror, TLS and signature checks.
+        run: |
+          attempt=0
+          for duration in 16m 10m; do
+            attempt=$((attempt + 1))
+            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
+            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "Dependency installation failed with exit $status"
+            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
+            # A terminated apt install may leave configuration pending.
+            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
+            sleep 10
+          done
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
@@ -102,7 +121,22 @@ jobs:
       # can remove the observed apt bottleneck on a fresh runner.
       - name: Install browser system dependencies
         timeout-minutes: 30
-        run: pnpm --filter socialprune exec playwright install-deps chromium firefox webkit
+        shell: bash
+        run: |
+          attempt=0
+          for duration in 16m 10m; do
+            attempt=$((attempt + 1))
+            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
+            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter socialprune exec playwright install-deps chromium firefox webkit; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "Dependency installation failed with exit $status"
+            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
+            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
+            sleep 10
+          done
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter socialprune exec playwright install chromium firefox webkit
@@ -147,6 +181,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @socialprune/desktop exec playwright install chromium
+      # Restore the archive before units, not only before installed proofs.
+      # actions/cache v4.2.4 is already admitted (MIT, 2026-10-19, ADR-002).
+      - name: Read pinned NSIS archive digest
+        id: nsis
+        run: node --input-type=module -e "import { NSIS_SHA256 } from './apps/desktop/packaging/nsis-version.ts'; console.log('sha256=' + NSIS_SHA256)" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: apps/desktop/dist/nsis-3.13.zip
+          key: nsis-${{ steps.nsis.outputs.sha256 }}
+      - name: Prepare verified NSIS archive before unit tests
+        run: node apps/desktop/packaging/nsis-cache.ts
       - run: pnpm build:desktop
       - run: pnpm --filter @socialprune/desktop fuses:check
       - run: pnpm --filter @socialprune/desktop test:red
@@ -159,15 +204,6 @@ jobs:
       - run: pnpm exec vitest run --project desktop --project licenses-check --project lint-rules --maxWorkers=2
       - run: pnpm test:desktop
       - run: pnpm smoke:desktop
-      # actions/cache v4.2.4 LICENSE read at the tagged release (MIT),
-      # 2026-10-19, ADR-002 rule 7. Restored bytes are still SHA-256 checked.
-      - name: Read pinned NSIS archive digest
-        id: nsis
-        run: node --input-type=module -e "import { NSIS_SHA256 } from './apps/desktop/packaging/nsis-version.ts'; console.log('sha256=' + NSIS_SHA256)" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: apps/desktop/dist/nsis-3.13.zip
-          key: nsis-${{ steps.nsis.outputs.sha256 }}
       - name: Installed release budgets and system boundary
         run: |
           pnpm --filter @socialprune/desktop build:release

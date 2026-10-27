@@ -89,7 +89,14 @@ test('desktop CI enforces runner budgets and publishes medians, using a digest-k
   const workflow = parseDocument(source).toJS() as {
     jobs: {
       desktop: {
-        steps: { uses?: string; if?: string; with?: Record<string, unknown> }[];
+        steps: {
+          uses?: string;
+          if?: string;
+          name?: string;
+          id?: string;
+          run?: string;
+          with?: Record<string, unknown>;
+        }[];
       };
     };
   };
@@ -98,6 +105,24 @@ test('desktop CI enforces runner budgets and publishes medians, using a digest-k
   );
   expect(evidence?.if).toBe('always()');
   expect(evidence?.with?.['if-no-files-found']).toBe('warn');
+  const steps = workflow.jobs.desktop.steps;
+  const pin = steps.findIndex((step) => step.id === 'nsis');
+  const cache = steps.findIndex(
+    (step) => step.with?.path === 'apps/desktop/dist/nsis-3.13.zip',
+  );
+  const verify = steps.findIndex(
+    (step) => step.run === 'node apps/desktop/packaging/nsis-cache.ts',
+  );
+  const units = steps.findIndex((step) =>
+    step.run?.includes('vitest run --project desktop'),
+  );
+  expect(pin).toBeGreaterThan(0);
+  expect(cache).toBeGreaterThan(pin);
+  expect(verify).toBeGreaterThan(cache);
+  expect(units).toBeGreaterThan(verify);
+  expect(steps[verify]?.if).toBeUndefined(); // A cache hit still verifies the digest.
+  expect(steps[cache]?.with?.key).toBe('nsis-${{ steps.nsis.outputs.sha256 }}');
+  expect(steps.filter((step) => step.id === 'nsis')).toHaveLength(1);
   const manifest = JSON.parse(
     await readFile(join(root, 'package.json'), 'utf8'),
   ) as { scripts: Record<string, string> };
@@ -128,6 +153,7 @@ test('Linux browser jobs bound the measured apt bottleneck separately from brows
           name?: string;
           run?: string;
           uses?: string;
+          shell?: string;
           'timeout-minutes'?: number;
         }[];
       }
@@ -149,8 +175,25 @@ test('Linux browser jobs bound the measured apt bottleneck separately from brows
     expect(browsers).toBe(dependencies + 1);
     expect(job.steps[dependencies]).toMatchObject({
       'timeout-minutes': 30,
-      run: `pnpm --filter ${filter} exec playwright install-deps chromium firefox webkit`,
+      shell: 'bash',
     });
+    const install = job.steps[dependencies]!.run!;
+    expect(install).toContain('for duration in 16m 10m; do');
+    expect(install).toContain(
+      `timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter ${filter} exec playwright install-deps chromium firefox webkit`,
+    );
+    expect(install).toContain(
+      'if [ "$attempt" -eq 2 ]; then exit "$status"; fi',
+    );
+    expect(install).toContain(
+      'timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a',
+    );
+    expect(install).not.toMatch(
+      /continue-on-error|\|\| true|--allow-unauthenticated|trusted=yes/,
+    );
+    // The first attempt encloses the measured 14m09s successful install.
+    // 16m + 10m + two 30s kill allowances + 70s dpkg + 10s pause < 30m.
+    expect((16 + 10) * 60 + 2 * 30 + 60 + 10 + 10).toBeLessThan(30 * 60);
     expect(job.steps[browsers]).toMatchObject({
       'timeout-minutes': 5,
       run: `pnpm --filter ${filter} exec playwright install chromium firefox webkit`,

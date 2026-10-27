@@ -1,19 +1,11 @@
 import { createHash } from 'node:crypto';
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import extract from '@electron-internal/extract-zip';
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
 import { dist } from './paths.ts';
-import { verifyNsisArchive } from './nsis-checks.ts';
-import { NSIS_SHA256, NSIS_URL, NSIS_VERSION } from './nsis-version.ts';
+import { NSIS_SHA256, NSIS_VERSION } from './nsis-version.ts';
+import { loadNsisArchive } from './nsis-download.ts';
 
 const hash = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
@@ -81,40 +73,10 @@ export async function fetchNsis(
   options: { workspace?: string } = {},
 ) {
   const workspace = options.workspace ?? dist;
-  let cache = join(dist, `nsis-${NSIS_VERSION}.zip`);
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(cache);
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !('code' in error) ||
-      error.code !== 'ENOENT'
-    )
-      throw error;
-    cache = join(workspace, `nsis-${NSIS_VERSION}.zip`);
-    try {
-      bytes = await readFile(cache);
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !('code' in error) ||
-        error.code !== 'ENOENT'
-      )
-        throw error;
-      await mkdir(workspace, { recursive: true });
-      const response = await fetch(NSIS_URL, {
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!response.ok)
-        throw new Error(`NSIS_DOWNLOAD_FAILED:${response.status}`);
-      bytes = Buffer.from(await response.arrayBuffer());
-      verifyNsisArchive(bytes, expected);
-      await writeFile(cache, bytes, { flag: 'wx' });
-    }
-  }
-  // Recheck cached bytes before extracting or executing anything.
-  verifyNsisArchive(bytes, expected);
+  const { path: cache, bytes } = await loadNsisArchive(expected, {
+    cacheDirectory: dist,
+    workspace,
+  });
   const files = await archiveFiles(bytes);
   // Parent-created tools are read-only inputs. Never delete or repair them.
   const candidates = [join(dist, 'nsis-tools')];

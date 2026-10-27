@@ -206,7 +206,9 @@ test('confirmed Instagram posts replace each local fallback, show files only on 
       own.createdAt,
     );
     await expect(
-      post.locator('[data-instagram-caption] > p[dir="auto"]'),
+      post.locator(
+        '[data-instagram-caption] [data-clamped-text] > p[dir="auto"]',
+      ),
     ).toHaveText(
       `${fixture.records[0]!.post.owner} ${fixture.records[0]!.post.caption!}`,
     );

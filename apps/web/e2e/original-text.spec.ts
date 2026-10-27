@@ -66,7 +66,11 @@ for (const row of originalTextCases()) {
           .first(),
       ).toHaveText(originalTextInput.ownText);
       const original = card.getByTestId('stored-original');
-      const text = original.locator(':scope > p[dir="auto"]').first();
+      const text = original
+        .locator(
+          ':scope > p[dir="auto"], :scope > [data-clamped-text] > p[dir="auto"]',
+        )
+        .first();
       await expect(text).toHaveText(row.expected);
       for (const forbidden of row.hidden)
         await expect(text).not.toContainText(forbidden);

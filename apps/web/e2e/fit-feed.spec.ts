@@ -198,22 +198,24 @@ for (const size of sizes)
           .getByRole('tab', { name: /^Suggested for deletion,/ })
           .click();
         await page.getByRole('tab', { name: /^All,/ }).click();
-        const summary = page.getByTestId('stored-original').locator('summary');
-        expect((await summary.boundingBox())!.height).toBeLessThanOrEqual(64);
+        await expect(
+          page
+            .getByTestId('stored-original')
+            .getByRole('link', { name: 'View original on X' }),
+        ).toBeVisible();
       }
       await mode(page, true);
       await expect(page.getByRole('feed').locator('article')).toHaveCount(1);
       await geometry(page);
       if (shape === 'image') {
         const original = page.getByTestId('stored-original');
-        await original.locator('summary').click();
         const image = original.locator('img');
         await expect(image).toBeVisible();
         await image.evaluate((node) => (node as HTMLImageElement).decode());
         expect((await image.boundingBox())!.height).toBeLessThanOrEqual(
           size.height * 0.28 + 1,
         );
-        await geometry(page, true);
+        await geometry(page);
       }
     }
   });
@@ -282,6 +284,11 @@ test('R3 phone Instagram keeps a readable uncropped image and reachable actions'
     await mode(page, true);
     const card = await geometry(page);
     const image = card.getByTestId('instagram-post').locator('img').first();
+    await expect(
+      card
+        .getByTestId('instagram-post')
+        .getByRole('link', { name: 'Open on Instagram' }),
+    ).toBeVisible();
     const rendered = await image.evaluate((node) => {
       const image = node as HTMLImageElement,
         box = image.getBoundingClientRect();

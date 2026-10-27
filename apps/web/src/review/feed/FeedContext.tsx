@@ -7,6 +7,7 @@ import { originalDisplayText } from '../../social/originalText.ts';
 import { originalXLink } from '../../social/originalLink.ts';
 import { useT } from '../../i18n/index.ts';
 import styles from './Feed.module.css';
+import { ClampedText } from './ClampedText.tsx';
 
 export function FeedContext({
   item,
@@ -47,32 +48,29 @@ export function FeedContext({
     (original.signedIn?.status === 'read' ||
       (!original.signedIn && original.anonymous?.status === 'fetched'));
   return (
-    <details className={styles.thread} data-testid="stored-original">
-      <summary className={styles.contextLabel}>
+    <section className={styles.thread} data-testid="stored-original">
+      <p className={styles.contextLabel}>
         {t(
           item.kind === 'quote'
             ? 'reviewFeed.quoted'
             : 'reviewFeed.conversation',
         )}
-        {text && (
-          <span className={styles.contextTeaser} dir="auto">
-            {text}
-          </span>
-        )}
-      </summary>
+      </p>
       {original && text && (
         <>
           <strong>
             {original.authorName}{' '}
             {original.authorHandle && `@${original.authorHandle}`}
           </strong>
-          <p dir="auto">{text}</p>
-          <StoredMedia original={original} />
+          <ClampedText>{text}</ClampedText>
+          <div className={styles.contextMedia}>
+            <StoredMedia original={original} />
+          </div>
         </>
       )}
       {readable ? (
         <>
-          <p className={styles.meta}>
+          <span className={styles.meta}>
             {t(
               original.textCompleteness === 'full'
                 ? 'originals.full'
@@ -80,8 +78,8 @@ export function FeedContext({
                   ? 'originals.truncated'
                   : 'originals.completenessUnknown',
             )}
-          </p>
-          <p className={styles.meta}>
+          </span>{' '}
+          <span className={styles.meta}>
             {t(
               original.textSource === 'signed-in'
                 ? 'originals.sourceSignedIn'
@@ -98,7 +96,7 @@ export function FeedContext({
                 ),
               },
             )}
-          </p>
+          </span>
           <Conversation id={original.id} client={client} />
         </>
       ) : (
@@ -117,6 +115,6 @@ export function FeedContext({
           {t('proto.viewOriginalX')}
         </a>
       )}
-    </details>
+    </section>
   );
 }

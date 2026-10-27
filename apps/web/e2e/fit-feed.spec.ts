@@ -101,8 +101,10 @@ async function prepare(page: Page, shape: Shape) {
     await page.evaluate((original) => {
       window.workspace.getOriginals = () => Promise.resolve([original]);
     }, original);
-    await page.getByRole('tab', { name: /^Suggested for deletion,/ }).click();
-    await page.getByRole('tab', { name: /^All,/ }).click();
+    await page
+      .getByRole('tab', { name: /^(Suggested for deletion|Löschvorschläge),/ })
+      .click();
+    await page.getByRole('tab', { name: /^(All|Alle),/ }).click();
   }
   return item.id;
 }
@@ -364,6 +366,54 @@ test('R2 clipped caption control belongs below that caption and expands internal
   ).toHaveAttribute('aria-expanded', 'true');
   await geometry(page, true);
 });
+
+for (const locale of ['en', 'de'] as const)
+  test(`original provenance and platform link are separated in ${locale}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(sizes[1]!);
+    await page.addInitScript(
+      (locale) => localStorage.setItem('sp-locale', locale),
+      locale,
+    );
+    await prepare(page, 'image');
+    const original = page.getByTestId('stored-original');
+    const link = original.getByRole('link', {
+      name: locale === 'en' ? 'View original on X' : 'Original auf X ansehen',
+      exact: true,
+    });
+    for (const single of [true, false]) {
+      await page
+        .getByRole('button', {
+          name:
+            locale === 'en'
+              ? single
+                ? 'One at a time'
+                : 'List'
+              : single
+                ? 'Einzeln'
+                : 'Liste',
+          exact: true,
+        })
+        .click();
+      await expect(link).toBeVisible();
+      const adjacency = await link.evaluate((link) => {
+        const text = link.parentElement!.textContent;
+        const index = text.indexOf(link.textContent);
+        const previous = link.previousSibling;
+        const prior =
+          previous instanceof Element ? previous.getBoundingClientRect() : null;
+        const box = link.getBoundingClientRect();
+        return {
+          before: text.slice(0, index),
+          startsNewLine: !!prior && box.top >= prior.bottom - 1,
+        };
+      });
+      expect(adjacency.startsNewLine || /[\s·|]$/u.test(adjacency.before)).toBe(
+        true,
+      );
+    }
+  });
 
 for (const size of [sizes[3]!, sizes[1]!, sizes[4]!])
   for (const theme of ['light', 'dark'] as const)

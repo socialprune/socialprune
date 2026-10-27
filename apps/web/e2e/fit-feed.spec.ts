@@ -369,3 +369,32 @@ for (const size of [sizes[3]!, sizes[1]!, sizes[4]!])
           });
         }
       });
+
+for (const size of [sizes[3]!, sizes[1]!, sizes[4]!])
+  for (const theme of ['light', 'dark'] as const)
+    test(`FIT-1 restored original capture ${theme} ${size.width}`, async ({
+      page,
+    }) => {
+      // eslint-disable-next-line no-restricted-properties -- Explicit generated screenshot destination.
+      const folder = process.env['SP_H_SCREEN_DIR'];
+      test.skip(
+        !folder || test.info().project.name !== 'chromium',
+        'Explicit Chromium capture only.',
+      );
+      await page.setViewportSize(size);
+      await page.addInitScript((theme) => {
+        localStorage.setItem('sp-locale', 'en');
+        localStorage.setItem('sp-theme', theme);
+      }, theme);
+      await prepare(page, 'image');
+      for (const single of [true, false]) {
+        await mode(page, single);
+        await page.screenshot({
+          path: join(
+            folder!,
+            `x-original-${single ? 'single' : 'list'}-${theme}-${size.width}x${size.height}.png`,
+          ),
+          animations: 'disabled',
+        });
+      }
+    });

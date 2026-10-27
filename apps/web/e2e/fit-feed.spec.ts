@@ -160,6 +160,16 @@ async function geometry(page: Page, expanded = false) {
       media,
       '/context/instagram/Generated_feed/image.png',
     );
+  if (!expanded && (await card.getByTestId('instagram-post').count())) {
+    const link = card
+      .getByTestId('instagram-post')
+      .getByRole('link', { name: 'Open on Instagram' });
+    const linkBox = await link.boundingBox(),
+      contentBox = await card.locator('[data-card-content]').boundingBox();
+    expect
+      .soft(linkBox!.y + linkBox!.height)
+      .toBeLessThanOrEqual(contentBox!.y + contentBox!.height + 1);
+  }
   const result = await card.evaluate((card) => {
     const root = document.scrollingElement!;
     const box = (node: Element) => {

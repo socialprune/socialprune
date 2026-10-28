@@ -117,6 +117,15 @@ test('F1 reviewer SQLite probe: failed keep followed by Undo never changes the e
 test('reviewer retained proof: write two of three fails without erasing writes one and three', async ({
   page,
 }) => {
+  // Keep this proof valid when the first observation frame is later than a
+  // failed receipt. The injected receipt is released by queue order, not time.
+  await page.addInitScript(() => {
+    const frame = requestAnimationFrame;
+    window.requestAnimationFrame = (callback) =>
+      frame((time) => {
+        setTimeout(() => callback(time), 180);
+      });
+  });
   const initial = headerFixture(),
     workspace = await mkdtemp(
       join(tmpdir(), 'socialprune-revision-three-generated-'),
@@ -151,13 +160,16 @@ test('reviewer retained proof: write two of three fails without erasing writes o
       window.workspace.request = async (input, transfer) => {
         if (input.type === 'decide') {
           count++;
-          await new Promise((resolve) => setTimeout(resolve, 80));
-          if (count === 2)
+          if (count === 2) {
+            await new Promise<void>((resolve) =>
+              Reflect.set(window, '__releaseSecondWrite', resolve),
+            );
             return {
               type: 'failed',
               requestId: input.requestId,
               code: 'STORAGE',
             };
+          }
         }
         return request(input, transfer);
       };
@@ -170,17 +182,31 @@ test('reviewer retained proof: write two of three fails without erasing writes o
         )!;
         ids.push(card.dataset['cardId']!);
         card.querySelector<HTMLButtonElement>('[data-keep-action]')!.click();
-        await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () =>
+              reject(new Error('Queued decision did not advance the card.')),
+            5000,
+          );
           const frame = () =>
             document.querySelector<HTMLElement>('article[data-card-id]')
               ?.dataset['cardId'] !== ids.at(-1)
-              ? resolve()
+              ? (clearTimeout(timeout), resolve())
               : requestAnimationFrame(frame);
           requestAnimationFrame(frame);
         });
       }
       return ids;
     });
+    expect(ids).toEqual(['x:feed-1', 'x:feed-2', 'x:feed-3']);
+    await expect
+      .poll(() =>
+        page.evaluate(() => typeof Reflect.get(window, '__releaseSecondWrite')),
+      )
+      .toBe('function');
+    await page.evaluate(() =>
+      (Reflect.get(window, '__releaseSecondWrite') as () => void)(),
+    );
     await page.evaluate(() => window.workspace.flushCommands());
     await expect(feed.locator('article')).toHaveAttribute(
       'data-card-id',

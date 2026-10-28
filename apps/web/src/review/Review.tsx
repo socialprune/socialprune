@@ -168,9 +168,11 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const requestedWindow = useRef<number | null>(null);
   // The count arrives before its rows. Retain Enter for this view and index
   // until the row is rendered, unless the person moves on.
-  const pendingDetail = useRef<{ view: ReviewView; index: number } | null>(
-    null,
-  );
+  const pendingDetail = useRef<{
+    view: ReviewView;
+    generation: number;
+    index: number;
+  } | null>(null);
   const selectionAnchor = useRef<number | null>(null);
   const currentQuery = useRef({ generation: 0, total: 0 });
   const focusedIndex = useRef(0);
@@ -373,6 +375,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     if (!intent) return;
     if (
       intent.view !== viewRef.current ||
+      intent.generation !== generation.current ||
       intent.index !== focusedIndex.current ||
       document.activeElement !== grid.current
     ) {
@@ -830,6 +833,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
       else if (total > 0)
         pendingDetail.current = {
           view: viewRef.current,
+          generation: generation.current,
           index: focusedIndex.current,
         };
       return;

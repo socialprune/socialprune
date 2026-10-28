@@ -58,7 +58,13 @@ for (const home of [false, true])
     }
   });
 
-for (const supersede of ['Escape', 'focus', 'view', 'movement'] as const)
+for (const supersede of [
+  'Escape',
+  'focus',
+  'view',
+  'movement',
+  'revision',
+] as const)
   test(`pending detail never overrides a newer ${supersede} command`, async ({
     page,
     browserName,
@@ -90,6 +96,19 @@ for (const supersede of ['Escape', 'focus', 'view', 'movement'] as const)
       if (supersede === 'Escape') await page.keyboard.press('Escape');
       else if (supersede === 'focus') await search.focus();
       else if (supersede === 'movement') await page.keyboard.press('ArrowDown');
+      else if (supersede === 'revision')
+        await page.evaluate(() =>
+          window.workspace.worker.dispatchEvent(
+            new MessageEvent('message', {
+              data: {
+                type: 'changed',
+                revision: 999,
+                itemIds: 'many',
+                countsChanged: true,
+              },
+            }),
+          ),
+        );
       else await search.fill('entry 2');
       await page.evaluate(() =>
         (

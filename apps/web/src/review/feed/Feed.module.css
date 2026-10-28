@@ -45,26 +45,39 @@
     padding: var(--space-4) var(--space-5);
   }
   :global([data-single='true']) .cardContent {
-    display: flex;
-    flex-direction: column;
+    display: block;
     min-height: 0;
     flex: 1;
-    overflow: hidden;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
   :global([data-single='true']) .cardContent[data-expanded='true'] {
     overflow: auto;
     overscroll-behavior: contain;
   }
+  :global([data-single='true']) .cardContent > * {
+    flex-shrink: 0;
+  }
   :global([data-single='true']) .cardContent:not([data-expanded='true']) .post,
   :global([data-single='true'])
     .cardContent:not([data-expanded='true'])
     .postBody {
-    min-height: 0;
-    flex: 0 1 auto;
+    min-height: auto;
+    flex: none;
   }
   :global([data-single='true']) .postBody {
+    display: block;
+  }
+  :global([data-single='true']) .post {
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
+  }
+  :global([data-single='true']) .postBody {
+    min-width: 0;
+    width: calc(100% - 48px);
+  }
+  :global([data-single='true']) .avatar {
+    flex: none;
   }
   :global([data-single='true'])
     .cardContent:not([data-expanded='true'])
@@ -447,6 +460,9 @@
   :global([data-single='true']) .thread .contextMedia {
     min-height: 80px;
     margin-left: calc(100% - 112px);
+  }
+  :global([data-single='true']) .thread .contextMedia:not(:has(img, video)) {
+    min-height: 0;
   }
   :global([data-single='true']) .thread .meta {
     display: inline;
@@ -996,6 +1012,9 @@
     scrollbar-color: var(--color-boundary) var(--color-surface);
   }
   @media (max-width: 540px) {
+    :global([data-single='true']) .postBody {
+      width: 100%;
+    }
     :global([data-single='true']) .card .actions {
       left: 16px;
       right: 16px;

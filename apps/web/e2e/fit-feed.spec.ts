@@ -154,6 +154,203 @@ async function mode(page: Page, single: boolean) {
   }
 }
 
+async function compound(page: Page, instagram: boolean) {
+  await page.goto('about:blank');
+  const data = headerFixture();
+  const item = data.items.find(
+    (item) => item.id === (instagram ? 'instagram:feed-read' : 'x:feed-1'),
+  )!;
+  item.text =
+    '@generated_one @generated_two @generated_three ' +
+    'An invented discussion asks the council to improve the garden paths and keep the public meeting open. '.repeat(
+      3,
+    );
+  item.engagement.likes = 14;
+  item.kind = instagram ? 'comment' : 'reply';
+  if (!instagram) {
+    item.reference.replyToId = '81001';
+    item.reference.replyToHandle = 'generated_author';
+  }
+  data.settings.review!.accountKey = item.account.key;
+  data.settings.review!.feed!.tab = 'held';
+  const assessment = data.assessments.find((a) => a.itemId === item.id)!;
+  assessment.risk = 1;
+  assessment.reason =
+    'The invented council discussion contains a political suggestion.';
+  assessment.evidence = 'council';
+  data.assessments.push({
+    ...assessment,
+    assessmentId: 'generated-second-assessment',
+    submissionId: 'generated-second-submission',
+    source: { ...assessment.source, name: 'Second generated reader' },
+    reason: 'The invented public meeting is another generated reason.',
+    evidence: 'public meeting',
+  });
+  data.submissions.push({
+    ...data.submissions[0]!,
+    submissionId: 'generated-second-submission',
+    source: { kind: 'agent', version: '1', name: 'Second generated reader' },
+    contentHash: `sha256:${'c'.repeat(64)}`,
+    labelCount: 1,
+  });
+  data.counts.assessments++;
+  data.counts.submissions++;
+  await restoreLiveFeed(
+    page,
+    data,
+    undefined,
+    instagram ? [generatedReadPost()] : [],
+  );
+  const original = generatedOriginal({
+    text: 'A generated original discusses the garden paths and the public meeting.',
+    media: [],
+  });
+  await page.evaluate((original) => {
+    window.workspace.getOriginals = () => Promise.resolve([original]);
+    const request = window.workspace.request.bind(window.workspace);
+    window.workspace.request = (input, transfer) =>
+      input.type === 'getConversation'
+        ? Promise.resolve({
+            type: 'conversation',
+            requestId: input.requestId,
+            chain: [original],
+            state: 'complete',
+          } as never)
+        : request(input, transfer);
+  }, original);
+  await page.getByRole('tab', { name: /^(All|Alle),/ }).click();
+  await page
+    .getByRole('tab', { name: /^(Held back|Von deinen Regeln)/ })
+    .click();
+  await mode(page, true);
+  return item.id;
+}
+
+async function noIntersections(card: Locator) {
+  return card.evaluate((card) => {
+    const selectors =
+      '[data-primary-text], [data-clamped-text] > button, [data-testid="stored-original"], [data-testid="instagram-post"], [class*="metadataLine"], [class*="suggestionLine"] p, [class*="suggestionReason"], [class*="held"] p, [class*="suggestionDetails"] > summary, [data-keep-action], [data-later-action], [data-mark-action], [data-reset-action]';
+    const nodes = [...card.querySelectorAll<HTMLElement>(selectors)].filter(
+      (node) => node.getClientRects().length,
+    );
+    const pairs: string[] = [];
+    const visibleBox = (node: HTMLElement) => {
+      const r = node.getBoundingClientRect();
+      const box = {
+        left: r.left,
+        right: r.right,
+        top: r.top,
+        bottom: r.bottom,
+      };
+      for (
+        let parent = node.parentElement;
+        parent;
+        parent = parent.parentElement
+      ) {
+        const style = getComputedStyle(parent),
+          clip = parent.getBoundingClientRect();
+        if (/hidden|auto|scroll|clip/.test(style.overflowY)) {
+          box.top = Math.max(box.top, clip.top);
+          box.bottom = Math.min(box.bottom, clip.bottom);
+        }
+        if (/hidden|auto|scroll|clip/.test(style.overflowX)) {
+          box.left = Math.max(box.left, clip.left);
+          box.right = Math.min(box.right, clip.right);
+        }
+      }
+      return box;
+    };
+    for (let i = 0; i < nodes.length; i++)
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i]!,
+          b = nodes[j]!;
+        if (a.contains(b) || b.contains(a)) continue;
+        const x = visibleBox(a),
+          y = visibleBox(b);
+        if (
+          Math.min(x.right, y.right) - Math.max(x.left, y.left) > 1 &&
+          Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 1
+        )
+          pairs.push(
+            `${a.tagName}.${a.className} ${a.textContent?.slice(0, 30)} ${JSON.stringify(x)} parent ${JSON.stringify({ height: a.parentElement?.getBoundingClientRect().height, display: getComputedStyle(a.parentElement!).display, post: a.closest('[class*="postBody"]')?.getBoundingClientRect().height })} intersects ${b.tagName}.${b.className} ${b.textContent?.slice(0, 30)} ${JSON.stringify(y)}`,
+          );
+      }
+    return pairs;
+  });
+}
+
+for (const lang of ['de', 'en'])
+  for (const theme of ['dark', 'light'])
+    for (const platform of ['x', 'instagram'])
+      test(`compound no overlap ${platform} ${lang} ${theme}`, async ({
+        page,
+      }, info) => {
+        test.setTimeout(120_000);
+        await page.addInitScript(
+          ({ lang, theme }) => {
+            localStorage.setItem('sp-locale', lang);
+            localStorage.setItem('sp-theme', theme);
+          },
+          { lang, theme },
+        );
+        await page.setViewportSize({ width: 784, height: 782 });
+        const id = await compound(page, platform === 'instagram');
+        const card = page
+          .getByRole('feed')
+          .locator(`article[data-card-id="${id}"]`);
+        await expect(card).toBeVisible();
+        await expect(card.locator('[class*="suggestionLine"]')).toHaveCount(2);
+        await expect(card.locator('[class*="held"] p')).toHaveCount(1);
+        if (platform === 'x')
+          await expect(card.getByTestId('stored-original')).toBeVisible();
+        else
+          await expect(
+            card.getByTestId('instagram-post').locator('img').first(),
+          ).toBeVisible();
+        // eslint-disable-next-line no-restricted-properties -- Caller-owned generated screenshots only.
+        const folder = process.env['SP_H_SCREEN_DIR'];
+        const widths = [
+          784, 541, 600, 700, 900, 1024, 1100, 1279, 1280, 1920, 320, 390,
+        ];
+        for (const width of widths)
+          for (const height of [782, 700, 900]) {
+            await page.setViewportSize({ width, height });
+            await page.evaluate(
+              () =>
+                new Promise<void>((resolve) =>
+                  requestAnimationFrame(() =>
+                    requestAnimationFrame(() => resolve()),
+                  ),
+                ),
+            );
+            if (folder && info.project.name === 'chromium' && height === 782)
+              await page.screenshot({
+                path: join(
+                  folder,
+                  `compound-${platform}-${lang}-${theme}-${width}.png`,
+                ),
+              });
+            expect
+              .soft(await noIntersections(card), `${width}x${height}`)
+              .toEqual([]);
+            await card.locator('[data-card-content]').evaluate((node) => {
+              node.scrollTop = node.scrollHeight;
+            });
+            expect
+              .soft(await noIntersections(card), `scrolled ${width}x${height}`)
+              .toEqual([]);
+            await card.locator('[data-card-content]').evaluate((node) => {
+              node.scrollTop = 0;
+            });
+            const actions = await card
+              .locator('[data-mark-action]')
+              .boundingBox();
+            expect
+              .soft(actions!.y + actions!.height, `actions ${width}x${height}`)
+              .toBeLessThanOrEqual(height);
+          }
+      });
+
 async function expectStoredImage(image: Locator, pathname: string) {
   await expect(image).toBeVisible();
   await expect

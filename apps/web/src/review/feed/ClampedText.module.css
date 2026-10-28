@@ -23,6 +23,10 @@
   }
   :global([data-single='true']) .group {
     flex: none;
+    display: block;
+  }
+  :global([data-single='true']) .control {
+    display: block;
   }
   :global([data-single='true'])
     .group[data-caption-text]:not([data-text-expanded='true'])

@@ -283,7 +283,7 @@
     background: var(--color-surface);
     z-index: 10;
   }
-  @media (max-width: 520px) {
+  @media (max-width: 700px) {
     .local {
       display: none;
     }

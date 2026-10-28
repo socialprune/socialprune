@@ -112,6 +112,7 @@ export function FeedContext({
       )}
       {link && (
         <>
+          {' '}
           <a href={link} target="_blank" rel="noopener noreferrer">
             {t('proto.viewOriginalX')}
           </a>

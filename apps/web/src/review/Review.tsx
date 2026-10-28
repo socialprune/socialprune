@@ -165,6 +165,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
   const windowOffset = useRef(0);
   const loadingWindow = useRef<string | null>(null);
   const windowRequest = useRef<string | null>(null);
+  const requestedWindow = useRef<number | null>(null);
+  // The count arrives before its rows. Retain Enter for this view and index
+  // until the row is rendered, unless the person moves on.
+  const pendingDetail = useRef<{ view: ReviewView; index: number } | null>(
+    null,
+  );
   const selectionAnchor = useRef<number | null>(null);
   const currentQuery = useRef({ generation: 0, total: 0 });
   const focusedIndex = useRef(0);
@@ -252,6 +258,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     () => () => {
       viewWriter.flush();
       activeDetail.current = null;
+      pendingDetail.current = null;
       generation.current++;
       bulkVersion.current++;
       if (previewId.current)
@@ -321,6 +328,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     loadingWindow.current = windowKey;
     const requestId = nextId();
     windowRequest.current = requestId;
+    requestedWindow.current = start;
     try {
       const reply = await client.request({
         type: 'window',
@@ -353,12 +361,27 @@ export function Review({ client }: { client: WorkspaceClient }) {
       if (windowRequest.current === requestId) {
         loadingWindow.current = null;
         windowRequest.current = null;
+        requestedWindow.current = null;
       }
     }
   }
   function rowAt(index: number) {
     return rows[index - offset];
   }
+  useEffect(() => {
+    const intent = pendingDetail.current;
+    if (!intent) return;
+    if (
+      intent.view !== viewRef.current ||
+      intent.index !== focusedIndex.current ||
+      document.activeElement !== grid.current
+    ) {
+      pendingDetail.current = null;
+      return;
+    }
+    const row = rowAt(intent.index);
+    if (row) void openDetail(row);
+  }, [rows, offset, focusIndex]);
   const virtualItems = virtualizer.getVirtualItems();
   useEffect(() => {
     const first = virtualizer.range?.startIndex;
@@ -400,6 +423,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
   ]);
 
   async function move(index: number, extend = false) {
+    pendingDetail.current = null;
     movingFocus.current = true;
     const bounded = Math.min(Math.max(0, index), Math.max(0, total - 1));
     // Protect the destination while its worker page is still in flight, not
@@ -407,11 +431,12 @@ export function Review({ client }: { client: WorkspaceClient }) {
     focusedIndex.current = bounded;
     if (visibleIndex(bounded) !== windowOffset.current)
       await loadWindow(visibleIndex(bounded));
-    else {
+    else if (requestedWindow.current !== visibleIndex(bounded)) {
       // Home can use cached rows without sending a newer request. It still
-      // supersedes an outstanding scroll-driven request for another window.
+      // supersedes another window, but not this destination's pending rows.
       loadingWindow.current = null;
       windowRequest.current = null;
+      requestedWindow.current = null;
     }
     setFocusIndex(bounded);
     if (!paged)
@@ -458,6 +483,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     });
   }
   function resetView() {
+    pendingDetail.current = null;
     generation.current++;
     setSelection(new Set());
     selectionAnchor.current = null;
@@ -625,6 +651,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     }
   }
   async function openDetail(row: ReviewRow) {
+    pendingDetail.current = null;
     detailInvoker.current = document.activeElement as HTMLElement | null;
     activeDetail.current = row.id;
     setDetailId(row.id);
@@ -646,6 +673,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
     }
   }
   function closeDetail(returnFocus = true) {
+    pendingDetail.current = null;
     activeDetail.current = null;
     setDetailId(null);
     setDetail(null);
@@ -797,15 +825,21 @@ export function Review({ client }: { client: WorkspaceClient }) {
     }
     if (key === 'Enter') {
       event.preventDefault();
-      const row = rowAt(focusIndex);
+      const row = rowAt(focusedIndex.current);
       if (row) void openDetail(row);
+      else if (total > 0)
+        pendingDetail.current = {
+          view: viewRef.current,
+          index: focusedIndex.current,
+        };
       return;
     }
-    if (key === 'Escape' && detailId) {
+    if (key === 'Escape' && (detailId || pendingDetail.current)) {
       event.preventDefault();
       closeDetail();
       return;
     }
+    pendingDetail.current = null;
     if (key === 'ContextMenu' || (event.shiftKey && key === 'F10')) {
       event.preventDefault();
       const node = document.getElementById(
@@ -1303,6 +1337,9 @@ export function Review({ client }: { client: WorkspaceClient }) {
                     ref={grid}
                     className={styles.grid}
                     onKeyDown={keyboard}
+                    onBlur={() => {
+                      pendingDetail.current = null;
+                    }}
                   />
                 }
               >
@@ -1324,6 +1361,7 @@ export function Review({ client }: { client: WorkspaceClient }) {
                         className={`${styles.row} ${focusIndex === virtual.index ? styles.focused : ''} ${selectionAll || selection.has(row.id) ? styles.selected : ''}`}
                         style={{ transform: `translateY(${virtual.start}px)` }}
                         onClick={() => {
+                          pendingDetail.current = null;
                           focusedIndex.current = virtual.index;
                           setFocusIndex(virtual.index);
                           grid.current?.focus();

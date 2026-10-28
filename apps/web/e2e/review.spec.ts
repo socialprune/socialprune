@@ -10,6 +10,16 @@ import {
   captureReviewNavigation,
   traceReviewNavigation,
 } from './review-navigation.ts';
+import { captureDetailOrder, traceDetailOrder } from './review-detail-order.ts';
+
+test.beforeEach(async ({ page, browserName }, info) => {
+  if (info.title.startsWith('W2a focus and selection never decide;'))
+    await traceDetailOrder(page, browserName === 'chromium');
+});
+test.afterEach(async ({ page }, info) => {
+  if (info.title.startsWith('W2a focus and selection never decide;'))
+    await captureDetailOrder(page, info);
+});
 
 test('W2a an imported archive reaches a keyboard-only review without suggestions', async ({
   page,

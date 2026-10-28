@@ -130,7 +130,9 @@ export async function captureDetailOrder(page: Page, info: TestInfo) {
         ?.getAttribute('data-detail-open'),
     },
   }));
-  console.log('DETAIL_ORDER', JSON.stringify(trace));
+  console.log('DETAIL_FINAL', JSON.stringify(trace.final));
+  for (const event of trace.events ?? [])
+    console.log('DETAIL_EVENT', JSON.stringify(event));
   await info.attach('detail-order.json', {
     body: JSON.stringify(trace, null, 2),
     contentType: 'application/json',

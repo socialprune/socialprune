@@ -310,10 +310,10 @@ for (const lang of ['de', 'en'])
         // eslint-disable-next-line no-restricted-properties -- Caller-owned generated screenshots only.
         const folder = process.env['SP_H_SCREEN_DIR'];
         const widths = [
-          784, 541, 600, 700, 900, 1024, 1100, 1279, 1280, 1920, 320, 390,
+          784, 541, 600, 700, 900, 1024, 1100, 1279, 1280, 1366, 1920, 320, 390,
         ];
         for (const width of widths)
-          for (const height of [782, 700, 900]) {
+          for (const height of [782, 700, 768, 900]) {
             await page.setViewportSize({ width, height });
             await page.evaluate(
               () =>

@@ -56,10 +56,5 @@
       .text {
       -webkit-line-clamp: 1;
     }
-    :global([data-single='true'] [data-instagram-comment])
-      .group:not([data-text-expanded='true'])
-      .text {
-      -webkit-line-clamp: 1;
-    }
   }
 }

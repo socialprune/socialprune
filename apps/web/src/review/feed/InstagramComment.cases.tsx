@@ -10,6 +10,7 @@ import type { FeedCardModel } from './types.ts';
 import { InstagramPost } from '../../social/InstagramPost.tsx';
 import { instagramContractRecord } from '@socialprune/core/workspace/store-contract';
 import type { InstagramContext } from '@socialprune/core';
+import { commentText } from './InstagramComment.tsx';
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return { ...actual, useState: vi.fn(actual.useState) };
@@ -29,6 +30,49 @@ const card: FeedCardModel = {
   heldBy: [],
   decision: 'undecided',
 };
+test('Instagram comment display separates only a leading mention run and preserves the source', () => {
+  const text =
+    '@generated.one @generated_two Own words retain @inside and the ending.';
+  expect(commentText(text)).toEqual({
+    own: 'Own words retain @inside and the ending.',
+    mentions: '@generated.one @generated_two',
+  });
+  expect(commentText('@generated.one ')).toEqual({
+    own: '@generated.one ',
+    mentions: '',
+  });
+  expect(
+    commentText('@this_handle_is_longer_than_thirty_characters Body'),
+  ).toEqual({
+    own: '@this_handle_is_longer_than_thirty_characters Body',
+    mentions: '',
+  });
+  for (const single of [false, true]) {
+    const html = render(
+      <FeedCard
+        card={{ ...card, kind: 'comment', text }}
+        platform="instagram"
+        single={single}
+        position={1}
+        total={1}
+        onDecision={() => undefined}
+      />,
+      'en',
+    );
+    const primary = html.match(
+      /<p[^>]*data-primary-text="true"[^>]*>([\s\S]*?)<\/p>/,
+    )?.[1];
+    expect(primary).toBe(
+      single
+        ? 'Own words retain @inside and the ending.'
+        : `<strong id="${html.match(/<strong id="([^"]+)"/)?.[1]}" dir="ltr">demo_taylor</strong> ${text}`,
+    );
+    expect(html).toContain('@generated.one @generated_two');
+  }
+  expect(text).toBe(
+    '@generated.one @generated_two Own words retain @inside and the ending.',
+  );
+});
 for (const locale of ['de', 'en'] as const)
   for (const mode of ['feed-fallback', 'feed-action', 'full'] as const)
     test(`expanded screenshot control says hide in ${locale}, ${mode}`, () => {

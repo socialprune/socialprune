@@ -26,7 +26,7 @@ import type {
 } from './types.ts';
 import styles from './Feed.module.css';
 import controls from './Controls.module.css';
-import { InstagramComment } from './InstagramComment.tsx';
+import { InstagramComment, commentText } from './InstagramComment.tsx';
 import { ClampedText } from './ClampedText.tsx';
 
 const levels = [
@@ -165,7 +165,11 @@ export function FeedCard({
   const display =
     single && platform === 'x' && card.kind === 'reply'
       ? replyText(card.text, card.replyTo)
-      : { own: card.text, mentions: '' };
+      : single && platform === 'instagram' && card.kind === 'comment'
+        ? commentText(card.text)
+        : { own: card.text, mentions: '' };
+  const pinnedHeld =
+    single && platform === 'instagram' && !!card.suggestions.length;
   useLayoutEffect(() => {
     const node = content.current;
     if (!single || !node || expanded) return;
@@ -337,6 +341,7 @@ export function FeedCard({
                   </p>
                 )}
               </div>
+              {pinnedHeld && <HeldRules rules={card.heldBy} pinned />}
               <Suggestion suggestion={card.suggestions[0]} />
               {card.suggestions.length > 1 && (
                 <details
@@ -365,6 +370,7 @@ export function FeedCard({
             bylineId={`${id}-byline`}
             zone={zone}
             context={context}
+            display={single ? display : undefined}
           />
         ) : (
           <>
@@ -519,21 +525,7 @@ export function FeedCard({
               </details>
             )}
           </div>
-          {!!card.heldBy.length && (
-            <div className={styles.held}>
-              {card.heldBy.map((rule) => (
-                <p key={rule.id}>
-                  <ShieldCheck size={18} aria-hidden="true" />
-                  <span>
-                    {t('reviewFeed.heldBy', {
-                      value: rule.value,
-                      rule: rule.rule,
-                    })}
-                  </span>
-                </p>
-              ))}
-            </div>
-          )}
+          {!pinnedHeld && <HeldRules rules={card.heldBy} />}
           {(decided || card.deleted) && (
             <p className={styles.decision}>
               <Icon size={18} aria-hidden="true" />
@@ -564,6 +556,28 @@ export function FeedCard({
       )}
     </article>
   );
+}
+
+function HeldRules({
+  rules,
+  pinned = false,
+}: {
+  rules: FeedCardModel['heldBy'];
+  pinned?: boolean;
+}) {
+  const t = useT();
+  return rules.length ? (
+    <div className={`${styles.held} ${pinned ? styles.pinnedHeld : ''}`}>
+      {rules.map((rule) => (
+        <p key={rule.id}>
+          <ShieldCheck size={18} aria-hidden="true" />
+          <span>
+            {t('reviewFeed.heldBy', { value: rule.value, rule: rule.rule })}
+          </span>
+        </p>
+      ))}
+    </div>
+  ) : null;
 }
 
 function CardContent({

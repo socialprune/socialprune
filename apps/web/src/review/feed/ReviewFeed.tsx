@@ -142,6 +142,7 @@ export interface ReviewFeedProps {
   onDelete: () => void;
   onConversation?: (id: string) => void;
   onUndo?: (redo?: boolean) => void;
+  onBack?: () => void;
   onDrain?: () => Promise<void>;
   decisionKeysBlockedUntil?: number;
   onKeyboardHelp?: () => void;
@@ -354,6 +355,27 @@ export function ReviewFeed(props: ReviewFeedProps) {
       className={styles.review}
       data-single-view={props.virtualized === false}
       aria-label={t('reviewFeed.planHeading')}
+      onKeyDownCapture={(event) => {
+        if (
+          !props.onBack ||
+          event.repeat ||
+          event.altKey ||
+          event.shiftKey ||
+          (event.target instanceof HTMLElement &&
+            event.target.closest(
+              'input,textarea,select,[contenteditable="true"],[role="dialog"]',
+            ))
+        )
+          return;
+        if (
+          (!event.ctrlKey && !event.metaKey && event.key === 'Backspace') ||
+          ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z')
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onBack();
+        }
+      }}
     >
       {props.header}
       {hasCriteria && (

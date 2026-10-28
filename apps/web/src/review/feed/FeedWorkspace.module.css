@@ -90,6 +90,24 @@
     flex: none;
     gap: 0;
   }
+  @media (max-width: 900px) {
+    .mobileSort {
+      display: block;
+    }
+    .toolbar:has(.singleNavigation) .sortField {
+      display: none;
+    }
+    .toolbar:has(.singleNavigation) .accountField {
+      flex: 1 1 80px;
+    }
+    .toolbar:has(.singleNavigation) {
+      gap: var(--space-1);
+      padding-inline: var(--space-2);
+    }
+    .singleNavigation button {
+      padding-inline: var(--space-2);
+    }
+  }
   .menuPositioner {
     z-index: 30;
   }

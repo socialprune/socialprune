@@ -30,6 +30,8 @@ export function FeedToolbar({
   onMove,
   onUndo,
   onHelp,
+  onBack,
+  backDisabled,
 }: {
   accounts: readonly { key: string; handle: string | null }[];
   accountKey: string;
@@ -45,6 +47,8 @@ export function FeedToolbar({
   onMove: (direction: -1 | 1) => void;
   onUndo: () => void;
   onHelp: () => void;
+  onBack: () => void;
+  backDisabled: boolean;
 }) {
   const t = useT();
   const selectedSort = sortOptions.includes(sort) ? sort : 'newest';
@@ -118,6 +122,15 @@ export function FeedToolbar({
       </label>
       {single && (
         <div className={styles.singleNavigation}>
+          <button
+            className={controls.quiet}
+            aria-label={t('reviewFeed.backHint')}
+            disabled={backDisabled}
+            onClick={onBack}
+          >
+            <Undo2 size={18} aria-hidden="true" />
+            {t('reviewFeed.back')}
+          </button>
           <button
             className={controls.quiet}
             aria-label={t('proto.previousCard')}

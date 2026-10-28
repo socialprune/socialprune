@@ -7,6 +7,63 @@ import {
 import { observeImport } from './helpers.ts';
 import { checkAccessibility } from './accessibility.ts';
 
+test('single Back revisits decisions across tabs without writes and changes through the human queue', async ({
+  page,
+}) => {
+  await restoreLiveFeed(page);
+  await page
+    .getByRole('button', { name: 'One at a time', exact: true })
+    .click();
+  const back = page.getByRole('button', {
+    name: 'Back, change the last decision',
+    exact: true,
+  });
+  await expect(back).toBeDisabled();
+  const card = page.getByRole('feed').locator('article');
+  await card.focus();
+  await page.keyboard.press('k');
+  await expect(card).toHaveAttribute('data-card-id', 'x:feed-2');
+  await card.focus();
+  await page.keyboard.press('m');
+  await expect(card).toHaveAttribute('data-card-id', 'x:feed-3');
+  await page.evaluate(() => window.workspace.flushCommands());
+  await page.getByRole('tab', { name: /^Held back by your rules,/ }).click();
+  await page
+    .getByRole('button', { name: 'One at a time', exact: true })
+    .click();
+  await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
+  const before = await page.evaluate(() => window.workspace.summary?.revision);
+  await back.click();
+  await expect(card).toHaveAttribute('data-card-id', 'x:feed-2');
+  await expect(card).toHaveAttribute('data-decision', 'delete');
+  await card.focus();
+  await page.keyboard.press('Backspace');
+  await expect(card).toHaveAttribute('data-card-id', 'x:feed-1');
+  await expect(card).toHaveAttribute('data-decision', 'keep');
+  await expect(back).toBeDisabled();
+  expect(await page.evaluate(() => window.workspace.summary?.revision)).toBe(
+    before,
+  );
+  await card.focus();
+  await page.keyboard.press('l');
+  await expect(card).toHaveAttribute('data-decision', 'later');
+  await page.evaluate(() => window.workspace.flushCommands());
+  await card.focus();
+  await page.keyboard.press('Control+z');
+  await expect(card).toHaveAttribute('data-card-id', 'x:feed-1');
+  await expect(card).toHaveAttribute('data-decision', 'later');
+  await expect(page.getByTestId('card-review')).toHaveAttribute(
+    'data-decision-write-pending',
+    'false',
+  );
+  // FAST-1 deliberately blocks another decision key for 500ms after a decision.
+  await page.waitForTimeout(550);
+  await card.focus();
+  await page.keyboard.press('u');
+  await expect(card).toHaveAttribute('data-decision', 'undecided');
+  await page.evaluate(() => window.workspace.flushCommands());
+});
+
 test('all six real-service tabs, local decision states and counted human plan under network audit', async ({
   page,
   context,

@@ -856,6 +856,8 @@ declare global {
     'review.unknownReposts': Record<never, never>;
     'review.virtualList': Record<never, never>;
     'reviewFeed.applyCriteria': Record<never, never>;
+    'reviewFeed.back': Record<never, never>;
+    'reviewFeed.backHint': Record<never, never>;
     'reviewFeed.categoryGroupHostility': Record<never, never>;
     'reviewFeed.categoryIncorrect': Record<never, never>;
     'reviewFeed.categoryMisogynistic': Record<never, never>;

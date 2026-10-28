@@ -73,6 +73,80 @@ function fixture() {
   };
 }
 const saved = { type: 'committed', changed: 1 };
+test('Back reads the latest session decisions across tabs without a decision or undo write', async () => {
+  const f = fixture();
+  await f.session.open('x:contract', 'suggested');
+  expect(f.session.snapshot.backAvailable).toBe(false);
+  const a = f.session.decide('x:0', 'keep');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  f.release(saved);
+  await a;
+  const b = f.session.decide('x:1', 'delete');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2));
+  f.release(saved);
+  await b;
+  await f.session.open('x:contract', 'held');
+  expect(await f.session.back()).toBe('x:1');
+  expect(f.session.snapshot.cards[0]?.decision).toBe('delete');
+  expect(await f.session.back()).toBe('x:0');
+  expect(f.session.snapshot.cards[0]?.decision).toBe('keep');
+  expect(f.session.snapshot.backAvailable).toBe(false);
+  expect(f.requests).toHaveLength(2);
+  const change = f.session.decide('x:0', 'delete');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(3));
+  expect(f.requests[2]).toMatchObject({
+    type: 'decide',
+    value: 'delete',
+    expected: { 'x:0': 'keep' },
+  });
+  f.release(saved);
+  expect(await change).toBe(true);
+});
+test('Back waits for pending receipts and rereads a failed decision without resending it', async () => {
+  const f = fixture();
+  await f.session.open('x:contract', 'suggested');
+  const write = f.session.decide('x:0', 'delete');
+  const back = f.session.back();
+  await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  expect(f.session.snapshot.revisiting).toBe(false);
+  f.release({ type: 'committed', changed: 0, skipped: 1 });
+  expect(await write).toBe(false);
+  expect(await back).toBe('x:0');
+  expect(f.session.snapshot.cards[0]?.decision).toBe('undecided');
+  expect(f.requests).toHaveLength(1);
+  const retry = f.session.decide('x:0', 'keep');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2));
+  f.release(saved);
+  expect(await retry).toBe(true);
+  expect(f.session.snapshot.cards[0]?.decision).toBe('keep');
+});
+test('a tab switch supersedes an outstanding Back read', async () => {
+  const f = fixture();
+  await f.session.open('x:contract', 'suggested');
+  const write = f.session.decide('x:0', 'keep');
+  await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  f.release(saved);
+  await write;
+  let release!: (value: Awaited<ReturnType<typeof f.port.feedWindow>>) => void;
+  f.port.feedWindow.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const back = f.session.back();
+  await vi.waitFor(() => expect(release).toBeDefined());
+  await f.session.open('x:contract', 'held');
+  release({
+    type: 'feedCards',
+    cards: [{ ...cards[0]!, decision: 'keep' }],
+    total: 100,
+    anchorIndex: 0,
+  } as never);
+  expect(await back).toBeNull();
+  expect(f.session.snapshot.tab).toBe('held');
+  expect(f.session.snapshot.revisiting).toBe(false);
+});
 test('ADR-032 list decisions stay in place before and after confirmation until refresh', async () => {
   const f = fixture();
   const read = f.port.feedWindow.getMockImplementation()!;

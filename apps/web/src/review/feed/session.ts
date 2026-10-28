@@ -25,6 +25,8 @@ export interface FeedSnapshot {
   pending: number;
   saveFailure: { itemId: string; sequence: number } | null;
   historyBlocked: 'undo' | 'redo' | null;
+  backAvailable: boolean;
+  revisiting: boolean;
 }
 const id = () => crypto.randomUUID();
 
@@ -48,6 +50,8 @@ export class FeedSession {
     pending: 0,
     saveFailure: null,
     historyBlocked: null,
+    backAvailable: false,
+    revisiting: false,
   };
   private epoch = 0;
   private windowEpoch = 0;
@@ -67,6 +71,9 @@ export class FeedSession {
   private prefetching: Promise<void> | null = null;
   private failureSequence = 0;
   private history: Promise<unknown> = Promise.resolve();
+  private trail: { itemId: string; accountKey: string }[] = [];
+  private trailCursor = 0;
+  private backSequence = 0;
   constructor(client: WorkspaceClient) {
     this.client = client;
     this.commands = client.commands ?? new CommandQueue();
@@ -89,6 +96,7 @@ export class FeedSession {
     sort: FeedSort = this.snapshot.sort,
     keepPreview = false,
   ) {
+    ++this.backSequence;
     this.update({ loading: true });
     if (this.commands.pending) await this.commands.flush();
     if (this.commands.recovery?.accountKey === accountKey)
@@ -112,6 +120,7 @@ export class FeedSession {
       loading: true,
       busy: false,
       error: false,
+      revisiting: false,
       saveFailure:
         this.commands.recovery?.accountKey === accountKey
           ? this.commands.recovery
@@ -227,6 +236,58 @@ export class FeedSession {
     if (epoch === this.epoch && counts.type === 'planCounts')
       this.update({ counts });
   }
+  /** Session navigation only. Read the current card after all queued writes. */
+  async back(): Promise<string | null> {
+    if (!this.trailCursor || this.snapshot.busy) return null;
+    const sequence = ++this.backSequence;
+    const target = this.trail[--this.trailCursor]!;
+    this.update({ backAvailable: this.trailCursor > 0, loading: true });
+    await this.flush();
+    if (sequence !== this.backSequence) return null;
+    if (
+      this.snapshot.saveFailure &&
+      this.snapshot.saveFailure.itemId !== target.itemId
+    ) {
+      ++this.trailCursor;
+      this.update({ backAvailable: true, loading: false });
+      return null;
+    }
+    try {
+      const result = await this.client.feedWindow({
+        accountKey: target.accountKey,
+        tab: 'all',
+        sort: this.snapshot.sort,
+        anchor: target.itemId,
+        limit: 1,
+      });
+      if (sequence !== this.backSequence) return null;
+      if (
+        result.type !== 'feedCards' ||
+        result.cards[0]?.item.id !== target.itemId
+      )
+        throw Error('Back read rejected');
+      ++this.epoch;
+      ++this.windowEpoch;
+      const counts = await this.client.planCounts(target.accountKey);
+      if (sequence !== this.backSequence) return null;
+      this.update({
+        accountKey: target.accountKey,
+        cards: result.cards,
+        counts: counts.type === 'planCounts' ? counts : this.snapshot.counts,
+        start: 0,
+        total: 1,
+        revisiting: true,
+        error: false,
+        pending: 0,
+      });
+      return target.itemId;
+    } catch {
+      if (sequence === this.backSequence) this.update({ error: true });
+      return null;
+    } finally {
+      if (sequence === this.backSequence) this.update({ loading: false });
+    }
+  }
   undo(anchor?: string, kind: 'undo' | 'redo' = 'undo') {
     const work = this.reverse(anchor, kind);
     this.history = work;
@@ -283,6 +344,7 @@ export class FeedSession {
   }
   async prefetch(force = false) {
     if (
+      this.snapshot.revisiting ||
       this.prefetching ||
       !this.snapshot.cards.length ||
       (!force && this.snapshot.cards.length >= 200) ||
@@ -338,13 +400,18 @@ export class FeedSession {
     const card = this.snapshot.cards.find((card) => card.item.id === itemId);
     if (!card || this.snapshot.busy) return false;
     if (card.decision === value) return true;
+    if (!retainInPlace) {
+      this.trail.push({ itemId, accountKey: card.item.account.key });
+      this.trailCursor = this.trail.length;
+      this.update({ backAvailable: true });
+    }
     const index = this.snapshot.cards.indexOf(card),
       epoch = this.epoch;
     const failureGeneration = this.failedItems.get(itemId) ?? 0;
     if (!this.optimistic.has(itemId)) this.confirmedCards.set(itemId, card);
     const updated = { ...card, decision: value };
     const leaves = !this.belongs(card, value);
-    const removes = leaves && !retainInPlace;
+    const removes = leaves && !retainInPlace && !this.snapshot.revisiting;
     const operation = {
       card: updated,
       leaves: removes,
@@ -425,7 +492,7 @@ export class FeedSession {
               const cards = this.snapshot.cards.filter(
                 (entry) => entry.item.id !== itemId,
               );
-              if (remains || retainInPlace)
+              if (remains || retainInPlace || this.snapshot.revisiting)
                 cards.splice(Math.min(index, cards.length), 0, confirmed);
               this.update({ cards: cards.slice(0, 300), error: false });
             }
@@ -444,6 +511,7 @@ export class FeedSession {
                   : []),
               ),
             });
+          if (this.snapshot.revisiting) this.update({ total: 1 });
         }
       } catch {
         if (!saved) {

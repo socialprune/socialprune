@@ -150,6 +150,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
     nextTab = current.current.tab,
     nextAccount = current.current.accountKey,
   ) {
+    if (session.snapshot.revisiting) return;
     const summary = client.summary;
     if (!summary || !nextAccount) return;
     const feed = {
@@ -200,6 +201,11 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }, [accountKey, summary]);
   useEffect(() => {
     if (!accountKey) return;
+    if (
+      session.snapshot.revisiting &&
+      session.snapshot.accountKey === accountKey
+    )
+      return;
     setSingleIndex(0);
     setOriginals(new Map());
     activeAnchor.current =
@@ -300,8 +306,12 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
   }
 
   async function move(index: number) {
-    const sequence = ++focusSequence.current;
     const { accountKey, tab } = current.current;
+    if (session.snapshot.revisiting) {
+      await session.open(accountKey, tab, activeAnchor.current, sort);
+      index = session.snapshot.start;
+    }
+    const sequence = ++focusSequence.current;
     const id = await session.seek(index);
     if (
       !id ||
@@ -316,6 +326,21 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       );
     setFocusTarget({ id, sequence });
   }
+  async function back() {
+    if (!oneAtATime) return;
+    clearTimeout(persistenceTimer.current);
+    localCommand.current++;
+    try {
+      const id = await session.back();
+      if (id) {
+        setAccount(session.snapshot.accountKey);
+        setSingleIndex(0);
+        setFocusTarget({ id, sequence: ++focusSequence.current });
+      }
+    } finally {
+      localCommand.current--;
+    }
+  }
   const decide = useCallback(
     async (id: string, value: DecisionValue) => {
       localCommand.current++;
@@ -329,7 +354,7 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         session.snapshot.cards[
           Math.min(index, session.snapshot.cards.length - 1)
         ];
-      if (oneAtATime && next)
+      if (oneAtATime && next && !session.snapshot.revisiting)
         setSingleIndex(session.snapshot.cards.indexOf(next));
       if (next)
         setFocusTarget({ id: next.item.id, sequence: ++focusSequence.current });
@@ -561,12 +586,14 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
             onUndo={(redo) => {
               void undo(redo ? 'redo' : 'undo');
             }}
+            onBack={oneAtATime ? () => void back() : undefined}
             onDrain={() => session.flush()}
             onKeyboardHelp={() => setHelp(true)}
             onMove={(index) => {
               void move(index);
             }}
             onAnchor={(id) => {
+              if (session.snapshot.revisiting) return;
               if (id === activeAnchor.current) return;
               activeAnchor.current = id;
               anchors.current[tab] = id;
@@ -624,8 +651,15 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 }}
                 busy={state.busy || state.pending > 0}
                 single={oneAtATime}
+                onBack={() => void back()}
+                backDisabled={
+                  !state.backAvailable || state.loading || state.busy
+                }
                 previousDisabled={state.start + singleIndex === 0}
-                nextDisabled={state.start + singleIndex >= state.total - 1}
+                nextDisabled={
+                  !state.revisiting &&
+                  state.start + singleIndex >= state.total - 1
+                }
                 onAccount={(key) => {
                   anchors.current = Object.fromEntries(
                     Object.entries(views.current[key] ?? {}).flatMap(
@@ -646,6 +680,13 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
                 }}
                 onSingle={() => {
                   const single = !oneAtATime;
+                  if (session.snapshot.revisiting)
+                    void session.open(
+                      accountKey,
+                      tab,
+                      activeAnchor.current,
+                      sort,
+                    );
                   setSingleMode(
                     summary?.workspaceId ?? '',
                     accountKey,

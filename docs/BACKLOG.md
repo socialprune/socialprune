@@ -95,6 +95,7 @@ Product phases, gates and spikes live in the maintainer's `PLAN.md`. This file h
 - **What:** `socialprune --version` answers `INVALID_ARGUMENTS`; `socialprune review` started without a terminal opened no browser; an error from `browser setup` was reported with the code `DELETE_FAILED`; a heading on the backup screen is indented.
 - **Why deferred:** none of them blocks a run or changes data.
 - **Trigger:** the next change in the same command or screen, and before the package is published.
+- **2026-10-28, local review reload:** reloading the local review tab, opening it in a new tab or from history shows "Diese Sitzung ist beendet" and needs `socialprune review` again, because the page takes its one-use token from the address and removes it after the exchange (`apps/web/src/local-review/session.ts`). The maintainer met it during his own review. Changing it touches the one-use token design of the review server, so it needs his decision first; until then the CLI and docs should say that the tab must not be reloaded.
 
 ### BL-011: WebKit's first-paging pause
 

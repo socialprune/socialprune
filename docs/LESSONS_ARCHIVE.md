@@ -142,13 +142,14 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 1. A decision brief for the maintainer is written in his words: each item is one line that says what it is in plain terms, what it means for the project, what I recommend, and the exact reply or action.
 2. No internal code (node IDs such as G2, S2, I2, ADR numbers, card or item numbers, D, E or F entries) appears without its plain meaning in the same line, and only if he needs it to answer.
 3. The shape he asked for wins over any structure I prefer. When he says one line, it is one line.
-**Detection Pattern:** a maintainer-facing message whose items lead with a code instead of a plain description, or that uses headings and several bullets per item after he asked for short.
+4. His words include his language. Every message to him is in the language he chose, German since 2026-10-28 12:16 UTC, whatever language the code, the board, the lanes or the system prompt use.
+**Detection Pattern:** a maintainer-facing message whose items lead with a code instead of a plain description, or that uses headings and several bullets per item after he asked for short; a message to him in a language he did not choose.
 **Affected Files:** docs/LESSONS_ARCHIVE.md, .kilo/rules/human-writing-style.md. Retrieval anchor: `.kilo/rules/human-writing-style.md` section B, which loads in every session, carries the line he approved for this lesson and LL-2026-10-009 together, "A message to the maintainer starts from his stated goal, says per point done, not possible and why, or his choice, and uses his words, one line per item (LL-2026-10-005, LL-2026-10-009).", placed on 2026-10-20 at his request.
 **Related Lessons:** none.
 **Regression / Verification Note:** applied on 2026-10-09 by rewriting the pending-items brief as one plain line per item, without unexplained codes.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 1 time (2026-10-11 morning message: ADR-025, card AUTO-v2, S2, "Zitat" and "Export-Anleitung" without plain meaning; see LL-2026-10-009. The proposed anchor line had not been placed, and the rule did not run.)
+- Violated: 2 times (2026-10-27 to 2026-10-28: after a context compaction the parent wrote every status message to him in English for about 19 hours, although its own carried-over notes said German; he asked at 12:16 UTC on 2026-10-28 "Bitte schreib mir ab jetzt wieder auf Deutsch". The language lived only in the parent's compacted notes, not on a surface every turn reads, so the next turns followed the language of the board and the system prompt. Anchor added the same day: the header paragraph of the handoff `BOARD.md`, which every wakeup and message turn reads first. 2026-10-11 morning message: ADR-025, card AUTO-v2, S2, "Zitat" and "Export-Anleitung" without plain meaning; see LL-2026-10-009. The proposed anchor line had not been placed, and the rule did not run.)
 
 ### [LL-2026-10-006] 2026-10-09 PRIVACY: Prove a guard on a decoy, never on the thing it guards
 

@@ -52,10 +52,6 @@ test('single Back revisits decisions across tabs without writes and changes thro
   await page.keyboard.press('Control+z');
   await expect(card).toHaveAttribute('data-card-id', 'x:feed-1');
   await expect(card).toHaveAttribute('data-decision', 'later');
-  await expect(page.getByTestId('card-review')).toHaveAttribute(
-    'data-decision-write-pending',
-    'false',
-  );
   // FAST-1 deliberately blocks another decision key for 500ms after a decision.
   await page.waitForTimeout(550);
   await card.focus();

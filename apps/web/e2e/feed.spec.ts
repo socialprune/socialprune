@@ -391,6 +391,14 @@ test('a second page makes the plan stale; the changed preview requires another h
   await expect(
     dialog.getByRole('button', { name: 'Mark 2 entries', exact: true }),
   ).toBeEnabled();
+  // The second page has made the preview stale. Unmount its feed while its
+  // client is still alive, so cleanup and queued view writes settle before the
+  // first page takes the snapshot used to assert that no plan was committed.
+  // Otherwise that unrelated view write can correctly reject BACKUP_CHANGED.
+  await second.getByRole('link', { name: 'Archive', exact: true }).click();
+  await expect(second.getByRole('feed')).toHaveCount(0);
+  await second.evaluate(() => window.workspace.flushCommands());
+  await second.close();
   const before = await page.evaluate(async () => {
     let text = '';
     await window.workspace.backup(async (file) => {
@@ -400,7 +408,6 @@ test('a second page makes the plan stale; the changed preview requires another h
   });
   expect(before.reviewPlans).toHaveLength(0);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await second.close();
 });
 
 test('new workspace first start and Instagram plan use the real shared settings and platform path', async ({

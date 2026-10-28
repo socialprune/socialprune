@@ -41,6 +41,9 @@
     display: block;
     width: 100%;
     height: auto;
+    /* Reserve a box before a lazy image has intrinsic dimensions, including
+       when longer copy puts it just outside the scroll panel. */
+    aspect-ratio: auto 1 / 1;
     max-width: 470px;
     object-fit: contain;
     border-radius: var(--radius-control);

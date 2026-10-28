@@ -16,6 +16,8 @@ for (const theme of ['light', 'dark'] as const)
         workspace,
         assetDirectory: reviewAssetDirectory(),
         handleSignals: false,
+        // eslint-disable-next-line no-restricted-properties -- Test-only review port.
+        port: Number(process.env['SP_REVIEW_E2E_PORT'] ?? '4234'),
       });
       try {
         await page.setViewportSize({

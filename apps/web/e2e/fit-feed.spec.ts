@@ -23,7 +23,7 @@ const shapes = [
 ] as const;
 type Shape = (typeof shapes)[number];
 
-async function prepare(page: Page, shape: Shape) {
+async function prepare(page: Page, shape: Shape, longCopy = false) {
   await page.goto('about:blank');
   const data = headerFixture();
   const instagram = shape === 'tall' || shape === 'wide';
@@ -41,6 +41,11 @@ async function prepare(page: Page, shape: Shape) {
             .repeat(4)
             .slice(0, 280)
         : 'A generated council discussion about the park.';
+  if (longCopy)
+    item.text =
+      'Ein erfundener ausführlicher Kommentar über den Garten und den Gemeinderat. '.repeat(
+        60,
+      );
   if (shape === 'reply' || shape === 'image') {
     item.kind = 'reply';
     item.reference.replyToId = '81001';
@@ -72,7 +77,21 @@ async function prepare(page: Page, shape: Shape) {
     page,
     data,
     undefined,
-    instagram ? [generatedReadPost()] : [],
+    instagram
+      ? [
+          {
+            ...generatedReadPost(),
+            post: {
+              ...generatedReadPost().post,
+              caption: longCopy
+                ? 'Ein erfundener ausführlicher Bildtext über den Garten und den Gemeinderat. '.repeat(
+                    60,
+                  )
+                : generatedReadPost().post.caption,
+            },
+          },
+        ]
+      : [],
   );
   if (shape === 'reply' || shape === 'image') {
     const original = generatedOriginal({
@@ -118,17 +137,17 @@ async function mode(page: Page, single: boolean) {
   if (page.viewportSize()!.width > 540) {
     await page
       .getByRole('button', {
-        name: single ? 'One at a time' : 'List',
+        name: single ? /^(One at a time|Einzeln)$/ : /^(List|Liste)$/,
         exact: true,
       })
       .click();
   } else {
     await page
-      .getByRole('button', { name: 'Review options', exact: true })
+      .getByRole('button', { name: /^(Review options|Ansichtsoptionen)$/ })
       .click();
     await page
       .getByRole('menuitem', {
-        name: single ? 'One at a time' : 'All',
+        name: single ? /^(One at a time|Einzeln)$/ : /^(All|Alle)$/,
         exact: true,
       })
       .click();
@@ -341,6 +360,70 @@ test('R3 phone Instagram keeps a readable uncropped image and reachable actions'
     expect(rendered.fit).toBe('contain');
   }
 });
+
+for (const lang of ['en', 'de'] as const)
+  for (const theme of ['light', 'dark'] as const)
+    for (const width of [320, 390])
+      test(`R3 phone media with long copy ${lang} ${theme} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.addInitScript(
+          ({ lang, theme }) => {
+            localStorage.setItem('sp-locale', lang);
+            localStorage.setItem('sp-theme', theme);
+          },
+          { lang, theme },
+        );
+        await prepare(page, 'tall', true);
+        await page.evaluate(() =>
+          document.documentElement.style.setProperty(
+            '--font-family',
+            'Verdana, sans-serif',
+          ),
+        );
+        await mode(page, true);
+        const card = page.getByRole('feed').locator('article').first();
+        await expectStoredImage(
+          card.getByTestId('instagram-post').locator('img'),
+          '/context/instagram/Generated_feed/image.png',
+        );
+        const image = card.getByTestId('instagram-post').locator('img');
+        const before = await image.boundingBox();
+        expect(before!.height).toBeGreaterThanOrEqual(160);
+        expect(
+          await image.evaluate((node) => getComputedStyle(node).objectFit),
+        ).toBe('contain');
+        for (const action of ['keep', 'later', 'mark']) {
+          const box = await card
+            .locator(`[data-${action}-action]`)
+            .boundingBox();
+          expect(box!.y).toBeGreaterThanOrEqual(0);
+          expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+        }
+        const content = await card.locator('[data-card-content]').boundingBox();
+        expect(before!.y).toBeGreaterThanOrEqual(content!.y);
+        expect(before!.y + before!.height).toBeLessThanOrEqual(
+          content!.y + content!.height + 1,
+        );
+        const caption = card.locator('[data-caption-text]');
+        const expand = caption.getByRole('button');
+        await expect(expand).toBeVisible();
+        await expand.click();
+        await expect(expand).toHaveAttribute('aria-expanded', 'true');
+        expect((await image.boundingBox())!.height).toBe(before!.height);
+        await expand.click();
+        // eslint-disable-next-line no-restricted-properties -- Explicit screenshot destination, never credentials.
+        const folder = process.env['SP_H_SCREEN_DIR'];
+        if (folder && test.info().project.name === 'chromium')
+          await page.screenshot({
+            path: join(
+              folder,
+              `instagram-single-${lang}-${theme}-${width}.png`,
+            ),
+            animations: 'disabled',
+          });
+      });
 
 test('R2 clipped caption control belongs below that caption and expands internally', async ({
   page,

@@ -10,6 +10,38 @@ import {
 import { checkAccessibility } from './accessibility.ts';
 const catalogs = { en, de };
 
+test('a lazy post image reserves its box with wider German fallback metrics', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.addInitScript(() => localStorage.setItem('sp-locale', 'de'));
+  await restoreLiveFeed(page, liveFeedFixture(), undefined, [
+    generatedReadPost(),
+  ]);
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty(
+      '--font-family',
+      'Verdana, sans-serif',
+    ),
+  );
+  await page
+    .getByRole('combobox', { name: 'Konto', exact: true })
+    .selectOption(liveExpected.instagram);
+  const image = page.locator(
+    `[data-item-id="${liveExpected.readComment}"] [data-testid="instagram-post"] img`,
+  );
+  // Do not scroll or eagerly load it to manufacture visibility. The unloaded
+  // box must exist before the browser can choose to fetch its local resource.
+  await expect(image).toBeVisible();
+  expect((await image.boundingBox())!.height).toBeGreaterThan(0);
+  await image.scrollIntoViewIfNeeded();
+  await expect
+    .poll(() =>
+      image.evaluate((node) => (node as HTMLImageElement).naturalWidth),
+    )
+    .toBe(320);
+});
+
 test('Instagram screenshot fallback and both confirmation kinds keep their distinct evidence', async ({
   page,
 }) => {

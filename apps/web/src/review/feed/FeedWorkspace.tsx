@@ -176,7 +176,8 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
         });
         if (reply.type !== 'reviewViewChanged')
           setNotice(t('review.storageError'));
-      });
+      })
+      .catch(() => setNotice(t('review.storageError')));
   }
   useEffect(() => {
     if (!accountKey && summary?.accounts[0]) {

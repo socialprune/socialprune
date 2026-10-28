@@ -201,10 +201,11 @@ export function FeedCard({
       const readableHeight = primary
         ? Number.parseFloat(getComputedStyle(primary).lineHeight)
         : 1;
+      const readableLines = ownComment && innerHeight >= 900 ? 2 : 1;
       setShowExcerpt(
         !box ||
           Math.min(bounds.bottom, box.bottom) <
-            Math.max(bounds.top, box.top) + readableHeight - 1,
+            Math.max(bounds.top, box.top) + readableLines * readableHeight - 1,
       );
     };
     const observer = new ResizeObserver(() => {

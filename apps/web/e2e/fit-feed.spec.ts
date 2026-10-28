@@ -338,7 +338,11 @@ for (const lang of ['de', 'en'])
                     Math.max(primary.top, reading.top) +
                       Number.parseFloat(
                         getComputedStyle(primaryNode).lineHeight,
-                      ) -
+                      ) *
+                        (card.hasAttribute('data-instagram-card') &&
+                        innerHeight >= 900
+                          ? 2
+                          : 1) -
                       1;
                   return (
                     visible !== !!card.querySelector('[data-reading-excerpt]')
@@ -443,9 +447,10 @@ for (const lang of ['de', 'en'])
                 '[data-reading-excerpt]',
               );
               const ownVisible =
+                getComputedStyle(primary).visibility !== 'hidden' &&
                 Math.min(box.bottom, reading.bottom) -
                   Math.max(box.top, reading.top) >
-                Number.parseFloat(getComputedStyle(primary).lineHeight) - 1;
+                  Number.parseFloat(getComputedStyle(primary).lineHeight) - 1;
               const visibleText = ownVisible
                 ? primary.textContent
                 : excerpt?.textContent;
@@ -658,8 +663,18 @@ for (const lang of ['de', 'en'])
         ).toBeGreaterThanOrEqual((await first.boundingBox())!.y);
         await more.locator('summary').click();
         {
+          await page.setViewportSize({ width: 1366, height: 900 });
           const own = card.locator('[data-primary-text]');
           const group = own.locator('..');
+          await group.scrollIntoViewIfNeeded();
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                ),
+              ),
+          );
           await group
             .getByRole('button', {
               name: lang === 'de' ? 'Ganzen Text zeigen' : 'Show full text',
@@ -730,7 +745,12 @@ for (const lang of ['de', 'en'])
                   const readable =
                     Math.min(box.bottom, reading.bottom) -
                       Math.max(box.top, reading.top) >=
-                    Number.parseFloat(getComputedStyle(primary).lineHeight) - 1;
+                    Number.parseFloat(getComputedStyle(primary).lineHeight) *
+                      (card.hasAttribute('data-instagram-card') &&
+                      innerHeight >= 900
+                        ? 2
+                        : 1) -
+                      1;
                   return (
                     readable !== !!card.querySelector('[data-reading-excerpt]')
                   );

@@ -932,7 +932,7 @@
       padding-block: 0;
     }
   }
-  @media (max-height: 740px) and (max-width: 360px) {
+  @media (max-height: 740px) and (max-width: 440px) {
     :global([data-single='true'])
       .card[data-instagram-card]
       .firstSuggestion

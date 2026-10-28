@@ -617,6 +617,14 @@ for (const lang of ['de', 'en'])
             [390, 844],
           ]) {
             await page.setViewportSize({ width: width!, height: height! });
+            await page.evaluate(async () => {
+              await document.fonts.ready;
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                ),
+              );
+            });
             await expect
               .poll(async () => {
                 const bounds = await card
@@ -629,6 +637,26 @@ for (const lang of ['de', 'en'])
                   ? reason.y + reason.height <= bounds!.y + bounds!.height + 1
                   : false;
               })
+              .toBe(true);
+            await expect
+              .poll(() =>
+                card.evaluate((card) => {
+                  const primary = card.querySelector<HTMLElement>(
+                    '[data-primary-text]',
+                  )!;
+                  const box = primary.getBoundingClientRect();
+                  const reading = card
+                    .querySelector('[data-card-reading]')!
+                    .getBoundingClientRect();
+                  const readable =
+                    Math.min(box.bottom, reading.bottom) -
+                      Math.max(box.top, reading.top) >=
+                    Number.parseFloat(getComputedStyle(primary).lineHeight) - 1;
+                  return (
+                    readable !== !!card.querySelector('[data-reading-excerpt]')
+                  );
+                }),
+              )
               .toBe(true);
             await page.screenshot({
               path: join(

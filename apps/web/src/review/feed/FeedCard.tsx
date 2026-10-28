@@ -45,6 +45,19 @@ export function avatarInitials(name: string, handle: string): string {
     .toLocaleUpperCase();
 }
 
+/** Presentation only: the complete stored reply is still the expansion text. */
+export function replyText(
+  text: string,
+  replyTo?: string,
+): { own: string; mentions: string } {
+  const prefix = replyTo
+    ? /^\s*(?:@[A-Za-z0-9_]{1,15}\s+)+/u.exec(text)?.[0]
+    : undefined;
+  return prefix && text.slice(prefix.length).trim()
+    ? { own: text.slice(prefix.length), mentions: prefix.trim() }
+    : { own: text, mentions: '' };
+}
+
 export function sourceLabel(
   source: FeedSuggestion['source'],
   t: ReturnType<typeof useT>,
@@ -148,6 +161,11 @@ export function FeedCard({
     id = useId();
   const content = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const [showExcerpt, setShowExcerpt] = useState(false);
+  const display =
+    single && platform === 'x' && card.kind === 'reply'
+      ? replyText(card.text, card.replyTo)
+      : { own: card.text, mentions: '' };
   useLayoutEffect(() => {
     const node = content.current;
     if (!single || !node || expanded) return;
@@ -161,23 +179,54 @@ export function FeedCard({
         node.style.setProperty('--card-text-lines', String(lines));
         if (reading.scrollHeight <= reading.clientHeight + 1) break;
       }
+      const primary = node.querySelector<HTMLElement>('[data-primary-text]');
+      const bounds = reading.getBoundingClientRect();
+      const box = primary?.getBoundingClientRect();
+      setShowExcerpt(
+        !box ||
+          Math.min(bounds.bottom, box.bottom) <=
+            Math.max(bounds.top, box.top) + 1,
+      );
     };
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(fit);
     });
+    const resized = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    };
+    window.addEventListener('resize', resized);
+    node.addEventListener('load', resized, true);
     observer.observe(node);
+    node
+      .querySelectorAll(
+        '[data-card-reading], [data-primary-text], [data-testid="instagram-post"], [data-clamped-text]',
+      )
+      .forEach((element) => observer.observe(element));
+    node
+      .querySelector('[data-card-reading]')
+      ?.addEventListener('scroll', fit, { passive: true });
     fit();
     return () => {
       observer.disconnect();
+      window.removeEventListener('resize', resized);
+      node.removeEventListener('load', resized, true);
+      node
+        .querySelector('[data-card-reading]')
+        ?.removeEventListener('scroll', fit);
       cancelAnimationFrame(frame);
     };
-  }, [single, expanded, card, context]);
+  }, [single, expanded, card, context, showExcerpt]);
   useLayoutEffect(() => {
     if (!single || !content.current) return;
     const node = content.current;
     const revealDetails = (event: Event) => {
-      if (event.target instanceof HTMLDetailsElement && event.target.open)
+      if (
+        event.target instanceof HTMLDetailsElement &&
+        event.target.open &&
+        !event.target.hasAttribute('data-more-suggestions')
+      )
         setExpanded(true);
     };
     const revealText = (event: Event) =>
@@ -277,10 +326,31 @@ export function FeedCard({
         firstSuggestion={
           single && card.suggestions[0] ? (
             <div data-first-suggestion className={styles.firstSuggestion}>
-              <p className={styles.readingExcerpt} data-reading-excerpt>
-                <strong>{card.handle}</strong> {card.text || t('review.noText')}
-              </p>
+              <div className={styles.excerptSlot}>
+                {showExcerpt && (
+                  <p className={styles.readingExcerpt} data-reading-excerpt>
+                    {display.own || t('review.noText')}
+                  </p>
+                )}
+              </div>
               <Suggestion suggestion={card.suggestions[0]} />
+              {card.suggestions.length > 1 && (
+                <details
+                  className={styles.moreSuggestions}
+                  data-more-suggestions
+                >
+                  <summary>
+                    {t('reviewFeed.moreSuggestions', {
+                      count: card.suggestions.length - 1,
+                    })}
+                  </summary>
+                  <div className={styles.moreSuggestionBody}>
+                    {card.suggestions.slice(1).map((suggestion) => (
+                      <Suggestion key={suggestion.id} suggestion={suggestion} />
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           ) : undefined
         }
@@ -340,7 +410,15 @@ export function FeedCard({
                     )}
                   </span>
                   {card.replyTo && (
-                    <span>{t('proto.replyTo', { handle: card.replyTo })}</span>
+                    <span>
+                      {t('proto.replyTo', { handle: card.replyTo })}
+                      {display.mentions && (
+                        <span className={styles.replyMentions}>
+                          {' '}
+                          · {display.mentions}
+                        </span>
+                      )}
+                    </span>
                   )}
                   <span>
                     <Heart size={14} aria-hidden="true" />
@@ -351,7 +429,18 @@ export function FeedCard({
                     {t('proto.reposts', { count: card.reposts ?? -1 })}
                   </span>
                 </div>
-                <ClampedText className={styles.postText} primary>
+                <ClampedText
+                  className={styles.postText}
+                  primary
+                  collapsedChildren={
+                    display.mentions ? (
+                      <EvidenceText
+                        text={display.own}
+                        evidence={card.suggestions[0]?.evidence}
+                      />
+                    ) : undefined
+                  }
+                >
                   {evidenceSegments(
                     card.text ||
                       t(card.mediaCount ? 'review.mediaOnly' : 'review.noText'),
@@ -400,7 +489,7 @@ export function FeedCard({
         )}
         <div className={styles.reviewBody}>
           <div id={`${id}-suggestion`} className={styles.suggestions}>
-            {card.suggestions.slice(single ? 1 : 0).map((suggestion) => (
+            {(single ? [] : card.suggestions).map((suggestion) => (
               <Suggestion key={suggestion.id} suggestion={suggestion} />
             ))}
             {!card.suggestions.length && (

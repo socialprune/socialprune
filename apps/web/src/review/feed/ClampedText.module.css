@@ -38,6 +38,13 @@
     overflow: visible;
     -webkit-line-clamp: unset;
   }
+  @media (min-height: 780px) {
+    :global([data-single='true'])
+      .group:not([data-text-expanded='true'])
+      .text[data-primary-text='true'] {
+      -webkit-line-clamp: max(2, var(--card-text-lines, 5));
+    }
+  }
   @media (max-width: 1079px) {
     :global([data-single='true'])
       .group:not([data-text-expanded='true'])

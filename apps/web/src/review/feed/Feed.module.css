@@ -69,7 +69,7 @@
     border-top: 1px solid var(--color-divider);
   }
   .readingExcerpt {
-    margin: 0 0 var(--space-1);
+    margin: 0;
     font-size: var(--type-xs);
     line-height: var(--line-xs);
     display: -webkit-box;
@@ -77,6 +77,80 @@
     -webkit-line-clamp: 1;
     overflow: hidden;
     overflow-wrap: anywhere;
+  }
+  .excerptSlot {
+    height: var(--line-xs);
+    margin-bottom: var(--space-1);
+  }
+  @media (min-height: 780px) {
+    .readingExcerpt {
+      -webkit-line-clamp: 2;
+    }
+    .excerptSlot {
+      height: calc(2 * var(--line-xs));
+    }
+    :global([data-single='true']) .card[data-instagram-card] .excerptSlot {
+      height: var(--line-xs);
+    }
+  }
+  .replyMentions {
+    color: var(--color-text-secondary);
+    font-size: var(--type-xs);
+    overflow-wrap: anywhere;
+  }
+  .moreSuggestions {
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  .moreSuggestions > summary {
+    min-height: 32px;
+    align-content: center;
+    cursor: pointer;
+    color: var(--color-action);
+  }
+  @media (max-height: 740px) {
+    .moreSuggestions > summary {
+      min-height: 22px;
+    }
+  }
+  @media (max-height: 900px) {
+    :global([data-single='true'])
+      .card[data-instagram-card]:has([data-more-suggestions])
+      .readingExcerpt {
+      -webkit-line-clamp: 1;
+    }
+    :global([data-single='true'])
+      .card:has([data-more-suggestions])
+      > .actions {
+      padding-top: var(--space-1);
+    }
+  }
+  .replyMentions {
+    display: inline-block;
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .moreSuggestionBody {
+    max-height: 35dvh;
+    overflow: auto;
+  }
+  @media (max-height: 740px) {
+    :global([data-single='true']) .card [data-first-suggestion] {
+      margin-top: 0;
+      padding-top: 0;
+    }
+    :global([data-single='true']) .card > .actions {
+      padding-top: 0;
+    }
+    :global([data-single='true'])
+      .card
+      [data-testid='instagram-post']
+      > header {
+      padding-block: 0;
+    }
   }
   :global([data-single='true'])
     .card:has([data-reading-excerpt])
@@ -88,7 +162,7 @@
     font-size: var(--type-xs);
     line-height: var(--line-xs);
   }
-  @media (max-height: 740px) {
+  @media (max-height: 900px) {
     :global([data-single-view='true']) .tabHelp {
       position: absolute;
       width: 1px;

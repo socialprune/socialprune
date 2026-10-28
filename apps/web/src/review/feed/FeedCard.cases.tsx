@@ -2,7 +2,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it } from 'vitest';
-import { FeedCard, EvidenceText, avatarInitials } from './FeedCard.tsx';
+import {
+  FeedCard,
+  EvidenceText,
+  avatarInitials,
+  replyText,
+} from './FeedCard.tsx';
 import { FeedTabs, FinalMarkFooter, ReviewFeed } from './ReviewFeed.tsx';
 import { catalogs } from '../../i18n/index.ts';
 import type { FeedCardModel } from './types.ts';
@@ -42,6 +47,26 @@ function render(node: React.ReactNode, locale: 'en' | 'de' = 'en') {
 }
 
 describe('presentational feed', () => {
+  it('compacts only a leading reply mention run without mutating the source', () => {
+    const text =
+      '@generated_one @generated_two Own words include @inside and a final word.';
+    expect(replyText(text, 'generated_one')).toEqual({
+      own: 'Own words include @inside and a final word.',
+      mentions: '@generated_one @generated_two',
+    });
+    expect(text).toBe(
+      '@generated_one @generated_two Own words include @inside and a final word.',
+    );
+    expect(replyText(text)).toEqual({ own: text, mentions: '' });
+    expect(replyText('@generated_one ', 'generated_one')).toEqual({
+      own: '@generated_one ',
+      mentions: '',
+    });
+    expect(replyText('@this_handle_exceeds_the_limit Body', 'named')).toEqual({
+      own: '@this_handle_exceeds_the_limit Body',
+      mentions: '',
+    });
+  });
   it('shows source, level, reason, evidence, unknown counts and explicit local mark', () => {
     const html = render(
       <FeedCard card={card} position={3} total={90} onDecision={noop} />,

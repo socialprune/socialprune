@@ -49,6 +49,7 @@
   "reviewFeed.expandText": "Show full text",
   "reviewFeed.expandCaption": "Show full caption",
   "reviewFeed.collapseText": "Show less text",
+  "reviewFeed.moreSuggestions": "+{count, number} more {count, plural, one {suggestion} other {suggestions}}",
   "reviewFeed.planHeading": "Your review",
   "reviewFeed.planSaved": "Marked. Nothing was deleted on the platform.",
   "reviewFeed.helpBody": "Focus a post to use these keys. Page Up and Page Down move between posts, Home goes to the first and End to the last. In One at a time, Back, Backspace or Ctrl+Z shows your latest decided posts without changing their decisions. In List, Ctrl+Z or Command+Z undoes the last action. Undo stays in the menu. Turn single-letter keys off in Settings.",

@@ -907,6 +907,7 @@ declare global {
     'reviewFeed.marked': { date: string; method: string };
     'reviewFeed.missingContext': Record<never, never>;
     'reviewFeed.mode': Record<never, never>;
+    'reviewFeed.moreSuggestions': { count: number };
     'reviewFeed.nextTabs': Record<never, never>;
     'reviewFeed.nextWindow': Record<never, never>;
     'reviewFeed.noCriteria': Record<never, never>;

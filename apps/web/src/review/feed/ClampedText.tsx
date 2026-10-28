@@ -9,11 +9,13 @@ export function ClampedText({
   className,
   primary = false,
   caption = false,
+  collapsedChildren,
 }: {
   children: ReactNode;
   className?: string;
   primary?: boolean;
   caption?: boolean;
+  collapsedChildren?: ReactNode;
 }) {
   const text = useRef<HTMLParagraphElement>(null);
   const [clipped, setClipped] = useState(false),
@@ -48,9 +50,11 @@ export function ClampedText({
         data-primary-text={primary || undefined}
         dir="auto"
       >
-        {children}
+        {!expanded && collapsedChildren !== undefined
+          ? collapsedChildren
+          : children}
       </p>
-      {(clipped || expanded) && (
+      {(clipped || expanded || collapsedChildren !== undefined) && (
         <button
           className={styles.control}
           aria-expanded={expanded}

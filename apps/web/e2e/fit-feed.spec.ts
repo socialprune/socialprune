@@ -323,6 +323,24 @@ for (const lang of ['de', 'en'])
                   ),
                 ),
             );
+            await expect
+              .poll(() =>
+                card.evaluate((card) => {
+                  const primary = card
+                    .querySelector('[data-primary-text]')!
+                    .getBoundingClientRect();
+                  const reading = card
+                    .querySelector('[data-card-reading]')!
+                    .getBoundingClientRect();
+                  const visible =
+                    Math.min(primary.bottom, reading.bottom) >
+                    Math.max(primary.top, reading.top) + 1;
+                  return (
+                    visible !== !!card.querySelector('[data-reading-excerpt]')
+                  );
+                }),
+              )
+              .toBe(true);
             if (folder && info.project.name === 'chromium' && height === 782)
               await page.screenshot({
                 path: join(
@@ -342,6 +360,18 @@ for (const lang of ['de', 'en'])
                 '[class*="suggestionReason"]',
               )!;
               const bounds = content.getBoundingClientRect();
+              const reading = card
+                .querySelector('[data-card-reading]')!
+                .getBoundingClientRect();
+              const own = card
+                .querySelector('[data-primary-text]')!
+                .getBoundingClientRect();
+              const visibleOwn =
+                Math.min(own.bottom, reading.bottom) >
+                Math.max(own.top, reading.top) + 1;
+              const excerpt = card
+                .querySelector('[data-reading-excerpt]')
+                ?.getBoundingClientRect();
               return {
                 scroll: content.scrollTop,
                 top: bounds.top,
@@ -350,14 +380,12 @@ for (const lang of ['de', 'en'])
                 lineBottom: first.getBoundingClientRect().bottom,
                 reasonTop: reason.getBoundingClientRect().top,
                 reasonBottom: reason.getBoundingClientRect().bottom,
-                excerptTop:
-                  card
-                    .querySelector('[data-reading-excerpt]')
-                    ?.getBoundingClientRect().top ?? Infinity,
-                excerptBottom:
-                  card
-                    .querySelector('[data-reading-excerpt]')
-                    ?.getBoundingClientRect().bottom ?? Infinity,
+                excerptTop: visibleOwn
+                  ? Math.max(own.top, reading.top)
+                  : (excerpt?.top ?? Infinity),
+                excerptBottom: visibleOwn
+                  ? Math.min(own.bottom, reading.bottom)
+                  : (excerpt?.bottom ?? Infinity),
               };
             });
             expect
@@ -428,6 +456,13 @@ for (const lang of ['de', 'en'])
                   first.compareDocumentPosition(second) &
                   Node.DOCUMENT_POSITION_FOLLOWING
                 ),
+                ownLineCount:
+                  ownVisible || excerpt
+                    ? Number(
+                        getComputedStyle(ownVisible ? primary : excerpt!)
+                          .webkitLineClamp,
+                      )
+                    : 0,
               };
             });
             if (platform === 'x')
@@ -446,6 +481,13 @@ for (const lang of ['de', 'en'])
                 `further suggestion initially closed ${width}x${height}`,
               )
               .toBe(true);
+            if (platform === 'x' && height >= 780)
+              expect
+                .soft(
+                  presentation.ownLineCount,
+                  `two own lines ${width}x${height}`,
+                )
+                .toBeGreaterThanOrEqual(2);
             expect
               .soft(
                 presentation.secondInDisclosure,
@@ -519,6 +561,39 @@ for (const lang of ['de', 'en'])
               .soft(actions!.y + actions!.height, `actions ${width}x${height}`)
               .toBeLessThanOrEqual(height);
           }
+        const first = card
+          .locator('[data-first-suggestion] [class*="suggestionLine"]')
+          .first();
+        const more = card.locator('[data-more-suggestions]');
+        await more.locator('summary').click();
+        await expect(more.locator('[class*="suggestionLine"]')).toBeVisible();
+        expect(
+          (await more.locator('[class*="suggestionLine"]').boundingBox())!.y,
+        ).toBeGreaterThanOrEqual((await first.boundingBox())!.y);
+        await more.locator('summary').click();
+        if (platform === 'x') {
+          const own = card.locator('[data-primary-text]');
+          const group = own.locator('..');
+          await group
+            .getByRole('button', {
+              name: lang === 'de' ? 'Ganzen Text zeigen' : 'Show full text',
+              exact: true,
+            })
+            .click();
+          await expect(own).toHaveText(
+            '@generated_one @generated_two @generated_three ' +
+              'An invented discussion asks the council to improve the garden paths and keep the public meeting open. '.repeat(
+                3,
+              ),
+          );
+          await group
+            .getByRole('button', {
+              name: lang === 'de' ? 'Weniger Text zeigen' : 'Show less text',
+              exact: true,
+            })
+            .click();
+          await expect(own).toContainText('An invented');
+        }
         if (
           folder &&
           info.project.name === 'chromium' &&

@@ -49,6 +49,7 @@
   "reviewFeed.expandText": "Ganzen Text zeigen",
   "reviewFeed.expandCaption": "Ganze Bildunterschrift zeigen",
   "reviewFeed.collapseText": "Weniger Text zeigen",
+  "reviewFeed.moreSuggestions": "+{count, number} weitere {count, plural, one {Empfehlung} other {Empfehlungen}}",
   "reviewFeed.planHeading": "Deine Durchsicht",
   "reviewFeed.planSaved": "Vorgemerkt. Auf der Plattform wurde nichts gelöscht.",
   "reviewFeed.helpBody": "Fokussiere einen Beitrag für diese Tasten. Bild auf und Bild ab wechseln zwischen Beiträgen, Pos1 geht zum ersten und Ende zum letzten. In Einzeln zeigt Zurück, Rücktaste oder Strg+Z die zuletzt entschiedenen Beiträge, ohne ihre Entscheidung zu ändern. In der Liste nimmt Strg+Z oder Command+Z die letzte Aktion zurück. Rückgängig bleibt im Menü. Einzelne Buchstabentasten kannst du in den Einstellungen ausschalten.",

@@ -458,7 +458,14 @@ for (const lang of ['de', 'en'])
                 ),
               ].find((node) => node !== first)!;
               return {
-                visibleText: visibleText?.trim(),
+                visibleText: visibleText
+                  ?.replace(
+                    new RegExp(
+                      `^${primary.querySelector('strong')?.textContent ?? ''}\\s*`,
+                    ),
+                    '',
+                  )
+                  .trim(),
                 duplicate: !!excerpt && ownVisible,
                 secondHidden: !second.checkVisibility(),
                 secondInDisclosure: !!second.closest('details'),
@@ -475,10 +482,9 @@ for (const lang of ['de', 'en'])
                     : 0,
               };
             });
-            if (platform === 'x')
-              expect
-                .soft(presentation.visibleText, `own words ${width}x${height}`)
-                .toMatch(/^An invented/);
+            expect
+              .soft(presentation.visibleText, `own words ${width}x${height}`)
+              .toMatch(/^An invented/);
             expect
               .soft(
                 presentation.duplicate,
@@ -511,6 +517,70 @@ for (const lang of ['de', 'en'])
               )
               .toBe(true);
             if (platform === 'instagram') {
+              const comment = await card.evaluate((card) => {
+                const primary = card.querySelector<HTMLElement>(
+                  '[data-primary-text]',
+                )!;
+                const reading = card
+                  .querySelector('[data-card-reading]')!
+                  .getBoundingClientRect();
+                const box = primary.getBoundingClientRect();
+                const lineHeight = Number.parseFloat(
+                  getComputedStyle(primary).lineHeight,
+                );
+                const held =
+                  card.querySelector<HTMLElement>('[class*="held"]')!;
+                const badge = held.getBoundingClientRect();
+                let clipped = false;
+                for (
+                  let parent = held.parentElement;
+                  parent;
+                  parent = parent.parentElement
+                ) {
+                  const style = getComputedStyle(parent),
+                    clip = parent.getBoundingClientRect();
+                  if (
+                    /hidden|auto|scroll|clip/.test(style.overflowY) &&
+                    (badge.top < clip.top - 1 || badge.bottom > clip.bottom + 1)
+                  )
+                    clipped = true;
+                  if (
+                    /hidden|auto|scroll|clip/.test(style.overflowX) &&
+                    (badge.left < clip.left - 1 || badge.right > clip.right + 1)
+                  )
+                    clipped = true;
+                }
+                return {
+                  lines: Math.floor(
+                    (Math.min(box.bottom, reading.bottom) -
+                      Math.max(box.top, reading.top) +
+                      1) /
+                      lineHeight,
+                  ),
+                  clamp: Number(getComputedStyle(primary).webkitLineClamp),
+                  badgeClipped: clipped,
+                };
+              });
+              expect
+                .soft(
+                  comment.badgeClipped,
+                  `whole held badge ${width}x${height}`,
+                )
+                .toBe(false);
+              if (width >= 1080 || height >= 900) {
+                expect
+                  .soft(
+                    comment.lines,
+                    `readable comment lines ${width}x${height}`,
+                  )
+                  .toBeGreaterThanOrEqual(2);
+                expect
+                  .soft(
+                    comment.clamp,
+                    `adaptive comment clamp ${width}x${height}`,
+                  )
+                  .toBeGreaterThanOrEqual(2);
+              }
               const image = await card
                 .getByTestId('instagram-post')
                 .locator('img')
@@ -581,7 +651,7 @@ for (const lang of ['de', 'en'])
           (await more.locator('[class*="suggestionLine"]').boundingBox())!.y,
         ).toBeGreaterThanOrEqual((await first.boundingBox())!.y);
         await more.locator('summary').click();
-        if (platform === 'x') {
+        {
           const own = card.locator('[data-primary-text]');
           const group = own.locator('..');
           await group
@@ -590,7 +660,7 @@ for (const lang of ['de', 'en'])
               exact: true,
             })
             .click();
-          await expect(own).toHaveText(
+          await expect(own).toContainText(
             '@generated_one @generated_two @generated_three ' +
               'An invented discussion asks the council to improve the garden paths and keep the public meeting open. '.repeat(
                 3,

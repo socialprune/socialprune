@@ -213,9 +213,9 @@ async function compound(page: Page, instagram: boolean) {
         ? Promise.resolve({
             type: 'conversation',
             requestId: input.requestId,
-              chain: [{ id: original.id, original, ownItemId: null }],
+            chain: [{ id: original.id, original, ownItemId: null }],
             state: 'complete',
-            })
+          })
         : request(input, transfer);
   }, original);
   await page.getByRole('tab', { name: /^(All|Alle),/ }).click();

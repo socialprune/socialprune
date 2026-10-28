@@ -24,6 +24,7 @@ export type WorkspacePort = Pick<
 >;
 
 export class WorkspaceClient {
+  private disposed = false;
   readonly commands = new CommandQueue();
   private readonly leaveWarning = (event: BeforeUnloadEvent) => {
     if (this.commands.pending) {
@@ -198,6 +199,7 @@ export class WorkspaceClient {
       saved = resolve;
       saveFailed = reject;
     });
+    // A disposed worker can reject before the transferred sink closes.
     void savedReceipt.catch(() => undefined);
     const target = new WritableStream<Uint8Array>({
       write(chunk) {
@@ -230,7 +232,13 @@ export class WorkspaceClient {
     const reply = await this.request(
       { type: 'backup', requestId: crypto.randomUUID(), target },
       [target],
-    );
+    ).catch((error: unknown) => {
+      chunks.length = 0;
+      saveFailed(
+        error instanceof Error ? error : new Error('Backup did not complete.'),
+      );
+      throw error;
+    });
     if (reply.type !== 'done') {
       saveFailed(new Error('Backup did not complete.'));
       throw new Error('Backup did not complete.');
@@ -278,6 +286,8 @@ export class WorkspaceClient {
     input: WorkspaceRequest,
     transfer: Transferable[] = [],
   ): Promise<WorkspaceReply> {
+    if (this.disposed)
+      return Promise.reject(new Error('Workspace client disposed.'));
     if (
       this.commands.pending &&
       [
@@ -446,6 +456,8 @@ export class WorkspaceClient {
       void this.commands.flush().then(() => this.dispose());
       return;
     }
+    if (this.disposed) return;
+    this.disposed = true;
     if (typeof window !== 'undefined')
       window.removeEventListener('beforeunload', this.leaveWarning);
     this.worker.terminate();

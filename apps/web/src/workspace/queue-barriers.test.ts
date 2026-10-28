@@ -41,3 +41,28 @@ test('FAST-1 click-list reads and client disposal wait for unsent human writes',
   await client.commands.flush();
   await vi.waitFor(() => expect(terminate).toHaveBeenCalledOnce());
 });
+
+test('disposed worker clients reject outstanding and later requests instead of hanging', async () => {
+  const postMessage = vi.fn();
+  const client = new WorkspaceClient(
+    {
+      postMessage,
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return true;
+      },
+      terminate() {},
+    },
+    'generated-disposal',
+  );
+  const outstanding = client.open();
+  const settled = vi.fn();
+  void outstanding.then(settled, settled);
+  client.dispose();
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  await expect(outstanding).rejects.toThrow('Workspace client disposed.');
+  const before = postMessage.mock.calls.length;
+  await expect(client.open()).rejects.toThrow('Workspace client disposed.');
+  expect(postMessage).toHaveBeenCalledTimes(before);
+});

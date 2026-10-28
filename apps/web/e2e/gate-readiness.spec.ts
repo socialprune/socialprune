@@ -97,3 +97,84 @@ test('a different controlling worker still closes the import gate', async ({
   await expect(page.getByTestId('archives')).toHaveCount(0);
   await expect(page.getByTestId('import-state')).toHaveCount(0);
 });
+
+test('a demo request retained across gate promotion rejects instead of hanging', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const NativeWorker = Worker;
+    Reflect.set(
+      window,
+      'Worker',
+      class extends NativeWorker {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          if (String(url).includes('gate-worker')) {
+            Reflect.set(window, '__releaseGateHandshake', () => {
+              this.dispatchEvent(
+                new MessageEvent('message', {
+                  data: { type: 'gate-worker-ready' },
+                }),
+              );
+            });
+            this.addEventListener('message', (event) => {
+              if (event.isTrusted) event.stopImmediatePropagation();
+            });
+          }
+        }
+      },
+    );
+  });
+  await page.goto('/socialprune/');
+  await expect
+    .poll(() =>
+      page.evaluate(() => typeof Reflect.get(window, '__releaseGateHandshake')),
+    )
+    .toBe('function');
+  await page.getByRole('link', { name: 'Try the demo' }).click();
+  await expect(
+    page.getByRole('tab', { name: /All, 300 entries/ }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    Reflect.set(window, '__prePromotionClient', window.workspace),
+  );
+  await page.evaluate(() =>
+    (Reflect.get(window, '__releaseGateHandshake') as () => void)(),
+  );
+  await expect(page.locator('main[data-gate]')).toHaveAttribute(
+    'data-gate',
+    'ready',
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => Reflect.get(window, '__prePromotionClient') !== window.workspace,
+      ),
+    )
+    .toBe(true);
+  await expect(page.getByTestId('demo-banner')).toBeVisible();
+  await expect(
+    page.getByRole('tab', { name: /All, 300 entries/ }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        return Promise.race([
+          (
+            Reflect.get(
+              window,
+              '__prePromotionClient',
+            ) as typeof window.workspace
+          )
+            .backup(async () => {})
+            .then(
+              () => 'saved',
+              () => 'disposed',
+            ),
+          new Promise((resolve) => setTimeout(() => resolve('pending'), 1000)),
+        ]);
+      }),
+    )
+    .toBe('disposed');
+  await page.evaluate(() => window.workspace.backup(async () => {}));
+});

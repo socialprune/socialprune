@@ -73,6 +73,23 @@
     :global([data-single='true']) .metadata {
       margin-top: 0;
     }
+    :global([data-single='true']) .comment .body:has(button[aria-expanded]) {
+      position: relative;
+    }
+    :global([data-single='true'])
+      .comment
+      .body:has(button[aria-expanded])
+      .metadata {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      height: var(--target-size);
+      align-items: center;
+      pointer-events: none;
+    }
+    :global([data-single='true']) .comment .body button[aria-expanded] {
+      padding-right: 90px;
+    }
   }
   :global([data-single='true']) .text strong {
     font-size: var(--type-sm);

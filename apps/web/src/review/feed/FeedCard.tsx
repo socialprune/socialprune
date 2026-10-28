@@ -179,9 +179,21 @@ export function FeedCard({
       if (!reason) return;
       const reading = node.querySelector<HTMLElement>('[data-card-reading]');
       if (!reading) return;
-      for (let lines = 5; lines >= 1; lines--) {
+      const ownComment = node.querySelector<HTMLElement>('[data-own-comment]');
+      const commentColumn =
+        ownComment && getComputedStyle(reading).display === 'grid';
+      for (let lines = 5; lines >= (commentColumn ? 2 : 1); lines--) {
         node.style.setProperty('--card-text-lines', String(lines));
-        if (reading.scrollHeight <= reading.clientHeight + 1) break;
+        if (commentColumn) {
+          const detail =
+            reading.querySelector<HTMLElement>('[data-review-body]');
+          if (
+            ownComment.getBoundingClientRect().bottom +
+              (detail?.scrollHeight ?? 0) <=
+            reading.getBoundingClientRect().bottom + 1
+          )
+            break;
+        } else if (reading.scrollHeight <= reading.clientHeight + 1) break;
       }
       const primary = node.querySelector<HTMLElement>('[data-primary-text]');
       const bounds = reading.getBoundingClientRect();
@@ -497,7 +509,7 @@ export function FeedCard({
             </div>
           </>
         )}
-        <div className={styles.reviewBody}>
+        <div className={styles.reviewBody} data-review-body>
           <div id={`${id}-suggestion`} className={styles.suggestions}>
             {(single ? [] : card.suggestions).map((suggestion) => (
               <Suggestion key={suggestion.id} suggestion={suggestion} />

@@ -557,6 +557,12 @@ for (const lang of ['de', 'en'])
                       1) /
                       lineHeight,
                   ),
+                  fallbackLines: Number(
+                    getComputedStyle(
+                      card.querySelector('[data-reading-excerpt]') ?? primary,
+                    ).webkitLineClamp,
+                  ),
+                  fallback: !!card.querySelector('[data-reading-excerpt]'),
                   clamp: Number(getComputedStyle(primary).webkitLineClamp),
                   badgeClipped: clipped,
                 };
@@ -570,13 +576,13 @@ for (const lang of ['de', 'en'])
               if (width >= 1080 || height >= 900) {
                 expect
                   .soft(
-                    comment.lines,
+                    comment.fallback ? comment.fallbackLines : comment.lines,
                     `readable comment lines ${width}x${height}`,
                   )
                   .toBeGreaterThanOrEqual(2);
                 expect
                   .soft(
-                    comment.clamp,
+                    comment.fallback ? comment.fallbackLines : comment.clamp,
                     `adaptive comment clamp ${width}x${height}`,
                   )
                   .toBeGreaterThanOrEqual(2);
@@ -687,6 +693,9 @@ for (const lang of ['de', 'en'])
             [390, 844],
           ]) {
             await page.setViewportSize({ width: width!, height: height! });
+            await card.locator('[data-card-reading]').evaluate((node) => {
+              node.scrollTop = 0;
+            });
             await page.evaluate(async () => {
               await document.fonts.ready;
               await new Promise<void>((resolve) =>

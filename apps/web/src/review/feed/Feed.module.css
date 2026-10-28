@@ -865,9 +865,97 @@
     padding: var(--space-1) var(--space-2);
     max-width: 100%;
   }
-  .pinnedHeld p {
+  :global([data-single='true']) .pinnedHeld p {
     font-size: var(--type-xs);
     line-height: var(--line-xs);
+  }
+  :global([data-single='true']) .card[data-instagram-card] .firstSuggestion {
+    margin-top: 0;
+    padding-top: var(--space-1);
+  }
+  :global([data-single='true'])
+    .card[data-instagram-card]
+    .firstSuggestion
+    .suggestion {
+    margin-bottom: var(--space-1);
+  }
+  @media (max-width: 1079px) {
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .firstSuggestion
+      .suggestionLine
+      p {
+      font-size: var(--type-xs);
+      line-height: var(--line-xs);
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .firstSuggestion
+      .suggestionReason {
+      margin-top: 0;
+    }
+  }
+  @media (max-height: 900px) {
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .moreSuggestions
+      > summary {
+      min-height: 22px;
+    }
+  }
+  @media (max-height: 740px) {
+    :global([data-single='true']) .card[data-instagram-card] .firstSuggestion {
+      padding-top: 0;
+    }
+    :global([data-single='true']) .card[data-instagram-card] .pinnedHeld {
+      padding-block: 0;
+    }
+    :global([data-single='true']) .card[data-instagram-card] .excerptSlot {
+      margin-bottom: 0;
+    }
+    :global([data-single='true']) .card[data-instagram-card] .pinnedHeld {
+      margin-bottom: 0;
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .firstSuggestion
+      .suggestion {
+      margin-bottom: 0;
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .readingArea
+      > .reviewBody {
+      margin-top: 0;
+    }
+    :global([data-single='true']) .card[data-instagram-card] {
+      padding-block: 0;
+    }
+  }
+  @media (max-height: 740px) and (max-width: 360px) {
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .firstSuggestion
+      .suggestionLine
+      p,
+    :global([data-single='true'])
+      .card[data-instagram-card]
+      .firstSuggestion
+      .suggestionReason,
+    :global([data-single='true']) .card[data-instagram-card] .pinnedHeld p {
+      font-size: 11px;
+      line-height: 14px;
+    }
+  }
+  @media (min-height: 900px) {
+    :global([data-single='true']) .card[data-instagram-card] .excerptSlot {
+      height: calc(2 * var(--line-xs));
+    }
+    :global([data-single='true'])
+      .card[data-instagram-card]:has([data-more-suggestions])
+      .readingExcerpt {
+      -webkit-line-clamp: 2;
+    }
   }
   .actions {
     flex-wrap: wrap;

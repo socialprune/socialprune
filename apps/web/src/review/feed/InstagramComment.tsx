@@ -48,7 +48,7 @@ export function InstagramComment({
           <p className={styles.missing}>{t('proto.instagramMissingPost')}</p>
         )}
       </div>
-      <div className={styles.comment}>
+      <div className={styles.comment} data-own-comment>
         <span className={styles.avatar} aria-hidden="true">
           {card.handle.slice(0, 2).toLocaleUpperCase()}
         </span>
@@ -66,7 +66,9 @@ export function InstagramComment({
           <ClampedText
             className={styles.text}
             primary
-            collapsedChildren={display ? text(display.own) : undefined}
+            collapsedChildren={
+              display?.mentions ? text(display.own) : undefined
+            }
           >
             {!display && <>{author} </>}
             {text(card.text)}

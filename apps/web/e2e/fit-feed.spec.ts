@@ -414,6 +414,39 @@ for (const lang of ['de', 'en'])
               .soft(actions!.y + actions!.height, `actions ${width}x${height}`)
               .toBeLessThanOrEqual(height);
           }
+        if (
+          folder &&
+          info.project.name === 'chromium' &&
+          ((lang === 'de' && theme === 'dark') ||
+            (lang === 'en' && theme === 'light'))
+        )
+          for (const [width, height] of [
+            [784, 782],
+            [1024, 768],
+            [1366, 768],
+            [390, 844],
+          ]) {
+            await page.setViewportSize({ width: width!, height: height! });
+            await expect
+              .poll(async () => {
+                const bounds = await card
+                  .locator('[data-card-content]')
+                  .boundingBox();
+                const reason = await card
+                  .locator('[data-first-suggestion]')
+                  .boundingBox();
+                return reason
+                  ? reason.y + reason.height <= bounds!.y + bounds!.height + 1
+                  : false;
+              })
+              .toBe(true);
+            await page.screenshot({
+              path: join(
+                folder,
+                `view-${platform}-${lang}-${theme}-${width}x${height}.png`,
+              ),
+            });
+          }
       });
 
 async function expectStoredImage(image: Locator, pathname: string) {

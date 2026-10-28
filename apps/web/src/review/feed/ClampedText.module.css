@@ -18,7 +18,7 @@
   :global([data-single='true']) .group:not([data-text-expanded='true']) .text {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: var(--card-text-lines, 5);
     overflow: hidden;
   }
   :global([data-single='true']) .group {
@@ -42,7 +42,7 @@
     :global([data-single='true'])
       .group:not([data-text-expanded='true'])
       .text {
-      -webkit-line-clamp: 4;
+      -webkit-line-clamp: var(--card-text-lines, 4);
     }
     :global([data-single='true'])
       .group[data-caption-text]:not([data-text-expanded='true'])

@@ -149,6 +149,30 @@ export function FeedCard({
   const content = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   useLayoutEffect(() => {
+    const node = content.current;
+    if (!single || !node || expanded) return;
+    let frame = 0;
+    const fit = () => {
+      const reason = node.querySelector<HTMLElement>('[data-first-suggestion]');
+      if (!reason) return;
+      const bottom = node.getBoundingClientRect().bottom;
+      for (let lines = 5; lines >= 1; lines--) {
+        node.style.setProperty('--card-text-lines', String(lines));
+        if (reason.getBoundingClientRect().bottom <= bottom) break;
+      }
+    };
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    });
+    observer.observe(node);
+    fit();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [single, expanded, card, context]);
+  useLayoutEffect(() => {
     if (!single || !content.current) return;
     const node = content.current;
     const revealDetails = (event: Event) => {
@@ -365,8 +389,12 @@ export function FeedCard({
         )}
         <div className={styles.reviewBody}>
           <div id={`${id}-suggestion`} className={styles.suggestions}>
-            {card.suggestions.map((suggestion) => (
-              <div key={suggestion.id} className={styles.suggestion}>
+            {card.suggestions.map((suggestion, index) => (
+              <div
+                key={suggestion.id}
+                className={styles.suggestion}
+                data-first-suggestion={index === 0 ? '' : undefined}
+              >
                 <div className={styles.suggestionLine}>
                   <WandSparkles size={16} aria-hidden="true" />
                   <p dir="auto">

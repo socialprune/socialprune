@@ -454,8 +454,8 @@
     margin-bottom: 0;
   }
   :global([data-single='true']) .thread [data-clamped-text] {
-    float: left;
-    width: calc(100% - 120px);
+    float: none;
+    width: 100%;
   }
   :global([data-single='true']) .thread .contextMedia {
     min-height: 80px;
@@ -465,10 +465,11 @@
     min-height: 0;
   }
   :global([data-single='true']) .thread .meta {
-    display: inline;
+    display: block;
+    clear: both;
   }
   :global([data-single='true']) .thread > a {
-    display: inline;
+    display: block;
   }
   :global([data-single='true']) .thread [data-clamped-text] button {
     min-height: 28px;
@@ -478,6 +479,9 @@
   }
   :global([data-single='true']) .thread .meta {
     margin-block: 0;
+  }
+  :global([data-single='true']) .thread .contextMedia:not(:has(img, video)) {
+    margin-left: 0;
   }
   .contextLabel {
     gap: var(--space-2);

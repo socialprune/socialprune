@@ -335,7 +335,9 @@ for (const lang of ['de', 'en'])
               .toEqual([]);
             const firstSuggestion = await card.evaluate((card) => {
               const content = card.querySelector('[data-card-content]')!;
-              const first = card.querySelector('[class*="suggestionLine"]')!;
+              const first = card.querySelector(
+                '[data-first-suggestion] [class*="suggestionLine"]',
+              )!;
               const reason = first.parentElement!.querySelector(
                 '[class*="suggestionReason"]',
               )!;
@@ -398,13 +400,13 @@ for (const lang of ['de', 'en'])
                 )
                 .toBe(false);
             }
-            await card.locator('[data-card-content]').evaluate((node) => {
+            await card.locator('[data-card-reading]').evaluate((node) => {
               node.scrollTop = node.scrollHeight;
             });
             expect
               .soft(await noIntersections(card), `scrolled ${width}x${height}`)
               .toEqual([]);
-            await card.locator('[data-card-content]').evaluate((node) => {
+            await card.locator('[data-card-reading]').evaluate((node) => {
               node.scrollTop = 0;
             });
             const actions = await card

@@ -155,10 +155,11 @@ export function FeedCard({
     const fit = () => {
       const reason = node.querySelector<HTMLElement>('[data-first-suggestion]');
       if (!reason) return;
-      const bottom = node.getBoundingClientRect().bottom;
+      const reading = node.querySelector<HTMLElement>('[data-card-reading]');
+      if (!reading) return;
       for (let lines = 5; lines >= 1; lines--) {
         node.style.setProperty('--card-text-lines', String(lines));
-        if (reason.getBoundingClientRect().bottom <= bottom) break;
+        if (reading.scrollHeight <= reading.clientHeight + 1) break;
       }
     };
     const observer = new ResizeObserver(() => {
@@ -273,6 +274,11 @@ export function FeedCard({
         contentRef={content}
         expanded={expanded}
         id={`${id}-content`}
+        firstSuggestion={
+          single && card.suggestions[0] ? (
+            <Suggestion suggestion={card.suggestions[0]} first />
+          ) : undefined
+        }
       >
         {platform === 'instagram' && card.kind === 'comment' ? (
           <InstagramComment
@@ -389,34 +395,8 @@ export function FeedCard({
         )}
         <div className={styles.reviewBody}>
           <div id={`${id}-suggestion`} className={styles.suggestions}>
-            {card.suggestions.map((suggestion, index) => (
-              <div
-                key={suggestion.id}
-                className={styles.suggestion}
-                data-first-suggestion={index === 0 ? '' : undefined}
-              >
-                <div className={styles.suggestionLine}>
-                  <WandSparkles size={16} aria-hidden="true" />
-                  <p dir="auto">
-                    <strong>
-                      {t(
-                        suggestion.unclear
-                          ? 'review.categoryUnclear'
-                          : suggestion.harmless
-                            ? 'review.categoryHarmless'
-                            : 'reviewFeed.suggestDelete',
-                      )}
-                    </strong>
-                    {' · '}
-                    {suggestion.category}
-                    {' · '}
-                    {t(levels[suggestion.level])}
-                    {' · '}
-                    {sourceLabel(suggestion.source, t)}
-                  </p>
-                </div>
-                <p className={styles.suggestionReason}>{suggestion.reason}</p>
-              </div>
+            {card.suggestions.slice(single ? 1 : 0).map((suggestion) => (
+              <Suggestion key={suggestion.id} suggestion={suggestion} />
             ))}
             {!card.suggestions.length && (
               <p className={styles.meta}>{t('review.noSuggestions')}</p>
@@ -494,12 +474,14 @@ function CardContent({
   expanded,
   id,
   children,
+  firstSuggestion,
 }: {
   single: boolean;
   contentRef: React.RefObject<HTMLDivElement | null>;
   expanded: boolean;
   id: string;
   children: React.ReactNode;
+  firstSuggestion?: React.ReactNode;
 }) {
   return single ? (
     <div
@@ -509,10 +491,51 @@ function CardContent({
       data-expanded={expanded}
       id={id}
     >
-      {children}
+      <div className={styles.readingArea} data-card-reading>
+        {children}
+      </div>
+      {firstSuggestion}
     </div>
   ) : (
     <>{children}</>
+  );
+}
+
+function Suggestion({
+  suggestion,
+  first = false,
+}: {
+  suggestion: FeedSuggestion;
+  first?: boolean;
+}) {
+  const t = useT();
+  return (
+    <div
+      className={styles.suggestion}
+      data-first-suggestion={first ? '' : undefined}
+    >
+      <div className={styles.suggestionLine}>
+        <WandSparkles size={16} aria-hidden="true" />
+        <p dir="auto">
+          <strong>
+            {t(
+              suggestion.unclear
+                ? 'review.categoryUnclear'
+                : suggestion.harmless
+                  ? 'review.categoryHarmless'
+                  : 'reviewFeed.suggestDelete',
+            )}
+          </strong>
+          {' · '}
+          {suggestion.category}
+          {' · '}
+          {t(levels[suggestion.level])}
+          {' · '}
+          {sourceLabel(suggestion.source, t)}
+        </p>
+      </div>
+      <p className={styles.suggestionReason}>{suggestion.reason}</p>
+    </div>
   );
 }
 

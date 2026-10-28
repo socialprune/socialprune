@@ -91,7 +91,7 @@
     gap: 0;
   }
   @media (max-width: 900px) {
-    .mobileSort {
+    .menu[data-single-menu='true'] .mobileSort {
       display: block;
     }
     .toolbar:has(.singleNavigation) .sortField {

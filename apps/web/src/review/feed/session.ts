@@ -241,7 +241,11 @@ export class FeedSession {
     if (!this.trailCursor || this.snapshot.busy) return null;
     const sequence = ++this.backSequence;
     const target = this.trail[--this.trailCursor]!;
-    this.update({ backAvailable: this.trailCursor > 0, loading: true });
+    this.update({
+      backAvailable: this.trailCursor > 0,
+      loading: true,
+      busy: true,
+    });
     await this.flush();
     if (sequence !== this.backSequence) return null;
     if (
@@ -249,7 +253,7 @@ export class FeedSession {
       this.snapshot.saveFailure.itemId !== target.itemId
     ) {
       ++this.trailCursor;
-      this.update({ backAvailable: true, loading: false });
+      this.update({ backAvailable: true, loading: false, busy: false });
       return null;
     }
     try {
@@ -282,10 +286,14 @@ export class FeedSession {
       });
       return target.itemId;
     } catch {
-      if (sequence === this.backSequence) this.update({ error: true });
+      if (sequence === this.backSequence) {
+        ++this.trailCursor;
+        this.update({ error: true, backAvailable: true });
+      }
       return null;
     } finally {
-      if (sequence === this.backSequence) this.update({ loading: false });
+      if (sequence === this.backSequence)
+        this.update({ loading: false, busy: false });
     }
   }
   undo(anchor?: string, kind: 'undo' | 'redo' = 'undo') {
@@ -400,6 +408,7 @@ export class FeedSession {
     const card = this.snapshot.cards.find((card) => card.item.id === itemId);
     if (!card || this.snapshot.busy) return false;
     if (card.decision === value) return true;
+    ++this.backSequence;
     if (!retainInPlace) {
       this.trail.push({ itemId, accountKey: card.item.account.key });
       this.trailCursor = this.trail.length;

@@ -162,7 +162,7 @@ export function FeedToolbar({
             align="end"
             className={styles.menuPositioner}
           >
-            <Menu.Popup className={styles.menu}>
+            <Menu.Popup className={styles.menu} data-single-menu={single}>
               <Menu.RadioGroup
                 className={styles.mobileSort}
                 aria-label={t('reviewFeed.sort')}

@@ -537,3 +537,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-25, the tracked preview capture destination)
+
+### [LL-2026-10-020] 2026-10-28 ORCHESTRATION: Claim a turn before its external effects when more than one runtime can run it
+
+**ID:** LL-2026-10-020
+**Severity:** HIGH
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). The two server processes, the claim script and the timings below are evidence from 2026-10-26 to 2026-10-28.
+**Feedback:** No criticism from the maintainer; found by the parent on 2026-10-28 at 07:36 UTC. One scheduled parent wakeup ran at the same time in two kilo servers that both drive the parent session. One instance pushed the merge to main, backed up the maintainer's workspace and built his package, while the other instance read CI, found the merge already done and a backup file already written, and stopped before touching his workspace. It was the third time the same session ran twice: a design lane on 2026-10-25 (two instances in one worktree) and a parent turn on 2026-10-25 (a duplicate canary start that the CLI refused).
+**Problem:** The only guard was "list wakeups and cancel duplicates". It catches two scheduled wakeups, not one wakeup delivered to two runtimes. Both instances held the same plan, so both would have backed up, installed a package into the maintainer's folder and restarted his review, and two restarts change the address he is using.
+**5 Whys Analysis:**
+1. Why did two instances act? -> Two kilo servers on one database both resumed the session when its wakeup came due.
+2. Why did neither notice the other first? -> Each read state that was still unchanged, for example main at the old commit 31 seconds before the other pushed.
+3. Why did the earlier warnings not stop it? -> They said to check which server owns a session before resuming a task, which covers dispatches the parent makes, not turns the runtime starts by itself.
+4. Why was the risk high this time? -> The planned steps had effects outside the session: a push, a backup, a package install and a restart of a server the person uses.
+5. Why? -> Root cause: no mutual exclusion existed for external effects; correctness depended on a single runtime, which the setup does not guarantee.
+**Rule(s):**
+1. When more than one runtime can start the same turn, the turn claims an atomic, named lock before its first external effect, and an instance that loses the claim makes no effect and ends its turn.
+2. Read-only checks may run before the claim; pushes, merges, backups, installs, restarts, dispatches and messages that change what the person sees come after it.
+3. An instance that finds an effect already done, such as a pushed branch or a new backup file, treats that as another instance at work and stops rather than repeating it.
+4. Here the claim is `node gate-c2\claim.mjs <key>` (exit 0 claimed, exit 3 taken), with the wakeup's due time or step name as the key, and every wakeup prompt names it.
+**Detection Pattern:** a file is locked by another process the moment you create it; main, a branch or a pull request moved between two of your own reads; a backup or package file appears with a time you did not write; the session's own server PID differs from the one that owns its running children.
+**Affected Files:** `BOARD.md` header in the handoff folder (retrieval anchor: the claim trigger sits in the paragraph every wakeup reads first); every parent wakeup prompt; `phase2\gate-c2\claim.mjs` outside the repository.
+**Related Lessons:** LL-2026-10-001 (re-read state someone else owns), LL-2026-10-003 (change a running lane only through its task), LL-2026-10-011 (search the record before explaining a state your work may have produced).
+**Regression / Verification Note:** On 2026-10-28 the claim script returned exit 0 for a fresh key, 3 for the same key and 2 for an invalid key. Its first real use is the next parent wakeup.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-28 07:35Z, the FIT-1 merge wakeup ran in both servers; the second instance stopped before the maintainer's workspace was touched twice)

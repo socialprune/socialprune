@@ -393,6 +393,71 @@ for (const lang of ['de', 'en'])
                 `own text bottom ${width}x${height}`,
               )
               .toBeLessThanOrEqual(firstSuggestion.bottom + 1);
+            const presentation = await card.evaluate((card) => {
+              const reading = card
+                .querySelector('[data-card-reading]')!
+                .getBoundingClientRect();
+              const primary = card.querySelector<HTMLElement>(
+                '[data-primary-text]',
+              )!;
+              const box = primary.getBoundingClientRect();
+              const excerpt = card.querySelector<HTMLElement>(
+                '[data-reading-excerpt]',
+              );
+              const ownVisible =
+                Math.min(box.bottom, reading.bottom) -
+                  Math.max(box.top, reading.top) >
+                1;
+              const visibleText = ownVisible
+                ? primary.textContent
+                : excerpt?.textContent;
+              const first = card.querySelector(
+                '[data-first-suggestion] [class*="suggestionLine"]',
+              )!;
+              const second = [
+                ...card.querySelectorAll<HTMLElement>(
+                  '[class*="suggestionLine"]',
+                ),
+              ].find((node) => node !== first)!;
+              return {
+                visibleText: visibleText?.trim(),
+                duplicate: !!excerpt && ownVisible,
+                secondHidden: !second.checkVisibility(),
+                secondInDisclosure: !!second.closest('details'),
+                firstBeforeSecond: !!(
+                  first.compareDocumentPosition(second) &
+                  Node.DOCUMENT_POSITION_FOLLOWING
+                ),
+              };
+            });
+            if (platform === 'x')
+              expect
+                .soft(presentation.visibleText, `own words ${width}x${height}`)
+                .toMatch(/^An invented/);
+            expect
+              .soft(
+                presentation.duplicate,
+                `no duplicate own text ${width}x${height}`,
+              )
+              .toBe(false);
+            expect
+              .soft(
+                presentation.secondHidden,
+                `further suggestion initially closed ${width}x${height}`,
+              )
+              .toBe(true);
+            expect
+              .soft(
+                presentation.secondInDisclosure,
+                `further suggestion disclosure ${width}x${height}`,
+              )
+              .toBe(true);
+            expect
+              .soft(
+                presentation.firstBeforeSecond,
+                `suggestion order ${width}x${height}`,
+              )
+              .toBe(true);
             if (platform === 'instagram') {
               const image = await card
                 .getByTestId('instagram-post')

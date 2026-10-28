@@ -182,6 +182,20 @@ for (const lang of ['de', 'en'] as const)
         await expect(post).toContainText(liveExpected.caption);
         await expect(post.locator('img')).toBeVisible();
         await post.locator('img').scrollIntoViewIfNeeded();
+        // A reserved lazy-image box can be visible before its local bytes are
+        // decoded. Measure the intrinsic ratio only after that actual load.
+        await expect
+          .poll(() =>
+            post.locator('img').evaluate((node) => {
+              const image = node as HTMLImageElement;
+              return (
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0
+              );
+            }),
+          )
+          .toBe(true);
         const layout = await post.evaluate((node) => {
           const image = node.querySelector('img')!,
             header = node.querySelector('[data-instagram-post-header]')!,

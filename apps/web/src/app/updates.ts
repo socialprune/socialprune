@@ -38,17 +38,25 @@ export class AppUpdates {
   };
 
   watch(registration: ServiceWorkerRegistration): void {
-    const changed = () => {
-      if (registration.waiting) this.setWaiting(registration.waiting);
+    const observe = () => {
+      const worker = registration.installing ?? registration.waiting;
+      if (!worker) return;
+      const changed = () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller)
+          this.setWaiting(worker);
+      };
+      worker.addEventListener('statechange', changed);
+      // updatefound delivery can lag the install, and watch can start while an
+      // install is already in progress. Neither path gets another state event.
+      changed();
     };
-    changed();
-    registration.addEventListener('updatefound', () => {
-      const installing = registration.installing;
-      installing?.addEventListener('statechange', changed);
-    });
+    if (registration.waiting) this.setWaiting(registration.waiting);
+    observe();
+    registration.addEventListener('updatefound', observe);
   }
 
   private setWaiting(worker: ServiceWorker) {
+    if (this.disposed || this.waiting === worker) return;
     this.waiting = worker;
     for (const listener of this.listeners) listener(true);
   }

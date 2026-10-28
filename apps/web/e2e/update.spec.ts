@@ -38,134 +38,169 @@ async function nextBuild() {
   };
 }
 
-test('W0 two-tab update waits for consent, Later keeps v1 and reload flushes all tabs', async ({
-  page,
-  context,
-}) => {
-  test.setTimeout(90_000);
-  const server = await startStaticServer(offlinePort);
-  const version = await nextBuild();
-  const second = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text());
-  });
-  try {
-    for (const tab of [page, second]) {
-      await tab.goto(`${server.origin}/socialprune/#/settings`);
-      await expect(tab.locator('main[data-gate]')).toHaveAttribute(
-        'data-gate',
-        'ready',
-      );
-      await expect(tab.getByText(`Build ${version.id}`)).toBeVisible();
-    }
-    await page.evaluate(async () => {
-      await (
-        await caches.open('sp-model-invented')
-      ).put('/invented-model', new Response('invented model bytes'));
-      await new Promise<void>((resolve, reject) => {
-        const open = indexedDB.open('sp-update-test', 1);
-        open.onupgradeneeded = () => open.result.createObjectStore('events');
-        open.onerror = () =>
-          reject(open.error ?? new Error('Test database did not open.'));
-        open.onsuccess = () => {
-          const db = open.result;
-          const tx = db.transaction('events', 'readwrite');
-          tx.objectStore('events').put('invented retained event', 'one');
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
+for (const delayedUpdate of [false, true])
+  test(`W0 two-tab update waits for consent, Later keeps v1 and reload flushes all tabs${delayedUpdate ? ' with a late updatefound event' : ''}`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const server = await startStaticServer(offlinePort);
+    const version = await nextBuild();
+    const second = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    if (delayedUpdate)
+      await context.addInitScript(() => {
+        // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the real registration through .call below.
+        const add = ServiceWorkerRegistration.prototype.addEventListener;
+        ServiceWorkerRegistration.prototype.addEventListener = function (
+          type: string,
+          listener: EventListenerOrEventListenerObject,
+          options?: boolean | AddEventListenerOptions,
+        ) {
+          if (type !== 'updatefound' || typeof listener !== 'function')
+            return add.call(this, type, listener, options);
+          return add.call(
+            this,
+            type,
+            (event) => {
+              const worker = this.installing;
+              const deliver = () => listener.call(this, event);
+              if (!worker || worker.state === 'installed') return deliver();
+              worker.addEventListener('statechange', () => {
+                if (worker.state === 'installed') deliver();
+              });
+            },
+            options,
+          );
         };
       });
-    });
-    server.switchOutput(version.copy);
-    await page.evaluate(() =>
-      navigator.serviceWorker
-        .getRegistration()
-        .then((registration) => registration?.update()),
-    );
-    await expect(
-      page.getByText('A new version of SocialPrune is ready.'),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Later', exact: true }).click();
-    await expect(page.getByText(`Build ${version.id}`)).toBeVisible();
-    await expect(second.getByText(`Build ${version.id}`)).toBeVisible();
-    expect(await page.evaluate(() => caches.keys())).toContain(
-      `sp-app-${version.id}`,
-    );
-    // A fresh tab on the still-active old shell exposes the pending update.
-    const third = await context.newPage();
-    await third.goto(`${server.origin}/socialprune/#/settings`);
-    await expect(
-      third.getByRole('button', { name: 'Reload now' }),
-    ).toBeVisible();
-    const flushes: string[] = [];
-    await page.exposeFunction('__recordFlush', () => flushes.push('first'));
-    await second.exposeFunction('__recordFlush', () => flushes.push('second'));
-    for (const tab of [page, second])
-      await tab.evaluate(() => {
-        navigator.serviceWorker.addEventListener(
-          'message',
-          (event: MessageEvent<{ type: string }>) => {
-            if (event.data.type === 'flush-tab')
-              void (
-                Reflect.get(globalThis, '__recordFlush') as () => Promise<void>
-              )();
-          },
+    try {
+      for (const tab of [page, second]) {
+        await tab.goto(`${server.origin}/socialprune/#/settings`);
+        await expect(tab.locator('main[data-gate]')).toHaveAttribute(
+          'data-gate',
+          'ready',
         );
-      });
-    await third.getByRole('button', { name: 'Reload now' }).click();
-    await expect.poll(() => flushes.sort()).toEqual(['first', 'second']);
-    for (const tab of [page, second, third]) {
-      try {
-        await expect(
-          tab.getByText(`Build ${version.next}`),
-          JSON.stringify(errors),
-        ).toBeVisible();
-      } catch (error) {
-        console.log(
-          JSON.stringify({
-            errors,
-            url: tab.url(),
-            text: await tab.locator('body').innerText(),
-            caches: await tab.evaluate(() =>
-              'caches' in globalThis ? caches.keys() : [],
-            ),
-            hits: server.hits,
-          }),
-        );
-        throw error;
+        await expect(tab.getByText(`Build ${version.id}`)).toBeVisible();
       }
-    }
-    await expect
-      .poll(() => page.evaluate(() => caches.keys()))
-      .not.toContain(`sp-app-${version.id}`);
-    expect(await page.evaluate(() => caches.keys())).toContain(
-      'sp-model-invented',
-    );
-    expect(
       await page.evaluate(async () => {
-        const db = await new Promise<IDBDatabase>((resolve) => {
-          const open = indexedDB.open('sp-update-test');
-          open.onsuccess = () => resolve(open.result);
+        await (
+          await caches.open('sp-model-invented')
+        ).put('/invented-model', new Response('invented model bytes'));
+        await new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open('sp-update-test', 1);
+          open.onupgradeneeded = () => open.result.createObjectStore('events');
+          open.onerror = () =>
+            reject(open.error ?? new Error('Test database did not open.'));
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction('events', 'readwrite');
+            tx.objectStore('events').put('invented retained event', 'one');
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+          };
         });
-        const result = await new Promise<unknown>((resolve) => {
-          const get = db.transaction('events').objectStore('events').get('one');
-          get.onsuccess = () => resolve(get.result);
+      });
+      server.switchOutput(version.copy);
+      await page.evaluate(() =>
+        navigator.serviceWorker
+          .getRegistration()
+          .then((registration) => registration?.update()),
+      );
+      await expect(
+        page.getByText('A new version of SocialPrune is ready.'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Later', exact: true }).click();
+      await expect(page.getByText(`Build ${version.id}`)).toBeVisible();
+      await expect(second.getByText(`Build ${version.id}`)).toBeVisible();
+      expect(await page.evaluate(() => caches.keys())).toContain(
+        `sp-app-${version.id}`,
+      );
+      // A fresh tab on the still-active old shell exposes the pending update.
+      const third = await context.newPage();
+      await third.goto(`${server.origin}/socialprune/#/settings`);
+      await expect(
+        third.getByRole('button', { name: 'Reload now' }),
+      ).toBeVisible();
+      const flushes: string[] = [];
+      await page.exposeFunction('__recordFlush', () => flushes.push('first'));
+      await second.exposeFunction('__recordFlush', () =>
+        flushes.push('second'),
+      );
+      for (const tab of [page, second])
+        await tab.evaluate(() => {
+          navigator.serviceWorker.addEventListener(
+            'message',
+            (event: MessageEvent<{ type: string }>) => {
+              if (event.data.type === 'flush-tab')
+                void (
+                  Reflect.get(
+                    globalThis,
+                    '__recordFlush',
+                  ) as () => Promise<void>
+                )();
+            },
+          );
         });
-        db.close();
-        return result;
-      }),
-    ).toBe('invented retained event');
-    await third.close();
-  } finally {
-    await second.close();
-    await server.close();
-    await version.close();
-  }
-});
+      await third.getByRole('button', { name: 'Reload now' }).click();
+      await expect.poll(() => flushes.sort()).toEqual(['first', 'second']);
+      for (const tab of [page, second, third]) {
+        try {
+          await expect(
+            tab.getByText(`Build ${version.next}`),
+            JSON.stringify(errors),
+          ).toBeVisible();
+        } catch (error) {
+          console.log(
+            JSON.stringify({
+              errors,
+              url: tab.url(),
+              text: await tab.locator('body').innerText(),
+              caches: await tab.evaluate(() =>
+                'caches' in globalThis ? caches.keys() : [],
+              ),
+              hits: server.hits,
+            }),
+          );
+          throw error;
+        }
+      }
+      await expect
+        .poll(() => page.evaluate(() => caches.keys()))
+        .not.toContain(`sp-app-${version.id}`);
+      expect(await page.evaluate(() => caches.keys())).toContain(
+        'sp-model-invented',
+      );
+      expect(
+        await page.evaluate(async () => {
+          const db = await new Promise<IDBDatabase>((resolve) => {
+            const open = indexedDB.open('sp-update-test');
+            open.onsuccess = () => resolve(open.result);
+          });
+          const result = await new Promise<unknown>((resolve) => {
+            const get = db
+              .transaction('events')
+              .objectStore('events')
+              .get('one');
+            get.onsuccess = () => resolve(get.result);
+          });
+          db.close();
+          return result;
+        }),
+      ).toBe('invented retained event');
+      await third.close();
+    } finally {
+      await second.close();
+      await server.close();
+      await version.close();
+    }
+  });
 
 test('W0 failed update install leaves the old controlled shell available', async ({
   page,

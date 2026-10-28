@@ -13,18 +13,21 @@ import {
 import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
 import { JOURNAL_FIXTURE } from '../../../../packages/core/src/model/browser-fixture.ts';
 
-test('core store contract runs against real IndexedDB in a browser page', async ({
-  page,
-}) => {
-  await page.goto('/socialprune/icon.svg');
-  const passed = await page.evaluate(async () => {
-    const module = (await import(
-      /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
-    )) as { runBrowserStoreContract(): Promise<string[]> };
-    return module.runBrowserStoreContract();
+// Each independent core contract retains its complete assertions and 30s budget.
+// Bundling them under one 30s test timed out after successful checks on Windows.
+for (const { name } of STORE_CONTRACT_CHECKS)
+  test(`core store contract runs against real IndexedDB: ${name}`, async ({
+    page,
+  }) => {
+    await page.goto('/socialprune/icon.svg');
+    const passed = await page.evaluate(async (name) => {
+      const module = (await import(
+        /* @vite-ignore */ `${location.origin}/socialprune/store-contract.js`
+      )) as { runBrowserStoreContract(name: string): Promise<string[]> };
+      return module.runBrowserStoreContract(name);
+    }, name);
+    expect(passed).toEqual([name]);
   });
-  expect(passed).toEqual(STORE_CONTRACT_CHECKS.map(({ name }) => name));
-});
 
 test('valid streaming restore preserves fixture submissions shared sequence and backup time', async ({
   page,

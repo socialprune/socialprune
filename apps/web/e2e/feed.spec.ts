@@ -185,7 +185,27 @@ test('bounded card windows, full-query keyboard jumps and persisted tab anchor',
   await feed.locator('article').first().focus();
   await page.keyboard.press('Control+End');
   await expect(page.getByRole('tabpanel')).toBeFocused();
-  await feed.locator('article').first().focus();
+  // Control+End scrolls and pages the virtual window. Focus a visible card,
+  // not its old offscreen first node that retention is about to remove.
+  await expect
+    .poll(() =>
+      feed.evaluate(async (feed) => {
+        const panel = feed.closest('[role="tabpanel"]')!;
+        const bounds = panel.getBoundingClientRect();
+        const card = [...feed.querySelectorAll<HTMLElement>('article')].find(
+          (card) => {
+            const box = card.getBoundingClientRect();
+            return box.bottom > bounds.top && box.top < bounds.bottom;
+          },
+        );
+        card?.focus();
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+        return !!card?.isConnected && document.activeElement === card;
+      }),
+    )
+    .toBe(true);
   await page.keyboard.press('Control+Home');
   await expect(
     page.getByRole('heading', { name: 'Review', exact: true }).last(),

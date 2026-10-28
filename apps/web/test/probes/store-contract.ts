@@ -1,5 +1,5 @@
 import '@socialprune/core/browser-init';
-import { runStoreContract } from '@socialprune/core/workspace/store-contract';
+import { STORE_CONTRACT_CHECKS } from '@socialprune/core/workspace/store-contract';
 import type { StoreContractFactory } from '@socialprune/core/workspace/store-contract';
 import {
   IndexedDBStore,
@@ -13,7 +13,7 @@ import { QueryEngine } from '@socialprune/core/workspace/query';
 import { WORKSPACE_SCHEMA_VERSION } from '@socialprune/core';
 export { proveOwnerUpgrade } from '../../src/workspace/instagram-owner-migration.browser.ts';
 
-export async function runBrowserStoreContract(): Promise<string[]> {
+export async function runBrowserStoreContract(name: string): Promise<string[]> {
   const passed: string[] = [];
   const factory: StoreContractFactory = async (initial) => {
     const id = `contract-${crypto.randomUUID()}`;
@@ -31,7 +31,10 @@ export async function runBrowserStoreContract(): Promise<string[]> {
       },
     };
   };
-  await runStoreContract(factory, (name) => passed.push(name));
+  const check = STORE_CONTRACT_CHECKS.find((check) => check.name === name);
+  if (!check) throw new Error('Unknown store contract check.');
+  await check.run(factory);
+  passed.push(check.name);
   return passed;
 }
 

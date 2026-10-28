@@ -350,6 +350,14 @@ for (const lang of ['de', 'en'])
                 lineBottom: first.getBoundingClientRect().bottom,
                 reasonTop: reason.getBoundingClientRect().top,
                 reasonBottom: reason.getBoundingClientRect().bottom,
+                excerptTop:
+                  card
+                    .querySelector('[data-reading-excerpt]')
+                    ?.getBoundingClientRect().top ?? Infinity,
+                excerptBottom:
+                  card
+                    .querySelector('[data-reading-excerpt]')
+                    ?.getBoundingClientRect().bottom ?? Infinity,
               };
             });
             expect
@@ -373,6 +381,36 @@ for (const lang of ['de', 'en'])
                 `reason bottom ${width}x${height}`,
               )
               .toBeLessThanOrEqual(firstSuggestion.bottom + 1);
+            expect
+              .soft(
+                firstSuggestion.excerptTop,
+                `own text top ${width}x${height}`,
+              )
+              .toBeGreaterThanOrEqual(firstSuggestion.top);
+            expect
+              .soft(
+                firstSuggestion.excerptBottom,
+                `own text bottom ${width}x${height}`,
+              )
+              .toBeLessThanOrEqual(firstSuggestion.bottom + 1);
+            if (platform === 'instagram') {
+              const image = await card
+                .getByTestId('instagram-post')
+                .locator('img')
+                .first()
+                .boundingBox();
+              const reading = await card
+                .locator('[data-card-reading]')
+                .boundingBox();
+              const visible =
+                Math.min(
+                  image!.y + image!.height,
+                  reading!.y + reading!.height,
+                ) - Math.max(image!.y, reading!.y);
+              expect
+                .soft(visible, `visible image minimum ${width}x${height}`)
+                .toBeGreaterThanOrEqual(159);
+            }
             if (platform === 'x') {
               const provenance = await card
                 .getByTestId('stored-original')

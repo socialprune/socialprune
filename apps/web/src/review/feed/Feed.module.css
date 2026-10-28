@@ -64,6 +64,37 @@
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-divider);
   }
+  .readingExcerpt {
+    margin: 0 0 var(--space-1);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  :global([data-single-view='true']) .tabHelp {
+    padding-block: var(--space-1);
+    font-size: var(--type-xs);
+    line-height: var(--line-xs);
+  }
+  @media (max-height: 900px) {
+    :global([data-single='true']) .card {
+      padding-block: var(--space-1);
+    }
+    :global([data-single='true']) [data-first-suggestion] {
+      margin-top: var(--space-1);
+      padding-top: var(--space-1);
+      font-size: var(--type-xs);
+      line-height: var(--line-xs);
+    }
+    :global([data-single='true']) [data-first-suggestion] .suggestionLine,
+    :global([data-single='true']) [data-first-suggestion] .suggestionReason {
+      font-size: var(--type-xs);
+      line-height: var(--line-xs);
+    }
+  }
   :global([data-single='true']) [data-expanded='true'] .readingArea {
     flex: none;
     overflow: visible;

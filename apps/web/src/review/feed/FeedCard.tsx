@@ -276,7 +276,12 @@ export function FeedCard({
         id={`${id}-content`}
         firstSuggestion={
           single && card.suggestions[0] ? (
-            <Suggestion suggestion={card.suggestions[0]} first />
+            <div data-first-suggestion className={styles.firstSuggestion}>
+              <p className={styles.readingExcerpt} data-reading-excerpt>
+                <strong>{card.handle}</strong> {card.text || t('review.noText')}
+              </p>
+              <Suggestion suggestion={card.suggestions[0]} />
+            </div>
           ) : undefined
         }
       >

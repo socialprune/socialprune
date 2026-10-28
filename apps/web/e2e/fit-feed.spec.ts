@@ -333,6 +333,71 @@ for (const lang of ['de', 'en'])
             expect
               .soft(await noIntersections(card), `${width}x${height}`)
               .toEqual([]);
+            const firstSuggestion = await card.evaluate((card) => {
+              const content = card.querySelector('[data-card-content]')!;
+              const first = card.querySelector('[class*="suggestionLine"]')!;
+              const reason = first.parentElement!.querySelector(
+                '[class*="suggestionReason"]',
+              )!;
+              const bounds = content.getBoundingClientRect();
+              return {
+                scroll: content.scrollTop,
+                top: bounds.top,
+                bottom: bounds.bottom,
+                lineTop: first.getBoundingClientRect().top,
+                lineBottom: first.getBoundingClientRect().bottom,
+                reasonTop: reason.getBoundingClientRect().top,
+                reasonBottom: reason.getBoundingClientRect().bottom,
+              };
+            });
+            expect
+              .soft(firstSuggestion.scroll, `initial scroll ${width}x${height}`)
+              .toBe(0);
+            expect
+              .soft(
+                firstSuggestion.lineTop,
+                `suggestion top ${width}x${height}`,
+              )
+              .toBeGreaterThanOrEqual(firstSuggestion.top);
+            expect
+              .soft(
+                firstSuggestion.lineBottom,
+                `suggestion bottom ${width}x${height}`,
+              )
+              .toBeLessThanOrEqual(firstSuggestion.bottom + 1);
+            expect
+              .soft(
+                firstSuggestion.reasonBottom,
+                `reason bottom ${width}x${height}`,
+              )
+              .toBeLessThanOrEqual(firstSuggestion.bottom + 1);
+            if (platform === 'x') {
+              const provenance = await card
+                .getByTestId('stored-original')
+                .evaluate((original) => {
+                  const text = original.querySelector('[data-clamped-text]')!;
+                  const meta = original.querySelector('[class*="meta"]')!;
+                  const link = original.querySelector('a')!;
+                  return {
+                    textBottom: text.getBoundingClientRect().bottom,
+                    metaTop: meta.getBoundingClientRect().top,
+                    linkText: link.textContent,
+                    preceding: link.previousSibling?.textContent?.trim(),
+                  };
+                });
+              expect
+                .soft(
+                  provenance.metaTop,
+                  `provenance below text ${width}x${height}`,
+                )
+                .toBeGreaterThanOrEqual(provenance.textBottom - 1);
+              expect
+                .soft(
+                  provenance.linkText?.trim().startsWith('·'),
+                  `no leading separator ${width}x${height}`,
+                )
+                .toBe(false);
+            }
             await card.locator('[data-card-content]').evaluate((node) => {
               node.scrollTop = node.scrollHeight;
             });

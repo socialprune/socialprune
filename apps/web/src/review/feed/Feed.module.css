@@ -24,6 +24,9 @@
   .cardContent {
     display: contents;
   }
+  .readingArea {
+    display: contents;
+  }
   .review[data-single-view='true'] .scrollPanel {
     overflow: hidden;
     display: flex;
@@ -53,6 +56,7 @@
     overscroll-behavior: contain;
   }
   :global([data-single='true']) .readingArea {
+    display: block;
     flex: 1 1 0;
     min-height: 0;
     overflow: auto;
@@ -73,6 +77,11 @@
     -webkit-line-clamp: 1;
     overflow: hidden;
     overflow-wrap: anywhere;
+  }
+  :global([data-single='true'])
+    .card:has([data-reading-excerpt])
+    .commentExcerpt {
+    display: none;
   }
   :global([data-single-view='true']) .tabHelp {
     padding-block: var(--space-1);
@@ -1283,6 +1292,11 @@
     }
     :global([data-single='true']) .card[data-instagram-card] .readingArea {
       grid-template-rows: auto auto auto minmax(0, 1fr) 64px;
+    }
+  }
+  @media (max-height: 900px) {
+    :global([data-single='true']) .card[data-instagram-card] {
+      padding-block: var(--space-1);
     }
   }
 }

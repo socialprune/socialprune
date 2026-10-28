@@ -326,15 +326,20 @@ for (const lang of ['de', 'en'])
             await expect
               .poll(() =>
                 card.evaluate((card) => {
-                  const primary = card
-                    .querySelector('[data-primary-text]')!
-                    .getBoundingClientRect();
+                  const primaryNode = card.querySelector<HTMLElement>(
+                    '[data-primary-text]',
+                  )!;
+                  const primary = primaryNode.getBoundingClientRect();
                   const reading = card
                     .querySelector('[data-card-reading]')!
                     .getBoundingClientRect();
                   const visible =
-                    Math.min(primary.bottom, reading.bottom) >
-                    Math.max(primary.top, reading.top) + 1;
+                    Math.min(primary.bottom, reading.bottom) >=
+                    Math.max(primary.top, reading.top) +
+                      Number.parseFloat(
+                        getComputedStyle(primaryNode).lineHeight,
+                      ) -
+                      1;
                   return (
                     visible !== !!card.querySelector('[data-reading-excerpt]')
                   );
@@ -367,8 +372,13 @@ for (const lang of ['de', 'en'])
                 .querySelector('[data-primary-text]')!
                 .getBoundingClientRect();
               const visibleOwn =
-                Math.min(own.bottom, reading.bottom) >
-                Math.max(own.top, reading.top) + 1;
+                Math.min(own.bottom, reading.bottom) >=
+                Math.max(own.top, reading.top) +
+                  Number.parseFloat(
+                    getComputedStyle(card.querySelector('[data-primary-text]')!)
+                      .lineHeight,
+                  ) -
+                  1;
               const excerpt = card
                 .querySelector('[data-reading-excerpt]')
                 ?.getBoundingClientRect();
@@ -435,7 +445,7 @@ for (const lang of ['de', 'en'])
               const ownVisible =
                 Math.min(box.bottom, reading.bottom) -
                   Math.max(box.top, reading.top) >
-                1;
+                Number.parseFloat(getComputedStyle(primary).lineHeight) - 1;
               const visibleText = ownVisible
                 ? primary.textContent
                 : excerpt?.textContent;

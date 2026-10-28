@@ -182,10 +182,13 @@ export function FeedCard({
       const primary = node.querySelector<HTMLElement>('[data-primary-text]');
       const bounds = reading.getBoundingClientRect();
       const box = primary?.getBoundingClientRect();
+      const readableHeight = primary
+        ? Number.parseFloat(getComputedStyle(primary).lineHeight)
+        : 1;
       setShowExcerpt(
         !box ||
-          Math.min(bounds.bottom, box.bottom) <=
-            Math.max(bounds.top, box.top) + 1,
+          Math.min(bounds.bottom, box.bottom) <
+            Math.max(bounds.top, box.top) + readableHeight - 1,
       );
     };
     const observer = new ResizeObserver(() => {
@@ -322,12 +325,13 @@ export function FeedCard({
         single={single}
         contentRef={content}
         expanded={expanded}
+        fallbackActive={showExcerpt && !expanded}
         id={`${id}-content`}
         firstSuggestion={
           single && card.suggestions[0] ? (
             <div data-first-suggestion className={styles.firstSuggestion}>
               <div className={styles.excerptSlot}>
-                {showExcerpt && (
+                {showExcerpt && !expanded && (
                   <p className={styles.readingExcerpt} data-reading-excerpt>
                     {display.own || t('review.noText')}
                   </p>
@@ -569,6 +573,7 @@ function CardContent({
   id,
   children,
   firstSuggestion,
+  fallbackActive,
 }: {
   single: boolean;
   contentRef: React.RefObject<HTMLDivElement | null>;
@@ -576,6 +581,7 @@ function CardContent({
   id: string;
   children: React.ReactNode;
   firstSuggestion?: React.ReactNode;
+  fallbackActive?: boolean;
 }) {
   return single ? (
     <div
@@ -583,6 +589,7 @@ function CardContent({
       className={styles.cardContent}
       data-card-content
       data-expanded={expanded}
+      data-fallback-active={fallbackActive}
       id={id}
     >
       <div className={styles.readingArea} data-card-reading>

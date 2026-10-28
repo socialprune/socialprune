@@ -82,6 +82,9 @@
     height: var(--line-xs);
     margin-bottom: var(--space-1);
   }
+  :global([data-fallback-active='true']) [data-primary-text] {
+    visibility: hidden;
+  }
   @media (min-height: 780px) {
     .readingExcerpt {
       -webkit-line-clamp: 2;

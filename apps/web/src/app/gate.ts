@@ -19,9 +19,14 @@ export class WorkerGate {
   private readonly listeners = new Set<(state: GateState) => void>();
   private pending: Promise<void> | null = null;
   private registration: ServiceWorkerRegistration | null = null;
+  private verifiedController: ServiceWorker | null = null;
   private disposed = false;
   private readonly controlChanged = () => {
-    if (this.state === 'ready') this.update('preparing');
+    if (
+      this.state === 'ready' &&
+      navigator.serviceWorker.controller !== this.verifiedController
+    )
+      this.update('preparing');
   };
 
   subscribe(listener: (state: GateState) => void) {
@@ -55,7 +60,8 @@ export class WorkerGate {
     if (
       this.state !== 'ready' ||
       window.top !== window.self ||
-      !navigator.serviceWorker.controller
+      !navigator.serviceWorker.controller ||
+      navigator.serviceWorker.controller !== this.verifiedController
     )
       throw new Error('The real-data worker gate has not passed.');
   }
@@ -136,6 +142,11 @@ export class WorkerGate {
       } finally {
         worker.terminate();
       }
+      // A first-control notification may arrive after both handshakes. Only a
+      // different controller invalidates the controller we actually verified.
+      this.verifiedController = control;
+      if (navigator.serviceWorker.controller !== control)
+        throw new Error('Controlling worker changed during verification.');
       this.update('ready');
     } catch {
       this.update(

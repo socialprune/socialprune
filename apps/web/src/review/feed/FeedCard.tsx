@@ -205,7 +205,9 @@ export function FeedCard({
       setShowExcerpt(
         !box ||
           Math.min(bounds.bottom, box.bottom) <
-            Math.max(bounds.top, box.top) + readableLines * readableHeight - 1,
+            Math.max(bounds.top, box.top) +
+              Math.min(box.height, readableLines * readableHeight) -
+              1,
       );
     };
     const observer = new ResizeObserver(() => {

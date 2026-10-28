@@ -336,13 +336,16 @@ for (const lang of ['de', 'en'])
                   const visible =
                     Math.min(primary.bottom, reading.bottom) >=
                     Math.max(primary.top, reading.top) +
-                      Number.parseFloat(
-                        getComputedStyle(primaryNode).lineHeight,
-                      ) *
-                        (card.hasAttribute('data-instagram-card') &&
-                        innerHeight >= 900
-                          ? 2
-                          : 1) -
+                      Math.min(
+                        primary.height,
+                        Number.parseFloat(
+                          getComputedStyle(primaryNode).lineHeight,
+                        ) *
+                          (card.hasAttribute('data-instagram-card') &&
+                          innerHeight >= 900
+                            ? 2
+                            : 1),
+                      ) -
                       1;
                   return (
                     visible !== !!card.querySelector('[data-reading-excerpt]')
@@ -745,11 +748,14 @@ for (const lang of ['de', 'en'])
                   const readable =
                     Math.min(box.bottom, reading.bottom) -
                       Math.max(box.top, reading.top) >=
-                    Number.parseFloat(getComputedStyle(primary).lineHeight) *
-                      (card.hasAttribute('data-instagram-card') &&
-                      innerHeight >= 900
-                        ? 2
-                        : 1) -
+                    Math.min(
+                      box.height,
+                      Number.parseFloat(getComputedStyle(primary).lineHeight) *
+                        (card.hasAttribute('data-instagram-card') &&
+                        innerHeight >= 900
+                          ? 2
+                          : 1),
+                    ) -
                       1;
                   return (
                     readable !== !!card.querySelector('[data-reading-excerpt]')

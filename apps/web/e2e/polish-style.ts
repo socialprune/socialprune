@@ -9,6 +9,8 @@ export async function assertPolish(
 ) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.evaluate(() => document.fonts.ready);
+  await expect(page.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.getByRole('feed').locator('article').first()).toBeVisible();
   const observed = await page.evaluate(() => {
     const heading = document.querySelector('main > h1')!,
       card = document.querySelector('[role="feed"] article')!;

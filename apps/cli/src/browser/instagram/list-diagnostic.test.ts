@@ -3,6 +3,47 @@ import { accountDisplayNames, rowTextDiagnostic } from './list-diagnostic.ts';
 import { ListRowDiagnosticSchema } from './report.ts';
 import { contextEnd } from './copy.ts';
 
+test('IG-list broader text projection is diagnostic-only and compares both prefix directions without contents', () => {
+  const result = rowTextDiagnostic(
+    'generated_handle @someone CAFE\u0301 😀\ufe0f test 1w',
+    'generated label 2 Wochen',
+    'café test with ending',
+    'generated_handle',
+    new Set(),
+  );
+  expect(result).toMatchObject({
+    matcherExportStartsWithRow: false,
+    matcherRowStartsWithExport: false,
+    broadExportStartsWithRow: true,
+    broadRowStartsWithExport: false,
+    exportTextLengthBucket: '21-60',
+    labelRelativeTimePresent: true,
+  });
+  expect(
+    rowTextDiagnostic(
+      'generated_handle café test with ending 1w',
+      '',
+      'café test',
+      'generated_handle',
+      new Set(),
+    ),
+  ).toMatchObject({
+    matcherExportStartsWithRow: false,
+    matcherRowStartsWithExport: true,
+    broadExportStartsWithRow: false,
+    broadRowStartsWithExport: true,
+    labelRelativeTimePresent: false,
+  });
+  for (const value of [
+    'generated_handle',
+    '@someone',
+    'CAFE',
+    'Wochen',
+    'café',
+  ])
+    expect(JSON.stringify(result)).not.toContain(value);
+});
+
 test('IG-list diagnostics distinguish a display name, foreign author, mention and image-only row without values', () => {
   const text = 'Generated target comment';
   const handle = 'generated_handle';
@@ -60,7 +101,8 @@ test('IG-list diagnostics distinguish a display name, foreign author, mention an
       (value) =>
         value === null ||
         typeof value === 'number' ||
-        typeof value === 'boolean',
+        typeof value === 'boolean' ||
+        ['0-20', '21-60', '61-120', '>120'].includes(String(value)),
     ),
   ).toBe(true);
 });

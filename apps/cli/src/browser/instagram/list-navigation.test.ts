@@ -6,6 +6,55 @@ import {
 } from './list-navigation.ts';
 import type { Page } from 'playwright-core';
 import { ListNavigationSchema } from './report.ts';
+
+test('IG-list readiness failure never creates a CDP session or attempts a page projection', async () => {
+  const newCDPSession = vi.fn();
+  const page = {
+    on: () => {},
+    off: () => {},
+    waitForLoadState: () =>
+      Promise.reject(new Error('Generated detached frame')),
+    context: () => ({ newCDPSession }),
+  } as unknown as Page;
+  expect(
+    await listNavigation(page, '2025-01-02T12:00:00Z', 'generated_handle'),
+  ).toMatchObject({
+    observed: false,
+    observationFailed: true,
+    waitedForReadiness: false,
+  });
+  expect(newCDPSession).not.toHaveBeenCalled();
+});
+
+test('IG-list pending main navigation is refused before a CDP snapshot is sent', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => void>();
+  const frame = {};
+  const newCDPSession = vi.fn();
+  const page = {
+    on: (event: string, handler: (...args: unknown[]) => void) =>
+      handlers.set(event, handler),
+    off: (event: string) => handlers.delete(event),
+    waitForLoadState: () => {
+      handlers.get('request')!({
+        isNavigationRequest: () => true,
+        frame: () => frame,
+      });
+      return Promise.resolve();
+    },
+    mainFrame: () => frame,
+    isClosed: () => false,
+    context: () => ({ newCDPSession }),
+  } as unknown as Page;
+  expect(
+    await listNavigation(page, '2025-01-02T12:00:00Z', 'generated_handle'),
+  ).toMatchObject({
+    observed: false,
+    observationFailed: true,
+    waitedForReadiness: true,
+  });
+  expect(newCDPSession).not.toHaveBeenCalled();
+  expect(handlers.size).toBe(0);
+});
 import type { NavigationSnapshot } from './list-navigation.ts';
 
 test.each([
@@ -24,6 +73,10 @@ test.each([
 test('IG-list page projection fails closed and detaches when CDP cannot read', async () => {
   const detach = vi.fn(async () => {});
   const page = {
+    on: () => {},
+    off: () => {},
+    waitForLoadState: () => Promise.resolve(),
+    isClosed: () => false,
     context: () => ({
       newCDPSession: () =>
         Promise.resolve({

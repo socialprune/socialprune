@@ -71,6 +71,20 @@ export function rowTextDiagnostic(
   const author = prefix ?? /^([A-Za-z0-9_.]{1,30})\s/u.exec(body)?.[1];
   const comment = author ? normalize(body.slice(author.length)) : '';
   const commentPrefix = comment.replace(/(?:\u2026|\.\.\.)$/u, '');
+  const broad = (input: string) =>
+    normalize(input)
+      .toLowerCase()
+      .replace(/^(?:@[\p{L}\p{N}_.]+\s+)+/u, '')
+      .replace(
+        /[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0E\uFE0F\u200D\u20E3]/gu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
+  const broadComment = broad(comment),
+    broadTarget = broad(target);
+  const relativeTime =
+    /(?:^|\s)\d+\s*(?:y|w|d|h|m|s|years?|weeks?|days?|hours?|minutes?|seconds?|Jahr(?:e|en)?|Wochen?|Tage?[n]?|Stunden?|Minuten?|Sekunden?|Std\.?|Min\.?|Sek\.?)(?=\s|$)/iu;
   return {
     textPresent: !!value,
     textLength: value.length,
@@ -82,6 +96,23 @@ export function rowTextDiagnostic(
     authorEqualsDisplayName: display ? author === display : null,
     commentTextLength: comment.length,
     commentTextEqualsExport: !!author && comment === target,
+    matcherExportStartsWithRow:
+      !!comment && !!target && target.startsWith(comment),
+    matcherRowStartsWithExport:
+      !!comment && !!target && comment.startsWith(target),
+    broadExportStartsWithRow:
+      !!broadComment && !!broadTarget && broadTarget.startsWith(broadComment),
+    broadRowStartsWithExport:
+      !!broadComment && !!broadTarget && broadComment.startsWith(broadTarget),
+    exportTextLengthBucket:
+      target.length <= 20
+        ? ('0-20' as const)
+        : target.length <= 60
+          ? ('21-60' as const)
+          : target.length <= 120
+            ? ('61-120' as const)
+            : ('>120' as const),
+    labelRelativeTimePresent: relativeTime.test(normalize(label)),
     rowTextStartsWithHandle:
       body.toLowerCase() === handle.toLowerCase() ||
       body.toLowerCase().startsWith(handle.toLowerCase() + ' '),
@@ -109,6 +140,7 @@ export async function listRowDiagnostic(
   const pageDiagnostic = await listNavigation(page, at, handle);
   const empty = {
     observed: false,
+    waitedForReadiness: pageDiagnostic.waitedForReadiness ?? false,
     capped: false,
     total: 0,
     displayNameObserved: false,
@@ -118,6 +150,8 @@ export async function listRowDiagnostic(
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expired = false;
+  // Do not issue locator reads on a page whose readiness/navigation observation failed.
+  if (!pageDiagnostic.observed) return ListRowDiagnosticSchema.parse(empty);
   try {
     return await Promise.race([
       (async () => {
@@ -200,6 +234,8 @@ export async function listRowDiagnostic(
               names,
             ),
             imagePresent: (await row.locator('img').count()) > 0,
+            listContainerScrollable:
+              pageDiagnostic.listContainerScrollable ?? null,
             ancestry,
             singleLinkPathClass,
             anchorCount: anchors.length,
@@ -217,6 +253,7 @@ export async function listRowDiagnostic(
         }
         return ListRowDiagnosticSchema.parse({
           observed: true,
+          waitedForReadiness: pageDiagnostic.waitedForReadiness ?? false,
           capped: total > 40,
           total,
           displayNameObserved: names.size === 1,

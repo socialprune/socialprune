@@ -300,14 +300,6 @@ export async function loadList(
         guard,
       );
       await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
-      if (diagnose) {
-        rowCounts.unfilteredDiagnostic = await listNavigation(
-          page,
-          item.createdAt,
-          expected,
-        );
-        rowCounts.unfilteredOldestSortApplied = true;
-      }
       const first = (await readAccountRows(page, expected, rowCounts)).find(
           (row) => row.username.toLowerCase() === expected.toLowerCase(),
         ),
@@ -320,6 +312,14 @@ export async function loadList(
       // This reload stays inside the same step; empty rows keep their maximum.
       navigation = await navigateList(page, expected, deps, guard, rowCounts);
       accountRows = navigation.entries;
+      if (diagnose) {
+        rowCounts.unfilteredDiagnostic = await listNavigation(
+          page,
+          item.createdAt,
+          expected,
+        );
+        rowCounts.unfilteredOldestSortApplied = true;
+      }
     }
     if (diagnose && !rowCounts.unfilteredDiagnostic) {
       rowCounts.unfilteredDiagnostic = await listNavigation(
@@ -344,10 +344,6 @@ export async function loadList(
     });
     const filteredDeadline = performance.now() + deps.responseMs;
     if (diagnose) {
-      const closedBeforeSnapshot =
-        (await page
-          .getByRole('button', { name: 'Apply', exact: true })
-          .count()) === 0;
       rowCounts.initialDiagnostic = await listRowDiagnostic(
         page,
         item.text,
@@ -355,48 +351,19 @@ export async function loadList(
         expected,
         diagnosticBodies,
       );
-      rowCounts.filterDialogClosedObserved = false;
-      const observeDialogClosed = async () => {
-        // The same exact control identifies the existing filter dialog. This is
-        // passive and never waits beyond the already allocated response window.
-        if (
-          !rowCounts.filterDialogClosedObserved &&
-          (await page
-            .getByRole('button', { name: 'Apply', exact: true })
-            .count()) === 0
-        ) {
-          rowCounts.filterDialogClosedObserved = true;
-          rowCounts.dialogClosedDiagnostic = closedBeforeSnapshot
-            ? rowCounts.initialDiagnostic?.page
-            : await listNavigation(page, item.createdAt, expected);
-          rowCounts.afterDialogSameAsAfterApply =
-            closedBeforeSnapshot ||
-            JSON.stringify(rowCounts.dialogClosedDiagnostic) ===
-              JSON.stringify(rowCounts.initialDiagnostic?.page);
-        }
-      };
-      await observeDialogClosed();
+      const initialPage = rowCounts.initialDiagnostic.page;
+      rowCounts.filterDialogClosedObserved = Boolean(
+        initialPage?.observed && !initialPage.filterDialogPresent,
+      );
+      if (rowCounts.filterDialogClosedObserved) {
+        rowCounts.dialogClosedDiagnostic = initialPage;
+        rowCounts.afterDialogSameAsAfterApply = true;
+      }
       // Passive observation within the existing response window, with all page
       // and run guards alive. A late lazy row is evidence, not a new retry.
       while (performance.now() < filteredDeadline) {
         guard();
         await checkPage(page);
-        if (
-          !rowCounts.filterDialogClosedObserved &&
-          (await page
-            .getByRole('button', { name: 'Apply', exact: true })
-            .count()) === 0
-        ) {
-          rowCounts.filterDialogClosedObserved = true;
-          rowCounts.dialogClosedDiagnostic = await listNavigation(
-            page,
-            item.createdAt,
-            expected,
-          );
-          rowCounts.afterDialogSameAsAfterApply =
-            JSON.stringify(rowCounts.dialogClosedDiagnostic) ===
-            JSON.stringify(rowCounts.initialDiagnostic?.page);
-        }
         await sleep(
           Math.min(100, Math.max(0, filteredDeadline - performance.now())),
         );
@@ -581,6 +548,19 @@ export async function loadList(
         expected,
         diagnosticBodies,
       );
+    const finalPage = rowCounts.diagnostic?.page;
+    if (
+      diagnose &&
+      !rowCounts.filterDialogClosedObserved &&
+      finalPage?.observed &&
+      !finalPage.filterDialogPresent
+    ) {
+      rowCounts.filterDialogClosedObserved = true;
+      rowCounts.dialogClosedDiagnostic = finalPage;
+      rowCounts.afterDialogSameAsAfterApply =
+        JSON.stringify(finalPage) ===
+        JSON.stringify(rowCounts.initialDiagnostic?.page);
+    }
     freshness.finish();
     await dom?.dispose();
   }

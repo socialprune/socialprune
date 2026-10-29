@@ -160,6 +160,9 @@ export const ListNavigationSchema = z
   .strictObject({
     observed: z.boolean(),
     observationFailed: z.boolean(),
+    waitedForReadiness: z.boolean().optional(),
+    filterDialogPresent: z.boolean().optional(),
+    listContainerScrollable: z.boolean().nullable().optional(),
     knownEmptyStatePresent: z.boolean(),
     containers: z.strictObject({
       main: NavigationContainerSchema,
@@ -172,6 +175,7 @@ export const ListNavigationSchema = z
 export type ListNavigation = z.infer<typeof ListNavigationSchema>;
 export const ListRowDiagnosticSchema = z.strictObject({
   observed: z.boolean(),
+  waitedForReadiness: z.boolean().optional(),
   capped: z.boolean(),
   total: count,
   displayNameObserved: z.boolean(),
@@ -194,6 +198,13 @@ export const ListRowDiagnosticSchema = z.strictObject({
           authorEqualsDisplayName: z.boolean().nullable(),
           commentTextLength: count,
           commentTextEqualsExport: z.boolean(),
+          matcherExportStartsWithRow: z.boolean(),
+          matcherRowStartsWithExport: z.boolean(),
+          broadExportStartsWithRow: z.boolean(),
+          broadRowStartsWithExport: z.boolean(),
+          exportTextLengthBucket: z.enum(['0-20', '21-60', '61-120', '>120']),
+          labelRelativeTimePresent: z.boolean(),
+          listContainerScrollable: z.boolean().nullable(),
           rowTextStartsWithHandle: z.boolean(),
           exportStartsWithCommentText: z.boolean(),
           commentTextStartsWithExport: z.boolean(),

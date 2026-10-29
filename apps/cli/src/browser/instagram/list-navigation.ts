@@ -59,6 +59,9 @@ export function emptyNavigation() {
   return {
     observed: false,
     observationFailed: true,
+    waitedForReadiness: false,
+    filterDialogPresent: false,
+    listContainerScrollable: null as boolean | null,
     knownEmptyStatePresent: false,
     containers: {
       main: container(),
@@ -79,6 +82,8 @@ export function navigationCounts(
   const result = emptyNavigation();
   if (!snapshot.documents.length) return result;
   const window = utcWindow(at);
+  let foundList = false;
+  let scrollableList = false;
   for (const { nodes, layout } of snapshot.documents) {
     if (
       !nodes.nodeName ||
@@ -153,6 +158,7 @@ export function navigationCounts(
       regions.push(region);
       if (nodes.nodeType[index] !== 1) continue;
       const count = result.containers[region];
+      if (own.dialog && name === 'SELECT') result.filterDialogPresent = true;
       if (name === 'A' && attrs[index]!.has('href')) {
         const path = linkPathClass(attrs[index]!.get('href')!, origin);
         count.links[path === 'your-activity' ? 'yourActivity' : path]++;
@@ -198,7 +204,37 @@ export function navigationCounts(
       )
         result.containers[regions[index]!].scrollContainers++;
     }
+    // The narrowest enclosing block of counted image rows is the reader's
+    // rendered list surface, not the page's unrelated navigation scroller.
+    const rowParents = new Set<number>();
+    const imageParents = new Set(
+      names.flatMap((name, index) =>
+        name === 'IMG' ? [nodes.parentIndex![index]!] : [],
+      ),
+    );
+    for (const index of names.keys()) {
+      if (
+        nodes.nodeType[index] === 1 &&
+        attrs[index]!.get('role') === 'button' &&
+        attrs[index]!.has('aria-label') &&
+        regions[index] === 'main'
+      ) {
+        const hasImage = imageParents.has(index);
+        if (hasImage && nodes.parentIndex[index]! >= 0)
+          rowParents.add(nodes.parentIndex[index]!);
+      }
+    }
+    for (const parent of rowParents) {
+      const position = layoutPositions.get(parent);
+      if (position === undefined) continue;
+      const scroll = layout.scrollRects[position]?.[3],
+        client = layout.clientRects[position]?.[3];
+      if (scroll === undefined || client === undefined || client <= 0) continue;
+      foundList = true;
+      scrollableList ||= scroll > client;
+    }
   }
+  result.listContainerScrollable = foundList ? scrollableList : null;
   result.observed = true;
   result.observationFailed = false;
   return ListNavigationSchema.parse(result);
@@ -211,39 +247,70 @@ export async function listNavigation(page: Page, at: string, handle: string) {
     | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expired = false;
+  let waitedForReadiness = false;
+  let navigated = false;
+  const pending = new Set<import('playwright-core').Request>();
+  const requested = (request: import('playwright-core').Request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame())
+      pending.add(request);
+  };
+  const finished = (request: import('playwright-core').Request) =>
+    pending.delete(request);
+  const committed = (frame: import('playwright-core').Frame) => {
+    if (frame === page.mainFrame()) navigated = true;
+  };
+  const failed = () => ({ ...emptyNavigation(), waitedForReadiness });
   try {
+    page.on('request', requested);
+    page.on('requestfinished', finished);
+    page.on('requestfailed', finished);
+    page.on('framenavigated', committed);
     return await Promise.race([
       (async () => {
+        await page.waitForLoadState('domcontentloaded', { timeout: 800 });
+        waitedForReadiness = true;
+        if (expired || navigated || pending.size || page.isClosed())
+          return failed();
         client = await page.context().newCDPSession(page);
         if (expired) {
           await client.detach();
-          return emptyNavigation();
+          return failed();
         }
+        if (navigated || pending.size) return failed();
         const snapshot = await client.send('DOMSnapshot.captureSnapshot', {
           computedStyles: ['display', 'visibility', 'overflow-y'],
           includeDOMRects: true,
         });
-        if (expired) return emptyNavigation();
+        if (expired || navigated || pending.size) return failed();
         const origin = new URL(page.url()).origin;
-        return navigationCounts(
-          snapshot,
-          origin === 'null' ? 'https://www.instagram.com' : origin,
-          at,
-          handle,
-        );
+        return {
+          ...navigationCounts(
+            snapshot,
+            origin === 'null' ? 'https://www.instagram.com' : origin,
+            at,
+            handle,
+          ),
+          waitedForReadiness,
+        };
       })(),
       new Promise<ReturnType<typeof emptyNavigation>>((resolve) => {
         timer = setTimeout(() => {
           expired = true;
-          resolve(emptyNavigation());
+          resolve(failed());
         }, 1000);
       }),
     ]);
   } catch {
-    return emptyNavigation();
+    return failed();
   } finally {
     expired = true;
     clearTimeout(timer);
+    if (typeof page.off === 'function') {
+      page.off('request', requested);
+      page.off('requestfinished', finished);
+      page.off('requestfailed', finished);
+      page.off('framenavigated', committed);
+    }
     if (client) {
       let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
       try {

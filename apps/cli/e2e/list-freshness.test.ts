@@ -20,6 +20,59 @@ import {
 } from './fake-instagram/list-reader-20261023.ts';
 import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
+import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
+
+test('IG-list crash probe races old passive snapshots and readiness-gated diagnostics with generated navigation and detached subframes', async () => {
+  const fixture = await instagramFixture(1);
+  const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  let pageCrashes = 0,
+    browserDisconnects = 0;
+  browser.on('disconnected', () => browserDisconnects++);
+  try {
+    const page = await browser.newPage();
+    page.on('crash', () => pageCrashes++);
+    for (let index = 0; index < 8; index++) {
+      await page.goto(fake.origin + '/your_activity/interactions/comments');
+      const client = await page.context().newCDPSession(page);
+      const navigation = page.reload({ waitUntil: 'domcontentloaded' });
+      await client
+        .send('DOMSnapshot.captureSnapshot', {
+          computedStyles: ['display', 'visibility', 'overflow-y'],
+          includeDOMRects: true,
+        })
+        .catch(() => undefined);
+      await navigation;
+      await client.detach();
+      // Test-only frame churn; production diagnostics never evaluate a page.
+      await page.setContent('<main><iframe src="about:blank"></iframe></main>');
+      const frame = page.frames().find((value) => value !== page.mainFrame());
+      const frameRead = frame
+        ?.locator('body')
+        .count()
+        .catch(() => 0);
+      await page.setContent('<main><p>Generated replacement</p></main>');
+      await frameRead;
+      expect(
+        await listNavigation(
+          page,
+          fixture.items[0]!.createdAt,
+          fixture.items[0]!.account.handle!,
+        ),
+      ).toMatchObject({ observed: true, waitedForReadiness: true });
+    }
+    expect({ pageCrashes, browserDisconnects }).toEqual({
+      pageCrashes: 0,
+      browserDisconnects: 0,
+    });
+  } finally {
+    await browser.close();
+    await fake.close();
+  }
+});
 
 test.each(['populated-empty', 'empty-empty', 'populated-populated'] as const)(
   'IG-list window snapshots distinguish generated %s without changing the reader stop',
@@ -55,6 +108,7 @@ test.each(['populated-empty', 'empty-empty', 'populated-populated'] as const)(
         containers: { main: { images: mode === 'empty-empty' ? 0 : 2 } },
       });
       expect(counts.unfilteredOldestSortApplied).toBe(mode !== 'empty-empty');
+      expect(counts.unfilteredDiagnostic?.waitedForReadiness).toBe(true);
       expect(counts.windowDiagnostic).toMatchObject({
         observed: true,
         windowLengthDays: 3,

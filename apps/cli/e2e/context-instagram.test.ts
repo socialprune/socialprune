@@ -2456,7 +2456,7 @@ test('IG-list diagnostic order observes one list and never opens a post, exclude
           observed: true,
           observationFailed: false,
           knownEmptyStatePresent: false,
-          containers: { main: { images: 2 } },
+          containers: { main: { images: 4 } },
         },
       });
       const own = projection.rows.find(

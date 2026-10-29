@@ -565,3 +565,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 8 times (2026-10-28 and 2026-10-29: wakeups at 12:30, 15:05, 16:40, 18:20, 21:35 and 23:05 and two lane-return turns were delivered to both servers; the second instance got exit 3 and made no effect)
 - Violated: 2 times (2026-10-28 about 23:07Z: a lane dispatch was sent from a turn that had claimed only the lane's return, not the dispatch, while the other instance claimed the dispatch key and, finding the ledger line, did not send; one prompt reached the lane, so no work was doubled. 2026-10-28 07:35Z, the FIT-1 merge wakeup ran in both servers; the second instance stopped before the maintainer's workspace was touched twice)
+
+### [LL-2026-10-021] 2026-10-29 ORCHESTRATION: Start the next step toward the person's goal before improving what is already good enough
+
+**ID:** LL-2026-10-021
+**Severity:** HIGH
+**Category:** ORCHESTRATION
+**Expires:** Never (kernel). The counts and times below are evidence from 2026-10-28 and 2026-10-29.
+**Feedback:** "Ich will halt langsam anfangen, die Sachen dann für meinen Account zu löschen, damit das passt. Die letzten Tage machen wir nicht mehr wirklich Fortschritt, muss ich sagen." He also asked why most of his Instagram comments still have no like count.
+**Problem:** He finished marking his posts on 2026-10-28 at about 12:11 UTC (1,800 marked). The plan's next steps toward his goal were the X deletion dry run, the Instagram reading pass that confirms comments on their posts, and the first deletion canaries. For the next 23 hours the parent ran six waves of layout polish, test-flake diagnosis and CI restructuring, and none of those deletion steps started, although the X dry run needs no browser and the reading pass was covered by his existing written order. The likes he asked about on 2026-10-28 were read only for the 138 comments already confirmed, not for the 565 marked comments that had never been read.
+**5 Whys Analysis:**
+1. Why did no deletion step start? -> Each turn handled the newest lane return or CI result first and dispatched the next improvement it revealed.
+2. Why did improvements win? -> Every lane return produced a concrete new defect, and LL-2026-10-017 ("dispatch ownerless accepted work") was read as "dispatch whatever is ownerless", without ranking it against the critical path.
+3. Why was the critical path not checked? -> The plan's next-ready list still said "after his review", and nothing re-read it when his review ended; his "fertig" at 14:04 UTC was answered with a likes run for 138 comments, not with the next step for all 1,800.
+4. Why did that look like progress? -> Merged waves and green CI are visible and countable, while his goal (his posts gone) was not measured in any status line.
+5. Why? -> Root cause: no control compares each turn's work against his stated goal and the next step on its critical path, so work found along the way could fill every turn.
+**Rule(s):**
+1. Every turn first names the next step toward the person's stated goal and whether it can start now; if it can, it starts in that turn, and work found along the way waits behind it unless it blocks that step.
+2. When the person finishes his own step, re-read the plan's next-ready list in the same turn and start what his step released.
+3. A status for him reports progress against his goal first (here: posts deleted, posts ready, posts still blocked and by what), then the engineering.
+4. Here the goal is his posts deleted on X and Instagram; a defect in review layout, tests or CI is admitted ahead of it only when it would put a wrong deletion or a lost decision at risk.
+**Detection Pattern:** several consecutive waves of polish, flakes or CI while a step he released is still waiting; a status line that counts merges and test runs but not deleted, ready and blocked posts; the person saying progress has stalled.
+**Affected Files:** handoff `BOARD.md` header paragraph (retrieval anchor: "Every turn first names the next step toward his goal and starts it if it can"); every wakeup prompt.
+**Related Lessons:** LL-2026-10-009 (answer the person's goal before reporting the work), LL-2026-10-017 (dispatch accepted work instead of waiting), LL-2026-10-005 (his words).
+**Regression / Verification Note:** applied on 2026-10-29 at 11:10 UTC: the X deletion dry run (1,148 planned) and the Instagram counts (652 marked, 565 never read) were read in the turn of his message, and a reading pass of the marked comments only was prepared in the same turn.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-28 12:11Z to 2026-10-29 11:09Z, see Problem)

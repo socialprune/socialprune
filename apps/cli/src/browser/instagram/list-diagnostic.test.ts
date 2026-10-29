@@ -103,6 +103,64 @@ test('IG-list diagnostic schema refuses content-bearing fields and excessive row
   ).toBeNull();
 });
 
+test.each(['...', '\u2026'])(
+  'IG-list truncation %s is distinct from an unrelated row and a longer comment',
+  (ellipsis) => {
+    const handle = 'generated_handle';
+    const prefix = 'Generated comment prefix long enough';
+    const target = prefix + ' with an unseen ending';
+    expect(
+      rowTextDiagnostic(
+        `${handle} ${prefix}${ellipsis} 1w`,
+        '',
+        target,
+        handle,
+        new Set(),
+      ),
+    ).toMatchObject({
+      rowTextStartsWithHandle: true,
+      exportStartsWithCommentText: false,
+      commentTextStartsWithExport: false,
+      exportStartsWithCommentPrefix: true,
+      trailingEllipsisPresent: true,
+    });
+    expect(
+      rowTextDiagnostic(
+        `${handle} ${target} plus text 2d`,
+        '',
+        target,
+        handle,
+        new Set(),
+      ),
+    ).toMatchObject({
+      exportStartsWithCommentText: false,
+      commentTextStartsWithExport: true,
+      exportStartsWithCommentPrefix: false,
+      trailingEllipsisPresent: false,
+    });
+    expect(
+      rowTextDiagnostic(
+        'foreign unrelated text 1w',
+        '',
+        target,
+        handle,
+        new Set(),
+      ),
+    ).toMatchObject({
+      rowTextStartsWithHandle: false,
+      exportStartsWithCommentText: false,
+      commentTextStartsWithExport: false,
+      exportStartsWithCommentPrefix: false,
+      trailingEllipsisPresent: false,
+    });
+    expect(rowTextDiagnostic('', '', '', handle, new Set())).toMatchObject({
+      exportStartsWithCommentText: false,
+      commentTextStartsWithExport: false,
+      exportStartsWithCommentPrefix: false,
+    });
+  },
+);
+
 test.each(['de', 'en'] as const)(
   'IG-list timeout ending in %s does not claim a login, challenge, lock or limit',
   (lang) => {

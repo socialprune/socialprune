@@ -69,6 +69,7 @@ export function rowTextDiagnostic(
     .find((name) => body.toLowerCase().startsWith(name.toLowerCase() + ' '));
   const author = prefix ?? /^([A-Za-z0-9_.]{1,30})\s/u.exec(body)?.[1];
   const comment = author ? normalize(body.slice(author.length)) : '';
+  const commentPrefix = comment.replace(/(?:\u2026|\.\.\.)$/u, '');
   return {
     textPresent: !!value,
     textLength: value.length,
@@ -80,6 +81,16 @@ export function rowTextDiagnostic(
     authorEqualsDisplayName: display ? author === display : null,
     commentTextLength: comment.length,
     commentTextEqualsExport: !!author && comment === target,
+    rowTextStartsWithHandle:
+      body.toLowerCase() === handle.toLowerCase() ||
+      body.toLowerCase().startsWith(handle.toLowerCase() + ' '),
+    exportStartsWithCommentText:
+      !!comment && !!target && target.startsWith(comment),
+    commentTextStartsWithExport:
+      !!comment && !!target && comment.startsWith(target),
+    exportStartsWithCommentPrefix:
+      !!commentPrefix && !!target && target.startsWith(commentPrefix),
+    trailingEllipsisPresent: commentPrefix !== comment,
     labelPresent: !!label,
     labelLength: label.length,
     labelContainsExport: !!target && normalize(label).includes(target),
@@ -114,11 +125,16 @@ export async function listRowDiagnostic(
         const total = await candidates.count();
         const rows = [];
         const window = utcWindow(at);
+        const handlePattern = new RegExp(
+          '^' + handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
+          'i',
+        );
         for (let index = 0; index < Math.min(total, 40) && !expired; index++) {
           const row = candidates.nth(index);
           const label = await row.getAttribute('aria-label', { timeout: 150 });
           const role = await row.getAttribute('role', { timeout: 150 });
           const times = row.locator('time[datetime]');
+          const anchors = await row.locator('a,[role="link"]').allInnerTexts();
           const date =
             (await times.count()) === 1
               ? await times.getAttribute('datetime', { timeout: 150 })
@@ -150,6 +166,14 @@ export async function listRowDiagnostic(
               names,
             ),
             imagePresent: (await row.locator('img').count()) > 0,
+            anchorCount: anchors.length,
+            firstHandleAnchorIndex: anchors.findIndex(
+              (value) =>
+                normalize(value).toLowerCase() === handle.toLowerCase(),
+            ),
+            handleElementPresent:
+              (await row.getByText(handlePattern).count()) > 0,
+            timeElementPresent: (await row.locator('time').count()) > 0,
             exactTimeObserved: valid,
             timestampWithinWindow:
               day === null ? null : day >= window[0] && day <= window[1],

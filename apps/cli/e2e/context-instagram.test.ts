@@ -35,6 +35,8 @@ import {
   readPost,
   confirmComment,
   currentImageSource,
+  readRows,
+  rowCandidate,
 } from '../src/browser/instagram/selectors.ts';
 import type { Click } from '../src/browser/instagram/selectors.ts';
 import { createServer } from 'node:http';
@@ -82,6 +84,39 @@ import { execFile } from 'node:child_process';
 import { IMAGE_CASES, imageCasePng } from './fake-instagram/image-cases.ts';
 import type { SourceChecks } from '../src/browser/instagram/canary.ts';
 import type { ImageDiagnostic } from '../src/browser/instagram/report.ts';
+import {
+  historicalListPage,
+  historicalListRows,
+} from './fake-instagram/list-reader-20261023.ts';
+
+test.each(['old', 'split', 'foreign-first'] as const)(
+  'IG-list historical compatibility on generated %s rows keeps the old selection and author parsing',
+  async (layout) => {
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const fixture = historicalListPage(layout);
+      await page.setContent(fixture.html);
+      const oldRows = await historicalListRows(page);
+      const current = await readRows(page);
+      expect(current).toEqual(oldRows);
+      expect(
+        current.filter(
+          (row) =>
+            row.username === fixture.own &&
+            rowCandidate(row.text, fixture.text),
+        ),
+      ).toHaveLength(layout === 'split' ? 0 : 1);
+      if (layout === 'foreign-first')
+        expect(current.at(-1)?.username).toBe('generated_other');
+    } finally {
+      await browser.close();
+    }
+  },
+);
 
 test.each([
   {
@@ -2401,6 +2436,36 @@ test('IG-list diagnostic order observes one list and never opens a post, exclude
     ).toMatchObject({
       steps: [{ result: 'list-diagnostic', listRows: { observed: true } }],
     });
+    const diagnostic = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as {
+      steps: {
+        listRows: { rows: Record<string, unknown>[] };
+        listRowsAfterApply: { rows: Record<string, unknown>[] };
+      }[];
+    };
+    for (const projection of [
+      diagnostic.steps[0]!.listRows,
+      diagnostic.steps[0]!.listRowsAfterApply,
+    ]) {
+      const own = projection.rows.find(
+        (row) => row['authorEqualsHandle'] === true,
+      );
+      expect(own).toMatchObject({
+        anchorCount: 0,
+        firstHandleAnchorIndex: -1,
+        handleElementPresent: false,
+        rowTextStartsWithHandle: true,
+        exportStartsWithCommentText: true,
+        commentTextStartsWithExport: true,
+        exportStartsWithCommentPrefix: true,
+        trailingEllipsisPresent: false,
+        timeElementPresent: false,
+      });
+    }
   } finally {
     await h.close();
   }

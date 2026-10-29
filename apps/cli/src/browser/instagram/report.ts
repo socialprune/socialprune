@@ -148,27 +148,42 @@ export const ListRowDiagnosticSchema = z.strictObject({
   displayNameAmbiguous: z.boolean(),
   rows: z
     .array(
-      z.strictObject({
-        container: z.enum(['main', 'dialog', 'elsewhere']),
-        shape: z.enum(['counted', 'listitem', 'unlabelled-button']),
-        visible: z.boolean(),
-        textPresent: z.boolean(),
-        textLength: count,
-        textEqualsExport: z.boolean(),
-        textContainsExport: z.boolean(),
-        authorParsed: z.boolean(),
-        authorLength: count,
-        authorEqualsHandle: z.boolean(),
-        authorEqualsDisplayName: z.boolean().nullable(),
-        commentTextLength: count,
-        commentTextEqualsExport: z.boolean(),
-        imagePresent: z.boolean(),
-        labelPresent: z.boolean(),
-        labelLength: count,
-        labelContainsExport: z.boolean(),
-        exactTimeObserved: z.boolean(),
-        timestampWithinWindow: z.boolean().nullable(),
-      }),
+      z
+        .strictObject({
+          container: z.enum(['main', 'dialog', 'elsewhere']),
+          shape: z.enum(['counted', 'listitem', 'unlabelled-button']),
+          visible: z.boolean(),
+          textPresent: z.boolean(),
+          textLength: count,
+          textEqualsExport: z.boolean(),
+          textContainsExport: z.boolean(),
+          authorParsed: z.boolean(),
+          authorLength: count,
+          authorEqualsHandle: z.boolean(),
+          authorEqualsDisplayName: z.boolean().nullable(),
+          commentTextLength: count,
+          commentTextEqualsExport: z.boolean(),
+          rowTextStartsWithHandle: z.boolean(),
+          exportStartsWithCommentText: z.boolean(),
+          commentTextStartsWithExport: z.boolean(),
+          exportStartsWithCommentPrefix: z.boolean(),
+          trailingEllipsisPresent: z.boolean(),
+          imagePresent: z.boolean(),
+          anchorCount: count,
+          firstHandleAnchorIndex: z.number().int().min(-1),
+          handleElementPresent: z.boolean(),
+          timeElementPresent: z.boolean(),
+          labelPresent: z.boolean(),
+          labelLength: count,
+          labelContainsExport: z.boolean(),
+          exactTimeObserved: z.boolean(),
+          timestampWithinWindow: z.boolean().nullable(),
+        })
+        .refine(
+          (row) =>
+            row.firstHandleAnchorIndex < row.anchorCount &&
+            (!row.exactTimeObserved || row.timeElementPresent),
+        ),
     )
     .max(40),
 });

@@ -14,6 +14,130 @@ import { listRegions } from '../src/browser/instagram/list-regions.ts';
 import { commentLikes } from '../src/browser/instagram/likes.ts';
 import { IG_FIXTURE } from './fake-instagram/fixture.ts';
 import { listRowDiagnostic } from '../src/browser/instagram/list-diagnostic.ts';
+import {
+  historicalListPage,
+  historicalListRows,
+} from './fake-instagram/list-reader-20261023.ts';
+import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
+
+test.each(['old', 'split', 'foreign-first'] as const)(
+  'IG-list historical 8ad968d and current reader agree on generated %s rows',
+  async (layout) => {
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const fixture = historicalListPage(layout);
+      await page.setContent(fixture.html);
+      const historical = await historicalListRows(page);
+      const current = await readRows(page);
+      expect(current).toEqual(historical);
+      expect(
+        current.filter(
+          (row) =>
+            row.username === fixture.own &&
+            rowCandidate(row.text, fixture.text),
+        ),
+      ).toHaveLength(layout === 'split' ? 0 : 1);
+      if (layout === 'foreign-first')
+        expect(current.at(-1)?.username).toBe('generated_other');
+      if (layout === 'split')
+        expect(await page.locator('main li').count()).toBe(3);
+    } finally {
+      await browser.close();
+    }
+  },
+);
+
+test('IG-list link and element projection pins a later own-name link, truncation and non-datetime time without contents', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    const handle = 'generated_handle';
+    const prefix = 'Generated target comment with a long prefix';
+    const target = prefix + ' and more text';
+    await page.setContent(
+      `<main><li><a href="/foreign/">foreign</a> <a href="/${handle}/">${handle}</a> <span>${prefix}...</span> <time>1w</time></li><li><span>${handle.toUpperCase()}</span> <span>${target}</span> 2d</li><li><a role="link">foreign</a> unrelated 1w</li></main>`,
+    );
+    const result = await listRowDiagnostic(
+      page,
+      target,
+      '2025-01-02T12:00:00Z',
+      handle,
+    );
+    expect(result).toMatchObject({
+      observed: true,
+      total: 3,
+      rows: [
+        {
+          anchorCount: 2,
+          firstHandleAnchorIndex: 1,
+          handleElementPresent: true,
+          rowTextStartsWithHandle: false,
+          trailingEllipsisPresent: true,
+          timeElementPresent: true,
+          exactTimeObserved: false,
+        },
+        {
+          anchorCount: 0,
+          firstHandleAnchorIndex: -1,
+          handleElementPresent: true,
+          rowTextStartsWithHandle: true,
+          exportStartsWithCommentText: true,
+          commentTextStartsWithExport: true,
+          timeElementPresent: false,
+        },
+        {
+          anchorCount: 1,
+          firstHandleAnchorIndex: -1,
+          handleElementPresent: false,
+          rowTextStartsWithHandle: false,
+          timeElementPresent: false,
+        },
+      ],
+    });
+    for (const value of [
+      handle,
+      prefix,
+      target,
+      'foreign',
+      '/foreign/',
+      '2025',
+      '1w',
+    ])
+      expect(JSON.stringify(result)).not.toContain(value);
+    const row = result.rows[0]!;
+    const diagnostic = {
+      observed: true,
+      capped: false,
+      total: 1,
+      displayNameObserved: false,
+      displayNameAmbiguous: false,
+      rows: [row],
+    };
+    const { ListRowDiagnosticSchema } =
+      await import('../src/browser/instagram/report.ts');
+    expect(
+      ListRowDiagnosticSchema.safeParse({
+        ...diagnostic,
+        rows: [{ ...row, firstHandleAnchorIndex: 2 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      ListRowDiagnosticSchema.safeParse({
+        ...diagnostic,
+        rows: [{ ...row, handle: handle }],
+      }).success,
+    ).toBe(false);
+  } finally {
+    await browser.close();
+  }
+});
 
 test('IG-list per-row projection separates a foreign display-name match, an ignored result and a nav image', async () => {
   const browser = await chromium.launch({

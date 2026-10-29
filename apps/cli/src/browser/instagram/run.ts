@@ -861,6 +861,7 @@ export async function runContextWithDependencies(
               freshness,
               answers.bodies,
               options.order?.value.listDiagnostic,
+              options.plan.timeZone,
             );
             if (reopening?.stage === 'list') {
               reopening.outcome = 'ready';
@@ -885,6 +886,15 @@ export async function runContextWithDependencies(
                 listRegions: rowCounts.regions,
                 listRows: rowCounts.diagnostic,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
+                listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                unfilteredOldestSortApplied:
+                  rowCounts.unfilteredOldestSortApplied,
+                listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                filterDialogClosedObserved:
+                  rowCounts.filterDialogClosedObserved,
+                afterDialogSameAsAfterApply:
+                  rowCounts.afterDialogSameAsAfterApply,
+                listWindow: rowCounts.windowDiagnostic,
                 rows: 0,
                 emptySkipped: rowCounts.emptySkipped,
                 otherName: rowCounts.otherName,
@@ -905,6 +915,15 @@ export async function runContextWithDependencies(
                 candidates: 0,
                 listRows: rowCounts.diagnostic,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
+                listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                unfilteredOldestSortApplied:
+                  rowCounts.unfilteredOldestSortApplied,
+                listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                filterDialogClosedObserved:
+                  rowCounts.filterDialogClosedObserved,
+                afterDialogSameAsAfterApply:
+                  rowCounts.afterDialogSameAsAfterApply,
+                listWindow: rowCounts.windowDiagnostic,
               });
             }
             const retry = postRetries.beginList(
@@ -949,6 +968,12 @@ export async function runContextWithDependencies(
           listRegions: rowCounts.regions,
           listRows: rowCounts.diagnostic,
           listRowsAfterApply: rowCounts.initialDiagnostic,
+          listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+          unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,
+          listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+          filterDialogClosedObserved: rowCounts.filterDialogClosedObserved,
+          afterDialogSameAsAfterApply: rowCounts.afterDialogSameAsAfterApply,
+          listWindow: rowCounts.windowDiagnostic,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
           otherName: list.otherName,

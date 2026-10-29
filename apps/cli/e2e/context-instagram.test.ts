@@ -2436,6 +2436,32 @@ test('IG-list diagnostic order observes one list and never opens a post, exclude
     ).toMatchObject({
       steps: [{ result: 'list-diagnostic', listRows: { observed: true } }],
     });
+    const windowReport = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: Record<string, unknown>[] };
+    expect(windowReport.steps[0]).toMatchObject({
+      listPageUnfiltered: {
+        observed: true,
+        containers: { main: { images: 12 } },
+      },
+      unfilteredOldestSortApplied: true,
+      listPageAfterDialogClosed: {
+        observed: true,
+        containers: { main: { images: 4 } },
+      },
+      filterDialogClosedObserved: true,
+      afterDialogSameAsAfterApply: true,
+      listWindow: {
+        observed: true,
+        windowLengthDays: 3,
+        exportInsideWorkspaceWindow: true,
+        exportInsideUtcWindow: true,
+        startEndSameDay: false,
+      },
+    });
     const diagnostic = JSON.parse(
       await readFile(
         join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),

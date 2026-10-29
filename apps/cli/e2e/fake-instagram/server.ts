@@ -27,6 +27,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const hiddenPosts = new Set<number>();
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
+  let windowLists:
+    'populated-empty' | 'empty-empty' | 'populated-populated' | undefined;
+  let delayedFilterClose = false;
   let clientSidePosts = false;
   let filteredPlaceholders: { count: number; status: boolean } | undefined;
   let imageOnlyList:
@@ -219,6 +222,27 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           postVariants,
           clientSidePosts,
         );
+        if (windowLists) {
+          const loop = 'for(const [index,row]of chosen.entries())';
+          if (!html.includes(loop))
+            throw new Error('Generated window-list anchor missing');
+          const emptyCondition =
+            windowLists === 'empty-empty'
+              ? 'true'
+              : windowLists === 'populated-empty'
+                ? 'start&&end'
+                : 'false';
+          html = html.replace(
+            loop,
+            `if(${emptyCondition})chosen=[];if(!chosen.length){const empty=document.createElement('p');empty.textContent='No results';list.append(empty);}` +
+              loop,
+          );
+          if (delayedFilterClose)
+            html = html.replace(
+              'outer.remove();loads=0;render()',
+              'if(start&&end){setTimeout(()=>mutate(()=>outer.remove()),500)}else outer.remove();loads=0;render()',
+            );
+        }
         if (listDecoration === 'dialog')
           html = html.replace(
             '<body>',
@@ -560,6 +584,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (!Number.isInteger(count) || count < 0)
         throw new Error('Invalid generated empty-filtered-list count');
       emptyFilteredLists = count;
+    },
+    windowLists(value: NonNullable<typeof windowLists>, delayedClose = false) {
+      windowLists = value;
+      delayedFilterClose = delayedClose;
     },
     filteredListPlaceholders(count: number, status: boolean) {
       if (!Number.isInteger(count) || count < 0 || count > 20)

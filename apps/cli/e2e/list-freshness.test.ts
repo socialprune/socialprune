@@ -21,6 +21,75 @@ import {
 import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 
+test.each(['populated-empty', 'empty-empty', 'populated-populated'] as const)(
+  'IG-list window snapshots distinguish generated %s without changing the reader stop',
+  async (mode) => {
+    const fixture = await instagramFixture(1);
+    const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.windowLists(mode, mode === 'populated-empty');
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+      const item = fixture.items[0]!;
+      const outcome = await loadList(
+        page,
+        item,
+        item.account.handle!,
+        { ...productionContext, origin: fake.origin, responseMs: 1500 },
+        () => {},
+        true,
+        undefined,
+        counts,
+        listFreshness(),
+        [],
+        true,
+        'Europe/Berlin',
+      ).catch((error: unknown) => error);
+      expect(counts.unfilteredDiagnostic).toMatchObject({
+        observed: true,
+        knownEmptyStatePresent: mode === 'empty-empty',
+        containers: { main: { images: mode === 'empty-empty' ? 0 : 2 } },
+      });
+      expect(counts.unfilteredOldestSortApplied).toBe(mode !== 'empty-empty');
+      expect(counts.windowDiagnostic).toMatchObject({
+        observed: true,
+        windowLengthDays: 3,
+        exportInsideWorkspaceWindow: true,
+        exportInsideUtcWindow: true,
+        startEndSameDay: false,
+      });
+      if (mode === 'empty-empty') {
+        expect(counts.initialDiagnostic).toBeUndefined();
+        expect(outcome).toMatchObject({ token: 'list-timeout' });
+      } else {
+        expect(counts.diagnostic?.page).toMatchObject({
+          observed: true,
+          knownEmptyStatePresent: mode === 'populated-empty',
+          containers: { main: { images: mode === 'populated-empty' ? 0 : 2 } },
+        });
+        expect(counts.filterDialogClosedObserved).toBe(true);
+        expect(counts.dialogClosedDiagnostic?.containers.main.images).toBe(
+          mode === 'populated-empty' ? 0 : 2,
+        );
+        if (mode === 'populated-empty') {
+          expect(counts.afterDialogSameAsAfterApply).toBe(false);
+          expect(outcome).toMatchObject({ token: 'list-timeout' });
+        } else expect(outcome).toMatchObject({ candidates: [{ index: 0 }] });
+      }
+      expect(
+        fake.requests.some((request) => /^\/(?:p|reel)\//.test(request.path)),
+      ).toBe(false);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+
 test.each(['tiles', 'dialog', 'empty'] as const)(
   'IG-list page locations distinguish generated %s from navigation-only rows',
   async (mode) => {

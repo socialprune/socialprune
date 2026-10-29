@@ -140,6 +140,12 @@ export interface RowReadCounts {
   >;
   diagnostic?: import('./report.ts').ListRowDiagnostic;
   initialDiagnostic?: import('./report.ts').ListRowDiagnostic;
+  unfilteredDiagnostic?: import('./report.ts').ListNavigation;
+  unfilteredOldestSortApplied?: boolean;
+  dialogClosedDiagnostic?: import('./report.ts').ListNavigation;
+  filterDialogClosedObserved?: boolean;
+  afterDialogSameAsAfterApply?: boolean;
+  windowDiagnostic?: import('./report.ts').ListWindow;
 }
 export function accountMatches(
   expected: string,

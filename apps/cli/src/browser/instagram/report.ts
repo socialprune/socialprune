@@ -399,6 +399,25 @@ const StepImageSchema = z
         source: value.source,
       }).success,
   );
+export const ListWindowSchema = z
+  .strictObject({
+    observed: z.boolean(),
+    observationFailed: z.boolean(),
+    windowLengthDays: z.number().int().positive().nullable(),
+    exportInsideWorkspaceWindow: z.boolean().nullable(),
+    exportInsideUtcWindow: z.boolean().nullable(),
+    startEndSameDay: z.boolean().nullable(),
+    startYearOffset: z.number().int().nullable(),
+    endYearOffset: z.number().int().nullable(),
+  })
+  .refine(
+    (value) =>
+      value.observed !== value.observationFailed &&
+      Object.entries(value)
+        .filter(([key]) => !['observed', 'observationFailed'].includes(key))
+        .every(([, field]) => (field !== null) === value.observed),
+  );
+export type ListWindow = z.infer<typeof ListWindowSchema>;
 export const ContextStepReportSchema = z
   .looseObject({
     image: StepImageSchema.optional(),
@@ -408,6 +427,12 @@ export const ContextStepReportSchema = z
     listRegions: ListRegionsSchema.optional(),
     listRows: ListRowDiagnosticSchema.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
+    listPageUnfiltered: ListNavigationSchema.optional(),
+    unfilteredOldestSortApplied: z.boolean().optional(),
+    listPageAfterDialogClosed: ListNavigationSchema.optional(),
+    filterDialogClosedObserved: z.boolean().optional(),
+    afterDialogSameAsAfterApply: z.boolean().optional(),
+    listWindow: ListWindowSchema.optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

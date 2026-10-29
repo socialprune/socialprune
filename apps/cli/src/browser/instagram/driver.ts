@@ -44,6 +44,8 @@ import { listImageOnlyManual } from './list-image-only.ts';
 import { listFreshness } from './list-freshness.ts';
 import type { ListFreshness } from './list-freshness.ts';
 import { listRegions } from './list-regions.ts';
+import { listNavigation } from './list-navigation.ts';
+import { windowFacts } from './list-window.ts';
 import { listRowDiagnostic } from './list-diagnostic.ts';
 
 export interface ContextDependencies {
@@ -267,6 +269,7 @@ export async function loadList(
   freshness: ListFreshness = listFreshness(),
   diagnosticBodies: readonly unknown[] = [],
   diagnose = false,
+  diagnosticTimeZone = 'UTC',
 ) {
   const filter = {
     applied: false,
@@ -284,6 +287,11 @@ export async function loadList(
     initialAccount = accountRows.find(
       (row) => row.username.toLowerCase() === expected.toLowerCase(),
     )?.username;
+    if (diagnose)
+      rowCounts.windowDiagnostic = windowFacts(
+        item.createdAt,
+        diagnosticTimeZone,
+      );
     if (oldest) {
       await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
       await clickAllowed(
@@ -292,6 +300,14 @@ export async function loadList(
         guard,
       );
       await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+      if (diagnose) {
+        rowCounts.unfilteredDiagnostic = await listNavigation(
+          page,
+          item.createdAt,
+          expected,
+        );
+        rowCounts.unfilteredOldestSortApplied = true;
+      }
       const first = (await readAccountRows(page, expected, rowCounts)).find(
           (row) => row.username.toLowerCase() === expected.toLowerCase(),
         ),
@@ -304,6 +320,14 @@ export async function loadList(
       // This reload stays inside the same step; empty rows keep their maximum.
       navigation = await navigateList(page, expected, deps, guard, rowCounts);
       accountRows = navigation.entries;
+    }
+    if (diagnose && !rowCounts.unfilteredDiagnostic) {
+      rowCounts.unfilteredDiagnostic = await listNavigation(
+        page,
+        item.createdAt,
+        expected,
+      );
+      rowCounts.unfilteredOldestSortApplied = false;
     }
     await filterList(page, item.createdAt, guard, {
       readback(value) {
@@ -320,6 +344,10 @@ export async function loadList(
     });
     const filteredDeadline = performance.now() + deps.responseMs;
     if (diagnose) {
+      const closedBeforeSnapshot =
+        (await page
+          .getByRole('button', { name: 'Apply', exact: true })
+          .count()) === 0;
       rowCounts.initialDiagnostic = await listRowDiagnostic(
         page,
         item.text,
@@ -327,11 +355,48 @@ export async function loadList(
         expected,
         diagnosticBodies,
       );
+      rowCounts.filterDialogClosedObserved = false;
+      const observeDialogClosed = async () => {
+        // The same exact control identifies the existing filter dialog. This is
+        // passive and never waits beyond the already allocated response window.
+        if (
+          !rowCounts.filterDialogClosedObserved &&
+          (await page
+            .getByRole('button', { name: 'Apply', exact: true })
+            .count()) === 0
+        ) {
+          rowCounts.filterDialogClosedObserved = true;
+          rowCounts.dialogClosedDiagnostic = closedBeforeSnapshot
+            ? rowCounts.initialDiagnostic?.page
+            : await listNavigation(page, item.createdAt, expected);
+          rowCounts.afterDialogSameAsAfterApply =
+            closedBeforeSnapshot ||
+            JSON.stringify(rowCounts.dialogClosedDiagnostic) ===
+              JSON.stringify(rowCounts.initialDiagnostic?.page);
+        }
+      };
+      await observeDialogClosed();
       // Passive observation within the existing response window, with all page
       // and run guards alive. A late lazy row is evidence, not a new retry.
       while (performance.now() < filteredDeadline) {
         guard();
         await checkPage(page);
+        if (
+          !rowCounts.filterDialogClosedObserved &&
+          (await page
+            .getByRole('button', { name: 'Apply', exact: true })
+            .count()) === 0
+        ) {
+          rowCounts.filterDialogClosedObserved = true;
+          rowCounts.dialogClosedDiagnostic = await listNavigation(
+            page,
+            item.createdAt,
+            expected,
+          );
+          rowCounts.afterDialogSameAsAfterApply =
+            JSON.stringify(rowCounts.dialogClosedDiagnostic) ===
+            JSON.stringify(rowCounts.initialDiagnostic?.page);
+        }
         await sleep(
           Math.min(100, Math.max(0, filteredDeadline - performance.now())),
         );
@@ -496,6 +561,18 @@ export async function loadList(
     }
     throw error;
   } finally {
+    if (diagnose && !rowCounts.unfilteredDiagnostic && !filter.applied) {
+      rowCounts.unfilteredDiagnostic = await listNavigation(
+        page,
+        item.createdAt,
+        expected,
+      );
+      rowCounts.unfilteredOldestSortApplied = false;
+      rowCounts.windowDiagnostic = windowFacts(
+        item.createdAt,
+        diagnosticTimeZone,
+      );
+    }
     if (diagnose || missingCandidate || rowCounts.listTimeout)
       rowCounts.diagnostic = await listRowDiagnostic(
         page,

@@ -11,6 +11,7 @@ export async function traceDetailOrder(page: Page, throttle = false) {
     let armed = false;
     let queryId = '';
     let generation = 0;
+    let total: number | null = null;
     let held: (() => void) | null = null;
     const record = (kind: string, data: unknown) => {
       events.push({ at: performance.now(), kind, data });
@@ -27,6 +28,7 @@ export async function traceDetailOrder(page: Page, throttle = false) {
         reply?.();
       },
       isHeld: () => !!held,
+      count: () => total,
     });
     const RealWorker = Worker;
     globalThis.Worker = class extends RealWorker {
@@ -38,7 +40,10 @@ export async function traceDetailOrder(page: Page, throttle = false) {
             generation?: number;
             requestId?: string;
             rows?: unknown[];
+            total?: number;
           };
+          if (reply.type === 'queryResult' && reply.generation === generation)
+            total = reply.total ?? null;
           record('reply', {
             type: reply.type,
             generation: reply.generation,

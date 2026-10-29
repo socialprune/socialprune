@@ -28,9 +28,15 @@ for (const home of [false, true])
           ),
         )
         .toBe(true);
-      await expect(
-        page.getByText('8 entries in this view', { exact: true }),
-      ).toBeVisible();
+      // Holding rows longer than 150ms intentionally replaces the visible
+      // count with the searching label. Assert the real query count instead.
+      expect(
+        await page.evaluate(() =>
+          (
+            Reflect.get(globalThis, '__detailOrder') as { count(): number }
+          ).count(),
+        ),
+      ).toBe(8);
       const grid = page.getByRole('grid');
       await grid.focus();
       await expect(grid).toBeFocused();

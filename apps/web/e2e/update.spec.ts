@@ -64,6 +64,22 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         );
       };
       record('document', { controlled: !!navigator.serviceWorker.controller });
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Diagnostic wrapper preserves the receiver through .call.
+      const post = ServiceWorker.prototype.postMessage;
+      ServiceWorker.prototype.postMessage = function (
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        record('post', {
+          type: (message as { type?: string }).type,
+          state: this.state,
+        });
+        post.call(this, message, {
+          transfer: Array.isArray(options)
+            ? options
+            : (options?.transfer ?? []),
+        });
+      };
       addEventListener('pagehide', () => record('pagehide'));
       navigator.serviceWorker.addEventListener('controllerchange', () =>
         record('controllerchange', {
@@ -223,6 +239,35 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
                   JSON.parse(
                     sessionStorage.getItem('sp-update-events') ?? '[]',
                   ) as unknown,
+              ),
+              allTabs: await Promise.all(
+                [page, second, third].map(async (p) =>
+                  p.evaluate(async () => {
+                    const registration =
+                      await navigator.serviceWorker.getRegistration();
+                    return {
+                      text: document.body.innerText.slice(-200),
+                      alerts: [
+                        ...document.querySelectorAll('[role="alert"]'),
+                      ].map((n) => n.textContent),
+                      buttons: [...document.querySelectorAll('button')]
+                        .filter((n) => /Reload|Later/.test(n.textContent ?? ''))
+                        .map((n) => ({
+                          text: n.textContent,
+                          disabled: n.disabled,
+                        })),
+                      gate: document
+                        .querySelector('main')
+                        ?.getAttribute('data-gate'),
+                      active: registration?.active?.state,
+                      waiting: registration?.waiting?.state,
+                      installing: registration?.installing?.state,
+                      lifecycle: JSON.parse(
+                        sessionStorage.getItem('sp-update-events') ?? '[]',
+                      ) as unknown,
+                    };
+                  }),
+                ),
               ),
               controller: await tab.evaluate(async () => {
                 const controller = navigator.serviceWorker.controller;

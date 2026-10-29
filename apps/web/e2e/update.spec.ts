@@ -53,6 +53,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
       if (message.type() === 'error') errors.push(message.text());
     });
     await context.addInitScript(() => {
+      if (!navigator.serviceWorker) return;
       const record = (type: string, data?: unknown) => {
         const events = JSON.parse(
           sessionStorage.getItem('sp-update-events') ?? '[]',
@@ -64,6 +65,35 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         );
       };
       record('document', { controlled: !!navigator.serviceWorker.controller });
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Wrapper preserves the receiver and original transfer list.
+      const workerPost = ServiceWorker.prototype.postMessage;
+      ServiceWorker.prototype.postMessage = function (
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        record('worker-post', {
+          type: (message as { type?: string }).type,
+          state: this.state,
+        });
+        workerPost.call(this, message, {
+          transfer: Array.isArray(options)
+            ? options
+            : (options?.transfer ?? []),
+        });
+      };
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Wrapper preserves the receiver and original transfer list.
+      const portPost = MessagePort.prototype.postMessage;
+      MessagePort.prototype.postMessage = function (
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        record('port-post', { type: (message as { type?: string }).type });
+        portPost.call(this, message, {
+          transfer: Array.isArray(options)
+            ? options
+            : (options?.transfer ?? []),
+        });
+      };
       addEventListener('pagehide', () => record('pagehide'));
       navigator.serviceWorker.addEventListener('controllerchange', () =>
         record('controllerchange', {
@@ -76,6 +106,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
     });
     if (delayedUpdate === 'late-first-control')
       await context.addInitScript(() => {
+        if (!navigator.serviceWorker) return;
         // Reproduce ready-before-first-control-event: the gate reads a real
         // controlling worker before the updater gets its first notification.
         // eslint-disable-next-line @typescript-eslint/unbound-method -- Always invoked with the actual container through .call below.
@@ -106,6 +137,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
       });
     if (delayedUpdate === true)
       await context.addInitScript(() => {
+        if (!navigator.serviceWorker) return;
         // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the real registration through .call below.
         const add = ServiceWorkerRegistration.prototype.addEventListener;
         ServiceWorkerRegistration.prototype.addEventListener = function (

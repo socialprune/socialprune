@@ -36,7 +36,6 @@ const nativeSkip = self.skipWaiting;
 self.skipWaiting = function() {
   probe.calls++;
   const result=nativeSkip.call(self);
-  void result.then(()=>probe.resolved++,()=>probe.rejected++);
   return result;
 };
 self.addEventListener('message',event=>{

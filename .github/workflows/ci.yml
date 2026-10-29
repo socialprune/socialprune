@@ -70,6 +70,7 @@ jobs:
         browser: [chromium, firefox, webkit]
     env:
       SP_E2E_PORT: 4771
+      SP_E2E_PROBE_PORT: 4773
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,6 +120,7 @@ jobs:
       SP_E2E_PORT: 4771
       SP_E2E_INSTAGRAM_PORT: 4772
       SP_E2E_PROBE_PORT: 4773
+      SP_REVIEW_E2E_PORT: 4775
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

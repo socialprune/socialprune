@@ -72,7 +72,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         options?: Transferable[] | StructuredSerializeOptions,
       ) {
         record('worker-post', {
-          type: (message as { type?: string }).type,
+          type: (message as { type?: string } | null)?.type,
           state: this.state,
         });
         workerPost.call(this, message, {
@@ -81,18 +81,18 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
             : (options?.transfer ?? []),
         });
       };
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- Wrapper preserves the receiver and original transfer list.
-      const portPost = MessagePort.prototype.postMessage;
-      MessagePort.prototype.postMessage = function (
-        message: unknown,
-        options?: Transferable[] | StructuredSerializeOptions,
-      ) {
-        record('port-post', { type: (message as { type?: string }).type });
-        portPost.call(this, message, {
-          transfer: Array.isArray(options)
-            ? options
-            : (options?.transfer ?? []),
-        });
+      const NativeChannel = MessageChannel;
+      globalThis.MessageChannel = class extends NativeChannel {
+        constructor() {
+          super();
+          this.port1.addEventListener(
+            'message',
+            (event: MessageEvent<unknown>) => {
+              const type = (event.data as { type?: string } | null)?.type;
+              if (type) record('port-reply', { type });
+            },
+          );
+        }
       };
       addEventListener('pagehide', () => record('pagehide'));
       navigator.serviceWorker.addEventListener('controllerchange', () =>

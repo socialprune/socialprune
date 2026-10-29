@@ -59,9 +59,17 @@ jobs:
       - run: pnpm exec vitest run --project cli
 
   e2e:
+    name: e2e (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    # 30 min dependency bound + 5 min browser download + 25 min test allowance.
+    # Keep each browser's complete main config together on its own runner.
+    # 30 min dependency bound + 5 min download + 25 min build/test allowance.
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      SP_E2E_PORT: 4771
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,7 +107,93 @@ jobs:
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
-      - run: pnpm test:e2e:all
+      - name: Main config
+        timeout-minutes: 25
+        run: pnpm --filter @socialprune/web test:e2e:main --project ${{ matrix.browser }}
+
+  e2e-layout:
+    runs-on: ubuntu-latest
+    # Independent layout/policy configs no longer wait behind the main config.
+    timeout-minutes: 60
+    env:
+      SP_E2E_PORT: 4771
+      SP_E2E_INSTAGRAM_PORT: 4772
+      SP_E2E_PROBE_PORT: 4773
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install browser system dependencies
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          attempt=0
+          for duration in 16m 10m; do
+            attempt=$((attempt + 1))
+            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
+            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "Dependency installation failed with exit $status"
+            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
+            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
+            sleep 10
+          done
+      - name: Install pinned browsers
+        timeout-minutes: 5
+        run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
+      - name: Polish, fit, Instagram and policy probes
+        timeout-minutes: 25
+        run: pnpm --filter @socialprune/web test:e2e:layout
+
+  e2e-builds:
+    runs-on: ubuntu-latest
+    # Build checks and isolated renderers do not need a prior job's artifacts.
+    timeout-minutes: 50
+    env:
+      SP_E2E_DESKTOP_PORT: 4774
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install browser system dependencies
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          attempt=0
+          for duration in 16m 10m; do
+            attempt=$((attempt + 1))
+            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
+            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
+              exit 0
+            else
+              status=$?
+            fi
+            echo "Dependency installation failed with exit $status"
+            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
+            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
+            sleep 10
+          done
+      - name: Install pinned browsers
+        timeout-minutes: 5
+        run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
+      - name: Production build check, review mode and desktop renderer
+        timeout-minutes: 15
+        run: pnpm --filter @socialprune/web test:e2e:builds
 
   # ADR-016: the local-review build in a real browser against the real review
   # server, in its own job so the web e2e job keeps its time budget.

@@ -3,6 +3,7 @@ import { app, session } from 'electron';
 import { startDesktop } from '../../src/main/app.ts';
 import '../quiet-windows.ts';
 import type { EngineFileSelection } from 'socialprune/engine';
+import { displayControl } from '../display-control.ts';
 
 const dataDirectory = process.argv
   .find((argument) => argument.startsWith('--data-dir='))
@@ -84,6 +85,8 @@ void startDesktop({
       dialogLocales,
       platformWindow,
       removalReports,
+      displayControl: (command: Parameters<typeof displayControl>[1]) =>
+        displayControl(state!.engine.child, command),
     },
   }),
 );

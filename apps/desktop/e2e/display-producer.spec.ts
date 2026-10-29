@@ -11,21 +11,47 @@ import { launch, call } from './helpers.ts';
 import { startForegroundWatch } from './foreground-watch.ts';
 
 test('runner-owned generated platform window recovers without activation, visible neighbor stays and ownership survives ended until close', async () => {
-  const fake = await fakeX(4656);
-  const app = await launch('probe', false, undefined, async (data) => {
-    const root = join(data, 'display-producer');
-    await mkdir(join(root, 'workspace'), { recursive: true });
-    const initial = fixtureWorkspace();
-    for (const item of initial.items)
-      if (item.kind === 'reply' || item.kind === 'quote') item.kind = 'post';
-    const store = await SQLiteStore.open(
-      join(root, 'workspace/socialprune.sqlite'),
-      { initial },
-    );
-    await store.close();
-    await createProfile(join(root, 'profiles/x'), 'x');
-    return root;
-  });
+  const receiptPath = join(dist, `release-display-steps-${randomUUID()}.json`);
+  const steps: { name: string; state: string; elapsedMs: number }[] = [];
+  const stepStarted = performance.now();
+  const step = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
+    const record = async (state: string) => {
+      const row = {
+        name,
+        state,
+        elapsedMs: Math.ceil(performance.now() - stepStarted),
+      };
+      steps.push(row);
+      await writeFile(receiptPath, JSON.stringify({ steps }));
+      console.log('DISPLAY_STEP', JSON.stringify(row));
+    };
+    await record('started');
+    try {
+      const result = await test.step(name, run);
+      await record('returned');
+      return result;
+    } catch (error) {
+      await record('failed');
+      throw error;
+    }
+  };
+  const fake = await step('fake-start', () => fakeX(4771));
+  const app = await step('app-launch', () =>
+    launch('probe', false, undefined, async (data) => {
+      const root = join(data, 'display-producer');
+      await mkdir(join(root, 'workspace'), { recursive: true });
+      const initial = fixtureWorkspace();
+      for (const item of initial.items)
+        if (item.kind === 'reply' || item.kind === 'quote') item.kind = 'post';
+      const store = await SQLiteStore.open(
+        join(root, 'workspace/socialprune.sqlite'),
+        { initial },
+      );
+      await store.close();
+      await createProfile(join(root, 'profiles/x'), 'x');
+      return root;
+    }),
+  );
   const owner = () =>
     app.application.evaluate(async () => {
       const p = Reflect.get(globalThis, 'desktopProbe') as {
@@ -36,28 +62,15 @@ test('runner-owned generated platform window recovers without activation, visibl
       id: string;
       bounds: { x: number; y: number; width: number; height: number };
     } | null>;
-  const control = (command: unknown) =>
-    app.application.evaluate(async (_electron, value) => {
-      const p = Reflect.get(globalThis, 'desktopProbe') as {
-        engine: {
-          child: {
-            on(event: string, fn: (value: { type?: string }) => void): void;
-            removeListener(event: string, fn: unknown): void;
-            postMessage(value: unknown): void;
-          };
+  const control = (command: { type: string; bounds?: unknown }) =>
+    step(command.type, () =>
+      app.application.evaluate(async (_electron, value) => {
+        const p = Reflect.get(globalThis, 'desktopProbe') as {
+          displayControl(command: unknown): Promise<unknown>;
         };
-      };
-      return new Promise((resolve) => {
-        const receive = (reply: { type?: string }) => {
-          if (reply.type === 'displayControl') {
-            p.engine.child.removeListener('message', receive);
-            resolve(reply);
-          }
-        };
-        p.engine.child.on('message', receive);
-        p.engine.child.postMessage(value);
-      });
-    }, command);
+        return p.displayControl(value);
+      }, command),
+    );
   let watching: Awaited<ReturnType<typeof startForegroundWatch>> | undefined;
   const timeline: unknown[] = [];
   const started = performance.now();
@@ -158,36 +171,53 @@ test('runner-owned generated platform window recovers without activation, visibl
         action: value,
       });
     };
-    await action('acknowledge-warning');
-    await action('start');
+    await step('acknowledge-warning', () => action('acknowledge-warning'));
+    await step('run-start', () => action('start'));
     // The engine deliberately refuses an active launch until its exact-window
     // capability is registered. Retry that initial state, not later read errors.
-    await expect
-      .poll(
-        async () => {
-          try {
-            return await owner();
-          } catch (error) {
-            if (/OWNED_WINDOW_UNAVAILABLE/.test(String(error))) return null;
-            throw error;
-          }
-        },
-        { timeout: 30000 },
-      )
-      .not.toBeNull();
-    const first = await owner();
+    await step('owner-ready', () =>
+      expect
+        .poll(
+          async () => {
+            try {
+              return await owner();
+            } catch (error) {
+              if (/OWNED_WINDOW_UNAVAILABLE/.test(String(error))) return null;
+              throw error;
+            }
+          },
+          { timeout: 30000 },
+        )
+        .not.toBeNull(),
+    );
+    const first = await step('owner-read', owner);
     mark('owner', first);
     if (!first) throw new Error('NO_OWNER');
-    await action('stop');
-    await expect
-      .poll(async () => {
-        const r = await call(app, {
-          type: 'runView',
-          requestId: crypto.randomUUID(),
-        });
-        return r.type === 'runView' ? r.view.phase : '';
-      })
-      .toBe('ended');
+    // Ownership precedes startup checks. This display scenario stops at the
+    // read-only canary checkpoint rather than racing those unfinished checks.
+    await step('canary-ready', () =>
+      expect
+        .poll(async () => {
+          const reply = await call(app, {
+            type: 'runView',
+            requestId: crypto.randomUUID(),
+          });
+          return reply.type === 'runView' ? reply.view.phase : '';
+        })
+        .toBe('awaiting-continue'),
+    );
+    await step('run-stop', () => action('stop'));
+    await step('run-ended', () =>
+      expect
+        .poll(async () => {
+          const r = await call(app, {
+            type: 'runView',
+            requestId: crypto.randomUUID(),
+          });
+          return r.type === 'runView' ? r.view.phase : '';
+        })
+        .toBe('ended'),
+    );
     expect((await owner())?.id).toBe(first.id);
     mark('ended', await owner());
     const areas = await app.application.evaluate(({ screen }) =>
@@ -204,62 +234,74 @@ test('runner-owned generated platform window recovers without activation, visibl
     ).toMatchObject({ positioned: true });
     await expect.poll(async () => (await owner())?.bounds.x).toBe(off.x);
     mark('offscreen', { target: await owner(), areas });
-    await app.application.evaluate(({ BrowserWindow }) => {
-      const neighbor = new BrowserWindow({
-        width: 350,
-        height: 250,
-        show: true,
-        title: 'Generated neighbor',
-        webPreferences: { sandbox: true, nodeIntegration: false },
-      });
-      Reflect.set(globalThis, 'displayNeighbor', neighbor);
-      neighbor.focus();
-    });
-    const neighborBefore = await app.application.evaluate(() => {
-      const w = Reflect.get(
-        globalThis,
-        'displayNeighbor',
-      ) as Electron.BrowserWindow;
-      return { bounds: w.getBounds(), focused: w.isFocused() };
-    });
-    watching = await startForegroundWatch(app.data);
-    mark('foreground-ready', {
-      readyMs: watching.readyMs,
-      signal: watching.signal,
-      target: await owner(),
-    });
-    await app.application.evaluate(({ screen }) => {
-      screen.emit('display-metrics-changed');
-    });
-    await expect
-      .poll(async () => {
-        const value = await owner();
-        mark('recovery-poll', value);
-        return (
-          value &&
-          areas.some(
-            (a) =>
-              value.bounds.x < a.x + a.width &&
-              value.bounds.x + value.bounds.width > a.x &&
-              value.bounds.y < a.y + a.height &&
-              value.bounds.y + value.bounds.height > a.y,
-          )
-        );
-      })
-      .toBe(true);
-    const observed = await watching.stop();
-    watching = undefined;
-    expect(observed.changed).toBe(false);
-    expect(observed.samples).toBeGreaterThan(0);
-    expect(observed.final).toBe(observed.handle);
-    expect(
-      await app.application.evaluate(() => {
+    await step('neighbor-create', () =>
+      app.application.evaluate(({ BrowserWindow }) => {
+        const neighbor = new BrowserWindow({
+          width: 350,
+          height: 250,
+          show: true,
+          title: 'Generated neighbor',
+          webPreferences: { sandbox: true, nodeIntegration: false },
+        });
+        Reflect.set(globalThis, 'displayNeighbor', neighbor);
+        neighbor.focus();
+      }),
+    );
+    const neighborBefore = await step('neighbor-before', () =>
+      app.application.evaluate(() => {
         const w = Reflect.get(
           globalThis,
           'displayNeighbor',
         ) as Electron.BrowserWindow;
         return { bounds: w.getBounds(), focused: w.isFocused() };
       }),
+    );
+    watching = await step('foreground-start', () =>
+      startForegroundWatch(app.data),
+    );
+    mark('foreground-ready', {
+      readyMs: watching.readyMs,
+      signal: watching.signal,
+      target: await owner(),
+    });
+    await step('recovery-event', () =>
+      app.application.evaluate(({ screen }) => {
+        screen.emit('display-metrics-changed');
+      }),
+    );
+    await step('recovery-geometry', () =>
+      expect
+        .poll(async () => {
+          const value = await owner();
+          mark('recovery-poll', value);
+          return (
+            value &&
+            areas.some(
+              (a) =>
+                value.bounds.x < a.x + a.width &&
+                value.bounds.x + value.bounds.width > a.x &&
+                value.bounds.y < a.y + a.height &&
+                value.bounds.y + value.bounds.height > a.y,
+            )
+          );
+        })
+        .toBe(true),
+    );
+    const observed = await step('foreground-stop', () => watching!.stop());
+    watching = undefined;
+    expect(observed.changed).toBe(false);
+    expect(observed.samples).toBeGreaterThan(0);
+    expect(observed.final).toBe(observed.handle);
+    expect(
+      await step('neighbor-after', () =>
+        app.application.evaluate(() => {
+          const w = Reflect.get(
+            globalThis,
+            'displayNeighbor',
+          ) as Electron.BrowserWindow;
+          return { bounds: w.getBounds(), focused: w.isFocused() };
+        }),
+      ),
     ).toEqual(neighborBefore);
     const visible = {
       x: areas[0]!.x - 599,
@@ -272,19 +314,25 @@ test('runner-owned generated platform window recovers without activation, visibl
     await app.application.evaluate(({ screen }) => {
       screen.emit('display-removed');
     });
-    await app.page
-      .getByRole('button', { name: 'Run monitor', exact: true })
-      .click();
+    await step('monitor-navigation', () =>
+      app.page
+        .getByRole('button', { name: 'Run monitor', exact: true })
+        .click(),
+    );
     expect((await owner())?.bounds).toEqual(visible);
     await control({ type: 'displayClose' });
-    await expect.poll(owner).toBeNull();
+    await step('closed-owner', () => expect.poll(owner).toBeNull());
     expect(app.errors).toEqual([]);
     outcome = 'passed';
   } finally {
-    await watching?.stop();
+    await step('finally-foreground', async () => {
+      await watching?.stop();
+    });
     mark(
       'final-owner',
-      await owner().catch((error: unknown) => ({ failure: String(error) })),
+      await step('finally-owner', () =>
+        owner().catch((error: unknown) => ({ failure: String(error) })),
+      ),
     );
     const log = await readFile(
       join(app.selectedData, 'logs', 'desktop.ndjson'),
@@ -314,7 +362,7 @@ test('runner-owned generated platform window recovers without activation, visibl
         )?.destroy();
       })
       .catch(() => {});
-    await app.close();
-    await fake.close();
+    await step('app-close', () => app.close());
+    await step('fake-close', () => fake.close());
   }
 });

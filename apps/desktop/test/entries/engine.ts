@@ -54,7 +54,9 @@ startEngine(async (options) => {
   setQueryMeasurementDirectory(join(options.dataFolder, 'query-measurements'));
   setWindowsQueryExecutable(join(options.dataFolder, 'desktop-query.exe'));
   const engine = await openTestEngine(options, {
-    xOrigin: 'http://127.0.0.1:4656',
+    xOrigin: options.dataFolder.endsWith('display-producer')
+      ? 'http://127.0.0.1:4771'
+      : 'http://127.0.0.1:4656',
     headed: options.dataFolder.endsWith('display-producer'),
     instagramOrigin: 'http://127.0.0.1:4661',
     now: () => new Date(now),

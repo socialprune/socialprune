@@ -31,6 +31,14 @@ async function nextBuild() {
     worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)) +
       `
 // Test-only receipt observer in the disposable copied worker, not shipped.
+const originalSkip = self.skipWaiting;
+self.skipWaiting = function() {
+  const announce = phase => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
+    for(const client of clients) client.postMessage({type:'update-probe',phase,build:${JSON.stringify(next)}});
+  });
+  void announce('skip-called');
+  return originalSkip.call(self).then(value => {void announce('skip-resolved');return value},error => {void announce('skip-rejected');throw error});
+};
 self.addEventListener('message', event => {
   if (event.data?.type !== 'SKIP_WAITING') return;
   event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {

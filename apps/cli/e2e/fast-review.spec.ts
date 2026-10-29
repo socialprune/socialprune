@@ -235,36 +235,40 @@ test('reviewer retained proof: write two of three fails without erasing writes o
   }
 });
 
-test('FAST-1 real server failure restores the card before any deletion mark', async ({
-  page,
-}) => {
-  const workspace = await mkdtemp(
-    join(tmpdir(), 'socialprune-fast-failure-generated-'),
-  );
-  const store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'), {
-    initial: headerFixture(),
+for (const lateNavigation of [false, true])
+  test(`FAST-1 real server failure restores the card before any deletion mark${lateNavigation ? ' despite late navigation completion' : ''}`, async ({
+    page,
+  }) => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), 'socialprune-fast-failure-generated-'),
+    );
+    const store = await SQLiteStore.open(
+      join(workspace, 'socialprune.sqlite'),
+      {
+        initial: headerFixture(),
+      },
+    );
+    await store.close();
+    const server = await startReviewServer({
+      workspace,
+      assetDirectory: reviewAssetDirectory(),
+      handleSignals: false,
+      // eslint-disable-next-line no-restricted-properties -- Explicit generated test listener, never credentials.
+      port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
+    });
+    try {
+      await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
+      await page.goto(server.launchUrl);
+      await page
+        .getByRole('navigation', { name: 'Primary navigation', exact: true })
+        .getByRole('link', { name: 'Review', exact: true })
+        .click();
+      await checkFastFeed(page, lateNavigation);
+    } finally {
+      await server.stop();
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
-  await store.close();
-  const server = await startReviewServer({
-    workspace,
-    assetDirectory: reviewAssetDirectory(),
-    handleSignals: false,
-    // eslint-disable-next-line no-restricted-properties -- Explicit generated test listener, never credentials.
-    port: Number(process.env['SP_REVIEW_CONTEXT_PORT'] ?? 0),
-  });
-  try {
-    await page.addInitScript(() => localStorage.setItem('sp-locale', 'en'));
-    await page.goto(server.launchUrl);
-    await page
-      .getByRole('navigation', { name: 'Primary navigation', exact: true })
-      .getByRole('link', { name: 'Review', exact: true })
-      .click();
-    await checkFastFeed(page);
-  } finally {
-    await server.stop();
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
 
 test('FAST-1 real SQLite review measures 60 human decisions on 6000 generated entries', async ({
   page,

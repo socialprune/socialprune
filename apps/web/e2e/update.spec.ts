@@ -38,8 +38,8 @@ async function nextBuild() {
   };
 }
 
-for (const delayedUpdate of [false, true])
-  test(`W0 two-tab update waits for consent, Later keeps v1 and reload flushes all tabs${delayedUpdate ? ' with a late updatefound event' : ''}`, async ({
+for (const delayedUpdate of [false, true, 'late-first-control'] as const)
+  test(`W0 two-tab update waits for consent, Later keeps v1 and reload flushes all tabs${delayedUpdate === 'late-first-control' ? ' after a delayed first controller notification' : delayedUpdate ? ' with a late updatefound event' : ''}`, async ({
     page,
     context,
   }) => {
@@ -52,7 +52,58 @@ for (const delayedUpdate of [false, true])
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
-    if (delayedUpdate)
+    await context.addInitScript(() => {
+      const record = (type: string, data?: unknown) => {
+        const events = JSON.parse(
+          sessionStorage.getItem('sp-update-events') ?? '[]',
+        ) as unknown[];
+        events.push({ at: Date.now(), type, data });
+        sessionStorage.setItem(
+          'sp-update-events',
+          JSON.stringify(events.slice(-100)),
+        );
+      };
+      record('document', { controlled: !!navigator.serviceWorker.controller });
+      addEventListener('pagehide', () => record('pagehide'));
+      navigator.serviceWorker.addEventListener('controllerchange', () =>
+        record('controllerchange', {
+          controlled: !!navigator.serviceWorker.controller,
+        }),
+      );
+      navigator.serviceWorker.addEventListener('message', (event) =>
+        record('message', (event.data as { type?: string }).type),
+      );
+    });
+    if (delayedUpdate === 'late-first-control')
+      await context.addInitScript(() => {
+        // Reproduce ready-before-first-control-event: the gate reads a real
+        // controlling worker before the updater gets its first notification.
+        const add = ServiceWorkerContainer.prototype.addEventListener;
+        let updaterListener = true;
+        ServiceWorkerContainer.prototype.addEventListener = function (
+          type: string,
+          listener: EventListenerOrEventListenerObject,
+          options?: boolean | AddEventListenerOptions,
+        ) {
+          if (type !== 'controllerchange' || typeof listener !== 'function')
+            return add.call(this, type, listener, options);
+          let first = updaterListener && !this.controller;
+          updaterListener = false;
+          return add.call(
+            this,
+            type,
+            (event) => {
+              if (first) {
+                first = false;
+                return;
+              }
+              listener.call(this, event);
+            },
+            options,
+          );
+        };
+      });
+    if (delayedUpdate === true)
       await context.addInitScript(() => {
         // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the real registration through .call below.
         const add = ServiceWorkerRegistration.prototype.addEventListener;
@@ -166,6 +217,28 @@ for (const delayedUpdate of [false, true])
                 'caches' in globalThis ? caches.keys() : [],
               ),
               hits: server.hits,
+              lifecycle: await tab.evaluate(
+                () =>
+                  JSON.parse(
+                    sessionStorage.getItem('sp-update-events') ?? '[]',
+                  ) as unknown,
+              ),
+              controller: await tab.evaluate(async () => {
+                const controller = navigator.serviceWorker.controller;
+                if (!controller) return null;
+                return new Promise((resolve) => {
+                  const c = new MessageChannel();
+                  c.port1.onmessage = (event) => {
+                    resolve(event.data);
+                    c.port1.close();
+                  };
+                  controller.postMessage(
+                    { type: 'hello', buildId: 'diagnostic-no-cleanup' },
+                    [c.port2],
+                  );
+                  setTimeout(() => resolve('timeout'), 1000);
+                });
+              }),
             }),
           );
           throw error;

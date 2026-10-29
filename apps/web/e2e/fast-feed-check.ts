@@ -2,7 +2,7 @@ import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /** Injected only by browser tests, never reachable from a production entry. */
-export async function checkFastFeed(page: Page) {
+export async function checkFastFeed(page: Page, lateNavigation = false) {
   const feed = page.getByRole('feed');
   await expect(feed).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('tab', { name: /^All,/ }).click();
@@ -55,6 +55,20 @@ export async function checkFastFeed(page: Page) {
       return request(input, transfer);
     };
   });
+  if (lateNavigation)
+    await page.evaluate(() => {
+      const flush = window.workspace.flushCommands.bind(window.workspace);
+      let first = true;
+      window.workspace.flushCommands = async () => {
+        await flush();
+        if (first) {
+          first = false;
+          await new Promise<void>((resolve) =>
+            Reflect.set(window, '__lateNavigation', resolve),
+          );
+        }
+      };
+    });
   const first = await feed.locator('article').getAttribute('data-card-id');
   await feed.locator('[data-keep-action]').click();
   await expect(feed.locator('article')).not.toHaveAttribute(
@@ -98,11 +112,39 @@ export async function checkFastFeed(page: Page) {
     'data-card-id',
     second!,
   );
+  if (lateNavigation) {
+    await expect
+      .poll(() =>
+        page.evaluate(() => typeof Reflect.get(window, '__lateNavigation')),
+      )
+      .toBe('function');
+    await page.evaluate(() =>
+      (Reflect.get(window, '__lateNavigation') as () => void)(),
+    );
+  }
   await page.evaluate(() =>
     (Reflect.get(window, '__fastRelease') as () => void)(),
   );
   await page.evaluate(() => window.workspace.flushCommands());
-  await expect(
-    page.getByRole('tab', { name: /^Marked,/ }),
-  ).toHaveAccessibleName('Marked, 2 entries');
+  try {
+    await expect(
+      page.getByRole('tab', { name: /^Marked,/ }),
+    ).toHaveAccessibleName('Marked, 2 entries');
+  } finally {
+    console.log(
+      'FAST_FINAL',
+      JSON.stringify(
+        await page.evaluate(() => ({
+          hash: location.hash,
+          pending: window.workspace.commands.pending,
+          recovery: !!window.workspace.commands.recovery,
+          tabs: [...document.querySelectorAll('[role="tab"]')].map((n) =>
+            n.getAttribute('aria-label'),
+          ),
+          feed: !!document.querySelector('[role="feed"]'),
+          heading: document.querySelector('main h1')?.textContent,
+        })),
+      ),
+    );
+  }
 }

@@ -563,5 +563,5 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Related Lessons:** LL-2026-10-001 (re-read state someone else owns), LL-2026-10-003 (change a running lane only through its task), LL-2026-10-011 (search the record before explaining a state your work may have produced).
 **Regression / Verification Note:** On 2026-10-28 the claim script returned exit 0 for a fresh key, 3 for the same key and 2 for an invalid key. Its first real use is the next parent wakeup.
 **Metrics:**
-- Prevented: 0 times
-- Violated: 1 time (2026-10-28 07:35Z, the FIT-1 merge wakeup ran in both servers; the second instance stopped before the maintainer's workspace was touched twice)
+- Prevented: 8 times (2026-10-28 and 2026-10-29: wakeups at 12:30, 15:05, 16:40, 18:20, 21:35 and 23:05 and two lane-return turns were delivered to both servers; the second instance got exit 3 and made no effect)
+- Violated: 2 times (2026-10-28 about 23:07Z: a lane dispatch was sent from a turn that had claimed only the lane's return, not the dispatch, while the other instance claimed the dispatch key and, finding the ledger line, did not send; one prompt reached the lane, so no work was doubled. 2026-10-28 07:35Z, the FIT-1 merge wakeup ran in both servers; the second instance stopped before the maintainer's workspace was touched twice)

@@ -28,7 +28,21 @@ async function nextBuild() {
   // metadata bytes, never production entrypoint behavior or an env switch.
   await writeFile(
     join(copy, 'sw.js'),
-    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)),
+    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)) +
+      `
+// Test-only receipt observer in the disposable copied worker, not shipped.
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'SKIP_WAITING') return;
+  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
+    for(const client of clients) client.postMessage({type:'update-probe',phase:'skip-received',build:${JSON.stringify(next)}});
+  }));
+});
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
+    for(const client of clients) client.postMessage({type:'update-probe',phase:'activate',build:${JSON.stringify(next)}});
+  }));
+});
+`,
   );
   return {
     copy,
@@ -101,7 +115,12 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         }),
       );
       navigator.serviceWorker.addEventListener('message', (event) =>
-        record('message', (event.data as { type?: string }).type),
+        record(
+          'message',
+          (event.data as { type?: string }).type === 'update-probe'
+            ? event.data
+            : (event.data as { type?: string }).type,
+        ),
       );
     });
     if (delayedUpdate === 'late-first-control')

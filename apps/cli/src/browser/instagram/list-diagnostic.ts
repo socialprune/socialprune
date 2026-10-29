@@ -2,6 +2,7 @@ import type { Page } from 'playwright-core';
 import { normalize, ownerName } from './plan.ts';
 import { utcWindow } from './selectors.ts';
 import { ListRowDiagnosticSchema } from './report.ts';
+import { listNavigation, linkPathClass } from './list-navigation.ts';
 
 /** Only a user object naming the checked handle can supply a display name. */
 export function accountDisplayNames(
@@ -105,12 +106,14 @@ export async function listRowDiagnostic(
   handle: string,
   bodies: readonly unknown[] = [],
 ) {
+  const pageDiagnostic = await listNavigation(page, at, handle);
   const empty = {
     observed: false,
     capped: false,
     total: 0,
     displayNameObserved: false,
     displayNameAmbiguous: false,
+    page: pageDiagnostic,
     rows: [],
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -135,6 +138,37 @@ export async function listRowDiagnostic(
           const role = await row.getAttribute('role', { timeout: 150 });
           const times = row.locator('time[datetime]');
           const anchors = await row.locator('a,[role="link"]').allInnerTexts();
+          const links = row.locator('a[href]');
+          const linkCount = await links.count();
+          const ancestry = {
+            nav: (await row.locator('xpath=ancestor::nav').count()) > 0,
+            aside: (await row.locator('xpath=ancestor::aside').count()) > 0,
+            header: (await row.locator('xpath=ancestor::header').count()) > 0,
+            navigation:
+              (await row
+                .locator('xpath=ancestor::*[@role="navigation"]')
+                .count()) > 0,
+            tablist:
+              (await row
+                .locator('xpath=ancestor::*[@role="tablist"]')
+                .count()) > 0,
+            dialog:
+              (await row
+                .locator(
+                  'xpath=ancestor::*[@role="dialog" or @role="alertdialog"]',
+                )
+                .count()) > 0,
+          };
+          const origin = new URL(page.url()).origin;
+          const singleLinkPathClass =
+            linkCount === 0
+              ? 'none'
+              : linkCount > 1
+                ? 'multiple'
+                : linkPathClass(
+                    await links.getAttribute('href', { timeout: 150 }),
+                    origin === 'null' ? 'https://www.instagram.com' : origin,
+                  );
           const date =
             (await times.count()) === 1
               ? await times.getAttribute('datetime', { timeout: 150 })
@@ -166,6 +200,8 @@ export async function listRowDiagnostic(
               names,
             ),
             imagePresent: (await row.locator('img').count()) > 0,
+            ancestry,
+            singleLinkPathClass,
             anchorCount: anchors.length,
             firstHandleAnchorIndex: anchors.findIndex(
               (value) =>
@@ -185,6 +221,7 @@ export async function listRowDiagnostic(
           total,
           displayNameObserved: names.size === 1,
           displayNameAmbiguous: names.size > 1,
+          page: pageDiagnostic,
           rows,
         });
       })(),

@@ -19,6 +19,118 @@ import {
   historicalListRows,
 } from './fake-instagram/list-reader-20261023.ts';
 import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
+import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
+
+test.each(['tiles', 'dialog', 'empty'] as const)(
+  'IG-list page locations distinguish generated %s from navigation-only rows',
+  async (mode) => {
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const fixture = listNavigationPage(mode);
+      await page.setContent(fixture.html);
+      const diagnostic = await listRowDiagnostic(
+        page,
+        fixture.text,
+        fixture.at,
+        fixture.handle,
+      );
+      expect(diagnostic.observed).toBe(true);
+      expect(diagnostic.page).toMatchObject({
+        observed: true,
+        observationFailed: false,
+        knownEmptyStatePresent: mode === 'empty',
+      });
+      expect(diagnostic.page!.containers.navAside.links.yourActivity).toBe(3);
+      expect(diagnostic.rows.slice(0, 3).map((row) => row.textLength)).toEqual([
+        76, 74, 80,
+      ]);
+      expect(
+        diagnostic.rows.slice(0, 3).map((row) => row.authorLength),
+      ).toEqual([12, 6, 7]);
+      for (const row of diagnostic.rows.slice(0, 3))
+        expect(row).toMatchObject({
+          container: 'main',
+          shape: 'listitem',
+          ancestry: {
+            nav: true,
+            aside: true,
+            header: true,
+            navigation: true,
+            tablist: true,
+            dialog: false,
+          },
+          singleLinkPathClass: 'your-activity',
+          imagePresent: false,
+          authorEqualsHandle: false,
+          timeElementPresent: false,
+        });
+      if (mode === 'tiles')
+        expect(diagnostic.page!.containers.main).toMatchObject({
+          links: { post: 3 },
+          images: 3,
+          checkboxes: 1,
+          scrollContainers: 1,
+        });
+      if (mode === 'dialog') {
+        expect(diagnostic.page!.containers.dialog).toMatchObject({
+          links: { post: 1 },
+          images: 1,
+          timeElements: 1,
+          timesWithinWindow: 1,
+          checkboxes: 1,
+          handleElements: 1,
+        });
+        expect(
+          diagnostic.rows.find((row) => row.container === 'dialog'),
+        ).toMatchObject({
+          ancestry: { dialog: true },
+          singleLinkPathClass: 'post',
+          imagePresent: true,
+        });
+      }
+      if (mode === 'empty') {
+        expect(diagnostic.total).toBe(7);
+        for (const region of Object.values(diagnostic.page!.containers))
+          expect(region).toMatchObject({
+            links: { post: 0 },
+            timeElements: 0,
+            handleElements: 0,
+            checkboxes: 0,
+            scrollContainers: 0,
+          });
+        expect(
+          diagnostic.rows.every(
+            (row) =>
+              !row.handleElementPresent &&
+              !row.timeElementPresent &&
+              !row.exportStartsWithCommentPrefix,
+          ),
+        ).toBe(true);
+        const german = listNavigationPage('empty', true);
+        await page.setContent(german.html);
+        expect(
+          (await listRowDiagnostic(page, german.text, german.at, german.handle))
+            .page!.knownEmptyStatePresent,
+        ).toBe(true);
+      }
+      for (const value of [
+        fixture.handle,
+        fixture.text,
+        fixture.at,
+        'Generated_post',
+        'No results',
+        'generatednav',
+      ])
+        expect(JSON.stringify(diagnostic)).not.toContain(value);
+    } finally {
+      await browser.close();
+    }
+  },
+);
 
 test.each(['old', 'split', 'foreign-first'] as const)(
   'IG-list historical 8ad968d and current reader agree on generated %s rows',

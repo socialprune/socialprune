@@ -140,12 +140,43 @@ export const ListRegionsSchema = z.strictObject({
     endMatches: z.boolean(),
   }),
 });
+const NavigationContainerSchema = z
+  .strictObject({
+    links: z.strictObject({
+      post: count,
+      profile: count,
+      yourActivity: count,
+      other: count,
+    }),
+    timeElements: count,
+    timesWithinWindow: count,
+    handleElements: count,
+    images: count,
+    checkboxes: count,
+    scrollContainers: count,
+  })
+  .refine((value) => value.timesWithinWindow <= value.timeElements);
+export const ListNavigationSchema = z
+  .strictObject({
+    observed: z.boolean(),
+    observationFailed: z.boolean(),
+    knownEmptyStatePresent: z.boolean(),
+    containers: z.strictObject({
+      main: NavigationContainerSchema,
+      dialog: NavigationContainerSchema,
+      navAside: NavigationContainerSchema,
+      elsewhere: NavigationContainerSchema,
+    }),
+  })
+  .refine((value) => value.observed !== value.observationFailed);
+export type ListNavigation = z.infer<typeof ListNavigationSchema>;
 export const ListRowDiagnosticSchema = z.strictObject({
   observed: z.boolean(),
   capped: z.boolean(),
   total: count,
   displayNameObserved: z.boolean(),
   displayNameAmbiguous: z.boolean(),
+  page: ListNavigationSchema.optional(),
   rows: z
     .array(
       z
@@ -169,6 +200,22 @@ export const ListRowDiagnosticSchema = z.strictObject({
           exportStartsWithCommentPrefix: z.boolean(),
           trailingEllipsisPresent: z.boolean(),
           imagePresent: z.boolean(),
+          ancestry: z.strictObject({
+            nav: z.boolean(),
+            aside: z.boolean(),
+            header: z.boolean(),
+            navigation: z.boolean(),
+            tablist: z.boolean(),
+            dialog: z.boolean(),
+          }),
+          singleLinkPathClass: z.enum([
+            'post',
+            'profile',
+            'your-activity',
+            'other',
+            'none',
+            'multiple',
+          ]),
           anchorCount: count,
           firstHandleAnchorIndex: z.number().int().min(-1),
           handleElementPresent: z.boolean(),

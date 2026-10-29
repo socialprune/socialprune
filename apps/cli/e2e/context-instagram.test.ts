@@ -2451,6 +2451,14 @@ test('IG-list diagnostic order observes one list and never opens a post, exclude
       diagnostic.steps[0]!.listRows,
       diagnostic.steps[0]!.listRowsAfterApply,
     ]) {
+      expect(projection).toMatchObject({
+        page: {
+          observed: true,
+          observationFailed: false,
+          knownEmptyStatePresent: false,
+          containers: { main: { images: 2 } },
+        },
+      });
       const own = projection.rows.find(
         (row) => row['authorEqualsHandle'] === true,
       );

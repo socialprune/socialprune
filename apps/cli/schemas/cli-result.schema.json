@@ -389,7 +389,11 @@
                 },
                 "message": {
                   "type": "string",
-                  "const": "A stored Instagram field has no second source in the page's own answers. The canary was not accepted."
+                  "enum": [
+                    "A stored Instagram field has no second source in the page's own answers. The canary was not accepted.",
+                    "The Instagram canary lacked the required comparison evidence. The run stopped.",
+                    "Der Instagram-Stichprobe fehlten die erforderlichen Vergleichsbelege. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -403,7 +407,17 @@
                 "code": { "type": "string", "const": "CANARY_CHECK_FAILED" },
                 "message": {
                   "type": "string",
-                  "const": "An Instagram canary check failed. Nothing accepted this canary and no full run started."
+                  "enum": [
+                    "An Instagram canary check failed. Nothing accepted this canary and no full run started.",
+                    "The Instagram canary did not pass its acceptance checks. The run stopped.",
+                    "Die Instagram-Stichprobe hat ihre Abnahmeprüfungen nicht bestanden. Der Lauf wurde gestoppt.",
+                    "An added browser extension stopped the Instagram run.",
+                    "Eine hinzugefügte Browsererweiterung hat den Instagram-Lauf gestoppt.",
+                    "The Instagram account read-back did not pass. The run stopped.",
+                    "Die erneute Prüfung des Instagram-Kontos ist fehlgeschlagen. Der Lauf wurde gestoppt.",
+                    "The expected Instagram account could not be confirmed. The run stopped.",
+                    "Das erwartete Instagram-Konto konnte nicht bestätigt werden. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -417,7 +431,11 @@
                 "code": { "type": "string", "const": "PAGE_LANGUAGE" },
                 "message": {
                   "type": "string",
-                  "const": "Switch Instagram to English before this reading run."
+                  "enum": [
+                    "Switch Instagram to English before this reading run.",
+                    "The Instagram page was not in the required English language. The run stopped.",
+                    "Die Instagram-Seite war nicht in der erforderlichen englischen Sprache. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -434,7 +452,17 @@
                 },
                 "message": {
                   "type": "string",
-                  "const": "Instagram returned an unrecognized structure. The run stopped and the next run stays a canary."
+                  "enum": [
+                    "Instagram returned an unrecognized structure. The run stopped and the next run stays a canary.",
+                    "An Instagram comment row had an unrecognized structure. The run stopped.",
+                    "Eine Instagram-Kommentarzeile hatte eine unbekannte Struktur. Der Lauf wurde gestoppt.",
+                    "The Instagram date-filter controls could not be verified. The run stopped.",
+                    "Die Steuerelemente des Instagram-Datumsfilters konnten nicht geprüft werden. Der Lauf wurde gestoppt.",
+                    "The Instagram post structure or stored post evidence could not be verified. The run stopped.",
+                    "Die Struktur des Instagram-Beitrags oder seine gespeicherten Belege konnten nicht geprüft werden. Der Lauf wurde gestoppt.",
+                    "The Instagram comment structure could not be verified. The run stopped.",
+                    "Die Struktur des Instagram-Kommentars konnte nicht geprüft werden. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -448,7 +476,13 @@
                 "code": { "type": "string", "const": "CONTEXT_FAILED" },
                 "message": {
                   "type": "string",
-                  "const": "The Instagram reading pass could not finish. Recorded results remain in the workspace; no automatic retry was made."
+                  "enum": [
+                    "The Instagram reading pass could not finish. Recorded results remain in the workspace; no automatic retry was made.",
+                    "An Instagram request could not be recorded in the journal. The run stopped.",
+                    "Eine Instagram-Anfrage konnte nicht im Journal protokolliert werden. Der Lauf wurde gestoppt.",
+                    "The Instagram post structure or stored post evidence could not be verified. The run stopped.",
+                    "Die Struktur des Instagram-Beitrags oder seine gespeicherten Belege konnten nicht geprüft werden. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -493,7 +527,11 @@
                 "code": { "type": "string", "const": "CANARY_MISMATCH" },
                 "message": {
                   "type": "string",
-                  "const": "The stored original does not match the text or media counts shown on the page. The run stopped without accepting the canary."
+                  "enum": [
+                    "The stored original does not match the text or media counts shown on the page. The run stopped without accepting the canary.",
+                    "The Instagram canary comparison found disagreeing fields. The run stopped.",
+                    "Der Vergleich der Instagram-Stichprobe fand abweichende Felder. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -521,7 +559,11 @@
                 "code": { "type": "string", "const": "UNEXPECTED_ACTION" },
                 "message": {
                   "type": "string",
-                  "const": "The signed-in page sent a request that changes the account. The reading run stopped."
+                  "enum": [
+                    "The signed-in page sent a request that changes the account. The reading run stopped.",
+                    "An action outside the permitted Instagram reading controls was refused. The run stopped.",
+                    "Eine Aktion außerhalb der erlaubten Instagram-Lesesteuerung wurde abgelehnt. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -535,7 +577,11 @@
                 "code": { "type": "string", "const": "DISK_LOW" },
                 "message": {
                   "type": "string",
-                  "const": "Less than 5 GiB remains on the workspace drive. The run stopped before writing a file."
+                  "enum": [
+                    "Less than 5 GiB remains on the workspace drive. The run stopped before writing a file.",
+                    "Insufficient free disk space stopped the Instagram run.",
+                    "Zu wenig freier Speicherplatz hat den Instagram-Lauf gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -675,7 +721,13 @@
                 "code": { "type": "string", "const": "ACCOUNT_MISMATCH" },
                 "message": {
                   "type": "string",
-                  "const": "The signed-in account does not match the export account. The run stopped."
+                  "enum": [
+                    "The signed-in account does not match the export account. The run stopped.",
+                    "The expected Instagram account could not be confirmed. The run stopped.",
+                    "Das erwartete Instagram-Konto konnte nicht bestätigt werden. Der Lauf wurde gestoppt.",
+                    "The Instagram account read-back did not pass. The run stopped.",
+                    "Die erneute Prüfung des Instagram-Kontos ist fehlgeschlagen. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -703,7 +755,25 @@
                 "code": { "type": "string", "const": "PLATFORM_CHECK" },
                 "message": {
                   "type": "string",
-                  "const": "The page is not recognized, or shows a login, challenge, lock or limit. The run stopped."
+                  "enum": [
+                    "The page is not recognized, or shows a login, challenge, lock or limit. The run stopped.",
+                    "The filtered Instagram comments list could not be read reliably. The run stopped.",
+                    "Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.",
+                    "The Instagram post did not become ready within the response window. The run stopped.",
+                    "Der Instagram-Beitrag wurde innerhalb der Antwortfrist nicht bereit. Der Lauf wurde gestoppt.",
+                    "The Instagram page navigation did not finish. The run stopped.",
+                    "Die Navigation zur Instagram-Seite wurde nicht abgeschlossen. Der Lauf wurde gestoppt.",
+                    "The Instagram browser window closed. The run stopped.",
+                    "Das Instagram-Browserfenster wurde geschlossen. Der Lauf wurde gestoppt.",
+                    "An added browser extension stopped the Instagram run.",
+                    "Eine hinzugefügte Browsererweiterung hat den Instagram-Lauf gestoppt.",
+                    "The Instagram account read-back did not pass. The run stopped.",
+                    "Die erneute Prüfung des Instagram-Kontos ist fehlgeschlagen. Der Lauf wurde gestoppt.",
+                    "The expected Instagram account could not be confirmed. The run stopped.",
+                    "Das erwartete Instagram-Konto konnte nicht bestätigt werden. Der Lauf wurde gestoppt.",
+                    "The Instagram post structure or stored post evidence could not be verified. The run stopped.",
+                    "Die Struktur des Instagram-Beitrags oder seine gespeicherten Belege konnten nicht geprüft werden. Der Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }
@@ -1017,7 +1087,11 @@
                 "code": { "type": "string", "const": "CANCELLED" },
                 "message": {
                   "type": "string",
-                  "const": "The command was cancelled."
+                  "enum": [
+                    "The command was cancelled.",
+                    "The Instagram run was stopped.",
+                    "Der Instagram-Lauf wurde gestoppt."
+                  ]
                 },
                 "exitCode": { "type": "number", "const": 1 },
                 "retryable": { "type": "boolean", "const": false }

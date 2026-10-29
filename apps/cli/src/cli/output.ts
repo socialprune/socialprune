@@ -62,8 +62,9 @@ export function writeFailure(
   nodeVersion?: string,
   envelope = false,
   details?: LabelFailureDetails,
+  stop?: unknown,
 ): void {
-  const error = errorObject(code, nodeVersion, details);
+  const error = errorObject(code, nodeVersion, details, stop);
   if (json || envelope) {
     context.io.stdout.write(
       JSON.stringify(

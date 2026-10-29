@@ -1,9 +1,22 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+import { buildCommand } from '@stricli/core';
 import { executeCli } from './adapter.ts';
 import { createNodeContext } from './node-context.ts';
-import { normalizeExitCode } from './errors.ts';
+import {
+  normalizeExitCode,
+  CLI_ERRORS,
+  CliError,
+  errorObject,
+  INSTAGRAM_STOP_MESSAGES,
+  instagramStopMessages,
+} from './errors.ts';
+import { ContextStop } from '../browser/instagram/report.ts';
+import * as registry from './registry.ts';
+import { contextFailure } from '../browser/instagram/copy.ts';
+import { checkPage } from '../browser/instagram/selectors.ts';
+import type { Page } from 'playwright-core';
 import { commandRegistry } from './registry.ts';
 import { plainText } from './output.ts';
 import { capturedContext } from './test/context.ts';
@@ -40,6 +53,287 @@ const services: CliContext['services'] = {
     ]);
   },
 };
+
+test.each(['en', 'de'] as const)(
+  'Instagram list-timeout envelope and human line report the list failure in %s',
+  async (lang) => {
+    const failure = contextFailure(
+      new ContextStop('PLATFORM_CHECK', 'list-timeout'),
+      lang,
+    );
+    const entries = commandRegistry();
+    const command = buildCommand({
+      parameters: { flags: { json: { kind: 'boolean', default: false } } },
+      docs: { brief: 'Generated failure probe' },
+      func() {
+        throw failure;
+      },
+    });
+    const lookup = vi.spyOn(registry, 'commandRegistry').mockReturnValue([
+      {
+        ...entries[0]!,
+        path: ['context', 'instagram'],
+        command,
+        envelope: true,
+      },
+    ]);
+    try {
+      for (const json of [false, true]) {
+        const capture = capturedContext(services);
+        expect(
+          await executeCli(
+            ['context', 'instagram', ...(json ? ['--json'] : [])],
+            capture.context,
+          ),
+        ).toBe(1);
+        const message =
+          lang === 'de'
+            ? 'Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.'
+            : 'The filtered Instagram comments list could not be read reliably. The run stopped.';
+        expect(JSON.parse(capture.stdout.join(''))).toMatchObject({
+          status: 'error',
+          error: {
+            code: 'PLATFORM_CHECK',
+            message,
+            exitCode: 1,
+            retryable: false,
+          },
+        });
+        expect(capture.stderr.join('')).toBe(`PLATFORM_CHECK: ${message}\n`);
+        expect(capture.stderr.join('')).not.toMatch(
+          /login|challenge|lock|limit|Anmeldung|Sperre/iu,
+        );
+      }
+    } finally {
+      lookup.mockRestore();
+    }
+  },
+);
+
+test.each(['en', 'de'] as const)(
+  'Instagram login keeps the real platform-page failure unchanged for %s',
+  async (lang) => {
+    const stopped = await checkPage({
+      isClosed: () => false,
+      url: () => 'https://www.instagram.com/accounts/login/',
+    } as unknown as Page).catch((error: unknown) => error);
+    expect(stopped).toMatchObject({ code: 'PLATFORM_CHECK', token: 'login' });
+    const failure = contextFailure(stopped, lang);
+    const entries = commandRegistry();
+    const command = buildCommand({
+      parameters: { flags: { json: { kind: 'boolean', default: false } } },
+      docs: { brief: 'Generated login probe' },
+      func() {
+        throw failure;
+      },
+    });
+    const lookup = vi.spyOn(registry, 'commandRegistry').mockReturnValue([
+      {
+        ...entries[0]!,
+        path: ['context', 'instagram'],
+        command,
+        envelope: true,
+      },
+    ]);
+    try {
+      const capture = capturedContext(services);
+      expect(
+        await executeCli(['context', 'instagram', '--json'], capture.context),
+      ).toBe(1);
+      expect(JSON.parse(capture.stdout.join(''))).toMatchObject({
+        error: { code: 'PLATFORM_CHECK', ...CLI_ERRORS.PLATFORM_CHECK },
+      });
+      expect(capture.stderr.join('')).toBe(
+        `PLATFORM_CHECK: ${CLI_ERRORS.PLATFORM_CHECK.message}\n`,
+      );
+    } finally {
+      lookup.mockRestore();
+    }
+  },
+);
+
+test('Instagram stop metadata cannot override another command, an unknown token, language, code or raw exception', async () => {
+  const entries = commandRegistry();
+  for (const [path, failure] of [
+    [
+      ['delete', 'x'],
+      Object.assign(new CliError('PLATFORM_CHECK'), {
+        instagramStop: { token: 'list-timeout', lang: 'en' },
+      }),
+    ],
+    [
+      ['context', 'instagram'],
+      Object.assign(new CliError('PLATFORM_CHECK'), {
+        instagramStop: { token: 'Generated private decoy', lang: 'en' },
+      }),
+    ],
+    [
+      ['context', 'instagram'],
+      Object.assign(new CliError('PLATFORM_CHECK'), {
+        instagramStop: {
+          token: 'list-timeout',
+          lang: 'Generated private decoy',
+        },
+      }),
+    ],
+    [
+      ['context', 'instagram'],
+      Object.assign(new CliError('PLATFORM_CHECK'), {
+        instagramStop: {
+          token: 'list-timeout',
+          lang: 'en',
+          text: 'Generated private decoy',
+        },
+      }),
+    ],
+    [
+      ['context', 'instagram'],
+      Object.assign(new CliError('PLATFORM_CHECK'), {
+        instagramStop: { token: '__proto__', lang: 'en' },
+      }),
+    ],
+    [['context', 'instagram'], new Error('Generated private decoy')],
+  ] as const) {
+    const command = buildCommand({
+      parameters: { flags: { json: { kind: 'boolean', default: false } } },
+      docs: { brief: 'Generated error projection probe' },
+      func() {
+        throw failure;
+      },
+    });
+    const lookup = vi.spyOn(registry, 'commandRegistry').mockReturnValue([
+      {
+        ...entries[0]!,
+        path: [...path],
+        command,
+        envelope: true,
+        failureCode: 'CONTEXT_FAILED',
+      },
+    ]);
+    try {
+      const capture = capturedContext(services);
+      expect(await executeCli([...path, '--json'], capture.context)).toBe(1);
+      const expected =
+        failure instanceof CliError
+          ? errorObject(failure.code)
+          : errorObject('CONTEXT_FAILED');
+      expect(JSON.parse(capture.stdout.join(''))).toMatchObject({
+        error: expected,
+      });
+      expect(capture.stderr.join('')).toBe(
+        `${expected.code}: ${expected.message}\n`,
+      );
+      expect(capture.stdout.join('') + capture.stderr.join('')).not.toContain(
+        'Generated private decoy',
+      );
+    } finally {
+      lookup.mockRestore();
+    }
+  }
+  expect(
+    errorObject('INVALID_ARGUMENTS', undefined, undefined, {
+      token: 'list-timeout',
+      lang: 'en',
+    }),
+  ).toEqual(errorObject('INVALID_ARGUMENTS'));
+});
+
+test.each(['en', 'de'] as const)(
+  'Instagram platform notices and unknown page tokens keep their original message in %s',
+  async (lang) => {
+    const entries = commandRegistry();
+    for (const token of [
+      'login',
+      'challenge',
+      'checkpoint',
+      'locked',
+      'rate-limit',
+      'notice-error',
+      'http-429',
+      'rate-signal',
+      'unexpected-page',
+    ] as const) {
+      const failure = contextFailure(
+        new ContextStop('PLATFORM_CHECK', token),
+        lang,
+      );
+      const command = buildCommand({
+        parameters: { flags: { json: { kind: 'boolean', default: false } } },
+        docs: { brief: 'Generated platform stop probe' },
+        func() {
+          throw failure;
+        },
+      });
+      const lookup = vi.spyOn(registry, 'commandRegistry').mockReturnValue([
+        {
+          ...entries[0]!,
+          path: ['context', 'instagram'],
+          command,
+          envelope: true,
+        },
+      ]);
+      try {
+        const capture = capturedContext(services);
+        expect(
+          await executeCli(['context', 'instagram', '--json'], capture.context),
+        ).toBe(1);
+        expect(JSON.parse(capture.stdout.join(''))).toMatchObject({
+          error: { code: 'PLATFORM_CHECK', ...CLI_ERRORS.PLATFORM_CHECK },
+        });
+        expect(capture.stderr.join('')).toBe(
+          `PLATFORM_CHECK: ${CLI_ERRORS.PLATFORM_CHECK.message}\n`,
+        );
+      } finally {
+        lookup.mockRestore();
+      }
+    }
+  },
+);
+
+test.each(['en', 'de'] as const)(
+  'all closed non-platform Instagram stop projections validate and preserve the code in %s',
+  (lang) => {
+    for (const [code] of Object.entries(CLI_ERRORS)) {
+      for (const token of Object.keys(INSTAGRAM_STOP_MESSAGES)) {
+        const failure = contextFailure(
+          new ContextStop(
+            code as keyof typeof CLI_ERRORS,
+            token as keyof typeof INSTAGRAM_STOP_MESSAGES,
+          ),
+          lang,
+        );
+        const projected = errorObject(
+          failure.code,
+          undefined,
+          undefined,
+          failure.instagramStop,
+        );
+        expect(
+          CliResultSchema.safeParse({
+            schemaVersion: 1,
+            command: 'context.instagram',
+            status: 'error',
+            error: projected,
+            warnings: [],
+          }).success,
+        ).toBe(true);
+        const valid = instagramStopMessages(failure.code).includes(
+          INSTAGRAM_STOP_MESSAGES[
+            token as keyof typeof INSTAGRAM_STOP_MESSAGES
+          ][lang],
+        );
+        expect(projected.message).toBe(
+          valid
+            ? INSTAGRAM_STOP_MESSAGES[
+                token as keyof typeof INSTAGRAM_STOP_MESSAGES
+              ][lang]
+            : errorObject(failure.code).message,
+        );
+        expect(projected.code).toBe(code);
+      }
+    }
+  },
+);
 
 test.each([
   ['missing positional', ['structure']],

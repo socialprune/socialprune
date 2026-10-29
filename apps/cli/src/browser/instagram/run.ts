@@ -20,7 +20,7 @@ import {
 } from '../profile.ts';
 import type { ProfileSnapshot } from '../profile.ts';
 import { profileWarning, EXTENSION_NOTICE } from '../copy.ts';
-import { CONTEXT_STEPS, contextEnd } from './copy.ts';
+import { CONTEXT_STEPS, contextEnd, contextFailure } from './copy.ts';
 import {
   planContext,
   contextSummary,
@@ -1734,8 +1734,7 @@ export async function runContextWithDependencies(
       );
     }
   }
-  if (error)
-    throw error instanceof CliError ? error : new CliError('CONTEXT_FAILED');
+  if (error) throw contextFailure(error, options.lang);
   return {
     completed,
     steps: options.plan.canary ? commentsTried : steps,

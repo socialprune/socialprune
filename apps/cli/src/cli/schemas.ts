@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CLI_ERRORS, EXIT_MEANINGS, LABEL_FAILURE_CODES } from './errors.ts';
+import {
+  CLI_ERRORS,
+  EXIT_MEANINGS,
+  LABEL_FAILURE_CODES,
+  instagramStopMessages,
+} from './errors.ts';
+import type { CliErrorCode } from './errors.ts';
 
 const base = 'https://socialprune.github.io/socialprune/schemas/';
 export const CLI_SCHEMA_IDS = {
@@ -19,7 +25,12 @@ export const CliErrorSchema = z.union(
               .regex(
                 /^SocialPrune needs Node\.js 24\.15 or newer for workspaces\. You have \d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.$/,
               )
-          : z.literal(error.message),
+          : instagramStopMessages(code as CliErrorCode).length
+            ? z.enum([
+                error.message,
+                ...instagramStopMessages(code as CliErrorCode),
+              ])
+            : z.literal(error.message),
       exitCode: z.literal(error.exitCode),
       retryable: z.literal(error.retryable),
       ...(code === 'INVALID_LABELS'

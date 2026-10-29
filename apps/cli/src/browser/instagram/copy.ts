@@ -1,4 +1,17 @@
 import type { BrowserLanguage } from '../copy.ts';
+import { CliError, instagramStop } from '../../cli/errors.ts';
+import { ContextStop } from './report.ts';
+
+/** Carry only a closed token and language, never the exception's text. */
+export function contextFailure(
+  error: unknown,
+  lang: BrowserLanguage,
+): CliError {
+  if (!(error instanceof CliError)) return new CliError('CONTEXT_FAILED');
+  if (error instanceof ContextStop)
+    error.instagramStop = instagramStop({ token: error.token, lang });
+  return error;
+}
 
 export const CONTEXT_WARNING = {
   en: "Instagram's rules do not allow this kind of automation. Instagram can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. This run only reads. It sorts and filters your comments list, opens the posts and expands their comments in your signed-in Instagram window, and keeps what Instagram shows. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.",

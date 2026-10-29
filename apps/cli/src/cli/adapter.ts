@@ -53,6 +53,7 @@ export async function executeCli(
   let failure: CliErrorCode | undefined;
   let failureNodeVersion: string | undefined;
   let failureDetails: LabelFailureDetails | undefined;
+  let failureInstagramStop: unknown;
   let frameworkExit = 0;
   let helpOutput = '';
   let isHelp = false;
@@ -64,6 +65,10 @@ export async function executeCli(
     if (error instanceof CliError) {
       failureNodeVersion = error.nodeVersion;
       failureDetails = error.details;
+      failureInstagramStop =
+        selected?.path.join('.') === 'context.instagram'
+          ? error.instagramStop
+          : undefined;
     }
     return captureFailure(
       context.signal.aborted
@@ -241,6 +246,7 @@ export async function executeCli(
       failureNodeVersion,
       selected?.envelope,
       failureDetails,
+      failureInstagramStop,
     );
     return errorObject(code).exitCode;
   }

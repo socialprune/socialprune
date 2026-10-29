@@ -480,6 +480,145 @@ export const CLI_ERRORS = {
 
 export type CliErrorCode = keyof typeof CLI_ERRORS;
 
+// These describe observed reader failures, never platform warning pages. Unknown
+// tokens retain the original error table, rather than guessing a classification.
+export const INSTAGRAM_STOP_MESSAGES = {
+  'list-timeout': {
+    en: 'The filtered Instagram comments list could not be read reliably. The run stopped.',
+    de: 'Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.',
+  },
+  'post-timeout': {
+    en: 'The Instagram post did not become ready within the response window. The run stopped.',
+    de: 'Der Instagram-Beitrag wurde innerhalb der Antwortfrist nicht bereit. Der Lauf wurde gestoppt.',
+  },
+  navigation: {
+    en: 'The Instagram page navigation did not finish. The run stopped.',
+    de: 'Die Navigation zur Instagram-Seite wurde nicht abgeschlossen. Der Lauf wurde gestoppt.',
+  },
+  'browser-closed': {
+    en: 'The Instagram browser window closed. The run stopped.',
+    de: 'Das Instagram-Browserfenster wurde geschlossen. Der Lauf wurde gestoppt.',
+  },
+  'extensions-added': {
+    en: 'An added browser extension stopped the Instagram run.',
+    de: 'Eine hinzugefügte Browsererweiterung hat den Instagram-Lauf gestoppt.',
+  },
+  'account-readback': {
+    en: 'The Instagram account read-back did not pass. The run stopped.',
+    de: 'Die erneute Prüfung des Instagram-Kontos ist fehlgeschlagen. Der Lauf wurde gestoppt.',
+  },
+  'account-changed': {
+    en: 'The expected Instagram account could not be confirmed. The run stopped.',
+    de: 'Das erwartete Instagram-Konto konnte nicht bestätigt werden. Der Lauf wurde gestoppt.',
+  },
+  'page-language': {
+    en: 'The Instagram page was not in the required English language. The run stopped.',
+    de: 'Die Instagram-Seite war nicht in der erforderlichen englischen Sprache. Der Lauf wurde gestoppt.',
+  },
+  'row-structure': {
+    en: 'An Instagram comment row had an unrecognized structure. The run stopped.',
+    de: 'Eine Instagram-Kommentarzeile hatte eine unbekannte Struktur. Der Lauf wurde gestoppt.',
+  },
+  'filter-control': {
+    en: 'The Instagram date-filter controls could not be verified. The run stopped.',
+    de: 'Die Steuerelemente des Instagram-Datumsfilters konnten nicht geprüft werden. Der Lauf wurde gestoppt.',
+  },
+  'post-structure': {
+    en: 'The Instagram post structure or stored post evidence could not be verified. The run stopped.',
+    de: 'Die Struktur des Instagram-Beitrags oder seine gespeicherten Belege konnten nicht geprüft werden. Der Lauf wurde gestoppt.',
+  },
+  'comment-structure': {
+    en: 'The Instagram comment structure could not be verified. The run stopped.',
+    de: 'Die Struktur des Instagram-Kommentars konnte nicht geprüft werden. Der Lauf wurde gestoppt.',
+  },
+  'unexpected-action': {
+    en: 'An action outside the permitted Instagram reading controls was refused. The run stopped.',
+    de: 'Eine Aktion außerhalb der erlaubten Instagram-Lesesteuerung wurde abgelehnt. Der Lauf wurde gestoppt.',
+  },
+  'request-journal': {
+    en: 'An Instagram request could not be recorded in the journal. The run stopped.',
+    de: 'Eine Instagram-Anfrage konnte nicht im Journal protokolliert werden. Der Lauf wurde gestoppt.',
+  },
+  'second-source': {
+    en: 'The Instagram canary lacked the required comparison evidence. The run stopped.',
+    de: 'Der Instagram-Stichprobe fehlten die erforderlichen Vergleichsbelege. Der Lauf wurde gestoppt.',
+  },
+  'field-mismatch': {
+    en: 'The Instagram canary comparison found disagreeing fields. The run stopped.',
+    de: 'Der Vergleich der Instagram-Stichprobe fand abweichende Felder. Der Lauf wurde gestoppt.',
+  },
+  'canary-check': {
+    en: 'The Instagram canary did not pass its acceptance checks. The run stopped.',
+    de: 'Die Instagram-Stichprobe hat ihre Abnahmeprüfungen nicht bestanden. Der Lauf wurde gestoppt.',
+  },
+  'disk-low': {
+    en: 'Insufficient free disk space stopped the Instagram run.',
+    de: 'Zu wenig freier Speicherplatz hat den Instagram-Lauf gestoppt.',
+  },
+  stopped: {
+    en: 'The Instagram run was stopped.',
+    de: 'Der Instagram-Lauf wurde gestoppt.',
+  },
+} as const;
+export type InstagramStop = {
+  token: keyof typeof INSTAGRAM_STOP_MESSAGES;
+  lang: 'en' | 'de';
+};
+const INSTAGRAM_STOP_CODES: Partial<
+  Record<CliErrorCode, readonly InstagramStop['token'][]>
+> = {
+  PLATFORM_CHECK: [
+    'list-timeout',
+    'post-timeout',
+    'navigation',
+    'browser-closed',
+    'extensions-added',
+    'account-readback',
+    'account-changed',
+    'post-structure',
+  ],
+  ACCOUNT_MISMATCH: ['account-changed', 'account-readback'],
+  PAGE_LANGUAGE: ['page-language'],
+  INSTAGRAM_SHAPE_CHANGED: [
+    'row-structure',
+    'filter-control',
+    'post-structure',
+    'comment-structure',
+  ],
+  UNEXPECTED_ACTION: ['unexpected-action'],
+  CONTEXT_FAILED: ['request-journal', 'post-structure'],
+  CANARY_NO_SECOND_SOURCE: ['second-source'],
+  CANARY_MISMATCH: ['field-mismatch'],
+  CANARY_CHECK_FAILED: [
+    'canary-check',
+    'extensions-added',
+    'account-readback',
+    'account-changed',
+  ],
+  DISK_LOW: ['disk-low'],
+  CANCELLED: ['stopped'],
+};
+export function instagramStopMessages(code: CliErrorCode): string[] {
+  return (INSTAGRAM_STOP_CODES[code] ?? []).flatMap((token) => {
+    const messages = INSTAGRAM_STOP_MESSAGES[token];
+    return [messages.en, messages.de];
+  });
+}
+export function instagramStop(value: unknown): InstagramStop | undefined {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Object.keys(value).length !== 2 ||
+    !('token' in value) ||
+    typeof value.token !== 'string' ||
+    !Object.hasOwn(INSTAGRAM_STOP_MESSAGES, value.token) ||
+    !('lang' in value) ||
+    (value.lang !== 'en' && value.lang !== 'de')
+  )
+    return undefined;
+  return { token: value.token as InstagramStop['token'], lang: value.lang };
+}
+
 export const PLATFORM_CHECK_REASONS = [
   'count',
   'hidden',
@@ -559,6 +698,7 @@ export class CliError extends Error {
   readonly nodeVersion?: string;
   readonly details?: LabelFailureDetails;
   readonly reason?: PlatformCheckReason;
+  instagramStop?: InstagramStop;
 
   constructor(
     code: CliErrorCode,
@@ -581,9 +721,15 @@ export function errorObject(
   code: CliErrorCode,
   nodeVersion?: string,
   details?: LabelFailureDetails,
+  stop?: unknown,
 ) {
   const validated =
     code === 'INVALID_LABELS' ? labelDetails(details) : undefined;
+  const parsed = instagramStop(stop);
+  const observed =
+    parsed && INSTAGRAM_STOP_CODES[code]?.includes(parsed.token)
+      ? parsed
+      : undefined;
   return {
     code,
     ...CLI_ERRORS[code],
@@ -593,6 +739,9 @@ export function errorObject(
         }
       : {}),
     ...(validated ? { details: validated } : {}),
+    ...(observed
+      ? { message: INSTAGRAM_STOP_MESSAGES[observed.token][observed.lang] }
+      : {}),
   };
 }
 

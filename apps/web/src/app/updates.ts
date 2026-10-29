@@ -10,7 +10,7 @@ export class AppUpdates {
   private waiting: ServiceWorker | null = null;
   private readonly listeners = new Set<(ready: boolean) => void>();
   private flush: () => Promise<void>;
-  private hadController = Boolean(navigator.serviceWorker?.controller);
+  private controller = navigator.serviceWorker?.controller ?? null;
   private disposed = false;
 
   constructor(flush: () => Promise<void>) {
@@ -33,11 +33,16 @@ export class AppUpdates {
   }
 
   private controllerChanged = () => {
-    if (this.hadController && !this.disposed) location.reload();
-    this.hadController = true;
+    const controller = navigator.serviceWorker.controller;
+    if (this.controller && controller !== this.controller && !this.disposed)
+      location.reload();
+    this.controller = controller;
   };
 
   watch(registration: ServiceWorkerRegistration): void {
+    // The gate can verify first control before its queued notification reaches
+    // this listener. Seed the actual identity, not an initial boolean snapshot.
+    this.controller ??= navigator.serviceWorker.controller;
     const observe = () => {
       const worker = registration.installing ?? registration.waiting;
       if (!worker) return;

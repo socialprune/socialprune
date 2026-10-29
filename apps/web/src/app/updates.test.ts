@@ -5,6 +5,33 @@ vi.mock('virtual:sp-build-info', () => ({ buildId: 'generated-build' }));
 
 afterEach(() => vi.unstubAllGlobals());
 
+test('watch remembers verified first control before a late initial event and reloads only for a replacement', () => {
+  const container = Object.assign(new EventTarget(), {
+    controller: null as object | null,
+  });
+  const reload = vi.fn();
+  vi.stubGlobal('navigator', { serviceWorker: container });
+  vi.stubGlobal('location', { reload });
+  const updater = new AppUpdates(async () => {});
+  const first = {};
+  container.controller = first;
+  updater.watch(
+    Object.assign(new EventTarget(), {
+      waiting: null,
+      installing: null,
+    }) as unknown as ServiceWorkerRegistration,
+  );
+  container.dispatchEvent(new Event('controllerchange'));
+  expect(reload).not.toHaveBeenCalled();
+  container.controller = {};
+  container.dispatchEvent(new Event('controllerchange'));
+  expect(reload).toHaveBeenCalledTimes(1);
+  updater.dispose();
+  container.controller = {};
+  container.dispatchEvent(new Event('controllerchange'));
+  expect(reload).toHaveBeenCalledTimes(1);
+});
+
 test('the first installation does not announce an update before control', () => {
   vi.stubGlobal('navigator', {
     serviceWorker: Object.assign(new EventTarget(), { controller: null }),

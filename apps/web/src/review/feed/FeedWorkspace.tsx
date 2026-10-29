@@ -257,8 +257,14 @@ export function FeedWorkspace({ client }: { client: WorkspaceClient }) {
       event.preventDefault();
       event.stopPropagation();
       const href = anchor.getAttribute('href')!;
+      const failures = client.commands.failures;
       void client.flushCommands().then(() => {
-        if (!session.snapshot.saveFailure) window.location.hash = href;
+        if (
+          client.commands.failures === failures &&
+          !client.commands.recovery &&
+          !session.snapshot.saveFailure
+        )
+          window.location.hash = href;
       });
     };
     document.addEventListener('click', navigate, true);

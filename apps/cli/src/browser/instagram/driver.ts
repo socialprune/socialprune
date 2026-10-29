@@ -44,6 +44,7 @@ import { listImageOnlyManual } from './list-image-only.ts';
 import { listFreshness } from './list-freshness.ts';
 import type { ListFreshness } from './list-freshness.ts';
 import { listRegions } from './list-regions.ts';
+import { listRowDiagnostic } from './list-diagnostic.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -264,6 +265,8 @@ export async function loadList(
   now = new Date(),
   rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 },
   freshness: ListFreshness = listFreshness(),
+  diagnosticBodies: readonly unknown[] = [],
+  diagnose = false,
 ) {
   const filter = {
     applied: false,
@@ -274,6 +277,7 @@ export async function loadList(
   let dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined;
   let initialAccount: string | undefined;
   let oldestWithinWeek: boolean | null = null;
+  let missingCandidate = false;
   try {
     let navigation = await navigateList(page, expected, deps, guard, rowCounts);
     let accountRows = navigation.entries;
@@ -315,6 +319,24 @@ export async function loadList(
       },
     });
     const filteredDeadline = performance.now() + deps.responseMs;
+    if (diagnose) {
+      rowCounts.initialDiagnostic = await listRowDiagnostic(
+        page,
+        item.text,
+        item.createdAt,
+        expected,
+        diagnosticBodies,
+      );
+      // Passive observation within the existing response window, with all page
+      // and run guards alive. A late lazy row is evidence, not a new retry.
+      while (performance.now() < filteredDeadline) {
+        guard();
+        await checkPage(page);
+        await sleep(
+          Math.min(100, Math.max(0, filteredDeadline - performance.now())),
+        );
+      }
+    }
     await checkedAccountRows(
       page,
       expected,
@@ -368,12 +390,26 @@ export async function loadList(
     );
     rowCounts.rowSignature = await freshness.inspect(page);
     rowCounts.regions = await listRegions(page, item.text, item.createdAt);
+    const candidates = entries.filter(
+      (row) =>
+        row.username.toLowerCase() === expected.toLowerCase() &&
+        rowCandidate(row.text, item.text),
+    );
+    missingCandidate = candidates.length === 0;
+    // Success of the account read is not evidence that Apply refreshed its rows.
+    // The same retained-result guard must also precede a no-row settlement.
+    const signature = rowCounts.rowSignature;
+    if (
+      !candidates.length &&
+      rowCounts.emptySkipped > 0 &&
+      signature.observed &&
+      (signature.sameAsBeforeApply === true ||
+        (signature.sameAsPreviousStep === true &&
+          signature.previousWindowDifferent === true))
+    )
+      throw new ContextStop('PLATFORM_CHECK', 'list-timeout');
     return {
-      candidates: entries.filter(
-        (row) =>
-          row.username.toLowerCase() === expected.toLowerCase() &&
-          rowCandidate(row.text, item.text),
-      ),
+      candidates,
       account:
         entries.find(
           (row) => row.username.toLowerCase() === expected.toLowerCase(),
@@ -460,6 +496,14 @@ export async function loadList(
     }
     throw error;
   } finally {
+    if (diagnose || missingCandidate || rowCounts.listTimeout)
+      rowCounts.diagnostic = await listRowDiagnostic(
+        page,
+        item.text,
+        item.createdAt,
+        expected,
+        diagnosticBodies,
+      );
     freshness.finish();
     await dom?.dispose();
   }

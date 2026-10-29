@@ -138,6 +138,8 @@ export interface RowReadCounts {
   regions?: import('zod').z.infer<
     typeof import('./report.ts').ListRegionsSchema
   >;
+  diagnostic?: import('./report.ts').ListRowDiagnostic;
+  initialDiagnostic?: import('./report.ts').ListRowDiagnostic;
 }
 export function accountMatches(
   expected: string,

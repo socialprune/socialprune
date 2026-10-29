@@ -83,6 +83,39 @@ test.each([false, true])(
     ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
   },
 );
+test('IG-list diagnostic order is bounded to one 30-second reading step, never likes refresh', () => {
+  const order = {
+    value: {
+      scope: 'context-instagram' as const,
+      account: 'generated_person',
+      givenAt: '2026-10-29T12:00:00Z',
+      words: 'Read one generated list only.',
+      acceptCanary: true,
+      listDiagnostic: true,
+      maxSteps: 1,
+      secondsPerStep: 30,
+    },
+    sha256: 'a'.repeat(64),
+  };
+  expect(() =>
+    validateContextOrder(order, order.value.account, true),
+  ).not.toThrow();
+  for (const fields of [
+    { maxSteps: 2 },
+    { maxSteps: undefined },
+    { secondsPerStep: 10 },
+  ])
+    expect(() =>
+      validateContextOrder(
+        { ...order, value: { ...order.value, ...fields } },
+        order.value.account,
+        true,
+      ),
+    ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+  expect(() =>
+    validateContextOrder(order, order.value.account, false, true),
+  ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+});
 
 test.each([{ secondsPerStep: 9 }, { stepsPerDay: 601 }])(
   'P1 refuses out-of-range order %j independently',

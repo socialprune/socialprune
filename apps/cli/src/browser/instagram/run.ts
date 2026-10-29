@@ -814,7 +814,9 @@ export async function runContextWithDependencies(
             (value) => value.runId === runId,
           ),
         );
-        answers.reset(options.plan.canary);
+        answers.reset(
+          options.plan.canary || Boolean(options.order?.value.listDiagnostic),
+        );
         answerReport = undefined;
         const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
         stage = 'list-read';
@@ -857,6 +859,8 @@ export async function runContextWithDependencies(
               options.now(),
               rowCounts,
               freshness,
+              answers.bodies,
+              options.order?.value.listDiagnostic,
             );
             if (reopening?.stage === 'list') {
               reopening.outcome = 'ready';
@@ -879,6 +883,8 @@ export async function runContextWithDependencies(
                 listTimeout: rowCounts.listTimeout,
                 rowSignature: rowCounts.rowSignature,
                 listRegions: rowCounts.regions,
+                listRows: rowCounts.diagnostic,
+                listRowsAfterApply: rowCounts.initialDiagnostic,
                 rows: 0,
                 emptySkipped: rowCounts.emptySkipped,
                 otherName: rowCounts.otherName,
@@ -889,6 +895,17 @@ export async function runContextWithDependencies(
               report.steps.push(timeoutStep);
               activeStep = timeoutStep;
               if (reopening?.stage === 'list') reopening.outcome = 'timeout';
+            } else if (
+              options.order?.value.listDiagnostic &&
+              rowCounts.diagnostic
+            ) {
+              report.steps.push({
+                result: 'list-diagnostic',
+                confirmed: false,
+                candidates: 0,
+                listRows: rowCounts.diagnostic,
+                listRowsAfterApply: rowCounts.initialDiagnostic,
+              });
             }
             const retry = postRetries.beginList(
               caught,
@@ -930,6 +947,8 @@ export async function runContextWithDependencies(
           filterByLists: !options.plan.refreshLikes,
           rowSignature: rowCounts.rowSignature,
           listRegions: rowCounts.regions,
+          listRows: rowCounts.diagnostic,
+          listRowsAfterApply: rowCounts.initialDiagnostic,
           rows: list.rowCount,
           emptySkipped: list.emptySkipped,
           otherName: list.otherName,
@@ -954,6 +973,12 @@ export async function runContextWithDependencies(
         report.steps.push(stepReport);
         if (list.manualReason) await checkpoint();
         activeStep = stepReport;
+        if (options.order?.value.listDiagnostic) {
+          // A diagnostic observes the existing list path only. It never opens a
+          // candidate, settles a negative lookup or accepts a canary.
+          stepReport.result = 'list-diagnostic';
+          throw new ContextStop('CANCELLED', 'stopped');
+        }
         answers.reset(true);
         answerReport = options.plan.canary
           ? () => {
@@ -1647,7 +1672,16 @@ export async function runContextWithDependencies(
       announcedCause = report.cause;
     }
     if (reportPath) options.notice(`Structure report: ${reportPath}\n`);
-    const text = contextEnd(endReason, options.lang, Boolean(options.order));
+    const text = contextEnd(
+      options.order?.value.listDiagnostic &&
+        error instanceof ContextStop &&
+        error.code === 'CANCELLED'
+        ? 'list-diagnostic'
+        : endReason,
+      options.lang,
+      Boolean(options.order),
+      error instanceof ContextStop ? error.token : undefined,
+    );
     stage = 'projection';
     try {
       confirmation.update({ phase: 'ended', completed, result: text });

@@ -43,7 +43,13 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let listDecoration: 'caption' | 'comment' | 'dialog' | undefined;
   const deletedComments = new Set<string>();
   const deleteAttempts: string[] = [];
-  let listFreshness: 'retained' | 'sibling' | 'repeated' | undefined;
+  let listFreshness:
+    | 'retained'
+    | 'sibling'
+    | 'repeated'
+    | 'readable-retained'
+    | 'readable-repeated'
+    | undefined;
   let likesCase: 'answer' | 'dom' | 'unknown' | undefined;
   const candidates = new Map<
     number,
@@ -275,8 +281,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           }
         }
         if (listFreshness) {
-          const opaque =
-            "function opaque(){list.replaceChildren();const decoration=document.createElement('div');decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.append(document.createTextNode(other.username+' '+other.text+' 1w'));list.append(decoration);for(let i=0;i<3;i++)emptyImageButton();}";
+          const opaque = listFreshness.startsWith('readable-')
+            ? "function opaque(){document.querySelector('#generated-outside-row')?.remove();list.replaceChildren();emptyImageButton();const decoration=document.createElement('div');decoration.id='generated-outside-row';decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.innerHTML='<img>';decoration.append(document.createTextNode(handle+' Generated unrelated comment 1w'));document.body.append(decoration);}"
+            : "function opaque(){list.replaceChildren();const decoration=document.createElement('div');decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.append(document.createTextNode(other.username+' '+other.text+' 1w'));list.append(decoration);for(let i=0;i<3;i++)emptyImageButton();}";
           html = html.replace(
             'function render(){',
             opaque + 'function render(){',
@@ -285,7 +292,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             "const apply=document.createElement('div');",
             "const dialogDecoy=document.createElement('div');dialogDecoy.setAttribute('role','button');dialogDecoy.setAttribute('aria-label','Generated filter decoration');dialogDecoy.innerHTML='<img>';dialog.append(dialogDecoy);const apply=document.createElement('div');",
           );
-          if (listFreshness === 'repeated') {
+          if (listFreshness.endsWith('repeated')) {
             html = html.replace(
               'for(const [index,row]of chosen.entries())',
               'if(start&&end){opaque();chosen=[];}for(const [index,row]of chosen.entries())',
@@ -535,7 +542,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     setImageCase(value: ImageCaseName) {
       imageShape = value;
     },
-    listFreshness(value: 'retained' | 'sibling' | 'repeated') {
+    listFreshness(value: NonNullable<typeof listFreshness>) {
       listFreshness = value;
     },
     likes(value: 'answer' | 'dom' | 'unknown') {

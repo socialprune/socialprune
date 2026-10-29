@@ -13,6 +13,120 @@ import { FilteredListTimeout } from '../src/browser/instagram/retry.ts';
 import { listRegions } from '../src/browser/instagram/list-regions.ts';
 import { commentLikes } from '../src/browser/instagram/likes.ts';
 import { IG_FIXTURE } from './fake-instagram/fixture.ts';
+import { listRowDiagnostic } from '../src/browser/instagram/list-diagnostic.ts';
+
+test('IG-list per-row projection separates a foreign display-name match, an ignored result and a nav image', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      `<nav><div role="button" aria-label="Generated nav"><img></div></nav><main><div role="button" aria-label="Generated display row"><img>Generated Display Generated target 1w</div><li><time datetime="2025-01-02T12:00:00Z"></time>Generated target</li></main>`,
+    );
+    const result = await listRowDiagnostic(
+      page,
+      'Generated target',
+      '2025-01-02T12:00:00Z',
+      'generated_handle',
+      [
+        {
+          user: {
+            username: 'generated_handle',
+            full_name: 'Generated Display',
+          },
+        },
+      ],
+    );
+    expect(result).toMatchObject({
+      observed: true,
+      total: 3,
+      displayNameObserved: true,
+      rows: [
+        { container: 'elsewhere', textPresent: false, imagePresent: true },
+        {
+          container: 'main',
+          authorEqualsHandle: false,
+          authorEqualsDisplayName: true,
+          commentTextEqualsExport: true,
+        },
+        {
+          container: 'main',
+          shape: 'listitem',
+          textEqualsExport: true,
+          exactTimeObserved: true,
+          timestampWithinWindow: true,
+        },
+      ],
+    });
+    for (const forbidden of [
+      'Generated',
+      'generated_handle',
+      '2025',
+      'datetime',
+      '1w',
+    ])
+      expect(JSON.stringify(result)).not.toContain(forbidden);
+  } finally {
+    await browser.close();
+  }
+});
+
+test.each(['readable-retained', 'readable-repeated'] as const)(
+  'IG-list a split-container %s result cannot exclude a comment through no-row',
+  async (mode) => {
+    const fixture = await instagramFixture(2);
+    fixture.items[1]!.createdAt = new Date(
+      Date.parse(fixture.items[0]!.createdAt) + 100 * 86400000,
+    ).toISOString();
+    const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.setToday('2026-10-29');
+    fake.listFreshness(mode);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    const tracker = listFreshness();
+    try {
+      const page = await browser.newPage();
+      const outcomes: unknown[] = [];
+      for (const item of fixture.items) {
+        const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+        outcomes.push(
+          await loadList(
+            page,
+            item,
+            item.account.handle!,
+            { ...productionContext, origin: fake.origin, responseMs: 1500 },
+            () => {},
+            false,
+            undefined,
+            counts,
+            tracker,
+          ).catch((error: unknown) => error),
+        );
+        expect(counts.regions).toMatchObject({
+          observed: true,
+          main: 1,
+          elsewhere: 1,
+          distinctParents: 2,
+        });
+        expect(counts.emptySkipped).toBe(1);
+      }
+      expect(outcomes[mode === 'readable-retained' ? 0 : 1]).toMatchObject({
+        code: 'PLATFORM_CHECK',
+        token: 'list-timeout',
+      });
+      expect(
+        fake.requests.some((request) => request.path.startsWith('/p/')),
+      ).toBe(false);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
 
 test.each(['retained', 'sibling'] as const)(
   'C-list matching dropdowns with %s rows must stop, not exclude the comment',

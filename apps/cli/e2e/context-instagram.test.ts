@@ -2366,6 +2366,121 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
   }
 });
 
+test('IG-list diagnostic order observes one list and never opens a post, excludes a comment or accepts a canary', async () => {
+  const h = await harness('success', 6);
+  h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'CANCELLED',
+      token: 'stopped',
+    });
+    const journal = await h.store.browserJournal();
+    const run = journal.runs[0]!;
+    expect(run.canaryAcceptedAt).toBeNull();
+    expect(run.pageOpens).toBe(1);
+    expect(
+      h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toBe(false);
+    expect(
+      await h.store.read((tx) => records(tx.instagramContext)),
+    ).toHaveLength(0);
+    const next = await planContext(h.store, h.plan.accountKey);
+    expect(next.rows).toHaveLength(6);
+    expect(next.excluded).toEqual({
+      unconfirmed: 0,
+      'not-listed': 0,
+      unavailable: 0,
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ),
+    ).toMatchObject({
+      steps: [{ result: 'list-diagnostic', listRows: { observed: true } }],
+    });
+  } finally {
+    await h.close();
+  }
+});
+
+test('IG-list retained split-container readable rows stop before no-row settlement and remain planned', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  h.fake.listFreshness('readable-retained');
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'list-timeout',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.filter(
+        (attempt) =>
+          attempt.code === 'no-row' || attempt.code === 'list-image-only',
+      ),
+    ).toHaveLength(0);
+    const run = journal.runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const reportText = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(reportText)).toMatchObject({
+      steps: [
+        {
+          result: 'list-timeout',
+          listRows: {
+            observed: true,
+            total: 3,
+            rows: [
+              {
+                container: 'main',
+                shape: 'unlabelled-button',
+                textPresent: true,
+                imagePresent: false,
+              },
+              {
+                container: 'main',
+                textPresent: false,
+                imagePresent: true,
+                authorParsed: false,
+              },
+              {
+                container: 'elsewhere',
+                textPresent: true,
+                authorEqualsHandle: true,
+                commentTextEqualsExport: false,
+              },
+            ],
+          },
+        },
+      ],
+      retries: { used: 0 },
+    });
+    expect(h.waits).not.toContain(60000);
+    const next = await planContext(h.store, h.plan.accountKey);
+    expect(next.rows.map((row) => row.item.id)).toContain(
+      h.fixture.items[0]!.id,
+    );
+    expect(next.excluded['not-listed']).toBe(0);
+    for (const value of [
+      h.plan.handle,
+      ...h.fixture.items.map((item) => item.text),
+      'Generated unrelated comment',
+    ])
+      expect(reportText).not.toContain(value);
+    expect(h.notices.join('')).toContain(
+      'The filtered comments list could not be read reliably.',
+    );
+  } finally {
+    await h.close();
+  }
+});
+
 test('C-list run-wide signature stops a repeated opaque window on the next canary comment', async () => {
   const h = await harness('success', 6);
   h.fake.listFreshness('repeated');

@@ -564,6 +564,61 @@ test('C18 disjoint include and exclude restore only the named earlier result', a
     await h.close();
   }
 });
+test.each(['list-image-only', 'no-row'] as const)(
+  'IG-list explicit include restores a %s exclusion without rewriting its evidence',
+  async (code) => {
+    const h = await excludeFixture();
+    try {
+      const plan = await planContext(h.store, h.accountKey);
+      const writer = new InstagramContextWriter(h.store);
+      await writer.startRun({
+        runId: 'generated-list-recovery',
+        accountKey: h.accountKey,
+        planHash: plan.hash,
+        startedAt: IG_FIXTURE.now,
+      });
+      await writer.sending({
+        runId: 'generated-list-recovery',
+        attemptId: 'generated-list-recovery-send',
+        itemId: h.fixture.items[0]!.id,
+        at: IG_FIXTURE.now,
+      });
+      await writer.settle({
+        attemptId: 'generated-list-recovery-send',
+        state: 'not-listed',
+        code,
+        at: IG_FIXTURE.now,
+      });
+      const before = await h.store.browserJournal();
+      expect(
+        (await planContext(h.store, h.accountKey)).excluded['not-listed'],
+      ).toBe(1);
+      const include = join(h.directory, 'include.txt');
+      await writeFile(include, h.fixture.items[0]!.id + '\n');
+      const result = await invokeContext([
+        '--workspace',
+        h.directory,
+        '--account',
+        h.accountKey,
+        '--include',
+        include,
+        '--dry-run',
+        '--json',
+      ]);
+      expect(result.code, result.stdout + result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        data: {
+          planned: 6,
+          excluded: { 'not-listed': 0 },
+          planHash: plan.hash,
+        },
+      });
+      expect(await h.store.browserJournal()).toEqual(before);
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('C18 run command passes the same exclusion set to the runner without contacting a browser', async () => {
   const h = await excludeFixture();
   const validate = vi

@@ -12,6 +12,7 @@ export function contextEnd(
   reason: string,
   lang: BrowserLanguage,
   automatic: boolean,
+  token?: string,
 ): string {
   const endings: Record<string, [string, string]> = {
     done: [
@@ -21,6 +22,10 @@ export function contextEnd(
     canary: [
       'The canary ended here. Read its structure report before a new dry run and a full run.',
       'Die Stichprobe endet hier. Lies ihren Strukturbericht vor einem neuen Probelauf und einem vollständigen Lauf.',
+    ],
+    'list-diagnostic': [
+      'The one-step list diagnostic is complete. No post was opened and no negative lookup was saved.',
+      'Die Listendiagnose mit einem Schritt ist beendet. Kein Beitrag wurde geöffnet und kein negatives Suchergebnis gespeichert.',
     ],
     'daily-cap': [
       'The Instagram daily step limit has been reached.',
@@ -43,7 +48,12 @@ export function contextEnd(
       'Ein Fehler hat diesen Leselauf gestoppt. Es gibt keinen automatischen Wiederholungsversuch.',
     ],
   };
-  const text = (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
+  const text =
+    token === 'list-timeout'
+      ? lang === 'de'
+        ? 'Die gefilterte Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt; der Kommentar bleibt für einen späteren Plan offen.'
+        : 'The filtered comments list could not be read reliably. The run stopped; the comment remains eligible for a later plan.'
+      : (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
   return lang === 'de'
     ? `Beendet: ${text} ${automatic ? 'Das Browserfenster wird automatisch geschlossen.' : 'Schließe das Instagram-Fenster, um den Lauf zu beenden.'}`
     : `Ended: ${text} ${automatic ? 'The browser window closes automatically.' : 'Close the Instagram window to finish.'}`;

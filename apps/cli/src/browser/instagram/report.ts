@@ -140,6 +140,39 @@ export const ListRegionsSchema = z.strictObject({
     endMatches: z.boolean(),
   }),
 });
+export const ListRowDiagnosticSchema = z.strictObject({
+  observed: z.boolean(),
+  capped: z.boolean(),
+  total: count,
+  displayNameObserved: z.boolean(),
+  displayNameAmbiguous: z.boolean(),
+  rows: z
+    .array(
+      z.strictObject({
+        container: z.enum(['main', 'dialog', 'elsewhere']),
+        shape: z.enum(['counted', 'listitem', 'unlabelled-button']),
+        visible: z.boolean(),
+        textPresent: z.boolean(),
+        textLength: count,
+        textEqualsExport: z.boolean(),
+        textContainsExport: z.boolean(),
+        authorParsed: z.boolean(),
+        authorLength: count,
+        authorEqualsHandle: z.boolean(),
+        authorEqualsDisplayName: z.boolean().nullable(),
+        commentTextLength: count,
+        commentTextEqualsExport: z.boolean(),
+        imagePresent: z.boolean(),
+        labelPresent: z.boolean(),
+        labelLength: count,
+        labelContainsExport: z.boolean(),
+        exactTimeObserved: z.boolean(),
+        timestampWithinWindow: z.boolean().nullable(),
+      }),
+    )
+    .max(40),
+});
+export type ListRowDiagnostic = z.infer<typeof ListRowDiagnosticSchema>;
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -311,6 +344,8 @@ export const ContextStepReportSchema = z
     listTimeout: ListTimeoutDiagnosticSchema.optional(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),
     listRegions: ListRegionsSchema.optional(),
+    listRows: ListRowDiagnosticSchema.optional(),
+    listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

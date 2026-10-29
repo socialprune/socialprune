@@ -6,6 +6,7 @@ import { CliError } from '../../cli/errors.ts';
 export const ContextOrderSchema = z.strictObject({
   scope: z.literal('context-instagram'),
   refreshLikes: z.boolean().optional(),
+  listDiagnostic: z.boolean().optional(),
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
   words: z.string().trim().min(1).max(10000),
@@ -52,6 +53,11 @@ export function validateContextOrder(
     parsed.data.account.toLowerCase() !== handle.toLowerCase() ||
     (parsed.data.refreshLikes !== undefined &&
       parsed.data.refreshLikes !== refreshLikes) ||
+    (parsed.data.listDiagnostic === true &&
+      (refreshLikes ||
+        parsed.data.maxSteps !== 1 ||
+        (parsed.data.secondsPerStep !== undefined &&
+          parsed.data.secondsPerStep !== 30))) ||
     !/^[a-f0-9]{64}$/.test(order.sha256)
   )
     throw new CliError('CONTEXT_ORDER_INVALID');

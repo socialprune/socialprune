@@ -148,12 +148,8 @@ scope.addEventListener('message', (event) => {
     if (client) pendingFlushes.get(data.id)?.delete(client.id);
   } else if (data.type === 'SKIP_WAITING') {
     // Only the coordinated, person-confirmed page update path sends this.
-    event.waitUntil(
-      // The active worker has just posted its flush receipt from an extended
-      // message event. Hand activation to the next task so that event can end.
-      new Promise<void>((resolve) => setTimeout(resolve, 0)).then(() =>
-        scope.skipWaiting(),
-      ),
-    );
+    // This asks the browser to activate; it is not work that must keep this
+    // message event open while the waiting worker is promoted.
+    void scope.skipWaiting();
   }
 });

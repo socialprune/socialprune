@@ -64,22 +64,6 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         );
       };
       record('document', { controlled: !!navigator.serviceWorker.controller });
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- Diagnostic wrapper preserves the receiver through .call.
-      const post = ServiceWorker.prototype.postMessage;
-      ServiceWorker.prototype.postMessage = function (
-        message: unknown,
-        options?: Transferable[] | StructuredSerializeOptions,
-      ) {
-        record('post', {
-          type: (message as { type?: string }).type,
-          state: this.state,
-        });
-        post.call(this, message, {
-          transfer: Array.isArray(options)
-            ? options
-            : (options?.transfer ?? []),
-        });
-      };
       addEventListener('pagehide', () => record('pagehide'));
       navigator.serviceWorker.addEventListener('controllerchange', () =>
         record('controllerchange', {

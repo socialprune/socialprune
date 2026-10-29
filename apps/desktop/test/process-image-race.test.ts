@@ -1,21 +1,11 @@
 import { expect, test } from 'vitest';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { directory, dist } from '../packaging/paths.ts';
-import {
-  runPowerShell,
-  WINDOWS_QUERY_TIMEOUT_MS,
-} from '../packaging/windows-powershell.ts';
+import { cachedHelper } from '../packaging/helper-cache.ts';
+import { createHelperScratch } from '../packaging/helper-scratch.ts';
 import { windowsTestBudget } from './windows-test-budgets.ts';
 
 // Only this test compiles the barrier and undersized-buffer mutation. The real
@@ -34,9 +24,7 @@ for (const operation of ['processes', 'uninstall-processes'] as const)
         let queryExitMs: number | null = null;
         let stderr = '',
           stdout = '';
-        const scratch = await mkdtemp(
-          join(tmpdir(), 'socialprune-image-race-'),
-        );
+        const scratch = createHelperScratch('image-race');
         const executable = join(
           scratch,
           operation === 'processes' ? 'SocialPrune.exe' : 'Uninstall.exe',
@@ -83,34 +71,29 @@ for (const operation of ['processes', 'uninstall-processes'] as const)
             ? 'if(handle!=IntPtr.Zero) try {\n            var path=new StringBuilder(32768); uint size=32768;'
             : 'else try {\n            var path=new StringBuilder(32768);uint size=32768;';
         expect(source.split(anchor)).toHaveLength(2);
-        const patched = source.replace(
-          anchor,
-          (operation === 'processes'
-            ? 'if(handle!=IntPtr.Zero) try {\n'
-            : 'else try {\n') +
-            `            if(entry.pid==${child.pid!}) { Console.Error.WriteLine("IMAGE_READ_BARRIER"); Console.Error.Flush(); Console.ReadLine(); }\n` +
-            // A snapshot includes same-named generated neighbors from other
-            // tests. Mutate only this case's PID, never their image reads.
-            `            var path=new StringBuilder(32768); uint size=${mode === 'live' ? `entry.pid==${child.pid!}?1u:32768u` : '32768'};`,
-        );
-        const injected = join(scratch, 'query-test.cs');
-        const helper = join(scratch, 'query-test.exe');
-        await writeFile(injected, patched);
+        const patched = source
+          .replace(
+            'public static class DesktopQuery {',
+            'public static class DesktopQuery {\n  static uint testPid; static bool testLive;',
+          )
+          .replace(
+            'if(args.Length!=2) throw new Exception("QUERY_ARGUMENTS_INVALID");',
+            'if(args.Length!=4) throw new Exception("QUERY_ARGUMENTS_INVALID"); testPid=UInt32.Parse(args[2]); testLive=args[3]=="live";',
+          )
+          .replace(
+            anchor,
+            (operation === 'processes'
+              ? 'if(handle!=IntPtr.Zero) try {\n'
+              : 'else try {\n') +
+              '            if(entry.pid==testPid) { Console.Error.WriteLine("IMAGE_READ_BARRIER"); Console.Error.Flush(); Console.ReadLine(); }\n' +
+              // A snapshot includes same-named generated neighbors from other
+              // tests. Mutate only this case's PID, never their image reads.
+              '            var path=new StringBuilder(32768); uint size=entry.pid==testPid&&testLive?1u:32768u;',
+          );
         let query: ReturnType<typeof spawn> | undefined;
         try {
           const compileStarted = performance.now();
-          await runPowerShell(
-            [
-              '-NoProfile',
-              '-NonInteractive',
-              '-Command',
-              `Add-Type -Path '${injected.replaceAll("'", "''")}' -OutputAssembly '${helper.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
-            ],
-            {
-              timeout: WINDOWS_QUERY_TIMEOUT_MS,
-              queryClass: 'test-image-race-compile',
-            },
-          );
+          const helper = await cachedHelper(patched);
           compileMs = performance.now() - compileStarted;
           queryStarted = performance.now();
           query = spawn(
@@ -120,6 +103,8 @@ for (const operation of ['processes', 'uninstall-processes'] as const)
               operation === 'processes'
                 ? executable
                 : `${scratch}|${executable}`,
+              String(child.pid),
+              mode,
             ],
             {
               stdio: ['pipe', 'pipe', 'pipe'],

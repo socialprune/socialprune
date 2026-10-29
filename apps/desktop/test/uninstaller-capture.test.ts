@@ -1,12 +1,4 @@
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { expect, test } from 'vitest';
@@ -23,6 +15,8 @@ import { windowsTestBudget } from './windows-test-budgets.ts';
 import { collectProof } from '../e2e/proof-collection.ts';
 import { windowsShortPath } from './short-path.ts';
 import { fetchNsis } from '../packaging/nsis-fetch.ts';
+import { cachedHelper } from '../packaging/helper-cache.ts';
+import { createHelperScratch } from '../packaging/helper-scratch.ts';
 
 type Receipt = {
   state: string;
@@ -50,24 +44,20 @@ type Receipt = {
 test.skipIf(process.platform !== 'win32')(
   'creation-bound capture retains an already-exited copy that the old late poll misses, and fails closed on no child or exit zero',
   async () => {
-    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-nsis-capture-'));
+    const scratch = createHelperScratch('nsis-capture');
     try {
       const outer = join(scratch, 'outer.exe');
       const owned = join(scratch, 'temp');
       const copy = join(owned, '~nsu77000A.tmp', 'Un.exe');
       await mkdir(join(copy, '..'), { recursive: true });
-      await runPowerShell(
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Add-Type -Path '${join(directory, 'test/nsis-capture-fixture.cs').replaceAll("'", "''")}' -OutputAssembly '${outer.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
-        ],
-        {
-          timeout: WINDOWS_QUERY_TIMEOUT_MS,
-          windowsHide: true,
-          env: testEnvironment(),
-        },
+      await copyFile(
+        await cachedHelper(
+          await readFile(
+            join(directory, 'test/nsis-capture-fixture.cs'),
+            'utf8',
+          ),
+        ),
+        outer,
       );
       await copyFile(outer, copy);
       const ready = join(scratch, 'ready'),

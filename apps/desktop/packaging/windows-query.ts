@@ -1,17 +1,15 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { directory, dist } from './paths.ts';
 import {
   runNativeQuery,
-  runPowerShell,
   WINDOWS_QUERY_TIMEOUT_MS,
 } from './windows-powershell.ts';
+import { cachedHelper } from './helper-cache.ts';
 
 let configured: string | undefined;
-let compiled: Promise<string> | undefined;
 let diagnosticDirectory = dist;
 const diagnosticId = randomUUID();
 const uninstallQueries: unknown[] = [];
@@ -104,44 +102,12 @@ function recordUninstallQuery(stderr: string, state: 'returned' | 'failed') {
 export function setWindowsQueryExecutable(executable: string) {
   configured = executable;
 }
-export function prepareWindowsQuery(): Promise<string> {
+export async function prepareWindowsQuery(): Promise<string> {
   if (configured) return Promise.resolve(configured);
-  // One private compiler output per harness process; never ship this helper in
-  // any app variant. Probe engines receive an explicit run-owned copy.
-  compiled ??= (async () => {
-    const folder = await mkdtemp(join(tmpdir(), 'socialprune-native-query-'));
-    const output = join(folder, 'desktop-query.exe');
-    try {
-      await runPowerShell(
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Add-Type -Path '${join(directory, 'packaging/windows-query.cs').replaceAll("'", "''")}' -OutputAssembly '${output.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
-        ],
-        {
-          timeout: WINDOWS_QUERY_TIMEOUT_MS,
-          windowsHide: true,
-          queryClass: 'native-query-compile',
-        },
-      );
-      // Readback before using or copying an executable created by the compiler.
-      if (!(await readFile(output)).subarray(0, 2).equals(Buffer.from('MZ')))
-        throw new Error('QUERY_HELPER_BUILD_INVALID');
-      process.once('exit', () => {
-        try {
-          rmSync(folder, { recursive: true, force: true });
-        } catch {
-          console.error('QUERY_HELPER_CLEANUP_FAILED');
-        }
-      });
-      return output;
-    } catch (error) {
-      await rm(folder, { recursive: true, force: true });
-      throw error;
-    }
-  })();
-  return compiled;
+  // Harness-only; probe engines still receive an explicit run-owned copy.
+  return cachedHelper(
+    await readFile(join(directory, 'packaging/windows-query.cs'), 'utf8'),
+  );
 }
 export async function windowsQuery(
   operation:

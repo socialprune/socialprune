@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
-import { readFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, copyFile, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { directory, dist } from '../packaging/paths.ts';
@@ -12,6 +11,8 @@ import {
 } from '../packaging/windows-powershell.ts';
 import { testEnvironment } from './process-environment.ts';
 import { RESTRICTED_SEQUENCE_TEST_TIMEOUT_MS } from './windows-test-budgets.ts';
+import { cachedHelper } from '../packaging/helper-cache.ts';
+import { createHelperScratch } from '../packaging/helper-scratch.ts';
 
 test('buffered nested proof queries inherit a standard fd so libuv cannot request CREATE_NO_WINDOW for hidden console children', async () => {
   const source = await readFile(
@@ -69,22 +70,14 @@ test('the raw Node listener controls inherit their existing hidden console inste
 test.skipIf(process.platform !== 'win32')(
   'real restricted buffered native, buffered shell and streaming shell children share their parent console and never show or foreground it',
   async () => {
-    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-console-proof-'));
+    const scratch = createHelperScratch('console-proof');
     try {
       const probe = join(scratch, 'console-state.exe');
-      const escaped = (value: string) => value.replaceAll("'", "''");
-      await runPowerShell(
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Add-Type -Path '${escaped(join(directory, 'test/console-state.cs'))}' -OutputAssembly '${escaped(probe)}' -OutputType ConsoleApplication`,
-        ],
-        {
-          timeout: WINDOWS_QUERY_TIMEOUT_MS,
-          windowsHide: true,
-          env: testEnvironment(),
-        },
+      await copyFile(
+        await cachedHelper(
+          await readFile(join(directory, 'test/console-state.cs'), 'utf8'),
+        ),
+        probe,
       );
       expect((await readFile(probe)).subarray(0, 2).toString()).toBe('MZ');
       await runPowerShell(

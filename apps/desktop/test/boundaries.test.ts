@@ -33,6 +33,12 @@ test('every production entry excludes test code and runtime test selectors', asy
   ]) {
     const modules = await graph(resolve(directory, entry));
     assertProductionGraph(modules);
+    expect(modules.has(resolve(directory, 'packaging/helper-cache.ts'))).toBe(
+      false,
+    );
+    expect(modules.has(resolve(directory, 'packaging/helper-scratch.ts'))).toBe(
+      false,
+    );
     expect(modules.has(resolve(directory, 'packaging/windows-query.ts'))).toBe(
       false,
     );

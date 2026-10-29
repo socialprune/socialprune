@@ -32,6 +32,8 @@ import { windowsShortPath } from './short-path.ts';
 import { dist } from '../packaging/paths.ts';
 import { uninstallAccessDisposition } from './uninstall-access-precondition.ts';
 import type { UninstallAccessPrecondition } from './uninstall-access-precondition.ts';
+import { cachedHelper } from '../packaging/helper-cache.ts';
+import { createHelperScratch } from '../packaging/helper-scratch.ts';
 
 test('layout assertion receipts retain changed field names and both path classes without serializing either side', () => {
   const before = {
@@ -497,7 +499,7 @@ test.skipIf(process.platform !== 'win32')(
 test.skipIf(process.platform !== 'win32')(
   'an access-limited generated uninstaller query remains fatal and records the exact denied filter, not false absence',
   async () => {
-    const scratch = await mkdtemp(join(tmpdir(), 'socialprune-query-denied-'));
+    const scratch = createHelperScratch('query-denied');
     const image = join(scratch, 'Uninstall.exe');
     const audit = join(scratch, 'access-audit.exe');
     const diagnostics = join(scratch, 'evidence');
@@ -508,14 +510,9 @@ test.skipIf(process.platform !== 'win32')(
         ['test/uninstall-access-fixture.cs', image],
         ['test/uninstall-access-audit.cs', audit],
       ])
-        await runPowerShell(
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            `Add-Type -Path '${join(directory, source!).replaceAll("'", "''")}' -OutputAssembly '${output!.replaceAll("'", "''")}' -OutputType ConsoleApplication`,
-          ],
-          { timeout: WINDOWS_QUERY_TIMEOUT_MS, windowsHide: true },
+        await copyFile(
+          await cachedHelper(await readFile(join(directory, source!), 'utf8')),
+          output!,
         );
       child = spawn(image, [], {
         stdio: ['pipe', 'pipe', 'pipe'],

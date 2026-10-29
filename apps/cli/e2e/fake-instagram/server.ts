@@ -237,11 +237,16 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             `if(${emptyCondition})chosen=[];if(!chosen.length){const empty=document.createElement('p');empty.textContent='No results';list.append(empty);}` +
               loop,
           );
-          if (delayedFilterClose)
+          if (delayedFilterClose) {
+            html = html.replace(
+              "const apply=document.createElement('div');",
+              "const image=document.createElement('img');dialog.append(image);const apply=document.createElement('div');",
+            );
             html = html.replace(
               'outer.remove();loads=0;render()',
               'if(start&&end){setTimeout(()=>mutate(()=>outer.remove()),500)}else outer.remove();loads=0;render()',
             );
+          }
         }
         if (listDecoration === 'dialog')
           html = html.replace(

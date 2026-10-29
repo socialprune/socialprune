@@ -28,20 +28,7 @@ async function nextBuild() {
   // metadata bytes, never production entrypoint behavior or an env switch.
   await writeFile(
     join(copy, 'sw.js'),
-    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)) +
-      `
-// Disposable-build-only counters do not add asynchronous work before skipWaiting.
-const probe = {calls:0,resolved:0,rejected:0};
-const nativeSkip = self.skipWaiting;
-self.skipWaiting = function() {
-  probe.calls++;
-  const result=nativeSkip.call(self);
-  return result;
-};
-self.addEventListener('message',event=>{
-  if(event.data?.type==='test-skip-state') event.ports[0]?.postMessage(probe);
-});
-`,
+    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)),
   );
   return {
     copy,
@@ -269,22 +256,6 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
                   }),
                 ),
               ),
-              waitingProbe: await tab.evaluate(async () => {
-                const worker = (await navigator.serviceWorker.getRegistration())
-                  ?.waiting;
-                if (!worker) return null;
-                return new Promise((resolve) => {
-                  const channel = new MessageChannel();
-                  channel.port1.onmessage = (event) => {
-                    channel.port1.close();
-                    resolve(event.data);
-                  };
-                  worker.postMessage({ type: 'test-skip-state' }, [
-                    channel.port2,
-                  ]);
-                  setTimeout(() => resolve('timeout'), 1000);
-                });
-              }),
               controller: await tab.evaluate(async () => {
                 const controller = navigator.serviceWorker.controller;
                 if (!controller) return null;
@@ -301,6 +272,25 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
                   setTimeout(() => resolve('timeout'), 1000);
                 });
               }),
+            }),
+          );
+          const eventual = await tab
+            .getByText(`Build ${version.next}`)
+            .waitFor({ state: 'visible', timeout: 45_000 })
+            .then(
+              () => true,
+              () => false,
+            );
+          console.log(
+            'UPDATE_EVENTUAL',
+            JSON.stringify({
+              eventual,
+              lifecycle: await tab.evaluate(
+                () =>
+                  JSON.parse(
+                    sessionStorage.getItem('sp-update-events') ?? '[]',
+                  ) as unknown,
+              ),
             }),
           );
           throw error;

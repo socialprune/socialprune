@@ -149,7 +149,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-09 by rewriting the pending-items brief as one plain line per item, without unexplained codes.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 2 times (2026-10-27 to 2026-10-28: after a context compaction the parent wrote every status message to him in English for about 19 hours, although its own carried-over notes said German; he asked at 12:16 UTC on 2026-10-28 "Bitte schreib mir ab jetzt wieder auf Deutsch". The language lived only in the parent's compacted notes, not on a surface every turn reads, so the next turns followed the language of the board and the system prompt. Anchor added the same day: the header paragraph of the handoff `BOARD.md`, which every wakeup and message turn reads first. 2026-10-11 morning message: ADR-025, card AUTO-v2, S2, "Zitat" and "Export-Anleitung" without plain meaning; see LL-2026-10-009. The proposed anchor line had not been placed, and the rule did not run.)
+- Violated: 3 times (2026-10-29 11:41Z: his order asked for "alle Likes und Kommentare dazu", the replies under his Instagram comments; the reading pass stores no replies, and no reply to him said that this part was not built until he asked again at 21:06Z. 2026-10-27 to 2026-10-28: after a context compaction the parent wrote every status message to him in English for about 19 hours, although its own carried-over notes said German; he asked at 12:16 UTC on 2026-10-28 "Bitte schreib mir ab jetzt wieder auf Deutsch". The language lived only in the parent's compacted notes, not on a surface every turn reads, so the next turns followed the language of the board and the system prompt. Anchor added the same day: the header paragraph of the handoff `BOARD.md`, which every wakeup and message turn reads first. 2026-10-11 morning message: ADR-025, card AUTO-v2, S2, "Zitat" and "Export-Anleitung" without plain meaning; see LL-2026-10-009. The proposed anchor line had not been placed, and the rule did not run.)
 
 ### [LL-2026-10-006] 2026-10-09 PRIVACY: Prove a guard on a decoy, never on the thing it guards
 
@@ -592,3 +592,29 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-28 12:11Z to 2026-10-29 11:09Z, see Problem)
+
+### [LL-2026-10-022] 2026-10-29 DIAGNOSIS: When a path that worked starts failing, compare the last good run with the first bad one before fixing the newest symptom
+
+**ID:** LL-2026-10-022
+**Severity:** HIGH
+**Category:** DIAGNOSIS
+**Expires:** Never (kernel). The run IDs, counts, dates and package commits below are evidence from 2026-10-21 to 2026-10-29.
+**Feedback:** "Haben wir jetzt von allen Instagram-Sachen die Likes ... und auch die Kommentare auf meinen Kommentaren ... Warum wurden die noch nicht gelesen? Das frage ich mich so sehr." (2026-10-29 21:06 UTC)
+**Problem:** The Instagram reading pass found its comment in the filtered comments list on every list step from canary 1b2f1f6e (2026-10-21) to run 740f3454 (2026-10-23 22:58 UTC); 261 comments were confirmed that way. From run 87ca0f37 (2026-10-24 22:53 UTC) on, every list step had 0 candidates. For five days each stopped run was treated as a new local defect: list timeouts, image-only rows, a freshness guard, a no-row guard, a stop message, row-level diagnostics. A per-run table of candidates against the installed package was built only on 2026-10-29 at 14:50 UTC; it showed the break at once, and by 19:50 UTC page-wide counts proved that Instagram's filtered list shows no comment at all. Meanwhile 1,912 comments stayed unread.
+**5 Whys Analysis:**
+1. Why did the reading stay broken for five days? -> Each fix addressed the newest stop of the newest run.
+2. Why the newest stop? -> The run report of the failing run was the only evidence each turn read, and each report showed a different symptom.
+3. Why no comparison with earlier runs? -> The reports of the working runs were on disk, but no step asked when the path last worked or what had changed since.
+4. Why was that step missing? -> The diagnosis routine starts from the failing run and its stop detail; it has no entry for "this used to work".
+5. Why? -> Root cause: no control requires locating the last good and the first bad run, with their outcome counts and the code, package or platform change between them, before a symptom is fixed.
+**Rule(s):**
+1. When a path that once worked starts failing, find the last good run and the first bad run, compare their outcome counts, and list what changed between them (code, installed package, configuration, platform) before fixing any single symptom.
+2. A second consecutive failing run of the same path on the real account triggers that comparison, at the latest, before the next code change for it.
+3. For the SocialPrune reading and deletion passes, the comparison is a per-run table from the structure reports (steps, candidates, confirmations, results) against the installed package commit, counts only.
+**Detection Pattern:** several fixes in a row for different symptoms of one path that previously worked; a lane brief that cites only the newest run; no "last good run" named in a diagnosis.
+**Affected Files:** handoff `BOARD.md` header paragraph (retrieval anchor: "A path that worked and now fails: last good run against first bad run before any fix"); cleanup-tools report readers.
+**Related Lessons:** LL-2026-10-021 (next step toward his goal first), LL-2026-10-013 (a failed route proves only that route failed).
+**Regression / Verification Note:** applied on 2026-10-29 at 14:50 UTC with the per-run candidate table (E899) and since then in every Instagram diagnostic routing; the comparison refuted a suspected reader regression on generated pages the same day.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-24 to 2026-10-29, see Problem)

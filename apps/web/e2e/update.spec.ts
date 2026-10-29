@@ -78,6 +78,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
       await context.addInitScript(() => {
         // Reproduce ready-before-first-control-event: the gate reads a real
         // controlling worker before the updater gets its first notification.
+        // eslint-disable-next-line @typescript-eslint/unbound-method -- Always invoked with the actual container through .call below.
         const add = ServiceWorkerContainer.prototype.addEventListener;
         let updaterListener = true;
         ServiceWorkerContainer.prototype.addEventListener = function (

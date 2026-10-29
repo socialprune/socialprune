@@ -28,29 +28,7 @@ async function nextBuild() {
   // metadata bytes, never production entrypoint behavior or an env switch.
   await writeFile(
     join(copy, 'sw.js'),
-    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)) +
-      `
-// Test-only receipt observer in the disposable copied worker, not shipped.
-const originalSkip = self.skipWaiting;
-self.skipWaiting = function() {
-  const announce = phase => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
-    for(const client of clients) client.postMessage({type:'update-probe',phase,build:${JSON.stringify(next)}});
-  });
-  void announce('skip-called');
-  return originalSkip.call(self).then(value => {void announce('skip-resolved');return value},error => {void announce('skip-rejected');throw error});
-};
-self.addEventListener('message', event => {
-  if (event.data?.type !== 'SKIP_WAITING') return;
-  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
-    for(const client of clients) client.postMessage({type:'update-probe',phase:'skip-received',build:${JSON.stringify(next)}});
-  }));
-});
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients => {
-    for(const client of clients) client.postMessage({type:'update-probe',phase:'activate',build:${JSON.stringify(next)}});
-  }));
-});
-`,
+    worker.replaceAll(id, next).replace(digest(info), digest(updatedInfo)),
   );
   return {
     copy,
@@ -87,35 +65,6 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         );
       };
       record('document', { controlled: !!navigator.serviceWorker.controller });
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- Wrapper preserves the receiver and original transfer list.
-      const workerPost = ServiceWorker.prototype.postMessage;
-      ServiceWorker.prototype.postMessage = function (
-        message: unknown,
-        options?: Transferable[] | StructuredSerializeOptions,
-      ) {
-        record('worker-post', {
-          type: (message as { type?: string } | null)?.type,
-          state: this.state,
-        });
-        workerPost.call(this, message, {
-          transfer: Array.isArray(options)
-            ? options
-            : (options?.transfer ?? []),
-        });
-      };
-      const NativeChannel = MessageChannel;
-      globalThis.MessageChannel = class extends NativeChannel {
-        constructor() {
-          super();
-          this.port1.addEventListener(
-            'message',
-            (event: MessageEvent<unknown>) => {
-              const type = (event.data as { type?: string } | null)?.type;
-              if (type) record('port-reply', { type });
-            },
-          );
-        }
-      };
       addEventListener('pagehide', () => record('pagehide'));
       navigator.serviceWorker.addEventListener('controllerchange', () =>
         record('controllerchange', {
@@ -123,12 +72,7 @@ for (const delayedUpdate of [false, true, 'late-first-control'] as const)
         }),
       );
       navigator.serviceWorker.addEventListener('message', (event) =>
-        record(
-          'message',
-          (event.data as { type?: string }).type === 'update-probe'
-            ? event.data
-            : (event.data as { type?: string }).type,
-        ),
+        record('message', (event.data as { type?: string }).type),
       );
     });
     if (delayedUpdate === 'late-first-control')

@@ -92,7 +92,7 @@ export async function commentReplies(
           ? await time.getAttribute('datetime', { timeout: 150 })
           : null;
       const createdAt =
-        rawTime && Number.isFinite(Date.parse(rawTime))
+        id && rawTime && Number.isFinite(Date.parse(rawTime))
           ? new Date(rawTime).toISOString()
           : null;
       const key =

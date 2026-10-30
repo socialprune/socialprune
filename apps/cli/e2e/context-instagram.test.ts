@@ -6612,6 +6612,7 @@ test('REPLIES-1 new confirmations observe replies and direct refresh fills once 
       .run(prior.itemId);
     raw.close();
     const before = h.fake.requests.length;
+    h.fake.directPostAccount('expected');
     expect(await h.start({ refreshReplies: true })).toMatchObject({
       completed: 1,
       steps: 1,
@@ -6649,6 +6650,37 @@ test('REPLIES-1 new confirmations observe replies and direct refresh fills once 
   }
 });
 
+test('REPLIES-1 direct refresh refuses another signed-in account before reading reply content', async () => {
+  const h = await harness('success', 5);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+    raw.exec('DROP TRIGGER instagram_context_no_update');
+    raw
+      .prepare(
+        "UPDATE instagram_context SET data=json_remove(data,'$.replies') WHERE item_id=?",
+      )
+      .run(h.fixture.items[0]!.id);
+    raw.close();
+    h.fake.directPostAccount('other');
+    h.fake.replies(3);
+    const result = await h.start({ refreshReplies: true });
+    expect(result).toMatchObject({ code: 'ACCOUNT_MISMATCH' });
+    expect(
+      (
+        await h.store.read((tx) =>
+          tx.instagramContext.get(h.fixture.items[0]!.id),
+        )
+      )?.replies,
+    ).toBeUndefined();
+    expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+      'View replies',
+    );
+  } finally {
+    await h.close();
+  }
+});
+
 test.each(['unavailable', 'not-shown'] as const)(
   'REPLIES-1 direct refresh settles %s and continues without a comments-list request',
   async (variant) => {
@@ -6665,6 +6697,7 @@ test.each(['unavailable', 'not-shown'] as const)(
           .run(item.id);
       raw.close();
       h.fake.setPostVariant(0, variant);
+      h.fake.directPostAccount('expected');
       const before = h.fake.requests.length;
       expect(await h.start({ refreshReplies: true })).toMatchObject({
         completed: 1,

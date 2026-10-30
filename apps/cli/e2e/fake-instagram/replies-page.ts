@@ -19,7 +19,7 @@ export function addRepliesPage(
   const position = end + '<div role="button">Reply</div></div></div>'.length;
   const group = `<button onclick="this.nextElementSibling.hidden=false;this.remove()">View replies</button><ul hidden>${entries}</ul>`;
   return (html.slice(0, position) + group + html.slice(position)).replace(
-    '</article>',
-    "<aside data-reply-decoy><button onclick=\"this.parentElement.setAttribute('data-clicked','true')\">View replies</button></aside></article>",
+    '</main>',
+    "<aside data-reply-decoy><button onclick=\"this.parentElement.setAttribute('data-clicked','true')\">View replies</button></aside></main>",
   );
 }

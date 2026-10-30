@@ -44,4 +44,5 @@ test('REPLIES-1 generated reply control and group belong directly to the focal p
   expect(focalAncestor).toBeGreaterThan(0);
   expect(controlParent).toBe(focalAncestor);
   expect(groupParent).toBe(focalAncestor);
+  expect(html).toContain('<aside data-reply-decoy>');
 });

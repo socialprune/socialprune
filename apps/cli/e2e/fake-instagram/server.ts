@@ -29,6 +29,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let directPostAccount: 'expected' | 'other' | undefined;
   let windowLists:
     'populated-empty' | 'empty-empty' | 'populated-populated' | undefined;
   let delayedFilterClose = false;
@@ -388,6 +389,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           undefined,
           hiddenPosts.has(index),
         );
+        if (directPostAccount)
+          html = html.replace(
+            '<body>',
+            `<body><nav><a href="/${directPostAccount === 'expected' ? items[0]!.account.handle! : IG_FIXTURE.other.username}/">Generated signed-in profile</a></nav>`,
+          );
         if (likesCase) {
           // Reply decorations are independent from like-count source cases.
           html = html.replace(
@@ -607,6 +613,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replies(count: number) {
       replyCount = count;
+    },
+    directPostAccount(value: 'expected' | 'other') {
+      directPostAccount = value;
     },
     filteredListPlaceholders(count: number, status: boolean) {
       if (!Number.isInteger(count) || count < 0 || count > 20)

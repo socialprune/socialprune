@@ -146,6 +146,8 @@ export interface RowReadCounts {
   filterDialogClosedObserved?: boolean;
   afterDialogSameAsAfterApply?: boolean;
   windowDiagnostic?: import('./report.ts').ListWindow;
+  filteredProbe?: import('./report.ts').FilteredProbe;
+  newestProbe?: import('./report.ts').NewestProbe;
 }
 export function accountMatches(
   expected: string,

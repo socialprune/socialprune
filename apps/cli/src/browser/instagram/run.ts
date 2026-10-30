@@ -936,6 +936,8 @@ export async function runContextWithDependencies(
                 rowSignature: rowCounts.rowSignature,
                 listRegions: rowCounts.regions,
                 listRows: rowCounts.diagnostic,
+                filteredProbe: rowCounts.filteredProbe,
+                newestProbe: rowCounts.newestProbe,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
                 unfilteredOldestSortApplied:
@@ -965,6 +967,8 @@ export async function runContextWithDependencies(
                 confirmed: false,
                 candidates: 0,
                 listRows: rowCounts.diagnostic,
+                filteredProbe: rowCounts.filteredProbe,
+                newestProbe: rowCounts.newestProbe,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
                 unfilteredOldestSortApplied:
@@ -1019,6 +1023,8 @@ export async function runContextWithDependencies(
           rowSignature: rowCounts.rowSignature,
           listRegions: rowCounts.regions,
           listRows: rowCounts.diagnostic,
+          filteredProbe: rowCounts.filteredProbe,
+          newestProbe: rowCounts.newestProbe,
           listRowsAfterApply: rowCounts.initialDiagnostic,
           listPageUnfiltered: rowCounts.unfilteredDiagnostic,
           unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,

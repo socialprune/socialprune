@@ -246,6 +246,45 @@ export const ListRowDiagnosticSchema = z.strictObject({
     .max(40),
 });
 export type ListRowDiagnostic = z.infer<typeof ListRowDiagnosticSchema>;
+const ProbeRowSchema = z.strictObject({
+  authorEqualsHandle: z.boolean(),
+  matcherExportStartsWithRow: z.boolean(),
+  matcherRowStartsWithExport: z.boolean(),
+  broadExportStartsWithRow: z.boolean(),
+  broadRowStartsWithExport: z.boolean(),
+  targetMatched: z.boolean(),
+  ageClass: z.enum(['same-day', 'within-3-days', 'older', 'unknown']),
+});
+export const ListProbeViewSchema = z.strictObject({
+  observed: z.boolean(),
+  ownRows: count,
+  targetMatched: z.boolean(),
+  capped: z.boolean(),
+  rows: z.array(ProbeRowSchema).max(30),
+  scrollContainerObserved: z.boolean(),
+  scrollHeightGreaterThanClient: z.boolean().nullable(),
+});
+export const FilteredProbeSchema = z.strictObject({
+  initial: ListProbeViewSchema,
+  scrolls: z
+    .array(
+      z.strictObject({
+        rowsBefore: count,
+        rowsAfter: count,
+        targetMatched: z.boolean(),
+        observed: z.boolean(),
+        rows: z.array(ProbeRowSchema).max(30),
+      }),
+    )
+    .max(3),
+});
+export const NewestProbeSchema = z.strictObject({
+  sortReadback: z.boolean(),
+  settledReload: z.boolean(),
+  view: ListProbeViewSchema,
+});
+export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
+export type NewestProbe = z.infer<typeof NewestProbeSchema>;
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -464,6 +503,8 @@ export const ContextStepReportSchema = z
     filterDialogClosedObserved: z.boolean().optional(),
     afterDialogSameAsAfterApply: z.boolean().optional(),
     listWindow: ListWindowSchema.optional(),
+    filteredProbe: FilteredProbeSchema.optional(),
+    newestProbe: NewestProbeSchema.optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

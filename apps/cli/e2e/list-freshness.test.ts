@@ -85,9 +85,12 @@ test.each([0, 3, 55])(
         expect(
           await page.locator('[data-reply-decoy]').getAttribute('data-clicked'),
         ).toBe(null);
-      expect(fake.requests.every((request) => request.method === 'GET')).toBe(
-        true,
-      );
+      // /events is the fake's own passive browser recorder, not a platform API.
+      expect(
+        fake.requests
+          .filter((request) => request.path !== '/events')
+          .every((request) => request.method === 'GET'),
+      ).toBe(true);
     } finally {
       await browser.close();
       await fake.close();

@@ -1,12 +1,14 @@
 import { expect, test, vi } from 'vitest';
-import type { Page } from 'playwright-core';
+import type { Page, Locator } from 'playwright-core';
 import {
   loadList,
   productionContext,
   postReopenTarget,
   reopenCandidate,
+  confirmOnPost,
 } from './driver.ts';
 import * as selectors from './selectors.ts';
+import type { PostProjection } from './selectors.ts';
 import { stopDetails } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import * as filterHelpers from './filter.ts';
@@ -14,6 +16,81 @@ import {
   instagramFixture,
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
+
+test('REPLIES regression finding a nested own comment expands replies even without capture consent', async () => {
+  const fixture = await instagramFixture(),
+    item = fixture.items[0]!,
+    handle = item.account.handle!;
+  let expanded = false,
+    clock = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => (clock += 600));
+  vi.spyOn(selectors, 'checkPage').mockResolvedValue();
+  vi.spyOn(selectors, 'postElement').mockResolvedValue({} as Locator);
+  vi.spyOn(selectors, 'currentImageSource').mockResolvedValue(null);
+  vi.spyOn(selectors, 'scrollPostComments').mockResolvedValue(false);
+  const element = {
+    locator: () => ({ count: () => Promise.resolve(expanded ? 1 : 0) }),
+  } as unknown as Locator;
+  const projection: PostProjection = {
+    kind: 'p',
+    code: IG_FIXTURE.code,
+    owner: item.reference.ownerHandle!,
+    ownerCount: 1,
+    ownerMatchesProfile: true,
+    caption: null,
+    captionComplete: true,
+    createdAt: null,
+    comments: [],
+    element,
+  };
+  vi.spyOn(selectors, 'readPost').mockImplementation(() =>
+    Promise.resolve({
+      ...projection,
+      comments: expanded
+        ? [
+            {
+              id: IG_FIXTURE.commentId,
+              username: handle,
+              text: item.text.normalize('NFC').replace(/\s+/gu, ' ').trim(),
+              createdAt: item.createdAt,
+            },
+          ]
+        : [],
+    }),
+  );
+  const click = vi
+    .spyOn(selectors, 'clickAllowed')
+    .mockImplementation((_page, action) => {
+      if (action.kind === 'named' && action.name === 'View replies')
+        expanded = true;
+      return Promise.resolve();
+    });
+  const page = {
+    getByRole: (_role: string, options: { name: string }) => ({
+      count: () => Promise.resolve(options.name === 'View replies' ? 1 : 0),
+    }),
+  } as unknown as Page;
+  // The legacy injected flag deliberately stays false so this case fails on
+  // d2f91f7 and proves finding and recording have separate boundaries.
+  const deps = {
+    ...productionContext,
+    captureReplies: false,
+    responseMs: 10000,
+    sleep: () => Promise.resolve(),
+  };
+  try {
+    const read = await confirmOnPost(page, item, handle, deps, () => {});
+    expect(read.result.state).toBe('confirmed');
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(click.mock.calls[0]?.[1]).toEqual({
+      kind: 'named',
+      name: 'View replies',
+    });
+    expect(read.expandClicks).toBe(1);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
 
 test('C27 diagnostic attach and DOM read failures retain the original filtered timeout with explicit observation failure', async () => {
   const fixture = await instagramFixture();

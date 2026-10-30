@@ -156,10 +156,6 @@ export async function runContextWithDependencies(
   let accountAfterClass: AccountClass = 'absent';
   deps = {
     ...deps,
-    captureReplies: Boolean(
-      options.plan.refreshReplies ||
-      options.order?.value.captureReplies === true,
-    ),
     navigated: (kind, elapsed) => {
       limitSignals.navigated(kind, elapsed);
       if (kind === 'post' && activeReady)

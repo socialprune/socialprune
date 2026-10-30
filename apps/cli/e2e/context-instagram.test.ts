@@ -6705,7 +6705,7 @@ test('REPLIES revision F1 no-answer first direct refresh waits for the person to
   }
 });
 
-test('REPLIES revision F2 main mode without captureReplies never expands or records replies', async () => {
+test('REPLIES revision F2 main mode without captureReplies never expands for recording or stores replies', async () => {
   const h = await harness('success', 5, 30000);
   h.fake.replies(3);
   try {
@@ -6722,6 +6722,34 @@ test('REPLIES revision F2 main mode without captureReplies never expands or reco
     await h.close();
   }
 });
+
+test('REPLIES regression without capture consent still expands to find the own comment and records no replies', async () => {
+  const h = await harness('hidden', 5);
+  try {
+    expect(await h.start(true)).toMatchObject({
+      completed: 5,
+      endReason: 'canary',
+    });
+    const contexts = await h.store.read((tx) => records(tx.instagramContext));
+    expect(contexts).toHaveLength(5);
+    expect(
+      contexts.every(
+        (record) =>
+          record.confirmedBy === 'post' && record.replies === undefined,
+      ),
+    ).toBe(true);
+    expect(
+      h.fake.events
+        .flatMap((event) => event.clicks)
+        .filter((name) => name === 'View replies'),
+    ).toHaveLength(5);
+    expect(contexts.every((record) => record.comment.expandClicks === 3)).toBe(
+      true,
+    );
+  } finally {
+    await h.close();
+  }
+}, 90000);
 
 test('REPLIES revision F3 malformed reply controls never discard a successful main confirmation', async () => {
   const h = await harness('success', 5, 30000);
@@ -7365,7 +7393,6 @@ for (const variant of [
     async () => {
       const h = await harness(variant, 5);
       try {
-        if (variant === 'hidden') h.setPace({ captureReplies: true });
         const result = await h.start(true);
         expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
         const runs = await h.store.browserJournal();

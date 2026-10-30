@@ -37,6 +37,20 @@ export function rowAgeClass(
   let value =
     date && Number.isFinite(Date.parse(date)) ? Date.parse(date) : null;
   if (value === null) {
+    const displayed =
+      /\b(?:\d{4}-\d{2}-\d{2}|(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})\b/iu.exec(
+        label,
+      )?.[0];
+    const parsed = displayed
+      ? Date.parse(
+          /^\d{4}-/u.test(displayed)
+            ? displayed + 'T00:00:00Z'
+            : displayed + ' UTC',
+        )
+      : NaN;
+    if (Number.isFinite(parsed)) value = parsed;
+  }
+  if (value === null) {
     const age =
       /(?:^|\s)(\d+\s*(?:years?|weeks?|days?|hours?|minutes?|seconds?|y|w|d|h|m|s))$/iu.exec(
         normalize(label),
@@ -73,7 +87,7 @@ function rowProjection(
     broadExportStartsWithRow: row.broadExportStartsWithRow,
     broadRowStartsWithExport: row.broadRowStartsWithExport,
     targetMatched: match,
-    ageClass: rowAgeClass(date, raw, at, now),
+    ageClass: rowAgeClass(date, label + ' ' + raw, at, now),
   };
 }
 
@@ -86,7 +100,7 @@ export function probeProjection(
   now: number,
 ) {
   const result = empty();
-  if (snapshot.documents.length !== 1) return result;
+  if (!snapshot.documents.length) return result;
   const doc = (snapshot as Snapshot).documents[0]!,
     { nodes, layout } = doc;
   if (
@@ -179,7 +193,12 @@ export function probeProjection(
       }
       const row = {
         ...value,
-        ageClass: rowAgeClass(date, texts[index]!, at, now),
+        ageClass: rowAgeClass(
+          date,
+          attrs[index]!.get('aria-label')! + ' ' + texts[index]!,
+          at,
+          now,
+        ),
       };
       result.rows.push(row);
       result.targetMatched ||= row.targetMatched;
@@ -303,20 +322,13 @@ export async function listProbeReader(
       const quad = box.model.content;
       if (quad.length !== 8) return false;
       const viewport = await client.send('Page.getLayoutMetrics');
-      const x = Math.max(
-        1,
-        Math.min(
-          viewport.cssLayoutViewport.clientWidth - 1,
-          (quad[0]! + quad[2]!) / 2,
-        ),
-      );
-      const y = Math.max(
-        1,
-        Math.min(
-          viewport.cssLayoutViewport.clientHeight - 1,
-          (quad[1]! + quad[5]!) / 2,
-        ),
-      );
+      const left = Math.max(0, quad[0]!),
+        right = Math.min(viewport.cssLayoutViewport.clientWidth, quad[2]!),
+        top = Math.max(0, quad[1]!),
+        bottom = Math.min(viewport.cssLayoutViewport.clientHeight, quad[5]!);
+      if (right <= left || bottom <= top) return false;
+      const x = (left + right) / 2,
+        y = (top + bottom) / 2;
       guard();
       await page.mouse.move(x, y);
       guard();

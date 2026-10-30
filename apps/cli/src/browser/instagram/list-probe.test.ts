@@ -129,6 +129,9 @@ test('listprobe ages are closed and unavailable observations are never an empty 
   );
   expect(rowAgeClass('2026-10-01T12:00:00Z', '', at, now)).toBe('older');
   expect(rowAgeClass(null, 'unknown age', at, now)).toBe('unknown');
+  expect(rowAgeClass(null, 'Generated row October 6, 2026', at, now)).toBe(
+    'same-day',
+  );
   expect(
     ListProbeViewSchema.safeParse(
       probeView(

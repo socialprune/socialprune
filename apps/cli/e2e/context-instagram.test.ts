@@ -6666,8 +6666,10 @@ test('REPLIES revision F1 first direct refresh canary is accepted only after fiv
     });
     expect((await h.store.browserJournal()).runs.at(-1)).toMatchObject({
       acceptedBy: 'automatic-check',
-      canaryAcceptedAt: expect.any(String),
     });
+    expect(
+      typeof (await h.store.browserJournal()).runs.at(-1)!.canaryAcceptedAt,
+    ).toBe('string');
     expect(
       (
         await planContext(

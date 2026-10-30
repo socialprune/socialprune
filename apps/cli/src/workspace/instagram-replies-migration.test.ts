@@ -3,7 +3,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { SQLiteStore } from './sqlite-store.ts';
 import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
 import { writeInstagramContextContract } from '@socialprune/core/workspace/store-contract';
@@ -26,19 +25,14 @@ test.each([false, true])(
     const first = await SQLiteStore.open(path, { initial });
     await first.close();
     const raw = new DatabaseSync(path);
-    const baseline = execFileSync(
-      'git',
-      [
-        'show',
-        '0fa3746b1f0486b4d9de9225945800b1e1f4a1a8:apps/cli/src/workspace/sqlite-store.ts',
-      ],
-      { encoding: 'utf8', windowsHide: true },
-    );
-    const v11Trigger = baseline.match(
-      /CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN[\s\S]*?END;/,
-    )?.[0];
-    expect(v11Trigger).toBeDefined();
-    raw.exec('DROP TRIGGER instagram_context_no_update; ' + v11Trigger!);
+    // Verbatim from sqlite-store.ts at base 0fa3746; a shallow CI checkout
+    // must not need historical Git objects to construct the v11 fixture.
+    const v11Trigger = `CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
+  json_extract(OLD.data,'$.confirmedBy')!='post' OR json_type(OLD.data,'$.likes') IS NOT NULL OR
+  json_type(NEW.data,'$.likes') IS NOT 'object' OR
+  json_remove(OLD.data,'$.likes')!=json_remove(NEW.data,'$.likes')
+BEGIN SELECT RAISE(ABORT,'write-once'); END;`;
+    raw.exec('DROP TRIGGER instagram_context_no_update; ' + v11Trigger);
     raw.exec(
       "UPDATE meta SET data=json_set(data,'$.schemaVersion',11); PRAGMA user_version=11;",
     );

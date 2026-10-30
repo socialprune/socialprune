@@ -12,8 +12,19 @@ const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-const idOf = (value: Record<string, unknown>) =>
-  String(value.pk ?? value.id ?? '');
+const stringId = (value: unknown): string =>
+  typeof value === 'string'
+    ? value
+    : typeof value === 'number' && Number.isSafeInteger(value)
+      ? String(value)
+      : '';
+const idOf = (value: Record<string, unknown>) => stringId(value.pk ?? value.id);
+const fields = (value: Entry): Entry => ({
+  account: value.account,
+  text: value.text,
+  createdAt: value.createdAt,
+  likes: value.likes,
+});
 function entry(input: unknown): (Entry & { id: string }) | null {
   const value = object(input),
     user = object(value.user),
@@ -114,7 +125,7 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
       }
     }
     // Standalone child-comment responses explicitly bind every row to its parent.
-    if (String(value.parent_comment_id ?? '') === match.id) {
+    if (stringId(value.parent_comment_id) === match.id) {
       present = true;
       add(value);
     }
@@ -153,8 +164,7 @@ export function checkedReplyRows(
   const entries: Entry[] = [];
   for (const row of rows) {
     if (!answer.present) {
-      const { id: _id, ...value } = row;
-      entries.push(value);
+      entries.push(fields(row));
       continue;
     }
     const matches = answer.entries.filter(
@@ -166,8 +176,7 @@ export function checkedReplyRows(
     );
     if (matches.length !== 1)
       return { reason: 'reply-answer-mismatch' as const };
-    const { id: _id, ...value } = matches[0]!;
-    entries.push(value);
+    entries.push({ ...fields(matches[0]!), createdAt: row.createdAt });
   }
   return {
     observation: {

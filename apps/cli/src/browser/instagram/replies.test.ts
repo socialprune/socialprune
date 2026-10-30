@@ -65,7 +65,7 @@ test('REPLIES revision F1 answers are focal-bound, conflicting rows refuse, boun
   ).toMatchObject({ answerChecked: false });
 });
 test('REPLIES revision F2 main mode without explicit consent never invokes the reply reader', async () => {
-  const read = vi.fn(async () => ({ entries: [] }));
+  const read = vi.fn(() => Promise.resolve({ entries: [] }));
   expect(
     await captureRepliesForMode(read, false, false, () => {}),
   ).toBeUndefined();
@@ -90,59 +90,63 @@ function pageFixture({
   text = '  Cafe\u0301\n  second line  ',
 } = {}) {
   const empty = {
-    count: async () => 0,
-    all: async () => [],
+    count: () => Promise.resolve(0),
+    all: () => Promise.resolve([]),
     locator: (_selector: string): unknown => empty,
   };
   const replyText = {
-    count: async () => 1,
-    innerText: async () => text,
+    count: () => Promise.resolve(1),
+    innerText: () => Promise.resolve(text),
     locator: () => empty,
   };
   const blocks = {
-    count: async () => 1,
+    count: () => Promise.resolve(1),
     locator: (selector: string) =>
       selector === ':scope > div'
         ? { nth: () => ({ locator: () => replyText }) }
         : empty,
   };
   const row = {
-    isVisible: async () => true,
+    isVisible: () => Promise.resolve(true),
     locator: (selector: string) =>
       selector === ':scope > div:not([role])' ? blocks : empty,
   };
   const list = {
-    count: async () => rows,
+    count: () => Promise.resolve(rows),
     nth: () => row,
-    locator: () => ({ count: async () => 0 }),
+    locator: () => ({ count: () => Promise.resolve(0) }),
   };
   const control = {
-    count: async () => controls,
+    count: () => Promise.resolve(controls),
     filter() {
       return this;
     },
-    isVisible: async () => true,
+    isVisible: () => Promise.resolve(true),
   };
   const root = {
-    count: async () => rootCount,
+    count: () => Promise.resolve(rootCount),
     locator: (selector: string) =>
       selector.includes('ul > li')
         ? list
         : selector.includes('button')
           ? control
           : {
-              count: async () => (selector.includes(':scope > ul') ? 0 : 1),
+              count: () =>
+                Promise.resolve(selector.includes(':scope > ul') ? 0 : 1),
               locator: () => ({
-                count: async () => 1,
-                getAttribute: async () => `/${match.username}/`,
+                count: () => Promise.resolve(1),
+                getAttribute: () => Promise.resolve(`/${match.username}/`),
               }),
             },
   };
   const focal = {
-    count: async () => 1,
+    count: () => Promise.resolve(1),
     locator: (selector: string) =>
       selector === 'time[datetime]'
-        ? { count: async () => 1, getAttribute: async () => match.createdAt }
+        ? {
+            count: () => Promise.resolve(1),
+            getAttribute: () => Promise.resolve(match.createdAt),
+          }
         : selector === 'xpath=ancestor::*[5]'
           ? root
           : blocks,
@@ -153,12 +157,14 @@ function pageFixture({
   } as unknown as Page;
   vi.spyOn(selectors, 'checkPage').mockResolvedValue();
   let reads = 0;
-  vi.spyOn(selectors, 'textBlock').mockImplementation(async () => ({
-    username: match.username,
-    text: reads++
-      ? text.normalize('NFC').replace(/\s+/gu, ' ').trim()
-      : match.text,
-  }));
+  vi.spyOn(selectors, 'textBlock').mockImplementation(() =>
+    Promise.resolve({
+      username: match.username,
+      text: reads++
+        ? text.normalize('NFC').replace(/\s+/gu, ' ').trim()
+        : match.text,
+    }),
+  );
   return page;
 }
 test.each([

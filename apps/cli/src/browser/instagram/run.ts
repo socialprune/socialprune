@@ -1227,16 +1227,17 @@ export async function runContextWithDependencies(
             throw new ContextStop('PLATFORM_CHECK', 'post-structure');
           if (options.plan.refreshReplies) {
             let answerChecked = false;
+            const match = {
+              ...read.result.comment,
+              username: options.plan.handle,
+              text: row.item.text,
+            };
             const replies = await captureRepliesForMode(
               () =>
                 commentReplies(
                   page,
                   answers.bodies,
-                  {
-                    ...read.result.comment,
-                    username: options.plan.handle,
-                    text: row.item.text,
-                  },
+                  match,
                   guard,
                   openedAt + deps.responseMs,
                   (ms) => deps.sleep(ms),

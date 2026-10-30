@@ -102,7 +102,7 @@ export async function smoke(olderNode?: string): Promise<void> {
     if (process.platform !== 'win32')
       assert.equal(
         await realpath(shim),
-        join(installed, 'bin/socialprune.mjs'),
+        await realpath(join(installed, 'bin/socialprune.mjs')),
       );
     else
       assert.match(

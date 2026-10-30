@@ -24,7 +24,9 @@ export async function commentReplies(
   let moreCount = 0,
     capped = false,
     clicks = 0;
-  const address = postAddress(page.url(), new URL(page.url()).origin);
+  const address =
+    postAddress(page.url(), new URL(page.url()).origin, match.id) ??
+    postAddress(page.url(), new URL(page.url()).origin);
   if (!address)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   guard();
@@ -54,7 +56,9 @@ export async function commentReplies(
   for (;;) {
     guard();
     await checkPage(page);
-    const current = postAddress(page.url(), new URL(page.url()).origin);
+    const current =
+      postAddress(page.url(), new URL(page.url()).origin, match.id) ??
+      postAddress(page.url(), new URL(page.url()).origin);
     if (current?.code !== address.code || current.kind !== address.kind)
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
     const rows = root.locator(':scope > ul > li, :scope > div > ul > li');

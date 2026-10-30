@@ -6582,7 +6582,7 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
 });
 
 test('REPLIES-1 new confirmations observe replies and direct refresh fills once without visiting the list', async () => {
-  const h = await harness('success', 5);
+  const h = await harness('success', 5, { responseMs: 30000 });
   h.fake.replies(3);
   try {
     expect(await h.start(true)).toMatchObject({ completed: 5 });

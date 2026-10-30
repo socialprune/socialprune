@@ -229,7 +229,7 @@ for (const legacyVersion of [8, 10, 11] as const)
           proveOwnerUpgrade(
             value: WorkspaceV2,
             fail: boolean,
-            version: 8 | 10,
+            version: 8 | 10 | 11,
           ): Promise<unknown>;
         };
         return module.proveOwnerUpgrade(input, true, version);

@@ -162,6 +162,10 @@ test.each(['populated-empty', 'empty-empty', 'populated-populated'] as const)(
         knownEmptyStatePresent: mode === 'empty-empty',
         containers: { main: { images: mode === 'empty-empty' ? 0 : 2 } },
       });
+      if (count)
+        expect(
+          await page.locator('[data-reply-decoy]').getAttribute('data-clicked'),
+        ).toBe(null);
       expect(counts.unfilteredOldestSortApplied).toBe(mode !== 'empty-empty');
       expect(counts.unfilteredDiagnostic?.waitedForReadiness).toBe(true);
       expect(counts.windowDiagnostic).toMatchObject({

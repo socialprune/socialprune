@@ -7,6 +7,124 @@ import {
   contextInputs,
   writeContextFixture,
 } from '../../cli/src/review/test/context-fixture.ts';
+import { SQLiteStore } from '../../cli/src/workspace/sqlite-store.ts';
+import {
+  createBackup,
+  restoreBackup,
+} from '@socialprune/core/workspace/backup';
+import { readWorkspace } from '@socialprune/core/workspace/store';
+
+test('REPLIES-1 CLI to real IndexedDB to CLI backup preserves replies and v11 upgrade invents none', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const workspace = await mkdtemp(join(tmpdir(), 'sp-replies-roundtrip-'));
+  let store: SQLiteStore | undefined;
+  let target: SQLiteStore | undefined;
+  try {
+    const fixture = await writeContextFixture(workspace);
+    store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'));
+    const record = fixture.data.instagramContext![0]!;
+    const replies = {
+      entries: [
+        {
+          account: 'generated_roundtrip',
+          text: 'Generated local reply for the portable round trip',
+          createdAt: null,
+          likes: { count: 9, source: 'dom' as const },
+        },
+      ],
+      moreCount: 0,
+      capped: false,
+    };
+    await store.write((tx) =>
+      tx.instagramContext.fillReplies({ ...record, replies }),
+    );
+    let source = '';
+    for await (const bytes of createBackup(store).chunks)
+      source += new TextDecoder().decode(bytes);
+    await store.close();
+    store = undefined;
+    await waitForApp(page);
+    expect(
+      await page.evaluate(
+        (text) =>
+          window.workspace.request({
+            type: 'restore',
+            requestId: crypto.randomUUID(),
+            file: new File([text], 'generated-replies.json'),
+          }),
+        source,
+      ),
+    ).toMatchObject({ type: 'opened' });
+    const backup = await page.evaluate(async () => {
+      let text = '';
+      await window.workspace.backup(async (file) => {
+        text = await file.text();
+      });
+      return text;
+    });
+    const roundtrip = JSON.parse(
+      backup,
+    ) as import('@socialprune/core').WorkspaceV2;
+    expect(roundtrip.schemaVersion).toBe(12);
+    expect(
+      roundtrip.instagramContext!.find(
+        (value) => value.itemId === record.itemId,
+      )?.replies,
+    ).toEqual(replies);
+    target = await SQLiteStore.open(join(workspace, 'roundtrip.sqlite'), {
+      initial: (
+        await import('@socialprune/core/workspace/store')
+      ).createWorkspace(),
+    });
+    await restoreBackup(
+      target,
+      (async function* () {
+        yield backup;
+      })(),
+    );
+    expect(
+      (await target.read(readWorkspace)).instagramContext!.find(
+        (value) => value.itemId === record.itemId,
+      )?.replies,
+    ).toEqual(replies);
+    // This generated v11 portable input has no replies. Restore upgrades its
+    // version only; no empty observation is invented.
+    const legacy = JSON.parse(
+      source,
+    ) as import('@socialprune/core').WorkspaceV2;
+    legacy.schemaVersion = 11;
+    for (const context of legacy.instagramContext!) delete context.replies;
+    expect(
+      await page.evaluate(
+        (text) =>
+          window.workspace.request({
+            type: 'restore',
+            requestId: crypto.randomUUID(),
+            file: new File([text], 'generated-v11.json'),
+          }),
+        JSON.stringify(legacy),
+      ),
+    ).toMatchObject({ type: 'opened' });
+    const observed = await page.evaluate(async () => {
+      let text = '';
+      await window.workspace.backup(async (file) => {
+        text = await file.text();
+      });
+      return JSON.parse(text) as import('@socialprune/core').WorkspaceV2;
+    });
+    expect(
+      observed.instagramContext!.every(
+        (context) => context.replies === undefined,
+      ),
+    ).toBe(true);
+  } finally {
+    await store?.close();
+    await target?.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites every context without changing other stores', async ({
   page,

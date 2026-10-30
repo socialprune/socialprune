@@ -23,7 +23,7 @@ const done = (tx: IDBTransaction) =>
 export async function proveOwnerUpgrade(
   legacy: WorkspaceV2,
   fail: boolean,
-  legacyVersion: 7 | 8 | 9 | 10 = 7,
+  legacyVersion: 7 | 8 | 9 | 10 | 11 = 7,
 ) {
   const id = `owner-v${legacyVersion}-${crypto.randomUUID()}`;
   const opening = indexedDB.open(`sp-ws-${id}`, legacyVersion);

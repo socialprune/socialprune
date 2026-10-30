@@ -200,7 +200,7 @@ export async function restoreLiveFeed(
     window.workspace.feedWindow = async (...args) => {
       const reply = await original(...args);
       for (const card of reply.cards) {
-        const record = records.find(record => record.itemId === card.item.id);
+        const record = records.find((record) => record.itemId === card.item.id);
         if (record?.replies) card.replies = record.replies;
       }
       return reply;

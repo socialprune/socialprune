@@ -129,7 +129,7 @@ test('C32 failed layout 8 to 9 step rolls back metadata, layout and gate tables'
     const spy = vi
       .spyOn(DatabaseSync.prototype, 'exec')
       .mockImplementation(function (this: DatabaseSync, sql: string) {
-        if (sql.includes('PRAGMA user_version=11'))
+        if (sql.includes('PRAGMA user_version=12'))
           throw new Error('Generated migration failure');
         return original.call(this, sql);
       });

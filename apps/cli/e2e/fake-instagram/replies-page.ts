@@ -14,7 +14,7 @@ export function addRepliesPage(
   if (start < 0) throw new Error('Generated focal comment missing');
   const end = html.indexOf('<div role="button">Reply</div></div></div>', start);
   if (end < 0) throw new Error('Generated reply scope missing');
-  const position = end + '<div role="button">Reply</div></div></div>'.length;
+  const position = end + '<div role="button">Reply</div></div>'.length;
   const group = `<button onclick="this.nextElementSibling.hidden=false;this.remove()">View replies</button><ul hidden>${entries}</ul>`;
   return html.slice(0, position) + group + html.slice(position);
 }

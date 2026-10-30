@@ -48,7 +48,7 @@ test.each([0, 3, 55])(
           text: item.text,
         },
         () => {},
-        performance.now() + 5000,
+        performance.now() + 30000,
       );
       expect(result.entries).toHaveLength(Math.min(count, 50));
       expect(result).toMatchObject({

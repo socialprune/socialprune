@@ -10,27 +10,73 @@ import {
 import { checkAccessibility } from './accessibility.ts';
 const catalogs = { en, de };
 
-for (const lang of ['de', 'en'] as const) for (const theme of ['light', 'dark'] as const) for (const width of [320, 1280])
-test(`REPLIES-1 stored replies render under the own comment ${lang} ${theme} ${width}`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 844 });
-  await page.addInitScript(({ lang, theme }) => { localStorage.setItem('sp-locale', lang); localStorage.setItem('sp-theme', theme); }, { lang, theme });
-  const record = generatedReadPost();
-  record.replies = { entries: [{ account: 'generated_reply', text: 'Generated local reply text', createdAt: '2025-01-02T12:00:00Z', likes: { count: 7, source: 'dom' } }, { account: 'generated_other_reply', text: 'Generated unknown time and likes', createdAt: null, likes: { count: null, source: null } }], moreCount: 1, capped: false };
-  await restoreLiveFeed(page, liveFeedFixture(), undefined, [record]);
-  await page.getByRole('combobox', { name: lang === 'de' ? 'Konto' : 'Account', exact: true }).selectOption(liveExpected.instagram);
-  const card = page.locator(`[data-item-id="${record.itemId}"]`);
-  const replies = card.locator('[data-instagram-replies]');
-  await replies.scrollIntoViewIfNeeded();
-  await expect(replies).toContainText('generated_reply');
-  await expect(replies).toContainText('Generated local reply text');
-  await expect(replies.locator('time')).toHaveAttribute('datetime', '2025-01-02T12:00:00Z');
-  await expect(replies).toContainText('7');
-  expect(await replies.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-  record.replies = { entries: [], moreCount: 0, capped: false };
-  await restoreLiveFeed(page, liveFeedFixture(), undefined, [record]);
-  await page.getByRole('combobox', { name: lang === 'de' ? 'Konto' : 'Account', exact: true }).selectOption(liveExpected.instagram);
-  await expect(page.locator('[data-instagram-replies]')).toContainText(catalogs[lang]['instagramReplies.empty']);
-});
+for (const lang of ['de', 'en'] as const)
+  for (const theme of ['light', 'dark'] as const)
+    for (const width of [320, 1280])
+      test(`REPLIES-1 stored replies render under the own comment ${lang} ${theme} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.addInitScript(
+          ({ lang, theme }) => {
+            localStorage.setItem('sp-locale', lang);
+            localStorage.setItem('sp-theme', theme);
+          },
+          { lang, theme },
+        );
+        const record = generatedReadPost();
+        record.replies = {
+          entries: [
+            {
+              account: 'generated_reply',
+              text: 'Generated local reply text',
+              createdAt: '2025-01-02T12:00:00Z',
+              likes: { count: 7, source: 'dom' },
+            },
+            {
+              account: 'generated_other_reply',
+              text: 'Generated unknown time and likes',
+              createdAt: null,
+              likes: { count: null, source: null },
+            },
+          ],
+          moreCount: 1,
+          capped: false,
+        };
+        await restoreLiveFeed(page, liveFeedFixture(), undefined, [record]);
+        await page
+          .getByRole('combobox', {
+            name: lang === 'de' ? 'Konto' : 'Account',
+            exact: true,
+          })
+          .selectOption(liveExpected.instagram);
+        const card = page.locator(`[data-item-id="${record.itemId}"]`);
+        const replies = card.locator('[data-instagram-replies]');
+        await replies.scrollIntoViewIfNeeded();
+        await expect(replies).toContainText('generated_reply');
+        await expect(replies).toContainText('Generated local reply text');
+        await expect(replies.locator('time')).toHaveAttribute(
+          'datetime',
+          '2025-01-02T12:00:00Z',
+        );
+        await expect(replies).toContainText('7');
+        expect(
+          await replies.evaluate(
+            (node) => node.scrollWidth <= node.clientWidth + 1,
+          ),
+        ).toBe(true);
+        record.replies = { entries: [], moreCount: 0, capped: false };
+        await restoreLiveFeed(page, liveFeedFixture(), undefined, [record]);
+        await page
+          .getByRole('combobox', {
+            name: lang === 'de' ? 'Konto' : 'Account',
+            exact: true,
+          })
+          .selectOption(liveExpected.instagram);
+        await expect(page.locator('[data-instagram-replies]')).toContainText(
+          catalogs[lang]['instagramReplies.empty'],
+        );
+      });
 
 test('a lazy post image reserves its box with wider German fallback metrics', async ({
   page,

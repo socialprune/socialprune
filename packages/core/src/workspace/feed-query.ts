@@ -286,17 +286,16 @@ export class FeedQuery {
             origin = actions.get(origin.action.reverts) ?? null;
           }
           const plan = origin && (await tx.reviewPlans.get(origin.action.id));
+          const instagramContext =
+            stored.item.platform === 'instagram' &&
+            stored.item.kind === 'comment'
+              ? await tx.instagramContext.get(id)
+              : undefined;
           cards.push({
-            ...((await tx.instagramContext.get(id))?.replies
-              ? { replies: (await tx.instagramContext.get(id))!.replies }
+            ...(instagramContext?.replies
+              ? { replies: instagramContext.replies }
               : {}),
-            item: withEffectiveEngagement(
-              stored.item,
-              stored.item.platform === 'instagram' &&
-                stored.item.kind === 'comment'
-                ? await tx.instagramContext.get(id)
-                : undefined,
-            ),
+            item: withEffectiveEngagement(stored.item, instagramContext),
             suggestions: [
               ...new Map(
                 (checks.get(id) ?? []).flatMap((check) =>

@@ -81,7 +81,7 @@ test.each([
               : await readBackup(createBackup(store).chunks);
             await memory?.close();
             expect(workspace.schemaVersion).toBe(
-              consumer === 'read-only backup reader' ? 11 : 6,
+              consumer === 'read-only backup reader' ? 12 : 6,
             );
             expect(workspace.instagramContext).toHaveLength(1);
             expect(workspace.instagramContext![0]).toHaveProperty(

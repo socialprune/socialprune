@@ -144,6 +144,8 @@ export const contextInstagramCommand = buildCommand({
       (flags['refresh-likes'] && flags['refresh-replies'])
     )
       throw new CliError('INVALID_ARGUMENTS');
+    if (!flags.dryRun && flags['refresh-replies'] && !flags.order)
+      throw new CliError('CONTEXT_ORDER_INVALID');
     if (!flags.dryRun && !flags.order && (flags.json || !this.stdoutIsTerminal))
       throw new CliError('NOT_INTERACTIVE');
     const include = new Set<string>(),

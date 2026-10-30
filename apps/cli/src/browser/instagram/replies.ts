@@ -29,10 +29,15 @@ export async function commentReplies(
   const focal = page.locator(
     `main a[href="/${address.kind}/${address.code}/c/${match.id}/"]`,
   );
+  const focalTimes = focal.locator('time[datetime]');
+  const rawFocalTime =
+    (await focalTimes.count()) === 1
+      ? await focalTimes.getAttribute('datetime', { timeout: 150 })
+      : null;
   if (
     (await focal.count()) !== 1 ||
-    (await focal.locator('time[datetime]').getAttribute('datetime')) !==
-      match.createdAt
+    !rawFocalTime ||
+    Date.parse(rawFocalTime) !== Date.parse(match.createdAt)
   )
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
   const content = await textBlock(focal.locator('xpath=ancestor::*[3]'));
@@ -132,6 +137,23 @@ export async function commentReplies(
     clicks++;
     guard();
     await checkPage(page);
+    // Allow the scoped read response/render to expose rows before re-reading
+    // its replacement control. The existing step deadline remains the bound.
+    const previousCount = count;
+    while (
+      performance.now() < deadline &&
+      (await rows.count()) === previousCount &&
+      (await control.count()) === controls
+    ) {
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.min(100, Math.max(1, deadline - performance.now())),
+        ),
+      );
+      guard();
+      await checkPage(page);
+    }
   }
   return InstagramRepliesSchema.parse({ entries, moreCount, capped });
 }

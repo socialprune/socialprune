@@ -29,7 +29,7 @@ test('literal layout 5 and schema 5 remain readable through SQLiteStore.open aft
       const opened = await SQLiteStore.open(file, { readOnly });
       try {
         expect((await opened.read(readWorkspace)).schemaVersion).toBe(
-          readOnly ? 6 : 11,
+          readOnly ? 6 : 12,
         );
       } finally {
         await opened.close();
@@ -65,7 +65,7 @@ test('SQLite satisfies every framework-neutral core store contract check', async
     },
     (name) => checks.push(name),
   );
-  expect(checks).toHaveLength(14);
+  expect(checks).toHaveLength(15);
 }, 60_000);
 
 test('used SQLite API, strict layout, PRAGMAs and append-only triggers are real', async () => {

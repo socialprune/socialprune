@@ -132,6 +132,8 @@ export async function runContextWithDependencies(
   options: ContextOptions,
   deps: ContextDependencies,
 ) {
+  if (options.plan.refreshReplies && !options.order)
+    throw new CliError('CONTEXT_ORDER_INVALID');
   validateContextOrder(
     options.order,
     options.plan.handle,

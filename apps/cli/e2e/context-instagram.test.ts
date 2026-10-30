@@ -6637,6 +6637,65 @@ test('REPLIES-1 new confirmations observe replies and direct refresh fills once 
 });
 
 test.each(['unavailable', 'not-shown'] as const)(
+  'REPLIES-1 direct refresh settles %s and continues without a comments-list request',
+  async (variant) => {
+    const h = await harness('success', 5);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+      raw.exec('DROP TRIGGER instagram_context_no_update');
+      for (const item of h.fixture.items.slice(0, 2))
+        raw
+          .prepare(
+            "UPDATE instagram_context SET data=json_remove(data,'$.replies') WHERE item_id=?",
+          )
+          .run(item.id);
+      raw.close();
+      h.fake.setPostVariant(0, variant);
+      const before = h.fake.requests.length;
+      expect(await h.start({ refreshReplies: true })).toMatchObject({
+        completed: 1,
+        steps: 2,
+        endReason: 'done',
+      });
+      expect(
+        h.fake.requests
+          .slice(before)
+          .some((request) => request.path.startsWith('/your_activity/')),
+      ).toBe(false);
+      const journal = await h.store.browserJournal();
+      const run = journal.runs.at(-1)!;
+      expect(
+        journal.attempts
+          .filter((attempt) => attempt.runId === run.runId && attempt.settles)
+          .map((attempt) => [attempt.action, attempt.state, attempt.code]),
+      ).toEqual([
+        [
+          'refresh-comment-replies',
+          'failed',
+          variant === 'unavailable' ? 'post-unavailable' : 'comment-not-shown',
+        ],
+        ['refresh-comment-replies', 'read', null],
+      ]);
+      expect(
+        (
+          await planContext(
+            h.store,
+            run.accountKey,
+            new Set(),
+            new Set(),
+            false,
+            true,
+          )
+        ).rows,
+      ).toHaveLength(0);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test.each(['unavailable', 'not-shown'] as const)(
   'F4 refresh %s among three settles once, fills the later two and excludes the failed record until include',
   async (variant) => {
     const h = await harness('success', 5);

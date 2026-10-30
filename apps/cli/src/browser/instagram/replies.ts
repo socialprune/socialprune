@@ -137,7 +137,7 @@ export async function commentReplies(
       performance.now() >= deadline ||
       clicks >= 10
     ) {
-      capped ||= moreCount > 0;
+      capped ||= moreCount > 0 || performance.now() >= deadline;
       break;
     }
     if (!controls) break;
@@ -150,9 +150,24 @@ export async function commentReplies(
     await pause(expandMs);
     guard();
     await checkPage(page);
-    await control.click({
-      timeout: Math.max(1, Math.min(1000, deadline - performance.now())),
-    });
+    try {
+      await control.click({
+        timeout: Math.max(1, Math.min(1000, deadline - performance.now())),
+      });
+    } catch (error) {
+      guard();
+      await checkPage(page);
+      if (
+        error instanceof Error &&
+        error.name === 'TimeoutError' &&
+        performance.now() >= deadline
+      ) {
+        capped = true;
+        moreCount = Math.max(1, moreCount);
+        break;
+      }
+      throw error;
+    }
     clicks++;
     guard();
     await checkPage(page);

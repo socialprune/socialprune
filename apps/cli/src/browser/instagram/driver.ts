@@ -65,6 +65,7 @@ export interface ContextDependencies {
   capture?: typeof capturePost;
   navigated?(kind: ReadyKind, elapsedMs: number): void;
   accountObserved?(this: void, value: AccountClass): void;
+  captureReplies?: boolean;
   close(context: BrowserContext, automatic: boolean): Promise<void>;
 }
 export const productionContext: ContextDependencies = {
@@ -683,7 +684,7 @@ export async function confirmOnPost(
     });
     const name = (await load.count())
       ? 'Load more comments'
-      : (await replies.count())
+      : deps.captureReplies !== false && (await replies.count())
         ? 'View replies'
         : null;
     const previous = await blockCount();

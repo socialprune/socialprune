@@ -7365,6 +7365,7 @@ for (const variant of [
     async () => {
       const h = await harness(variant, 5);
       try {
+        if (variant === 'hidden') h.setPace({ captureReplies: true });
         const result = await h.start(true);
         expect(result).toMatchObject({ completed: 5, endReason: 'canary' });
         const runs = await h.store.browserJournal();

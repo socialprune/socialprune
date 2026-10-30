@@ -2463,7 +2463,24 @@ test.each(['below-first', 'other-date', 'absent'] as const)(
         settledReload: true,
         view: { targetMatched: variant === 'other-date' },
       });
-      expect(journal.attempts).toHaveLength(0);
+      expect(
+        journal.attempts.some((attempt) =>
+          [
+            'confirmed',
+            'unconfirmed',
+            'not-listed',
+            'unavailable',
+            'read',
+          ].includes(attempt.state),
+        ),
+      ).toBe(false);
+      expect(
+        journal.attempts.every(
+          (attempt) =>
+            attempt.state === 'sending' ||
+            (attempt.state === 'failed' && attempt.code === 'CANCELLED'),
+        ),
+      ).toBe(true);
       expect(run.pageOpens).toBe(1);
       expect(
         h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),

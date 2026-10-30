@@ -5,6 +5,7 @@ import {
 } from './instagram-context.ts';
 import { createMemoryStore } from '../workspace/memory-store.ts';
 import { writeInstagramContextContract } from '../workspace/store-contract.ts';
+import { createBackup, readBackup } from '../workspace/backup.ts';
 
 test('REPLIES-1 post observations fill once, survive likes fills and cannot alter confirmation or list records', async () => {
   const store = createMemoryStore();
@@ -67,5 +68,18 @@ test('REPLIES-1 post observations fill once, survive likes fills and cannot alte
       }),
     ),
   ).rejects.toThrow('CONTEXT_WRITE_ONCE');
+  const doc = await readBackup(createBackup(store).chunks);
+  const { schemaVersion, ...rest } = doc;
+  const reordered = JSON.stringify({ ...rest, schemaVersion });
+  expect(
+    (
+      await readBackup(
+        (async function* () {
+          await Promise.resolve();
+          yield reordered;
+        })(),
+      )
+    ).instagramContext?.[0]?.replies,
+  ).toEqual(replies);
   await store.close();
 });

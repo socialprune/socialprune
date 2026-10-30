@@ -1216,7 +1216,7 @@ export async function runContextWithDependencies(
               },
               guard,
               openedAt + deps.responseMs,
-              deps.sleep,
+              (ms) => deps.sleep(ms),
               deps.pace.expandMs,
             );
             await checkpoint();
@@ -1313,7 +1313,7 @@ export async function runContextWithDependencies(
                   },
                   guard,
                   openedAt + deps.responseMs,
-                  deps.sleep,
+                  (ms) => deps.sleep(ms),
                   deps.pace.expandMs,
                 ),
               }

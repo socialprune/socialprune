@@ -555,15 +555,23 @@ export async function restoreBackup(
         const value = part.value as Record<string, unknown>;
         const inferred =
           part.name === 'instagramContext'
-            ? value.ownerCheck === 'not-in-export'
-              ? 8
-              : Object.hasOwn(value, 'confirmedBy')
-                ? 6
-                : 5
+            ? Object.hasOwn(value, 'replies')
+              ? 12
+              : Object.hasOwn(value, 'likes')
+                ? 11
+                : value.ownerCheck === 'not-in-export'
+                  ? 8
+                  : Object.hasOwn(value, 'confirmedBy')
+                    ? 6
+                    : 5
             : part.name === 'originals' && Object.hasOwn(value, 'anonymous')
               ? 4
               : part.name === 'browserRuns' || part.name === 'browserAttempts'
-                ? 3
+                ? value.action === 'refresh-comment-replies'
+                  ? 12
+                  : value.action === 'refresh-comment-likes'
+                    ? 11
+                    : 3
                 : part.name === 'decisions' || part.name === 'outcomes'
                   ? 1
                   : part.name === 'items'

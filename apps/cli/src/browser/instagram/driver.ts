@@ -580,9 +580,10 @@ export async function reopenCandidate(
   target: string,
   deps: ContextDependencies,
   guard: () => void,
+  directAccount?: string,
 ): Promise<boolean> {
   guard();
-  await checkPage(page);
+  if (!directAccount || page.url() !== 'about:blank') await checkPage(page);
   const address = postReopenTarget(target, deps.origin);
   if (!address)
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
@@ -591,7 +592,19 @@ export async function reopenCandidate(
     waitUntil: 'domcontentloaded',
     timeout: deps.responseMs,
   });
-  return postReady(page, navigationStart, deps, guard);
+  const ready = await postReady(page, navigationStart, deps, guard);
+  if (directAccount) {
+    guard();
+    await checkPage(page);
+    const classification = accountClass(
+      directAccount,
+      await outsideProfilePaths(page),
+    );
+    deps.accountObserved?.(classification);
+    if (classification !== 'expected')
+      throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+  }
+  return ready;
 }
 /** The observed main-frame address may change without a document request. */
 export function postReopenTarget(input: string, origin: string): string | null {

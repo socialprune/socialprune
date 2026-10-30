@@ -1093,6 +1093,7 @@ export async function runContextWithDependencies(
                   `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
                   deps,
                   guard,
+                  options.plan.refreshReplies ? options.plan.handle : undefined,
                 )
               : reopening && reopenTarget
                 ? await reopenCandidate(page, reopenTarget, deps, guard)

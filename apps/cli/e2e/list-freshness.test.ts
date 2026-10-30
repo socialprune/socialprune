@@ -66,6 +66,21 @@ test.each([0, 3, 55])(
           createdAt: null,
           likes: { count: null, source: null },
         });
+      if (count) {
+        const expired = await commentReplies(
+          page,
+          [],
+          {
+            id: IG_FIXTURE.commentId,
+            createdAt: item.createdAt,
+            username: item.account.handle!,
+            text: item.text,
+          },
+          () => {},
+          performance.now() - 1,
+        );
+        expect(expired).toMatchObject({ entries: [], capped: true });
+      }
       if (count)
         expect(
           await page.locator('[data-reply-decoy]').getAttribute('data-clicked'),

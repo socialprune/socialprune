@@ -1,4 +1,7 @@
 {
+  "instagramReplies.title": "Antworten unter deinem Kommentar",
+  "instagramReplies.empty": "Keine Antworten angezeigt.",
+  "instagramReplies.partial": "Weitere Antworten waren verfügbar. Mindestens {count} wurden nicht gelesen.",
   "app.name": "SocialPrune",
   "scan.title": "Modellvorschläge",
   "scan.intro": "Lass deinen eigenen Modell-Endpunkt Vorschläge für die Durchsicht machen. Nur du entscheidest, was bleibt oder weg soll.",

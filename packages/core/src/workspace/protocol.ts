@@ -18,6 +18,7 @@ import {
   QuerySortSchema,
   ReviewViewSchema,
   InstagramContextSchema,
+  InstagramRepliesSchema,
   InstagramItemIdSchema,
 } from '../model/index.ts';
 export {
@@ -111,6 +112,7 @@ export const PlanSnapshotSchema = z.strictObject({
   ),
 });
 export const FeedCardSchema = z.strictObject({
+  replies: InstagramRepliesSchema.optional(),
   item: ItemSchema,
   suggestions: z.array(AssessmentSchema),
   holdingRules: z.array(z.string().min(1)).max(16),

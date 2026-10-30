@@ -41,6 +41,12 @@ export const contextInstagramCommand = buildCommand({
         brief:
           'Reopen post-confirmed comments only to fill unobserved comment likes',
       },
+      'refresh-replies': {
+        kind: 'boolean',
+        default: false,
+        brief:
+          'Reopen post-confirmed comments to record their shown replies once',
+      },
       json: jsonFlag,
       include: {
         kind: 'parsed',
@@ -114,6 +120,7 @@ export const contextInstagramCommand = buildCommand({
       handle?: string;
       dryRun: boolean;
       'refresh-likes': boolean;
+      'refresh-replies': boolean;
       json: boolean;
       include?: string;
       exclude?: string;
@@ -133,7 +140,8 @@ export const contextInstagramCommand = buildCommand({
       limit < 1 ||
       limit > (flags.order ? 600 : 200) ||
       (flags.json && flags.list) ||
-      (flags.order && flags.include)
+      (flags.order && flags.include) ||
+      (flags['refresh-likes'] && flags['refresh-replies'])
     )
       throw new CliError('INVALID_ARGUMENTS');
     if (!flags.dryRun && !flags.order && (flags.json || !this.stdoutIsTerminal))
@@ -163,6 +171,7 @@ export const contextInstagramCommand = buildCommand({
         include,
         exclude,
         flags['refresh-likes'],
+        flags['refresh-replies'],
       );
       if (
         plan.handle &&
@@ -186,6 +195,7 @@ export const contextInstagramCommand = buildCommand({
         plan.handle,
         !flags.dryRun && plan.canary,
         Boolean(plan.refreshLikes),
+        Boolean(plan.refreshReplies),
       );
       const pace = contextPace(order, plan.canary);
       const data = contextSummary(plan, flags.lang, pace),

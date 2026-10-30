@@ -9,6 +9,39 @@ import {
   ContextOrderSchema,
 } from './order.ts';
 
+test('REPLIES-1 written order must explicitly name replies refresh and refuse cross-mode reuse', () => {
+  const order = {
+    value: {
+      scope: 'context-instagram' as const,
+      account: 'generated_person',
+      givenAt: '2026-10-29T22:35:48Z',
+      words: 'Read generated replies.',
+      acceptCanary: false,
+      refreshReplies: true,
+    },
+    sha256: 'a'.repeat(64),
+  };
+  expect(() =>
+    validateContextOrder(order, order.value.account, false, false, true),
+  ).not.toThrow();
+  expect(() =>
+    validateContextOrder(order, order.value.account, false, false, false),
+  ).toThrow();
+  const value = { ...order.value, refreshReplies: undefined };
+  expect(() =>
+    validateContextOrder(
+      { ...order, value },
+      value.account,
+      false,
+      false,
+      true,
+    ),
+  ).toThrow();
+  expect(() =>
+    validateContextOrder(order, value.account, false, true, true),
+  ).toThrow();
+});
+
 test('P1 pace order accepts the upper scoped limits and retains defaults without the new fields', () => {
   const base = {
     scope: 'context-instagram',

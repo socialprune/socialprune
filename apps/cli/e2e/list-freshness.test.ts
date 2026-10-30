@@ -21,6 +21,61 @@ import {
 import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
+import { commentReplies } from '../src/browser/instagram/replies.ts';
+import { IG_FIXTURE } from './fake-instagram/fixture.ts';
+
+test.each([0, 3, 55])(
+  'REPLIES-1 focal nested replies capture=%i stays scoped and caps without a write request',
+  async (count) => {
+    const fixture = await instagramFixture(1);
+    const fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(count);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const item = fixture.items[0]!;
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const result = await commentReplies(
+        page,
+        [],
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 5000,
+      );
+      expect(result.entries).toHaveLength(Math.min(count, 50));
+      expect(result).toMatchObject({
+        moreCount: Math.max(0, count - 50),
+        capped: count > 50,
+      });
+      if (count)
+        expect(result.entries[0]).toEqual({
+          account: 'generated_reply_0',
+          text: 'Generated reply 0 with local text',
+          createdAt: item.createdAt,
+          likes: { count: 2, source: 'dom' },
+        });
+      if (count > 1)
+        expect(result.entries[1]).toMatchObject({
+          createdAt: null,
+          likes: { count: null, source: null },
+        });
+      expect(fake.requests.every((request) => request.method === 'GET')).toBe(
+        true,
+      );
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
 
 test('IG-list crash probe races old passive snapshots and readiness-gated diagnostics with generated navigation and detached subframes', async () => {
   const fixture = await instagramFixture(1);

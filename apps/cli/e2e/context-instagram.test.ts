@@ -1197,7 +1197,11 @@ async function harness(
   let running: Promise<unknown> | undefined;
   const controller = new AbortController();
   const start = (
-    order: boolean | 'no-canary' | { refreshLikes: true } = false,
+    order:
+      | boolean
+      | 'no-canary'
+      | { refreshLikes: true }
+      | { refreshReplies: true } = false,
     lang: 'en' | 'de' = 'en',
   ) => {
     const written: ContextOrder | undefined = order
@@ -1210,6 +1214,7 @@ async function harness(
             acceptCanary: order !== 'no-canary',
             maxSteps,
             ...paceFields,
+            ...(typeof order === 'object' ? order : {}),
           },
           sha256: 'a'.repeat(64),
         }
@@ -1225,7 +1230,8 @@ async function harness(
                   plan.accountKey,
                   new Set(),
                   exclude,
-                  true,
+                  'refreshLikes' in order,
+                  'refreshReplies' in order,
                 )
               : plan,
           workspace: directory,
@@ -4159,7 +4165,7 @@ test.each(POST_NOTICE_FIXTURE.cases)(
       );
       try {
         expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
-          user_version: 11,
+          user_version: 12,
         });
       } finally {
         database.close();
@@ -6570,6 +6576,61 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
       (await planContext(h.store, prior.accountKey, new Set(), new Set(), true))
         .rows,
     ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
+
+test('REPLIES-1 new confirmations observe replies and direct refresh fills once without visiting the list', async () => {
+  const h = await harness('success', 5);
+  h.fake.replies(3);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const prior = (
+      await h.store.read((tx) => records(tx.instagramContext))
+    )[0]!;
+    expect(prior.replies?.entries).toHaveLength(3);
+    const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
+    raw.exec('DROP TRIGGER instagram_context_no_update');
+    raw
+      .prepare(
+        "UPDATE instagram_context SET data=json_remove(data,'$.replies') WHERE item_id=?",
+      )
+      .run(prior.itemId);
+    raw.close();
+    const before = h.fake.requests.length;
+    expect(await h.start({ refreshReplies: true })).toMatchObject({
+      completed: 1,
+      steps: 1,
+    });
+    const requests = h.fake.requests.slice(before);
+    expect(
+      requests.some((request) => request.path.startsWith('/your_activity/')),
+    ).toBe(false);
+    expect(
+      await h.store.read((tx) => tx.instagramContext.get(prior.itemId)),
+    ).toEqual(prior);
+    expect(
+      (
+        await planContext(
+          h.store,
+          prior.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          true,
+        )
+      ).rows,
+    ).toHaveLength(0);
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.runId === journal.runs.at(-1)!.runId)
+        .map((attempt) => [attempt.action, attempt.state]),
+    ).toEqual([
+      ['refresh-comment-replies', 'sending'],
+      ['refresh-comment-replies', 'read'],
+    ]);
   } finally {
     await h.close();
   }

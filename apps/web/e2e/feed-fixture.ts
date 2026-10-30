@@ -196,6 +196,15 @@ export async function restoreLiveFeed(
   await page.evaluate((records) => {
     window.workspace.getInstagramContext = (ids) =>
       Promise.resolve(records.filter((record) => ids.includes(record.itemId)));
+    const original = window.workspace.feedWindow.bind(window.workspace);
+    window.workspace.feedWindow = async (...args) => {
+      const reply = await original(...args);
+      for (const card of reply.cards) {
+        const record = records.find(record => record.itemId === card.item.id);
+        if (record?.replies) card.replies = record.replies;
+      }
+      return reply;
+    };
   }, records);
   await page.goto('/socialprune/#/review');
   await expect(page.getByRole('feed')).toBeVisible();

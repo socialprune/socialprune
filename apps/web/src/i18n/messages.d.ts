@@ -572,6 +572,9 @@ declare global {
     'instagramContext.open': Record<never, never>;
     'instagramContext.screenshot': { date: string };
     'instagramContext.showScreenshot': Record<never, never>;
+    'instagramReplies.empty': Record<never, never>;
+    'instagramReplies.partial': { count: string };
+    'instagramReplies.title': Record<never, never>;
     'keepRules.add': Record<never, never>;
     'keepRules.choose': Record<never, never>;
     'keepRules.combine': Record<never, never>;

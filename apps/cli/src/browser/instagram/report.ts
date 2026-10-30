@@ -431,6 +431,7 @@ export const ListWindowSchema = z
 export type ListWindow = z.infer<typeof ListWindowSchema>;
 export const ContextStepReportSchema = z
   .looseObject({
+    replies: z.strictObject({ read: z.number().int().min(0).max(50), moreCount: z.number().int().nonnegative(), capped: z.boolean() }).optional(),
     image: StepImageSchema.optional(),
     memory: MemorySampleSchema.optional(),
     listTimeout: ListTimeoutDiagnosticSchema.optional(),

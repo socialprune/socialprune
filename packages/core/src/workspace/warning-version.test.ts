@@ -12,8 +12,8 @@ const chunks = (value: unknown) =>
     yield JSON.stringify(value);
   })();
 test('C32 warning classification is a version 9 field, preserved by portable backup without inventing older warnings', async () => {
-  expect(WORKSPACE_SCHEMA_VERSION).toBe(11);
-  expect(createWorkspace().schemaVersion).toBe(11);
+  expect(WORKSPACE_SCHEMA_VERSION).toBe(12);
+  expect(createWorkspace().schemaVersion).toBe(12);
   const workspace = contractWorkspace();
   const run = {
     ...JOURNAL_FIXTURE.run,
@@ -35,7 +35,7 @@ test('C32 warning classification is a version 9 field, preserved by portable bac
       expect(restored.browserRuns).toEqual([run]);
       expect(
         (await readBackup(createBackup(target).chunks)).schemaVersion,
-      ).toBe(11);
+      ).toBe(12);
     } finally {
       await target.close();
     }
@@ -74,7 +74,7 @@ test('C32 warning classification is a version 9 field, preserved by portable bac
   try {
     await restoreBackup(target, chunks(legacy));
     const value = await target.read(readWorkspace);
-    expect(value.schemaVersion).toBe(11);
+    expect(value.schemaVersion).toBe(12);
     expect(value.browserRuns).toEqual([JOURNAL_FIXTURE.run]);
     expect(Object.hasOwn(value.browserRuns![0]!, 'warningKind')).toBe(false);
   } finally {

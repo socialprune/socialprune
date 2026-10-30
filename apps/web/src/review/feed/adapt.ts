@@ -49,6 +49,7 @@ export function adaptCard(
     handle: item.account.handle ?? item.account.key,
     createdAt: item.createdAt,
     text: item.text,
+    replies: card.replies,
     kind: item.kind,
     mediaCount: item.mediaCount ?? 0,
     likes: item.engagement.likes,

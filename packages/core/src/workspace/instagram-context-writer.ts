@@ -46,7 +46,11 @@ async function pending(
   const send = await tx.browserAttempts.get(attemptId);
   if (
     !send ||
-    !['confirm-comment', 'refresh-comment-likes'].includes(send.action) ||
+    ![
+      'confirm-comment',
+      'refresh-comment-likes',
+      'refresh-comment-replies',
+    ].includes(send.action) ||
     send.state !== 'sending'
   )
     throw new Error('INVALID_CONTEXT_ATTEMPT');
@@ -124,9 +128,11 @@ export class InstagramContextWriter {
           if (attempt.runId === old.runId) attempts.push(attempt);
         for (const send of attempts)
           if (
-            ['confirm-comment', 'refresh-comment-likes'].includes(
-              send.action,
-            ) &&
+            [
+              'confirm-comment',
+              'refresh-comment-likes',
+              'refresh-comment-replies',
+            ].includes(send.action) &&
             send.state === 'sending' &&
             !attempts.some((attempt) => attempt.settles === send.attemptId)
           )
@@ -148,6 +154,7 @@ export class InstagramContextWriter {
     itemId: string;
     at: string;
     refreshLikes?: boolean;
+    refreshReplies?: boolean;
   }): Promise<number> {
     return this.store.write(async (tx) => {
       const run = await activeRun(tx, input.runId),
@@ -156,11 +163,15 @@ export class InstagramContextWriter {
         stored?.item.platform !== 'instagram' ||
         stored.item.kind !== 'comment' ||
         stored.item.account.key !== run.accountKey ||
-        (input.refreshLikes
+        (input.refreshReplies
           ? (await tx.instagramContext.get(input.itemId))?.confirmedBy !==
               'post' ||
-            (await tx.instagramContext.get(input.itemId))?.likes !== undefined
-          : Boolean(await tx.instagramContext.get(input.itemId))) ||
+            (await tx.instagramContext.get(input.itemId))?.replies !== undefined
+          : input.refreshLikes
+            ? (await tx.instagramContext.get(input.itemId))?.confirmedBy !==
+                'post' ||
+              (await tx.instagramContext.get(input.itemId))?.likes !== undefined
+            : Boolean(await tx.instagramContext.get(input.itemId))) ||
         Date.parse(input.at) < Date.parse(run.startedAt)
       )
         throw new Error('INVALID_CONTEXT_ATTEMPT');
@@ -175,9 +186,11 @@ export class InstagramContextWriter {
           itemId: input.itemId,
           at: input.at,
           seq,
-          action: input.refreshLikes
-            ? 'refresh-comment-likes'
-            : 'confirm-comment',
+          action: input.refreshReplies
+            ? 'refresh-comment-replies'
+            : input.refreshLikes
+              ? 'refresh-comment-likes'
+              : 'confirm-comment',
           state: 'sending',
           settles: null,
           code: null,
@@ -239,9 +252,15 @@ export class InstagramContextWriter {
       await settlement(
         tx,
         send,
-        send.action === 'refresh-comment-likes' ? 'failed' : input.state,
+        ['refresh-comment-likes', 'refresh-comment-replies'].includes(
+          send.action,
+        )
+          ? 'failed'
+          : input.state,
         input.at,
-        send.action === 'refresh-comment-likes'
+        ['refresh-comment-likes', 'refresh-comment-replies'].includes(
+          send.action,
+        )
           ? (input.code ?? 'INTERRUPTED')
           : input.code,
       );
@@ -288,6 +307,23 @@ export class InstagramContextWriter {
       const prior = await tx.instagramContext.get(send.itemId);
       if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
       await tx.instagramContext.fillLikes({ ...prior, likes });
+      await settlement(tx, send, 'read', at, null);
+      await revision(tx, at);
+    });
+  }
+
+  async fillReplies(
+    attemptId: string,
+    replies: NonNullable<InstagramContext['replies']>,
+    at: string,
+  ): Promise<void> {
+    await this.store.write(async (tx) => {
+      const send = await pending(tx, attemptId);
+      if (send.action !== 'refresh-comment-replies' || !send.itemId)
+        throw new Error('INVALID_CONTEXT_ATTEMPT');
+      const prior = await tx.instagramContext.get(send.itemId);
+      if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+      await tx.instagramContext.fillReplies({ ...prior, replies });
       await settlement(tx, send, 'read', at, null);
       await revision(tx, at);
     });

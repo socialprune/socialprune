@@ -16,7 +16,7 @@ export * from './original.ts';
 import { InstagramContextSchema } from './instagram-context.ts';
 export * from './instagram-context.ts';
 
-export const WORKSPACE_SCHEMA_VERSION = 11;
+export const WORKSPACE_SCHEMA_VERSION = 12;
 
 export {
   PlatformIdSchema,

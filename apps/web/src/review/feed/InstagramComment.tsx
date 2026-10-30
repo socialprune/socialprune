@@ -88,6 +88,52 @@ export function InstagramComment({
               </span>
             )}
           </div>
+          {card.replies && (
+            <section
+              className={styles.replies}
+              aria-label={t('instagramReplies.title')}
+              data-instagram-replies
+            >
+              {card.replies.entries.length === 0 ? (
+                <p>{t('instagramReplies.empty')}</p>
+              ) : (
+                <ul>
+                  {card.replies.entries.map((reply, index) => (
+                    <li key={index}>
+                      <strong dir="ltr">{reply.account}</strong>
+                      <p dir="auto">{reply.text}</p>
+                      <div className={styles.metadata}>
+                        {reply.createdAt && (
+                          <time dateTime={reply.createdAt}>
+                            {intl.formatDate(reply.createdAt, {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              timeZone: zone,
+                            })}
+                          </time>
+                        )}
+                        {reply.likes.count !== null && (
+                          <span>
+                            {t('review.likesValue', {
+                              count: reply.likes.count,
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {(card.replies.moreCount > 0 || card.replies.capped) && (
+                <p>
+                  {t('instagramReplies.partial', {
+                    count: String(card.replies.moreCount),
+                  })}
+                </p>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </div>

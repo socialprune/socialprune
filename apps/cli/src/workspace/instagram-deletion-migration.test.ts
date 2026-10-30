@@ -68,7 +68,7 @@ test.each([false, true])(
       expect(backups).toHaveLength(1);
       expect(await readFile(join(root, backups[0]!))).toEqual(before);
       const read = new DatabaseSync(path);
-      expect(read.prepare('PRAGMA user_version').get()!.user_version).toBe(11);
+      expect(read.prepare('PRAGMA user_version').get()!.user_version).toBe(12);
       expect(
         read
           .prepare('SELECT count(*) AS n FROM browser_instagram_warnings')
@@ -121,7 +121,7 @@ test('D10 portable readers and staging retain an interrupted Instagram warning b
         yield input;
       })();
     const parsed = await readBackup(chunks(text));
-    expect(parsed.schemaVersion).toBe(11);
+    expect(parsed.schemaVersion).toBe(12);
     await restoreBackup(target, chunks(text));
     expect(
       (await target.read(readWorkspace)).browserRuns!.at(-1)?.instagramWarning

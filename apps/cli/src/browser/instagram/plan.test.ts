@@ -52,6 +52,65 @@ async function invokeContext(args: string[]) {
   return { code, stdout: stdout.join(''), stderr: stderr.join('') };
 }
 
+test('REPLIES-1 refresh plan excludes observed empty replies and binds the CLI mode', async () => {
+  const h = await excludeFixture();
+  try {
+    const record = await writeInstagramContextContract(
+      h.store,
+      h.fixture.items[0],
+    );
+    const plan = await planContext(
+      h.store,
+      h.accountKey,
+      new Set(),
+      new Set(),
+      false,
+      true,
+    );
+    expect(plan.rows.map((row) => row.item.id)).toEqual([record.itemId]);
+    expect(plan.refreshReplies).toBe(true);
+    expect(plan.canary).toBe(false);
+    expect(plan.hash).not.toBe(
+      (await planContext(h.store, h.accountKey, new Set(), new Set(), true))
+        .hash,
+    );
+    await h.store.write((tx) =>
+      tx.instagramContext.fillReplies({
+        ...record,
+        replies: { entries: [], moreCount: 0, capped: false },
+      }),
+    );
+    expect(
+      (
+        await planContext(
+          h.store,
+          h.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          true,
+        )
+      ).rows,
+    ).toHaveLength(0);
+    const result = await invokeContext([
+      '--workspace',
+      h.directory,
+      '--account',
+      h.accountKey,
+      '--refresh-replies',
+      '--dry-run',
+      '--json',
+    ]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).data).toMatchObject({
+      refreshReplies: true,
+      planned: 0,
+    });
+  } finally {
+    await h.close();
+  }
+});
+
 test('IG-LIKES refresh plan binds only post records with absent observations and has its own mode hash', async () => {
   const h = await excludeFixture();
   try {

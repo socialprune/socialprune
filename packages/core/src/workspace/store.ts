@@ -133,6 +133,7 @@ export interface WriteTransaction extends ReadTransaction {
   originals: RecordWriter<Original>;
   instagramContext: UniqueWriter<InstagramContext> & {
     fillLikes(value: InstagramContext): Promise<void>;
+    fillReplies(value: InstagramContext): Promise<void>;
   };
   browserRuns: RecordWriter<BrowserRun> & UniqueWriter<BrowserRun>;
   browserAttempts: UniqueWriter<BrowserAttempt>;

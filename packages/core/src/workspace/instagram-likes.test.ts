@@ -118,7 +118,7 @@ test('likes refresh writes once, settles its own receipt, preserves confirmation
       },
     });
     const value = validateWorkspace(await store.read(readWorkspace));
-    expect(value.schemaVersion).toBe(11);
+    expect(value.schemaVersion).toBe(12);
     const text = await readBackup(createBackup(store).chunks);
     expect(text.instagramContext).toEqual(value.instagramContext);
     const target = createMemoryStore();

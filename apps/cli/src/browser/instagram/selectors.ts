@@ -577,7 +577,7 @@ async function profileLinks(element: Locator) {
   }
   return profiles;
 }
-async function textBlock(block: Locator) {
+export async function textBlock(block: Locator) {
   if (
     (await block.locator('xpath=self::div').count()) !== 1 ||
     (await block.locator(':scope > *').count()) !== 2 ||

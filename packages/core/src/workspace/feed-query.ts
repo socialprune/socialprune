@@ -287,6 +287,9 @@ export class FeedQuery {
           }
           const plan = origin && (await tx.reviewPlans.get(origin.action.id));
           cards.push({
+            ...((await tx.instagramContext.get(id))?.replies
+              ? { replies: (await tx.instagramContext.get(id))!.replies }
+              : {}),
             item: withEffectiveEngagement(
               stored.item,
               stored.item.platform === 'instagram' &&

@@ -6,6 +6,7 @@ import { CliError } from '../../cli/errors.ts';
 export const ContextOrderSchema = z.strictObject({
   scope: z.literal('context-instagram'),
   refreshLikes: z.boolean().optional(),
+  refreshReplies: z.boolean().optional(),
   listDiagnostic: z.boolean().optional(),
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
@@ -45,16 +46,22 @@ export function validateContextOrder(
   handle: string,
   canary: boolean,
   refreshLikes = false,
+  refreshReplies = false,
 ): void {
   if (!order) return;
   const parsed = ContextOrderSchema.safeParse(order.value);
   if (
     !parsed.success ||
+    (refreshLikes && refreshReplies) ||
+    (refreshReplies && parsed.data.refreshReplies !== true) ||
+    (parsed.data.refreshReplies !== undefined &&
+      parsed.data.refreshReplies !== refreshReplies) ||
     parsed.data.account.toLowerCase() !== handle.toLowerCase() ||
     (parsed.data.refreshLikes !== undefined &&
       parsed.data.refreshLikes !== refreshLikes) ||
     (parsed.data.listDiagnostic === true &&
       (refreshLikes ||
+        refreshReplies ||
         parsed.data.maxSteps !== 1 ||
         (parsed.data.secondsPerStep !== undefined &&
           parsed.data.secondsPerStep !== 30))) ||

@@ -11,7 +11,34 @@ export const InstagramItemIdSchema = z
 export const InstagramPostCodeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/);
+export const InstagramRepliesSchema = z.strictObject({
+  entries: z
+    .array(
+      z.strictObject({
+        account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
+        text: z.string().min(1).max(10000),
+        createdAt: UtcTimestampSchema.nullable(),
+        likes: z
+          .strictObject({
+            count: z
+              .number()
+              .int()
+              .nonnegative()
+              .max(Number.MAX_SAFE_INTEGER)
+              .nullable(),
+            source: z.enum(['answer', 'dom']).nullable(),
+          })
+          .refine(
+            (value) => (value.count === null) === (value.source === null),
+          ),
+      }),
+    )
+    .max(50),
+  moreCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  capped: z.boolean(),
+});
 const ContextFieldsSchema = z.strictObject({
+  replies: InstagramRepliesSchema.optional(),
   likes: z
     .strictObject({
       count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
@@ -88,6 +115,11 @@ export const InstagramContextSchema = z
         code: 'custom',
         message: 'List confirmations have no comment likes.',
       });
+    if (value.confirmedBy === 'list' && value.replies !== undefined)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'List confirmations have no replies.',
+      });
     if (
       (value.image.status === 'stored') !== (value.image.file !== null) ||
       (value.screenshot.status === 'stored') !==
@@ -116,6 +148,23 @@ export function validateInstagramLikesFill(
     prior.confirmedBy !== 'post' ||
     prior.likes !== undefined ||
     next.likes === undefined ||
+    canonicalJson(before) !== canonicalJson(after)
+  )
+    throw new Error('CONTEXT_WRITE_ONCE');
+}
+
+/** A post's absent replies observation may be filled once, including an empty result. */
+export function validateInstagramRepliesFill(
+  prior: InstagramContext,
+  next: InstagramContext,
+): void {
+  InstagramContextSchema.parse(next);
+  const { replies: beforeReplies, ...before } = prior;
+  const { replies: afterReplies, ...after } = next;
+  if (
+    prior.confirmedBy !== 'post' ||
+    beforeReplies !== undefined ||
+    afterReplies === undefined ||
     canonicalJson(before) !== canonicalJson(after)
   )
     throw new Error('CONTEXT_WRITE_ONCE');

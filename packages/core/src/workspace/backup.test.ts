@@ -53,7 +53,7 @@ test('hand-written v2 document parses at one-byte boundaries and restores ordere
     });
     expect(await target.read(readWorkspace)).toEqual({
       ...migrateReviewContract(input),
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
     expect(
       [...deriveState(await target.read(readWorkspace))].map(([id, value]) => [
@@ -141,7 +141,7 @@ test('writer streams bounded chunks in header order and marks the store only aft
     ]);
     expect(document).toEqual({
       ...migrateReviewContract(input),
-      schemaVersion: 11,
+      schemaVersion: 12,
       lastBackupAt: createdAt,
     });
     await session.complete();
@@ -363,7 +363,7 @@ test('reader accepts v1 migration and deduplicates identical log records but rej
     const legacy = await readBackup(chunks(old));
     expect(migrated).toEqual({
       ...migrateReviewContract(legacy),
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
     expect(
       migrated.decisionEvents.map((event) => [event.seq, event.value]),
@@ -670,7 +670,7 @@ test('restore applies validated record batches of at most the requested size', a
     expect(sizes).toEqual([1, 1, 1, 1, 1, 1]);
     expect(await target.read(readWorkspace)).toEqual({
       ...migrateReviewContract(input),
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
   } finally {
     await target.close();

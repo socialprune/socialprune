@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { imageCase, imageCasePage, imageCasePng } from './image-cases.ts';
 import type { ImageCaseName } from './image-cases.ts';
 import { deletionPost } from './delete-page.ts';
+import { addRepliesPage } from './replies-page.ts';
 import type { DeleteCase } from './delete-page.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
@@ -27,6 +28,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const hiddenPosts = new Set<number>();
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
+  let replyCount = 0;
   let windowLists:
     'populated-empty' | 'empty-empty' | 'populated-populated' | undefined;
   let delayedFilterClose = false;
@@ -387,6 +389,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           hiddenPosts.has(index),
         );
         if (likesCase) {
+          // Reply decorations are independent from like-count source cases.
           html = html.replace(
             '<div role="button">Reply</div>',
             '<div role="button">999 likes</div><div role="button">Reply</div>',
@@ -404,6 +407,14 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
                 );
           }
         }
+        if (replyCount)
+          html = addRepliesPage(
+            html,
+            replyCount,
+            String(BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))),
+            post[1]!,
+            items[Math.max(0, index)]!.createdAt,
+          );
         if (listDecoration === 'caption')
           html = html.replace(
             '<section>',
@@ -593,6 +604,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     windowLists(value: NonNullable<typeof windowLists>, delayedClose = false) {
       windowLists = value;
       delayedFilterClose = delayedClose;
+    },
+    replies(count: number) {
+      replyCount = count;
     },
     filteredListPlaceholders(count: number, status: boolean) {
       if (!Number.isInteger(count) || count < 0 || count > 20)

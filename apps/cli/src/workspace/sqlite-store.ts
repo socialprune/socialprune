@@ -18,6 +18,7 @@ import {
   BrowserAttemptSchema,
   InstagramContextSchema,
   validateInstagramLikesFill,
+  validateInstagramRepliesFill,
   migrateInstagramContext,
   WORKSPACE_SCHEMA_VERSION,
   ReviewPlanSchema,
@@ -63,7 +64,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 11;
+export const SQLITE_LAYOUT_VERSION = 12;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
@@ -76,9 +77,10 @@ CREATE TABLE instagram_context (
   item_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))
 ) STRICT;
 CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
-  json_extract(OLD.data,'$.confirmedBy')!='post' OR json_type(OLD.data,'$.likes') IS NOT NULL OR
-  json_type(NEW.data,'$.likes') IS NOT 'object' OR
-  json_remove(OLD.data,'$.likes')!=json_remove(NEW.data,'$.likes')
+  json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
+    (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
+    (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
+  )
 BEGIN SELECT RAISE(ABORT,'write-once'); END;
 CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
 `;
@@ -413,13 +415,14 @@ export class SQLiteStore implements WorkspaceStore {
                 schemaVersion: WORKSPACE_SCHEMA_VERSION,
               }),
             );
-            if (Number(version) < 11)
+            if (Number(version) < 12)
               db.exec(`
               DROP TRIGGER instagram_context_no_update;
               CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
-                json_extract(OLD.data,'$.confirmedBy')!='post' OR json_type(OLD.data,'$.likes') IS NOT NULL OR
-                json_type(NEW.data,'$.likes') IS NOT 'object' OR
-                json_remove(OLD.data,'$.likes')!=json_remove(NEW.data,'$.likes')
+                json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
+                  (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
+                  (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
+                )
               BEGIN SELECT RAISE(ABORT,'write-once'); END;
             `);
             db.exec(`PRAGMA user_version=${SQLITE_LAYOUT_VERSION};`);
@@ -846,6 +849,20 @@ export class SQLiteStore implements WorkspaceStore {
         },
       },
       instagramContext: {
+        fillReplies: (value) => {
+          const prior = get<InstagramContext>(
+            'SELECT data FROM instagram_context WHERE item_id=?',
+            value.itemId,
+          );
+          if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+          validateInstagramRepliesFill(prior, value);
+          run(
+            "UPDATE instagram_context SET data=json_set(data,'$.replies',json(?)) WHERE item_id=?",
+            JSON.stringify(value.replies),
+            value.itemId,
+          );
+          return Promise.resolve();
+        },
         fillLikes: (value) => {
           const prior = get<InstagramContext>(
             'SELECT data FROM instagram_context WHERE item_id=?',

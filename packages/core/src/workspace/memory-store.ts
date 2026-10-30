@@ -13,6 +13,7 @@ import {
   BrowserAttemptSchema,
   InstagramContextSchema,
   validateInstagramLikesFill,
+  validateInstagramRepliesFill,
   ReviewPlanSchema,
 } from '../model/index.ts';
 import type {
@@ -339,6 +340,15 @@ export function createMemoryStore(
             const prior = db.instagramContext.get(value.itemId);
             if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
             validateInstagramLikesFill(prior, value);
+            db.instagramContext.set(value.itemId, structuredClone(value));
+            iterationCache.delete(db.instagramContext);
+            return Promise.resolve();
+          },
+          fillReplies(value) {
+            guard(true);
+            const prior = db.instagramContext.get(value.itemId);
+            if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+            validateInstagramRepliesFill(prior, value);
             db.instagramContext.set(value.itemId, structuredClone(value));
             iterationCache.delete(db.instagramContext);
             return Promise.resolve();

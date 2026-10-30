@@ -99,6 +99,7 @@ import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
 import { commentLikes } from './likes.ts';
+import { commentReplies } from './replies.ts';
 import { refreshOutcome } from './refresh.ts';
 import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
@@ -136,6 +137,7 @@ export async function runContextWithDependencies(
     options.plan.handle,
     options.plan.canary,
     Boolean(options.plan.refreshLikes),
+    Boolean(options.plan.refreshReplies),
   );
   const pace = contextPace(options.order, options.plan.canary, {
     ...CONTEXT_PACE,
@@ -166,6 +168,7 @@ export async function runContextWithDependencies(
         options.include,
         options.exclude,
         Boolean(options.plan.refreshLikes),
+        Boolean(options.plan.refreshReplies),
       )
     ).hash !== options.plan.hash
   )
@@ -205,13 +208,17 @@ export async function runContextWithDependencies(
       marked,
     })),
     completed: 0,
-    result: options.plan.refreshLikes
+    result: options.plan.refreshReplies
       ? options.lang === 'de'
-        ? 'Dieser Lauf ergänzt nur die Likes bereits bestätigter Kommentare. Frühere Bestätigungen bleiben unverändert.'
-        : 'This run only adds likes to already confirmed comments. Earlier confirmations stay unchanged.'
-      : options.lang === 'de'
-        ? 'Dieser Lauf liest nur. Die erste Stichprobe endet vor einem vollständigen Lauf.'
-        : 'This run only reads. The first canary ends before a full run.',
+        ? 'Dieser Lauf ergänzt nur die Antworten unter bereits bestätigten Kommentaren.'
+        : 'This run only adds replies under already confirmed comments.'
+      : options.plan.refreshLikes
+        ? options.lang === 'de'
+          ? 'Dieser Lauf ergänzt nur die Likes bereits bestätigter Kommentare. Frühere Bestätigungen bleiben unverändert.'
+          : 'This run only adds likes to already confirmed comments. Earlier confirmations stay unchanged.'
+        : options.lang === 'de'
+          ? 'Dieser Lauf liest nur. Die erste Stichprobe endet vor einem vollständigen Lauf.'
+          : 'This run only reads. The first canary ends before a full run.',
   });
   const writer = new InstagramContextWriter(options.store),
     runId = crypto.randomUUID();
@@ -543,6 +550,7 @@ export async function runContextWithDependencies(
           options.include,
           options.exclude,
           Boolean(options.plan.refreshLikes),
+          Boolean(options.plan.refreshReplies),
         )
       ).hash !== options.plan.hash
     )
@@ -702,9 +710,11 @@ export async function runContextWithDependencies(
       options.session?.entry(
         entryView(
           row.item,
-          options.plan.refreshLikes
-            ? 'refresh-comment-likes'
-            : 'confirm-comment',
+          options.plan.refreshReplies
+            ? 'refresh-comment-replies'
+            : options.plan.refreshLikes
+              ? 'refresh-comment-likes'
+              : 'confirm-comment',
         ),
       );
       const attemptId = crypto.randomUUID();
@@ -715,6 +725,7 @@ export async function runContextWithDependencies(
         itemId: row.item.id,
         at: options.now().toISOString(),
         refreshLikes: options.plan.refreshLikes,
+        refreshReplies: options.plan.refreshReplies,
       });
       pendingAttempt = attemptId;
       let settled = false;
@@ -821,7 +832,26 @@ export async function runContextWithDependencies(
         const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
         stage = 'list-read';
         const list = await (async () => {
-          if (options.plan.refreshLikes) {
+          if (options.plan.refreshLikes || options.plan.refreshReplies) {
+            if (options.plan.refreshReplies)
+              return {
+                account: options.plan.handle,
+                manualReason: undefined,
+                candidates: [
+                  {
+                    index: 0,
+                    username: options.plan.handle,
+                    text: row.item.text,
+                    age: '',
+                  },
+                ],
+                rowCount: 0,
+                emptySkipped: 0,
+                otherName: 0,
+                scrollLoads: 0,
+                full: false,
+                oldestWithinWeek: false,
+              };
             await navigateList(
               page,
               options.plan.handle,
@@ -963,7 +993,8 @@ export async function runContextWithDependencies(
             ...imageDiagnostic(null, null, []),
           },
           ready: { postMs: 0 },
-          filterByLists: !options.plan.refreshLikes,
+          filterByLists:
+            !options.plan.refreshLikes && !options.plan.refreshReplies,
           rowSignature: rowCounts.rowSignature,
           listRegions: rowCounts.regions,
           listRows: rowCounts.diagnostic,
@@ -1053,7 +1084,8 @@ export async function runContextWithDependencies(
         page.on('request', navigation);
         try {
           opened =
-            options.plan.refreshLikes && row.context
+            (options.plan.refreshLikes || options.plan.refreshReplies) &&
+            row.context
               ? await reopenCandidate(
                   page,
                   `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
@@ -1109,17 +1141,22 @@ export async function runContextWithDependencies(
           stage = 'settlement';
           await writer.settle({
             attemptId,
-            state: options.plan.refreshLikes ? 'failed' : 'unavailable',
-            code: options.plan.refreshLikes
-              ? refreshOutcome({ opened: false, context: row.context })
-              : null,
+            state:
+              options.plan.refreshLikes || options.plan.refreshReplies
+                ? 'failed'
+                : 'unavailable',
+            code:
+              options.plan.refreshLikes || options.plan.refreshReplies
+                ? refreshOutcome({ opened: false, context: row.context })
+                : null,
             at: options.now().toISOString(),
           });
           pendingAttempt = undefined;
           settled = true;
-          stepReport.result = options.plan.refreshLikes
-            ? 'post-unavailable'
-            : 'unavailable';
+          stepReport.result =
+            options.plan.refreshLikes || options.plan.refreshReplies
+              ? 'post-unavailable'
+              : 'unavailable';
           break;
         }
         stage = 'post-read';
@@ -1144,7 +1181,7 @@ export async function runContextWithDependencies(
           stepReport.secondSource = answers.summary(read.post.code);
         }
         await checkpoint();
-        if (options.plan.refreshLikes) {
+        if (options.plan.refreshLikes || options.plan.refreshReplies) {
           const outcome = refreshOutcome({
             opened: true,
             context: row.context,
@@ -1166,6 +1203,35 @@ export async function runContextWithDependencies(
           }
           if (read.result.state !== 'confirmed')
             throw new ContextStop('PLATFORM_CHECK', 'post-structure');
+          if (options.plan.refreshReplies) {
+            const replies = await commentReplies(
+              page,
+              answers.bodies,
+              {
+                ...read.result.comment,
+                username: options.plan.handle,
+                text: row.item.text,
+              },
+              guard,
+              openedAt + deps.responseMs,
+            );
+            await checkpoint();
+            await writer.fillReplies(
+              attemptId,
+              replies,
+              options.now().toISOString(),
+            );
+            pendingAttempt = undefined;
+            settled = true;
+            completed++;
+            stepReport.result = 'replies-refreshed';
+            stepReport.replies = {
+              read: replies.entries.length,
+              moreCount: replies.moreCount,
+              capped: replies.capped,
+            };
+            break;
+          }
           const likes = await commentLikes(page, answers.bodies, {
             ...read.result.comment,
             username: options.plan.handle,
@@ -1233,6 +1299,17 @@ export async function runContextWithDependencies(
                   username: options.plan.handle,
                   text: row.item.text,
                 }),
+                replies: await commentReplies(
+                  page,
+                  answers.bodies,
+                  {
+                    ...read.result.comment,
+                    username: options.plan.handle,
+                    text: row.item.text,
+                  },
+                  guard,
+                  openedAt + deps.responseMs,
+                ),
               }
             : {}),
           itemId: row.item.id,
@@ -1289,6 +1366,15 @@ export async function runContextWithDependencies(
         };
         if (options.plan.canary) checks.push(check);
         Object.assign(stepReport, {
+          ...(record.replies
+            ? {
+                replies: {
+                  read: record.replies.entries.length,
+                  moreCount: record.replies.moreCount,
+                  capped: record.replies.capped,
+                },
+              }
+            : {}),
           confirmed: true,
           result: 'confirmed',
           confirmedBy: record.confirmedBy,
@@ -1352,13 +1438,17 @@ export async function runContextWithDependencies(
       } else
         confirmation.update({
           completed,
-          result: options.plan.refreshLikes
+          result: options.plan.refreshReplies
             ? options.lang === 'de'
-              ? `${steps} Schritte gelesen, ${completed} Likes-Angaben ergänzt.`
-              : `${steps} steps read, ${completed} like observations added.`
-            : options.lang === 'de'
-              ? `${steps} Schritte gelesen, ${completed} Kommentare bestätigt.`
-              : `${steps} steps read, ${completed} comments confirmed.`,
+              ? `${steps} Schritte gelesen, ${completed} Antwort-Beobachtungen ergänzt.`
+              : `${steps} steps read, ${completed} reply observations added.`
+            : options.plan.refreshLikes
+              ? options.lang === 'de'
+                ? `${steps} Schritte gelesen, ${completed} Likes-Angaben ergänzt.`
+                : `${steps} steps read, ${completed} like observations added.`
+              : options.lang === 'de'
+                ? `${steps} Schritte gelesen, ${completed} Kommentare bestätigt.`
+                : `${steps} steps read, ${completed} comments confirmed.`,
         });
     }
     await sampleMemory();

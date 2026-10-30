@@ -28,6 +28,7 @@ export interface ContextRow {
 }
 export interface ContextPlan {
   refreshLikes?: boolean;
+  refreshReplies?: boolean;
   accountKey: string;
   handle: string;
   timeZone: string;
@@ -46,7 +47,9 @@ export async function planContext(
   include: ReadonlySet<string> = new Set(),
   exclude: ReadonlySet<string> = new Set(),
   refreshLikes = false,
+  refreshReplies = false,
 ): Promise<ContextPlan> {
+  if (refreshLikes && refreshReplies) throw new CliError('INVALID_ARGUMENTS');
   if ([...exclude].some((id) => include.has(id)))
     throw new CliError('INVALID_ARGUMENTS');
   return store.read(async (tx) => {
@@ -147,7 +150,10 @@ export async function planContext(
       if (runIds.has(attempt.runId) && attempt.itemId && attempt.settles) {
         last.set(attempt.itemId, attempt.state);
         if (
-          attempt.action === 'refresh-comment-likes' &&
+          attempt.action ===
+            (refreshReplies
+              ? 'refresh-comment-replies'
+              : 'refresh-comment-likes') &&
           attempt.state === 'failed' &&
           (attempt.code === 'post-unavailable' ||
             attempt.code === 'comment-not-shown')
@@ -173,11 +179,13 @@ export async function planContext(
         event.value === 'delete' && event.source.kind === 'human',
       );
     for (const item of items) {
-      if (refreshLikes) {
+      if (refreshLikes || refreshReplies) {
         const context = await tx.instagramContext.get(item.id);
         if (
           context?.confirmedBy === 'post' &&
-          context.likes === undefined &&
+          (refreshReplies
+            ? context.replies === undefined
+            : context.likes === undefined) &&
           (!settledRefresh.has(item.id) || include.has(item.id)) &&
           !personExcludes(item.id)
         )
@@ -228,9 +236,9 @@ export async function planContext(
     const hash = createHash('sha256')
       .update(
         JSON.stringify(
-          refreshLikes
+          refreshLikes || refreshReplies
             ? {
-                mode: 'refresh-likes',
+                mode: refreshReplies ? 'refresh-replies' : 'refresh-likes',
                 rows: selected.map((row) => ({
                   ...row,
                   context: rows.find((entry) => entry.item.id === row.itemId)!
@@ -252,6 +260,7 @@ export async function planContext(
     }
     return {
       ...(refreshLikes ? { refreshLikes: true } : {}),
+      ...(refreshReplies ? { refreshReplies: true } : {}),
       accountKey,
       handle: handle ?? '',
       timeZone:
@@ -259,7 +268,7 @@ export async function planContext(
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       rows,
       hash,
-      canary: refreshLikes ? false : !accepted,
+      canary: refreshLikes || refreshReplies ? false : !accepted,
       manual,
       confirmed,
       excluded,
@@ -276,6 +285,7 @@ export function contextSummary(
   return {
     dryRun: true,
     refreshLikes: Boolean(plan.refreshLikes),
+    refreshReplies: Boolean(plan.refreshReplies),
     planned: plan.rows.length,
     marked: plan.rows.filter((row) => row.marked).length,
     manual: plan.manual,

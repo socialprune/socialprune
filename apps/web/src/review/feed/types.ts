@@ -23,6 +23,16 @@ export interface FeedSuggestion {
   harmless?: boolean;
 }
 export interface FeedCardModel extends FeedPost {
+  replies?: {
+    entries: readonly {
+      account: string;
+      text: string;
+      createdAt: string | null;
+      likes: { count: number | null; source: 'answer' | 'dom' | null };
+    }[];
+    moreCount: number;
+    capped: boolean;
+  };
   kind: 'post' | 'reply' | 'quote' | 'repost' | 'comment';
   replyTo?: string;
   replyContext?: readonly FeedPost[];

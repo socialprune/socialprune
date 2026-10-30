@@ -17,6 +17,7 @@ export const BrowserActionSchema = z.enum([
   'confirm-comment',
   'delete-comment',
   'refresh-comment-likes',
+  'refresh-comment-replies',
 ]);
 export const BrowserAttemptStateSchema = z.enum([
   'withdrawn',
@@ -238,7 +239,11 @@ export const BrowserAttemptSchema = z
       .optional(),
   })
   .superRefine((attempt, ctx) => {
-    if (attempt.action === 'refresh-comment-likes') {
+    if (
+      ['refresh-comment-likes', 'refresh-comment-replies'].includes(
+        attempt.action,
+      )
+    ) {
       if (
         !attempt.itemId?.startsWith('instagram:') ||
         attempt.originalId !== undefined ||
@@ -438,7 +443,11 @@ export function validateBrowserJournal(
     const item = value.itemId ? items.get(value.itemId) : undefined;
     if (
       !run ||
-      (['confirm-comment', 'refresh-comment-likes'].includes(value.action)
+      ([
+        'confirm-comment',
+        'refresh-comment-likes',
+        'refresh-comment-replies',
+      ].includes(value.action)
         ? run.platform !== 'instagram' ||
           run.mode !== 'context' ||
           !value.itemId ||
@@ -477,7 +486,11 @@ export function validateBrowserJournal(
     )
       throw new Error('INVALID_BROWSER_JOURNAL');
     if (
-      ['confirm-comment', 'refresh-comment-likes'].includes(value.action) &&
+      [
+        'confirm-comment',
+        'refresh-comment-likes',
+        'refresh-comment-replies',
+      ].includes(value.action) &&
       run &&
       (Date.parse(value.at) < Date.parse(run.startedAt) ||
         (run.endedAt !== null &&
@@ -495,7 +508,9 @@ export function validateBrowserJournal(
         prior.action !== value.action ||
         settled.has(prior.attemptId) ||
         !(
-          value.action === 'refresh-comment-likes'
+          ['refresh-comment-likes', 'refresh-comment-replies'].includes(
+            value.action,
+          )
             ? ['read', 'failed']
             : value.action === 'confirm-comment'
               ? [
@@ -513,9 +528,12 @@ export function validateBrowserJournal(
         throw new Error('INVALID_BROWSER_JOURNAL');
       settled.add(prior.attemptId);
     } else if (
-      (['read-post', 'confirm-comment', 'refresh-comment-likes'].includes(
-        value.action,
-      ) &&
+      ([
+        'read-post',
+        'confirm-comment',
+        'refresh-comment-likes',
+        'refresh-comment-replies',
+      ].includes(value.action) &&
         value.state !== 'sending') ||
       (!['sending', 'withdrawn', 'not-found'].includes(value.state) &&
         !(
@@ -530,7 +548,11 @@ export function validateBrowserJournal(
   for (const attempt of attempts) {
     const run = knownRuns.get(attempt.runId);
     if (
-      ['confirm-comment', 'refresh-comment-likes'].includes(attempt.action) &&
+      [
+        'confirm-comment',
+        'refresh-comment-likes',
+        'refresh-comment-replies',
+      ].includes(attempt.action) &&
       attempt.state === 'sending' &&
       run?.endedAt &&
       !settled.has(attempt.attemptId)

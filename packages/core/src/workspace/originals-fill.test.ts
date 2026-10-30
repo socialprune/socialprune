@@ -92,7 +92,7 @@ test('fill writer cannot change decision/outcome state; v4 portable backup prese
         yield* bytes;
       })(),
     );
-    expect(parsed.schemaVersion).toBe(11);
+    expect(parsed.schemaVersion).toBe(12);
     expect(parsed.originals).toEqual(value.originals);
     const target = createMemoryStore();
     try {

@@ -73,6 +73,61 @@ test('Instagram comment display separates only a leading mention run and preserv
     '@generated.one @generated_two Own words retain @inside and the ending.',
   );
 });
+
+for (const locale of ['de', 'en'] as const)
+  test(`REPLIES-1 replies follow the own Instagram comment in ${locale}, empty differs from unobserved and X is unchanged`, () => {
+    const replies = {
+      entries: [
+        {
+          account: 'generated_reply',
+          text: 'Generated reply <script>not executed</script>',
+          createdAt: '2025-01-02T12:00:00Z',
+          likes: { count: 7, source: 'dom' as const },
+        },
+      ],
+      moreCount: 1,
+      capped: false,
+    };
+    const node = (value: FeedCardModel, platform: 'x' | 'instagram') => (
+      <FeedCard
+        card={value}
+        platform={platform}
+        position={1}
+        total={1}
+        onDecision={() => undefined}
+      />
+    );
+    const html = render(
+      node({ ...card, kind: 'comment', replies }, 'instagram'),
+      locale,
+    );
+    expect(html.indexOf(card.text)).toBeLessThan(
+      html.indexOf('generated_reply'),
+    );
+    expect(html).toContain('data-instagram-replies');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('2025-01-02T12:00:00Z');
+    expect(
+      render(
+        node(
+          {
+            ...card,
+            kind: 'comment',
+            replies: { entries: [], moreCount: 0, capped: false },
+          },
+          'instagram',
+        ),
+        locale,
+      ),
+    ).toContain(catalogs[locale]['instagramReplies.empty']);
+    expect(
+      render(node({ ...card, kind: 'comment' }, 'instagram'), locale),
+    ).not.toContain('data-instagram-replies');
+    expect(render(node({ ...card, replies }, 'x'), locale)).not.toContain(
+      'generated_reply',
+    );
+  });
 for (const locale of ['de', 'en'] as const)
   for (const mode of ['feed-fallback', 'feed-action', 'full'] as const)
     test(`expanded screenshot control says hide in ${locale}, ${mode}`, () => {

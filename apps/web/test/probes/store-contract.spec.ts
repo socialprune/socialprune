@@ -195,7 +195,7 @@ for (const legacyVersion of [7, 8, 10] as const)
       duplicateRejected: boolean;
       addOnly: boolean;
     };
-    expect(result.version).toBe(11);
+    expect(result.version).toBe(12);
     expect(result.first).toEqual(current);
     expect(result.second).toEqual(current);
     expect(

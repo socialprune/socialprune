@@ -47,6 +47,7 @@ import { listRegions } from './list-regions.ts';
 import { listNavigation } from './list-navigation.ts';
 import { windowFacts } from './list-window.ts';
 import { listRowDiagnostic } from './list-diagnostic.ts';
+import { listProbeReader, boundedProbe, probeView } from './list-probe.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -281,6 +282,7 @@ export async function loadList(
   let initialAccount: string | undefined;
   let oldestWithinWeek: boolean | null = null;
   let missingCandidate = false;
+  let probeAllowed = false;
   try {
     let navigation = await navigateList(page, expected, deps, guard, rowCounts);
     let accountRows = navigation.entries;
@@ -384,7 +386,7 @@ export async function loadList(
       ),
       scrollLoads = 0,
       full = false;
-    for (let index = 0; index < 10; index++) {
+    for (let index = 0; index < (diagnose ? 0 : 10); index++) {
       guard();
       const first = (await readAccountRows(page, expected, rowCounts))[0];
       const box = first
@@ -440,6 +442,7 @@ export async function loadList(
           signature.previousWindowDifferent === true))
     )
       throw new ContextStop('PLATFORM_CHECK', 'list-timeout');
+    probeAllowed = true;
     return {
       candidates,
       account:
@@ -459,6 +462,7 @@ export async function loadList(
     };
   } catch (error) {
     if (error instanceof ContextStop && error.token === 'list-timeout') {
+      probeAllowed = true;
       rowCounts.listTimeout = await listTimeoutDiagnostic(
         page,
         filter,
@@ -563,6 +567,59 @@ export async function loadList(
     }
     freshness.finish();
     await dom?.dispose();
+    if (diagnose && filter.applied && probeAllowed) {
+      const reader = await listProbeReader(
+        page,
+        item.text,
+        item.createdAt,
+        expected,
+        now.getTime(),
+        guard,
+      );
+      try {
+        rowCounts.filteredProbe = await boundedProbe(
+          () => reader.read(),
+          () => reader.scroll(),
+          () => reader.settle(deps.pace.scrollMs),
+        );
+        await navigateList(page, expected, deps, guard, rowCounts);
+        await clickAllowed(
+          page,
+          { kind: 'named', name: 'Sort & filter' },
+          guard,
+        );
+        await clickAllowed(
+          page,
+          { kind: 'named', name: 'Newest to oldest' },
+          guard,
+        );
+        const newest = page.getByRole('button', {
+          name: 'Newest to oldest',
+          exact: true,
+        });
+        const selected =
+          (
+            await Promise.all(
+              ['aria-checked', 'aria-pressed', 'data-selected'].map(
+                (attribute) => newest.getAttribute(attribute, { timeout: 150 }),
+              ),
+            )
+          ).some((value) => value === 'true') ||
+          (await newest
+            .locator('input:checked,[aria-checked="true"]')
+            .count()) === 1;
+        await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
+        await navigateList(page, expected, deps, guard, rowCounts);
+        await reader.settle(deps.pace.scrollMs);
+        rowCounts.newestProbe = {
+          sortReadback: selected,
+          settledReload: true,
+          view: probeView(await reader.read()),
+        };
+      } finally {
+        await reader.close();
+      }
+    }
   }
 }
 export async function openCandidate(

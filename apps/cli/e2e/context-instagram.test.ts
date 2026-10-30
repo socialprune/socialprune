@@ -2408,6 +2408,77 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
   }
 });
 
+test.each(['below-first', 'other-date', 'absent'] as const)(
+  'listprobe %s distinguishes filtered lazy rows, alternate filter date and bounded absence',
+  async (variant) => {
+    const h = await harness('success', 1, 1000);
+    h.fake.listProbe(variant);
+    h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+    try {
+      expect(await h.start(true)).toMatchObject({
+        code: 'CANCELLED',
+        token: 'stopped',
+      });
+      const journal = await h.store.browserJournal(),
+        run = journal.runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          filteredProbe: {
+            initial: {
+              ownRows: number;
+              targetMatched: boolean;
+              scrollHeightGreaterThanClient: boolean | null;
+            };
+            scrolls: {
+              rowsBefore: number;
+              rowsAfter: number;
+              targetMatched: boolean;
+            }[];
+          };
+          newestProbe: {
+            sortReadback: boolean;
+            settledReload: boolean;
+            view: { ownRows: number; targetMatched: boolean };
+          };
+        }[];
+      };
+      expect(report.steps).toHaveLength(1);
+      const step = report.steps[0]!;
+      expect(step.filteredProbe.initial).toMatchObject({
+        ownRows: 3,
+        targetMatched: false,
+        scrollHeightGreaterThanClient: true,
+      });
+      expect(step.filteredProbe.scrolls.length).toBeLessThanOrEqual(3);
+      expect(
+        step.filteredProbe.scrolls.some((scroll) => scroll.targetMatched),
+      ).toBe(variant === 'below-first');
+      expect(step.newestProbe).toMatchObject({
+        sortReadback: true,
+        settledReload: true,
+        view: { targetMatched: variant === 'other-date' },
+      });
+      expect(journal.attempts).toHaveLength(0);
+      expect(run.pageOpens).toBe(1);
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toBe(false);
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(0);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
 test('IG-list diagnostic order observes one list and never opens a post, excludes a comment or accepts a canary', async () => {
   const h = await harness('success', 6);
   h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });

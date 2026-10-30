@@ -8,6 +8,8 @@ import { imageCase, imageCasePage, imageCasePng } from './image-cases.ts';
 import type { ImageCaseName } from './image-cases.ts';
 import { deletionPost } from './delete-page.ts';
 import { addRepliesPage } from './replies-page.ts';
+import { listProbePage } from './list-probe-page.ts';
+import type { ListProbeCase } from './list-probe-page.ts';
 import type { DeleteCase } from './delete-page.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
@@ -29,6 +31,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let probeCase: ListProbeCase | undefined;
   let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
   let windowLists:
@@ -213,6 +216,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         return;
       }
       if (path === '/your_activity/interactions/comments') {
+        if (probeCase) {
+          response.setHeader('Content-Type', 'text/html');
+          response.end(listProbePage(items, probeCase));
+          return;
+        }
         await beforeNavigation?.();
         response.writeHead(variant === '429' ? 429 : 200, {
           'Content-Type': 'text/html',
@@ -639,6 +647,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replies(count: number) {
       replyCount = count;
+    },
+    listProbe(value: ListProbeCase) {
+      probeCase = value;
     },
     malformedReplyControls() {
       replyControlMalformed = true;

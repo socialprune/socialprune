@@ -2,13 +2,14 @@ import type { Item } from '@socialprune/core';
 import { listPage } from './pages.ts';
 
 export type ListProbeCase = 'below-first' | 'other-date' | 'absent';
+export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
   items: readonly Item[],
   probe: ListProbeCase,
 ): string {
   return listPage(items, 'success', 0)
-    .replace('#list{height:420px;', '#list{height:160px;')
+    .replace('#list{height:420px;', `#list{height:${PROBE_CLIENT_HEIGHT}px;`)
     .replace(
       'let oldest=false,',
       "let oldest=sessionStorage.getItem('probe-oldest')==='true',",

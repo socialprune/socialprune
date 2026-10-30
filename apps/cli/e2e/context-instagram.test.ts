@@ -1371,7 +1371,7 @@ async function harness(
         maxRetries: 10,
         retryDelay: 100,
       });
-      assertRecordedEvents(fake.events);
+      assertRecordedEvents(fake.events, fake.listWheelDelta);
     })().finally(() => {
       diagnostics.close();
       closeSettled = true;

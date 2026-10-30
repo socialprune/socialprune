@@ -15,6 +15,9 @@ export async function commentReplies(
   match: { id: string; createdAt: string; username: string; text: string },
   guard: () => void,
   deadline: number,
+  pause: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+  expandMs = 3000,
 ): Promise<NonNullable<InstagramContext['replies']>> {
   const entries: NonNullable<InstagramContext['replies']>['entries'] = [];
   const seen = new Set<string>();
@@ -71,7 +74,9 @@ export async function commentReplies(
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
       const links = blocks.locator('a[href*="/c/"]');
       const href =
-        (await links.count()) === 1 ? await links.getAttribute('href') : null;
+        (await links.count()) === 1
+          ? await links.getAttribute('href', { timeout: 150 })
+          : null;
       const id = href
         ? new RegExp(
             `^/${address.kind}/${address.code}/c/([0-9]{1,40})/$`,
@@ -79,7 +84,9 @@ export async function commentReplies(
         : undefined;
       const time = links.locator('time[datetime]');
       const rawTime =
-        (await time.count()) === 1 ? await time.getAttribute('datetime') : null;
+        (await time.count()) === 1
+          ? await time.getAttribute('datetime', { timeout: 150 })
+          : null;
       const createdAt =
         rawTime && Number.isFinite(Date.parse(rawTime))
           ? new Date(rawTime).toISOString()
@@ -132,6 +139,11 @@ export async function commentReplies(
     if (!controls) break;
     if (controls !== 1 || !(await control.isVisible()))
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+    if (performance.now() + expandMs >= deadline) {
+      capped = true;
+      break;
+    }
+    await pause(expandMs);
     guard();
     await checkPage(page);
     await control.click({

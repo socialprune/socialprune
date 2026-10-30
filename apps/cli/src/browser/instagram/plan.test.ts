@@ -102,10 +102,12 @@ test('REPLIES-1 refresh plan excludes observed empty replies and binds the CLI m
       '--json',
     ]);
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout).data).toMatchObject({
-      refreshReplies: true,
-      planned: 0,
-    });
+    expect((JSON.parse(result.stdout) as { data: unknown }).data).toMatchObject(
+      {
+        refreshReplies: true,
+        planned: 0,
+      },
+    );
   } finally {
     await h.close();
   }

@@ -81,6 +81,7 @@ test('REPLIES-1 CLI to real IndexedDB to CLI backup preserves replies and v11 up
     await restoreBackup(
       target,
       (async function* () {
+        await Promise.resolve();
         yield backup;
       })(),
     );

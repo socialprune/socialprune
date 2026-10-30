@@ -64,9 +64,11 @@ export async function commentReplies(
       const row = rows.nth(index);
       if (!(await row.isVisible())) continue;
       const blocks = row.locator(':scope > div:not([role])');
-      if ((await blocks.count()) !== 1) continue;
+      if ((await blocks.count()) !== 1)
+        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
       const value = await textBlock(blocks);
-      if (!value) continue;
+      if (!value)
+        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
       const links = blocks.locator('a[href*="/c/"]');
       const href =
         (await links.count()) === 1 ? await links.getAttribute('href') : null;
@@ -112,10 +114,11 @@ export async function commentReplies(
       });
       if (entries.length === REPLY_CAP) break;
     }
-    const control = root.getByRole('button', {
-      name: 'View replies',
-      exact: true,
-    });
+    const control = root
+      .locator(
+        ':scope > button, :scope > div > button, :scope > div > [role="button"], :scope > [role="button"]',
+      )
+      .filter({ hasText: /^View replies$/u });
     const controls = await control.count();
     moreCount = Math.max(0, count - entries.length, controls ? 1 : 0);
     if (

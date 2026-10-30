@@ -54,4 +54,18 @@ test('REPLIES-1 post observations fill once, survive likes fills and cannot alte
   expect(
     (await store.read((tx) => tx.instagramContext.get(prior.itemId)))?.replies,
   ).toEqual(replies);
+  const withLikes = { ...next, likes: { count: 8, source: 'dom' as const } };
+  await store.write((tx) => tx.instagramContext.fillLikes(withLikes));
+  expect(
+    await store.read((tx) => tx.instagramContext.get(prior.itemId)),
+  ).toEqual(withLikes);
+  await expect(
+    store.write((tx) =>
+      tx.instagramContext.fillLikes({
+        ...withLikes,
+        replies: { ...replies, moreCount: 2 },
+      }),
+    ),
+  ).rejects.toThrow('CONTEXT_WRITE_ONCE');
+  await store.close();
 });

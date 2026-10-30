@@ -133,8 +133,8 @@ test('quota failure rolls back the real transaction and versionchange closes the
   });
 });
 
-for (const legacyVersion of [7, 8, 10] as const)
-  test(`v${legacyVersion} to v11 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
+for (const legacyVersion of [7, 8, 10, 11] as const)
+  test(`v${legacyVersion} to v12 real IndexedDB migration preserves ambiguous deletion receipts and context journal on reopen`, async ({
     page,
   }) => {
     const store = createMemoryStore();
@@ -182,7 +182,7 @@ for (const legacyVersion of [7, 8, 10] as const)
           proveOwnerUpgrade(
             value: WorkspaceV2,
             fail: boolean,
-            version: 7 | 8 | 10,
+            version: 7 | 8 | 10 | 11,
           ): Promise<unknown>;
         };
         return module.proveOwnerUpgrade(input, false, legacyVersion);
@@ -207,8 +207,8 @@ for (const legacyVersion of [7, 8, 10] as const)
     expect(result.addOnly).toBe(true);
   });
 
-for (const legacyVersion of [8, 10] as const)
-  test(`v${legacyVersion} to v11 IndexedDB metadata failure rolls back the version step and retains context`, async ({
+for (const legacyVersion of [8, 10, 11] as const)
+  test(`v${legacyVersion} to v12 IndexedDB metadata failure rolls back the version step and retains context`, async ({
     page,
   }) => {
     const store = createMemoryStore();

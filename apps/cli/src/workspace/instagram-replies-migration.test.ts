@@ -30,6 +30,8 @@ test.each([false, true])(
     );
     raw.close();
     const before = await readFile(path);
+    // Applied to the intercepted database by the scoped migration spy.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const original = DatabaseSync.prototype.exec;
     const spy = failure
       ? vi.spyOn(DatabaseSync.prototype, 'exec').mockImplementation(function (

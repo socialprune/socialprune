@@ -99,7 +99,11 @@ import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
 import { commentLikes } from './likes.ts';
-import { commentReplies } from './replies.ts';
+import {
+  commentReplies,
+  captureRepliesForMode,
+  ReplyReadFailure,
+} from './replies.ts';
 import { refreshOutcome } from './refresh.ts';
 import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
@@ -272,7 +276,12 @@ export async function runContextWithDependencies(
   const chosen = options.plan.canary
     ? canaryRows(options.plan)
     : options.plan.rows;
-  const automatic = Boolean(options.order && options.plan.canary);
+  const automatic = Boolean(
+    options.order &&
+    options.plan.canary &&
+    (!options.plan.refreshReplies || options.order.value.acceptCanary),
+  );
+  let repliesAnswerChecked = true;
   let context: BrowserContext | undefined,
     network: Awaited<ReturnType<typeof guardInstagramNetwork>> | undefined;
   let pages: ReturnType<typeof contextPages> | undefined;
@@ -400,6 +409,16 @@ export async function runContextWithDependencies(
     if (automatic) throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
   };
   const assertAutomaticCanary = async () => {
+    if (options.plan.refreshReplies) {
+      if (
+        !automatic ||
+        completed !== 5 ||
+        checkedItemIds.length !== 5 ||
+        !repliesAnswerChecked
+      )
+        throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+      return;
+    }
     if (!automatic || completed !== 5 || checkedAttempts.size !== 5)
       throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
     await options.store.read(async (tx) => {
@@ -1207,19 +1226,44 @@ export async function runContextWithDependencies(
           if (read.result.state !== 'confirmed')
             throw new ContextStop('PLATFORM_CHECK', 'post-structure');
           if (options.plan.refreshReplies) {
-            const replies = await commentReplies(
-              page,
-              answers.bodies,
-              {
-                ...read.result.comment,
-                username: options.plan.handle,
-                text: row.item.text,
+            let answerChecked = false;
+            const replies = await captureRepliesForMode(
+              () =>
+                commentReplies(
+                  page,
+                  answers.bodies,
+                  {
+                    ...read.result.comment,
+                    username: options.plan.handle,
+                    text: row.item.text,
+                  },
+                  guard,
+                  openedAt + deps.responseMs,
+                  (ms) => deps.sleep(ms),
+                  deps.pace.expandMs,
+                  (value) => {
+                    answerChecked = value;
+                  },
+                  () =>
+                    answers!.flush(
+                      Math.max(
+                        1,
+                        openedAt + deps.responseMs - performance.now(),
+                      ),
+                    ),
+                ),
+              true,
+              false,
+              (reason) => {
+                stepReport.replies = {
+                  read: 0,
+                  moreCount: 0,
+                  capped: false,
+                  reason,
+                };
               },
-              guard,
-              openedAt + deps.responseMs,
-              (ms) => deps.sleep(ms),
-              deps.pace.expandMs,
             );
+            if (!replies) throw new ReplyReadFailure('reply-read-failed');
             await checkpoint();
             await writer.fillReplies(
               attemptId,
@@ -1234,7 +1278,10 @@ export async function runContextWithDependencies(
               read: replies.entries.length,
               moreCount: replies.moreCount,
               capped: replies.capped,
+              answerChecked,
             };
+            checkedItemIds.push(row.item.id);
+            repliesAnswerChecked &&= answerChecked;
             break;
           }
           const likes = await commentLikes(page, answers.bodies, {
@@ -1296,7 +1343,44 @@ export async function runContextWithDependencies(
           answers.images,
           deps.policy,
         );
+        let capturedReplies: InstagramContext['replies'];
+        if (read.result.state === 'confirmed') {
+          const match = {
+            ...read.result.comment,
+            username: options.plan.handle,
+            text: row.item.text,
+          };
+          capturedReplies = await captureRepliesForMode(
+            () =>
+              commentReplies(
+                page,
+                answers.bodies,
+                match,
+                guard,
+                openedAt + deps.responseMs,
+                (ms) => deps.sleep(ms),
+                deps.pace.expandMs,
+                () => {},
+                () =>
+                  answers!.flush(
+                    Math.max(1, openedAt + deps.responseMs - performance.now()),
+                  ),
+              ),
+            false,
+            options.order?.value.captureReplies === true,
+            (reason) => {
+              stepReport.replies = {
+                read: 0,
+                moreCount: 0,
+                capped: false,
+                reason,
+              };
+            },
+          );
+          await checkpoint();
+        }
         const record: InstagramContext = {
+          ...(capturedReplies ? { replies: capturedReplies } : {}),
           ...(read.result.state === 'confirmed'
             ? {
                 likes: await commentLikes(page, answers.bodies, {
@@ -1304,19 +1388,6 @@ export async function runContextWithDependencies(
                   username: options.plan.handle,
                   text: row.item.text,
                 }),
-                replies: await commentReplies(
-                  page,
-                  answers.bodies,
-                  {
-                    ...read.result.comment,
-                    username: options.plan.handle,
-                    text: row.item.text,
-                  },
-                  guard,
-                  openedAt + deps.responseMs,
-                  (ms) => deps.sleep(ms),
-                  deps.pace.expandMs,
-                ),
               }
             : {}),
           itemId: row.item.id,
@@ -1462,7 +1533,12 @@ export async function runContextWithDependencies(
     if (options.plan.canary && commentsTried === 15 && completed < 5)
       throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
     stage = 'canary-check';
-    if (automatic && chosen.length) await assertAutomaticCanary();
+    if (
+      automatic &&
+      chosen.length &&
+      !(options.plan.refreshReplies && !repliesAnswerChecked)
+    )
+      await assertAutomaticCanary();
     if (options.plan.canary && report.steps.length > 0 && endReason === 'done')
       endReason = 'canary';
   } catch (caught) {
@@ -1577,7 +1653,14 @@ export async function runContextWithDependencies(
         await network?.flush();
         await pages?.flush();
       });
-      if (endReason === 'canary' && !error && !options.order && completed > 0) {
+      if (
+        endReason === 'canary' &&
+        !error &&
+        (!options.order ||
+          (options.plan.refreshReplies &&
+            (!automatic || !repliesAnswerChecked))) &&
+        completed > 0
+      ) {
         const written = await finalize('structure-report', structure);
         if (written)
           await finalize('manual-match', async () => {
@@ -1680,7 +1763,11 @@ export async function runContextWithDependencies(
       await finalize('network', async () => {
         await network?.flush();
       });
-      if (automatic && !error)
+      if (
+        automatic &&
+        !error &&
+        !(options.plan.refreshReplies && !repliesAnswerChecked)
+      )
         await finalize('automatic-check', assertAutomaticCanary);
       await finalize('structure-report', structure);
       await finalize('extension-report', async () => {
@@ -1702,22 +1789,36 @@ export async function runContextWithDependencies(
         await network?.flush();
       });
       await finalize('structure-report', structure);
-      if (automatic && endReason === 'canary' && !error) {
+      if (
+        automatic &&
+        endReason === 'canary' &&
+        !error &&
+        !(options.plan.refreshReplies && !repliesAnswerChecked)
+      ) {
         accepted = await finalize('acceptance', async () => {
           guard();
-          await options.store
-            .browserOutcomeWriter()
-            .recordContextAudit(
-              runId,
-              canaryAudit(checks, added, removed, 0),
-              undefined,
-              true,
-              {
-                at: options.now().toISOString(),
-                itemIds: checkedItemIds,
-                profileReport,
-              },
-            );
+          await options.store.browserOutcomeWriter().recordContextAudit(
+            runId,
+            options.plan.refreshReplies
+              ? {
+                  ...canaryAudit([], added, removed, 0),
+                  commentsConfirmed: completed,
+                }
+              : canaryAudit(checks, added, removed, 0),
+            undefined,
+            true,
+            {
+              at: options.now().toISOString(),
+              itemIds: checkedItemIds,
+              profileReport,
+              ...(options.plan.refreshReplies
+                ? {
+                    refreshReplies: true,
+                    repliesChecked: repliesAnswerChecked,
+                  }
+                : {}),
+            },
+          );
           ended = true;
         });
       }
@@ -1775,7 +1876,7 @@ export async function runContextWithDependencies(
         });
       if (
         ended &&
-        !options.order &&
+        (!options.order || options.plan.refreshReplies) &&
         endReason === 'canary' &&
         !error &&
         matches

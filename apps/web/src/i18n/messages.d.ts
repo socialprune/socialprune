@@ -573,6 +573,7 @@ declare global {
     'instagramContext.open': Record<never, never>;
     'instagramContext.screenshot': { date: string };
     'instagramContext.showScreenshot': Record<never, never>;
+    'instagramReplies.bound': Record<never, never>;
     'instagramReplies.empty': Record<never, never>;
     'instagramReplies.partial': { count: string };
     'instagramReplies.title': Record<never, never>;

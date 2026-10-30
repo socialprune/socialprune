@@ -69,7 +69,7 @@ test('REPLIES-1 refresh plan excludes observed empty replies and binds the CLI m
     );
     expect(plan.rows.map((row) => row.item.id)).toEqual([record.itemId]);
     expect(plan.refreshReplies).toBe(true);
-    expect(plan.canary).toBe(false);
+    expect(plan.canary).toBe(true);
     expect(plan.hash).not.toBe(
       (await planContext(h.store, h.accountKey, new Set(), new Set(), true))
         .hash,

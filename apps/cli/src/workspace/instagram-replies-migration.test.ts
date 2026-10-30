@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { SQLiteStore } from './sqlite-store.ts';
 import { createMemoryStore } from '@socialprune/core/workspace/memory-store';
 import { writeInstagramContextContract } from '@socialprune/core/workspace/store-contract';
@@ -25,9 +26,31 @@ test.each([false, true])(
     const first = await SQLiteStore.open(path, { initial });
     await first.close();
     const raw = new DatabaseSync(path);
+    const baseline = execFileSync(
+      'git',
+      [
+        'show',
+        '0fa3746b1f0486b4d9de9225945800b1e1f4a1a8:apps/cli/src/workspace/sqlite-store.ts',
+      ],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    const v11Trigger = baseline.match(
+      /CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN[\s\S]*?END;/,
+    )?.[0];
+    expect(v11Trigger).toBeDefined();
+    raw.exec('DROP TRIGGER instagram_context_no_update; ' + v11Trigger!);
     raw.exec(
       "UPDATE meta SET data=json_set(data,'$.schemaVersion',11); PRAGMA user_version=11;",
     );
+    expect(() =>
+      raw.prepare('UPDATE instagram_context SET data=? WHERE item_id=?').run(
+        JSON.stringify({
+          ...prior,
+          replies: { entries: [], moreCount: 0, capped: false },
+        }),
+        prior.itemId,
+      ),
+    ).toThrow(/write-once/);
     raw.close();
     const before = await readFile(path);
     // Applied to the intercepted database by the scoped migration spy.

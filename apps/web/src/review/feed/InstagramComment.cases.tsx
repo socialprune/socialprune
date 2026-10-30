@@ -75,6 +75,40 @@ test('Instagram comment display separates only a leading mention run and preserv
 });
 
 for (const locale of ['de', 'en'] as const)
+  test(`REPLIES revision F5 a declared bound without a count never claims zero unread replies in ${locale}`, () => {
+    const html = render(
+      <FeedCard
+        card={{
+          ...card,
+          kind: 'comment',
+          replies: {
+            entries: [
+              {
+                account: 'generated_reply',
+                text: 'Generated reply',
+                createdAt: null,
+                likes: { count: null, source: null },
+              },
+            ],
+            moreCount: 0,
+            capped: true,
+          },
+        }}
+        platform="instagram"
+        position={1}
+        total={1}
+        onDecision={() => undefined}
+      />,
+      locale,
+    );
+    expect(html).toContain(
+      locale === 'de'
+        ? 'Die Erfassung endete an ihrer festgelegten Grenze.'
+        : 'Capture ended at its declared limit.',
+    );
+    expect(html).not.toContain(locale === 'de' ? 'Mindestens 0' : 'At least 0');
+  });
+for (const locale of ['de', 'en'] as const)
   test(`REPLIES-1 replies follow the own Instagram comment in ${locale}, empty differs from unobserved and X is unchanged`, () => {
     const replies = {
       entries: [

@@ -29,6 +29,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
   let windowLists:
     'populated-empty' | 'empty-empty' | 'populated-populated' | undefined;
@@ -421,6 +422,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             post[1]!,
             items[Math.max(0, index)]!.createdAt,
           );
+        if (replyControlMalformed)
+          html = html.replace(
+            'View replies</button>',
+            'View replies</button><button>View replies</button>',
+          );
         if (listDecoration === 'caption')
           html = html.replace(
             '<section>',
@@ -547,7 +553,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     server.listen(port, '127.0.0.1', resolve);
   });
   function withLikes(answer: unknown, index: number) {
-    if (likesCase !== 'answer') return answer;
+    if (likesCase !== 'answer' && !replyCount) return answer;
     const item = items[index]!;
     return {
       ...(answer as object),
@@ -557,7 +563,27 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           created_at: Date.parse(item.createdAt) / 1000,
           user: { username: item.account.handle },
           text: item.text,
-          comment_like_count: 23,
+          ...(likesCase === 'answer' ? { comment_like_count: 23 } : {}),
+          ...(replyCount
+            ? {
+                child_comment_count: replyCount,
+                preview_child_comments: Array.from(
+                  { length: replyCount },
+                  (_, ordinal) => ({
+                    pk: String(900000 + ordinal),
+                    parent_comment_id: String(
+                      BigInt(IG_FIXTURE.commentId) + BigInt(index),
+                    ),
+                    created_at: Date.parse(item.createdAt) / 1000,
+                    user: { username: `generated_reply_${ordinal}` },
+                    text: `Generated reply ${ordinal} with local text`,
+                    ...(ordinal === 1
+                      ? {}
+                      : { comment_like_count: ordinal + 2 }),
+                  }),
+                ),
+              }
+            : {}),
         },
       ],
     };
@@ -613,6 +639,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replies(count: number) {
       replyCount = count;
+    },
+    malformedReplyControls() {
+      replyControlMalformed = true;
     },
     directPostAccount(value: 'expected' | 'other') {
       directPostAccount = value;

@@ -127,12 +127,15 @@ export function InstagramComment({
                   ))}
                 </ul>
               )}
-              {(card.replies.moreCount > 0 || card.replies.capped) && (
+              {card.replies.moreCount > 0 && (
                 <p>
                   {t('instagramReplies.partial', {
                     count: String(card.replies.moreCount),
                   })}
                 </p>
+              )}
+              {card.replies.capped && card.replies.moreCount === 0 && (
+                <p>{t('instagramReplies.bound')}</p>
               )}
             </section>
           )}

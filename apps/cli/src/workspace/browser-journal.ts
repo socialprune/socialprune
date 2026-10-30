@@ -1082,6 +1082,8 @@ export class BrowserOutcomeWriter {
       at: string;
       itemIds: readonly string[];
       profileReport: BrowserProfileReport;
+      refreshReplies?: boolean;
+      repliesChecked?: boolean;
     },
   ): Promise<void> {
     const names = ['owner', 'time', 'caption', 'image'];
@@ -1136,18 +1138,22 @@ export class BrowserOutcomeWriter {
           run.canaryAcceptedAt ||
           code !== undefined ||
           counts.commentsConfirmed !== 5 ||
+          (acceptance.refreshReplies && acceptance.repliesChecked !== true) ||
           acceptance.itemIds.length !== counts.commentsConfirmed ||
           new Set(acceptance.itemIds).size !== counts.commentsConfirmed ||
-          counts.imagesMatched !== counts.commentsConfirmed ||
-          counts.screenshotsStored !== counts.commentsConfirmed ||
+          (!acceptance.refreshReplies &&
+            counts.imagesMatched !== counts.commentsConfirmed) ||
+          (!acceptance.refreshReplies &&
+            counts.screenshotsStored !== counts.commentsConfirmed) ||
           counts.unexpectedActions ||
           counts.extensionIdsAdded ||
           counts.extensionIdsRemoved ||
-          Object.values(counts.fields).some(
-            (value) =>
-              value.compared !== counts.commentsConfirmed ||
-              value.agreed !== value.compared,
-          ))
+          (!acceptance.refreshReplies &&
+            Object.values(counts.fields).some(
+              (value) =>
+                value.compared !== counts.commentsConfirmed ||
+                value.agreed !== value.compared,
+            )))
       )
         throw new CliError('CANARY_CHECK_FAILED');
       if (accepted && acceptance) {
@@ -1162,8 +1168,11 @@ export class BrowserOutcomeWriter {
           sends.length > 15 ||
           sends.length !== settlements.length ||
           attempts.length !== sends.length + settlements.length ||
-          settlements.filter((attempt) => attempt.state === 'confirmed')
-            .length !== 5
+          settlements.filter(
+            (attempt) =>
+              attempt.state ===
+              (acceptance.refreshReplies ? 'read' : 'confirmed'),
+          ).length !== 5
         )
           throw new CliError('CANARY_CHECK_FAILED');
         const itemIds = new Set<string>();
@@ -1172,31 +1181,41 @@ export class BrowserOutcomeWriter {
             (attempt) => attempt.settles === send.attemptId,
           );
           if (
-            send.action !== 'confirm-comment' ||
+            send.action !==
+              (acceptance.refreshReplies
+                ? 'refresh-comment-replies'
+                : 'confirm-comment') ||
             send.settles !== null ||
             !send.itemId ||
             itemIds.has(send.itemId) ||
             settles.length !== 1 ||
-            settles[0]!.action !== 'confirm-comment' ||
+            settles[0]!.action !== send.action ||
             settles[0]!.itemId !== send.itemId ||
-            (settles[0]!.state !== 'confirmed' &&
+            (settles[0]!.state !==
+              (acceptance.refreshReplies ? 'read' : 'confirmed') &&
+              !(acceptance.refreshReplies && settles[0]!.state === 'failed') &&
               settles[0]!.state !== 'unavailable' &&
               settles[0]!.state !== 'unconfirmed' &&
               settles[0]!.state !== 'not-listed')
           )
             throw new CliError('CANARY_CHECK_FAILED');
           itemIds.add(send.itemId);
-          if (settles[0]!.state === 'confirmed') {
+          if (
+            settles[0]!.state ===
+            (acceptance.refreshReplies ? 'read' : 'confirmed')
+          ) {
             const record = await tx.instagramContext.get(send.itemId);
             if (
               !acceptance.itemIds.includes(send.itemId) ||
               !record ||
-              record.runId !== runId ||
-              record.attemptId !== send.attemptId ||
-              !record.post.owner ||
-              !record.post.createdAt ||
-              record.image.status !== 'stored' ||
-              record.screenshot.status !== 'stored'
+              (acceptance.refreshReplies
+                ? record.confirmedBy !== 'post' || record.replies === undefined
+                : record.runId !== runId ||
+                  record.attemptId !== send.attemptId ||
+                  !record.post.owner ||
+                  !record.post.createdAt ||
+                  record.image.status !== 'stored' ||
+                  record.screenshot.status !== 'stored')
             )
               throw new CliError('CANARY_CHECK_FAILED');
           }

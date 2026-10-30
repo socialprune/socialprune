@@ -146,8 +146,15 @@ export async function planContext(
       )
         runs.push(run);
     const runIds = new Set(runs.map((run) => run.runId));
+    const modeRuns = new Set<string>();
     for await (const attempt of tx.browserAttempts.iterate())
-      if (runIds.has(attempt.runId) && attempt.itemId && attempt.settles) {
+      if (runIds.has(attempt.runId) && attempt.itemId) {
+        if (
+          attempt.action ===
+          (refreshReplies ? 'refresh-comment-replies' : 'confirm-comment')
+        )
+          modeRuns.add(attempt.runId);
+        if (!attempt.settles) continue;
         last.set(attempt.itemId, attempt.state);
         if (
           attempt.action ===
@@ -255,6 +262,7 @@ export async function planContext(
     runs.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
     let accepted = false;
     for (const run of runs) {
+      if (!modeRuns.has(run.runId)) continue;
       if (run.endReason === 'shape-changed') accepted = false;
       if (run.canaryAcceptedAt) accepted = true;
     }
@@ -268,7 +276,7 @@ export async function planContext(
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       rows,
       hash,
-      canary: refreshLikes || refreshReplies ? false : !accepted,
+      canary: refreshLikes ? false : !accepted,
       manual,
       confirmed,
       excluded,

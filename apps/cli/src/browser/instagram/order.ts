@@ -7,6 +7,7 @@ export const ContextOrderSchema = z.strictObject({
   scope: z.literal('context-instagram'),
   refreshLikes: z.boolean().optional(),
   refreshReplies: z.boolean().optional(),
+  captureReplies: z.boolean().optional(),
   listDiagnostic: z.boolean().optional(),
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
@@ -53,6 +54,7 @@ export function validateContextOrder(
   if (
     !parsed.success ||
     (refreshLikes && refreshReplies) ||
+    (refreshLikes && parsed.data.captureReplies !== undefined) ||
     (refreshReplies && parsed.data.refreshReplies !== true) ||
     (parsed.data.refreshReplies !== undefined &&
       parsed.data.refreshReplies !== refreshReplies) ||
@@ -68,6 +70,6 @@ export function validateContextOrder(
     !/^[a-f0-9]{64}$/.test(order.sha256)
   )
     throw new CliError('CONTEXT_ORDER_INVALID');
-  if (canary && !parsed.data.acceptCanary)
+  if (canary && !parsed.data.acceptCanary && !refreshReplies)
     throw new CliError('CANARY_REQUIRED');
 }

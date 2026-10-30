@@ -377,8 +377,14 @@ export class InstagramContextWriter {
         if (attempt.runId === runId) attempts.push(attempt);
       const sends = attempts.filter((attempt) => attempt.state === 'sending'),
         settlements = attempts.filter((attempt) => attempt.settles !== null),
+        refreshReplies =
+          sends.length > 0 &&
+          sends.every(
+            (attempt) => attempt.action === 'refresh-comment-replies',
+          ),
         confirmed = settlements.filter(
-          (attempt) => attempt.state === 'confirmed',
+          (attempt) =>
+            attempt.state === (refreshReplies ? 'read' : 'confirmed'),
         );
       if (
         sends.length < 1 ||
@@ -401,32 +407,36 @@ export class InstagramContextWriter {
         );
         const result = settled[0];
         if (
-          send.action !== 'confirm-comment' ||
+          send.action !==
+            (refreshReplies ? 'refresh-comment-replies' : 'confirm-comment') ||
           send.settles !== null ||
           !send.itemId ||
           itemIds.has(send.itemId) ||
           settled.length !== 1 ||
-          result?.action !== 'confirm-comment' ||
+          result?.action !== send.action ||
           result.itemId !== send.itemId ||
-          (result.state !== 'confirmed' &&
+          (result.state !== (refreshReplies ? 'read' : 'confirmed') &&
+            !(refreshReplies && result.state === 'failed') &&
             result.state !== 'unavailable' &&
             result.state !== 'unconfirmed' &&
             result.state !== 'not-listed')
         )
           throw new Error('INVALID_CANARY');
         itemIds.add(send.itemId);
-        if (result.state === 'confirmed') {
+        if (result.state === (refreshReplies ? 'read' : 'confirmed')) {
           const record = await tx.instagramContext.get(send.itemId);
           if (
             !record ||
-            record.runId !== runId ||
-            record.attemptId !== send.attemptId ||
+            (refreshReplies
+              ? record.confirmedBy !== 'post' || record.replies === undefined
+              : record.runId !== runId ||
+                record.attemptId !== send.attemptId) ||
             (checkedItemIds !== undefined &&
               (!checkedItemIds.includes(send.itemId) ||
-                !record.post.owner ||
-                !record.post.createdAt ||
-                record.image.status !== 'stored' ||
-                record.screenshot.status !== 'stored'))
+                (!refreshReplies && !record.post.owner) ||
+                (!refreshReplies && !record.post.createdAt) ||
+                (!refreshReplies && record.image.status !== 'stored') ||
+                (!refreshReplies && record.screenshot.status !== 'stored')))
           )
             throw new Error('INVALID_CANARY');
         }

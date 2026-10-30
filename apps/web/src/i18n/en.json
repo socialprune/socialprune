@@ -1,6 +1,7 @@
 {
   "desktop.token.refresh-comment-replies": "Read shown replies under a confirmed comment.",
   "instagramReplies.title": "Replies under your comment",
+  "instagramReplies.bound": "Capture ended at its declared limit.",
   "instagramReplies.empty": "No replies shown.",
   "instagramReplies.partial": "More replies were available. At least {count} were not read.",
   "app.name": "SocialPrune",

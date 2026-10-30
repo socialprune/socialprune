@@ -9,6 +9,32 @@ import {
   ContextOrderSchema,
 } from './order.ts';
 
+test('REPLIES revision F2 capture consent is optional, boolean and main-only', () => {
+  const base = {
+    scope: 'context-instagram' as const,
+    account: 'generated_person',
+    givenAt: '2026-10-30T06:07:00Z',
+    words: 'Generated scope.',
+    acceptCanary: true,
+  };
+  expect(
+    ContextOrderSchema.safeParse({ ...base, captureReplies: true }).success,
+  ).toBe(true);
+  expect(
+    ContextOrderSchema.safeParse({ ...base, captureReplies: 'true' }).success,
+  ).toBe(false);
+  for (const captureReplies of [true, false]) {
+    const order = {
+      value: { ...base, captureReplies },
+      sha256: 'a'.repeat(64),
+    };
+    expect(() => validateContextOrder(order, base.account, true)).not.toThrow();
+    expect(() =>
+      validateContextOrder(order, base.account, false, true),
+    ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+  }
+});
+
 test('REPLIES-1 written order must explicitly name replies refresh and refuse cross-mode reuse', () => {
   const order = {
     value: {

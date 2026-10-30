@@ -47,6 +47,18 @@ test('CLI dry run preserves database bytes, emits counts only; invalid orders an
   };
   const recorder = networkRecorder();
   try {
+    const conflicting = await invoke([
+      '--refresh-likes',
+      '--refresh-replies',
+      '--json',
+    ]);
+    expect(conflicting.code).not.toBe(0);
+    expect(conflicting.stdout).toContain('INVALID_ARGUMENTS');
+    const missingOrder = await invoke(['--refresh-replies', '--json']);
+    expect(missingOrder.code).not.toBe(0);
+    expect(missingOrder.stdout).toContain('CONTEXT_ORDER_INVALID');
+    expect(browser.validate).not.toHaveBeenCalled();
+    expect(browser.run).not.toHaveBeenCalled();
     const before = createHash('sha256')
       .update(await readFile(path))
       .digest('hex');

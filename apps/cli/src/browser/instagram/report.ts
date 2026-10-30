@@ -436,6 +436,19 @@ export const ContextStepReportSchema = z
         read: z.number().int().min(0).max(50),
         moreCount: z.number().int().nonnegative(),
         capped: z.boolean(),
+        reason: z
+          .enum([
+            'reply-window-empty',
+            'reply-window-incomplete',
+            'reply-controls-changed',
+            'reply-scope-unverified',
+            'reply-answer-incomplete',
+            'reply-answer-conflict',
+            'reply-answer-mismatch',
+            'reply-read-failed',
+          ])
+          .optional(),
+        answerChecked: z.boolean().optional(),
       })
       .optional(),
     image: StepImageSchema.optional(),

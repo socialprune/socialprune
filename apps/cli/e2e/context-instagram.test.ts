@@ -1201,7 +1201,8 @@ async function harness(
       | boolean
       | 'no-canary'
       | { refreshLikes: true }
-      | { refreshReplies: true } = false,
+      | { refreshReplies: true }
+      | { captureReplies: boolean } = false,
     lang: 'en' | 'de' = 'en',
   ) => {
     const written: ContextOrder | undefined = order
@@ -6581,9 +6582,179 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
   }
 });
 
+async function acceptRepliesCanary(
+  store: SQLiteStore,
+  accountKey: string,
+  directory: string,
+) {
+  const writer = new InstagramContextWriter(store),
+    runId = crypto.randomUUID();
+  const prior = (await store.read((tx) => records(tx.instagramContext))).find(
+    (record) => record.replies === undefined,
+  )!;
+  await writer.startRun({
+    runId,
+    accountKey,
+    planHash: 'a'.repeat(64),
+    startedAt: IG_FIXTURE.now,
+  });
+  const attemptId = crypto.randomUUID();
+  await writer.sending({
+    runId,
+    attemptId,
+    itemId: prior.itemId,
+    at: IG_FIXTURE.now,
+    refreshReplies: true,
+  });
+  await writer.fillReplies(
+    attemptId,
+    { entries: [], moreCount: 0, capped: false },
+    IG_FIXTURE.now,
+  );
+  await writer.endRun({
+    runId,
+    endedAt: IG_FIXTURE.now,
+    endReason: 'canary',
+    bodyShapes: {},
+    profileReport: {
+      accountBefore: prior.accountKey.slice('instagram:'.length),
+      accountAfter: prior.accountKey.slice('instagram:'.length),
+      extensionsBefore: 0,
+      extensionsAfter: 0,
+      changedFiles: [],
+      unexpectedRequests: [],
+    },
+  });
+  await writer.acceptCanary(runId, IG_FIXTURE.now);
+  const raw = new DatabaseSync(join(directory, 'socialprune.sqlite'));
+  const trigger = raw
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE name='instagram_context_no_update'",
+    )
+    .get()?.sql;
+  raw.exec('DROP TRIGGER IF EXISTS instagram_context_no_update');
+  raw
+    .prepare(
+      "UPDATE instagram_context SET data=json_remove(data,'$.replies') WHERE item_id=?",
+    )
+    .run(prior.itemId);
+  if (trigger) raw.exec(String(trigger));
+  raw.close();
+}
+
+test('REPLIES revision F1 first direct refresh canary is accepted only after five answer-checked observations', async () => {
+  const h = await harness('success', 5, 30000);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    h.fake.replies(3);
+    h.fake.directPostAccount('expected');
+    expect(
+      (
+        await planContext(
+          h.store,
+          h.plan.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          true,
+        )
+      ).canary,
+    ).toBe(true);
+    expect(await h.start({ refreshReplies: true })).toMatchObject({
+      completed: 5,
+      endReason: 'canary',
+    });
+    expect((await h.store.browserJournal()).runs.at(-1)).toMatchObject({
+      acceptedBy: 'automatic-check',
+      canaryAcceptedAt: expect.any(String),
+    });
+    expect(
+      (
+        await planContext(
+          h.store,
+          h.plan.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          true,
+        )
+      ).canary,
+    ).toBe(false);
+  } finally {
+    await h.close();
+  }
+});
+
+test('REPLIES revision F1 no-answer first direct refresh waits for the person to compare', async () => {
+  const h = await harness('success', 5, 30000);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    h.fake.directPostAccount('expected');
+    const previousContext = h.context;
+    const running = h.start({ refreshReplies: true });
+    await expect.poll(() => h.context !== previousContext).toBe(true);
+    await h.click('Matches');
+    expect(await running).toMatchObject({ completed: 5, endReason: 'canary' });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    expect(run.canaryAcceptedAt).not.toBeNull();
+    expect(run.acceptedBy).not.toBe('automatic-check');
+  } finally {
+    await h.close();
+  }
+});
+
+test('REPLIES revision F2 main mode without captureReplies never expands or records replies', async () => {
+  const h = await harness('success', 5, 30000);
+  h.fake.replies(3);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).every(
+        (record) => record.replies === undefined,
+      ),
+    ).toBe(true);
+    expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+      'View replies',
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test('REPLIES revision F3 malformed reply controls never discard a successful main confirmation', async () => {
+  const h = await harness('success', 5, 30000);
+  h.fake.replies(3);
+  h.fake.malformedReplyControls();
+  try {
+    h.setPace({ captureReplies: true });
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).every(
+        (record) => record.replies === undefined,
+      ),
+    ).toBe(true);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, `context/instagram/canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: { replies?: { reason?: string } }[] };
+    expect(report.steps).toHaveLength(5);
+    expect(
+      report.steps.every(
+        (step) => step.replies?.reason === 'reply-controls-changed',
+      ),
+    ).toBe(true);
+  } finally {
+    await h.close();
+  }
+});
+
 test('REPLIES-1 new confirmations observe replies and direct refresh fills once without visiting the list', async () => {
   const h = await harness('success', 5, 30000);
   h.fake.replies(3);
+  h.setPace({ captureReplies: true });
   try {
     expect(await h.start(true)).toMatchObject({ completed: 5 });
     const prior = (
@@ -6613,6 +6784,7 @@ test('REPLIES-1 new confirmations observe replies and direct refresh fills once 
     raw.close();
     const before = h.fake.requests.length;
     h.fake.directPostAccount('expected');
+    await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
     expect(await h.start({ refreshReplies: true })).toMatchObject({
       completed: 1,
       steps: 1,
@@ -6686,6 +6858,7 @@ test.each(['unavailable', 'not-shown'] as const)(
   async (variant) => {
     const h = await harness('success', 5);
     try {
+      h.setPace({ captureReplies: true });
       expect(await h.start(true)).toMatchObject({ completed: 5 });
       const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
       raw.exec('DROP TRIGGER instagram_context_no_update');
@@ -6698,6 +6871,7 @@ test.each(['unavailable', 'not-shown'] as const)(
       raw.close();
       h.fake.setPostVariant(0, variant);
       h.fake.directPostAccount('expected');
+      await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
       const before = h.fake.requests.length;
       expect(await h.start({ refreshReplies: true })).toMatchObject({
         completed: 1,

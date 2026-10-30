@@ -6738,11 +6738,11 @@ test('REPLIES regression without capture consent still expands to find the own c
           record.confirmedBy === 'post' && record.replies === undefined,
       ),
     ).toBe(true);
+    // /events reports cumulative per-page snapshots, not individual clicks.
+    // The stored expansion count below is the exact per-comment assertion.
     expect(
-      h.fake.events
-        .flatMap((event) => event.clicks)
-        .filter((name) => name === 'View replies'),
-    ).toHaveLength(5);
+      h.fake.events.some((event) => event.clicks.includes('View replies')),
+    ).toBe(true);
     expect(contexts.every((record) => record.comment.expandClicks === 3)).toBe(
       true,
     );

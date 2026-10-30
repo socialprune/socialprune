@@ -31,6 +31,13 @@ jobs:
       - run: pnpm --filter socialprune build:release
       - run: pnpm --filter socialprune pack:check
       - run: pnpm --filter socialprune smoke:package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: matrix.os == 'windows-latest'
+        with:
+          name: socialprune-cli-package-${{ github.sha }}
+          path: apps/cli/dist/package
+          retention-days: 7
+          if-no-files-found: error
 
   publish:
     if: vars.NPM_PUBLISH_ENABLED == 'true'

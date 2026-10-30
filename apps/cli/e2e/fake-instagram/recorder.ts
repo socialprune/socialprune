@@ -8,14 +8,19 @@ export interface RecordedEvents {
   added: string[];
   wheels: { area: string; x: number; y: number }[];
 }
-export function assertRecordedEvents(events: readonly RecordedEvents[]): void {
+export function assertRecordedEvents(
+  events: readonly RecordedEvents[],
+  listWheelDelta: number = IG_FIXTURE.scroll.delta,
+): void {
   for (const event of events) {
     expect(event.inputs).toEqual([]);
     expect(event.added).toEqual([]);
     for (const wheel of event.wheels) {
       expect(['list', 'post-comments']).toContain(wheel.area);
       expect(wheel.x).toBe(0);
-      expect(wheel.y).toBe(IG_FIXTURE.scroll.delta);
+      expect(wheel.y).toBe(
+        wheel.area === 'list' ? listWheelDelta : IG_FIXTURE.scroll.delta,
+      );
     }
     for (const click of event.clicks)
       expect(IG_FIXTURE.allowedClicks as readonly string[]).toContain(click);

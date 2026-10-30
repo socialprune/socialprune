@@ -8,7 +8,7 @@ import { imageCase, imageCasePage, imageCasePng } from './image-cases.ts';
 import type { ImageCaseName } from './image-cases.ts';
 import { deletionPost } from './delete-page.ts';
 import { addRepliesPage } from './replies-page.ts';
-import { listProbePage } from './list-probe-page.ts';
+import { listProbePage, PROBE_CLIENT_HEIGHT } from './list-probe-page.ts';
 import type { ListProbeCase } from './list-probe-page.ts';
 import type { DeleteCase } from './delete-page.ts';
 
@@ -650,6 +650,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     listProbe(value: ListProbeCase) {
       probeCase = value;
+    },
+    get listWheelDelta() {
+      return probeCase ? PROBE_CLIENT_HEIGHT : IG_FIXTURE.scroll.delta;
     },
     malformedReplyControls() {
       replyControlMalformed = true;

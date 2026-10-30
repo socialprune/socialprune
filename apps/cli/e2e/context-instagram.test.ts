@@ -6590,6 +6590,19 @@ test('REPLIES-1 new confirmations observe replies and direct refresh fills once 
       await h.store.read((tx) => records(tx.instagramContext))
     )[0]!;
     expect(prior.replies?.entries).toHaveLength(3);
+    const privateValues = [
+      'generated_reply_0',
+      'Generated reply 0 with local text',
+    ];
+    const reportDirectory = join(h.directory, 'context', 'instagram');
+    for (const name of await readdir(reportDirectory))
+      if (name.endsWith('.json')) {
+        const structure = await readFile(join(reportDirectory, name), 'utf8');
+        for (const value of privateValues)
+          expect(structure).not.toContain(value);
+      }
+    for (const value of privateValues)
+      expect(h.notices.join('\n')).not.toContain(value);
     const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));
     raw.exec('DROP TRIGGER instagram_context_no_update');
     raw

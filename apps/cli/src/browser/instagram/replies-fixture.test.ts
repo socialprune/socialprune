@@ -33,13 +33,13 @@ test('REPLIES-1 generated reply control and group belong directly to the focal p
     if (
       tag.startsWith('<button') &&
       html
-        .slice(token.index! + tag.length)
+        .slice(token.index + tag.length)
         .startsWith('View replies</button><ul')
     )
       controlParent = stack.at(-1)?.position ?? -2;
     if (tag === '<ul hidden>') groupParent = stack.at(-1)?.position ?? -3;
     if (!['img', 'meta', 'link', 'input', 'br', 'hr'].includes(name!))
-      stack.push({ name: name!, position: token.index! });
+      stack.push({ name: name!, position: token.index });
   }
   expect(focalAncestor).toBeGreaterThan(0);
   expect(controlParent).toBe(focalAncestor);

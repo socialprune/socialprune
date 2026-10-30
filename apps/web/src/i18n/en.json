@@ -1,4 +1,5 @@
 {
+  "desktop.token.refresh-comment-replies": "Read shown replies under a confirmed comment.",
   "instagramReplies.title": "Replies under your comment",
   "instagramReplies.empty": "No replies shown.",
   "instagramReplies.partial": "More replies were available. At least {count} were not read.",

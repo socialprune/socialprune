@@ -45,7 +45,7 @@ export async function commentReplies(
     Date.parse(rawFocalTime) !== Date.parse(match.createdAt)
   )
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-  const content = await textBlock(focal.locator('xpath=ancestor::*[3]'));
+  const content = await textBlock(focal.locator('xpath=ancestor::*[3]'), 150);
   if (
     !content ||
     content.username.toLowerCase() !== match.username.toLowerCase() ||
@@ -73,7 +73,7 @@ export async function commentReplies(
       const blocks = row.locator(':scope > div:not([role])');
       if ((await blocks.count()) !== 1)
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
-      const value = await textBlock(blocks);
+      const value = await textBlock(blocks, 150);
       if (!value)
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
       const links = blocks.locator('a[href*="/c/"]');

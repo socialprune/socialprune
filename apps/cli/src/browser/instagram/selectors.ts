@@ -562,22 +562,22 @@ export async function readPost(
     element,
   };
 }
-async function profileLinks(element: Locator) {
+async function profileLinks(element: Locator, timeout?: number) {
   const profiles = [];
   for (const anchor of await element.locator('a[href]').all()) {
     const match = /^\/([A-Za-z0-9_.]{1,30})\/$/.exec(
-      (await anchor.getAttribute('href')) ?? '',
+      (await anchor.getAttribute('href', { timeout })) ?? '',
     );
     if (match)
       profiles.push({
         username: match[1]!,
-        text: normalize(await anchor.innerText()),
+        text: normalize(await anchor.innerText({ timeout })),
         element: anchor,
       });
   }
   return profiles;
 }
-export async function textBlock(block: Locator) {
+export async function textBlock(block: Locator, timeout?: number) {
   if (
     (await block.locator('xpath=self::div').count()) !== 1 ||
     (await block.locator(':scope > *').count()) !== 2 ||
@@ -590,7 +590,7 @@ export async function textBlock(block: Locator) {
     (await row.locator(':scope > span[dir="auto"]').count()) !== 2
   )
     return null;
-  const profiles = await profileLinks(row);
+  const profiles = await profileLinks(row, timeout);
   if (profiles.length !== 1) return null;
   const profile = profiles[0]!;
   if (
@@ -615,7 +615,7 @@ export async function textBlock(block: Locator) {
     return null;
   return {
     username: profile.username,
-    text: normalize(await text.innerText()),
+    text: normalize(await text.innerText({ timeout })),
   };
 }
 async function captionText(

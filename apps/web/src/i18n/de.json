@@ -1,4 +1,5 @@
 {
+  "desktop.token.refresh-comment-replies": "Angezeigte Antworten unter einem bestätigten Kommentar lesen.",
   "instagramReplies.title": "Antworten unter deinem Kommentar",
   "instagramReplies.empty": "Keine Antworten angezeigt.",
   "instagramReplies.partial": "Weitere Antworten waren verfügbar. Mindestens {count} wurden nicht gelesen.",

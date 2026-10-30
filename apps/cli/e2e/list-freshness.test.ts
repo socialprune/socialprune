@@ -22,7 +22,6 @@ import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
 import { commentReplies } from '../src/browser/instagram/replies.ts';
-import { IG_FIXTURE } from './fake-instagram/fixture.ts';
 
 test.each([0, 3, 55])(
   'REPLIES-1 focal nested replies capture=%i stays scoped and caps without a write request',
@@ -67,6 +66,10 @@ test.each([0, 3, 55])(
           createdAt: null,
           likes: { count: null, source: null },
         });
+      if (count)
+        expect(
+          await page.locator('[data-reply-decoy]').getAttribute('data-clicked'),
+        ).toBe(null);
       expect(fake.requests.every((request) => request.method === 'GET')).toBe(
         true,
       );
@@ -162,10 +165,6 @@ test.each(['populated-empty', 'empty-empty', 'populated-populated'] as const)(
         knownEmptyStatePresent: mode === 'empty-empty',
         containers: { main: { images: mode === 'empty-empty' ? 0 : 2 } },
       });
-      if (count)
-        expect(
-          await page.locator('[data-reply-decoy]').getAttribute('data-clicked'),
-        ).toBe(null);
       expect(counts.unfilteredOldestSortApplied).toBe(mode !== 'empty-empty');
       expect(counts.unfilteredDiagnostic?.waitedForReadiness).toBe(true);
       expect(counts.windowDiagnostic).toMatchObject({

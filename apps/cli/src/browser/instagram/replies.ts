@@ -20,8 +20,10 @@ export const REPLY_REASONS = [
 ] as const;
 export type ReplyReason = (typeof REPLY_REASONS)[number];
 export class ReplyReadFailure extends Error {
-  constructor(readonly reason: ReplyReason) {
+  readonly reason: ReplyReason;
+  constructor(reason: ReplyReason) {
     super(reason);
+    this.reason = reason;
   }
 }
 
@@ -296,7 +298,7 @@ export async function commentReplies(
   guard();
   await checkPage(page);
   const checked = checkedReplyRows(bodies, match, entries, capped, moreCount);
-  if ('reason' in checked) throw new ReplyReadFailure(checked.reason);
+  if (checked.reason) throw new ReplyReadFailure(checked.reason);
   verified(checked.answerChecked);
   return InstagramRepliesSchema.parse(checked.observation);
 }

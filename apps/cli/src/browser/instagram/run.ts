@@ -1236,7 +1236,7 @@ export async function runContextWithDependencies(
               () =>
                 commentReplies(
                   page,
-                  answers.bodies,
+                  answers!.bodies,
                   match,
                   guard,
                   openedAt + deps.responseMs,
@@ -1355,7 +1355,7 @@ export async function runContextWithDependencies(
             () =>
               commentReplies(
                 page,
-                answers.bodies,
+                answers!.bodies,
                 match,
                 guard,
                 openedAt + deps.responseMs,

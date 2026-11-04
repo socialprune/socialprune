@@ -36,7 +36,7 @@ test('realfix skips only exact handle-only age rows and keeps candidate indices 
     allInnerTexts: () => Promise.resolve(texts),
   };
   const page = { locator: () => locator } as unknown as Page;
-  const counts = { emptySkipped: 0, otherName: 0 };
+  const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
   expect(await readRows(page, counts, 'generated_person')).toEqual([
     {
       username: 'generated_person',
@@ -51,9 +51,11 @@ test('realfix skips only exact handle-only age rows and keeps candidate indices 
       index: 3,
     },
   ]);
-  expect(counts.emptySkipped).toBe(2);
+  expect(counts.emptySkipped).toBe(1);
+  expect(counts.handleOnlySkipped).toBe(1);
   await readRows(page, counts, 'generated_person');
-  expect(counts.emptySkipped).toBe(2);
+  expect(counts.emptySkipped).toBe(1);
+  expect(counts.handleOnlySkipped).toBe(1);
   for (const malformed of [
     'other_person\n18w',
     'Generated_person\n18w',

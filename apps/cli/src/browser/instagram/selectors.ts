@@ -134,6 +134,8 @@ export interface RowReadCounts {
   rowShape?: import('./report.ts').RowShapeDiagnostic;
   /** Maximum simultaneous empty matches seen within one list load. */
   emptySkipped: number;
+  /** Exact own-handle and age rows without comment text, never candidates. */
+  handleOnlySkipped?: number;
   /** Maximum simultaneous other-name rows within one step's list loads. */
   otherName: number;
   listTimeout?: ListTimeoutDiagnostic;
@@ -207,11 +209,16 @@ export async function readRows(
       AGE_PATTERN.test(lines[1]!)
     );
   };
-  if (counts)
+  if (counts) {
     counts.emptySkipped = Math.max(
       counts.emptySkipped,
-      texts.filter((text) => !normalize(text) || handleOnly(text)).length,
+      texts.filter((text) => !normalize(text)).length,
     );
+    counts.handleOnlySkipped = Math.max(
+      counts.handleOnlySkipped ?? 0,
+      texts.filter(handleOnly).length,
+    );
+  }
   for (let index = 0; index < texts.length; index++) {
     const raw = normalize(texts[index]!);
     if (!raw || handleOnly(texts[index]!)) continue;

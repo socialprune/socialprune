@@ -614,6 +614,7 @@ export const ContextStepReportSchema = z
     listRows: ListRowDiagnosticSchema.optional(),
     rowShape: RowShapeDiagnosticSchema.optional(),
     replyScope: ReplyScopeDiagnosticSchema.optional(),
+    handleOnlySkipped: count.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     listPageUnfiltered: ListNavigationSchema.optional(),
     unfilteredOldestSortApplied: z.boolean().optional(),

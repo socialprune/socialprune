@@ -2429,7 +2429,8 @@ test('realfix handle-only image row is counted, never a candidate, and both list
       ),
     ) as { steps: unknown[] };
     expect(report.steps[0]).toMatchObject({
-      emptySkipped: 1,
+      emptySkipped: 0,
+      handleOnlySkipped: 1,
       filteredProbe: { initial: { targetMatched: false } },
       newestProbe: { sortReadback: true, settledReload: true },
     });
@@ -7174,7 +7175,7 @@ test('REPLIES-1 direct refresh refuses another signed-in account before reading 
 test.each(['unavailable', 'not-shown'] as const)(
   'REPLIES-1 direct refresh settles %s and continues without a comments-list request',
   async (variant) => {
-    const h = await harness('success', 5);
+    const h = await harness('success', 5, 30000);
     try {
       h.fake.replies(3);
       h.setPace({ captureReplies: true });

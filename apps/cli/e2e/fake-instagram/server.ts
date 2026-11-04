@@ -431,9 +431,11 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         }
         if (
           replyCount &&
-          html.includes(
-            `/c/${BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))}/`,
-          )
+          html
+            .split('<script>')[0]!
+            .includes(
+              `/c/${BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))}/`,
+            )
         )
           html = addRepliesPage(
             html,

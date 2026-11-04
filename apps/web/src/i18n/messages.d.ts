@@ -473,6 +473,14 @@ declare global {
     'desktop.token.refresh-comment-likes': Record<never, never>;
     'desktop.token.refresh-comment-replies': Record<never, never>;
     'desktop.token.render-timeout': Record<never, never>;
+    'desktop.token.reply-answer-conflict': Record<never, never>;
+    'desktop.token.reply-answer-incomplete': Record<never, never>;
+    'desktop.token.reply-answer-mismatch': Record<never, never>;
+    'desktop.token.reply-controls-changed': Record<never, never>;
+    'desktop.token.reply-read-failed': Record<never, never>;
+    'desktop.token.reply-scope-unverified': Record<never, never>;
+    'desktop.token.reply-window-empty': Record<never, never>;
+    'desktop.token.reply-window-incomplete': Record<never, never>;
     'desktop.token.request-journal': Record<never, never>;
     'desktop.token.row-structure': Record<never, never>;
     'desktop.token.second-source': Record<never, never>;

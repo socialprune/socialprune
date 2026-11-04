@@ -17,7 +17,9 @@ test('realshape generated page mutations produce malformed rows and absent or si
     item = fixture.items[0]!;
   for (const shape of ['extra-line', 'german-age', 'unknown-age'] as const) {
     const source = rowShapePage(listPage([item], 'success', 0), shape);
-    expect(source).toContain('[data-comment-row]{white-space:pre-line}');
+    expect(source).toContain('#list>[role=button]{white-space:pre-line}');
+    expect(source).toContain("node.setAttribute('role','button')");
+    expect(source).toContain('list.append(node)');
     expect(source).not.toBe(listPage([item], 'success', 0));
     expect(source).toContain(
       shape === 'german-age'

@@ -8,7 +8,7 @@ export function rowShapePage(html: string, shape: RowShapeCase) {
         ? '2 Std.'
         : '3mo';
   return html
-    .replace('<style>', '<style>[data-comment-row]{white-space:pre-line}')
+    .replace('<style>', '<style>#list>[role=button]{white-space:pre-line}')
     .replace(
       "+'\\n'+age)",
       `+'\\n'+${JSON.stringify(age).replace('\\\\n', '\\n')})`,

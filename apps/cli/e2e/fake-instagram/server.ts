@@ -33,6 +33,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let replyConfigured = false;
   let replyAnswer = true;
   let rowShapeCase: RowShapeCase | undefined,
     replyShapeCase: ReplyShapeCase | undefined;
@@ -223,7 +224,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       if (path === '/your_activity/interactions/comments') {
         if (probeCase) {
           response.setHeader('Content-Type', 'text/html');
-          response.end(listProbePage(items, probeCase));
+          const html = listProbePage(items, probeCase);
+          response.end(rowShapeCase ? rowShapePage(html, rowShapeCase) : html);
           return;
         }
         await beforeNavigation?.();
@@ -427,7 +429,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
                 );
           }
         }
-        if (replyCount)
+        if (
+          replyCount &&
+          html.includes(
+            `/c/${BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))}/`,
+          )
+        )
           html = addRepliesPage(
             html,
             replyCount,
@@ -572,7 +579,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     server.listen(port, '127.0.0.1', resolve);
   });
   function withLikes(answer: unknown, index: number) {
-    if (likesCase !== 'answer' && !replyCount) return answer;
+    if (likesCase !== 'answer' && !replyConfigured) return answer;
     const item = items[index]!;
     return {
       ...(answer as object),
@@ -583,7 +590,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           user: { username: item.account.handle },
           text: item.text,
           ...(likesCase === 'answer' ? { comment_like_count: 23 } : {}),
-          ...(replyAnswer && replyCount
+          ...(replyAnswer && replyConfigured
             ? {
                 child_comment_count: replyCount,
                 preview_child_comments: Array.from(
@@ -657,6 +664,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       delayedFilterClose = delayedClose;
     },
     replies(count: number) {
+      replyConfigured = true;
       replyCount = count;
     },
     replyAnswer(present: boolean) {

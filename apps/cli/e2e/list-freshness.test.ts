@@ -36,10 +36,14 @@ test.each([0, 3, 55])(
     try {
       const page = await browser.newPage();
       const item = fixture.items[0]!;
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
       await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const bodies: unknown[] = [await (await response).json()];
       const result = await commentReplies(
         page,
-        [],
+        bodies,
         {
           id: IG_FIXTURE.commentId,
           createdAt: item.createdAt,
@@ -59,7 +63,7 @@ test.each([0, 3, 55])(
           account: 'generated_reply_0',
           text: 'Generated reply 0 with local text',
           createdAt: item.createdAt,
-          likes: { count: 2, source: 'dom' },
+          likes: { count: 2, source: 'answer' },
         });
       if (count > 1)
         expect(result.entries[1]).toMatchObject({

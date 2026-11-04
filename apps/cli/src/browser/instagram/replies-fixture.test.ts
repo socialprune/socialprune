@@ -11,6 +11,7 @@ import {
   replyShapePage,
 } from '../../../e2e/fake-instagram/realshape-page.ts';
 import { listPage } from '../../../e2e/fake-instagram/pages.ts';
+import { listProbePage } from '../../../e2e/fake-instagram/list-probe-page.ts';
 
 test('realshape generated page mutations produce malformed rows and absent or sibling focal times without real content', async () => {
   const fixture = await instagramFixture(1),
@@ -147,4 +148,21 @@ test('realfix generated structure independently reproduces 2/2 old wrapper count
     root.parent!.parent!.children.filter((node) => node.tag === 'a'),
   ).toHaveLength(0);
   expect(source).toContain('Generated reply 0 with local text');
+});
+
+test('realfix handle-only decoration composes with the generated probes without hiding normal rows', async () => {
+  const fixture = await instagramFixture(1);
+  const source = rowShapePage(
+    listProbePage(fixture.items, 'absent'),
+    'handle-only',
+  );
+  expect(source).toContain(
+    "handleOnlyNode.append(document.createTextNode(handle+'\\n18w'))",
+  );
+  expect(source).toContain('Generated unrelated probe row');
+  expect(source).toContain(
+    "node.append(document.createTextNode(row.username+' '+row.text",
+  );
+  const script = source.match(/<script>([\s\S]*)<\/script>/u)![1]!;
+  expect(() => new Script(script)).not.toThrow();
 });

@@ -201,10 +201,12 @@ function pageFixture({
     locator: () => focal,
   } as unknown as Page;
   vi.spyOn(scope, 'structuralReplyScope').mockImplementation(
-    async (_focal, _selector, _zero, shape) => {
-      if (rootCount !== 1) return null;
+    (_focal, _selector, _zero, shape) => {
+      if (rootCount !== 1) return Promise.resolve(null);
       shape.chosenDepth = 5;
-      return root as unknown as import('playwright-core').Locator;
+      return Promise.resolve(
+        root as unknown as import('playwright-core').Locator,
+      );
     },
   );
   vi.spyOn(scope, 'ownReplyControls').mockResolvedValue(

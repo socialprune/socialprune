@@ -12,7 +12,7 @@ export function rowShapePage(html: string, shape: RowShapeCase) {
       .replace('<style>', '<style>#list>[role=button]{white-space:pre-line}')
       .replace(
         'list.replaceChildren();',
-        `list.replaceChildren();const empty=document.createElement('div');empty.setAttribute('role','button');empty.setAttribute('aria-label','Generated empty comment');empty.innerHTML='<img src="/thumb.png" alt="">';empty.append(document.createTextNode(handle+'\\n18w'));list.append(empty);`,
+        `list.replaceChildren();const handleOnlyNode=document.createElement('div');handleOnlyNode.setAttribute('role','button');handleOnlyNode.setAttribute('aria-label','Generated empty comment');handleOnlyNode.innerHTML='<img src="/thumb.png" alt="">';handleOnlyNode.append(document.createTextNode(handle+'\\n18w'));list.append(handleOnlyNode);`,
       );
   const age =
     shape === 'extra-line'

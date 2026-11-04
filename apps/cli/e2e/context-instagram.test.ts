@@ -77,7 +77,10 @@ import {
 import { assertRecordedEvents } from './fake-instagram/recorder.ts';
 import { contextDiagnostics } from './context-diagnostics.ts';
 import { fakePageFailure } from './fake-instagram/failure.ts';
-import { errorClass } from '../src/browser/instagram/report.ts';
+import {
+  errorClass,
+  ContextStepReportSchema,
+} from '../src/browser/instagram/report.ts';
 import type { MemorySample } from '../src/browser/instagram/report.ts';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -2424,7 +2427,7 @@ test('realfix handle-only image row is counted, never a candidate, and both list
         join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
         'utf8',
       ),
-    );
+    ) as { steps: unknown[] };
     expect(report.steps[0]).toMatchObject({
       emptySkipped: 1,
       filteredProbe: { initial: { targetMatched: false } },
@@ -6866,8 +6869,8 @@ test.each(['matching', 'missing', 'decoy'] as const)(
           join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
           'utf8',
         ),
-      );
-      const scope = report.steps[0].replyScope;
+      ) as { steps: unknown[] };
+      const scope = ContextStepReportSchema.parse(report.steps[0]).replyScope!;
       expect(scope.levels.length).toBeGreaterThan(0);
       expect(scope.levels.length).toBeLessThanOrEqual(12);
       expect(scope.failedCheck).toBe(mode === 'decoy' ? 'scope-depth' : 'none');

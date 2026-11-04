@@ -14,20 +14,23 @@ type Level = {
 };
 function fixture(levels: Level[]) {
   const empty = {
-    count: async () => 0,
-    all: async () => [],
+    count: () => Promise.resolve(0),
+    all: () => Promise.resolve([]),
     filter: () => empty,
     and: () => empty,
     locator: () => empty,
   };
-  const counted = (count: number) => ({ ...empty, count: async () => count });
+  const counted = (count: number) => ({
+    ...empty,
+    count: () => Promise.resolve(count),
+  });
   const root = (level: Level) => ({
     ...empty,
-    count: async () => 1,
+    count: () => Promise.resolve(1),
     locator: (selector: string) => {
       if (selector === 'xpath=ancestor::main') return counted(level.main ?? 1);
       if (selector === ':scope > *')
-        return { ...counted(0), all: async () => [] };
+        return { ...counted(0), all: () => Promise.resolve([]) };
       if (selector === REPLY_ROWS)
         return {
           ...counted(level.rows ?? 0),

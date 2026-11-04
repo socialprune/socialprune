@@ -24,3 +24,15 @@ test.each([
     expect(JSON.stringify(result)).not.toContain('Invented words');
   },
 );
+test('realshape distinguishes missing username and missing comment text without accepting either', () => {
+  expect(
+    rowShape('invalid handle\nwords\n2d', 'generated_person', false)
+      .failurePart,
+  ).toBe('age');
+  expect(
+    rowShape('invalid!\nwords\n2d', 'generated_person', false).failurePart,
+  ).toBe('username');
+  expect(
+    rowShape('generated_person\n2d', 'generated_person', false).failurePart,
+  ).toBe('text');
+});

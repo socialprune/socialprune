@@ -962,7 +962,7 @@ export async function runContextWithDependencies(
               if (reopening?.stage === 'list') reopening.outcome = 'timeout';
             } else if (
               options.order?.value.listDiagnostic &&
-              rowCounts.diagnostic
+              (rowCounts.diagnostic || rowCounts.rowShape)
             ) {
               report.steps.push({
                 result: 'list-diagnostic',

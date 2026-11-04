@@ -19,8 +19,8 @@ export function replyShapePage(
 ) {
   if (shape === 'root-changed')
     return html.replace(
-      '<div role="button">Reply</div></div></div>',
-      '<div role="button">Reply</div></div></div><span data-generated-root-extra></span>',
+      '<div role="button">Reply</div></div></div></div>',
+      '<div role="button">Reply</div></div></div></div><span data-generated-root-extra></span>',
     );
   const pattern = new RegExp(
     `(<a href="/p/[A-Za-z0-9_-]+/c/${id}/">)(<time datetime="[^"]+">[^<]*</time>)(</a>)`,

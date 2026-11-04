@@ -64,21 +64,31 @@ export function rowShape(raw: string, handle: string, accepted: boolean) {
     .slice(0, -1)
     .some((line) => rowAgeToken(line) !== 'none');
   const username = /^[A-Za-z0-9_.]{1,30}(?:\s|$)/u.exec(text);
+  const remainder = username ? text.slice(username[0].length).trim() : '';
+  const acceptedAgeSuffix =
+    /\s*\d+\s*(?:s|m|h|d|w|y|seconds?|minutes?|hours?|days?|weeks?|years?)$/u.exec(
+      remainder,
+    );
+  const missingText = Boolean(
+    acceptedAgeSuffix && !remainder.slice(0, acceptedAgeSuffix.index).trim(),
+  );
   let failurePart:
     'none' | 'username' | 'text' | 'age' | 'extra-trailing-line' = 'none';
   if (!accepted)
     failurePart = !username
       ? 'username'
-      : earlierAge
-        ? 'extra-trailing-line'
-        : !lastEnglish
-          ? 'age'
-          : lines.length < 3 &&
-              !/^\S+\s+.+\s+\d+\s*(?:s|m|h|d|w|y|seconds?|minutes?|hours?|days?|weeks?|years?)$/u.test(
-                text,
-              )
-            ? 'text'
-            : 'age';
+      : missingText
+        ? 'text'
+        : earlierAge
+          ? 'extra-trailing-line'
+          : !lastEnglish
+            ? 'age'
+            : lines.length < 3 &&
+                !/^\S+\s+.+\s+\d+\s*(?:s|m|h|d|w|y|seconds?|minutes?|hours?|days?|weeks?|years?)$/u.test(
+                  text,
+                )
+              ? 'text'
+              : 'age';
   return {
     lineCount: lines.length,
     linesCapped: lines.length > 64,
@@ -86,17 +96,15 @@ export function rowShape(raw: string, handle: string, accepted: boolean) {
     handleLinePresent: lines.some(
       (line) => line.toLowerCase() === handle.toLowerCase(),
     ),
-    lines: lines
-      .slice(0, 64)
-      .map((line) => ({
-        lengthBucket: bucket(line.length),
-        equalsHandle: line.toLowerCase() === handle.toLowerCase(),
-        ageClass: rowAgeToken(line),
-        countedLabel:
-          /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
-            line,
-          ),
-      })),
+    lines: lines.slice(0, 64).map((line) => ({
+      lengthBucket: bucket(line.length),
+      equalsHandle: line.toLowerCase() === handle.toLowerCase(),
+      ageClass: rowAgeToken(line),
+      countedLabel:
+        /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
+          line,
+        ),
+    })),
     ageClasses: ageClasses.length ? ageClasses : ['none' as const],
     countedLabelPresent: lines.some((line) =>
       /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(

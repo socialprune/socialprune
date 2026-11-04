@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { Script } from 'node:vm';
 import {
   instagramFixture,
   IG_FIXTURE,
@@ -25,7 +26,7 @@ test('realshape generated page mutations produce malformed rows and absent or si
           : '2d\\n3 likes',
     );
     const script = source.match(/<script>([\s\S]*)<\/script>/u)![1]!;
-    expect(() => new Function(script)).not.toThrow();
+    expect(() => new Script(script)).not.toThrow();
   }
   const html = postPage(item, 0, 'success');
   for (const shape of ['time-absent', 'time-nested', 'root-changed'] as const) {

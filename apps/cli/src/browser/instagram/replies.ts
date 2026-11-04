@@ -7,7 +7,12 @@ import { normalize } from './plan.ts';
 import { ContextStop } from './report.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 import { CliError } from '../../cli/errors.ts';
-import { checkedReplyRows } from './replies-answer.ts';
+import { answerReplies, checkedReplyRows } from './replies-answer.ts';
+import {
+  structuralReplyScope,
+  REPLY_ROWS,
+  ownReplyControls,
+} from './replies-scope.ts';
 
 export const REPLY_REASONS = [
   'reply-window-empty',
@@ -92,6 +97,9 @@ export function emptyReplyScope(): ReplyScopeDiagnostic {
     avatarMatches: null,
     parentChildrenCount: null,
     outerDivCount: null,
+    avatarObserved: false,
+    chosenDepth: null,
+    levels: [],
   };
 }
 async function checkedScope(
@@ -99,6 +107,7 @@ async function checkedScope(
   match: ReplyMatch,
   guard: () => void,
   diagnostic?: (value: ReplyScopeDiagnostic) => void,
+  bodies: readonly unknown[] = [],
 ) {
   const shape = emptyReplyScope();
   const fail = (part: ReplyScopeDiagnostic['failedCheck']): never => {
@@ -117,9 +126,8 @@ async function checkedScope(
   if (!address) return fail('address');
   guard();
   await checkPage(page);
-  const focal = page.locator(
-    `main a[href="/${address.kind}/${address.code}/c/${match.id}/"]`,
-  );
+  const focalSelector = `a[href="/${address.kind}/${address.code}/c/${match.id}/"]`;
+  const focal = page.locator(`main ${focalSelector}`);
   const focalTimes = focal.locator('time[datetime]');
   shape.focalCount = await focal.count();
   if (shape.focalCount !== 1) fail('focal-count');
@@ -153,35 +161,15 @@ async function checkedScope(
     : null;
   if (!content || !shape.authorMatches || !shape.textMatches)
     fail('author-text');
-  const root = focal.locator('xpath=ancestor::*[5]');
-  shape.rootCount = await root.count();
-  shape.rootMainCount = await root.locator('xpath=ancestor::main').count();
-  shape.rootFocalCount = await root
-    .locator(`a[href="/${address.kind}/${address.code}/c/${match.id}/"]`)
-    .count();
-  if (
-    shape.rootCount !== 1 ||
-    shape.rootMainCount !== 1 ||
-    shape.rootFocalCount !== 1
-  )
-    fail('single-root');
-  const outer = root.locator('xpath=ancestor::*[2]');
-  const avatars = outer.locator(':scope > a');
-  shape.parentChildrenCount = await root
-    .locator('xpath=parent::div')
-    .locator(':scope > *')
-    .count();
-  shape.avatarCount = await avatars.count();
-  shape.avatarMatches =
-    shape.avatarCount === 1
-      ? (
-          await avatars.getAttribute('href', { timeout: 150 })
-        )?.toLowerCase() === `/${match.username.toLowerCase()}/`
-      : false;
-  shape.outerDivCount = await outer.locator(':scope > div').count();
-  if (shape.avatarCount !== 1 || !shape.avatarMatches) fail('avatar');
-  if (shape.parentChildrenCount !== 1 || shape.outerDivCount !== 1)
-    fail('outer-shape');
+  const answer = answerReplies(bodies, match);
+  const root = await structuralReplyScope(
+    focal,
+    focalSelector,
+    answer.present && answer.valid && answer.total === 0,
+    shape,
+    guard,
+  );
+  if (!root) return fail('scope-depth');
   shape.observed = true;
   diagnostic?.({ ...shape });
   return { address, root, shape };
@@ -190,12 +178,19 @@ export async function replyScopeDiagnostic(
   page: Page,
   match: ReplyMatch,
   guard: () => void,
+  bodies: readonly unknown[] = [],
 ) {
   let result = emptyReplyScope();
   try {
-    await checkedScope(page, match, guard, (value) => {
-      result = value;
-    });
+    await checkedScope(
+      page,
+      match,
+      guard,
+      (value) => {
+        result = value;
+      },
+      bodies,
+    );
   } catch (error) {
     if (error instanceof CliError) throw error;
     if (!(error instanceof ReplyReadFailure)) {
@@ -228,11 +223,16 @@ export async function commentReplies(
     capped = false,
     clicks = 0,
     beforeExpansion: number | undefined;
+  if (performance.now() >= deadline)
+    throw new ReplyReadFailure('reply-window-empty');
+  await flush();
+  guard();
   const { address, root, shape } = await checkedScope(
     page,
     match,
     guard,
     diagnostic,
+    bodies,
   );
   for (;;) {
     guard();
@@ -242,7 +242,7 @@ export async function commentReplies(
       postAddress(page.url(), new URL(page.url()).origin);
     if (current?.code !== address.code || current.kind !== address.kind)
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-    const rows = root.locator(':scope > ul > li, :scope > div > ul > li');
+    const rows = root.locator(REPLY_ROWS);
     const count = await rows.count();
     if (
       (await root.locator('a[href*="/c/"]').count()) -
@@ -325,18 +325,10 @@ export async function commentReplies(
       });
       if (entries.length === REPLY_CAP) break;
     }
-    const control = root
-      .locator(
-        ':scope > button, :scope > div > button, :scope > div > [role="button"], :scope > [role="button"]',
-      )
-      .filter({ hasText: /^View replies$/u });
+    const scopedControls = await ownReplyControls(root);
+    const control = scopedControls.filter({ hasText: /^View replies$/u });
     const controls = await control.count();
-    const replyControls = await root
-      .locator(
-        ':scope > button, :scope > div > button, :scope > div > [role="button"], :scope > [role="button"]',
-      )
-      .filter({ hasText: /^(?:View|Hide|See|Load).*repl/iu })
-      .count();
+    const replyControls = await scopedControls.count();
     if (controls > 1 || replyControls !== controls)
       throw new ReplyReadFailure('reply-controls-changed');
     if (

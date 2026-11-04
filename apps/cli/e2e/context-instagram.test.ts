@@ -2408,6 +2408,42 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
   }
 });
 
+test('realfix handle-only image row is counted, never a candidate, and both list probes run', async () => {
+  const h = await harness('success', 1, 1000);
+  h.fake.listProbe('absent');
+  h.fake.rowShape('handle-only');
+  h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'CANCELLED',
+      token: 'stopped',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    );
+    expect(report.steps[0]).toMatchObject({
+      emptySkipped: 1,
+      filteredProbe: { initial: { targetMatched: false } },
+      newestProbe: { sortReadback: true, settledReload: true },
+    });
+    expect(
+      h.fake.events.some((event) => event.clicks.includes('Oldest to newest')),
+    ).toBe(true);
+    expect(
+      h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toBe(false);
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      [],
+    );
+  } finally {
+    await h.close();
+  }
+});
+
 test.each(['extra-line', 'german-age', 'unknown-age'] as const)(
   'realshape first list row %s records closed line counts and retains row-structure stop',
   async (shape) => {
@@ -6794,7 +6830,61 @@ async function acceptRepliesCanary(
   raw.close();
 }
 
-test.each(['time-absent', 'time-nested', 'root-changed'] as const)(
+test.each(['matching', 'missing', 'decoy'] as const)(
+  'realfix structural 2/2 reply shape without avatar link: %s answer and scope',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(3);
+      h.fake.replyAnswer(mode !== 'missing');
+      h.fake.replyShape(mode === 'decoy' ? 'top-level-decoy' : 'structural');
+      const result = await h.start({ refreshReplies: true });
+      expect(result).toMatchObject(
+        mode === 'matching'
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token:
+                mode === 'missing'
+                  ? 'reply-answer-incomplete'
+                  : 'reply-scope-unverified',
+            },
+      );
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(
+        contexts.every((record) =>
+          mode === 'matching'
+            ? record.replies?.entries.length === 3
+            : record.replies === undefined,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      );
+      const scope = report.steps[0].replyScope;
+      expect(scope.levels.length).toBeGreaterThan(0);
+      expect(scope.levels.length).toBeLessThanOrEqual(12);
+      expect(scope.failedCheck).toBe(mode === 'decoy' ? 'scope-depth' : 'none');
+      if (mode !== 'decoy') expect(scope.chosenDepth).toBe(5);
+      for (const value of [
+        h.fixture.items[0]!.text,
+        h.plan.handle,
+        'generated_reply_0',
+      ])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test.each(['time-absent', 'time-nested'] as const)(
   'realshape replies %s reports scope checks without relaxing refusal or writing observations',
   async (shape) => {
     const h = await harness('success', 5, 1000);
@@ -6804,11 +6894,7 @@ test.each(['time-absent', 'time-nested', 'root-changed'] as const)(
       h.fake.replyShape(shape);
       h.setPace({ replyDiagnostic: true });
       const result = await h.start({ refreshReplies: true });
-      if (shape === 'root-changed')
-        expect(result).toMatchObject({
-          code: 'INSTAGRAM_SHAPE_CHANGED',
-          token: 'reply-scope-unverified',
-        });
+      expect(result).not.toMatchObject({ completed: 5 });
       const run = (await h.store.browserJournal()).runs.at(-1)!;
       const report = JSON.parse(
         await readFile(
@@ -6816,21 +6902,13 @@ test.each(['time-absent', 'time-nested', 'root-changed'] as const)(
           'utf8',
         ),
       ) as { steps: { replyScope: Record<string, unknown> }[] };
-      expect(report.steps[0]!.replyScope).toMatchObject(
-        shape === 'root-changed'
-          ? {
-              observed: true,
-              failedCheck: 'outer-shape',
-              focalTimePresent: true,
-            }
-          : {
-              observed: true,
-              failedCheck: 'focal-time',
-              focalCount: 1,
-              focalTimeCount: 0,
-              nearbyTimeCount: shape === 'time-nested' ? 1 : 0,
-            },
-      );
+      expect(report.steps[0]!.replyScope).toMatchObject({
+        observed: true,
+        failedCheck: 'focal-time',
+        focalCount: 1,
+        focalTimeCount: 0,
+        nearbyTimeCount: shape === 'time-nested' ? 1 : 0,
+      });
       expect(
         (await h.store.read((tx) => records(tx.instagramContext))).every(
           (record) => record.replies === undefined,
@@ -6889,19 +6967,24 @@ test('REPLIES revision F1 first direct refresh canary is accepted only after fiv
   }
 });
 
-test('REPLIES revision F1 no-answer first direct refresh waits for the person to compare', async () => {
+test('realfix no-answer first direct refresh writes nothing and cannot be accepted by hand', async () => {
   const h = await harness('success', 5, 30000);
   try {
     expect(await h.start(true)).toMatchObject({ completed: 5 });
     h.fake.directPostAccount('expected');
-    const previousContext = h.context;
-    const running = h.start({ refreshReplies: true });
-    await expect.poll(() => h.context !== previousContext).toBe(true);
-    await h.click('Matches');
-    expect(await running).toMatchObject({ completed: 5, endReason: 'canary' });
+    h.fake.replies(3);
+    h.fake.replyAnswer(false);
+    expect(await h.start({ refreshReplies: true })).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'reply-answer-incomplete',
+    });
     const run = (await h.store.browserJournal()).runs.at(-1)!;
-    expect(run.canaryAcceptedAt).not.toBeNull();
-    expect(run.acceptedBy).not.toBe('automatic-check');
+    expect(run.canaryAcceptedAt).toBeNull();
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).every(
+        (record) => record.replies === undefined,
+      ),
+    ).toBe(true);
   } finally {
     await h.close();
   }
@@ -7090,6 +7173,7 @@ test.each(['unavailable', 'not-shown'] as const)(
   async (variant) => {
     const h = await harness('success', 5);
     try {
+      h.fake.replies(3);
       h.setPace({ captureReplies: true });
       expect(await h.start(true)).toMatchObject({ completed: 5 });
       const raw = new DatabaseSync(join(h.directory, 'socialprune.sqlite'));

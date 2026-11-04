@@ -9,6 +9,7 @@ import {
 import { ContextStop, stopDetails } from './report.ts';
 import * as selectors from './selectors.ts';
 import { checkedReplyRows } from './replies-answer.ts';
+import * as scope from './replies-scope.ts';
 
 const match = {
   id: '123',
@@ -82,9 +83,26 @@ test('REPLIES revision F1 answers are focal-bound, conflicting rows refuse, boun
       0,
     ),
   ).toEqual({ reason: 'reply-answer-mismatch' });
-  expect(
-    checkedReplyRows([{ variables: focal }], match, [], false, 0),
-  ).toMatchObject({ answerChecked: false });
+  expect(checkedReplyRows([{ variables: focal }], match, [], false, 0)).toEqual(
+    { reason: 'reply-answer-incomplete' },
+  );
+});
+test('realfix missing focal answers never authorize an empty or populated replies observation', () => {
+  for (const capped of [false, true])
+    for (const rows of [
+      [],
+      [
+        {
+          account: 'generated_reply',
+          text: 'Generated child',
+          createdAt: match.createdAt,
+          likes: { count: null, source: null },
+        },
+      ],
+    ])
+      expect(checkedReplyRows([], match, rows, capped, 0)).toEqual({
+        reason: 'reply-answer-incomplete',
+      });
 });
 test('REPLIES revision F2 main mode without explicit consent never invokes the reply reader', async () => {
   const read = vi.fn(() => Promise.resolve({ entries: [] }));
@@ -111,6 +129,7 @@ function pageFixture({
   rootCount = 1,
   timeCount = 1,
   nearbyTimeCount = 1,
+  legacyShape = false,
   text = '  Cafe\u0301\n  second line  ',
 } = {}) {
   const empty = {
@@ -160,7 +179,7 @@ function pageFixture({
               count: () =>
                 Promise.resolve(selector.includes(':scope > ul') ? 0 : 1),
               locator: () => ({
-                count: () => Promise.resolve(1),
+                count: () => Promise.resolve(legacyShape ? 2 : 1),
                 getAttribute: () => Promise.resolve(`/${match.username}/`),
               }),
             },
@@ -181,6 +200,16 @@ function pageFixture({
     url: () => 'https://www.instagram.com/p/Generated/',
     locator: () => focal,
   } as unknown as Page;
+  vi.spyOn(scope, 'structuralReplyScope').mockImplementation(
+    async (_focal, _selector, _zero, shape) => {
+      if (rootCount !== 1) return null;
+      shape.chosenDepth = 5;
+      return root as unknown as import('playwright-core').Locator;
+    },
+  );
+  vi.spyOn(scope, 'ownReplyControls').mockResolvedValue(
+    control as unknown as import('playwright-core').Locator,
+  );
   vi.spyOn(selectors, 'checkPage').mockResolvedValue();
   let reads = 0;
   vi.spyOn(selectors, 'textBlock').mockImplementation(() =>
@@ -193,6 +222,21 @@ function pageFixture({
   );
   return page;
 }
+test('realfix 2/2 no-avatar focal scope reaches the answer check and cannot store without it', async () => {
+  try {
+    await expect(
+      commentReplies(
+        pageFixture({ legacyShape: true }),
+        [],
+        match,
+        () => {},
+        performance.now() + 10000,
+      ),
+    ).rejects.toMatchObject({ reason: 'reply-answer-incomplete' });
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
 test.each([
   [0, 0],
   [0, 1],
@@ -280,7 +324,23 @@ test('REPLIES revision F4 retains NFC text and internal line breaks from the ver
   try {
     const result = await commentReplies(
       pageFixture({ rows: 1 }),
-      [],
+      [
+        {
+          ...match,
+          pk: match.id,
+          created_at: Date.parse(match.createdAt) / 1000,
+          user: { username: match.username },
+          child_comment_count: 1,
+          preview_child_comments: [
+            {
+              pk: '456',
+              created_at: Date.parse(match.createdAt) / 1000,
+              user: { username: match.username },
+              text: '  Cafe\u0301\n  second line  ',
+            },
+          ],
+        },
+      ],
       match,
       () => {},
       performance.now() + 10000,

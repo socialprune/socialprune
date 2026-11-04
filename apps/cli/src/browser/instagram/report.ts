@@ -318,6 +318,7 @@ export const ReplyScopeDiagnosticSchema = z.strictObject({
     'avatar',
     'outer-shape',
     'reply-group',
+    'scope-depth',
   ]),
   addressResolved: z.boolean(),
   addressWithMatchId: z.boolean(),
@@ -338,6 +339,27 @@ export const ReplyScopeDiagnosticSchema = z.strictObject({
   avatarMatches: z.boolean().nullable(),
   parentChildrenCount: count.nullable(),
   outerDivCount: count.nullable(),
+  avatarObserved: z.boolean(),
+  chosenDepth: z.number().int().min(1).max(12).nullable(),
+  levels: z
+    .array(
+      z.strictObject({
+        depth: z.number().int().min(1).max(12),
+        childrenCapped: z.boolean(),
+        children: z
+          .array(
+            z.strictObject({
+              containsFocal: z.boolean(),
+              otherPermalinks: count,
+              times: count,
+              expandControls: count,
+              images: count,
+            }),
+          )
+          .max(32),
+      }),
+    )
+    .max(12),
 });
 export type ReplyScopeDiagnostic = z.infer<typeof ReplyScopeDiagnosticSchema>;
 const ProbeRowSchema = z.strictObject({

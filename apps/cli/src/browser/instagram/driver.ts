@@ -184,7 +184,7 @@ export async function navigateList(
   const deadline = performance.now() + deps.responseMs;
   await waitPage(
     page,
-    async () => (await readRows(page, rowCounts)).length > 0,
+    async () => (await readRows(page, rowCounts, expected)).length > 0,
     Math.max(0, deadline - performance.now()),
     'list-timeout',
     guard,
@@ -249,7 +249,7 @@ async function readAccountRows(
   expected: string,
   counts: RowReadCounts,
 ) {
-  const entries = await readRows(page, counts);
+  const entries = await readRows(page, counts, expected);
   counts.otherName = Math.max(
     counts.otherName,
     entries.filter(

@@ -1206,6 +1206,7 @@ export async function runContextWithDependencies(
               text: row.item.text,
             },
             guard,
+            answers.bodies,
           );
         }
         const read = await confirmOnPost(

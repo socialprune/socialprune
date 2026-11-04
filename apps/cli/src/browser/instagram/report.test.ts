@@ -40,6 +40,41 @@ test('realshape row and reply diagnostic schemas reject text, links, IDs and unk
     scope = emptyReplyScope();
   expect(RowShapeDiagnosticSchema.safeParse(rows).success).toBe(true);
   expect(ReplyScopeDiagnosticSchema.safeParse(scope).success).toBe(true);
+  const level = {
+    depth: 1,
+    childrenCapped: false,
+    children: [
+      {
+        containsFocal: true,
+        otherPermalinks: 0,
+        times: 1,
+        expandControls: 0,
+        images: 0,
+      },
+    ],
+  };
+  expect(
+    ReplyScopeDiagnosticSchema.safeParse({
+      ...scope,
+      chosenDepth: 1,
+      levels: [level],
+    }).success,
+  ).toBe(true);
+  for (const invalid of [
+    { ...scope, chosenDepth: 13 },
+    { ...scope, levels: Array(13).fill(level) },
+    {
+      ...scope,
+      levels: [
+        { ...level, children: [{ ...level.children[0], text: plantedUrl }] },
+      ],
+    },
+    {
+      ...scope,
+      levels: [{ ...level, children: Array(33).fill(level.children[0]) }],
+    },
+  ])
+    expect(ReplyScopeDiagnosticSchema.safeParse(invalid).success).toBe(false);
   for (const key of ['text', 'handle', 'id', 'url']) {
     expect(
       RowShapeDiagnosticSchema.safeParse({

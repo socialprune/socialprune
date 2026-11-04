@@ -157,16 +157,13 @@ export function checkedReplyRows(
   moreCount: number,
 ) {
   const answer = answerReplies(bodies, match);
+  if (!answer.present) return { reason: 'reply-answer-incomplete' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
   if (answer.present && !capped && answer.total > rows.length)
     return { reason: 'reply-answer-incomplete' as const };
   const entries: Entry[] = [];
   for (const row of rows) {
-    if (!answer.present) {
-      entries.push(fields(row));
-      continue;
-    }
     const matches = answer.entries.filter(
       (value) =>
         (row.id ? row.id === value.id : true) &&

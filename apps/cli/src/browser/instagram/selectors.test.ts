@@ -22,6 +22,53 @@ import {
 } from '../../../e2e/fake-instagram/fixture.ts';
 import { checkInstagramDeletePage } from './delete-driver.ts';
 
+test('realfix skips only exact handle-only age rows and keeps candidate indices and malformed-row stops', async () => {
+  let texts = [
+    'generated_person A generated comment\n2d',
+    'generated_person\n18w',
+    '',
+    'generated_person Another generated comment\n1d',
+  ];
+  const locator = {
+    filter() {
+      return this;
+    },
+    allInnerTexts: () => Promise.resolve(texts),
+  };
+  const page = { locator: () => locator } as unknown as Page;
+  const counts = { emptySkipped: 0, otherName: 0 };
+  expect(await readRows(page, counts, 'generated_person')).toEqual([
+    {
+      username: 'generated_person',
+      text: 'A generated comment',
+      age: '2d',
+      index: 0,
+    },
+    {
+      username: 'generated_person',
+      text: 'Another generated comment',
+      age: '1d',
+      index: 3,
+    },
+  ]);
+  expect(counts.emptySkipped).toBe(2);
+  await readRows(page, counts, 'generated_person');
+  expect(counts.emptySkipped).toBe(2);
+  for (const malformed of [
+    'other_person\n18w',
+    'Generated_person\n18w',
+    'generated_person\n18q',
+    'generated_person\n18w\nextra',
+  ]) {
+    texts = [malformed];
+    await expect(
+      readRows(page, counts, 'generated_person'),
+    ).rejects.toMatchObject({
+      token: 'row-structure',
+    });
+  }
+});
+
 test.each([false, true])(
   'realshape readRows preserves refusal and attaches count-only details only in listDiagnostic=%s',
   async (diagnose) => {

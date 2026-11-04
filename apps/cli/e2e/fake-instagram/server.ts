@@ -33,6 +33,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let replyAnswer = true;
   let rowShapeCase: RowShapeCase | undefined,
     replyShapeCase: ReplyShapeCase | undefined;
   let probeCase: ListProbeCase | undefined;
@@ -582,7 +583,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           user: { username: item.account.handle },
           text: item.text,
           ...(likesCase === 'answer' ? { comment_like_count: 23 } : {}),
-          ...(replyCount
+          ...(replyAnswer && replyCount
             ? {
                 child_comment_count: replyCount,
                 preview_child_comments: Array.from(
@@ -657,6 +658,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replies(count: number) {
       replyCount = count;
+    },
+    replyAnswer(present: boolean) {
+      replyAnswer = present;
     },
     rowShape(value: RowShapeCase) {
       rowShapeCase = value;

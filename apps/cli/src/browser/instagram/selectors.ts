@@ -190,18 +190,31 @@ export async function outsideProfilePaths(page: Page): Promise<string[]> {
 export async function readRows(
   page: Page,
   counts?: RowReadCounts,
+  expectedHandle?: string,
 ): Promise<{ username: string; text: string; age: string; index: number }[]> {
   const result = [];
   const entries = rows(page);
   const texts = await entries.allInnerTexts();
+  const handleOnly = (text: string) => {
+    const lines = text
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return (
+      expectedHandle !== undefined &&
+      lines.length === 2 &&
+      lines[0] === expectedHandle &&
+      AGE_PATTERN.test(lines[1]!)
+    );
+  };
   if (counts)
     counts.emptySkipped = Math.max(
       counts.emptySkipped,
-      texts.filter((text) => !normalize(text)).length,
+      texts.filter((text) => !normalize(text) || handleOnly(text)).length,
     );
   for (let index = 0; index < texts.length; index++) {
     const raw = normalize(texts[index]!);
-    if (!raw) continue;
+    if (!raw || handleOnly(texts[index]!)) continue;
     const match = ROW_PATTERN.exec(raw);
     if (!match) {
       if (counts?.rowShapeHandle !== undefined)

@@ -105,3 +105,46 @@ test('REPLIES-1 generated reply control and group belong directly to the focal p
   expect(groupParent).toBe(focalAncestor);
   expect(html).toContain('<aside data-reply-decoy>');
 });
+
+test('realfix generated structure independently reproduces 2/2 old wrapper counts without an avatar link', async () => {
+  const fixture = await instagramFixture(1);
+  const source = replyShapePage(
+    addRepliesPage(
+      postPage(fixture.items[0]!, 0, 'success'),
+      3,
+      IG_FIXTURE.commentId,
+      IG_FIXTURE.code,
+      fixture.items[0]!.createdAt,
+    ),
+    IG_FIXTURE.commentId,
+    'structural',
+  );
+  type Node = { tag: string; parent?: Node; children: Node[] };
+  const stack: Node[] = [];
+  let focal: Node | undefined;
+  for (const token of source
+    .slice(0, source.indexOf('<script>'))
+    .matchAll(/<\/?([a-z][a-z0-9]*)\b[^>]*>/giu)) {
+    const [tag, name] = token;
+    if (tag.startsWith('</')) {
+      const index = stack.findLastIndex((node) => node.tag === name);
+      if (index >= 0) stack.splice(index);
+      continue;
+    }
+    const node: Node = { tag: name!, parent: stack.at(-1), children: [] };
+    node.parent?.children.push(node);
+    if (tag.includes(`/c/${IG_FIXTURE.commentId}/`)) focal = node;
+    if (!['img', 'meta', 'link', 'input', 'br', 'hr'].includes(name!))
+      stack.push(node);
+  }
+  let root = focal!;
+  for (let depth = 0; depth < 5; depth++) root = root.parent!;
+  expect(root.parent!.children).toHaveLength(2);
+  expect(
+    root.parent!.parent!.children.filter((node) => node.tag === 'div'),
+  ).toHaveLength(2);
+  expect(
+    root.parent!.parent!.children.filter((node) => node.tag === 'a'),
+  ).toHaveLength(0);
+  expect(source).toContain('Generated reply 0 with local text');
+});

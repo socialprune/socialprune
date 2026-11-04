@@ -17,6 +17,7 @@ test('realshape generated page mutations produce malformed rows and absent or si
     item = fixture.items[0]!;
   for (const shape of ['extra-line', 'german-age', 'unknown-age'] as const) {
     const source = rowShapePage(listPage([item], 'success', 0), shape);
+    expect(source).toContain('[data-comment-row]{white-space:pre-line}');
     expect(source).not.toBe(listPage([item], 'success', 0));
     expect(source).toContain(
       shape === 'german-age'
@@ -36,6 +37,29 @@ test('realshape generated page mutations produce malformed rows and absent or si
       expect(source).toContain(
         `/c/${IG_FIXTURE.commentId}/">1w</a>${shape === 'time-nested' ? '<time' : ''}`,
       );
+    else {
+      const stack: { name: string; position: number }[] = [];
+      let focalParent = -1,
+        plantedParent = -2;
+      for (const token of source
+        .slice(0, source.indexOf('<script>'))
+        .matchAll(/<\/?([a-z][a-z0-9]*)\b[^>]*>/giu)) {
+        const [tag, name] = token;
+        if (tag.startsWith('</')) {
+          const index = stack.findLastIndex((node) => node.name === name);
+          if (index >= 0) stack.splice(index);
+          continue;
+        }
+        if (tag.includes(`/c/${IG_FIXTURE.commentId}/`))
+          focalParent = stack.at(-6)?.position ?? -1;
+        if (tag.includes('data-generated-root-extra'))
+          plantedParent = stack.at(-1)?.position ?? -2;
+        if (!['img', 'meta', 'link', 'input', 'br', 'hr'].includes(name!))
+          stack.push({ name: name!, position: token.index });
+      }
+      expect(plantedParent).toBeGreaterThan(0);
+      expect(plantedParent).toBe(focalParent);
+    }
   }
 });
 

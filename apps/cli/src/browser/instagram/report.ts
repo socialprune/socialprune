@@ -246,6 +246,100 @@ export const ListRowDiagnosticSchema = z.strictObject({
     .max(40),
 });
 export type ListRowDiagnostic = z.infer<typeof ListRowDiagnosticSchema>;
+const ShapeAgeSchema = z.enum([
+  'en-s',
+  'en-m',
+  'en-h',
+  'en-d',
+  'en-w',
+  'en-y',
+  'de-s',
+  'de-m',
+  'de-h',
+  'de-d',
+  'de-w',
+  'de-y',
+  'none',
+]);
+const LineBucketSchema = z.enum(['0', '1-20', '21-60', '61-120', '>120']);
+export const RowShapeDiagnosticSchema = z.strictObject({
+  observed: z.boolean(),
+  total: count,
+  capped: z.boolean(),
+  rows: z
+    .array(
+      z.strictObject({
+        lineCount: count,
+        linesCapped: z.boolean(),
+        lineLengths: z.array(LineBucketSchema).max(64),
+        handleLinePresent: z.boolean(),
+        lines: z
+          .array(
+            z.strictObject({
+              lengthBucket: LineBucketSchema,
+              equalsHandle: z.boolean(),
+              ageClass: ShapeAgeSchema,
+              countedLabel: z.boolean(),
+            }),
+          )
+          .max(64),
+        ageClasses: z.array(ShapeAgeSchema).max(13),
+        countedLabelPresent: z.boolean(),
+        failurePart: z.enum([
+          'none',
+          'username',
+          'text',
+          'age',
+          'extra-trailing-line',
+        ]),
+        anchors: count,
+        linkClasses: z.strictObject({
+          post: count,
+          profile: count,
+          yourActivity: count,
+          other: count,
+        }),
+        imagePresent: z.boolean(),
+      }),
+    )
+    .max(30),
+});
+export type RowShapeDiagnostic = z.infer<typeof RowShapeDiagnosticSchema>;
+export const ReplyScopeDiagnosticSchema = z.strictObject({
+  observed: z.boolean(),
+  failedCheck: z.enum([
+    'none',
+    'address',
+    'focal-count',
+    'focal-time',
+    'focal-time-match',
+    'author-text',
+    'single-root',
+    'avatar',
+    'outer-shape',
+    'reply-group',
+  ]),
+  addressResolved: z.boolean(),
+  addressWithMatchId: z.boolean(),
+  pageUrlMatchIdPresent: z.boolean(),
+  focalCount: count.nullable(),
+  focalTimeCount: count.nullable(),
+  nearbyTimeCount: count.nullable(),
+  focalTimePresent: z.boolean().nullable(),
+  focalTimeExact: z.boolean().nullable(),
+  focalTimeWithinExportTolerance: z.boolean().nullable(),
+  contentObserved: z.boolean().nullable(),
+  authorMatches: z.boolean().nullable(),
+  textMatches: z.boolean().nullable(),
+  rootCount: count.nullable(),
+  rootMainCount: count.nullable(),
+  rootFocalCount: count.nullable(),
+  avatarCount: count.nullable(),
+  avatarMatches: z.boolean().nullable(),
+  parentChildrenCount: count.nullable(),
+  outerDivCount: count.nullable(),
+});
+export type ReplyScopeDiagnostic = z.infer<typeof ReplyScopeDiagnosticSchema>;
 const ProbeRowSchema = z.strictObject({
   authorEqualsHandle: z.boolean(),
   matcherExportStartsWithRow: z.boolean(),
@@ -496,6 +590,8 @@ export const ContextStepReportSchema = z
     rowSignature: RowSignatureDiagnosticSchema.optional(),
     listRegions: ListRegionsSchema.optional(),
     listRows: ListRowDiagnosticSchema.optional(),
+    rowShape: RowShapeDiagnosticSchema.optional(),
+    replyScope: ReplyScopeDiagnosticSchema.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     listPageUnfiltered: ListNavigationSchema.optional(),
     unfilteredOldestSortApplied: z.boolean().optional(),
@@ -542,6 +638,14 @@ export const CONTEXT_STOP_TOKENS = [
   'account-changed',
   'page-language',
   'row-structure',
+  'reply-window-empty',
+  'reply-window-incomplete',
+  'reply-controls-changed',
+  'reply-scope-unverified',
+  'reply-answer-incomplete',
+  'reply-answer-conflict',
+  'reply-answer-mismatch',
+  'reply-read-failed',
   'filter-control',
   'post-structure',
   'comment-structure',

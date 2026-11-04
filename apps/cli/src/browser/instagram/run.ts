@@ -103,6 +103,7 @@ import {
   commentReplies,
   captureRepliesForMode,
   ReplyReadFailure,
+  replyScopeDiagnostic,
 } from './replies.ts';
 import { refreshOutcome } from './refresh.ts';
 import { navigateList } from './driver.ts';
@@ -936,6 +937,7 @@ export async function runContextWithDependencies(
                 rowSignature: rowCounts.rowSignature,
                 listRegions: rowCounts.regions,
                 listRows: rowCounts.diagnostic,
+                rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
@@ -967,6 +969,7 @@ export async function runContextWithDependencies(
                 confirmed: false,
                 candidates: 0,
                 listRows: rowCounts.diagnostic,
+                rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
@@ -1023,6 +1026,7 @@ export async function runContextWithDependencies(
           rowSignature: rowCounts.rowSignature,
           listRegions: rowCounts.regions,
           listRows: rowCounts.diagnostic,
+          rowShape: rowCounts.rowShape,
           filteredProbe: rowCounts.filteredProbe,
           newestProbe: rowCounts.newestProbe,
           listRowsAfterApply: rowCounts.initialDiagnostic,
@@ -1188,6 +1192,22 @@ export async function runContextWithDependencies(
           break;
         }
         stage = 'post-read';
+        if (
+          options.plan.refreshReplies &&
+          row.context?.confirmedBy === 'post'
+        ) {
+          stepReport.replyScope = await replyScopeDiagnostic(
+            page,
+            {
+              id: row.context.comment.id,
+              createdAt: row.context.comment.createdAt,
+              exportCreatedAt: row.item.createdAt,
+              username: options.plan.handle,
+              text: row.item.text,
+            },
+            guard,
+          );
+        }
         const read = await confirmOnPost(
           page,
           row.item,
@@ -1235,6 +1255,7 @@ export async function runContextWithDependencies(
             let answerChecked = false;
             const match = {
               ...read.result.comment,
+              exportCreatedAt: row.item.createdAt,
               username: options.plan.handle,
               text: row.item.text,
             };
@@ -1258,6 +1279,9 @@ export async function runContextWithDependencies(
                         openedAt + deps.responseMs - performance.now(),
                       ),
                     ),
+                  (value) => {
+                    stepReport.replyScope = value;
+                  },
                 ),
               true,
               false,
@@ -1354,6 +1378,7 @@ export async function runContextWithDependencies(
         if (read.result.state === 'confirmed') {
           const match = {
             ...read.result.comment,
+            exportCreatedAt: row.item.createdAt,
             username: options.plan.handle,
             text: row.item.text,
           };
@@ -1372,6 +1397,11 @@ export async function runContextWithDependencies(
                   answers!.flush(
                     Math.max(1, openedAt + deps.responseMs - performance.now()),
                   ),
+                options.order?.value.replyDiagnostic === true
+                  ? (value) => {
+                      stepReport.replyScope = value;
+                    }
+                  : undefined,
               ),
             false,
             options.order?.value.captureReplies === true,

@@ -5,6 +5,7 @@ import { checkPage, textBlock, postAddress } from './selectors.ts';
 import { answerLikes, parseVisibleLikes } from './likes.ts';
 import { normalize } from './plan.ts';
 import { ContextStop } from './report.ts';
+import type { ReplyScopeDiagnostic } from './report.ts';
 import { CliError } from '../../cli/errors.ts';
 import { checkedReplyRows } from './replies-answer.ts';
 
@@ -52,16 +53,164 @@ export async function captureRepliesForMode<T>(
     failed(
       error instanceof ReplyReadFailure ? error.reason : 'reply-read-failed',
     );
-    if (refresh) throw error;
+    if (refresh) {
+      if (error instanceof ReplyReadFailure)
+        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', error.reason);
+      throw error;
+    }
     return undefined;
   }
 }
 
+type ReplyMatch = {
+  id: string;
+  createdAt: string;
+  username: string;
+  text: string;
+  exportCreatedAt?: string;
+};
+export function emptyReplyScope(): ReplyScopeDiagnostic {
+  return {
+    observed: false,
+    failedCheck: 'none',
+    addressResolved: false,
+    addressWithMatchId: false,
+    pageUrlMatchIdPresent: false,
+    focalCount: null,
+    focalTimeCount: null,
+    nearbyTimeCount: null,
+    focalTimePresent: null,
+    focalTimeExact: null,
+    focalTimeWithinExportTolerance: null,
+    contentObserved: null,
+    authorMatches: null,
+    textMatches: null,
+    rootCount: null,
+    rootMainCount: null,
+    rootFocalCount: null,
+    avatarCount: null,
+    avatarMatches: null,
+    parentChildrenCount: null,
+    outerDivCount: null,
+  };
+}
+async function checkedScope(
+  page: Page,
+  match: ReplyMatch,
+  guard: () => void,
+  diagnostic?: (value: ReplyScopeDiagnostic) => void,
+) {
+  const shape = emptyReplyScope();
+  const fail = (part: ReplyScopeDiagnostic['failedCheck']): never => {
+    shape.observed = true;
+    shape.failedCheck = part;
+    diagnostic?.({ ...shape });
+    throw new ReplyReadFailure('reply-scope-unverified');
+  };
+  const exact = postAddress(page.url(), new URL(page.url()).origin, match.id);
+  const address = exact ?? postAddress(page.url(), new URL(page.url()).origin);
+  shape.addressResolved = address !== null;
+  shape.addressWithMatchId = exact !== null;
+  shape.pageUrlMatchIdPresent = new URL(page.url()).pathname.endsWith(
+    `/c/${match.id}/`,
+  );
+  if (!address) return fail('address');
+  guard();
+  await checkPage(page);
+  const focal = page.locator(
+    `main a[href="/${address.kind}/${address.code}/c/${match.id}/"]`,
+  );
+  const focalTimes = focal.locator('time[datetime]');
+  shape.focalCount = await focal.count();
+  if (shape.focalCount !== 1) fail('focal-count');
+  shape.focalTimeCount = await focalTimes.count();
+  if (diagnostic)
+    shape.nearbyTimeCount = await focal
+      .locator('xpath=ancestor::*[3]')
+      .locator('time[datetime]')
+      .count();
+  const rawFocalTime =
+    shape.focalTimeCount === 1
+      ? await focalTimes.getAttribute('datetime', { timeout: 150 })
+      : null;
+  shape.focalTimePresent = Boolean(rawFocalTime);
+  if (!rawFocalTime) fail('focal-time');
+  shape.focalTimeExact =
+    Date.parse(rawFocalTime!) === Date.parse(match.createdAt);
+  shape.focalTimeWithinExportTolerance =
+    Math.abs(
+      Date.parse(rawFocalTime!) -
+        Date.parse(match.exportCreatedAt ?? match.createdAt),
+    ) <= 60000;
+  if (!shape.focalTimeExact) fail('focal-time-match');
+  const content = await textBlock(focal.locator('xpath=ancestor::*[3]'), 150);
+  shape.contentObserved = Boolean(content);
+  shape.authorMatches = content
+    ? content.username.toLowerCase() === match.username.toLowerCase()
+    : null;
+  shape.textMatches = content
+    ? normalize(content.text) === normalize(match.text)
+    : null;
+  if (!content || !shape.authorMatches || !shape.textMatches)
+    fail('author-text');
+  const root = focal.locator('xpath=ancestor::*[5]');
+  shape.rootCount = await root.count();
+  shape.rootMainCount = await root.locator('xpath=ancestor::main').count();
+  shape.rootFocalCount = await root
+    .locator(`a[href="/${address.kind}/${address.code}/c/${match.id}/"]`)
+    .count();
+  if (
+    shape.rootCount !== 1 ||
+    shape.rootMainCount !== 1 ||
+    shape.rootFocalCount !== 1
+  )
+    fail('single-root');
+  const outer = root.locator('xpath=ancestor::*[2]');
+  const avatars = outer.locator(':scope > a');
+  shape.parentChildrenCount = await root
+    .locator('xpath=parent::div')
+    .locator(':scope > *')
+    .count();
+  shape.avatarCount = await avatars.count();
+  shape.avatarMatches =
+    shape.avatarCount === 1
+      ? (
+          await avatars.getAttribute('href', { timeout: 150 })
+        )?.toLowerCase() === `/${match.username.toLowerCase()}/`
+      : false;
+  shape.outerDivCount = await outer.locator(':scope > div').count();
+  if (shape.avatarCount !== 1 || !shape.avatarMatches) fail('avatar');
+  if (shape.parentChildrenCount !== 1 || shape.outerDivCount !== 1)
+    fail('outer-shape');
+  shape.observed = true;
+  diagnostic?.({ ...shape });
+  return { address, root, shape };
+}
+export async function replyScopeDiagnostic(
+  page: Page,
+  match: ReplyMatch,
+  guard: () => void,
+) {
+  let result = emptyReplyScope();
+  try {
+    await checkedScope(page, match, guard, (value) => {
+      result = value;
+    });
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    if (!(error instanceof ReplyReadFailure)) {
+      guard();
+      await checkPage(page);
+      result.observed = false;
+    }
+  }
+  return result;
+}
 /** Only the confirmed comment's own reply group, never a page-wide reply control. */
 export async function commentReplies(
   page: Page,
   bodies: readonly unknown[],
-  match: { id: string; createdAt: string; username: string; text: string },
+  match: ReplyMatch,
   guard: () => void,
   deadline: number,
   pause: (ms: number) => Promise<void> = (ms) =>
@@ -69,6 +218,7 @@ export async function commentReplies(
   expandMs = 3000,
   verified: (answerChecked: boolean) => void = () => {},
   flush: () => Promise<void> = async () => {},
+  diagnostic?: (value: ReplyScopeDiagnostic) => void,
 ): Promise<NonNullable<InstagramContext['replies']>> {
   const entries: (NonNullable<
     InstagramContext['replies']
@@ -76,55 +226,14 @@ export async function commentReplies(
   const seen = new Set<string>();
   let moreCount = 0,
     capped = false,
-    clicks = 0;
-  let beforeExpansion: number | undefined;
-  const address =
-    postAddress(page.url(), new URL(page.url()).origin, match.id) ??
-    postAddress(page.url(), new URL(page.url()).origin);
-  if (!address) throw new ReplyReadFailure('reply-scope-unverified');
-  guard();
-  await checkPage(page);
-  const focal = page.locator(
-    `main a[href="/${address.kind}/${address.code}/c/${match.id}/"]`,
+    clicks = 0,
+    beforeExpansion: number | undefined;
+  const { address, root, shape } = await checkedScope(
+    page,
+    match,
+    guard,
+    diagnostic,
   );
-  const focalTimes = focal.locator('time[datetime]');
-  const rawFocalTime =
-    (await focalTimes.count()) === 1
-      ? await focalTimes.getAttribute('datetime', { timeout: 150 })
-      : null;
-  if (
-    (await focal.count()) !== 1 ||
-    !rawFocalTime ||
-    Date.parse(rawFocalTime) !== Date.parse(match.createdAt)
-  )
-    throw new ReplyReadFailure('reply-scope-unverified');
-  const content = await textBlock(focal.locator('xpath=ancestor::*[3]'), 150);
-  if (
-    !content ||
-    content.username.toLowerCase() !== match.username.toLowerCase() ||
-    normalize(content.text) !== normalize(match.text)
-  )
-    throw new ReplyReadFailure('reply-scope-unverified');
-  const root = focal.locator('xpath=ancestor::*[5]');
-  if (
-    (await root.count()) !== 1 ||
-    (await root.locator('xpath=ancestor::main').count()) !== 1 ||
-    (await root
-      .locator(`a[href="/${address.kind}/${address.code}/c/${match.id}/"]`)
-      .count()) !== 1
-  )
-    throw new ReplyReadFailure('reply-scope-unverified');
-  const outer = root.locator('xpath=ancestor::*[2]');
-  const avatars = outer.locator(':scope > a');
-  if (
-    (await root.locator('xpath=parent::div').locator(':scope > *').count()) !==
-      1 ||
-    (await avatars.count()) !== 1 ||
-    (await avatars.getAttribute('href', { timeout: 150 }))?.toLowerCase() !==
-      `/${match.username.toLowerCase()}/` ||
-    (await outer.locator(':scope > div').count()) !== 1
-  )
-    throw new ReplyReadFailure('reply-scope-unverified');
   for (;;) {
     guard();
     await checkPage(page);
@@ -140,8 +249,10 @@ export async function commentReplies(
         (await rows.locator('a[href*="/c/"]').count()) !==
         1 ||
       (await root.locator(':scope > ul, :scope > div > ul').count()) > 1
-    )
+    ) {
+      diagnostic?.({ ...shape, failedCheck: 'reply-group' });
       throw new ReplyReadFailure('reply-scope-unverified');
+    }
     for (let index = 0; index < Math.min(count, REPLY_CAP); index++) {
       if (performance.now() >= deadline) {
         throw new ReplyReadFailure(

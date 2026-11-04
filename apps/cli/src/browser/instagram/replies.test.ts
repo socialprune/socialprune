@@ -1,6 +1,12 @@
 import { expect, test, vi } from 'vitest';
 import type { Page } from 'playwright-core';
-import { commentReplies, captureRepliesForMode } from './replies.ts';
+import {
+  commentReplies,
+  captureRepliesForMode,
+  ReplyReadFailure,
+  replyScopeDiagnostic,
+} from './replies.ts';
+import { ContextStop, stopDetails } from './report.ts';
 import * as selectors from './selectors.ts';
 import { checkedReplyRows } from './replies-answer.ts';
 
@@ -10,6 +16,22 @@ const match = {
   username: 'generated_person',
   text: 'Generated own comment',
 };
+test('realshape refresh maps a ReplyReadFailure to the closed reason instead of unexpected-error', async () => {
+  const reason = 'reply-scope-unverified',
+    failed = vi.fn();
+  const error = await captureRepliesForMode(
+    () => Promise.reject(new ReplyReadFailure(reason)),
+    true,
+    false,
+    failed,
+  ).catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(ContextStop);
+  expect(stopDetails(error)).toMatchObject({
+    code: 'INSTAGRAM_SHAPE_CHANGED',
+    token: reason,
+  });
+  expect(failed).toHaveBeenCalledWith(reason);
+});
 test('REPLIES revision F1 answers are focal-bound, conflicting rows refuse, bounded counts are retained and answer text wins', () => {
   const reply = {
     pk: '456',
@@ -87,6 +109,8 @@ function pageFixture({
   rows = 0,
   controls = 0,
   rootCount = 1,
+  timeCount = 1,
+  nearbyTimeCount = 1,
   text = '  Cafe\u0301\n  second line  ',
 } = {}) {
   const empty = {
@@ -104,7 +128,9 @@ function pageFixture({
     locator: (selector: string) =>
       selector === ':scope > div'
         ? { nth: () => ({ locator: () => replyText }) }
-        : empty,
+        : selector === 'time[datetime]'
+          ? { count: () => Promise.resolve(nearbyTimeCount) }
+          : empty,
   };
   const row = {
     isVisible: () => Promise.resolve(true),
@@ -144,7 +170,7 @@ function pageFixture({
     locator: (selector: string) =>
       selector === 'time[datetime]'
         ? {
-            count: () => Promise.resolve(1),
+            count: () => Promise.resolve(timeCount),
             getAttribute: () => Promise.resolve(match.createdAt),
           }
         : selector === 'xpath=ancestor::*[5]'
@@ -167,6 +193,39 @@ function pageFixture({
   );
   return page;
 }
+test.each([
+  [0, 0],
+  [0, 1],
+] as const)(
+  'realshape scope absent focal time=%s nearby=%s is counted and still refused',
+  async (timeCount, nearbyTimeCount) => {
+    try {
+      const page = pageFixture({ timeCount, nearbyTimeCount });
+      const diagnostic = await replyScopeDiagnostic(page, match, () => {});
+      expect(diagnostic).toMatchObject({
+        observed: true,
+        failedCheck: 'focal-time',
+        addressResolved: true,
+        focalCount: 1,
+        focalTimeCount: 0,
+        focalTimePresent: false,
+        nearbyTimeCount,
+      });
+      await expect(
+        commentReplies(page, [], match, () => {}, performance.now() + 10000),
+      ).rejects.toMatchObject({ reason: 'reply-scope-unverified' });
+      for (const value of [
+        match.id,
+        match.createdAt,
+        match.username,
+        match.text,
+      ])
+        expect(JSON.stringify(diagnostic)).not.toContain(value);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  },
+);
 test.each([
   ['reply-window-empty', { rows: 0 }, -1],
   ['reply-controls-changed', { rows: 0, controls: 2 }, 10000],

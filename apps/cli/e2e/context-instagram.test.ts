@@ -2408,6 +2408,70 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
   }
 });
 
+test.each(['extra-line', 'german-age', 'unknown-age'] as const)(
+  'realshape first list row %s records closed line counts and retains row-structure stop',
+  async (shape) => {
+    const h = await harness('success', 1);
+    h.fake.rowShape(shape);
+    h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+    try {
+      expect(await h.start(true)).toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'row-structure',
+      });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          rowShape: {
+            observed: boolean;
+            rows: {
+              lineCount: number;
+              ageClasses: string[];
+              failurePart: string;
+              countedLabelPresent: boolean;
+            }[];
+          };
+        }[];
+      };
+      expect(report.steps).toHaveLength(1);
+      expect(report.steps[0]!.rowShape).toMatchObject({
+        observed: true,
+        rows: [
+          {
+            lineCount: shape === 'extra-line' ? 3 : 2,
+            ageClasses:
+              shape === 'extra-line'
+                ? ['en-d']
+                : shape === 'german-age'
+                  ? ['de-h']
+                  : ['none'],
+            failurePart: shape === 'extra-line' ? 'extra-trailing-line' : 'age',
+            countedLabelPresent: shape === 'extra-line',
+          },
+        ],
+      });
+      expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+        'Oldest to newest',
+      );
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toBe(false);
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(0);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
 test.each(['below-first', 'other-date', 'absent'] as const)(
   'listprobe %s distinguishes filtered lazy rows, alternate filter date and bounded absence',
   async (variant) => {
@@ -6729,6 +6793,56 @@ async function acceptRepliesCanary(
   if (trigger) raw.exec(String(trigger));
   raw.close();
 }
+
+test.each(['time-absent', 'time-nested', 'root-changed'] as const)(
+  'realshape replies %s reports scope checks without relaxing refusal or writing observations',
+  async (shape) => {
+    const h = await harness('success', 5, 1000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replyShape(shape);
+      h.setPace({ replyDiagnostic: true });
+      const result = await h.start({ refreshReplies: true });
+      if (shape === 'root-changed')
+        expect(result).toMatchObject({
+          code: 'INSTAGRAM_SHAPE_CHANGED',
+          token: 'reply-scope-unverified',
+        });
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: { replyScope: Record<string, unknown> }[] };
+      expect(report.steps[0]!.replyScope).toMatchObject(
+        shape === 'root-changed'
+          ? {
+              observed: true,
+              failedCheck: 'outer-shape',
+              focalTimePresent: true,
+            }
+          : {
+              observed: true,
+              failedCheck: 'focal-time',
+              focalCount: 1,
+              focalTimeCount: 0,
+              nearbyTimeCount: shape === 'time-nested' ? 1 : 0,
+            },
+      );
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).every(
+          (record) => record.replies === undefined,
+        ),
+      ).toBe(true);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test('REPLIES revision F1 first direct refresh canary is accepted only after five answer-checked observations', async () => {
   const h = await harness('success', 5, 30000);

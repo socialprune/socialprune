@@ -5,6 +5,38 @@ import {
 } from '../../../e2e/fake-instagram/fixture.ts';
 import { postPage } from '../../../e2e/fake-instagram/pages.ts';
 import { addRepliesPage } from '../../../e2e/fake-instagram/replies-page.ts';
+import {
+  rowShapePage,
+  replyShapePage,
+} from '../../../e2e/fake-instagram/realshape-page.ts';
+import { listPage } from '../../../e2e/fake-instagram/pages.ts';
+
+test('realshape generated page mutations produce malformed rows and absent or sibling focal times without real content', async () => {
+  const fixture = await instagramFixture(1),
+    item = fixture.items[0]!;
+  for (const shape of ['extra-line', 'german-age', 'unknown-age'] as const) {
+    const source = rowShapePage(listPage([item], 'success', 0), shape);
+    expect(source).not.toBe(listPage([item], 'success', 0));
+    expect(source).toContain(
+      shape === 'german-age'
+        ? '2 Std.'
+        : shape === 'unknown-age'
+          ? '3mo'
+          : '2d\\n3 likes',
+    );
+    const script = source.match(/<script>([\s\S]*)<\/script>/u)![1]!;
+    expect(() => new Function(script)).not.toThrow();
+  }
+  const html = postPage(item, 0, 'success');
+  for (const shape of ['time-absent', 'time-nested', 'root-changed'] as const) {
+    const source = replyShapePage(html, IG_FIXTURE.commentId, shape);
+    expect(source).not.toBe(html);
+    if (shape !== 'root-changed')
+      expect(source).toContain(
+        `/c/${IG_FIXTURE.commentId}/">1w</a>${shape === 'time-nested' ? '<time' : ''}`,
+      );
+  }
+});
 
 test('REPLIES-1 generated reply control and group belong directly to the focal permalink fifth ancestor', async () => {
   const fixture = await instagramFixture(1);

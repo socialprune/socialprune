@@ -6,6 +6,7 @@ import type {
   RowSignatureDiagnostic,
 } from './report.ts';
 import { normalize, ownerName } from './plan.ts';
+import { readRowShapes } from './row-shape.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
   code: 'code',
@@ -129,6 +130,8 @@ export function relativeAgeMs(value: string): number | null {
   return Number.isFinite(age) ? age : null;
 }
 export interface RowReadCounts {
+  rowShapeHandle?: string;
+  rowShape?: import('./report.ts').RowShapeDiagnostic;
   /** Maximum simultaneous empty matches seen within one list load. */
   emptySkipped: number;
   /** Maximum simultaneous other-name rows within one step's list loads. */
@@ -200,8 +203,17 @@ export async function readRows(
     const raw = normalize(texts[index]!);
     if (!raw) continue;
     const match = ROW_PATTERN.exec(raw);
-    if (!match)
+    if (!match) {
+      if (counts?.rowShapeHandle !== undefined)
+        counts.rowShape = await readRowShapes(
+          entries,
+          texts,
+          counts.rowShapeHandle,
+          new URL(page.url()).origin,
+          (value) => ROW_PATTERN.test(value),
+        );
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
+    }
     result.push({
       username: match[1]!,
       text: match[2]!,

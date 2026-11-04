@@ -280,6 +280,7 @@ export async function loadList(
   };
   let dom: Awaited<ReturnType<typeof observeListDomChanges>> | undefined;
   let initialAccount: string | undefined;
+  if (diagnose) rowCounts.rowShapeHandle = expected;
   let oldestWithinWeek: boolean | null = null;
   let missingCandidate = false;
   let probeAllowed = false;

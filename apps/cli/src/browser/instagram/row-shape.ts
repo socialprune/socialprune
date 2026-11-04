@@ -1,0 +1,163 @@
+import type { Locator } from 'playwright-core';
+import { linkPathClass } from './list-navigation.ts';
+import { normalize } from './plan.ts';
+
+export const ROW_AGE_CLASSES = [
+  'en-s',
+  'en-m',
+  'en-h',
+  'en-d',
+  'en-w',
+  'en-y',
+  'de-s',
+  'de-m',
+  'de-h',
+  'de-d',
+  'de-w',
+  'de-y',
+  'none',
+] as const;
+type AgeClass = (typeof ROW_AGE_CLASSES)[number];
+const english =
+  /^(\d+)\s*(s|m|h|d|w|y|seconds?|minutes?|hours?|days?|weeks?|years?)$/u;
+export function rowAgeToken(value: string): AgeClass {
+  const text = normalize(value),
+    en = english.exec(text);
+  if (en) return `en-${en[2]![0]!}` as AgeClass;
+  const de = /^\d+\s*(Sek\.|Min\.|Std\.|T\.|W\.|J\.)$/u.exec(text);
+  const unit =
+    de &&
+    (
+      {
+        'Sek.': 's',
+        'Min.': 'm',
+        'Std.': 'h',
+        'T.': 'd',
+        'W.': 'w',
+        'J.': 'y',
+      } as const
+    )[de[1] as 'Sek.' | 'Min.' | 'Std.' | 'T.' | 'W.' | 'J.'];
+  return unit ? `de-${unit}` : 'none';
+}
+const bucket = (length: number) =>
+  length === 0
+    ? ('0' as const)
+    : length <= 20
+      ? ('1-20' as const)
+      : length <= 60
+        ? ('21-60' as const)
+        : length <= 120
+          ? ('61-120' as const)
+          : ('>120' as const);
+/** Explanation only. This never decides whether the production row is accepted. */
+export function rowShape(raw: string, handle: string, accepted: boolean) {
+  const lines = raw
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    text = normalize(raw);
+  const ageClasses = [
+    ...new Set(lines.map(rowAgeToken).filter((value) => value !== 'none')),
+  ];
+  const lastEnglish = english.test(lines.at(-1) ?? '');
+  const earlierAge = lines
+    .slice(0, -1)
+    .some((line) => rowAgeToken(line) !== 'none');
+  const username = /^[A-Za-z0-9_.]{1,30}(?:\s|$)/u.exec(text);
+  let failurePart:
+    'none' | 'username' | 'text' | 'age' | 'extra-trailing-line' = 'none';
+  if (!accepted)
+    failurePart = !username
+      ? 'username'
+      : earlierAge
+        ? 'extra-trailing-line'
+        : !lastEnglish
+          ? 'age'
+          : lines.length < 3 &&
+              !/^\S+\s+.+\s+\d+\s*(?:s|m|h|d|w|y|seconds?|minutes?|hours?|days?|weeks?|years?)$/u.test(
+                text,
+              )
+            ? 'text'
+            : 'age';
+  return {
+    lineCount: lines.length,
+    linesCapped: lines.length > 64,
+    lineLengths: lines.slice(0, 64).map((line) => bucket(line.length)),
+    handleLinePresent: lines.some(
+      (line) => line.toLowerCase() === handle.toLowerCase(),
+    ),
+    lines: lines
+      .slice(0, 64)
+      .map((line) => ({
+        lengthBucket: bucket(line.length),
+        equalsHandle: line.toLowerCase() === handle.toLowerCase(),
+        ageClass: rowAgeToken(line),
+        countedLabel:
+          /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
+            line,
+          ),
+      })),
+    ageClasses: ageClasses.length ? ageClasses : ['none' as const],
+    countedLabelPresent: lines.some((line) =>
+      /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
+        line,
+      ),
+    ),
+    failurePart,
+  };
+}
+export async function readRowShapes(
+  entries: Locator,
+  texts: readonly string[],
+  handle: string,
+  origin: string,
+  accepted: (raw: string) => boolean,
+) {
+  const result: {
+    observed: boolean;
+    total: number;
+    capped: boolean;
+    rows: (ReturnType<typeof rowShape> & {
+      anchors: number;
+      linkClasses: {
+        post: number;
+        profile: number;
+        yourActivity: number;
+        other: number;
+      };
+      imagePresent: boolean;
+    })[];
+  } = {
+    observed: false,
+    total: texts.filter((text) => normalize(text)).length,
+    capped: false,
+    rows: [],
+  };
+  result.capped = result.total > 30;
+  try {
+    for (const [index, text] of texts.entries()) {
+      if (!normalize(text)) continue;
+      if (result.rows.length === 30) break;
+      const row = entries.nth(index),
+        links = { post: 0, profile: 0, yourActivity: 0, other: 0 };
+      const anchors = await row.locator('a[href]').all();
+      for (const anchor of anchors) {
+        const kind = linkPathClass(
+          (await anchor.getAttribute('href')) ?? '',
+          origin,
+        );
+        links[kind === 'your-activity' ? 'yourActivity' : kind]++;
+      }
+      result.rows.push({
+        ...rowShape(text, handle, accepted(normalize(text))),
+        anchors: anchors.length,
+        linkClasses: links,
+        imagePresent: (await row.locator('img').count()) > 0,
+      });
+    }
+    result.observed = true;
+  } catch {
+    result.observed = false;
+  }
+  return result;
+}

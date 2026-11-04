@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import type { PostProjection } from './selectors.ts';
+import type { RowReadCounts } from './selectors.ts';
 import type { Page } from 'playwright-core';
 import {
   confirmComment,
@@ -20,6 +21,68 @@ import {
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
 import { checkInstagramDeletePage } from './delete-driver.ts';
+
+test.each([false, true])(
+  'realshape readRows preserves refusal and attaches count-only details only in listDiagnostic=%s',
+  async (diagnose) => {
+    const texts = ['generated_person\nInvented confidential text\n2d\n3 likes'];
+    const entries = {
+      filter() {
+        return this;
+      },
+      allInnerTexts: () => Promise.resolve(texts),
+      nth: () => ({
+        locator: (selector: string) =>
+          selector === 'img'
+            ? { count: () => Promise.resolve(1) }
+            : {
+                all: () =>
+                  Promise.resolve([
+                    {
+                      getAttribute: () =>
+                        Promise.resolve('/generated_profile/'),
+                    },
+                  ]),
+              },
+      }),
+    };
+    const page = {
+      locator: () => entries,
+      url: () =>
+        'https://www.instagram.com/your_activity/interactions/comments/',
+    } as unknown as Page;
+    const counts: RowReadCounts = {
+      emptySkipped: 0,
+      otherName: 0,
+      ...(diagnose ? { rowShapeHandle: 'generated_person' } : {}),
+    };
+    await expect(readRows(page, counts)).rejects.toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'row-structure',
+    });
+    if (diagnose)
+      expect(counts.rowShape).toMatchObject({
+        observed: true,
+        total: 1,
+        rows: [
+          {
+            lineCount: 4,
+            failurePart: 'extra-trailing-line',
+            anchors: 1,
+            linkClasses: { profile: 1 },
+            imagePresent: true,
+          },
+        ],
+      });
+    else expect(counts.rowShape).toBeUndefined();
+    for (const value of [
+      'generated_person',
+      'Invented confidential text',
+      'generated_profile',
+    ])
+      expect(JSON.stringify(counts.rowShape ?? {})).not.toContain(value);
+  },
+);
 
 test.each(['caption', 'comment', 'dialog', 'alertdialog', 'alert'])(
   'D12 B ordinary warning phrases in %s only stop in owned notice containers',

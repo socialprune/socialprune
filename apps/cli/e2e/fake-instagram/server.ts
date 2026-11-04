@@ -10,6 +10,8 @@ import { deletionPost } from './delete-page.ts';
 import { addRepliesPage } from './replies-page.ts';
 import { listProbePage, PROBE_CLIENT_HEIGHT } from './list-probe-page.ts';
 import type { ListProbeCase } from './list-probe-page.ts';
+import { rowShapePage, replyShapePage } from './realshape-page.ts';
+import type { RowShapeCase, ReplyShapeCase } from './realshape-page.ts';
 import type { DeleteCase } from './delete-page.ts';
 
 export async function fakeInstagram(port: number, items: readonly Item[]) {
@@ -31,6 +33,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   const slowPosts = new Map<number, number>();
   let emptyFilteredLists = 0;
   let replyCount = 0;
+  let rowShapeCase: RowShapeCase | undefined,
+    replyShapeCase: ReplyShapeCase | undefined;
   let probeCase: ListProbeCase | undefined;
   let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
@@ -349,7 +353,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             );
           }
         }
-        response.end(html);
+        response.end(rowShapeCase ? rowShapePage(html, rowShapeCase) : html);
         return;
       }
       if (path.startsWith('/accounts/')) {
@@ -429,6 +433,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             String(BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))),
             post[1]!,
             items[Math.max(0, index)]!.createdAt,
+          );
+        if (replyShapeCase)
+          html = replyShapePage(
+            html,
+            String(BigInt(IG_FIXTURE.commentId) + BigInt(Math.max(0, index))),
+            replyShapeCase,
           );
         if (replyControlMalformed)
           html = html.replace(
@@ -647,6 +657,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replies(count: number) {
       replyCount = count;
+    },
+    rowShape(value: RowShapeCase) {
+      rowShapeCase = value;
+    },
+    replyShape(value: ReplyShapeCase) {
+      replyShapeCase = value;
     },
     listProbe(value: ListProbeCase) {
       probeCase = value;

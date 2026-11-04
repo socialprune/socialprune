@@ -13,7 +13,11 @@ import {
   ownFunction,
   ContextStepReportSchema,
   RunMemorySchema,
+  RowShapeDiagnosticSchema,
+  ReplyScopeDiagnosticSchema,
 } from './report.ts';
+import { emptyReplyScope } from './replies.ts';
+import { rowShape } from './row-shape.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
@@ -21,6 +25,40 @@ import { z } from 'zod';
 const runId = '00000000-0000-4000-8000-000000000016';
 const plantedUrl = `https://www.instagram.com/${IG_FIXTURE.other.username}/p/${IG_FIXTURE.other.code}/`;
 const ownSelectors = new URL('./selectors.ts', import.meta.url).href;
+test('realshape row and reply diagnostic schemas reject text, links, IDs and unknown closed tokens', () => {
+  const row = {
+    ...rowShape(
+      'generated_person\nInvented private diagnostic text\n2 Std.',
+      'generated_person',
+      false,
+    ),
+    anchors: 0,
+    linkClasses: { post: 0, profile: 0, yourActivity: 0, other: 0 },
+    imagePresent: true,
+  };
+  const rows = { observed: true, total: 1, capped: false, rows: [row] },
+    scope = emptyReplyScope();
+  expect(RowShapeDiagnosticSchema.safeParse(rows).success).toBe(true);
+  expect(ReplyScopeDiagnosticSchema.safeParse(scope).success).toBe(true);
+  for (const key of ['text', 'handle', 'id', 'url']) {
+    expect(
+      RowShapeDiagnosticSchema.safeParse({
+        ...rows,
+        rows: [{ ...row, [key]: plantedUrl }],
+      }).success,
+    ).toBe(false);
+    expect(
+      ReplyScopeDiagnosticSchema.safeParse({ ...scope, [key]: plantedUrl })
+        .success,
+    ).toBe(false);
+  }
+  expect(
+    ReplyScopeDiagnosticSchema.safeParse({
+      ...scope,
+      failedCheck: 'generated_private_reason',
+    }).success,
+  ).toBe(false);
+});
 test('IG-IMAGE diagnostic accepts closed numeric image data only and enforces count and source consistency', () => {
   const image = {
     status: 'stored',

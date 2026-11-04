@@ -9,6 +9,58 @@ import {
   ContextOrderSchema,
 } from './order.ts';
 
+test('realshape replyDiagnostic is a strict opt-in that never enables uncaptured main reads', () => {
+  const base = {
+    scope: 'context-instagram' as const,
+    account: 'generated_person',
+    givenAt: '2026-11-04T07:21:00Z',
+    words: 'Generated diagnostic order',
+    acceptCanary: true,
+  };
+  expect(
+    ContextOrderSchema.safeParse({ ...base, replyDiagnostic: 'true' }).success,
+  ).toBe(false);
+  const order = (value: object) => ({
+    value: { ...base, ...value },
+    sha256: 'a'.repeat(64),
+  });
+  expect(() =>
+    validateContextOrder(order({ replyDiagnostic: true }), base.account, true),
+  ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+  expect(() =>
+    validateContextOrder(
+      order({ replyDiagnostic: true, captureReplies: false }),
+      base.account,
+      true,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+  expect(() =>
+    validateContextOrder(
+      order({ replyDiagnostic: true, captureReplies: true }),
+      base.account,
+      true,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    validateContextOrder(
+      order({ replyDiagnostic: true, refreshReplies: true }),
+      base.account,
+      true,
+      false,
+      true,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    validateContextOrder(
+      order({ replyDiagnostic: true, refreshLikes: true }),
+      base.account,
+      false,
+      true,
+      false,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'CONTEXT_ORDER_INVALID' }));
+});
+
 test('REPLIES revision F2 capture consent is optional, boolean and main-only', () => {
   const base = {
     scope: 'context-instagram' as const,

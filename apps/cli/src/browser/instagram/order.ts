@@ -9,6 +9,7 @@ export const ContextOrderSchema = z.strictObject({
   refreshReplies: z.boolean().optional(),
   captureReplies: z.boolean().optional(),
   listDiagnostic: z.boolean().optional(),
+  replyDiagnostic: z.boolean().optional(),
   account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
   givenAt: z.iso.datetime({ offset: true }),
   words: z.string().trim().min(1).max(10000),
@@ -55,6 +56,10 @@ export function validateContextOrder(
     !parsed.success ||
     (refreshLikes && refreshReplies) ||
     (refreshLikes && parsed.data.captureReplies !== undefined) ||
+    (parsed.data.replyDiagnostic === true &&
+      (refreshLikes ||
+        parsed.data.listDiagnostic === true ||
+        (!refreshReplies && parsed.data.captureReplies !== true))) ||
     (refreshReplies && parsed.data.refreshReplies !== true) ||
     (parsed.data.refreshReplies !== undefined &&
       parsed.data.refreshReplies !== refreshReplies) ||

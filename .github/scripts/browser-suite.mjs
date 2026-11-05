@@ -16,6 +16,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Console } from 'node:console';
 import { promisify } from 'node:util';
+import { createRequire } from 'node:module';
 import { runProcess } from './suite-process.mjs';
 
 const console = new Console(process.stdout, process.stderr);
@@ -240,6 +241,21 @@ export function suiteArguments(name, report, pattern) {
         ]),
   ];
 }
+export function contextLaunch(args) {
+  const require = createRequire(import.meta.url);
+  // pnpm package scripts pass through a Windows command wrapper (8 KiB limit).
+  // Invoke the identical Vitest entry/config with Node argv, without a shell.
+  return {
+    executable: process.execPath,
+    args: [
+      join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs'),
+      'run',
+      '--config',
+      'apps/cli/e2e/context.vitest.config.ts',
+      ...args.slice(3),
+    ],
+  };
+}
 export async function resolvePnpm(
   environment = process.env,
   platform = process.platform,
@@ -417,9 +433,13 @@ export async function runSuite(
     log.write(`${launchError}\n${error.stderr ?? error.message}\n`);
   }
   if (!launchError) {
+    const executionCommand =
+      shard === undefined
+        ? { executable: launch.executable, args: [...launch.args, ...args] }
+        : contextLaunch(args);
     const execution = await runProcess(
-      launch.executable,
-      [...launch.args, ...args],
+      executionCommand.executable,
+      executionCommand.args,
       {
         cwd: root,
         env: environment,
@@ -473,7 +493,9 @@ export async function runSuite(
     launchError: launchError ?? null,
     termination,
     resolvedCommand: launch
-      ? [launch.executable, ...launch.args, ...args]
+      ? shard === undefined
+        ? [launch.executable, ...launch.args, ...args]
+        : [contextLaunch(args).executable, ...contextLaunch(args).args]
       : null,
     reportPresent,
     networkFailures,

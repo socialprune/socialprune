@@ -10,7 +10,7 @@ export function replyControlShape(label: string, answerTotal: number | null) {
   const number =
     all?.[1] ??
     numbered?.[1] ??
-    (digits.length === 1 && digits[0]!.length <= 6 ? digits[0] : undefined);
+    (digits.length === 1 && digits[0].length <= 6 ? digits[0] : undefined);
   const shape =
     text === 'View replies'
       ? ('exact-view-replies' as const)

@@ -1,14 +1,15 @@
 import type { Item } from '@socialprune/core';
 import { listPage } from './pages.ts';
 
-export type ListProbeCase = 'below-first' | 'other-date' | 'absent';
+export type ListProbeCase =
+  'below-first' | 'other-date' | 'absent' | 'newest-unsettled';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
   items: readonly Item[],
   probe: ListProbeCase,
 ): string {
-  return listPage(items, 'success', 0)
+  let source = listPage(items, 'success', 0)
     .replace('#list{height:420px;', `#list{height:${PROBE_CLIENT_HEIGHT}px;`)
     .replace(
       'let oldest=false,',
@@ -30,4 +31,15 @@ export function listProbePage(
       'applied=true;if(dirty.start)',
       "applied=true;sessionStorage.setItem('probe-oldest',String(oldest));if(dirty.start)",
     );
+  if (probe === 'newest-unsettled')
+    source = source
+      .replace(
+        'const mode=accountVariant(),mixed=',
+        "if(sessionStorage.getItem('probe-newest-unsettled')==='true')chosen=[];const mode=accountVariant(),mixed=",
+      )
+      .replace(
+        'applied=true;sessionStorage',
+        "applied=true;if(!oldest)sessionStorage.setItem('probe-newest-unsettled','true');sessionStorage",
+      );
+  return source;
 }

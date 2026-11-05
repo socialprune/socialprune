@@ -25,6 +25,7 @@ export async function structuralReplyScope(
   guard: () => void,
 ) {
   let emptyScope: { root: Locator; depth: number; avatar: boolean } | undefined;
+  let isolated: { root: Locator; depth: number; avatar: boolean } | undefined;
   const choose = (root: Locator, depth: number) => {
     shape.chosenDepth = depth;
     shape.rootCount = 1;
@@ -85,12 +86,13 @@ export async function structuralReplyScope(
       (await root.locator('a[href*="/c/"]').count()) -
       (await rows.locator('a[href*="/c/"]').count());
     if (focalCount !== 1 || other !== 1) {
-      // Do not adopt an ancestor which owns another top-level comment. An
-      // already isolated zero-child scope may end immediately below it.
-      if (count !== 0 || rowCount !== 0 || !emptyScope) return null;
-      shape.levels = shape.levels.slice(0, emptyScope.depth);
-      shape.avatarObserved = emptyScope.avatar;
-      return choose(emptyScope.root, emptyScope.depth);
+      // The first foreign top-level permalink bounds the whole isolated
+      // comment below it. No Reply action or avatar is needed to locate that
+      // boundary; the answer check still decides whether absence can be saved.
+      if (focalCount !== 1 || count !== 0 || rowCount !== 0 || !isolated)
+        return null;
+      shape.avatarObserved = isolated.avatar;
+      return choose(isolated.root, isolated.depth);
     }
     shape.avatarObserved ||= (await root.locator('img').count()) > 0;
     if (count > 0 || rowCount > 0) {
@@ -98,6 +100,7 @@ export async function structuralReplyScope(
         return null;
       return choose(root, depth);
     }
+    isolated = { root, depth, avatar: shape.avatarObserved };
     // Scan through the whole isolated comment before proving no expand
     // control. A narrower text/actions wrapper is not proof of absence.
     if (

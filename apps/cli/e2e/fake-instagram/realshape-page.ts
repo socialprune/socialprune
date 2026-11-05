@@ -5,6 +5,7 @@ export type ReplyShapeCase =
   | 'time-nested'
   | 'root-changed'
   | 'structural'
+  | 'no-replies'
   | 'top-level-decoy';
 export function rowShapePage(html: string, shape: RowShapeCase) {
   if (shape === 'handle-only')
@@ -32,6 +33,42 @@ export function replyShapePage(
   id: string,
   shape: ReplyShapeCase,
 ) {
+  if (shape === 'no-replies') {
+    const stack: { name: string; start: number }[] = [];
+    let start = -1,
+      end = -1;
+    for (const token of html
+      .slice(0, html.indexOf('<script>'))
+      .matchAll(/<\/?([a-z][a-z0-9]*)\b[^>]*>/giu)) {
+      const [tag, name] = token;
+      if (tag.startsWith('</')) {
+        const index = stack.findLastIndex((node) => node.name === name);
+        if (index >= 0) {
+          if (stack[index]!.start === start) {
+            end = token.index + tag.length;
+            break;
+          }
+          stack.splice(index);
+        }
+      } else {
+        if (tag.includes(`/c/${id}/`)) start = stack.at(-7)?.start ?? -1;
+        if (!['img', 'meta', 'link', 'input', 'br', 'hr'].includes(name!))
+          stack.push({ name: name!, start: token.index });
+      }
+    }
+    if (start < 0 || end < 0)
+      throw new Error('Generated empty reply scope missing');
+    const focal = html
+      .slice(start, end)
+      .replace('<div role="button">Reply</div>', '');
+    return (
+      html.slice(0, start) +
+      '<div><div><div>' +
+      focal +
+      '</div></div></div>' +
+      html.slice(end)
+    );
+  }
   if (shape === 'structural' || shape === 'top-level-decoy') {
     // Preserve the independently stated real counts: no avatar link, two
     // children at the old root's parent and two divs at the old outer.

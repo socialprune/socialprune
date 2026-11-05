@@ -104,6 +104,52 @@ test('realfix missing focal answers never authorize an empty or populated replie
         reason: 'reply-answer-incomplete',
       });
 });
+
+test('replyempty no replies shown requires agreeing exact focal answer evidence', () => {
+  const focal = {
+    pk: match.id,
+    user: { username: match.username },
+    text: match.text,
+    created_at: Date.parse(match.createdAt) / 1000,
+  };
+  for (const evidence of [
+    { child_comment_count: 0 },
+    { preview_child_comments: [] },
+    { edge_threaded_comments: { edges: [] } },
+  ])
+    expect(
+      checkedReplyRows([{ ...focal, ...evidence }], match, [], false, 0),
+    ).toEqual({
+      answerChecked: true,
+      observation: { entries: [], capped: false, moreCount: 0 },
+    });
+  for (const evidence of [
+    {},
+    { child_comment_count: 1 },
+    {
+      preview_child_comments: [
+        {
+          pk: '456',
+          user: { username: 'generated_reply' },
+          text: 'Generated child',
+          created_at: focal.created_at,
+        },
+      ],
+    },
+  ])
+    expect(
+      checkedReplyRows([{ ...focal, ...evidence }], match, [], false, 0),
+    ).toEqual({ reason: 'reply-answer-incomplete' });
+  expect(
+    checkedReplyRows(
+      [{ ...focal, child_comment_count: -1 }],
+      match,
+      [],
+      false,
+      0,
+    ),
+  ).toEqual({ reason: 'reply-answer-conflict' });
+});
 test('REPLIES revision F2 main mode without explicit consent never invokes the reply reader', async () => {
   const read = vi.fn(() => Promise.resolve({ entries: [] }));
   expect(

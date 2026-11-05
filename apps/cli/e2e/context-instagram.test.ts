@@ -2448,6 +2448,44 @@ test('realfix handle-only image row is counted, never a candidate, and both list
   }
 });
 
+test('replyempty diagnostic newest sort never settles, records its wait and ends without a run failure', async () => {
+  const h = await harness('success', 1, 1000);
+  h.fake.listProbe('newest-unsettled');
+  h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'CANCELLED',
+      token: 'stopped',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[] };
+    expect(
+      ContextStepReportSchema.parse(report.steps[0]).newestProbe,
+    ).toMatchObject({
+      sortReadback: true,
+      settledReload: false,
+      observationFailed: true,
+      timeoutWait: 'newest-reload-rows',
+      view: { observed: false },
+    });
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      [],
+    );
+    expect(
+      h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toBe(false);
+    for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+      expect(JSON.stringify(report)).not.toContain(value);
+  } finally {
+    await h.close();
+  }
+});
+
 test.each(['extra-line', 'german-age', 'unknown-age'] as const)(
   'realshape first list row %s records closed line counts and retains row-structure stop',
   async (shape) => {
@@ -6833,6 +6871,67 @@ async function acceptRepliesCanary(
   if (trigger) raw.exec(String(trigger));
   raw.close();
 }
+
+test.each(['matching', 'missing', 'disagreement'] as const)(
+  'replyempty depth-11 foreign permalink and no expand control: %s focal answer',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(mode === 'disagreement' ? 3 : 0);
+      h.fake.replyAnswer(mode !== 'missing');
+      h.fake.replyShape('no-replies');
+      expect(await h.start({ refreshReplies: true })).toMatchObject(
+        mode === 'matching'
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token: 'reply-answer-incomplete',
+            },
+      );
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      for (const record of contexts)
+        if (mode === 'matching')
+          expect(record.replies).toMatchObject({
+            entries: [],
+            capped: false,
+            moreCount: 0,
+          });
+        else expect(record.replies).toBeUndefined();
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const scope = ContextStepReportSchema.parse(report.steps[0]).replyScope!;
+      expect(scope).toMatchObject({ failedCheck: 'none', chosenDepth: 10 });
+      expect(scope.levels).toHaveLength(11);
+      expect(
+        scope.levels
+          .slice(0, 10)
+          .every((level) =>
+            level.children.every(
+              (child) =>
+                child.otherPermalinks === 0 && child.expandControls === 0,
+            ),
+          ),
+      ).toBe(true);
+      expect(
+        scope.levels[10]!.children.some((child) => child.otherPermalinks === 1),
+      ).toBe(true);
+      expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+        'View replies',
+      );
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test.each(['matching', 'missing', 'decoy'] as const)(
   'realfix structural 2/2 reply shape without avatar link: %s answer and scope',

@@ -47,7 +47,15 @@ import { listRegions } from './list-regions.ts';
 import { listNavigation } from './list-navigation.ts';
 import { windowFacts } from './list-window.ts';
 import { listRowDiagnostic } from './list-diagnostic.ts';
-import { listProbeReader, boundedProbe, probeView } from './list-probe.ts';
+import {
+  listProbeReader,
+  boundedProbe,
+  probeView,
+  emptyProbeView,
+  probeWait,
+  ProbeTimeout,
+} from './list-probe.ts';
+import type { NewestProbe } from './report.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -169,35 +177,56 @@ export async function navigateList(
   deps: ContextDependencies,
   guard: () => void,
   rowCounts: RowReadCounts,
+  probePhase?: 'newest-navigation' | 'newest-reload',
 ) {
   guard();
   const navigationStart = performance.now();
+  const checked = async () => {
+    guard();
+    await checkPage(page);
+  };
+  const wait = <T>(
+    part: 'load' | 'rows' | 'account',
+    action: () => Promise<T>,
+  ) =>
+    probePhase ? probeWait(`${probePhase}-${part}`, action, checked) : action();
   try {
-    await page.goto(deps.origin + COMMENTS_PATH, {
-      waitUntil: 'domcontentloaded',
-      timeout: deps.responseMs,
-    });
-  } catch {
+    await wait('load', () =>
+      page.goto(deps.origin + COMMENTS_PATH, {
+        waitUntil: 'domcontentloaded',
+        timeout: deps.responseMs,
+      }),
+    );
+  } catch (error) {
+    if (
+      error instanceof ProbeTimeout ||
+      (probePhase && error instanceof ContextStop)
+    )
+      throw error;
     guard();
     throw new ContextStop('PLATFORM_CHECK', 'navigation');
   }
   const deadline = performance.now() + deps.responseMs;
-  await waitPage(
-    page,
-    async () => (await readRows(page, rowCounts, expected)).length > 0,
-    Math.max(0, deadline - performance.now()),
-    'list-timeout',
-    guard,
+  await wait('rows', () =>
+    waitPage(
+      page,
+      async () => (await readRows(page, rowCounts, expected)).length > 0,
+      Math.max(0, deadline - performance.now()),
+      'list-timeout',
+      guard,
+    ),
   );
   deps.navigated?.('list', performance.now() - navigationStart);
-  const accountRows = await checkedAccountRows(
-    page,
-    expected,
-    deadline,
-    guard,
-    rowCounts,
-    navigationStart,
-    deps.accountObserved,
+  const accountRows = await wait('account', () =>
+    checkedAccountRows(
+      page,
+      expected,
+      deadline,
+      guard,
+      rowCounts,
+      navigationStart,
+      deps.accountObserved,
+    ),
   );
   return { entries: accountRows, navigationStart };
 }
@@ -569,56 +598,129 @@ export async function loadList(
     freshness.finish();
     await dom?.dispose();
     if (diagnose && filter.applied && probeAllowed) {
-      const reader = await listProbeReader(
-        page,
-        item.text,
-        item.createdAt,
-        expected,
-        now.getTime(),
-        guard,
-      );
+      const checked = async () => {
+        guard();
+        await checkPage(page);
+        const classification = accountClass(
+          expected,
+          await outsideProfilePaths(page),
+        );
+        deps.accountObserved?.(classification);
+        if (classification !== 'expected')
+          throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+      };
+      const newest: NewestProbe = {
+        sortReadback: false,
+        settledReload: false,
+        observationFailed: false,
+        timeoutWait: null,
+        view: emptyProbeView(),
+      };
+      rowCounts.newestProbe = newest;
+      let reader: Awaited<ReturnType<typeof listProbeReader>> | undefined;
       try {
+        reader = await probeWait(
+          'probe-attach',
+          () =>
+            listProbeReader(
+              page,
+              item.text,
+              item.createdAt,
+              expected,
+              now.getTime(),
+              guard,
+            ),
+          checked,
+        );
+        const active = reader;
         rowCounts.filteredProbe = await boundedProbe(
-          () => reader.read(),
-          () => reader.scroll(),
-          () => reader.settle(deps.pace.scrollMs),
+          () => active.read(),
+          () => active.scroll(),
+          () => active.settle(deps.pace.scrollMs),
+          checked,
         );
-        await navigateList(page, expected, deps, guard, rowCounts);
-        await clickAllowed(
+        await navigateList(
           page,
-          { kind: 'named', name: 'Sort & filter' },
+          expected,
+          deps,
           guard,
+          rowCounts,
+          'newest-navigation',
         );
-        await clickAllowed(
-          page,
-          { kind: 'named', name: 'Newest to oldest' },
-          guard,
+        await probeWait(
+          'newest-open-sort',
+          () =>
+            clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard),
+          checked,
         );
-        const newest = page.getByRole('button', {
+        await probeWait(
+          'newest-select-sort',
+          () =>
+            clickAllowed(
+              page,
+              { kind: 'named', name: 'Newest to oldest' },
+              guard,
+            ),
+          checked,
+        );
+        const control = page.getByRole('button', {
           name: 'Newest to oldest',
           exact: true,
         });
-        const selected =
-          (
-            await Promise.all(
-              ['aria-checked', 'aria-pressed', 'data-selected'].map(
-                (attribute) => newest.getAttribute(attribute, { timeout: 150 }),
-              ),
-            )
-          ).some((value) => value === 'true') ||
-          (await newest
-            .locator('input:checked,[aria-checked="true"]')
-            .count()) === 1;
-        await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
-        await navigateList(page, expected, deps, guard, rowCounts);
-        await reader.settle(deps.pace.scrollMs);
-        rowCounts.newestProbe = {
-          sortReadback: selected,
-          settledReload: true,
-          view: probeView(await reader.read()),
-        };
+        newest.sortReadback = await probeWait(
+          'newest-sort-readback',
+          async () =>
+            (
+              await Promise.all(
+                ['aria-checked', 'aria-pressed', 'data-selected'].map(
+                  (attribute) =>
+                    control.getAttribute(attribute, { timeout: 150 }),
+                ),
+              )
+            ).some((value) => value === 'true') ||
+            (await control
+              .locator('input:checked,[aria-checked="true"]')
+              .count()) === 1,
+          checked,
+        );
+        await probeWait(
+          'newest-apply',
+          () => clickAllowed(page, { kind: 'named', name: 'Apply' }, guard),
+          checked,
+        );
+        await navigateList(
+          page,
+          expected,
+          deps,
+          guard,
+          rowCounts,
+          'newest-reload',
+        );
+        await probeWait(
+          'newest-settle',
+          () => active.settle(deps.pace.scrollMs),
+          checked,
+        );
+        newest.view = probeView(
+          await probeWait('newest-read', () => active.read(), checked),
+        );
+        newest.settledReload = true;
+        newest.observationFailed = !newest.view.observed;
+      } catch (error) {
+        if (!(error instanceof ProbeTimeout)) throw error;
+        await checked();
+        newest.observationFailed = true;
+        newest.timeoutWait = error.wait;
       } finally {
-        await reader.close();
+        if (reader) {
+          try {
+            await probeWait('probe-close', () => reader!.close(), checked);
+          } catch (error) {
+            if (!(error instanceof ProbeTimeout)) throw error;
+            newest.observationFailed = true;
+            newest.timeoutWait ??= error.wait;
+          }
+        }
       }
     }
   }

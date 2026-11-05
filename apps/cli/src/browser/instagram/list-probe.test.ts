@@ -4,8 +4,15 @@ import {
   probeProjection,
   rowAgeClass,
   probeView,
+  probeWait,
+  ProbeTimeout,
 } from './list-probe.ts';
-import { ListProbeViewSchema } from './report.ts';
+import {
+  ListProbeViewSchema,
+  ContextStop,
+  PROBE_WAITS,
+  NewestProbeSchema,
+} from './report.ts';
 import type { NavigationSnapshot } from './list-navigation.ts';
 
 const target = 'Generated target words only',
@@ -176,4 +183,78 @@ test('listprobe enforces three-scroll maximum even when rows keep growing', asyn
   );
   expect(scrolls).toBe(3);
   expect(result.scrolls).toHaveLength(3);
+});
+
+test.each(PROBE_WAITS)(
+  'replyempty timeout has only its closed wait token: %s',
+  async (wait) => {
+    const error = Object.assign(new Error('Generated private timeout detail'), {
+      name: 'TimeoutError',
+    });
+    const caught = await probeWait(
+      wait,
+      () => Promise.reject(error),
+      async () => {},
+    ).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(ProbeTimeout);
+    expect(caught).toMatchObject({ wait, message: wait });
+  },
+);
+test('replyempty diagnostic timeout never suppresses account, platform, cancellation or non-timeout failures', async () => {
+  for (const error of [
+    new ContextStop('ACCOUNT_MISMATCH', 'account-changed'),
+    new ContextStop('PLATFORM_CHECK', 'http-429'),
+    new ContextStop('CANCELLED', 'stopped'),
+    new Error('Generated non-timeout failure'),
+  ]) {
+    await expect(
+      probeWait(
+        'newest-read',
+        () => Promise.reject(error),
+        async () => {},
+      ),
+    ).rejects.toBe(error);
+    const timeout = Object.assign(new Error('Generated timeout'), {
+      name: 'TimeoutError',
+    });
+    await expect(
+      probeWait(
+        'newest-read',
+        () => Promise.reject(timeout),
+        () => Promise.reject(error),
+      ),
+    ).rejects.toBe(error);
+  }
+});
+test('replyempty partial filtered observation survives a scroll wait timeout and is never an empty proof', async () => {
+  const projection = probeProjection(
+    snapshot([target]),
+    target,
+    at,
+    handle,
+    now,
+  );
+  const result = await boundedProbe(
+    () => Promise.resolve(projection),
+    () => Promise.resolve(true),
+    () =>
+      Promise.reject(
+        Object.assign(new Error('Generated timeout'), { name: 'TimeoutError' }),
+      ),
+  );
+  expect(result).toMatchObject({
+    observationFailed: true,
+    timeoutWait: 'filtered-settle',
+    initial: { targetMatched: true },
+    scrolls: [],
+  });
+  expect(
+    NewestProbeSchema.safeParse({
+      observationFailed: true,
+      timeoutWait: 'private-content',
+      sortReadback: false,
+      settledReload: false,
+      view: probeView(projection),
+    }).success,
+  ).toBe(false);
 });

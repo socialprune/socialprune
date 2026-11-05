@@ -380,7 +380,32 @@ export const ListProbeViewSchema = z.strictObject({
   scrollContainerObserved: z.boolean(),
   scrollHeightGreaterThanClient: z.boolean().nullable(),
 });
+export const PROBE_WAITS = [
+  'probe-attach',
+  'filtered-read',
+  'filtered-scroll',
+  'filtered-settle',
+  'newest-navigation-load',
+  'newest-navigation-rows',
+  'newest-navigation-account',
+  'newest-open-sort',
+  'newest-select-sort',
+  'newest-sort-readback',
+  'newest-apply',
+  'newest-reload-load',
+  'newest-reload-rows',
+  'newest-reload-account',
+  'newest-settle',
+  'newest-read',
+  'probe-close',
+] as const;
+export type ProbeWait = (typeof PROBE_WAITS)[number];
+const probeFailure = {
+  observationFailed: z.boolean(),
+  timeoutWait: z.enum(PROBE_WAITS).nullable(),
+};
 export const FilteredProbeSchema = z.strictObject({
+  ...probeFailure,
   initial: ListProbeViewSchema,
   scrolls: z
     .array(
@@ -395,6 +420,7 @@ export const FilteredProbeSchema = z.strictObject({
     .max(3),
 });
 export const NewestProbeSchema = z.strictObject({
+  ...probeFailure,
   sortReadback: z.boolean(),
   settledReload: z.boolean(),
   view: ListProbeViewSchema,

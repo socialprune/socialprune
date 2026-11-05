@@ -106,6 +106,27 @@ test('realfix refuses a sibling top-level permalink at the reply boundary withou
   expect(shape.chosenDepth).toBeNull();
 });
 
+test.each([true, false])(
+  'replyempty isolates depth 10 below the first foreign permalink without an expand control, zero answer=%s',
+  async (zeroAnswer) => {
+    const shape = emptyReplyScope();
+    expect(
+      await structuralReplyScope(
+        fixture([
+          ...Array.from({ length: 10 }, (): Level => ({})),
+          { foreign: 1 },
+        ]),
+        focalSelector,
+        zeroAnswer,
+        shape,
+        () => {},
+      ),
+    ).not.toBeNull();
+    expect(shape.chosenDepth).toBe(10);
+    expect(shape.levels).toHaveLength(11);
+  },
+);
+
 test('realfix zero-child answer proves absence only at a focal Reply action, within main and the depth bound', async () => {
   for (const [levels, zero, chosen] of [
     [[{}, { reply: 1 }], true, 2],

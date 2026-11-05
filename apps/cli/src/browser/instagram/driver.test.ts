@@ -12,6 +12,10 @@ import type { PostProjection } from './selectors.ts';
 import { stopDetails } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import * as filterHelpers from './filter.ts';
+import * as probeHelpers from './list-probe.ts';
+import * as navigationHelpers from './list-navigation.ts';
+import * as diagnosticHelpers from './list-diagnostic.ts';
+import * as regionHelpers from './list-regions.ts';
 import {
   instagramFixture,
   IG_FIXTURE,
@@ -164,6 +168,91 @@ test('C27 diagnostic attach and DOM read failures retain the original filtered t
     now.mockRestore();
   }
 });
+
+test.each([true, false])(
+  'replyempty newest sort timeout is diagnostic-only, diagnose=%s',
+  async (diagnose) => {
+    const fixture = await instagramFixture(1),
+      item = fixture.items[0]!,
+      handle = item.account.handle!;
+    const timeout = Object.assign(new Error('generated timeout'), {
+      name: 'TimeoutError',
+    });
+    let clock = 0,
+      sortOpens = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 200));
+    vi.spyOn(selectors, 'checkPage').mockResolvedValue();
+    vi.spyOn(selectors, 'outsideProfilePaths').mockResolvedValue([
+      `/${handle}/`,
+    ]);
+    vi.spyOn(selectors, 'readRows').mockResolvedValue([
+      { index: 0, username: handle, text: item.text, age: '1w' },
+    ]);
+    vi.spyOn(filterHelpers, 'chooseFilterDate').mockResolvedValue();
+    vi.spyOn(selectors, 'clickAllowed').mockImplementation(
+      (_page, action, _guard, dispatched) => {
+        if (action.kind === 'named' && action.name === 'Sort & filter') {
+          if (!diagnose || ++sortOpens > 1) return Promise.reject(timeout);
+        }
+        dispatched?.();
+        return Promise.resolve();
+      },
+    );
+    vi.spyOn(navigationHelpers, 'listNavigation').mockResolvedValue(
+      {} as never,
+    );
+    vi.spyOn(diagnosticHelpers, 'listRowDiagnostic').mockResolvedValue(
+      {} as never,
+    );
+    vi.spyOn(regionHelpers, 'listRegions').mockResolvedValue({} as never);
+    const projection = probeHelpers.probeProjection(
+      { strings: [], documents: [] },
+      item.text,
+      item.createdAt,
+      handle,
+      0,
+    );
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(probeHelpers, 'listProbeReader').mockResolvedValue({
+      read: () => Promise.resolve(projection),
+      scroll: () => Promise.resolve(false),
+      settle: () => Promise.resolve(),
+      close,
+    });
+    const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+    const freshness = {
+      beforeApply: () => Promise.resolve(),
+      inspect: () => Promise.resolve({} as never),
+      finish: () => {},
+    };
+    try {
+      const result = loadList(
+        { goto: () => Promise.resolve() } as unknown as Page,
+        item,
+        handle,
+        { ...productionContext, responseMs: 1 },
+        () => {},
+        false,
+        undefined,
+        counts,
+        freshness,
+        [],
+        diagnose,
+      );
+      if (diagnose) {
+        await expect(result).resolves.toMatchObject({ rowCount: 1 });
+        expect(counts.newestProbe).toMatchObject({
+          observationFailed: true,
+          timeoutWait: 'newest-open-sort',
+          settledReload: false,
+        });
+        expect(close).toHaveBeenCalledOnce();
+      } else await expect(result).rejects.toBe(timeout);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  },
+);
 
 test.each(['p', 'reel'] as const)(
   'C26 observed %s addresses retain only the exact same-origin post kind and code',

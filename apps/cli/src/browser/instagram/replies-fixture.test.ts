@@ -166,3 +166,62 @@ test('realfix handle-only decoration composes with the generated probes without 
   const script = source.match(/<script>([\s\S]*)<\/script>/u)![1]!;
   expect(() => new Script(script)).not.toThrow();
 });
+
+test('replyempty generated page has no expand control and its first foreign permalink at depth 11', async () => {
+  const fixture = await instagramFixture(1);
+  const source = replyShapePage(
+    postPage(fixture.items[0]!, 0, 'success'),
+    IG_FIXTURE.commentId,
+    'no-replies',
+  );
+  type Node = {
+    tag: string;
+    parent?: Node;
+    children: Node[];
+    permalink: boolean;
+  };
+  const stack: Node[] = [];
+  let focal: Node | undefined;
+  for (const token of source
+    .slice(0, source.indexOf('<script>'))
+    .matchAll(/<\/?([a-z][a-z0-9]*)\b[^>]*>/giu)) {
+    const [tag, name] = token;
+    if (tag.startsWith('</')) {
+      const index = stack.findLastIndex((node) => node.tag === name);
+      if (index >= 0) stack.splice(index);
+      continue;
+    }
+    const node: Node = {
+      tag: name!,
+      parent: stack.at(-1),
+      children: [],
+      permalink: name === 'a' && tag.includes('/c/'),
+    };
+    node.parent?.children.push(node);
+    if (tag.includes(`/c/${IG_FIXTURE.commentId}/`)) focal = node;
+    if (!['img', 'meta', 'link', 'input', 'br', 'hr'].includes(name!))
+      stack.push(node);
+  }
+  const links = (node: Node): number =>
+    Number(node.permalink) +
+    node.children.reduce((sum, child) => sum + links(child), 0);
+  let ancestor = focal!;
+  for (let depth = 1; depth <= 11; depth++) {
+    ancestor = ancestor.parent!;
+    expect(links(ancestor)).toBe(depth === 11 ? 2 : 1);
+  }
+  expect(source.slice(0, source.indexOf('<script>'))).not.toContain(
+    'View replies',
+  );
+  // The foreign sibling retains its ordinary Reply action. The focal has none.
+  expect(
+    source.slice(0, source.indexOf('<script>')).match(/>Reply<\/div>/gu),
+  ).toHaveLength(1);
+  const probe = listProbePage(fixture.items, 'newest-unsettled');
+  expect(probe).toContain(
+    "if(sessionStorage.getItem('probe-newest-unsettled')==='true')chosen=[]",
+  );
+  expect(
+    () => new Script(probe.match(/<script>([\s\S]*)<\/script>/u)![1]!),
+  ).not.toThrow();
+});

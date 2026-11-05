@@ -5,6 +5,34 @@ import { rowTextDiagnostic } from './list-diagnostic.ts';
 import { normalize } from './plan.ts';
 import { checkPage, relativeAgeMs, outsideProfilePaths } from './selectors.ts';
 import { ContextStop } from './report.ts';
+import type { ProbeWait } from './report.ts';
+
+export class ProbeTimeout extends Error {
+  readonly wait: ProbeWait;
+  constructor(wait: ProbeWait) {
+    super(wait);
+    this.wait = wait;
+  }
+}
+/** Only diagnostic waits are recoverable. Guards remain authoritative. */
+export async function probeWait<T>(
+  wait: ProbeWait,
+  action: () => Promise<T>,
+  checked: () => Promise<void>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (
+      (error instanceof Error && error.name === 'TimeoutError') ||
+      (error instanceof ContextStop && error.token === 'list-timeout')
+    ) {
+      await checked();
+      throw new ProbeTimeout(wait);
+    }
+    throw error;
+  }
+}
 
 type Age = 'same-day' | 'within-3-days' | 'older' | 'unknown';
 type Container = {
@@ -239,40 +267,55 @@ export const probeView = ({ container, ...value }: Projection) => ({
   scrollContainerObserved: container !== null,
   scrollHeightGreaterThanClient: container?.scrollable ?? null,
 });
+export const emptyProbeView = () => probeView(empty());
 export async function boundedProbe(
   read: () => Promise<Projection>,
   scroll: () => Promise<boolean>,
   settle: () => Promise<void>,
+  checked: () => Promise<void> = async () => {},
 ) {
-  let current = await read();
-  const initial = probeView(current),
-    scrolls: {
+  const result = {
+    initial: emptyProbeView(),
+    observationFailed: false,
+    timeoutWait: null as ProbeWait | null,
+    scrolls: [] as {
       rowsBefore: number;
       rowsAfter: number;
       targetMatched: boolean;
       observed: boolean;
       rows: Projection['rows'];
-    }[] = [];
-  for (let index = 0; index < 3; index++) {
-    if (
-      !current.observed ||
-      !current.container?.scrollable ||
-      !(await scroll())
-    )
-      break;
-    const before = current.ownRows;
-    await settle();
-    current = await read();
-    scrolls.push({
-      rowsBefore: before,
-      rowsAfter: current.ownRows,
-      targetMatched: current.targetMatched,
-      observed: current.observed,
-      rows: current.rows,
-    });
-    if (!current.observed || current.ownRows <= before) break;
+    }[],
+  };
+  try {
+    let current = await probeWait('filtered-read', read, checked);
+    result.initial = probeView(current);
+    result.observationFailed = !current.observed;
+    for (let index = 0; index < 3; index++) {
+      if (
+        !current.observed ||
+        !current.container?.scrollable ||
+        !(await probeWait('filtered-scroll', scroll, checked))
+      )
+        break;
+      const before = current.ownRows;
+      await probeWait('filtered-settle', settle, checked);
+      current = await probeWait('filtered-read', read, checked);
+      result.observationFailed ||= !current.observed;
+      result.scrolls.push({
+        rowsBefore: before,
+        rowsAfter: current.ownRows,
+        targetMatched: current.targetMatched,
+        observed: current.observed,
+        rows: current.rows,
+      });
+      if (!current.observed || current.ownRows <= before) break;
+    }
+  } catch (error) {
+    if (!(error instanceof ProbeTimeout)) throw error;
+    result.observationFailed = true;
+    result.timeoutWait = error.wait;
   }
-  return { initial, scrolls };
+  return result;
 }
 
 export async function listProbeReader(
@@ -307,8 +350,10 @@ export async function listProbeReader(
         const result = probeProjection(snapshot, text, at, handle, now);
         container = result.container;
         return result;
-      } catch {
+      } catch (error) {
         await checked();
+        if (error instanceof Error && error.name === 'TimeoutError')
+          throw error;
         container = null;
         return empty();
       }

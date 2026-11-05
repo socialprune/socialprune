@@ -2478,7 +2478,11 @@ test('newestpick no-op Newest option retains the failed observation even after m
         () => selectorHelpers.checkPage(h.page),
         diagnostic,
       ),
-    ).rejects.toMatchObject({ wait: 'newest-apply' });
+    ).resolves.toMatchObject({
+      rowOrderRequired: true,
+      readback: 'none',
+      chosenReadback: false,
+    });
     expect(diagnostic).toMatchObject({
       menuControlFound: true,
       controlFound: true,
@@ -2488,8 +2492,8 @@ test('newestpick no-op Newest option retains the failed observation even after m
       clickTarget: 'named-role-button',
       applyFound: true,
       applyEnabled: false,
-      applySkipped: false,
-      failedStep: 'apply',
+      applySkipped: true,
+      failedStep: 'none',
     });
     expect(h.fake.events.flatMap((event) => event.clicks)).toContain(
       'Newest to oldest',
@@ -7067,6 +7071,7 @@ test.each([
       h.fake.replies(3);
       h.fake.replyAnswer(mode === 'conflict');
       h.fake.scriptReplies(mode);
+      if (mode === 'matching') h.fake.replyControl('View all 3 replies');
       h.fake.replyShape('structural');
       const accepted = mode === 'matching' || mode === 'list';
       expect(
@@ -7105,6 +7110,19 @@ test.each([
         mode === 'conflict' ? 'conflict' : accepted ? 'script' : 'absent',
       );
       expect(diagnostic.script?.objectsInspected).toBeGreaterThan(0);
+      if (mode === 'matching')
+        expect(
+          ContextStepReportSchema.parse(report.steps[0]).replyControls,
+        ).toMatchObject({
+          count: 1,
+          controls: [
+            {
+              shape: 'view-all-n-replies',
+              numberEqualsAnswer: true,
+              accepted: true,
+            },
+          ],
+        });
       if (['id', 'author', 'time', 'text'].includes(mode))
         expect(
           diagnostic.script?.failedChecks[

@@ -16,6 +16,8 @@ export async function instagramDeleteFixture(count = 2): Promise<WorkspaceV2> {
       runId: `generated-context-${i}`,
       attemptId: `generated-send-${i}`,
       confirmedAt: at,
+      likes: { count: null, source: null },
+      replies: { entries: [], capped: false, moreCount: 0 },
       post: {
         ...instagramContractRecord(item).post,
         code: `GeneratedDelete_${i}`,

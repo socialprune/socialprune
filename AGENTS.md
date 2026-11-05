@@ -36,6 +36,8 @@ Since IG-LIKES A, which the maintainer chose on 2026-10-26, a comment confirmed 
 
 Since 2026-11-05 the diagnostic newest-first probe records its sort controls, offered options, selection and Apply readbacks, list-change observation and closed failed sub-step with timing; an already-selected newest sort with disabled Apply skips that click. Reply reports distinguish a missing focal answer from an incomplete reply list and count matched and parameter-only IDs, child-count classes, body path classes and diagnostic-only JSON script data in one bounded post document. Reply matching accepts `owner` and `created_at_utc` as well as `user` and `created_at`, with the same ID, author, text, time and reply-agreement checks; parameter containers and HTML scripts do not authorize an observation. These changes are tested with generated data, and their cause on a real account remains unmeasured.
 
+Since DEL-ARCHIV-1 A, accepted on 2026-11-05, Instagram deletion additionally requires stored likes and replies observations before a comment enters the plan or list and checks the current workspace again before sending; null likes and empty replies count as read, capped replies count as read and are counted separately, and dry runs count comments waiting for likes, replies or both. This requirement has no switch, changes no X deletion or Instagram pace, canary or warning rule, and adds no desktop Instagram Start path.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

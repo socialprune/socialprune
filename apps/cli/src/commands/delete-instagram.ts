@@ -10,6 +10,7 @@ import { SQLiteStore } from '../workspace/sqlite-store.ts';
 import {
   planInstagramDeletion,
   instagramDeleteSummary,
+  instagramArchiveWaitText,
 } from '../browser/instagram/delete-plan.ts';
 import { instagramHandle } from '../browser/instagram/plan.ts';
 import { resolveAccountName } from '../browser/plan.ts';
@@ -73,7 +74,8 @@ export async function deleteInstagramHandler(
       plan.canary = false;
     }
     const summary = instagramDeleteSummary(plan, flags.lang);
-    const text = `${summary.planned} Instagram comments planned. Plan: ${plan.hash}\n${summary.warning}\n${plan.rows.map((row) => `${row.item.id}\t${row.item.createdAt}\t${row.item.text.split(/\r?\n/, 1)[0]!.replace(/[\u0000-\u001f\u007f]/g, ' ')}`).join('\n')}\n`;
+    const archive = instagramArchiveWaitText(plan, flags.lang);
+    const text = `${summary.planned} Instagram comments planned. Plan: ${plan.hash}\n${archive}\n${summary.warning}\n${plan.rows.map((row) => `${row.item.id}\t${row.item.createdAt}\t${row.item.text.split(/\r?\n/, 1)[0]!.replace(/[\u0000-\u001f\u007f]/g, ' ')}`).join('\n')}\n`;
     if (flags.dryRun) {
       if (flags.list) {
         await assertOutput(flags.list, flags.workspace);
@@ -90,7 +92,7 @@ export async function deleteInstagramHandler(
         human:
           context.stdoutIsTerminal && !flags.list
             ? text
-            : `${summary.planned} comments planned. Plan: ${plan.hash}\n${summary.warning}`,
+            : `${summary.planned} comments planned. Plan: ${plan.hash}\n${archive}\n${summary.warning}`,
       };
     }
     const { validateProfile, installedBrowser } =

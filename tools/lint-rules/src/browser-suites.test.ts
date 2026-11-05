@@ -29,6 +29,7 @@ interface Runner {
   ): Promise<{ executable: string; args: string[] }>;
   suiteEnvironment(environment: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv>;
   contextShards: { count: number; minutes: number };
+  contextLaunch(args: string[]): { executable: string; args: string[] };
   contextPartition(file: string, name: string): number;
   contextPattern(
     cases: { file: string; name: string }[],
@@ -602,6 +603,25 @@ test('context aggregate fails first for planted empty JUnit and a missing shard,
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('large case shard patterns go directly to the real Vitest Node entry instead of a Windows script wrapper', () => {
+  const pattern = '^(?:' + 'generated long test name|'.repeat(600) + 'last)$';
+  const launch = runner.contextLaunch([
+    '--filter',
+    'socialprune',
+    'test:context',
+    `--testNamePattern=${pattern}`,
+    '--maxWorkers=1',
+  ]);
+  expect(launch.executable).toBe(process.execPath);
+  expect(launch.args[0]).toMatch(/vitest[\\/]vitest\.mjs$/);
+  expect(launch.args.slice(1, 4)).toEqual([
+    'run',
+    '--config',
+    'apps/cli/e2e/context.vitest.config.ts',
+  ]);
+  expect(launch.args).toContain(`--testNamePattern=${pattern}`);
 });
 
 test('test-only preload refuses Node TCP before dialing and configures a closed browser proxy', async () => {

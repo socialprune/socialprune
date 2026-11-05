@@ -62,6 +62,12 @@ test('newestreply report contracts reject contents and unknown answer/sort class
       sort: { ...newest.sort, failedStep: 'Generated private label' },
     }).success,
   ).toBe(false);
+  expect(
+    NewestProbeSchema.safeParse({
+      ...newest,
+      sort: { ...newest.sort, clickTarget: 'Generated private label' },
+    }).success,
+  ).toBe(false);
 });
 
 const runId = '00000000-0000-4000-8000-000000000016';

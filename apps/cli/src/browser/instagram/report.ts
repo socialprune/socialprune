@@ -427,6 +427,7 @@ export const NewestProbeSchema = z.strictObject({
       controlFound: z.boolean(),
       optionsOffered: count,
       selectedBefore: z.boolean(),
+      clickTarget: z.enum(['not-clicked', 'named-role-button']).optional(),
       chosenReadback: z.boolean(),
       applyFound: z.boolean(),
       applyEnabled: z.boolean().nullable(),

@@ -36,6 +36,8 @@ Since IG-LIKES A, which the maintainer chose on 2026-10-26, a comment confirmed 
 
 Since 2026-11-05 the diagnostic newest-first probe records its sort controls, offered options, selection and Apply readbacks, list-change observation and closed failed sub-step with timing; an already-selected newest sort with disabled Apply skips that click. Reply reports distinguish a missing focal answer from an incomplete reply list and count matched and parameter-only IDs, child-count classes, body path classes and diagnostic-only JSON script data in one bounded post document. Reply matching accepts `owner` and `created_at_utc` as well as `user` and `created_at`, with the same ID, author, text, time and reply-agreement checks; parameter containers and HTML scripts do not authorize an observation. These changes are tested with generated data, and their cause on a real account remains unmeasured.
 
+The newest-first diagnostic also reports the closed click-target class, `named-role-button` or `not-clicked`. Both sort choices use the same exact named role-button selector and click; an Oldest Apply completion does not prove selected-state readback. A generated no-op Newest option keeps the probe inconclusive without changing normal reading or adding a fallback click target.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

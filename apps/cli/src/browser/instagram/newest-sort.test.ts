@@ -32,6 +32,7 @@ test('newestreply unchanged newest sort does not wait on its disabled Apply cont
       selectedBefore: true,
       chosenReadback: true,
       applySkipped: true,
+      clickTarget: 'not-clicked',
     });
     expect(
       click.mock.calls.some(
@@ -84,6 +85,7 @@ test.each([true, false])(
         chosenReadback: hasReadback,
         applyEnabled: true,
         applySkipped: false,
+        clickTarget: 'named-role-button',
       });
       expect(
         click.mock.calls.filter(
@@ -95,3 +97,40 @@ test.each([true, false])(
     }
   },
 );
+
+test('newestpick Oldest and Newest use the identical allow-listed named-button action', async () => {
+  const calls: unknown[] = [];
+  const control = {
+    count: () => Promise.resolve(1),
+    isVisible: () => Promise.resolve(true),
+    click: (options: unknown) => {
+      calls.push(options);
+      return Promise.resolve();
+    },
+  };
+  const locator = {
+    getAttribute: () => Promise.resolve('en'),
+    getByText: () => ({ count: () => Promise.resolve(0) }),
+    filter() {
+      return this;
+    },
+  };
+  const named: unknown[] = [];
+  const page = {
+    isClosed: () => false,
+    url: () => 'https://www.instagram.com/your_activity/interactions/comments/',
+    locator: () => locator,
+    getByText: () => ({ count: () => Promise.resolve(0) }),
+    getByRole: (role: string, options: unknown) => {
+      named.push({ role, options });
+      return control;
+    },
+  } as unknown as Page;
+  for (const name of ['Oldest to newest', 'Newest to oldest'] as const)
+    await selectors.clickAllowed(page, { kind: 'named', name }, () => {});
+  expect(named).toEqual([
+    { role: 'button', options: { name: 'Oldest to newest', exact: true } },
+    { role: 'button', options: { name: 'Newest to oldest', exact: true } },
+  ]);
+  expect(calls).toEqual([{ timeout: 5000 }, { timeout: 5000 }]);
+});

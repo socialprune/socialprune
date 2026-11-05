@@ -41,8 +41,19 @@ export const suites = Object.freeze({
 export const contextShards = Object.freeze({ count: 4, minutes: 30 });
 export const caseKey = (file, name) => JSON.stringify([file, name]);
 export function contextPartition(file, name) {
+  // This existing two-case lifecycle probe shares cleanupLease and verifies the
+  // preceding case's onTestFinished effect. Keep both in source order together;
+  // all other cases are independent. Do not edit the browser test to shard it.
+  const group =
+    name ===
+    'C8 cleanup 2 verifies the preceding test released its browser and fixed fake port'
+      ? 'C8 cleanup 1 registers cleanup even when the test never enters a finally'
+      : name;
   return (
-    (createHash('sha256').update(caseKey(file, name)).digest().readUInt32BE(0) %
+    (createHash('sha256')
+      .update(caseKey(file, group))
+      .digest()
+      .readUInt32BE(0) %
       contextShards.count) +
     1
   );

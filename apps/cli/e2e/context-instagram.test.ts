@@ -2770,7 +2770,7 @@ test.each([
 ] as const)(
   'REPCTL diagnostic %s proves default Newest only from three independent own row times',
   async (variant) => {
-    const h = await harness('success', 1, 1500);
+    const h = await harness('success', 1, 10000);
     h.fake.listProbe(variant);
     h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
     try {

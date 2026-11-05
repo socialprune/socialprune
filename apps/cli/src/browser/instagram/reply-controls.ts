@@ -6,7 +6,11 @@ export function replyControlShape(label: string, answerTotal: number | null) {
   const text = normalize(label);
   const all = /^View all ([1-9]\d{0,5}) replies$/u.exec(text);
   const numbered = /^View replies \(([1-9]\d{0,5})\)$/u.exec(text);
-  const number = all?.[1] ?? numbered?.[1];
+  const digits = text.match(/\d+/gu) ?? [];
+  const number =
+    all?.[1] ??
+    numbered?.[1] ??
+    (digits.length === 1 && digits[0]!.length <= 6 ? digits[0] : undefined);
   const shape =
     text === 'View replies'
       ? ('exact-view-replies' as const)

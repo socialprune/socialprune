@@ -624,6 +624,21 @@ test('large case shard patterns go directly to the real Vitest Node entry instea
   expect(launch.args).toContain(`--testNamePattern=${pattern}`);
 });
 
+test('the existing two-case cleanup lifecycle proof stays on the same runner', () => {
+  const file = 'apps/cli/e2e/context-instagram.test.ts';
+  expect(
+    runner.contextPartition(
+      file,
+      'C8 cleanup 2 verifies the preceding test released its browser and fixed fake port',
+    ),
+  ).toBe(
+    runner.contextPartition(
+      file,
+      'C8 cleanup 1 registers cleanup even when the test never enters a finally',
+    ),
+  );
+});
+
 test('test-only preload refuses Node TCP before dialing and configures a closed browser proxy', async () => {
   const preload = resolve(root, '.github/scripts/loopback-only.cjs');
   const execute = promisify(execFile);

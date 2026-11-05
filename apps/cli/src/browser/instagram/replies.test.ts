@@ -375,6 +375,18 @@ function pageFixture({
   };
   const control = {
     count: () => Promise.resolve(controls),
+    all: () =>
+      Promise.resolve(
+        Array.from({ length: controls }, () => ({
+          innerText: () => Promise.resolve('View replies'),
+          locator: () => ({ count: () => Promise.resolve(1) }),
+          getAttribute: () => Promise.resolve(null),
+          or() {
+            return this;
+          },
+          count: () => Promise.resolve(controls),
+        })),
+      ),
     filter() {
       return this;
     },

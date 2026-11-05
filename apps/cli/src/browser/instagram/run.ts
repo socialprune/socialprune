@@ -1300,6 +1300,9 @@ export async function runContextWithDependencies(
                   () => answers!.bodyPaths,
                   () => answers!.htmlDiagnostic(match),
                   () => answers!.scriptValues(),
+                  (value) => {
+                    stepReport.replyControls = value;
+                  },
                 ),
               true,
               false,
@@ -1426,6 +1429,9 @@ export async function runContextWithDependencies(
                 () => answers!.bodyPaths,
                 () => answers!.htmlDiagnostic(match),
                 () => answers!.scriptValues(),
+                (value) => {
+                  stepReport.replyControls = value;
+                },
               ),
             false,
             options.order?.value.captureReplies === true,

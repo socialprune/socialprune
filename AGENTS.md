@@ -42,6 +42,8 @@ The newest-first diagnostic also reports the closed click-target class, `named-r
 
 Since REPLY-SRC-1 A, accepted on 2026-11-05, the replies reader may use parsed inline application/json data from the same loaded main-frame post document only with exact comment ID, author and time, comparison-normalized text and an explicit child count or list. Network answers keep priority and cross-source conflicts refuse; parameter containers remain excluded. Sort reports also observe the existing Oldest and Newest controls before and after their clicks as closed tag, role, control-count and selection-state fields, without changing the targets or stops. These paths use generated-data tests; real-account behavior is not established by them.
 
+The replies reader also accepts exact numbered expansion-control variants only when their count matches the agreeing focal answer, and reports closed control shapes without labels. A diagnostic Newest choice with disabled Apply and no selection attributes may be read back from the first three own rows only after leaving the menu without Apply; all three times must establish non-increasing order with a distinct decrease, while unknown, tied or ascending observations stay inconclusive. The main Oldest path is unchanged, and these paths are tested on generated pages only.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

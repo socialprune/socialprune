@@ -721,9 +721,23 @@ export async function loadList(
           checked,
         );
         sort.failedStep = 'read';
-        newest.view = probeView(
-          await probeWait('newest-read', () => active.read(), checked),
+        const reading = await probeWait(
+          'newest-read',
+          () => active.read(),
+          checked,
         );
+        newest.view = probeView(reading);
+        if (sort.rowOrderRequired) {
+          sort.rowOrder = reading.order;
+          if (!reading.observed || !reading.order.proved) {
+            sort.failedStep = 'readback';
+            throw new ProbeTimeout('newest-apply');
+          }
+          sort.chosenReadback = true;
+          sort.readback = 'row-order';
+          newest.sortReadback = true;
+          newest.view = probeView(reading);
+        }
         newest.settledReload = true;
         newest.observationFailed =
           !newest.view.observed || !newest.sortReadback;

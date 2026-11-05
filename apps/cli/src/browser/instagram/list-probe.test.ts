@@ -6,6 +6,8 @@ import {
   probeView,
   probeWait,
   ProbeTimeout,
+  rowTimeRange,
+  newestRowOrder,
 } from './list-probe.ts';
 import {
   ListProbeViewSchema,
@@ -19,6 +21,25 @@ const target = 'Generated target words only',
   handle = 'generated_handle',
   at = '2026-10-06T12:00:00Z',
   now = Date.parse('2026-10-30T12:00:00Z');
+test('REPCTL row-order proof requires first three known newest-first rows and a real decrease', () => {
+  const exact = (day: number) =>
+    rowTimeRange(`2026-10-${day}T12:00:00Z`, '', now);
+  expect(newestRowOrder([exact(29), exact(28), exact(27)]).proved).toBe(true);
+  expect(newestRowOrder([exact(27), exact(28), exact(29)]).proved).toBe(false);
+  expect(newestRowOrder([exact(29), exact(29), exact(29)]).proved).toBe(false);
+  expect(newestRowOrder([exact(29), null, exact(27)]).proved).toBe(false);
+  expect(newestRowOrder([exact(29), exact(28)]).proved).toBe(false);
+  expect(
+    newestRowOrder(
+      ['1d', '2d', '3d'].map((age) => rowTimeRange(null, age, now)),
+    ).proved,
+  ).toBe(true);
+  expect(
+    newestRowOrder(
+      ['1w', '1w', '2w'].map((age) => rowTimeRange(null, age, now)),
+    ).proved,
+  ).toBe(false);
+});
 function snapshot(texts: readonly string[]): NavigationSnapshot {
   const strings: string[] = [],
     string = (value: string) => {

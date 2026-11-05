@@ -5,6 +5,7 @@ export function addRepliesPage(
   id: string,
   code: string,
   at: string,
+  label = 'View replies',
 ) {
   const entries = Array.from({ length: count }, (_, index) => {
     const author = `generated_reply_${index}`;
@@ -17,7 +18,7 @@ export function addRepliesPage(
   // The generated ancestry check fixes the group to the permalink's fifth
   // ancestor, outside the inner text/actions row but inside this comment.
   const position = end + '<div role="button">Reply</div></div></div>'.length;
-  const group = `<button onclick="this.nextElementSibling.hidden=false;this.remove()">View replies</button><ul hidden>${entries}</ul>`;
+  const group = `<button onclick="this.nextElementSibling.hidden=false;this.remove()">${label}</button><ul hidden>${entries}</ul>`;
   return (html.slice(0, position) + group + html.slice(position)).replace(
     '</main>',
     "<aside data-reply-decoy><button onclick=\"this.parentElement.setAttribute('data-clicked','true')\">View replies</button></aside></main>",

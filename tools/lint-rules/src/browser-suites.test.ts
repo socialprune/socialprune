@@ -312,7 +312,8 @@ test('pnpm resolution follows generated action-setup and npm-global layouts with
       code: 'ENOENT',
     });
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    // Windows can retain the just-exited executable's image lock briefly.
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 

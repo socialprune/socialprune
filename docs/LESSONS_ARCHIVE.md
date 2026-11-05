@@ -591,7 +591,7 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Regression / Verification Note:** applied on 2026-10-29 at 11:10 UTC: the X deletion dry run (1,148 planned) and the Instagram counts (652 marked, 565 never read) were read in the turn of his message, and a reading pass of the marked comments only was prepared in the same turn.
 **Metrics:**
 - Prevented: 0 times
-- Violated: 1 time (2026-10-28 12:11Z to 2026-10-29 11:09Z, see Problem)
+- Violated: 2 times (2026-10-28 12:11Z to 2026-10-29 11:09Z, see Problem. 2026-10-29 to 2026-11-05: rules 3 and 4 carried only the deletion part of his goal into every status, so the archive part he had asked for had no counter; see LL-2026-11-001)
 
 ### [LL-2026-10-022] 2026-10-29 DIAGNOSIS: When a path that worked starts failing, compare the last good run with the first bad one before fixing the newest symptom
 
@@ -618,3 +618,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-24 to 2026-10-29, see Problem)
+
+### [LL-2026-11-001] 2026-11-05 COMMUNICATION: Give every part of the person's stated goal its own count in every status
+
+**ID:** LL-2026-11-001
+**Severity:** HIGH
+**Category:** COMMUNICATION
+**Expires:** Never (kernel). The counts, times and file names below are evidence from 2026-10-28 to 2026-11-05.
+**Feedback:** Relayed on 2026-11-05 from his message of 14:55 UTC: "bei Instagram habe ich ja auch gesagt, weißt du, ich will ja die Likes und so herausfinden und die Kommentare drunter, dass wir das auch richtig archiviert haben. Das habe ich denen schon oft genug gesagt. Und ich sehe noch irgendwas sind nur 36 Kommentare, bei denen wir diese Anzahl haben."
+**Problem:** Since 2026-10-29 his goal has two parts: every Instagram comment archived with its likes, its post and the replies under it, and then his marked posts deleted. He asked about the likes and replies on 2026-10-28, on 2026-10-29 at 11:09 and 21:06 UTC, and again on 2026-11-05. LL-2026-10-021 rules 3 and 4 set the status to the deletion part only (deleted, ready, blocked), and every wakeup prompt and the handoff copied that line. From 2026-11-04 on, every status said "ready 36 on Instagram, blocked 1,912 unread", which he read as "only 36 comments have their numbers". A count on 2026-11-05 showed what no status had said: 2,173 comments, 261 read (138 on their post, 123 only through his comments list), a like count for 27, no number shown by Instagram for 110, replies stored for none; the 123 list confirmations cannot hold likes or replies by design, and the written order for the main reading pass did not ask for replies.
+**5 Whys Analysis:**
+1. Why did he think only 36 comments have their numbers? -> The only Instagram numbers he saw were "36 ready" and "1,912 blocked".
+2. Why only those? -> The status line was fixed as deleted, ready, blocked, and every wakeup prompt repeated it word for word.
+3. Why did his questions about likes and replies not change it? -> Each question was answered inside that one message (a likes run, a replies decision), and the status format stayed as it was.
+4. Why did nobody see the gap? -> The format was written when his goal was "posts deleted" and was reused unchanged after he added the archive part; nothing compared the format with the goal.
+5. Why? -> Root cause: no control derives the status counters from every part of the person's stated goal, so a part added later had no counter, and a repeated question about it was answered as a one-off instead of being read as a missing counter.
+**Rule(s):**
+1. Every status counts each part of the person's stated goal on its own, from a fresh readback. A part without a counter is invisible to the person, whatever the work does for it.
+2. When the person asks about the same part a second time, the status format lacks a counter: add it, in the same turn, to the format and to every prompt and handoff that carries the format.
+3. When some entries cannot reach a part of the goal by design, name that gap in the status with its count instead of leaving it out.
+4. Here, from 2026-11-05: deletion (deleted, ready, blocked) and archive (Instagram comments read on their post, read through the list only, unread; with a like count; with replies stored; X posts with export likes and with their original stored or gone), counts from `archive-coverage.mjs` or an equal readback.
+**Detection Pattern:** the person asks a second time about one part of the goal; a status line copied unchanged between turns after the goal changed; a number the person reads as covering something it does not.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the handoff `BOARD.md` header paragraph beside LL-2026-10-021 ("Every status: deletion counts and archive counts per goal part"), the address line of `HANDOFF.md` section 00000, and every wakeup prompt.
+**Related Lessons:** LL-2026-10-021 (its rules 3 and 4 named the deletion part only), LL-2026-10-009 (answer the person's goal point by point), LL-2026-10-005 (his words).
+**Regression / Verification Note:** applied on 2026-11-05 at 15:16 UTC: archive coverage was counted per goal part and his five questions were answered against those counts in the same turn.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-10-29 to 2026-11-05, see Problem)

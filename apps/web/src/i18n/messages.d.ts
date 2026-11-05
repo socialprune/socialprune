@@ -473,6 +473,7 @@ declare global {
     'desktop.token.refresh-comment-likes': Record<never, never>;
     'desktop.token.refresh-comment-replies': Record<never, never>;
     'desktop.token.render-timeout': Record<never, never>;
+    'desktop.token.reply-answer-absent': Record<never, never>;
     'desktop.token.reply-answer-conflict': Record<never, never>;
     'desktop.token.reply-answer-incomplete': Record<never, never>;
     'desktop.token.reply-answer-mismatch': Record<never, never>;

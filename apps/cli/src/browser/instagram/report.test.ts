@@ -15,12 +15,54 @@ import {
   RunMemorySchema,
   RowShapeDiagnosticSchema,
   ReplyScopeDiagnosticSchema,
+  ReplyAnswerDiagnosticSchema,
+  NewestProbeSchema,
 } from './report.ts';
 import { emptyReplyScope } from './replies.ts';
 import { rowShape } from './row-shape.ts';
 import { IG_FIXTURE } from '../../../e2e/fake-instagram/fixture.ts';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { replyAnswerDiagnostic } from './replies-answer.ts';
+import { emptySortDiagnostic } from './newest-sort.ts';
+import { emptyProbeView } from './list-probe.ts';
+
+test('newestreply report contracts reject contents and unknown answer/sort classes', () => {
+  const answer = replyAnswerDiagnostic(
+    [],
+    {
+      id: '123',
+      username: 'generated_person',
+      text: 'Generated text',
+      createdAt: '2025-01-01T00:00:00Z',
+    },
+    0,
+  );
+  expect(ReplyAnswerDiagnosticSchema.safeParse(answer).success).toBe(true);
+  for (const mutation of [
+    { text: 'Generated private words' },
+    { childCountClass: 'unknown' },
+    { paths: [{ path: '/private/123', bodies: 1 }] },
+  ])
+    expect(
+      ReplyAnswerDiagnosticSchema.safeParse({ ...answer, ...mutation }).success,
+    ).toBe(false);
+  const newest = {
+    observationFailed: false,
+    timeoutWait: null,
+    sortReadback: true,
+    settledReload: true,
+    view: emptyProbeView(),
+    sort: emptySortDiagnostic(),
+  };
+  expect(NewestProbeSchema.safeParse(newest).success).toBe(true);
+  expect(
+    NewestProbeSchema.safeParse({
+      ...newest,
+      sort: { ...newest.sort, failedStep: 'Generated private label' },
+    }).success,
+  ).toBe(false);
+});
 
 const runId = '00000000-0000-4000-8000-000000000016';
 const plantedUrl = `https://www.instagram.com/${IG_FIXTURE.other.username}/p/${IG_FIXTURE.other.code}/`;

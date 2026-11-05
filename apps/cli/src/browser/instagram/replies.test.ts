@@ -8,7 +8,7 @@ import {
 } from './replies.ts';
 import { ContextStop, stopDetails } from './report.ts';
 import * as selectors from './selectors.ts';
-import { checkedReplyRows } from './replies-answer.ts';
+import { checkedReplyRows, replyAnswerDiagnostic } from './replies-answer.ts';
 import * as scope from './replies-scope.ts';
 
 const match = {
@@ -84,7 +84,7 @@ test('REPLIES revision F1 answers are focal-bound, conflicting rows refuse, boun
     ),
   ).toEqual({ reason: 'reply-answer-mismatch' });
   expect(checkedReplyRows([{ variables: focal }], match, [], false, 0)).toEqual(
-    { reason: 'reply-answer-incomplete' },
+    { reason: 'reply-answer-absent' },
   );
 });
 test('realfix missing focal answers never authorize an empty or populated replies observation', () => {
@@ -101,8 +101,92 @@ test('realfix missing focal answers never authorize an empty or populated replie
       ],
     ])
       expect(checkedReplyRows([], match, rows, capped, 0)).toEqual({
-        reason: 'reply-answer-incomplete',
+        reason: 'reply-answer-absent',
       });
+});
+
+test.each(['owner', 'utc', 'both'] as const)(
+  'newestreply threaded focal answers accept %s field forms',
+  (mode) => {
+    const focal = {
+      id: match.id,
+      ...(mode === 'utc'
+        ? { user: { username: match.username } }
+        : { owner: { username: match.username } }),
+      text: match.text,
+      ...(mode === 'owner'
+        ? { created_at: Date.parse(match.createdAt) / 1000 }
+        : { created_at_utc: Date.parse(match.createdAt) / 1000 }),
+      edge_threaded_comments: { count: 0, edges: [] },
+    };
+    expect(checkedReplyRows([focal], match, [], false, 0)).toMatchObject({
+      answerChecked: true,
+      observation: { entries: [], capped: false },
+    });
+  },
+);
+
+test('newestreply diagnostics separate absent, excluded, invalid and incomplete answers without their values', () => {
+  const focal = {
+    pk: match.id,
+    user: { username: match.username },
+    text: match.text,
+    created_at: Date.parse(match.createdAt) / 1000,
+    child_comment_count: 3,
+  };
+  for (const key of [
+    'variables',
+    'params',
+    'instanceParams',
+    'route_match_infos',
+  ]) {
+    const bodies = [{ [key]: focal }, { comment_id: match.id }];
+    const value = replyAnswerDiagnostic(bodies, match, 0, [
+      'graphql',
+      'api-v1-media-comments',
+    ]);
+    expect(value).toMatchObject({
+      answerPresent: false,
+      matchIdBodies: 2,
+      parameterMatchIdBodies: 1,
+      focalObjects: 0,
+      childCountClass: 'positive',
+      bodiesInspected: 2,
+    });
+    expect(checkedReplyRows(bodies, match, [], false, 0)).toEqual({
+      reason: 'reply-answer-absent',
+    });
+    for (const content of Object.values(match))
+      expect(JSON.stringify(value)).not.toContain(content);
+  }
+  expect(replyAnswerDiagnostic([focal], match, 0)).toMatchObject({
+    answerPresent: true,
+    answerValid: true,
+    answerTotal: 3,
+    childCountSeen: true,
+    childCountClass: 'positive',
+    rowsShown: 0,
+  });
+  expect(
+    replyAnswerDiagnostic([{ ...focal, child_comment_count: -1 }], match, 0),
+  ).toMatchObject({
+    answerPresent: true,
+    answerValid: false,
+    childCountClass: 'invalid',
+  });
+  for (const pk of [123, '123'])
+    expect(
+      checkedReplyRows(
+        [{ ...focal, pk, child_comment_count: 0 }],
+        match,
+        [],
+        false,
+        0,
+      ),
+    ).toHaveProperty('answerChecked', true);
+  expect(
+    checkedReplyRows([{ ...focal, pk: 9007199254740992 }], match, [], false, 0),
+  ).toEqual({ reason: 'reply-answer-absent' });
 });
 
 test('replyempty no replies shown requires agreeing exact focal answer evidence', () => {
@@ -139,7 +223,11 @@ test('replyempty no replies shown requires agreeing exact focal answer evidence'
   ])
     expect(
       checkedReplyRows([{ ...focal, ...evidence }], match, [], false, 0),
-    ).toEqual({ reason: 'reply-answer-incomplete' });
+    ).toEqual({
+      reason: Object.keys(evidence).length
+        ? 'reply-answer-incomplete'
+        : 'reply-answer-absent',
+    });
   expect(
     checkedReplyRows(
       [{ ...focal, child_comment_count: -1 }],
@@ -280,7 +368,7 @@ test('realfix 2/2 no-avatar focal scope reaches the answer check and cannot stor
         () => {},
         performance.now() + 10000,
       ),
-    ).rejects.toMatchObject({ reason: 'reply-answer-incomplete' });
+    ).rejects.toMatchObject({ reason: 'reply-answer-absent' });
   } finally {
     vi.restoreAllMocks();
   }

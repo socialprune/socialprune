@@ -35,6 +35,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let replyCount = 0;
   let replyConfigured = false;
   let replyAnswer = true;
+  let threadedReplyAnswer = false;
   let rowShapeCase: RowShapeCase | undefined,
     replyShapeCase: ReplyShapeCase | undefined;
   let probeCase: ListProbeCase | undefined;
@@ -589,8 +590,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       comments: [
         {
           pk: String(BigInt(IG_FIXTURE.commentId) + BigInt(index)),
-          created_at: Date.parse(item.createdAt) / 1000,
-          user: { username: item.account.handle },
+          ...(threadedReplyAnswer
+            ? { created_at_utc: Date.parse(item.createdAt) / 1000 }
+            : { created_at: Date.parse(item.createdAt) / 1000 }),
+          ...(threadedReplyAnswer
+            ? { owner: { username: item.account.handle } }
+            : { user: { username: item.account.handle } }),
           text: item.text,
           ...(likesCase === 'answer' ? { comment_like_count: 23 } : {}),
           ...(replyAnswer && replyConfigured
@@ -672,6 +677,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replyAnswer(present: boolean) {
       replyAnswer = present;
+    },
+    threadedReplyAnswer() {
+      threadedReplyAnswer = true;
     },
     rowShape(value: RowShapeCase) {
       rowShapeCase = value;

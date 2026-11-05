@@ -169,6 +169,7 @@ const tokenIds = [
   'desktop.token.reply-controls-changed',
   'desktop.token.reply-scope-unverified',
   'desktop.token.reply-answer-incomplete',
+  'desktop.token.reply-answer-absent',
   'desktop.token.reply-answer-conflict',
   'desktop.token.reply-answer-mismatch',
   'desktop.token.reply-read-failed',

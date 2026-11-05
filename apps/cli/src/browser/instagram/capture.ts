@@ -16,6 +16,10 @@ import { ContextStop } from './report.ts';
 import { parseAnswer, answerSummary } from './answers.ts';
 import type { CollectedAnswer } from './answers.ts';
 import { interruptibleWork } from './interruptible.ts';
+import { postPathClass } from './signals.ts';
+import type { PostPathClass } from './signals.ts';
+import { replyAnswerDiagnostic } from './replies-answer.ts';
+import type { ReplyMatch } from './replies-answer.ts';
 
 export function pageAnswers(
   page: Page,
@@ -23,13 +27,17 @@ export function pageAnswers(
 ) {
   const images = new Map<string, Response>(),
     bodies: unknown[] = [],
+    bodyPaths: PostPathClass[] = [],
+    htmlDocuments: Uint8Array[] = [],
     collected: CollectedAnswer[] = [],
     tasks = new Set<Promise<void>>();
   let totalBytes = 0;
   const generations = new WeakMap<Request, number>();
   let generation = 0,
     json = false,
-    disposed = false;
+    disposed = false,
+    htmlFailed = false,
+    collectHTML = false;
   let work = interruptibleWork();
   const sent = (request: Request) => {
     generations.set(request, generation);
@@ -47,10 +55,13 @@ export function pageAnswers(
       !json ||
       generations.get(response.request()) !== generation ||
       !policy.platform(response.url()) ||
-      (type !== 'application/json' && type !== 'text/javascript') ||
+      !['application/json', 'text/javascript', 'text/html'].includes(type) ||
       response.status() !== 200 ||
       Number(response.headers()['content-length']) > INSTAGRAM_IMAGE_MAX_BYTES
     )
+      return;
+    const html = type === 'text/html';
+    if (html && (!collectHTML || postPathClass(response.url()) !== 'post-page'))
       return;
     const current = generation;
     const task = (async () => {
@@ -61,8 +72,13 @@ export function pageAnswers(
           bytes.length <= INSTAGRAM_IMAGE_MAX_BYTES &&
           current === generation &&
           json &&
-          totalBytes + bytes.length <= 50 * 1024 ** 2
+          (html || totalBytes + bytes.length <= 50 * 1024 ** 2)
         ) {
+          if (html) {
+            // One bounded document for diagnostics, outside the answer budget.
+            htmlDocuments.splice(0, htmlDocuments.length, bytes);
+            return;
+          }
           totalBytes += bytes.length;
           let parsed: ReturnType<typeof parseAnswer>;
           try {
@@ -78,8 +94,15 @@ export function pageAnswers(
             parsed,
           });
           bodies.push(...parsed.values);
+          bodyPaths.push(
+            ...parsed.values.map(() => postPathClass(response.url())),
+          );
         }
       } catch {
+        if (html) {
+          if (current === generation && json) htmlFailed = true;
+          return;
+        }
         if (current === generation && json)
           collected.push({
             type: type === 'application/json' ? 'json' : 'javascript',
@@ -96,19 +119,61 @@ export function pageAnswers(
   return {
     images,
     bodies,
+    bodyPaths,
+    htmlDiagnostic(match: ReplyMatch) {
+      let jsonScripts = 0,
+        matchIdDocuments = 0,
+        observationFailed = htmlFailed;
+      for (const bytes of htmlDocuments) {
+        try {
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          // Diagnostic only. Script text is never evaluated or admitted to bodies.
+          const scripts = [
+            ...text.matchAll(
+              /<script\b[^>]*\btype\s*=\s*["']application\/json["'][^>]*>([\s\S]*?)<\/script\s*>/giu,
+            ),
+          ];
+          jsonScripts += scripts.length;
+          // Only parsed JSON script objects count, not the focal DOM permalink.
+          const values: unknown[] = [];
+          for (const script of scripts) {
+            try {
+              values.push(JSON.parse(script[1]!) as unknown);
+            } catch {
+              observationFailed = true;
+            }
+          }
+          matchIdDocuments += Number(
+            replyAnswerDiagnostic(values, match, 0).matchIdBodies > 0,
+          );
+        } catch {
+          observationFailed = true;
+        }
+      }
+      return {
+        documents: htmlDocuments.length,
+        jsonScripts,
+        matchIdDocuments,
+        observationFailed,
+      };
+    },
     summary(code: string | null) {
       return answerSummary(collected, code);
     },
-    reset(collectJSON: boolean) {
+    reset(collectJSON: boolean, inspectHTML = false) {
       if (disposed) return;
       work.interrupt();
       work = interruptibleWork();
       generation++;
       images.clear();
       bodies.length = 0;
+      bodyPaths.length = 0;
+      htmlDocuments.length = 0;
+      htmlFailed = false;
       collected.length = 0;
       totalBytes = 0;
       json = collectJSON;
+      collectHTML = inspectHTML;
     },
     async flush(timeoutMs: number) {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -128,6 +193,9 @@ export function pageAnswers(
       work.interrupt();
       images.clear();
       bodies.length = 0;
+      bodyPaths.length = 0;
+      htmlDocuments.length = 0;
+      htmlFailed = false;
       collected.length = 0;
       totalBytes = 0;
       page.off('response', receive);

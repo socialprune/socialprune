@@ -227,7 +227,13 @@ test.each([true, false])(
     };
     try {
       const result = loadList(
-        { goto: () => Promise.resolve() } as unknown as Page,
+        {
+          goto: () => Promise.resolve(),
+          getByRole: () => ({
+            count: () => Promise.resolve(1),
+            isVisible: () => Promise.resolve(true),
+          }),
+        } as unknown as Page,
         item,
         handle,
         { ...productionContext, responseMs: 1 },

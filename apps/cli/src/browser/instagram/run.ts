@@ -1068,7 +1068,12 @@ export async function runContextWithDependencies(
           stepReport.result = 'list-diagnostic';
           throw new ContextStop('CANCELLED', 'stopped');
         }
-        answers.reset(true);
+        answers.reset(
+          true,
+          options.plan.refreshReplies ||
+            options.order?.value.captureReplies === true ||
+            options.order?.value.replyDiagnostic === true,
+        );
         answerReport = options.plan.canary
           ? () => {
               stepReport.secondSource = answers!.summary(
@@ -1285,6 +1290,11 @@ export async function runContextWithDependencies(
                   (value) => {
                     stepReport.replyScope = value;
                   },
+                  (value) => {
+                    stepReport.replyAnswer = value;
+                  },
+                  () => answers!.bodyPaths,
+                  () => answers!.htmlDiagnostic(match),
                 ),
               true,
               false,
@@ -1405,6 +1415,11 @@ export async function runContextWithDependencies(
                       stepReport.replyScope = value;
                     }
                   : undefined,
+                (value) => {
+                  stepReport.replyAnswer = value;
+                },
+                () => answers!.bodyPaths,
+                () => answers!.htmlDiagnostic(match),
               ),
             false,
             options.order?.value.captureReplies === true,

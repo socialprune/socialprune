@@ -921,6 +921,7 @@
   "desktop.token.reply-controls-changed": "Die Steuerung zum Anzeigen weiterer Antworten hat sich geändert.",
   "desktop.token.reply-scope-unverified": "Der Bereich der Antworten konnte nicht dem Kommentar zugeordnet werden.",
   "desktop.token.reply-answer-incomplete": "Die Seitenantwort nennt weitere Antworten, die nicht angezeigt wurden.",
+  "desktop.token.reply-answer-absent": "Keine Seitenantwort ordnet diesem Kommentar Antworten zu.",
   "desktop.token.reply-answer-conflict": "Die Seitenantwort enthält widersprüchliche Angaben zu den Antworten.",
   "desktop.token.reply-answer-mismatch": "Die angezeigten Antworten stimmen nicht mit der Seitenantwort überein.",
   "desktop.token.reply-read-failed": "Die Antworten konnten nicht gelesen werden.",

@@ -2550,7 +2550,7 @@ test.each(['extra-line', 'german-age', 'unknown-age'] as const)(
   },
 );
 
-test.each(['below-first', 'other-date', 'absent'] as const)(
+test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
   'listprobe %s distinguishes filtered lazy rows, alternate filter date and bounded absence',
   async (variant) => {
     const h = await harness('success', 1, 1000);
@@ -2603,8 +2603,20 @@ test.each(['below-first', 'other-date', 'absent'] as const)(
       expect(step.newestProbe).toMatchObject({
         sortReadback: true,
         settledReload: true,
-        view: { targetMatched: variant === 'other-date' },
+        view: {
+          targetMatched:
+            variant === 'other-date' || variant === 'newest-selected',
+        },
       });
+      if (variant === 'newest-selected')
+        expect(
+          ContextStepReportSchema.parse(step).newestProbe?.sort,
+        ).toMatchObject({
+          selectedBefore: true,
+          chosenReadback: true,
+          applySkipped: true,
+          failedStep: 'none',
+        });
       expect(
         journal.attempts.some((attempt) =>
           [
@@ -6872,7 +6884,7 @@ async function acceptRepliesCanary(
   raw.close();
 }
 
-test.each(['matching', 'missing', 'disagreement'] as const)(
+test.each(['matching', 'missing', 'disagreement', 'threaded'] as const)(
   'replyempty depth-11 foreign permalink and no expand control: %s focal answer',
   async (mode) => {
     const h = await harness('success', 5, 30000);
@@ -6881,18 +6893,22 @@ test.each(['matching', 'missing', 'disagreement'] as const)(
       h.fake.directPostAccount('expected');
       h.fake.replies(mode === 'disagreement' ? 3 : 0);
       h.fake.replyAnswer(mode !== 'missing');
+      if (mode === 'threaded') h.fake.threadedReplyAnswer();
       h.fake.replyShape('no-replies');
       expect(await h.start({ refreshReplies: true })).toMatchObject(
-        mode === 'matching'
+        mode === 'matching' || mode === 'threaded'
           ? { completed: 5, endReason: 'canary' }
           : {
               code: 'INSTAGRAM_SHAPE_CHANGED',
-              token: 'reply-answer-incomplete',
+              token:
+                mode === 'missing'
+                  ? 'reply-answer-absent'
+                  : 'reply-answer-incomplete',
             },
       );
       const contexts = await h.store.read((tx) => records(tx.instagramContext));
       for (const record of contexts)
-        if (mode === 'matching')
+        if (mode === 'matching' || mode === 'threaded')
           expect(record.replies).toMatchObject({
             entries: [],
             capped: false,
@@ -6907,6 +6923,20 @@ test.each(['matching', 'missing', 'disagreement'] as const)(
         ),
       ) as { steps: unknown[] };
       const scope = ContextStepReportSchema.parse(report.steps[0]).replyScope!;
+      expect(
+        ContextStepReportSchema.parse(report.steps[0]).replyAnswer,
+      ).toMatchObject({
+        answerPresent: mode !== 'missing',
+        answerValid: true,
+        answerTotal: mode === 'disagreement' ? 3 : 0,
+        rowsShown: 0,
+        childCountClass:
+          mode === 'missing'
+            ? 'absent'
+            : mode === 'disagreement'
+              ? 'positive'
+              : 'zero',
+      });
       expect(scope).toMatchObject({ failedCheck: 'none', chosenDepth: 10 });
       expect(scope.levels).toHaveLength(11);
       expect(
@@ -6951,7 +6981,7 @@ test.each(['matching', 'missing', 'decoy'] as const)(
               code: 'INSTAGRAM_SHAPE_CHANGED',
               token:
                 mode === 'missing'
-                  ? 'reply-answer-incomplete'
+                  ? 'reply-answer-absent'
                   : 'reply-scope-unverified',
             },
       );
@@ -7079,7 +7109,7 @@ test('realfix no-answer first direct refresh writes nothing and cannot be accept
     h.fake.replyAnswer(false);
     expect(await h.start({ refreshReplies: true })).toMatchObject({
       code: 'INSTAGRAM_SHAPE_CHANGED',
-      token: 'reply-answer-incomplete',
+      token: 'reply-answer-absent',
     });
     const run = (await h.store.browserJournal()).runs.at(-1)!;
     expect(run.canaryAcceptedAt).toBeNull();

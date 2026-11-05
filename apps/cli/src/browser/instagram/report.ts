@@ -421,12 +421,61 @@ export const FilteredProbeSchema = z.strictObject({
 });
 export const NewestProbeSchema = z.strictObject({
   ...probeFailure,
+  sort: z
+    .strictObject({
+      menuControlFound: z.boolean().optional(),
+      controlFound: z.boolean(),
+      optionsOffered: count,
+      selectedBefore: z.boolean(),
+      chosenReadback: z.boolean(),
+      applyFound: z.boolean(),
+      applyEnabled: z.boolean().nullable(),
+      applySkipped: z.boolean(),
+      listChangeObserved: z.boolean().nullable(),
+      elapsedMs: count,
+      failedStep: z.enum([
+        'none',
+        'open',
+        'options',
+        'select',
+        'readback',
+        'apply',
+        'reload',
+        'settle',
+        'read',
+      ]),
+    })
+    .optional(),
   sortReadback: z.boolean(),
   settledReload: z.boolean(),
   view: ListProbeViewSchema,
 });
 export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
 export type NewestProbe = z.infer<typeof NewestProbeSchema>;
+export const ReplyAnswerDiagnosticSchema = z.strictObject({
+  answerPresent: z.boolean(),
+  answerValid: z.boolean(),
+  answerTotal: count,
+  rowsShown: count,
+  bodiesInspected: count,
+  matchIdBodies: count,
+  parameterMatchIdBodies: count,
+  focalObjects: count,
+  traversalCapped: z.boolean(),
+  childCountSeen: z.boolean(),
+  childCountClasses: z.array(z.enum(['zero', 'positive', 'invalid'])).max(3),
+  childCountClass: z.enum(['zero', 'positive', 'absent', 'invalid', 'mixed']),
+  paths: z
+    .array(z.strictObject({ path: z.enum(POST_PATH_CLASSES), bodies: count }))
+    .max(POST_PATH_CLASSES.length),
+  html: z.strictObject({
+    documents: count,
+    jsonScripts: count,
+    matchIdDocuments: count,
+    observationFailed: z.boolean(),
+  }),
+});
+export type ReplyAnswerDiagnostic = z.infer<typeof ReplyAnswerDiagnosticSchema>;
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -624,6 +673,7 @@ export const ContextStepReportSchema = z
             'reply-controls-changed',
             'reply-scope-unverified',
             'reply-answer-incomplete',
+            'reply-answer-absent',
             'reply-answer-conflict',
             'reply-answer-mismatch',
             'reply-read-failed',
@@ -640,6 +690,7 @@ export const ContextStepReportSchema = z
     listRows: ListRowDiagnosticSchema.optional(),
     rowShape: RowShapeDiagnosticSchema.optional(),
     replyScope: ReplyScopeDiagnosticSchema.optional(),
+    replyAnswer: ReplyAnswerDiagnosticSchema.optional(),
     handleOnlySkipped: count.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     listPageUnfiltered: ListNavigationSchema.optional(),
@@ -692,6 +743,7 @@ export const CONTEXT_STOP_TOKENS = [
   'reply-controls-changed',
   'reply-scope-unverified',
   'reply-answer-incomplete',
+  'reply-answer-absent',
   'reply-answer-conflict',
   'reply-answer-mismatch',
   'reply-read-failed',

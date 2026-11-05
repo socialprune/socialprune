@@ -56,6 +56,7 @@ import {
   ProbeTimeout,
 } from './list-probe.ts';
 import type { NewestProbe } from './report.ts';
+import { applyNewestSort, emptySortDiagnostic } from './newest-sort.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -615,8 +616,10 @@ export async function loadList(
         observationFailed: false,
         timeoutWait: null,
         view: emptyProbeView(),
+        sort: emptySortDiagnostic(),
       };
       rowCounts.newestProbe = newest;
+      const probeStarted = performance.now();
       let reader: Awaited<ReturnType<typeof listProbeReader>> | undefined;
       try {
         reader = await probeWait(
@@ -647,47 +650,17 @@ export async function loadList(
           rowCounts,
           'newest-navigation',
         );
-        await probeWait(
-          'newest-open-sort',
-          () =>
-            clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard),
-          checked,
-        );
-        await probeWait(
-          'newest-select-sort',
-          () =>
-            clickAllowed(
-              page,
-              { kind: 'named', name: 'Newest to oldest' },
-              guard,
-            ),
-          checked,
-        );
-        const control = page.getByRole('button', {
-          name: 'Newest to oldest',
-          exact: true,
-        });
-        newest.sortReadback = await probeWait(
-          'newest-sort-readback',
-          async () =>
-            (
-              await Promise.all(
-                ['aria-checked', 'aria-pressed', 'data-selected'].map(
-                  (attribute) =>
-                    control.getAttribute(attribute, { timeout: 150 }),
-                ),
-              )
-            ).some((value) => value === 'true') ||
-            (await control
-              .locator('input:checked,[aria-checked="true"]')
-              .count()) === 1,
-          checked,
-        );
-        await probeWait(
-          'newest-apply',
-          () => clickAllowed(page, { kind: 'named', name: 'Apply' }, guard),
-          checked,
-        );
+        const sort = newest.sort!;
+        const beforeSort = listFreshness();
+        await beforeSort.beforeApply(page, utcWindow(item.createdAt));
+        await applyNewestSort(page, guard, checked, sort);
+        newest.sortReadback = sort.chosenReadback;
+        const signature = await beforeSort.inspect(page);
+        sort.listChangeObserved = signature.observed
+          ? signature.sameAsBeforeApply === false
+          : null;
+        beforeSort.finish();
+        sort.failedStep = 'reload';
         await navigateList(
           page,
           expected,
@@ -696,22 +669,30 @@ export async function loadList(
           rowCounts,
           'newest-reload',
         );
+        sort.failedStep = 'settle';
         await probeWait(
           'newest-settle',
           () => active.settle(deps.pace.scrollMs),
           checked,
         );
+        sort.failedStep = 'read';
         newest.view = probeView(
           await probeWait('newest-read', () => active.read(), checked),
         );
         newest.settledReload = true;
-        newest.observationFailed = !newest.view.observed;
+        newest.observationFailed =
+          !newest.view.observed || !newest.sortReadback;
+        sort.failedStep = newest.sortReadback ? 'none' : 'readback';
       } catch (error) {
         if (!(error instanceof ProbeTimeout)) throw error;
         await checked();
         newest.observationFailed = true;
         newest.timeoutWait = error.wait;
       } finally {
+        newest.sort!.elapsedMs = Math.max(
+          0,
+          Math.round(performance.now() - probeStarted),
+        );
         if (reader) {
           try {
             await probeWait('probe-close', () => reader!.close(), checked);

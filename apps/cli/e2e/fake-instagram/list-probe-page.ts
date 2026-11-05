@@ -2,7 +2,11 @@ import type { Item } from '@socialprune/core';
 import { listPage } from './pages.ts';
 
 export type ListProbeCase =
-  'below-first' | 'other-date' | 'absent' | 'newest-unsettled';
+  | 'below-first'
+  | 'other-date'
+  | 'absent'
+  | 'newest-unsettled'
+  | 'newest-selected';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
@@ -40,6 +44,24 @@ export function listProbePage(
       .replace(
         'applied=true;sessionStorage',
         "applied=true;if(!oldest)sessionStorage.setItem('probe-newest-unsettled','true');sessionStorage",
+      );
+  if (probe === 'newest-selected')
+    source = source
+      .replace(
+        "let oldest=sessionStorage.getItem('probe-oldest')==='true',",
+        'let oldest=false,',
+      )
+      .replace(
+        "'other-date'&&!start&&!oldest",
+        "'newest-selected'&&!start&&!oldest",
+      )
+      .replace(
+        "const apply=document.createElement('div');",
+        "dialog.querySelectorAll('[role=button]')[1].setAttribute('aria-pressed',String(!oldest));const apply=document.createElement('div');",
+      )
+      .replace(
+        'oldest=false;dialog.querySelectorAll',
+        'if(!oldest)return;oldest=false;dialog.querySelectorAll',
       );
   return source;
 }

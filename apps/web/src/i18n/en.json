@@ -921,6 +921,7 @@
   "desktop.token.reply-controls-changed": "The control for showing more replies has changed.",
   "desktop.token.reply-scope-unverified": "The replies area could not be linked to the comment.",
   "desktop.token.reply-answer-incomplete": "The page response reports more replies than were shown.",
+  "desktop.token.reply-answer-absent": "No page response identifies this comment's replies.",
   "desktop.token.reply-answer-conflict": "The page response contains conflicting reply details.",
   "desktop.token.reply-answer-mismatch": "The displayed replies do not match the page response.",
   "desktop.token.reply-read-failed": "The replies could not be read.",

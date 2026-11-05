@@ -231,6 +231,44 @@ test('C14 ignores foreign hosts, non-200 answers and unapproved content types', 
   expect(h.answers.bodies).toEqual([]);
   h.answers.dispose();
 });
+test('newestreply HTML remains diagnostic-only and body provenance resets with capture', async () => {
+  const h = collector();
+  const id = '123456789';
+  const match = {
+    id,
+    username: 'generated_person',
+    text: 'Generated comment',
+    createdAt: '2025-01-01T00:00:00Z',
+  };
+  h.answers.reset(true, true);
+  h.send(
+    `<html><script type="application/json">{"id":"${id}","child_comment_count":0}</script><script>globalThis.__replyInjected=true</script></html>`,
+    { type: 'text/html', url: 'https://www.instagram.com/p/Generated/' },
+  );
+  h.send('{"id":"123456789"}', {
+    url: 'https://www.instagram.com/api/v1/media/123/comments/',
+  });
+  await h.answers.flush(1000);
+  expect(h.answers.bodies).toEqual([{ id }]);
+  expect(h.answers.bodyPaths).toEqual(['api-v1-media-comments']);
+  expect(h.answers.htmlDiagnostic(match)).toEqual({
+    documents: 1,
+    jsonScripts: 1,
+    matchIdDocuments: 1,
+    observationFailed: false,
+  });
+  h.send(
+    `<html><a href="/p/Generated/c/${id}/">Generated DOM permalink</a><script type="application/json">{"pk":"999"}</script></html>`,
+    { type: 'text/html', url: 'https://www.instagram.com/p/Generated/' },
+  );
+  await h.answers.flush(1000);
+  expect(h.answers.htmlDiagnostic(match).matchIdDocuments).toBe(0);
+  expect(Reflect.get(globalThis, '__replyInjected')).toBeUndefined();
+  h.answers.reset(true);
+  expect(h.answers.bodyPaths).toEqual([]);
+  expect(h.answers.htmlDiagnostic(match).documents).toBe(0);
+  h.answers.dispose();
+});
 test('C14 keeps per-response 5 MiB, aggregate 50 MiB and generation limits', async () => {
   const h = collector();
   const large = JSON.stringify({ code, padding: 'x'.repeat(5 * 1024 ** 2) });

@@ -146,6 +146,7 @@ export const InstagramStopTokenSchema = z.enum([
   'reply-controls-changed',
   'reply-scope-unverified',
   'reply-answer-incomplete',
+  'reply-answer-absent',
   'reply-answer-conflict',
   'reply-answer-mismatch',
   'reply-read-failed',

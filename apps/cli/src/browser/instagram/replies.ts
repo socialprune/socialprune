@@ -7,7 +7,13 @@ import { normalize } from './plan.ts';
 import { ContextStop } from './report.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 import { CliError } from '../../cli/errors.ts';
-import { answerReplies, checkedReplyRows } from './replies-answer.ts';
+import {
+  answerReplies,
+  checkedReplyRows,
+  replyAnswerDiagnostic,
+} from './replies-answer.ts';
+import type { ReplyAnswerDiagnostic } from './report.ts';
+import type { PostPathClass } from './signals.ts';
 import {
   structuralReplyScope,
   REPLY_ROWS,
@@ -20,6 +26,7 @@ export const REPLY_REASONS = [
   'reply-controls-changed',
   'reply-scope-unverified',
   'reply-answer-incomplete',
+  'reply-answer-absent',
   'reply-answer-conflict',
   'reply-answer-mismatch',
   'reply-read-failed',
@@ -214,6 +221,14 @@ export async function commentReplies(
   verified: (answerChecked: boolean) => void = () => {},
   flush: () => Promise<void> = async () => {},
   diagnostic?: (value: ReplyScopeDiagnostic) => void,
+  answerDiagnostic?: (value: ReplyAnswerDiagnostic) => void,
+  answerPaths: () => readonly PostPathClass[] = () => [],
+  htmlDiagnostic: () => ReplyAnswerDiagnostic['html'] = () => ({
+    documents: 0,
+    jsonScripts: 0,
+    matchIdDocuments: 0,
+    observationFailed: false,
+  }),
 ): Promise<NonNullable<InstagramContext['replies']>> {
   const entries: (NonNullable<
     InstagramContext['replies']
@@ -227,6 +242,9 @@ export async function commentReplies(
     throw new ReplyReadFailure('reply-window-empty');
   await flush();
   guard();
+  answerDiagnostic?.(
+    replyAnswerDiagnostic(bodies, match, 0, answerPaths(), htmlDiagnostic()),
+  );
   const { address, root, shape } = await checkedScope(
     page,
     match,
@@ -401,6 +419,15 @@ export async function commentReplies(
   guard();
   await checkPage(page);
   const checked = checkedReplyRows(bodies, match, entries, capped, moreCount);
+  answerDiagnostic?.(
+    replyAnswerDiagnostic(
+      bodies,
+      match,
+      entries.length,
+      answerPaths(),
+      htmlDiagnostic(),
+    ),
+  );
   if (checked.reason) throw new ReplyReadFailure(checked.reason);
   verified(checked.answerChecked);
   return InstagramRepliesSchema.parse(checked.observation);

@@ -1,5 +1,7 @@
 import type { InstagramContext } from '@socialprune/core';
 import { normalize } from './plan.ts';
+import type { ReplyAnswerDiagnostic } from './report.ts';
+import type { PostPathClass } from './signals.ts';
 
 type Entry = NonNullable<InstagramContext['replies']>['entries'][number];
 export interface ReplyMatch {
@@ -19,6 +21,8 @@ const stringId = (value: unknown): string =>
       ? String(value)
       : '';
 const idOf = (value: Record<string, unknown>) => stringId(value.pk ?? value.id);
+const authorOf = (value: Record<string, unknown>) =>
+  object(value.user ?? value.owner);
 const fields = (value: Entry): Entry => ({
   account: value.account,
   text: value.text,
@@ -27,7 +31,7 @@ const fields = (value: Entry): Entry => ({
 });
 function entry(input: unknown): (Entry & { id: string }) | null {
   const value = object(input),
-    user = object(value.user),
+    user = authorOf(value),
     id = idOf(value);
   if (
     !/^\d{1,40}$/.test(id) ||
@@ -94,13 +98,14 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
     }
     const value = object(input);
     if (!Object.keys(value).length) return;
-    const user = object(value.user);
+    const user = authorOf(value);
     if (
       idOf(value) === match.id &&
       user.username === match.username &&
       typeof value.text === 'string' &&
       normalize(value.text) === normalize(match.text) &&
-      value.created_at === Date.parse(match.createdAt) / 1000
+      (value.created_at ?? value.created_at_utc) ===
+        Date.parse(match.createdAt) / 1000
     ) {
       const threaded = object(value.edge_threaded_comments);
       const count = value.child_comment_count ?? threaded.count;
@@ -157,7 +162,7 @@ export function checkedReplyRows(
   moreCount: number,
 ) {
   const answer = answerReplies(bodies, match);
-  if (!answer.present) return { reason: 'reply-answer-incomplete' as const };
+  if (!answer.present) return { reason: 'reply-answer-absent' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
   if (answer.present && !capped && answer.total > rows.length)
@@ -182,5 +187,116 @@ export function checkedReplyRows(
       capped,
     },
     answerChecked: answer.present,
+  };
+}
+
+/** Counts inspect excluded containers too, but never qualify them as evidence. */
+export function replyAnswerDiagnostic(
+  bodies: readonly unknown[],
+  match: ReplyMatch,
+  rowsShown: number,
+  paths: readonly PostPathClass[] = [],
+  html: ReplyAnswerDiagnostic['html'] = {
+    documents: 0,
+    jsonScripts: 0,
+    matchIdDocuments: 0,
+    observationFailed: false,
+  },
+): ReplyAnswerDiagnostic {
+  const answer = answerReplies(bodies, match);
+  let matchIdBodies = 0,
+    parameterMatchIdBodies = 0,
+    focalObjects = 0,
+    visits = 0,
+    capped = false;
+  const classes = new Set<'zero' | 'positive' | 'invalid'>();
+  const pathCounts = new Map<PostPathClass, number>();
+  for (const [index, body] of bodies.entries()) {
+    let found = false,
+      parameterFound = false;
+    const walk = (input: unknown, depth: number, parameter: boolean) => {
+      if (++visits > 100000 || depth > 40) {
+        capped = true;
+        return;
+      }
+      if (Array.isArray(input)) {
+        for (const value of input) {
+          if (capped) break;
+          walk(value, depth + 1, parameter);
+        }
+        return;
+      }
+      const value = object(input);
+      const idMatch = Object.entries(value).some(
+        ([key, id]) =>
+          /^(?:pk|id)$|(?:_|[a-z])id$|_pk$/iu.test(key) &&
+          stringId(id) === match.id,
+      );
+      found ||= idMatch;
+      parameterFound ||= idMatch && parameter;
+      if (idMatch) {
+        const raw =
+          value.child_comment_count ??
+          object(value.edge_threaded_comments).count;
+        if (raw !== undefined)
+          classes.add(
+            typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0
+              ? 'invalid'
+              : raw === 0
+                ? 'zero'
+                : 'positive',
+          );
+        if (
+          !parameter &&
+          idOf(value) === match.id &&
+          authorOf(value).username === match.username &&
+          typeof value.text === 'string' &&
+          normalize(value.text) === normalize(match.text) &&
+          (value.created_at ?? value.created_at_utc) ===
+            Date.parse(match.createdAt) / 1000
+        )
+          focalObjects++;
+      }
+      for (const [key, next] of Object.entries(value)) {
+        if (capped) break;
+        if (next && typeof next === 'object')
+          walk(
+            next,
+            depth + 1,
+            parameter ||
+              [
+                'variables',
+                'params',
+                'instanceParams',
+                'route_match_infos',
+              ].includes(key),
+          );
+      }
+    };
+    walk(body, 0, false);
+    matchIdBodies += Number(found);
+    parameterMatchIdBodies += Number(parameterFound);
+    const path = paths[index] ?? 'other';
+    pathCounts.set(path, (pathCounts.get(path) ?? 0) + 1);
+    if (capped) break;
+  }
+  return {
+    answerPresent: answer.present,
+    answerValid: answer.valid,
+    answerTotal: answer.total,
+    rowsShown,
+    bodiesInspected: [...pathCounts.values()].reduce(
+      (sum, count) => sum + count,
+      0,
+    ),
+    matchIdBodies,
+    parameterMatchIdBodies,
+    focalObjects,
+    traversalCapped: capped,
+    childCountSeen: classes.size > 0,
+    childCountClasses: [...classes],
+    childCountClass: classes.size > 1 ? 'mixed' : ([...classes][0] ?? 'absent'),
+    paths: [...pathCounts].map(([path, bodies]) => ({ path, bodies })),
+    html,
   };
 }

@@ -20,21 +20,44 @@ import { planInstagramDeletion } from '../src/browser/instagram/delete-plan.ts';
 import { fakeInstagram } from './fake-instagram/server.ts';
 import { instagramDeleteFixture } from './fake-instagram/delete-fixture.ts';
 import type { DeleteCase } from './fake-instagram/delete-page.ts';
+import { DatabaseSync } from 'node:sqlite';
 
 async function generatedRun(
-  scenario: DeleteCase | 'extension-change',
+  scenario:
+    | DeleteCase
+    | 'extension-change'
+    | 'archive-likes-lost'
+    | 'archive-replies-lost',
   afterCanary = false,
+  archiveMixed = false,
 ) {
   const root = await mkdtemp(join(tmpdir(), 'sp-d10-browser-'));
-  const workspace = await instagramDeleteFixture(afterCanary ? 3 : 2),
+  const workspace = await instagramDeleteFixture(
+      archiveMixed ? 5 : afterCanary ? 3 : 2,
+    ),
     account = workspace.items[0]!.account.key;
+  if (archiveMixed) {
+    delete workspace.instagramContext![0]!.likes;
+    delete workspace.instagramContext![1]!.replies;
+    delete workspace.instagramContext![2]!.likes;
+    delete workspace.instagramContext![2]!.replies;
+    workspace.instagramContext![3]!.replies = {
+      entries: [],
+      capped: true,
+      moreCount: 1,
+    };
+  }
   const store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
     initial: workspace,
   });
   const profile = join(root, 'profile');
   await createProfile(profile, 'instagram');
   const server = await fakeInstagram(4871, workspace.items);
-  server.deletionCase(scenario === 'extension-change' ? 'success' : scenario);
+  server.deletionCase(
+    scenario === 'extension-change' || scenario.startsWith('archive-')
+      ? 'success'
+      : (scenario as DeleteCase),
+  );
   let clock = Date.parse('2026-10-25T12:00:00.000Z');
   let plan = await planInstagramDeletion(store, account, new Date(clock));
   const execute = () =>
@@ -99,6 +122,28 @@ async function generatedRun(
         checkPage: checkInstagramDeletePage,
         identity: instagramDeleteIdentity,
         click: async (page, row, handle, origin, before) => {
+          if (scenario.startsWith('archive-')) {
+            // Test-only corruption stands in for a changed current workspace.
+            // Normal stores forbid removing an archived observation.
+            const db = new DatabaseSync(join(root, 'socialprune.sqlite'));
+            try {
+              const trigger = db
+                .prepare(
+                  "SELECT sql FROM sqlite_master WHERE name='instagram_context_no_update'",
+                )
+                .get()!.sql;
+              db.exec('DROP TRIGGER instagram_context_no_update');
+              db.prepare(
+                'UPDATE instagram_context SET data=json_remove(data,?) WHERE item_id=?',
+              ).run(
+                scenario === 'archive-likes-lost' ? '$.likes' : '$.replies',
+                row.item.id,
+              );
+              db.exec(String(trigger));
+            } finally {
+              db.close();
+            }
+          }
           if (scenario === 'extension-change')
             await mkdir(
               join(
@@ -186,6 +231,37 @@ test('D10 foundation: real browser page crosses human Start, sending, one allowe
     journal.runs.findLast((r) => r.mode === 'delete')?.canaryAcceptedAt,
   ).toBeTruthy();
 });
+test('DEL-ARCHIV-1 headless generated browser sends only an archived capped comment and leaves all unread comments untouched', async () => {
+  const { result, journal, attempts, nextPlan } = await generatedRun(
+    'success',
+    false,
+    true,
+  );
+  expect(result).toMatchObject({ completed: 1, endReason: 'canary' });
+  expect(attempts).toEqual(['191919191919191922']);
+  expect(
+    journal.attempts
+      .filter((attempt) => attempt.action === 'delete-comment')
+      .map((attempt) => attempt.itemId),
+  ).toEqual(['instagram:generated-3', 'instagram:generated-3']);
+  expect(nextPlan.rows.map((row) => row.item.id)).toEqual([
+    'instagram:generated-4',
+  ]);
+  expect(nextPlan.archiveMissing).toEqual({ likes: 1, replies: 1, both: 1 });
+});
+test.each(['archive-likes-lost', 'archive-replies-lost'] as const)(
+  'DEL-ARCHIV-1 %s after planning refuses the final click against current workspace',
+  async (scenario) => {
+    const { result, journal, attempts } = await generatedRun(scenario);
+    expect(result).toMatchObject({ completed: 0, code: 'RUN_STOPPED' });
+    expect(attempts).toEqual([]);
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.action === 'delete-comment')
+        .map((attempt) => attempt.state),
+    ).toEqual(['sending', 'failed']);
+  },
+);
 test.each([
   'http-429',
   'feedback_required',

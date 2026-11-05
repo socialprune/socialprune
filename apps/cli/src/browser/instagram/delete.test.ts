@@ -8,6 +8,7 @@ import {
   planInstagramDeletion,
   INSTAGRAM_DELETION_PROTOCOL,
   instagramDeleteSummary,
+  requireInstagramArchive,
 } from './delete-plan.ts';
 import {
   instagramDeleteBudget,
@@ -95,6 +96,216 @@ test('D10 plan binds post identity, human decisions, canary and workspace day wi
     await h.close();
   }
 });
+
+test('DEL-ARCHIV-1 excludes missing archive parts, keeps null likes and empty or capped replies, and lists only readable targets', async () => {
+  const workspace = await instagramDeleteFixture(5);
+  const contexts = workspace.instagramContext!;
+  for (const context of contexts) {
+    context.likes = { count: null, source: null };
+    context.replies = { entries: [], capped: false, moreCount: 0 };
+  }
+  delete contexts[0]!.likes;
+  delete contexts[1]!.replies;
+  delete contexts[2]!.likes;
+  delete contexts[2]!.replies;
+  contexts[3]!.replies = { entries: [], capped: true, moreCount: 2 };
+  const root = await mkdtemp(join(tmpdir(), 'sp-delguard-counts-'));
+  const store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
+    initial: workspace,
+  });
+  try {
+    const plan = await planInstagramDeletion(
+      store,
+      workspace.items[0]!.account.key,
+    );
+    expect(plan.rows.map((row) => row.item.id)).toEqual(
+      workspace.items.slice(3).map((item) => item.id),
+    );
+    expect(instagramDeleteSummary(plan, 'en')).toMatchObject({
+      planned: 2,
+      archiveMissing: { likes: 1, replies: 1, both: 1 },
+      archiveCapped: 1,
+    });
+    await store.close();
+    const json: string[] = [];
+    expect(
+      await executeCli(
+        [
+          'delete',
+          'instagram',
+          '--workspace',
+          root,
+          '--account',
+          workspace.items[0]!.account.key,
+          '--dry-run',
+          '--json',
+        ],
+        createNodeContext({ write: (s) => json.push(s) }, { write: () => {} }),
+      ),
+    ).toBe(0);
+    expect((JSON.parse(json.join('')) as { data: unknown }).data).toMatchObject(
+      {
+        planned: 2,
+        archiveMissing: { likes: 1, replies: 1, both: 1 },
+        archiveCapped: 1,
+      },
+    );
+    for (const lang of ['de', 'en'] as const) {
+      const output: string[] = [];
+      const context = createNodeContext(
+        { write: (s) => output.push(s) },
+        { write: () => {} },
+      );
+      const list = join(root, `generated-list-${lang}.txt`);
+      expect(
+        await executeCli(
+          [
+            'delete',
+            'instagram',
+            '--workspace',
+            root,
+            '--account',
+            workspace.items[0]!.account.key,
+            '--dry-run',
+            '--lang',
+            lang,
+            '--list',
+            list,
+          ],
+          context,
+        ),
+      ).toBe(0);
+      const text = await readFile(list, 'utf8');
+      for (const item of workspace.items.slice(0, 3))
+        expect(text).not.toContain(item.id);
+      for (const item of workspace.items.slice(3))
+        expect(text).toContain(item.id);
+      expect(text).toContain(
+        lang === 'de'
+          ? '2 Kommentare warten auf gelesene Likes'
+          : 'Likes still need to be read for 2 comments',
+      );
+      expect(output.join('')).toContain(
+        lang === 'de'
+          ? '2 Kommentare warten auf gelesene Likes'
+          : 'Likes still need to be read for 2 comments',
+      );
+    }
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('DEL-ARCHIV-1 a plan made before the replies write is stale before profile or browser access', async () => {
+  const workspace = await instagramDeleteFixture(1);
+  const context = workspace.instagramContext![0]!;
+  context.likes = { count: null, source: null };
+  delete context.replies;
+  const root = await mkdtemp(join(tmpdir(), 'sp-delguard-stale-'));
+  const store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
+    initial: workspace,
+  });
+  const now = () => new Date('2026-11-05T12:00:00Z');
+  try {
+    const before = await planInstagramDeletion(
+      store,
+      workspace.items[0]!.account.key,
+      now(),
+    );
+    await store.write(async (tx) =>
+      tx.instagramContext.fillReplies({
+        ...context,
+        replies: { entries: [], capped: false, moreCount: 0 },
+      }),
+    );
+    const after = await planInstagramDeletion(
+      store,
+      workspace.items[0]!.account.key,
+      now(),
+    );
+    expect(before.rows).toHaveLength(0);
+    expect(after.rows).toHaveLength(1);
+    expect(after.hash).not.toBe(before.hash);
+    await expect(
+      runInstagramDeletion({
+        store,
+        workspace: root,
+        plan: before,
+        profile: 'not-opened',
+        executablePath: 'not-opened',
+        lang: 'en',
+        list: '',
+        verify: false,
+        now,
+        signal: new AbortController().signal,
+        notice: () => {},
+      }),
+    ).rejects.toMatchObject({ code: 'STALE_PLAN' });
+    expect(
+      (await store.browserJournal()).runs.filter(
+        (run) => run.mode === 'delete',
+      ),
+    ).toEqual([]);
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test.each(['likes', 'replies', 'both'] as const)(
+  'DEL-ARCHIV-1 current workspace refuses a forged archived row missing %s before send',
+  async (missing) => {
+    const workspace = await instagramDeleteFixture(1);
+    const archived = structuredClone(workspace.instagramContext![0]!);
+    if (archived.confirmedBy !== 'post')
+      throw new Error('Generated post record required');
+    if (missing !== 'replies') delete workspace.instagramContext![0]!.likes;
+    if (missing !== 'likes') delete workspace.instagramContext![0]!.replies;
+    const root = await mkdtemp(join(tmpdir(), 'sp-delguard-send-'));
+    const store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
+      initial: workspace,
+    });
+    try {
+      const row = {
+        item: workspace.items[0]!,
+        decision: workspace.decisionEvents[0]!,
+        action: 'delete-comment' as const,
+        context: { ...archived, confirmedBy: 'post' as const },
+      };
+      await expect(requireInstagramArchive(store, row)).rejects.toMatchObject({
+        code: 'RUN_STOPPED',
+      });
+      const current = workspace.instagramContext![0]!;
+      if (current.confirmedBy !== 'post')
+        throw new Error('Generated post record required');
+      const unread = {
+        ...row,
+        context: {
+          ...current,
+          confirmedBy: 'post' as const,
+        },
+      };
+      await expect(
+        clickInstagramDelete(
+          {} as never,
+          unread,
+          'generated',
+          'http://127.0.0.1',
+          async () => {},
+        ),
+      ).rejects.toMatchObject({ code: 'RUN_STOPPED' });
+      expect(
+        (await store.browserJournal()).attempts.filter(
+          (attempt) => attempt.action === 'delete-comment',
+        ),
+      ).toEqual([]);
+    } finally {
+      await store.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 test.each(['en', 'de'] as const)(
   'D12 E %s start page names the hash-bound watched comment before launch',
   async (lang) => {
@@ -151,6 +362,8 @@ test('D10 list confirmations and owner-not-in-export never enter a deletion plan
     confirmedBy: 'list',
     comment: { id: null, createdAt: null, expandClicks: 0 },
   };
+  delete workspace.instagramContext![0].likes;
+  delete workspace.instagramContext![0].replies;
   workspace.instagramContext![1]!.ownerCheck = 'not-in-export';
   workspace.items[1]!.reference.ownerHandle = null;
   const directory = await mkdtemp(join(tmpdir(), 'sp-d10-manual-'));

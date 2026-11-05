@@ -45,6 +45,7 @@ import {
   planInstagramDeletion,
   INSTAGRAM_DELETE_WARNING,
   INSTAGRAM_DELETION_PROTOCOL,
+  requireInstagramArchive,
 } from './delete-plan.ts';
 import type { InstagramDeletePlan, InstagramDeleteRow } from './delete-plan.ts';
 import { requireXWarningFileClear } from '../../workspace/x-warning-file.ts';
@@ -550,6 +551,7 @@ export async function runInstagramDeletion(
         await deps.expand(page, row, plan.handle, deps.origin, checkpoint);
         await waitIdentity(page, row);
         await checkpoint();
+        await requireInstagramArchive(store, row);
         sending =
           (await writer.check(row, run.runId, now().toISOString(), true)) ??
           undefined;
@@ -562,6 +564,7 @@ export async function runInstagramDeletion(
           if (dateInZone(now(), plan.timeZone) !== plan.day)
             throw new CliError('STALE_PLAN');
           await writer.requireInstagramDecision(row);
+          await requireInstagramArchive(store, row);
           permission.arm({
             page: page!,
             origin: deps.origin,
@@ -573,6 +576,7 @@ export async function runInstagramDeletion(
               await checkpoint();
               await admit();
               await writer.requireInstagramDecision(row);
+              await requireInstagramArchive(store, row);
               if (dateInZone(now(), plan.timeZone) !== plan.day)
                 throw new CliError('STALE_PLAN');
             },

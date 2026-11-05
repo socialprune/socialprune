@@ -1,6 +1,7 @@
 import type { Page, Locator } from 'playwright-core';
 import { CliError } from '../../cli/errors.ts';
 import type { InstagramDeleteRow } from './delete-plan.ts';
+import { instagramArchiveMissing } from './delete-plan.ts';
 import {
   checkPage,
   outsideProfilePaths,
@@ -86,6 +87,8 @@ export async function clickInstagramDelete(
   origin: string,
   beforeFinal: () => Promise<void>,
 ): Promise<void> {
+  if (instagramArchiveMissing(row.context) !== null)
+    throw new CliError('RUN_STOPPED');
   let block = await instagramDeleteIdentity(page, row, handle, origin);
   if (await page.getByRole('dialog').count())
     throw new CliError('INSTAGRAM_SHAPE_CHANGED');

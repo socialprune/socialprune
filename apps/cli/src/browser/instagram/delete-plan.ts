@@ -19,6 +19,8 @@ export interface InstagramDeletePlan {
   rows: InstagramDeleteRow[];
   hash: string;
   canary: boolean;
+  archiveMissing: { likes: number; replies: number; both: number };
+  archiveCapped: number;
   manual: {
     noContext: number;
     list: number;
@@ -32,6 +34,33 @@ export const INSTAGRAM_DELETE_WARNING = {
   de: 'Die Regeln von Instagram erlauben diese Art von Automatisierung nicht. Instagram kann dein Konto dafür sperren oder einschränken, auch bei diesem Tempo. Dieser Lauf löscht nur deine markierten, eindeutig identifizierten Kommentare in deinem angemeldeten Browser. SocialPrune verbirgt die Programmsteuerung nicht. Ein Kommentar zu einem auf Facebook geteilten Reel kann auch dort entfernt werden. Nutze es nur für dein eigenes Konto und nur, wenn du das in Kauf nimmst.',
 };
 export const INSTAGRAM_DELETION_PROTOCOL = 'ig-del-v1-a-1';
+/** Presence is the read receipt: a null count and an empty reply list qualify. */
+export function instagramArchiveMissing(context: InstagramContext) {
+  const likes = context.likes === undefined,
+    replies = context.replies === undefined;
+  return likes && replies
+    ? 'both'
+    : likes
+      ? 'likes'
+      : replies
+        ? 'replies'
+        : null;
+}
+/** Re-read current evidence, not just the context snapshot in a dry-run plan. */
+export async function requireInstagramArchive(
+  store: WorkspaceStore,
+  row: InstagramDeleteRow,
+): Promise<void> {
+  await store.read(async (tx) => {
+    const current = await tx.instagramContext.get(row.item.id);
+    if (
+      !current ||
+      instagramArchiveMissing(current) !== null ||
+      JSON.stringify(current) !== JSON.stringify(row.context)
+    )
+      throw new CliError('RUN_STOPPED');
+  });
+}
 export async function planInstagramDeletion(
   store: WorkspaceStore,
   accountKey: string,
@@ -110,6 +139,8 @@ export async function planInstagramDeletion(
     };
     const rows: InstagramDeleteRow[] = [],
       items: Item[] = [];
+    const archiveMissing = { likes: 0, replies: 0, both: 0 };
+    let archiveCapped = 0;
     for await (const stored of tx.items.iterate())
       if (
         stored.item.platform === 'instagram' &&
@@ -178,6 +209,12 @@ export async function planInstagramDeletion(
         manual.unresolved++;
         continue;
       }
+      const missing = instagramArchiveMissing(context);
+      if (missing) {
+        archiveMissing[missing]++;
+        continue;
+      }
+      if (context.replies!.capped) archiveCapped++;
       rows.push({ item, decision, context, action: 'delete-comment' });
     }
     rows.sort(
@@ -191,6 +228,7 @@ export async function planInstagramDeletion(
         JSON.stringify({
           accountKey,
           protocol: INSTAGRAM_DELETION_PROTOCOL,
+          archivePolicy: 'del-archiv-1-a',
           day,
           timeZone,
           canary,
@@ -202,7 +240,18 @@ export async function planInstagramDeletion(
         }),
       )
       .digest('hex');
-    return { accountKey, handle, timeZone, day, rows, hash, canary, manual };
+    return {
+      accountKey,
+      handle,
+      timeZone,
+      day,
+      rows,
+      hash,
+      canary,
+      manual,
+      archiveMissing,
+      archiveCapped,
+    };
   });
 }
 export function instagramDeleteSummary(
@@ -213,6 +262,8 @@ export function instagramDeleteSummary(
     dryRun: true,
     planned: plan.rows.length,
     manual: plan.manual,
+    archiveMissing: plan.archiveMissing,
+    archiveCapped: plan.archiveCapped,
     canary: plan.canary,
     canaryItemId: plan.canary ? (plan.rows[0]?.item.id ?? null) : null,
     planHash: plan.hash,
@@ -223,4 +274,14 @@ export function instagramDeleteSummary(
     attemptsPerDay: 50,
     warning: INSTAGRAM_DELETE_WARNING[lang],
   };
+}
+export function instagramArchiveWaitText(
+  plan: InstagramDeletePlan,
+  lang: 'en' | 'de',
+) {
+  const likes = plan.archiveMissing.likes + plan.archiveMissing.both;
+  const replies = plan.archiveMissing.replies + plan.archiveMissing.both;
+  return lang === 'de'
+    ? `${likes} Kommentare warten auf gelesene Likes, ${replies} auf gelesene Antworten; ${plan.archiveMissing.both} fehlen beide. Sie bleiben stehen. ${plan.archiveCapped} geplante Kommentare haben begrenzt gelesene Antworten.`
+    : `Likes still need to be read for ${likes} comments, replies for ${replies}; ${plan.archiveMissing.both} lack both. They stay on Instagram. ${plan.archiveCapped} planned comments have capped replies observations.`;
 }

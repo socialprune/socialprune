@@ -38,7 +38,16 @@ interface Runner {
   aggregateContext(
     input: string,
     source: string,
-  ): Promise<{ cases: number; state: string }>;
+  ): Promise<{
+    cases: number;
+    state: string;
+    shards: {
+      shard: number;
+      attempt: number;
+      artifact: string;
+      cases: number;
+    }[];
+  }>;
 }
 const runner = (await import(entry)) as Runner;
 
@@ -600,6 +609,174 @@ test('context aggregate fails first for planted empty JUnit and a missing shard,
     await expect(
       runner.aggregateContext(directory, 'generated-source'),
     ).rejects.toThrow('CONTEXT_SHARD_COVERAGE');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+const rerunInventory = Array.from({ length: 40 }, (_, n) => ({
+  file: 'apps/cli/e2e/context-instagram.test.ts',
+  name: `generated rerun case ${n}`,
+}));
+async function contextAttempt(
+  directory: string,
+  shard: number,
+  attempt: number | string,
+  state = 'passed',
+) {
+  const folder = resolve(
+    directory,
+    `browser-suite-context-${shard}-${attempt}`,
+  );
+  await mkdir(folder);
+  await writeFile(
+    resolve(folder, 'summary.json'),
+    JSON.stringify({
+      suite: 'context',
+      shard,
+      shards: 4,
+      source: 'generated-source',
+      state,
+      exitCode: state === 'passed' ? 0 : 1,
+      worktreeDirty: false,
+      durationSeconds: 10,
+      timeoutSeconds: 1800,
+    }),
+  );
+  await writeFile(
+    resolve(folder, 'inventory.json'),
+    JSON.stringify(rerunInventory),
+  );
+  await writeFile(resolve(folder, 'suite.log'), 'generated rerun output');
+  await writeFile(
+    resolve(folder, 'junit.xml'),
+    '<testsuites><testsuite>' +
+      rerunInventory
+        .filter((c) => runner.contextPartition(c.file, c.name) === shard)
+        .map((c) => `<testcase classname="${c.file}" name="${c.name}"/>`)
+        .join('') +
+      '</testsuite></testsuites>',
+  );
+  return folder;
+}
+
+test('context rerun selects the latest attempt per shard, ignoring an earlier failure and counting every case once', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-context-rerun-'));
+  try {
+    for (let shard = 1; shard <= 4; shard++)
+      await contextAttempt(
+        directory,
+        shard,
+        1,
+        shard === 1 ? 'failed' : 'passed',
+      );
+    await contextAttempt(directory, 1, 2);
+    const result = await runner.aggregateContext(directory, 'generated-source');
+    expect(result).toMatchObject({ cases: 40, state: 'passed' });
+    expect(
+      result.shards.map(({ shard, attempt, artifact }) => ({
+        shard,
+        attempt,
+        artifact,
+      })),
+    ).toEqual([
+      { shard: 1, attempt: 2, artifact: 'browser-suite-context-1-2' },
+      { shard: 2, attempt: 1, artifact: 'browser-suite-context-2-1' },
+      { shard: 3, attempt: 1, artifact: 'browser-suite-context-3-1' },
+      { shard: 4, attempt: 1, artifact: 'browser-suite-context-4-1' },
+    ]);
+    expect(result.shards.reduce((sum, shard) => sum + shard.cases, 0)).toBe(40);
+    await contextAttempt(directory, 1, 10);
+    expect(
+      (await runner.aggregateContext(directory, 'generated-source')).shards[0],
+    ).toMatchObject({
+      attempt: 10,
+      artifact: 'browser-suite-context-1-10',
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each(['failed', 'timed-out'])(
+  'context rerun rejects a %s latest attempt instead of falling back to green',
+  async (state) => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'sp-context-rerun-red-'));
+    try {
+      for (let shard = 1; shard <= 4; shard++)
+        await contextAttempt(directory, shard, 1);
+      await contextAttempt(directory, 1, 2, state);
+      await expect(
+        runner.aggregateContext(directory, 'generated-source'),
+      ).rejects.toThrow('CONTEXT_SHARD_FAILED');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test('context rerun rejects duplicate shard-attempt identities even when superseded', async () => {
+  const directory = await mkdtemp(
+    resolve(tmpdir(), 'sp-context-rerun-duplicate-'),
+  );
+  try {
+    for (let shard = 1; shard <= 4; shard++)
+      await contextAttempt(directory, shard, 1);
+    // Different directory spellings carry the same numeric shard/attempt pair.
+    await contextAttempt(directory, 1, '01');
+    await contextAttempt(directory, 1, 2);
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_SHARD_MISSING_OR_DUPLICATE');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('context rerun still rejects a missing shard among mixed attempts', async () => {
+  const directory = await mkdtemp(
+    resolve(tmpdir(), 'sp-context-rerun-missing-'),
+  );
+  try {
+    for (let shard = 1; shard <= 3; shard++)
+      await contextAttempt(directory, shard, 1);
+    await contextAttempt(directory, 1, 2);
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_SHARD_MISSING_OR_DUPLICATE');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('context rerun checks the selected latest JUnit and never reuses an older complete report', async () => {
+  const directory = await mkdtemp(
+    resolve(tmpdir(), 'sp-context-rerun-report-'),
+  );
+  try {
+    for (let shard = 1; shard <= 4; shard++)
+      await contextAttempt(directory, shard, 1);
+    const folder = await contextAttempt(directory, 1, 2);
+    const report = resolve(folder, 'junit.xml');
+    const complete = await readFile(report, 'utf8');
+    await writeFile(report, '<testsuites><testsuite></testsuite></testsuites>');
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_JUNIT_EMPTY');
+    await rm(report);
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    const caseTag = complete.match(/<testcase\b[^>]*\/>/)![0];
+    for (const altered of [
+      complete.replace(caseTag, ''),
+      complete.replace(caseTag, caseTag + caseTag),
+    ]) {
+      await writeFile(report, altered);
+      await expect(
+        runner.aggregateContext(directory, 'generated-source'),
+      ).rejects.toThrow('CONTEXT_SHARD_COVERAGE');
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

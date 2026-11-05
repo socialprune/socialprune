@@ -156,12 +156,28 @@ export async function aggregateContext(input, expectedSource) {
   const receipts = [];
   let inventory;
   const executed = [];
+  const artifacts = await readdir(input);
   for (let shard = 1; shard <= contextShards.count; shard++) {
-    const matches = (await readdir(input)).filter((name) =>
-      new RegExp(`^browser-suite-context-${shard}-\\d+$`).test(name),
-    );
-    assert.equal(matches.length, 1, 'CONTEXT_SHARD_MISSING_OR_DUPLICATE');
-    const folder = join(input, matches[0]);
+    const attempts = new Map();
+    for (const artifact of artifacts) {
+      const match = artifact.match(
+        new RegExp(`^browser-suite-context-${shard}-(\\d+)$`),
+      );
+      if (!match) continue;
+      const attempt = Number(match[1]);
+      assert(
+        Number.isSafeInteger(attempt) && attempt > 0,
+        'CONTEXT_ATTEMPT_INVALID',
+      );
+      assert(!attempts.has(attempt), 'CONTEXT_SHARD_MISSING_OR_DUPLICATE');
+      attempts.set(attempt, artifact);
+    }
+    assert(attempts.size > 0, 'CONTEXT_SHARD_MISSING_OR_DUPLICATE');
+    // Failed-job reruns retain earlier artifacts and rerun only failed shards.
+    // Select each shard's latest attempt, never the latest successful attempt.
+    const attempt = Math.max(...attempts.keys());
+    const artifact = attempts.get(attempt);
+    const folder = join(input, artifact);
     const summary = JSON.parse(
       await readFile(join(folder, 'summary.json'), 'utf8'),
     );
@@ -200,6 +216,8 @@ export async function aggregateContext(input, expectedSource) {
     executed.push(...actual.map((c) => caseKey(c.file, c.name)));
     receipts.push({
       shard,
+      attempt,
+      artifact,
       cases: actual.length,
       durationSeconds: summary.durationSeconds,
       timeoutSeconds: summary.timeoutSeconds,

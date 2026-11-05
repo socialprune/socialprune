@@ -17,6 +17,7 @@ import {
   ReplyScopeDiagnosticSchema,
   ReplyAnswerDiagnosticSchema,
   NewestProbeSchema,
+  SortControlStructureSchema,
 } from './report.ts';
 import { emptyReplyScope } from './replies.ts';
 import { rowShape } from './row-shape.ts';
@@ -26,6 +27,7 @@ import { z } from 'zod';
 import { replyAnswerDiagnostic } from './replies-answer.ts';
 import { emptySortDiagnostic } from './newest-sort.ts';
 import { emptyProbeView } from './list-probe.ts';
+import { emptySortStructure } from './sort-structure.ts';
 
 test('newestreply report contracts reject contents and unknown answer/sort classes', () => {
   const answer = replyAnswerDiagnostic(
@@ -66,6 +68,44 @@ test('newestreply report contracts reject contents and unknown answer/sort class
     NewestProbeSchema.safeParse({
       ...newest,
       sort: { ...newest.sort, clickTarget: 'Generated private label' },
+    }).success,
+  ).toBe(false);
+});
+test('REPLY-SRC-1 script/structure reports reject unknown identity-bearing fields and arbitrary classes', () => {
+  const structure = emptySortStructure();
+  expect(SortControlStructureSchema.safeParse(structure).success).toBe(true);
+  expect(
+    SortControlStructureSchema.safeParse({
+      ...structure,
+      text: 'Generated private text',
+    }).success,
+  ).toBe(false);
+  const answer = replyAnswerDiagnostic(
+    [],
+    {
+      id: '123',
+      username: 'generated_person',
+      text: 'Generated text',
+      createdAt: '2025-01-01T00:00:00Z',
+    },
+    0,
+  );
+  expect(
+    ReplyAnswerDiagnosticSchema.safeParse({
+      ...answer,
+      source: 'generated-private-source',
+    }).success,
+  ).toBe(false);
+  expect(
+    ReplyAnswerDiagnosticSchema.safeParse({
+      ...answer,
+      script: {
+        ...answer.script,
+        failedChecks: {
+          ...answer.script!.failedChecks,
+          url: 'Generated private',
+        },
+      },
     }).success,
   ).toBe(false);
 });

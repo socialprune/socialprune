@@ -36,6 +36,17 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let replyConfigured = false;
   let replyAnswer = true;
   let threadedReplyAnswer = false;
+  let scriptReplyCase:
+    | 'matching'
+    | 'id'
+    | 'author'
+    | 'time'
+    | 'text'
+    | 'missing-count'
+    | 'parameter'
+    | 'conflict'
+    | 'list'
+    | null = null;
   let rowShapeCase: RowShapeCase | undefined,
     replyShapeCase: ReplyShapeCase | undefined;
   let probeCase: ListProbeCase | undefined;
@@ -457,6 +468,44 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             'View replies</button>',
             'View replies</button><button>View replies</button>',
           );
+        if (scriptReplyCase) {
+          const i = Math.max(0, index),
+            item = items[i]!;
+          let focal: Record<string, unknown> = {
+            pk: String(BigInt(IG_FIXTURE.commentId) + BigInt(i)),
+            user: { username: item.account.handle },
+            text: item.text,
+            created_at: Date.parse(item.createdAt) / 1000,
+            child_comment_count:
+              scriptReplyCase === 'conflict' ? replyCount + 1 : replyCount,
+            child_comments: Array.from(
+              { length: replyCount },
+              (_, ordinal) => ({
+                pk: String(900000 + ordinal),
+                user: { username: `generated_reply_${ordinal}` },
+                text: `Generated reply ${ordinal} with local text`,
+                created_at: Date.parse(item.createdAt) / 1000,
+                ...(ordinal === 1 ? {} : { comment_like_count: ordinal + 2 }),
+              }),
+            ),
+          };
+          if (scriptReplyCase === 'id') focal.pk = '999';
+          if (scriptReplyCase === 'author')
+            focal.user = { username: 'generated_other' };
+          if (scriptReplyCase === 'time')
+            focal.created_at = Number(focal.created_at) + 1;
+          if (scriptReplyCase === 'text') focal.text = 'Generated other text';
+          if (scriptReplyCase === 'list') delete focal.child_comment_count;
+          if (scriptReplyCase === 'missing-count') {
+            delete focal.child_comment_count;
+            delete focal.child_comments;
+          }
+          if (scriptReplyCase === 'parameter') focal = { variables: focal };
+          html = html.replace(
+            '</head>',
+            `<script type="application/json">${JSON.stringify({ data: focal }).replaceAll('<', '\\u003c')}</script></head>`,
+          );
+        }
         if (listDecoration === 'caption')
           html = html.replace(
             '<section>',
@@ -680,6 +729,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     threadedReplyAnswer() {
       threadedReplyAnswer = true;
+    },
+    scriptReplies(value: NonNullable<typeof scriptReplyCase>) {
+      scriptReplyCase = value;
     },
     rowShape(value: RowShapeCase) {
       rowShapeCase = value;

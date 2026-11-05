@@ -67,6 +67,7 @@ import {
   applyNewestSort,
   emptySortDiagnostic,
 } from '../src/browser/instagram/newest-sort.ts';
+import { sortControlStructure } from '../src/browser/instagram/sort-structure.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
 import {
   filterList,
@@ -2506,6 +2507,38 @@ test('newestpick no-op Newest option retains the failed observation even after m
   }
 });
 
+test('REPLY-SRC-1 sort structure reads nested controls and selection without contents or DOM mutations', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      '<html lang="en"><body><div role="radio" aria-selected="true"><label><div role="button" aria-label="Newest to oldest" data-selected="false"><label><input type="radio" checked><span role="option" aria-checked="true">Generated private option</span></label></div></label></div><button aria-disabled="true">Apply</button></body></html>',
+    );
+    const before = await page.content();
+    const value = await sortControlStructure(
+      page,
+      'Newest to oldest',
+      () => {},
+    );
+    expect(value).toMatchObject({
+      observed: true,
+      element: { tag: 'div', role: 'button', dataSelected: false },
+      descendants: { input: 1, label: 1, radio: 1 },
+      ancestors: { input: 0, label: 1, radio: 1 },
+      nearestDescendant: { tag: 'input', checked: true },
+      nearestAncestor: { tag: 'div', role: 'radio', ariaSelected: true },
+      applyEnabled: false,
+    });
+    expect(JSON.stringify(value)).not.toContain('Generated private option');
+    expect(await page.content()).toBe(before);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('replyempty diagnostic newest sort never settles, records its wait and ends without a run failure', async () => {
   const h = await harness('success', 1, 1000);
   h.fake.listProbe('newest-unsettled');
@@ -2649,6 +2682,16 @@ test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
       };
       expect(report.steps).toHaveLength(1);
       const step = report.steps[0]!;
+      expect(
+        ContextStepReportSchema.parse(step).oldestSortStructure,
+      ).toMatchObject({
+        before: { observed: true, element: { role: 'button' } },
+        after: {
+          observed: true,
+          element: { ariaPressed: true },
+          applyEnabled: true,
+        },
+      });
       expect(step.filteredProbe.initial).toMatchObject({
         ownRows: 3,
         targetMatched: false,
@@ -2665,6 +2708,12 @@ test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
           targetMatched:
             variant === 'other-date' || variant === 'newest-selected',
         },
+      });
+      expect(
+        ContextStepReportSchema.parse(step).newestProbe?.sort?.structure,
+      ).toMatchObject({
+        before: { observed: true },
+        after: { observed: true },
       });
       if (variant === 'newest-selected')
         expect(
@@ -6941,6 +6990,81 @@ async function acceptRepliesCanary(
   if (trigger) raw.exec(String(trigger));
   raw.close();
 }
+
+test.each([
+  'matching',
+  'id',
+  'author',
+  'time',
+  'text',
+  'missing-count',
+  'parameter',
+  'conflict',
+  'list',
+] as const)(
+  'REPLY-SRC-1 embedded post JSON %s retains four-check admission and source conflict refusal',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(3);
+      h.fake.replyAnswer(mode === 'conflict');
+      h.fake.scriptReplies(mode);
+      h.fake.replyShape('structural');
+      const accepted = mode === 'matching' || mode === 'list';
+      expect(
+        await h.start({ refreshReplies: true }),
+        h.notices.join('\n'),
+      ).toMatchObject(
+        accepted
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token:
+                mode === 'conflict'
+                  ? 'reply-answer-conflict'
+                  : 'reply-answer-absent',
+            },
+      );
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      expect(
+        contexts.every((record) =>
+          accepted
+            ? record.replies?.entries.length === 3
+            : record.replies === undefined,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const diagnostic = ContextStepReportSchema.parse(
+        report.steps[0],
+      ).replyAnswer!;
+      expect(diagnostic.source).toBe(
+        mode === 'conflict' ? 'conflict' : accepted ? 'script' : 'absent',
+      );
+      expect(diagnostic.script?.objectsInspected).toBeGreaterThan(0);
+      if (['id', 'author', 'time', 'text'].includes(mode))
+        expect(
+          diagnostic.script?.failedChecks[
+            mode as 'id' | 'author' | 'time' | 'text'
+          ],
+        ).toBeGreaterThan(0);
+      if (mode === 'parameter')
+        expect(diagnostic.script?.parameterObjectsSkipped).toBeGreaterThan(0);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
 
 test.each(['matching', 'missing', 'disagreement', 'threaded'] as const)(
   'replyempty depth-11 foreign permalink and no expand control: %s focal answer',

@@ -940,6 +940,7 @@ export async function runContextWithDependencies(
                 rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
+                oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
                 unfilteredOldestSortApplied:
@@ -973,6 +974,7 @@ export async function runContextWithDependencies(
                 rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
+                oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
                 unfilteredOldestSortApplied:
@@ -1030,6 +1032,7 @@ export async function runContextWithDependencies(
           rowShape: rowCounts.rowShape,
           filteredProbe: rowCounts.filteredProbe,
           newestProbe: rowCounts.newestProbe,
+          oldestSortStructure: rowCounts.oldestSortStructure,
           listRowsAfterApply: rowCounts.initialDiagnostic,
           listPageUnfiltered: rowCounts.unfilteredDiagnostic,
           unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,
@@ -1214,6 +1217,7 @@ export async function runContextWithDependencies(
             },
             guard,
             answers.bodies,
+            answers.scriptValues(),
           );
         }
         const read = await confirmOnPost(
@@ -1295,6 +1299,7 @@ export async function runContextWithDependencies(
                   },
                   () => answers!.bodyPaths,
                   () => answers!.htmlDiagnostic(match),
+                  () => answers!.scriptValues(),
                 ),
               true,
               false,
@@ -1420,6 +1425,7 @@ export async function runContextWithDependencies(
                 },
                 () => answers!.bodyPaths,
                 () => answers!.htmlDiagnostic(match),
+                () => answers!.scriptValues(),
               ),
             false,
             options.order?.value.captureReplies === true,

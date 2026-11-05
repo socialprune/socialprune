@@ -128,7 +128,12 @@ test('C15 diagnostics skip code-keyed parameter objects before the 64-object cap
   });
 });
 function collector() {
-  const page = new EventEmitter();
+  const mainFrame = {};
+  let currentUrl = 'https://www.instagram.com/p/Generated/';
+  const page = Object.assign(new EventEmitter(), {
+    mainFrame: () => mainFrame,
+    url: () => currentUrl,
+  });
   const answers = pageAnswers(page as unknown as Page, {
     platform: (url) => url.startsWith('https://www.instagram.com/'),
     image: () => false,
@@ -142,9 +147,16 @@ function collector() {
       url?: string;
       declared?: number;
       body?: () => Promise<Buffer>;
+      subframe?: boolean;
+      resourceType?: string;
     } = {},
   ) => {
-    const request = {} as Request;
+    const request = {
+      resourceType: () =>
+        options.resourceType ??
+        (options.type === 'text/html' ? 'document' : 'fetch'),
+      frame: () => (options.subframe ? {} : mainFrame),
+    } as Request;
     page.emit('request', request);
     page.emit('response', {
       request: () => request,
@@ -157,7 +169,13 @@ function collector() {
       body: options.body ?? (() => Promise.resolve(Buffer.from(input))),
     });
   };
-  return { answers, send };
+  return {
+    answers,
+    send,
+    navigate: (url: string) => {
+      currentUrl = url;
+    },
+  };
 }
 
 test.each([
@@ -257,6 +275,12 @@ test('newestreply HTML remains diagnostic-only and body provenance resets with c
     matchIdDocuments: 1,
     observationFailed: false,
   });
+  expect(h.answers.scriptValues()).toEqual([{ id, child_comment_count: 0 }]);
+  h.navigate(`https://www.instagram.com/p/Generated/c/${id}/`);
+  expect(h.answers.scriptValues()).toEqual([{ id, child_comment_count: 0 }]);
+  h.navigate('https://www.instagram.com/p/OtherGenerated/');
+  expect(h.answers.scriptValues()).toEqual([]);
+  h.navigate('https://www.instagram.com/p/Generated/');
   h.send(
     `<html><a href="/p/Generated/c/${id}/">Generated DOM permalink</a><script type="application/json">{"pk":"999"}</script></html>`,
     { type: 'text/html', url: 'https://www.instagram.com/p/Generated/' },
@@ -267,6 +291,35 @@ test('newestreply HTML remains diagnostic-only and body provenance resets with c
   h.answers.reset(true);
   expect(h.answers.bodyPaths).toEqual([]);
   expect(h.answers.htmlDiagnostic(match).documents).toBe(0);
+  expect(h.answers.scriptValues()).toEqual([]);
+  h.answers.dispose();
+});
+test('REPLY-SRC-1 HTML qualification excludes foreign hosts, subframes, fetches and capture resets', async () => {
+  const h = collector();
+  h.answers.reset(true, true);
+  const html =
+    '<script type="application/json">{"id":"123","child_comment_count":0}</script>';
+  for (const options of [
+    { url: 'https://foreign.invalid/p/Generated/' },
+    { url: 'https://www.instagram.com/p/Generated/', subframe: true },
+    { url: 'https://www.instagram.com/p/Generated/', resourceType: 'fetch' },
+  ])
+    h.send(html, { type: 'text/html', ...options });
+  await h.answers.flush(1000);
+  expect(h.answers.scriptValues()).toEqual([]);
+  let resolve!: (value: Buffer) => void;
+  h.send(html, {
+    type: 'text/html',
+    url: 'https://www.instagram.com/p/Generated/',
+    body: () =>
+      new Promise<Buffer>((done) => {
+        resolve = done;
+      }),
+  });
+  h.answers.reset(true, true);
+  resolve(Buffer.from(html));
+  await h.answers.flush(1000);
+  expect(h.answers.scriptValues()).toEqual([]);
   h.answers.dispose();
 });
 test('C14 keeps per-response 5 MiB, aggregate 50 MiB and generation limits', async () => {

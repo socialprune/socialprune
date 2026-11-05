@@ -130,6 +130,10 @@ export function relativeAgeMs(value: string): number | null {
   return Number.isFinite(age) ? age : null;
 }
 export interface RowReadCounts {
+  oldestSortStructure?: {
+    before: import('./report.ts').SortControlStructure;
+    after: import('./report.ts').SortControlStructure;
+  };
   rowShapeHandle?: string;
   rowShape?: import('./report.ts').RowShapeDiagnostic;
   /** Maximum simultaneous empty matches seen within one list load. */

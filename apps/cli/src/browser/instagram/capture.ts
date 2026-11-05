@@ -20,6 +20,8 @@ import { postPathClass } from './signals.ts';
 import type { PostPathClass } from './signals.ts';
 import { replyAnswerDiagnostic } from './replies-answer.ts';
 import type { ReplyMatch } from './replies-answer.ts';
+import { parseReplyScripts } from './replies-script.ts';
+import { postAddress } from './selectors.ts';
 
 export function pageAnswers(
   page: Page,
@@ -28,7 +30,7 @@ export function pageAnswers(
   const images = new Map<string, Response>(),
     bodies: unknown[] = [],
     bodyPaths: PostPathClass[] = [],
-    htmlDocuments: Uint8Array[] = [],
+    htmlDocuments: { bytes: Uint8Array; url: string }[] = [],
     collected: CollectedAnswer[] = [],
     tasks = new Set<Promise<void>>();
   let totalBytes = 0;
@@ -61,7 +63,13 @@ export function pageAnswers(
     )
       return;
     const html = type === 'text/html';
-    if (html && (!collectHTML || postPathClass(response.url()) !== 'post-page'))
+    if (
+      html &&
+      (!collectHTML ||
+        postPathClass(response.url()) !== 'post-page' ||
+        response.request().resourceType() !== 'document' ||
+        response.request().frame() !== page.mainFrame())
+    )
       return;
     const current = generation;
     const task = (async () => {
@@ -75,8 +83,11 @@ export function pageAnswers(
           (html || totalBytes + bytes.length <= 50 * 1024 ** 2)
         ) {
           if (html) {
-            // One bounded document for diagnostics, outside the answer budget.
-            htmlDocuments.splice(0, htmlDocuments.length, bytes);
+            // One bounded main-frame post document, outside the network budget.
+            htmlDocuments.splice(0, htmlDocuments.length, {
+              bytes,
+              url: response.url(),
+            });
             return;
           }
           totalBytes += bytes.length;
@@ -120,31 +131,52 @@ export function pageAnswers(
     images,
     bodies,
     bodyPaths,
+    scriptValues() {
+      const document = htmlDocuments[0];
+      if (!document) return [];
+      try {
+        const current = new URL(page.url()),
+          captured = new URL(document.url);
+        const currentId = /\/c\/(\d{1,40})\/$/u.exec(current.pathname)?.[1];
+        const capturedId = /\/c\/(\d{1,40})\/$/u.exec(captured.pathname)?.[1];
+        const currentPost = postAddress(
+            current.href,
+            current.origin,
+            currentId,
+          ),
+          capturedPost = postAddress(
+            captured.href,
+            captured.origin,
+            capturedId,
+          );
+        if (
+          current.origin !== captured.origin ||
+          !currentPost ||
+          !capturedPost ||
+          currentPost.kind !== capturedPost.kind ||
+          currentPost.code !== capturedPost.code
+        )
+          return [];
+        const parsed = parseReplyScripts(
+          new TextDecoder('utf-8', { fatal: true }).decode(document.bytes),
+        );
+        return parsed.failed ? [] : parsed.values;
+      } catch {
+        return [];
+      }
+    },
     htmlDiagnostic(match: ReplyMatch) {
       let jsonScripts = 0,
         matchIdDocuments = 0,
         observationFailed = htmlFailed;
-      for (const bytes of htmlDocuments) {
+      for (const { bytes } of htmlDocuments) {
         try {
           const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          // Diagnostic only. Script text is never evaluated or admitted to bodies.
-          const scripts = [
-            ...text.matchAll(
-              /<script\b[^>]*\btype\s*=\s*["']application\/json["'][^>]*>([\s\S]*?)<\/script\s*>/giu,
-            ),
-          ];
-          jsonScripts += scripts.length;
-          // Only parsed JSON script objects count, not the focal DOM permalink.
-          const values: unknown[] = [];
-          for (const script of scripts) {
-            try {
-              values.push(JSON.parse(script[1]!) as unknown);
-            } catch {
-              observationFailed = true;
-            }
-          }
+          const parsed = parseReplyScripts(text);
+          jsonScripts += parsed.scripts;
+          observationFailed ||= parsed.failed;
           matchIdDocuments += Number(
-            replyAnswerDiagnostic(values, match, 0).matchIdBodies > 0,
+            replyAnswerDiagnostic(parsed.values, match, 0).matchIdBodies > 0,
           );
         } catch {
           observationFailed = true;

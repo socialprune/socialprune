@@ -17,6 +17,30 @@ const match = {
   username: 'generated_person',
   text: 'Generated own comment',
 };
+const sourceReply = {
+  pk: '456',
+  user: { username: 'generated_reply' },
+  text: 'Generated child',
+  created_at: Date.parse(match.createdAt) / 1000,
+  comment_like_count: 1,
+};
+const sourceAnswer = {
+  pk: match.id,
+  user: { username: match.username },
+  text: match.text,
+  created_at: Date.parse(match.createdAt) / 1000,
+  child_comment_count: 1,
+  child_comments: [sourceReply],
+};
+const sourceDom = [
+  {
+    id: '456',
+    account: 'generated_reply',
+    text: sourceReply.text,
+    createdAt: match.createdAt,
+    likes: { count: null, source: null },
+  },
+];
 test('realshape refresh maps a ReplyReadFailure to the closed reason instead of unexpected-error', async () => {
   const reason = 'reply-scope-unverified',
     failed = vi.fn();
@@ -187,6 +211,60 @@ test('newestreply diagnostics separate absent, excluded, invalid and incomplete 
   expect(
     checkedReplyRows([{ ...focal, pk: 9007199254740992 }], match, [], false, 0),
   ).toEqual({ reason: 'reply-answer-absent' });
+});
+
+test('REPLY-SRC-1 exact script parent with explicit zero or list supplies the missing page answer', () => {
+  const focal = {
+    pk: match.id,
+    user: { username: match.username },
+    text: match.text,
+    created_at: Date.parse(match.createdAt) / 1000,
+  };
+  for (const evidence of [{ child_comment_count: 0 }, { child_comments: [] }])
+    expect(
+      checkedReplyRows([], match, [], false, 0, [{ ...focal, ...evidence }]),
+    ).toMatchObject({
+      answerChecked: true,
+      observation: { entries: [], capped: false },
+    });
+  expect(
+    checkedReplyRows([], match, sourceDom, false, 0, [sourceAnswer]),
+  ).toMatchObject({
+    answerChecked: true,
+    observation: { entries: [{ account: 'generated_reply' }] },
+  });
+});
+test.each(['id', 'author', 'time', 'text', 'count', 'parameter'] as const)(
+  'REPLY-SRC-1 script %s failure never supplies an observation',
+  (failure) => {
+    let focal: Record<string, unknown> = {
+      pk: match.id,
+      user: { username: match.username },
+      text: match.text,
+      created_at: Date.parse(match.createdAt) / 1000,
+      child_comment_count: 0,
+    };
+    if (failure === 'id') focal.pk = '999';
+    if (failure === 'author') focal.user = { username: 'generated_other' };
+    if (failure === 'time') focal.created_at = Number(focal.created_at) + 1;
+    if (failure === 'text') focal.text = 'Generated other text';
+    if (failure === 'count') delete focal.child_comment_count;
+    if (failure === 'parameter') focal = { variables: focal };
+    expect(checkedReplyRows([], match, [], false, 0, [focal])).toEqual({
+      reason: 'reply-answer-absent',
+    });
+  },
+);
+test('REPLY-SRC-1 conflict between network and exact script evidence refuses, network keeps priority on agreement', () => {
+  const zero = { ...sourceAnswer, child_comment_count: 0, child_comments: [] };
+  expect(
+    checkedReplyRows([sourceAnswer], match, sourceDom, false, 0, [zero]),
+  ).toEqual({ reason: 'reply-answer-conflict' });
+  expect(
+    checkedReplyRows([sourceAnswer], match, sourceDom, false, 0, [
+      sourceAnswer,
+    ]),
+  ).toMatchObject({ answerChecked: true });
 });
 
 test('replyempty no replies shown requires agreeing exact focal answer evidence', () => {

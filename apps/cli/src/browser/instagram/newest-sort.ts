@@ -2,6 +2,7 @@ import type { Page } from 'playwright-core';
 import { clickAllowed } from './selectors.ts';
 import { probeWait } from './list-probe.ts';
 import type { NewestProbe } from './report.ts';
+import { sortControlStructure } from './sort-structure.ts';
 
 export const emptySortDiagnostic = (): NonNullable<NewestProbe['sort']> => ({
   menuControlFound: false,
@@ -63,19 +64,27 @@ export async function applyNewestSort(
       selected,
       checked,
     );
-    if (!diagnostic.selectedBefore) {
-      diagnostic.failedStep = 'select';
-      diagnostic.clickTarget = 'named-role-button';
-      await probeWait(
-        'newest-select-sort',
-        () =>
-          clickAllowed(
-            page,
-            { kind: 'named', name: 'Newest to oldest' },
-            guard,
-          ),
-        checked,
-      );
+    const before = await sortControlStructure(page, 'Newest to oldest', guard);
+    try {
+      if (!diagnostic.selectedBefore) {
+        diagnostic.failedStep = 'select';
+        diagnostic.clickTarget = 'named-role-button';
+        await probeWait(
+          'newest-select-sort',
+          () =>
+            clickAllowed(
+              page,
+              { kind: 'named', name: 'Newest to oldest' },
+              guard,
+            ),
+          checked,
+        );
+      }
+    } finally {
+      diagnostic.structure = {
+        before,
+        after: await sortControlStructure(page, 'Newest to oldest', guard),
+      };
     }
     diagnostic.failedStep = 'readback';
     diagnostic.chosenReadback = await probeWait(

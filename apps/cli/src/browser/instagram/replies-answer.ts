@@ -2,6 +2,7 @@ import type { InstagramContext } from '@socialprune/core';
 import { normalize } from './plan.ts';
 import type { ReplyAnswerDiagnostic } from './report.ts';
 import type { PostPathClass } from './signals.ts';
+import { scriptReplySource } from './replies-script.ts';
 
 type Entry = NonNullable<InstagramContext['replies']>['entries'][number];
 export interface ReplyMatch {
@@ -160,8 +161,9 @@ export function checkedReplyRows(
   rows: readonly (Entry & { id?: string })[],
   capped: boolean,
   moreCount: number,
+  scriptValues: readonly unknown[] = [],
 ) {
-  const answer = answerReplies(bodies, match);
+  const answer = combinedReplyAnswer(bodies, match, scriptValues).answer;
   if (!answer.present) return { reason: 'reply-answer-absent' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
@@ -190,6 +192,62 @@ export function checkedReplyRows(
   };
 }
 
+/** Network remains authoritative; either source's conflicting evidence refuses. */
+export function combinedReplyAnswer(
+  bodies: readonly unknown[],
+  match: ReplyMatch,
+  scriptValues: readonly unknown[] = [],
+) {
+  const network = answerReplies(bodies, match);
+  const scripts = scriptReplySource(scriptValues, match);
+  const embedded = answerReplies(scripts.objects, match);
+  let conflict = scripts.conflict;
+  if (network.present && embedded.present) {
+    conflict ||=
+      !network.valid || !embedded.valid || network.total !== embedded.total;
+    for (const entry of embedded.entries) {
+      const prior = network.entries.find((row) => row.id === entry.id);
+      if (!prior && network.entries.length === network.total) conflict = true;
+      if (
+        prior &&
+        (prior.account !== entry.account ||
+          normalize(prior.text) !== normalize(entry.text) ||
+          prior.createdAt !== entry.createdAt ||
+          (prior.likes.count !== null &&
+            entry.likes.count !== null &&
+            prior.likes.count !== entry.likes.count))
+      )
+        conflict = true;
+    }
+    if (
+      embedded.entries.length === embedded.total &&
+      network.entries.some(
+        (entry) => !embedded.entries.some((row) => row.id === entry.id),
+      )
+    )
+      conflict = true;
+  }
+  const chosen = network.present ? network : embedded;
+  const answer = {
+    ...chosen,
+    valid:
+      chosen.valid &&
+      !conflict &&
+      !(scripts.diagnostic.capped && embedded.present),
+  };
+  return {
+    answer,
+    scripts: scripts.diagnostic,
+    source: conflict
+      ? ('conflict' as const)
+      : network.present
+        ? ('network' as const)
+        : embedded.present
+          ? ('script' as const)
+          : ('absent' as const),
+  };
+}
+
 /** Counts inspect excluded containers too, but never qualify them as evidence. */
 export function replyAnswerDiagnostic(
   bodies: readonly unknown[],
@@ -202,8 +260,10 @@ export function replyAnswerDiagnostic(
     matchIdDocuments: 0,
     observationFailed: false,
   },
+  scriptValues: readonly unknown[] = [],
 ): ReplyAnswerDiagnostic {
-  const answer = answerReplies(bodies, match);
+  const combined = combinedReplyAnswer(bodies, match, scriptValues);
+  const answer = combined.answer;
   let matchIdBodies = 0,
     parameterMatchIdBodies = 0,
     focalObjects = 0,
@@ -281,6 +341,12 @@ export function replyAnswerDiagnostic(
     if (capped) break;
   }
   return {
+    source: combined.source,
+    script: {
+      ...combined.scripts,
+      observationFailed:
+        html.observationFailed || combined.scripts.observationFailed,
+    },
     answerPresent: answer.present,
     answerValid: answer.valid,
     answerTotal: answer.total,

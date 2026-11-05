@@ -57,6 +57,7 @@ import {
 } from './list-probe.ts';
 import type { NewestProbe } from './report.ts';
 import { applyNewestSort, emptySortDiagnostic } from './newest-sort.ts';
+import { sortControlStructure } from './sort-structure.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -132,10 +133,21 @@ export async function filterList(
     readback(value: Awaited<ReturnType<typeof filterWindowMatches>>): void;
     beforeApply(): Promise<void>;
     applied(): void;
+    sortBefore?(): Promise<void>;
+    sortAfter?(): Promise<void>;
   },
 ): Promise<void> {
   await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
-  await clickAllowed(page, { kind: 'named', name: 'Oldest to newest' }, guard);
+  await evidence?.sortBefore?.();
+  try {
+    await clickAllowed(
+      page,
+      { kind: 'named', name: 'Oldest to newest' },
+      guard,
+    );
+  } finally {
+    await evidence?.sortAfter?.();
+  }
   const dates = utcWindow(at);
   await chooseFilterDate(page, 'start', dates[0], guard);
   await chooseFilterDate(page, 'end', dates[1], guard);
@@ -327,11 +339,23 @@ export async function loadList(
       );
     if (oldest) {
       await clickAllowed(page, { kind: 'named', name: 'Sort & filter' }, guard);
-      await clickAllowed(
+      const before = await sortControlStructure(
         page,
-        { kind: 'named', name: 'Oldest to newest' },
+        'Oldest to newest',
         guard,
       );
+      try {
+        await clickAllowed(
+          page,
+          { kind: 'named', name: 'Oldest to newest' },
+          guard,
+        );
+      } finally {
+        rowCounts.oldestSortStructure = {
+          before,
+          after: await sortControlStructure(page, 'Oldest to newest', guard),
+        };
+      }
       await clickAllowed(page, { kind: 'named', name: 'Apply' }, guard);
       const first = (await readAccountRows(page, expected, rowCounts)).find(
           (row) => row.username.toLowerCase() === expected.toLowerCase(),
@@ -363,6 +387,27 @@ export async function loadList(
       rowCounts.unfilteredOldestSortApplied = false;
     }
     await filterList(page, item.createdAt, guard, {
+      async sortBefore() {
+        if (!rowCounts.oldestSortStructure) {
+          const before = await sortControlStructure(
+            page,
+            'Oldest to newest',
+            guard,
+          );
+          rowCounts.oldestSortStructure = { before, after: before };
+        }
+      },
+      async sortAfter() {
+        if (
+          rowCounts.oldestSortStructure?.after ===
+          rowCounts.oldestSortStructure?.before
+        )
+          rowCounts.oldestSortStructure!.after = await sortControlStructure(
+            page,
+            'Oldest to newest',
+            guard,
+          );
+      },
       readback(value) {
         Object.assign(filter, value);
       },

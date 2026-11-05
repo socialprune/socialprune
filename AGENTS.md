@@ -40,6 +40,8 @@ Since DEL-ARCHIV-1 A, accepted on 2026-11-05, Instagram deletion additionally re
 
 The newest-first diagnostic also reports the closed click-target class, `named-role-button` or `not-clicked`. Both sort choices use the same exact named role-button selector and click; an Oldest Apply completion does not prove selected-state readback. A generated no-op Newest option keeps the probe inconclusive without changing normal reading or adding a fallback click target.
 
+Since REPLY-SRC-1 A, accepted on 2026-11-05, the replies reader may use parsed inline application/json data from the same loaded main-frame post document only with exact comment ID, author and time, comparison-normalized text and an explicit child count or list. Network answers keep priority and cross-source conflicts refuse; parameter containers remain excluded. Sort reports also observe the existing Oldest and Newest controls before and after their clicks as closed tag, role, control-count and selection-state fields, without changing the targets or stops. These paths use generated-data tests; real-account behavior is not established by them.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

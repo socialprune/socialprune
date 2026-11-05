@@ -419,6 +419,57 @@ export const FilteredProbeSchema = z.strictObject({
     )
     .max(3),
 });
+const SortElementSchema = z.strictObject({
+  tag: z.enum([
+    'button',
+    'div',
+    'span',
+    'input',
+    'label',
+    'select',
+    'option',
+    'li',
+    'ul',
+    'section',
+    'form',
+    'main',
+    'body',
+    'html',
+    'other',
+  ]),
+  role: z
+    .enum([
+      'button',
+      'radio',
+      'option',
+      'radiogroup',
+      'listbox',
+      'checkbox',
+      'dialog',
+      'other',
+    ])
+    .nullable(),
+  checked: z.boolean().nullable(),
+  ariaChecked: z.boolean().nullable(),
+  ariaSelected: z.boolean().nullable(),
+  ariaPressed: z.boolean().nullable(),
+  dataSelected: z.boolean().nullable(),
+});
+export const SortControlStructureSchema = z.strictObject({
+  observed: z.boolean(),
+  capped: z.boolean(),
+  element: SortElementSchema.nullable(),
+  descendants: z.strictObject({ input: count, label: count, radio: count }),
+  ancestors: z.strictObject({ input: count, label: count, radio: count }),
+  nearestDescendant: SortElementSchema.nullable(),
+  nearestAncestor: SortElementSchema.nullable(),
+  applyEnabled: z.boolean().nullable(),
+});
+export type SortControlStructure = z.infer<typeof SortControlStructureSchema>;
+const SortStructuresSchema = z.strictObject({
+  before: SortControlStructureSchema,
+  after: SortControlStructureSchema,
+});
 export const NewestProbeSchema = z.strictObject({
   ...probeFailure,
   sort: z
@@ -428,6 +479,7 @@ export const NewestProbeSchema = z.strictObject({
       optionsOffered: count,
       selectedBefore: z.boolean(),
       clickTarget: z.enum(['not-clicked', 'named-role-button']).optional(),
+      structure: SortStructuresSchema.optional(),
       chosenReadback: z.boolean(),
       applyFound: z.boolean(),
       applyEnabled: z.boolean().nullable(),
@@ -454,6 +506,30 @@ export const NewestProbeSchema = z.strictObject({
 export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
 export type NewestProbe = z.infer<typeof NewestProbeSchema>;
 export const ReplyAnswerDiagnosticSchema = z.strictObject({
+  source: z.enum(['network', 'script', 'absent', 'conflict']).optional(),
+  script: z
+    .strictObject({
+      objectsInspected: count,
+      focalMatches: count,
+      qualified: count,
+      parameterObjectsSkipped: count,
+      failedChecks: z.strictObject({
+        id: count,
+        author: count,
+        time: count,
+        text: count,
+      }),
+      childCountClass: z.enum([
+        'absent',
+        'zero',
+        'positive',
+        'invalid',
+        'mixed',
+      ]),
+      capped: z.boolean(),
+      observationFailed: z.boolean(),
+    })
+    .optional(),
   answerPresent: z.boolean(),
   answerValid: z.boolean(),
   answerTotal: count,
@@ -692,6 +768,7 @@ export const ContextStepReportSchema = z
     rowShape: RowShapeDiagnosticSchema.optional(),
     replyScope: ReplyScopeDiagnosticSchema.optional(),
     replyAnswer: ReplyAnswerDiagnosticSchema.optional(),
+    oldestSortStructure: SortStructuresSchema.optional(),
     handleOnlySkipped: count.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     listPageUnfiltered: ListNavigationSchema.optional(),

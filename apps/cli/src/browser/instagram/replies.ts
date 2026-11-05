@@ -8,7 +8,7 @@ import { ContextStop } from './report.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 import { CliError } from '../../cli/errors.ts';
 import {
-  answerReplies,
+  combinedReplyAnswer,
   checkedReplyRows,
   replyAnswerDiagnostic,
 } from './replies-answer.ts';
@@ -115,6 +115,7 @@ async function checkedScope(
   guard: () => void,
   diagnostic?: (value: ReplyScopeDiagnostic) => void,
   bodies: readonly unknown[] = [],
+  scriptValues: readonly unknown[] = [],
 ) {
   const shape = emptyReplyScope();
   const fail = (part: ReplyScopeDiagnostic['failedCheck']): never => {
@@ -168,7 +169,7 @@ async function checkedScope(
     : null;
   if (!content || !shape.authorMatches || !shape.textMatches)
     fail('author-text');
-  const answer = answerReplies(bodies, match);
+  const answer = combinedReplyAnswer(bodies, match, scriptValues).answer;
   const root = await structuralReplyScope(
     focal,
     focalSelector,
@@ -186,6 +187,7 @@ export async function replyScopeDiagnostic(
   match: ReplyMatch,
   guard: () => void,
   bodies: readonly unknown[] = [],
+  scriptValues: readonly unknown[] = [],
 ) {
   let result = emptyReplyScope();
   try {
@@ -197,6 +199,7 @@ export async function replyScopeDiagnostic(
         result = value;
       },
       bodies,
+      scriptValues,
     );
   } catch (error) {
     if (error instanceof CliError) throw error;
@@ -229,6 +232,7 @@ export async function commentReplies(
     matchIdDocuments: 0,
     observationFailed: false,
   }),
+  scriptValues: () => readonly unknown[] = () => [],
 ): Promise<NonNullable<InstagramContext['replies']>> {
   const entries: (NonNullable<
     InstagramContext['replies']
@@ -243,7 +247,14 @@ export async function commentReplies(
   await flush();
   guard();
   answerDiagnostic?.(
-    replyAnswerDiagnostic(bodies, match, 0, answerPaths(), htmlDiagnostic()),
+    replyAnswerDiagnostic(
+      bodies,
+      match,
+      0,
+      answerPaths(),
+      htmlDiagnostic(),
+      scriptValues(),
+    ),
   );
   const { address, root, shape } = await checkedScope(
     page,
@@ -251,6 +262,7 @@ export async function commentReplies(
     guard,
     diagnostic,
     bodies,
+    scriptValues(),
   );
   for (;;) {
     guard();
@@ -418,7 +430,14 @@ export async function commentReplies(
   await flush();
   guard();
   await checkPage(page);
-  const checked = checkedReplyRows(bodies, match, entries, capped, moreCount);
+  const checked = checkedReplyRows(
+    bodies,
+    match,
+    entries,
+    capped,
+    moreCount,
+    scriptValues(),
+  );
   answerDiagnostic?.(
     replyAnswerDiagnostic(
       bodies,
@@ -426,6 +445,7 @@ export async function commentReplies(
       entries.length,
       answerPaths(),
       htmlDiagnostic(),
+      scriptValues(),
     ),
   );
   if (checked.reason) throw new ReplyReadFailure(checked.reason);

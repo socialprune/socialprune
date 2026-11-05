@@ -28,6 +28,16 @@ interface Runner {
     platform?: string,
   ): Promise<{ executable: string; args: string[] }>;
   suiteEnvironment(environment: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv>;
+  contextShards: { count: number; minutes: number };
+  contextPartition(file: string, name: string): number;
+  contextPattern(
+    cases: { file: string; name: string }[],
+    shard: number,
+  ): string;
+  aggregateContext(
+    input: string,
+    source: string,
+  ): Promise<{ cases: number; state: string }>;
 }
 const runner = (await import(entry)) as Runner;
 
@@ -68,7 +78,12 @@ test('Instagram deletion is serial, independently uploaded and bounded from its 
   ).toBeGreaterThan(
     workflow.indexOf('run: node .github/scripts/browser-suite.mjs run fill'),
   );
-  expect(workflow).not.toMatch(/^\s*matrix:/m);
+  expect(
+    workflow.slice(
+      workflow.indexOf('  suites:'),
+      workflow.indexOf('  context:'),
+    ),
+  ).not.toMatch(/^\s*matrix:/m);
 });
 
 // The context suite runs the reading pass and the list-freshness pages; with
@@ -92,12 +107,14 @@ test('the context suite keeps its measured outer budget without changing test or
     'utf8',
   );
   expect(workflow).toMatch(
-    /name: Instagram context suite[\s\S]*?timeout-minutes: 72\s+run: node \.github\/scripts\/browser-suite\.mjs run context/,
+    /name: Instagram context case shard[\s\S]*?timeout-minutes: 32/,
   );
   expect(workflow).toContain('timeout-minutes: 180');
-  expect(workflow).toContain('browser-suite-context-${{ github.run_attempt }}');
   expect(workflow).toContain(
-    'path: apps/cli/test-results/browser-suites/context/',
+    'browser-suite-context-${{ matrix.shard }}-${{ github.run_attempt }}',
+  );
+  expect(workflow).toContain(
+    'path: apps/cli/test-results/browser-suites/context-${{ matrix.shard }}/',
   );
   expect(workflow).not.toContain('--shard');
 });
@@ -441,7 +458,7 @@ test('the workflow runner calls the real local package scripts, changing only wo
   }
 });
 
-test('the standalone workflow keeps all five suites serial, bounded and independently uploaded', async () => {
+test('the standalone workflow keeps other suites serial and case-shards context with a required aggregate', async () => {
   const workflow = await readFile(
     resolve(root, '.github/workflows/browser-suites.yml'),
     'utf8',
@@ -452,15 +469,9 @@ test('the standalone workflow keeps all five suites serial, bounded and independ
   expect(workflow).toContain('group: browser-suites-${{ github.ref }}');
   expect(workflow).toContain('contents: read');
   expect(workflow).not.toMatch(
-    /^\s*matrix:|\bsecrets\b|pull_request_target|\bdeploy\b|continue-on-error/m,
+    /\bsecrets\b|pull_request_target|\bdeploy\b|continue-on-error/m,
   );
-  for (const name of [
-    'delete',
-    'engine',
-    'context',
-    'fill',
-    'delete-instagram',
-  ]) {
+  for (const name of ['delete', 'engine', 'fill', 'delete-instagram']) {
     expect(workflow).toContain(
       `run: node .github/scripts/browser-suite.mjs run ${name}`,
     );
@@ -476,10 +487,121 @@ test('the standalone workflow keeps all five suites serial, bounded and independ
   expect(
     workflow.match(/run: node .github\/scripts\/browser-suite.mjs run /g),
   ).toHaveLength(5);
-  expect(workflow.match(/timeout-minutes: (?:27|12|72|10)\n/g)).toHaveLength(5);
+  expect(workflow.match(/timeout-minutes: (?:27|12|32|10)\n/g)).toHaveLength(5);
+  expect(workflow).toContain('shard: [1, 2, 3, 4]');
+  expect(workflow).toContain('needs: [select, context]');
+  expect(workflow).toContain(
+    'node .github/scripts/browser-suite.mjs aggregate-context context-artifacts',
+  );
+  expect(workflow).toContain('test "$SHARDS_RESULT" = success');
   const pins = [...workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/g)];
   expect(pins.length).toBeGreaterThan(5);
   for (const [, , pin] of pins) expect(pin).toMatch(/^[a-f0-9]{40}$/);
+});
+
+test('context aggregate fails first for planted empty JUnit and a missing shard, then proves every case once', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'sp-context-aggregate-'));
+  const cases = Array.from({ length: 40 }, (_, n) => ({
+    file: 'apps/cli/e2e/context-instagram.test.ts',
+    name: `generated [${n}] (case)? & value`,
+  }));
+  const encode = (s: string) =>
+    s.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+  const xml = (rows: typeof cases) =>
+    '<testsuites><testsuite>' +
+    rows
+      .map(
+        (c) =>
+          `<testcase classname="${encode(c.file)}" name="${encode(c.name)}"></testcase>`,
+      )
+      .join('') +
+    '</testsuite></testsuites>';
+  try {
+    const reports: string[] = [];
+    for (let shard = 1; shard <= runner.contextShards.count; shard++) {
+      const folder = resolve(directory, `browser-suite-context-${shard}-1`);
+      await mkdir(folder);
+      const selected = cases.filter(
+        (c) => runner.contextPartition(c.file, c.name) === shard,
+      );
+      const pattern = new RegExp(runner.contextPattern(cases, shard));
+      expect(cases.filter((c) => pattern.test(c.name))).toEqual(selected);
+      reports.push(xml(selected));
+      await writeFile(resolve(folder, 'inventory.json'), JSON.stringify(cases));
+      await writeFile(
+        resolve(folder, 'summary.json'),
+        JSON.stringify({
+          suite: 'context',
+          shard,
+          shards: 4,
+          source: 'generated-source',
+          state: 'passed',
+          exitCode: 0,
+          worktreeDirty: false,
+          durationSeconds: 10,
+          timeoutSeconds: 1800,
+        }),
+      );
+      await writeFile(resolve(folder, 'suite.log'), 'generated suite output');
+      await writeFile(
+        resolve(folder, 'junit.xml'),
+        shard === 1
+          ? '<testsuites><testsuite></testsuite></testsuites>'
+          : reports[shard - 1]!,
+      );
+    }
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_JUNIT_EMPTY');
+    await writeFile(
+      resolve(directory, 'browser-suite-context-1-1/junit.xml'),
+      reports[0]!,
+    );
+    await rm(resolve(directory, 'browser-suite-context-4-1'), {
+      recursive: true,
+    });
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_SHARD_MISSING_OR_DUPLICATE');
+    const folder = resolve(directory, 'browser-suite-context-4-1');
+    await mkdir(folder);
+    await writeFile(resolve(folder, 'inventory.json'), JSON.stringify(cases));
+    const summary = {
+      suite: 'context',
+      shard: 4,
+      shards: 4,
+      source: 'generated-source',
+      state: 'passed',
+      exitCode: 0,
+      worktreeDirty: false,
+      durationSeconds: 10,
+      timeoutSeconds: 1800,
+    };
+    await writeFile(resolve(folder, 'summary.json'), JSON.stringify(summary));
+    await writeFile(resolve(folder, 'suite.log'), 'generated output');
+    await writeFile(resolve(folder, 'junit.xml'), reports[3]!);
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).resolves.toMatchObject({ cases: 40, state: 'passed' });
+    await writeFile(
+      resolve(folder, 'summary.json'),
+      JSON.stringify({ ...summary, state: 'timed-out' }),
+    );
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_SHARD_FAILED');
+    await writeFile(resolve(folder, 'summary.json'), JSON.stringify(summary));
+    await rm(resolve(folder, 'junit.xml'));
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow();
+    await writeFile(resolve(folder, 'junit.xml'), xml(cases));
+    await expect(
+      runner.aggregateContext(directory, 'generated-source'),
+    ).rejects.toThrow('CONTEXT_SHARD_COVERAGE');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('test-only preload refuses Node TCP before dialing and configures a closed browser proxy', async () => {

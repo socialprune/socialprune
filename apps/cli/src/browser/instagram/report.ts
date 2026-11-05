@@ -481,6 +481,18 @@ export const NewestProbeSchema = z.strictObject({
       clickTarget: z.enum(['not-clicked', 'named-role-button']).optional(),
       structure: SortStructuresSchema.optional(),
       chosenReadback: z.boolean(),
+      readback: z.enum(['none', 'attributes', 'row-order']).optional(),
+      rowOrderRequired: z.boolean().optional(),
+      rowOrder: z
+        .strictObject({
+          required: z.literal(3),
+          rows: count,
+          timesKnown: count,
+          nonIncreasing: z.boolean(),
+          distinct: z.boolean(),
+          proved: z.boolean(),
+        })
+        .optional(),
       applyFound: z.boolean(),
       applyEnabled: z.boolean().nullable(),
       applySkipped: z.boolean(),
@@ -505,6 +517,31 @@ export const NewestProbeSchema = z.strictObject({
 });
 export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
 export type NewestProbe = z.infer<typeof NewestProbeSchema>;
+export const ReplyControlsDiagnosticSchema = z.strictObject({
+  count,
+  capped: z.boolean(),
+  controls: z
+    .array(
+      z.strictObject({
+        shape: z.enum([
+          'exact-view-replies',
+          'view-all-n-replies',
+          'view-replies-n',
+          'hide-replies',
+          'other',
+        ]),
+        digitsPresent: z.boolean(),
+        numberEqualsAnswer: z.boolean().nullable(),
+        accepted: z.boolean(),
+        tag: z.enum(['button', 'div', 'other']),
+        role: z.enum(['button', 'other']).nullable(),
+      }),
+    )
+    .max(20),
+});
+export type ReplyControlsDiagnostic = z.infer<
+  typeof ReplyControlsDiagnosticSchema
+>;
 export const ReplyAnswerDiagnosticSchema = z.strictObject({
   source: z.enum(['network', 'script', 'absent', 'conflict']).optional(),
   script: z
@@ -768,6 +805,7 @@ export const ContextStepReportSchema = z
     rowShape: RowShapeDiagnosticSchema.optional(),
     replyScope: ReplyScopeDiagnosticSchema.optional(),
     replyAnswer: ReplyAnswerDiagnosticSchema.optional(),
+    replyControls: ReplyControlsDiagnosticSchema.optional(),
     oldestSortStructure: SortStructuresSchema.optional(),
     handleOnlySkipped: count.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),

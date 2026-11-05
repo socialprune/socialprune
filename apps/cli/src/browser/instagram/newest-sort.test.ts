@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import type { Page } from 'playwright-core';
 import * as selectors from './selectors.ts';
-import { applyNewestSort } from './newest-sort.ts';
+import { applyNewestSort, emptySortDiagnostic } from './newest-sort.ts';
 
 test('newestreply unchanged newest sort does not wait on its disabled Apply control', async () => {
   const click = vi
@@ -133,4 +133,45 @@ test('newestpick Oldest and Newest use the identical allow-listed named-button a
     { role: 'button', options: { name: 'Newest to oldest', exact: true } },
   ]);
   expect(calls).toEqual([{ timeout: 5000 }, { timeout: 5000 }]);
+});
+test('REPCTL disabled Apply without attribute readback defers to independent rows instead of clicking Apply', async () => {
+  const click = vi
+    .spyOn(selectors, 'clickAllowed')
+    .mockImplementation((_page, action) => {
+      if (action.kind === 'named' && action.name === 'Apply')
+        return Promise.reject(
+          Object.assign(new Error('Generated timeout'), {
+            name: 'TimeoutError',
+          }),
+        );
+      return Promise.resolve();
+    });
+  const control = {
+    count: () => Promise.resolve(1),
+    isVisible: () => Promise.resolve(true),
+    isEnabled: () => Promise.resolve(false),
+    getAttribute: () => Promise.resolve(null),
+    locator: () => ({ count: () => Promise.resolve(0) }),
+  };
+  try {
+    expect(
+      await applyNewestSort(
+        { getByRole: () => control } as unknown as Page,
+        () => {},
+        async () => {},
+        emptySortDiagnostic(),
+      ),
+    ).toMatchObject({
+      chosenReadback: false,
+      rowOrderRequired: true,
+      applySkipped: true,
+    });
+    expect(
+      click.mock.calls.some(
+        (call) => call[1].kind === 'named' && call[1].name === 'Apply',
+      ),
+    ).toBe(false);
+  } finally {
+    vi.restoreAllMocks();
+  }
 });

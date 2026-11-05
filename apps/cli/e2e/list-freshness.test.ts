@@ -22,6 +22,108 @@ import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
 import { commentReplies } from '../src/browser/instagram/replies.ts';
+import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
+test.each(['View all 5 replies', 'View replies (5)'])(
+  'REPCTL numbered control %s expands only with agreeing answer total',
+  async (label) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(5);
+    fake.replyControl(label);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const result = await commentReplies(
+        page,
+        [await (await response).json()],
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 30000,
+        async () => {},
+        0,
+      );
+      expect(result.entries).toHaveLength(5);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+test.each([
+  'View all 4 replies',
+  'View replies (4)',
+  'Hide replies',
+  'See more replies',
+])(
+  'REPCTL control %s refuses without expansion and reports closed shape only',
+  async (label) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(5);
+    fake.replyControl(label);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      let diagnostic: ReplyControlsDiagnostic | undefined;
+      await expect(
+        commentReplies(
+          page,
+          [await (await response).json()],
+          {
+            id: IG_FIXTURE.commentId,
+            createdAt: item.createdAt,
+            username: item.account.handle!,
+            text: item.text,
+          },
+          () => {},
+          performance.now() + 30000,
+          async () => {},
+          0,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          (value) => {
+            diagnostic = value;
+          },
+        ),
+      ).rejects.toMatchObject({ reason: 'reply-controls-changed' });
+      expect(diagnostic).toMatchObject({
+        count: 1,
+        controls: [{ accepted: false, tag: 'button', role: null }],
+      });
+      expect(JSON.stringify(diagnostic)).not.toContain(label);
+      expect(await page.locator('ul[hidden]').count()).toBe(1);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
 
 test.each([0, 3, 55])(
   'REPLIES-1 focal nested replies capture=%i stays scoped and caps without a write request',

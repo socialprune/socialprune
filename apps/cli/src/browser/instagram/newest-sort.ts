@@ -11,6 +11,8 @@ export const emptySortDiagnostic = (): NonNullable<NewestProbe['sort']> => ({
   selectedBefore: false,
   clickTarget: 'not-clicked',
   chosenReadback: false,
+  readback: 'none',
+  rowOrderRequired: false,
   applyFound: false,
   applyEnabled: null,
   applySkipped: false,
@@ -108,6 +110,14 @@ export async function applyNewestSort(
       diagnostic.selectedBefore &&
       diagnostic.chosenReadback &&
       diagnostic.applyEnabled === false;
+    diagnostic.rowOrderRequired =
+      !diagnostic.chosenReadback &&
+      diagnostic.applyFound &&
+      diagnostic.applyEnabled === false;
+    // No selection is claimed yet. The caller must leave this menu without
+    // applying and prove current order independently from the rendered rows.
+    diagnostic.applySkipped ||= diagnostic.rowOrderRequired;
+    if (diagnostic.chosenReadback) diagnostic.readback = 'attributes';
     diagnostic.failedStep = 'apply';
     if (!diagnostic.applySkipped)
       await probeWait(

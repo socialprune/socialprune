@@ -2757,6 +2757,62 @@ test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
   },
 );
 
+test.each([
+  'newest-default',
+  'newest-default-ascending',
+  'newest-default-tied',
+  'newest-default-unknown',
+  'newest-default-short',
+] as const)(
+  'REPCTL diagnostic %s proves default Newest only from three independent own row times',
+  async (variant) => {
+    const h = await harness('success', 1, 1500);
+    h.fake.listProbe(variant);
+    h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+    try {
+      expect(await h.start(true)).toMatchObject({
+        code: 'CANCELLED',
+        token: 'stopped',
+      });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const probe = ContextStepReportSchema.parse(report.steps[0]).newestProbe!;
+      expect(probe.sort).toMatchObject({
+        applyEnabled: false,
+        applySkipped: true,
+        rowOrderRequired: true,
+      });
+      expect(probe.observationFailed).toBe(variant !== 'newest-default');
+      expect(probe.sort?.readback).toBe(
+        variant === 'newest-default' ? 'row-order' : 'none',
+      );
+      expect(probe.sort?.rowOrder?.proved).toBe(variant === 'newest-default');
+      if (variant !== 'newest-default')
+        expect(probe.timeoutWait).toBe('newest-apply');
+      expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+        [],
+      );
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//u.test(request.path)),
+      ).toBe(false);
+      for (const value of [
+        h.fixture.items[0]!.text,
+        h.plan.handle,
+        '2025-01-03',
+      ])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+
 test('IG-list diagnostic order observes one list and never opens a post, excludes a comment or accepts a canary', async () => {
   const h = await harness('success', 6);
   h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });

@@ -6,6 +6,52 @@ import { normalize } from './plan.ts';
 import { checkPage, relativeAgeMs, outsideProfilePaths } from './selectors.ts';
 import { ContextStop } from './report.ts';
 import type { ProbeWait } from './report.ts';
+export const NEWEST_ORDER_ROWS = 3;
+type TimeRange = { low: number; high: number };
+export function rowTimeRange(
+  date: string | null,
+  label: string,
+  now: number,
+): TimeRange | null {
+  if (date !== null)
+    return /^\d{4}-\d{2}-\d{2}T/u.test(date) &&
+      Number.isFinite(Date.parse(date))
+      ? { low: Date.parse(date), high: Date.parse(date) }
+      : null;
+  // Without an actual time element, only the row's terminal age is evidence.
+  // Dates inside comment text must not become an ordering assertion.
+  const relative =
+    /(?:^|\s)(\d+)\s*(years?|weeks?|days?|hours?|minutes?|seconds?|y|w|d|h|m|s)$/iu.exec(
+      normalize(label),
+    );
+  if (!relative) return null;
+  const duration = relativeAgeMs(relative[1]! + relative[2]!.toLowerCase());
+  const unit = relativeAgeMs('1' + relative[2]!.toLowerCase());
+  return duration === null || unit === null
+    ? null
+    : { low: now - duration - unit, high: now - duration };
+}
+export function newestRowOrder(times: readonly (TimeRange | null)[]) {
+  const values = times.slice(0, NEWEST_ORDER_ROWS);
+  const known = values.filter((value): value is TimeRange => value !== null);
+  const nonIncreasing =
+    values.length === NEWEST_ORDER_ROWS &&
+    known.length === NEWEST_ORDER_ROWS &&
+    known.every(
+      (value, index) => index === 0 || known[index - 1]!.low >= value.high,
+    );
+  const distinct = known.some(
+    (value, index) => index > 0 && known[index - 1]!.high > value.high,
+  );
+  return {
+    required: NEWEST_ORDER_ROWS as 3,
+    rows: values.length,
+    timesKnown: known.length,
+    nonIncreasing,
+    distinct,
+    proved: nonIncreasing && distinct,
+  };
+}
 
 export class ProbeTimeout extends Error {
   readonly wait: ProbeWait;
@@ -54,6 +100,7 @@ const empty = () => ({
   capped: false,
   rows: [] as ReturnType<typeof rowProjection>[],
   container: null as Container | null,
+  order: newestRowOrder([]),
 });
 
 export function rowAgeClass(
@@ -171,6 +218,7 @@ export function probeProjection(
     }
   }
   const ownIndices: number[] = [];
+  const ownTimes: (TimeRange | null)[] = [];
   for (const [index, name] of names.entries()) {
     const parent = nodes.parentIndex[index]!,
       role = attrs[index]!.get('role'),
@@ -206,7 +254,8 @@ export function probeProjection(
     ownIndices.push(index);
     result.ownRows++;
     if (result.rows.length < 30) {
-      let date: string | null = null;
+      let date: string | null = null,
+        timeCount = 0;
       for (let child = index + 1; child < names.length; child++) {
         let ancestor = nodes.parentIndex[child]!;
         while (ancestor > index) ancestor = nodes.parentIndex[ancestor]!;
@@ -216,7 +265,7 @@ export function probeProjection(
           attrs[child]!.has('datetime')
         ) {
           date = attrs[child]!.get('datetime')!;
-          break;
+          timeCount++;
         }
       }
       const row = {
@@ -228,12 +277,17 @@ export function probeProjection(
           now,
         ),
       };
+      if (ownTimes.length < NEWEST_ORDER_ROWS)
+        ownTimes.push(
+          timeCount > 1 ? null : rowTimeRange(date, texts[index]!, now),
+        );
       result.rows.push(row);
       result.targetMatched ||= row.targetMatched;
     }
   }
   result.capped = result.ownRows > 30;
   result.observed = true;
+  result.order = newestRowOrder(ownTimes);
   // Walk from the actual counted own row, not an arbitrary page scroller or
   // the immediate parent, which may only wrap a lazily rendered row group.
   for (const row of ownIndices) {
@@ -262,7 +316,11 @@ export function probeProjection(
   return result;
 }
 type Projection = ReturnType<typeof probeProjection>;
-export const probeView = ({ container, ...value }: Projection) => ({
+export const probeView = ({
+  container,
+  order: _order,
+  ...value
+}: Projection) => ({
   ...value,
   scrollContainerObserved: container !== null,
   scrollHeightGreaterThanClient: container?.scrollable ?? null,

@@ -14,6 +14,8 @@ import {
 } from './replies-answer.ts';
 import type { ReplyAnswerDiagnostic } from './report.ts';
 import type { PostPathClass } from './signals.ts';
+import { checkedReplyControls } from './reply-controls.ts';
+import type { ReplyControlsDiagnostic } from './report.ts';
 import {
   structuralReplyScope,
   REPLY_ROWS,
@@ -233,6 +235,7 @@ export async function commentReplies(
     observationFailed: false,
   }),
   scriptValues: () => readonly unknown[] = () => [],
+  controlsDiagnostic?: (value: ReplyControlsDiagnostic) => void,
 ): Promise<NonNullable<InstagramContext['replies']>> {
   const entries: (NonNullable<
     InstagramContext['replies']
@@ -356,10 +359,16 @@ export async function commentReplies(
       if (entries.length === REPLY_CAP) break;
     }
     const scopedControls = await ownReplyControls(root);
-    const control = scopedControls.filter({ hasText: /^View replies$/u });
-    const controls = await control.count();
-    const replyControls = await scopedControls.count();
-    if (controls > 1 || replyControls !== controls)
+    const answer = combinedReplyAnswer(bodies, match, scriptValues()).answer;
+    const checkedControls = await checkedReplyControls(
+      scopedControls,
+      answer.present && answer.valid ? answer.total : null,
+    );
+    if (checkedControls.diagnostic.count > 0 || clicks === 0)
+      controlsDiagnostic?.(checkedControls.diagnostic);
+    const control = checkedControls.control;
+    const controls = control ? await control.count() : 0;
+    if (!checkedControls.valid)
       throw new ReplyReadFailure('reply-controls-changed');
     if (
       beforeExpansion !== undefined &&
@@ -376,7 +385,7 @@ export async function commentReplies(
       throw new ReplyReadFailure(
         entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
       );
-    if (!controls) break;
+    if (!controls || !control) break;
     if (controls !== 1 || !(await control.isVisible()))
       throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
     if (performance.now() + expandMs >= deadline) {

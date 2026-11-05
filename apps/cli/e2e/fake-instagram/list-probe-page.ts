@@ -7,7 +7,12 @@ export type ListProbeCase =
   | 'absent'
   | 'newest-unsettled'
   | 'newest-selected'
-  | 'newest-noop';
+  | 'newest-noop'
+  | 'newest-default'
+  | 'newest-default-ascending'
+  | 'newest-default-tied'
+  | 'newest-default-unknown'
+  | 'newest-default-short';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
@@ -69,5 +74,24 @@ export function listProbePage(
       "oldest=false;dialog.querySelectorAll('[role=button]')[1].setAttribute('aria-pressed','true');dialog.querySelectorAll('[role=button]')[0].setAttribute('aria-pressed','false');apply.setAttribute('aria-disabled','false')",
       'return',
     );
+  if (probe.startsWith('newest-default')) {
+    source = source
+      .replace(
+        "let oldest=sessionStorage.getItem('probe-oldest')==='true',",
+        'let oldest=false,',
+      )
+      .replace(
+        "oldest=false;dialog.querySelectorAll('[role=button]')[1].setAttribute('aria-pressed','true');dialog.querySelectorAll('[role=button]')[0].setAttribute('aria-pressed','false');apply.setAttribute('aria-disabled','false')",
+        'return',
+      )
+      .replace(
+        'for(const [index,row]of chosen.entries())',
+        `for(const [index,row]of chosen.slice(0,${probe === 'newest-default-short' ? 2 : 3}).entries())`,
+      )
+      .replace(
+        'node.onclick=()=>location.href=',
+        `const dates=${JSON.stringify(probe === 'newest-default-ascending' ? ['2025-01-01', '2025-01-02', '2025-01-03'] : probe === 'newest-default-tied' ? ['2025-01-03', '2025-01-03', '2025-01-03'] : ['2025-01-03', '2025-01-02', '2025-01-01'])};const time=document.createElement('time');time.setAttribute('datetime',${JSON.stringify(probe)}==='newest-default-unknown'?'unreadable':dates[index]+'T12:00:00Z');node.append(time);node.onclick=()=>location.href=`,
+      );
+  }
   return source;
 }

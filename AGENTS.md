@@ -38,6 +38,8 @@ Since 2026-11-05 the diagnostic newest-first probe records its sort controls, of
 
 Since DEL-ARCHIV-1 A, accepted on 2026-11-05, Instagram deletion additionally requires stored likes and replies observations before a comment enters the plan or list and checks the current workspace again before sending; null likes and empty replies count as read, capped replies count as read and are counted separately, and dry runs count comments waiting for likes, replies or both. This requirement has no switch, changes no X deletion or Instagram pace, canary or warning rule, and adds no desktop Instagram Start path.
 
+The newest-first diagnostic also reports the closed click-target class, `named-role-button` or `not-clicked`. Both sort choices use the same exact named role-button selector and click; an Oldest Apply completion does not prove selected-state readback. A generated no-op Newest option keeps the probe inconclusive without changing normal reading or adding a fallback click target.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

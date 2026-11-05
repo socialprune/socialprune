@@ -8,6 +8,7 @@ export const emptySortDiagnostic = (): NonNullable<NewestProbe['sort']> => ({
   controlFound: false,
   optionsOffered: 0,
   selectedBefore: false,
+  clickTarget: 'not-clicked',
   chosenReadback: false,
   applyFound: false,
   applyEnabled: null,
@@ -64,6 +65,7 @@ export async function applyNewestSort(
     );
     if (!diagnostic.selectedBefore) {
       diagnostic.failedStep = 'select';
+      diagnostic.clickTarget = 'named-role-button';
       await probeWait(
         'newest-select-sort',
         () =>

@@ -6,7 +6,8 @@ export type ListProbeCase =
   | 'other-date'
   | 'absent'
   | 'newest-unsettled'
-  | 'newest-selected';
+  | 'newest-selected'
+  | 'newest-noop';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
@@ -63,5 +64,10 @@ export function listProbePage(
         'oldest=false;dialog.querySelectorAll',
         'if(!oldest)return;oldest=false;dialog.querySelectorAll',
       );
+  if (probe === 'newest-noop')
+    source = source.replace(
+      "oldest=false;dialog.querySelectorAll('[role=button]')[1].setAttribute('aria-pressed','true');dialog.querySelectorAll('[role=button]')[0].setAttribute('aria-pressed','false');apply.setAttribute('aria-disabled','false')",
+      'return',
+    );
   return source;
 }

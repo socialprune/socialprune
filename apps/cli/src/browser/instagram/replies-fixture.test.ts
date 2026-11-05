@@ -224,4 +224,14 @@ test('replyempty generated page has no expand control and its first foreign perm
   expect(
     () => new Script(probe.match(/<script>([\s\S]*)<\/script>/u)![1]!),
   ).not.toThrow();
+  const noop = listProbePage(fixture.items, 'newest-noop');
+  expect(noop).toContain(
+    "dialog.querySelectorAll('[role=button]')[1].onclick=()=>{return}",
+  );
+  expect(noop).toContain(
+    "dialog.querySelectorAll('[role=button]')[0].onclick=()=>{oldest=true;",
+  );
+  expect(
+    () => new Script(noop.match(/<script>([\s\S]*)<\/script>/u)![1]!),
+  ).not.toThrow();
 });

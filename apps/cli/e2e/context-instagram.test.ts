@@ -63,6 +63,10 @@ import * as networkHelpers from '../src/browser/instagram/network.ts';
 import * as pagesHelpers from '../src/browser/instagram/pages.ts';
 import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
+import {
+  applyNewestSort,
+  emptySortDiagnostic,
+} from '../src/browser/instagram/newest-sort.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
 import {
   filterList,
@@ -2443,6 +2447,60 @@ test('realfix handle-only image row is counted, never a candidate, and both list
     expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
       [],
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test('newestpick no-op Newest option retains the failed observation even after main Oldest Apply completes', async () => {
+  const h = await filterHarness();
+  h.fake.listProbe('newest-noop');
+  try {
+    await h.open();
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Sort & filter' },
+      () => {},
+    );
+    await clickAllowed(
+      h.page,
+      { kind: 'named', name: 'Oldest to newest' },
+      () => {},
+    );
+    await clickAllowed(h.page, { kind: 'named', name: 'Apply' }, () => {});
+    await h.open();
+    const diagnostic = emptySortDiagnostic();
+    await expect(
+      applyNewestSort(
+        h.page,
+        () => {},
+        () => selectorHelpers.checkPage(h.page),
+        diagnostic,
+      ),
+    ).rejects.toMatchObject({ wait: 'newest-apply' });
+    expect(diagnostic).toMatchObject({
+      menuControlFound: true,
+      controlFound: true,
+      optionsOffered: 2,
+      selectedBefore: false,
+      chosenReadback: false,
+      clickTarget: 'named-role-button',
+      applyFound: true,
+      applyEnabled: false,
+      applySkipped: false,
+      failedStep: 'apply',
+    });
+    expect(h.fake.events.flatMap((event) => event.clicks)).toContain(
+      'Newest to oldest',
+    );
+    expect(
+      h.fake.requests.some((request) => /^\/(p|reel)\//u.test(request.path)),
+    ).toBe(false);
+    for (const value of [
+      h.fixture.items[0]!.text,
+      h.fixture.items[0]!.account.handle!,
+    ])
+      expect(JSON.stringify(diagnostic)).not.toContain(value);
   } finally {
     await h.close();
   }

@@ -64,9 +64,35 @@ export async function cachedHelper(
   const key = hash(
     JSON.stringify([source, configuration.compilerOptions ?? options]),
   );
-  await mkdir(root, { recursive: true });
+  try {
+    await mkdir(root, { recursive: true });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      ['EPERM', 'EACCES', 'EROFS'].includes(String(error.code))
+    )
+      throw new Error('HELPER_CACHE_ROOT_NOT_WRITABLE');
+    throw error;
+  }
   if ((await lstat(root)).isSymbolicLink())
     throw new Error('HELPER_CACHE_LINK');
+  // A lock-path sharing denial is retryable only after this directory has
+  // proved it can create files. Never interpret an unwritable root as an owner.
+  const probe = join(root, '.write-probe-' + randomUUID());
+  try {
+    const writable = await open(probe, 'wx');
+    await writable.close();
+    await rm(probe);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      ['EPERM', 'EACCES', 'EROFS'].includes(String(error.code))
+    )
+      throw new Error('HELPER_CACHE_ROOT_NOT_WRITABLE');
+    throw error;
+  }
   const target = join(root, key);
   const output = join(target, 'helper.exe');
   async function valid() {
@@ -95,15 +121,12 @@ export async function cachedHelper(
   for (;;) {
     try {
       handle = await open(lock, 'wx');
-      await handle.writeFile(
-        JSON.stringify({ pid: process.pid, token: randomUUID() }),
-      );
       break;
     } catch (error) {
       if (!(
         error instanceof Error &&
         'code' in error &&
-        error.code === 'EEXIST'
+        ['EEXIST', 'EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
       ))
         throw error;
       if (Date.now() >= deadline) throw new Error('HELPER_CACHE_LOCK_TIMEOUT');
@@ -112,6 +135,9 @@ export async function cachedHelper(
   }
   let scratch: string | undefined;
   try {
+    await handle.writeFile(
+      JSON.stringify({ pid: process.pid, token: randomUUID() }),
+    );
     if (await valid()) return output;
     scratch = createHelperScratch('compile');
     const staging = join(scratch, 'entry');

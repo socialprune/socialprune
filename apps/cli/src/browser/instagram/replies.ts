@@ -22,6 +22,8 @@ import {
   structuralReplyScope,
   REPLY_ROWS,
   ownReplyControls,
+  matchedReplyRows,
+  EXPANDED_REPLY_LISTS,
 } from './replies-scope.ts';
 
 export const REPLY_REASONS = [
@@ -283,14 +285,19 @@ export async function commentReplies(
         postAddress(page.url(), new URL(page.url()).origin);
       if (current?.code !== address.code || current.kind !== address.kind)
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-      const rows = root.locator(REPLY_ROWS);
+      const rows =
+        clicks > 0
+          ? await matchedReplyRows(root, address)
+          : root.locator(REPLY_ROWS);
       const count = await rows.count();
       site = 'reply-group';
       if (
         (await root.locator('a[href*="/c/"]').count()) -
           (await rows.locator('a[href*="/c/"]').count()) !==
           1 ||
-        (await root.locator(':scope > ul, :scope > div > ul').count()) > 1
+        (await root
+          .locator(`:scope > ul, :scope > div > ul, ${EXPANDED_REPLY_LISTS}`)
+          .count()) > 1
       ) {
         diagnostic?.({ ...shape, failedCheck: 'reply-group' });
         throw new ReplyReadFailure('reply-scope-unverified');
@@ -371,7 +378,7 @@ export async function commentReplies(
         if (entries.length === REPLY_CAP) break;
       }
       site = 'controls';
-      const scopedControls = await ownReplyControls(root);
+      const scopedControls = await ownReplyControls(root, rows);
       const answer = combinedReplyAnswer(bodies, match, scriptValues()).answer;
       const checkedControls = await checkedReplyControls(
         scopedControls,
@@ -477,6 +484,7 @@ export async function commentReplies(
             answer.present && answer.valid ? answer.total : null,
             listsBefore,
             click,
+            address,
           );
           expansionDiagnostic(expansion);
         }

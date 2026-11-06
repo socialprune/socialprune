@@ -1,18 +1,21 @@
 import type { Locator } from 'playwright-core';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { checkedReplyControls } from './reply-controls.ts';
-import { ownReplyControls, REPLY_ROWS } from './replies-scope.ts';
+import { ownReplyControls, matchedReplyRows } from './replies-scope.ts';
 
 /** Counts only, within the already verified focal scope. Never a row oracle. */
 export async function expansionShape(
   root: Locator,
   handle: string,
   total: number | null,
+  address: { kind: 'p' | 'reel'; code: string },
 ) {
+  const rows = await matchedReplyRows(root, address);
   return {
-    rows: await root.locator(REPLY_ROWS).count(),
-    controls: (await checkedReplyControls(await ownReplyControls(root), total))
-      .diagnostic,
+    rows: await rows.count(),
+    controls: (
+      await checkedReplyControls(await ownReplyControls(root, rows), total)
+    ).diagnostic,
     candidates: {
       li: await root.locator('li').count(),
       ul: await root.locator('ul').count(),
@@ -30,9 +33,10 @@ export async function afterExpansion(
   total: number | null,
   listsBefore: number,
   click: ReplyExpansionDiagnostic['clicks'][number],
+  address: { kind: 'p' | 'reel'; code: string },
 ) {
   try {
-    const after = await expansionShape(root, handle, total);
+    const after = await expansionShape(root, handle, total, address);
     click.rowsAfter = after.rows;
     click.controlsAfter = after.controls;
     click.candidatesAfter = after.candidates;

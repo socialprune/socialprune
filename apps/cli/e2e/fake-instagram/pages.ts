@@ -11,7 +11,7 @@ const escape = (input: string) =>
 const json = (value: unknown) =>
   JSON.stringify(value).replaceAll('<', '\\u003c');
 function doc(body: string, script: string, lang = 'en'): string {
-  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}main{width:500px;background:white}main img{width:160px;height:100px}a>img{width:24px;height:24px}#list{height:420px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>body{font:16px system-ui;margin:12px}main{width:500px;background:white}main img{width:160px;height:100px}a>img{width:24px;height:24px}#list{height:${IG_FIXTURE.scroll.listClientHeight}px;overflow:auto}button,[role=button]{padding:10px;border:1px solid #888;margin:2px}#list>[role=button]{height:70px}dialog{max-height:500px;overflow:auto}</style></head><body>${body}<script>${script}</script></body></html>`;
 }
 const instrumentation = `
 window.events={inputs:[],choices:[],clicks:[],added:[],wheels:[]};window.filterSelects=new Map();

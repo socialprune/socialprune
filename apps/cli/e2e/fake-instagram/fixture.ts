@@ -15,7 +15,14 @@ export const IG_FIXTURE = {
     'Generated_candidate_2',
     'Generated_candidate_3',
   ],
-  scroll: { first: 1, beyondLimit: 11, maximum: 10, empty: 2, delta: 700 },
+  scroll: {
+    first: 1,
+    beyondLimit: 11,
+    maximum: 10,
+    empty: 2,
+    delta: 700,
+    listClientHeight: 420,
+  },
   postAt: '2025-07-30T18:00:00.000Z',
   ownerWithoutExport: 'generated_owner_without_export',
   other: {

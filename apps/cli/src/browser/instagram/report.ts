@@ -397,6 +397,14 @@ export const PROBE_WAITS = [
   'newest-reload-account',
   'newest-settle',
   'newest-read',
+  'wider-navigation-load',
+  'wider-navigation-rows',
+  'wider-navigation-account',
+  'wider-open-filter',
+  'wider-select-filter',
+  'wider-filter-readback',
+  'wider-apply',
+  'wider-settle',
   'probe-close',
 ] as const;
 export type ProbeWait = (typeof PROBE_WAITS)[number];
@@ -516,6 +524,31 @@ export const NewestProbeSchema = z.strictObject({
   view: ListProbeViewSchema,
 });
 export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
+export const WidenedProbeSchema = FilteredProbeSchema.extend({
+  radiusDays: z.union([z.literal(7), z.literal(31)]),
+  filter: z.strictObject({
+    readbackObserved: z.boolean(),
+    startMatches: z.boolean(),
+    endMatches: z.boolean(),
+    applied: z.boolean(),
+  }),
+  scrollCount: z.number().int().min(0).max(3),
+  failedStep: z.enum([
+    'none',
+    'navigation',
+    'filter',
+    'readback',
+    'apply',
+    'settle',
+    'read',
+  ]),
+}).refine(
+  (value) =>
+    value.scrollCount === value.scrolls.length &&
+    (value.filter.readbackObserved ||
+      (!value.filter.startMatches && !value.filter.endMatches)),
+);
+export type WidenedProbe = z.infer<typeof WidenedProbeSchema>;
 export type NewestProbe = z.infer<typeof NewestProbeSchema>;
 export const ReplyControlsDiagnosticSchema = z.strictObject({
   count,
@@ -541,6 +574,52 @@ export const ReplyControlsDiagnosticSchema = z.strictObject({
 });
 export type ReplyControlsDiagnostic = z.infer<
   typeof ReplyControlsDiagnosticSchema
+>;
+export const REPLY_STOP_SITES = [
+  'initial-window',
+  'scope',
+  'page-address',
+  'reply-group',
+  'row-window',
+  'row-block',
+  'row-text',
+  'controls',
+  'postclick-no-growth',
+  'window',
+  'control-visible',
+  'expansion-window',
+  'click',
+  'postclick-wait',
+  'answer-check',
+] as const;
+export const ReplyExpansionDiagnosticSchema = z.strictObject({
+  stopAt: z.enum(REPLY_STOP_SITES).nullable(),
+  clicks: z
+    .array(
+      z.strictObject({
+        clicked: z.boolean(),
+        rowsBefore: count,
+        rowsAfter: count.nullable(),
+        controlsAfter: ReplyControlsDiagnosticSchema.nullable(),
+        candidatesAfter: z
+          .strictObject({
+            li: count,
+            ul: count,
+            roleLists: count,
+            divButtons: count,
+            commentPermalinks: count,
+            datedTimes: count,
+            ownHandleLinks: count,
+          })
+          .nullable(),
+        nestedListAppeared: z.boolean().nullable(),
+        observationFailed: z.boolean(),
+      }),
+    )
+    .max(10),
+});
+export type ReplyExpansionDiagnostic = z.infer<
+  typeof ReplyExpansionDiagnosticSchema
 >;
 export const ReplyAnswerDiagnosticSchema = z.strictObject({
   source: z.enum(['network', 'script', 'absent', 'conflict']).optional(),
@@ -806,6 +885,7 @@ export const ContextStepReportSchema = z
     replyScope: ReplyScopeDiagnosticSchema.optional(),
     replyAnswer: ReplyAnswerDiagnosticSchema.optional(),
     replyControls: ReplyControlsDiagnosticSchema.optional(),
+    replyExpansion: ReplyExpansionDiagnosticSchema.optional(),
     oldestSortStructure: SortStructuresSchema.optional(),
     handleOnlySkipped: count.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
@@ -817,6 +897,7 @@ export const ContextStepReportSchema = z
     listWindow: ListWindowSchema.optional(),
     filteredProbe: FilteredProbeSchema.optional(),
     newestProbe: NewestProbeSchema.optional(),
+    widenedProbes: z.array(WidenedProbeSchema).max(2).optional(),
     ready: z.strictObject({ postMs: count }).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),

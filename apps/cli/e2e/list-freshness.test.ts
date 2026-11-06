@@ -23,6 +23,134 @@ import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
 import { commentReplies } from '../src/browser/instagram/replies.ts';
 import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
+import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
+
+test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
+  'POSTCLICK reply expansion %s records the actual click and scoped after-shape without relaxing answer agreement',
+  async (mode) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(5);
+    fake.replyControl('View all 5 replies');
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      await page.route('**/p/**', async (route) => {
+        const response = await route.fetch();
+        let html = await response.text();
+        const group =
+          /<button onclick="this.nextElementSibling.hidden=false;this.remove\(\)">View all 5 replies<\/button><ul hidden>(.*?)<\/ul>/s.exec(
+            html,
+          );
+        if (!group) throw new Error('Generated expansion group missing');
+        const rows =
+          mode === 'mismatch'
+            ? group[1]!.replace(
+                'Generated reply 0 with local text',
+                'Generated different reply',
+              )
+            : group[1]!;
+        const expanded =
+          mode === 'missing'
+            ? ''
+            : mode === 'wrapped'
+              ? `<div><div><ul>${rows}</ul></div></div>`
+              : `<ul>${rows}</ul>`;
+        const script = `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
+        html = html.replace(
+          group[0],
+          `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>${mode === 'blocked' ? '<div style="position:fixed;inset:0;z-index:9999;background:white"></div>' : ''}`,
+        );
+        await route.fulfill({ response, body: html });
+      });
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const bodies = [await (await response).json()];
+      let expansion: unknown;
+      const reading = commentReplies(
+        page,
+        bodies,
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 10000,
+        async () => {},
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (value) => {
+          expansion = value;
+        },
+      );
+      if (mode === 'shown') expect((await reading).entries).toHaveLength(5);
+      else if (mode === 'blocked')
+        await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
+      else
+        await expect(reading).rejects.toMatchObject({
+          reason:
+            mode === 'wrapped'
+              ? 'reply-scope-unverified'
+              : mode === 'mismatch'
+                ? 'reply-answer-mismatch'
+                : 'reply-controls-changed',
+        });
+      const parsed = ContextStepReportSchema.parse({
+        replyExpansion: expansion,
+      }).replyExpansion!;
+      expect(parsed.clicks).toHaveLength(1);
+      expect(parsed.clicks[0]).toMatchObject({
+        clicked: mode !== 'blocked',
+        rowsBefore: 0,
+        rowsAfter: mode === 'shown' || mode === 'mismatch' ? 5 : 0,
+        observationFailed: false,
+        controlsAfter: { count: mode === 'blocked' ? 1 : 0 },
+        candidatesAfter: {
+          li: mode === 'missing' || mode === 'blocked' ? 0 : 5,
+          ul: mode === 'missing' || mode === 'blocked' ? 0 : 1,
+          ownHandleLinks: 1,
+        },
+        nestedListAppeared: !['missing', 'blocked'].includes(mode),
+      });
+      expect(parsed.stopAt).toBe(
+        mode === 'shown'
+          ? null
+          : mode === 'wrapped'
+            ? 'reply-group'
+            : mode === 'mismatch'
+              ? 'answer-check'
+              : mode === 'blocked'
+                ? 'click'
+                : 'postclick-no-growth',
+      );
+      for (const value of [
+        item.text,
+        item.account.handle!,
+        IG_FIXTURE.commentId,
+        'View all 5 replies',
+      ])
+        expect(JSON.stringify(parsed)).not.toContain(value);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
 test.each(['View all 5 replies', 'View replies (5)'])(
   'REPCTL numbered control %s expands only with agreeing answer total',
   async (label) => {

@@ -16,6 +16,8 @@ import type { ReplyAnswerDiagnostic } from './report.ts';
 import type { PostPathClass } from './signals.ts';
 import { checkedReplyControls } from './reply-controls.ts';
 import type { ReplyControlsDiagnostic } from './report.ts';
+import type { ReplyExpansionDiagnostic } from './report.ts';
+import { afterExpansion } from './replies-expansion.ts';
 import {
   structuralReplyScope,
   REPLY_ROWS,
@@ -236,228 +238,279 @@ export async function commentReplies(
   }),
   scriptValues: () => readonly unknown[] = () => [],
   controlsDiagnostic?: (value: ReplyControlsDiagnostic) => void,
+  expansionDiagnostic?: (value: ReplyExpansionDiagnostic) => void,
 ): Promise<NonNullable<InstagramContext['replies']>> {
-  const entries: (NonNullable<
-    InstagramContext['replies']
-  >['entries'][number] & { id?: string })[] = [];
-  const seen = new Set<string>();
-  let moreCount = 0,
-    capped = false,
-    clicks = 0,
-    beforeExpansion: number | undefined;
-  if (performance.now() >= deadline)
-    throw new ReplyReadFailure('reply-window-empty');
-  await flush();
-  guard();
-  answerDiagnostic?.(
-    replyAnswerDiagnostic(
-      bodies,
-      match,
-      0,
-      answerPaths(),
-      htmlDiagnostic(),
-      scriptValues(),
-    ),
-  );
-  const { address, root, shape } = await checkedScope(
-    page,
-    match,
-    guard,
-    diagnostic,
-    bodies,
-    scriptValues(),
-  );
-  for (;;) {
-    guard();
-    await checkPage(page);
-    const current =
-      postAddress(page.url(), new URL(page.url()).origin, match.id) ??
-      postAddress(page.url(), new URL(page.url()).origin);
-    if (current?.code !== address.code || current.kind !== address.kind)
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-    const rows = root.locator(REPLY_ROWS);
-    const count = await rows.count();
-    if (
-      (await root.locator('a[href*="/c/"]').count()) -
-        (await rows.locator('a[href*="/c/"]').count()) !==
-        1 ||
-      (await root.locator(':scope > ul, :scope > div > ul').count()) > 1
-    ) {
-      diagnostic?.({ ...shape, failedCheck: 'reply-group' });
-      throw new ReplyReadFailure('reply-scope-unverified');
-    }
-    for (let index = 0; index < Math.min(count, REPLY_CAP); index++) {
-      if (performance.now() >= deadline) {
-        throw new ReplyReadFailure(
-          entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
-        );
-      }
-      const row = rows.nth(index);
-      if (!(await row.isVisible())) continue;
-      const blocks = row.locator(':scope > div:not([role])');
-      if ((await blocks.count()) !== 1)
-        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
-      const value = await textBlock(blocks, 150);
-      if (!value)
-        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
-      const links = blocks.locator('a[href*="/c/"]');
-      const href =
-        (await links.count()) === 1
-          ? await links.getAttribute('href', { timeout: 150 })
-          : null;
-      const id = href
-        ? new RegExp(
-            `^/${address.kind}/${address.code}/c/([0-9]{1,40})/$`,
-          ).exec(href)?.[1]
-        : undefined;
-      const time = links.locator('time[datetime]');
-      const rawTime =
-        (await time.count()) === 1
-          ? await time.getAttribute('datetime', { timeout: 150 })
-          : null;
-      const createdAt =
-        id && rawTime && Number.isFinite(Date.parse(rawTime))
-          ? new Date(rawTime).toISOString()
-          : null;
-      const key =
-        id ?? JSON.stringify([value.username, value.text, createdAt, index]);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const answer =
-        id && createdAt
-          ? answerLikes(bodies, { ...value, id, createdAt })
-          : null;
-      const likes = [];
-      for (const node of await row
-        .locator(':scope > button, :scope > [role="button"]')
-        .all()) {
-        const count = parseVisibleLikes(
-          normalize(await node.innerText({ timeout: 150 })),
-        );
-        if (count !== null && (await node.isVisible())) likes.push(count);
-      }
-      entries.push({
-        ...(id ? { id } : {}),
-        account: value.username,
-        text: (
-          await blocks
-            .locator(':scope > div')
-            .nth(1)
-            .locator(':scope > span[dir="auto"]')
-            .innerText({ timeout: 150 })
-        )
-          .normalize('NFC')
-          .trim(),
-        createdAt,
-        likes:
-          answer !== null
-            ? { count: answer, source: 'answer' }
-            : likes.length === 1
-              ? { count: likes[0]!, source: 'dom' }
-              : { count: null, source: null },
-      });
-      if (entries.length === REPLY_CAP) break;
-    }
-    const scopedControls = await ownReplyControls(root);
-    const answer = combinedReplyAnswer(bodies, match, scriptValues()).answer;
-    const checkedControls = await checkedReplyControls(
-      scopedControls,
-      answer.present && answer.valid ? answer.total : null,
-    );
-    if (checkedControls.diagnostic.count > 0 || clicks === 0)
-      controlsDiagnostic?.(checkedControls.diagnostic);
-    const control = checkedControls.control;
-    const controls = control ? await control.count() : 0;
-    if (!checkedControls.valid)
-      throw new ReplyReadFailure('reply-controls-changed');
-    if (
-      beforeExpansion !== undefined &&
-      entries.length === beforeExpansion &&
-      controls === 0
-    )
-      throw new ReplyReadFailure('reply-controls-changed');
-    moreCount = Math.max(0, count - entries.length, controls ? 1 : 0);
-    if (entries.length >= REPLY_CAP || clicks >= 10) {
-      capped = true;
-      break;
-    }
+  const expansion: ReplyExpansionDiagnostic = { clicks: [], stopAt: null };
+  let site: NonNullable<ReplyExpansionDiagnostic['stopAt']> = 'initial-window';
+  try {
+    const entries: (NonNullable<
+      InstagramContext['replies']
+    >['entries'][number] & { id?: string })[] = [];
+    const seen = new Set<string>();
+    let moreCount = 0,
+      capped = false,
+      clicks = 0,
+      beforeExpansion: number | undefined;
     if (performance.now() >= deadline)
-      throw new ReplyReadFailure(
-        entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
-      );
-    if (!controls || !control) break;
-    if (controls !== 1 || !(await control.isVisible()))
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
-    if (performance.now() + expandMs >= deadline) {
-      throw new ReplyReadFailure(
-        entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
-      );
-    }
-    await pause(expandMs);
+      throw new ReplyReadFailure('reply-window-empty');
+    await flush();
     guard();
-    await checkPage(page);
-    beforeExpansion = entries.length;
-    try {
-      await control.click({
-        timeout: Math.max(1, Math.min(1000, deadline - performance.now())),
-      });
-    } catch (error) {
+    answerDiagnostic?.(
+      replyAnswerDiagnostic(
+        bodies,
+        match,
+        0,
+        answerPaths(),
+        htmlDiagnostic(),
+        scriptValues(),
+      ),
+    );
+    site = 'scope';
+    const { address, root, shape } = await checkedScope(
+      page,
+      match,
+      guard,
+      diagnostic,
+      bodies,
+      scriptValues(),
+    );
+    for (;;) {
+      site = 'page-address';
       guard();
       await checkPage(page);
+      const current =
+        postAddress(page.url(), new URL(page.url()).origin, match.id) ??
+        postAddress(page.url(), new URL(page.url()).origin);
+      if (current?.code !== address.code || current.kind !== address.kind)
+        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+      const rows = root.locator(REPLY_ROWS);
+      const count = await rows.count();
+      site = 'reply-group';
       if (
-        error instanceof Error &&
-        error.name === 'TimeoutError' &&
-        performance.now() >= deadline
+        (await root.locator('a[href*="/c/"]').count()) -
+          (await rows.locator('a[href*="/c/"]').count()) !==
+          1 ||
+        (await root.locator(':scope > ul, :scope > div > ul').count()) > 1
       ) {
+        diagnostic?.({ ...shape, failedCheck: 'reply-group' });
+        throw new ReplyReadFailure('reply-scope-unverified');
+      }
+      for (let index = 0; index < Math.min(count, REPLY_CAP); index++) {
+        site = 'row-window';
+        if (performance.now() >= deadline) {
+          throw new ReplyReadFailure(
+            entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
+          );
+        }
+        const row = rows.nth(index);
+        if (!(await row.isVisible())) continue;
+        const blocks = row.locator(':scope > div:not([role])');
+        site = 'row-block';
+        if ((await blocks.count()) !== 1)
+          throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
+        const value = await textBlock(blocks, 150);
+        site = 'row-text';
+        if (!value)
+          throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
+        const links = blocks.locator('a[href*="/c/"]');
+        const href =
+          (await links.count()) === 1
+            ? await links.getAttribute('href', { timeout: 150 })
+            : null;
+        const id = href
+          ? new RegExp(
+              `^/${address.kind}/${address.code}/c/([0-9]{1,40})/$`,
+            ).exec(href)?.[1]
+          : undefined;
+        const time = links.locator('time[datetime]');
+        const rawTime =
+          (await time.count()) === 1
+            ? await time.getAttribute('datetime', { timeout: 150 })
+            : null;
+        const createdAt =
+          id && rawTime && Number.isFinite(Date.parse(rawTime))
+            ? new Date(rawTime).toISOString()
+            : null;
+        const key =
+          id ?? JSON.stringify([value.username, value.text, createdAt, index]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const answer =
+          id && createdAt
+            ? answerLikes(bodies, { ...value, id, createdAt })
+            : null;
+        const likes = [];
+        for (const node of await row
+          .locator(':scope > button, :scope > [role="button"]')
+          .all()) {
+          const count = parseVisibleLikes(
+            normalize(await node.innerText({ timeout: 150 })),
+          );
+          if (count !== null && (await node.isVisible())) likes.push(count);
+        }
+        entries.push({
+          ...(id ? { id } : {}),
+          account: value.username,
+          text: (
+            await blocks
+              .locator(':scope > div')
+              .nth(1)
+              .locator(':scope > span[dir="auto"]')
+              .innerText({ timeout: 150 })
+          )
+            .normalize('NFC')
+            .trim(),
+          createdAt,
+          likes:
+            answer !== null
+              ? { count: answer, source: 'answer' }
+              : likes.length === 1
+                ? { count: likes[0]!, source: 'dom' }
+                : { count: null, source: null },
+        });
+        if (entries.length === REPLY_CAP) break;
+      }
+      site = 'controls';
+      const scopedControls = await ownReplyControls(root);
+      const answer = combinedReplyAnswer(bodies, match, scriptValues()).answer;
+      const checkedControls = await checkedReplyControls(
+        scopedControls,
+        answer.present && answer.valid ? answer.total : null,
+      );
+      if (checkedControls.diagnostic.count > 0 || clicks === 0)
+        controlsDiagnostic?.(checkedControls.diagnostic);
+      const control = checkedControls.control;
+      const controls = control ? await control.count() : 0;
+      if (!checkedControls.valid)
+        throw new ReplyReadFailure('reply-controls-changed');
+      site = 'postclick-no-growth';
+      if (
+        beforeExpansion !== undefined &&
+        entries.length === beforeExpansion &&
+        controls === 0
+      )
+        throw new ReplyReadFailure('reply-controls-changed');
+      moreCount = Math.max(0, count - entries.length, controls ? 1 : 0);
+      if (entries.length >= REPLY_CAP || clicks >= 10) {
+        capped = true;
+        break;
+      }
+      site = 'window';
+      if (performance.now() >= deadline)
+        throw new ReplyReadFailure(
+          entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
+        );
+      if (!controls || !control) break;
+      site = 'control-visible';
+      if (controls !== 1 || !(await control.isVisible()))
+        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+      site = 'expansion-window';
+      if (performance.now() + expandMs >= deadline) {
         throw new ReplyReadFailure(
           entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
         );
       }
-      throw error;
-    }
-    clicks++;
-    guard();
-    await checkPage(page);
-    // Allow the scoped read response/render to expose rows before re-reading
-    // its replacement control. The existing step deadline remains the bound.
-    const previousCount = count;
-    while (
-      performance.now() < deadline &&
-      (await rows.count()) === previousCount &&
-      (await control.count()) === controls
-    ) {
-      await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(100, Math.max(1, deadline - performance.now())),
-        ),
-      );
+      await pause(expandMs);
       guard();
       await checkPage(page);
+      beforeExpansion = entries.length;
+      const click: ReplyExpansionDiagnostic['clicks'][number] = {
+        clicked: false,
+        rowsBefore: count,
+        rowsAfter: null,
+        controlsAfter: null,
+        candidatesAfter: null,
+        nestedListAppeared: null,
+        observationFailed: true,
+      };
+      const listsBefore = expansionDiagnostic
+        ? await root.locator('ul,[role="list"]').count()
+        : 0;
+      if (expansionDiagnostic) expansion.clicks.push(click);
+      site = 'click';
+      try {
+        try {
+          await control.click({
+            timeout: Math.max(1, Math.min(1000, deadline - performance.now())),
+          });
+        } catch (error) {
+          guard();
+          await checkPage(page);
+          if (
+            error instanceof Error &&
+            error.name === 'TimeoutError' &&
+            performance.now() >= deadline
+          ) {
+            throw new ReplyReadFailure(
+              entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
+            );
+          }
+          throw error;
+        }
+        click.clicked = true;
+        clicks++;
+        site = 'postclick-wait';
+        guard();
+        await checkPage(page);
+        // Allow the scoped read response/render to expose rows before re-reading
+        // its replacement control. The existing step deadline remains the bound.
+        const previousCount = count;
+        while (
+          performance.now() < deadline &&
+          (await rows.count()) === previousCount &&
+          (await control.count()) === controls
+        ) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              Math.min(100, Math.max(1, deadline - performance.now())),
+            ),
+          );
+          guard();
+          await checkPage(page);
+        }
+      } finally {
+        if (expansionDiagnostic) {
+          await afterExpansion(
+            root,
+            match.username,
+            answer.present && answer.valid ? answer.total : null,
+            listsBefore,
+            click,
+          );
+          expansionDiagnostic(expansion);
+        }
+      }
     }
-  }
-  await flush();
-  guard();
-  await checkPage(page);
-  const checked = checkedReplyRows(
-    bodies,
-    match,
-    entries,
-    capped,
-    moreCount,
-    scriptValues(),
-  );
-  answerDiagnostic?.(
-    replyAnswerDiagnostic(
+    site = 'answer-check';
+    await flush();
+    guard();
+    await checkPage(page);
+    const checked = checkedReplyRows(
       bodies,
       match,
-      entries.length,
-      answerPaths(),
-      htmlDiagnostic(),
+      entries,
+      capped,
+      moreCount,
       scriptValues(),
-    ),
-  );
-  if (checked.reason) throw new ReplyReadFailure(checked.reason);
-  verified(checked.answerChecked);
-  return InstagramRepliesSchema.parse(checked.observation);
+    );
+    answerDiagnostic?.(
+      replyAnswerDiagnostic(
+        bodies,
+        match,
+        entries.length,
+        answerPaths(),
+        htmlDiagnostic(),
+        scriptValues(),
+      ),
+    );
+    if (checked.reason) throw new ReplyReadFailure(checked.reason);
+    verified(checked.answerChecked);
+    return InstagramRepliesSchema.parse(checked.observation);
+  } catch (error) {
+    expansion.stopAt = site;
+    throw error;
+  } finally {
+    expansionDiagnostic?.(expansion);
+  }
 }

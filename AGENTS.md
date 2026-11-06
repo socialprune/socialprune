@@ -151,6 +151,8 @@ CI (`.github/workflows/ci.yml`) runs eight job definitions on every push to `mai
 
 For `browser-suites.yml`, the serial description above applies to the other suites. Instagram context now runs in four parallel case shards on separate Windows runners, each retaining JUnit, log, inventory and summary. After a failed-job rerun, the aggregate selects each shard's latest numeric attempt in that run and records its artifact and attempt; duplicate shard-attempt pairs fail. It rejects failed, missing or empty shards and checks every collected case runs exactly once; fake-server ports can repeat across the separate runners.
 
+Linux CI browser jobs share a package-lock guard that reports measured wait seconds and holder classes, waits at most two minutes per lock check, and runs dependency installation as root in an owned process group. A timed-out install's own descendants are stopped before lock read-back, configuration recovery and one retry; the existing 30-minute dependency-step bound remains. The checks job exercises the guard with a disposable POSIX lock and a generated process tree, without changing system packages.
+
 Run one package with `pnpm exec vitest run --project <name>`, where the name is the folder name (`core`, `adapter-x`, `adapter-instagram`, `web`, `cli`, `desktop`, `fixture-gen`, `data-guard`, `copy-check`, `licenses-check`, `lint-rules`).
 
 Spikes under `spikes/` are standalone pnpm projects with their own lockfile, outside the workspace and outside CI. Each one documents how to rerun it in `docs/spikes/`.

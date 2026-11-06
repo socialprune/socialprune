@@ -33,6 +33,8 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - name: Verify dependency lock and process cleanup guards
+        run: python3 -B .github/scripts/playwright-deps-test.py
       - run: pnpm test
       - run: pnpm fixtures:check
       - run: pnpm schemas:check
@@ -86,25 +88,11 @@ jobs:
       - name: Install browser system dependencies
         timeout-minutes: 30
         shell: bash
-        # Playwright does not support caching OS packages. Retry installation,
-        # not tests; 16m encloses the measured 14m09s success, with 10m recovery.
-        # Retain apt's mirror, TLS and signature checks.
+        # Probe POSIX package locks and run the install timeout as root so it
+        # can terminate its own apt descendants before recovery and one retry.
         run: |
-          attempt=0
-          for duration in 16m 10m; do
-            attempt=$((attempt + 1))
-            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
-            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
-              exit 0
-            else
-              status=$?
-            fi
-            echo "Dependency installation failed with exit $status"
-            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
-            # A terminated apt install may leave configuration pending.
-            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
-            sleep 10
-          done
+          cli=$(node --input-type=module -e "import {createRequire} from 'node:module'; import path from 'node:path'; const r=createRequire(path.resolve('apps/web/package.json')); console.log(path.join(path.dirname(r.resolve('@playwright/test/package.json')), 'cli.js'))")
+          sudo python3 -B .github/scripts/playwright-deps.py --node "$(command -v node)" --cli "$cli"
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
@@ -135,20 +123,8 @@ jobs:
         timeout-minutes: 30
         shell: bash
         run: |
-          attempt=0
-          for duration in 16m 10m; do
-            attempt=$((attempt + 1))
-            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
-            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
-              exit 0
-            else
-              status=$?
-            fi
-            echo "Dependency installation failed with exit $status"
-            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
-            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
-            sleep 10
-          done
+          cli=$(node --input-type=module -e "import {createRequire} from 'node:module'; import path from 'node:path'; const r=createRequire(path.resolve('apps/web/package.json')); console.log(path.join(path.dirname(r.resolve('@playwright/test/package.json')), 'cli.js'))")
+          sudo python3 -B .github/scripts/playwright-deps.py --node "$(command -v node)" --cli "$cli"
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
@@ -176,20 +152,8 @@ jobs:
         timeout-minutes: 30
         shell: bash
         run: |
-          attempt=0
-          for duration in 16m 10m; do
-            attempt=$((attempt + 1))
-            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
-            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter @socialprune/web exec playwright install-deps chromium firefox webkit; then
-              exit 0
-            else
-              status=$?
-            fi
-            echo "Dependency installation failed with exit $status"
-            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
-            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
-            sleep 10
-          done
+          cli=$(node --input-type=module -e "import {createRequire} from 'node:module'; import path from 'node:path'; const r=createRequire(path.resolve('apps/web/package.json')); console.log(path.join(path.dirname(r.resolve('@playwright/test/package.json')), 'cli.js'))")
+          sudo python3 -B .github/scripts/playwright-deps.py --node "$(command -v node)" --cli "$cli"
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter @socialprune/web exec playwright install chromium firefox webkit
@@ -219,20 +183,8 @@ jobs:
         timeout-minutes: 30
         shell: bash
         run: |
-          attempt=0
-          for duration in 16m 10m; do
-            attempt=$((attempt + 1))
-            echo "Playwright system dependency attempt $attempt of 2 (limit $duration)"
-            if timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter socialprune exec playwright install-deps chromium firefox webkit; then
-              exit 0
-            else
-              status=$?
-            fi
-            echo "Dependency installation failed with exit $status"
-            if [ "$attempt" -eq 2 ]; then exit "$status"; fi
-            timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a
-            sleep 10
-          done
+          cli=$(node --input-type=module -e "import {createRequire} from 'node:module'; import path from 'node:path'; const r=createRequire(path.resolve('apps/cli/package.json')); console.log(path.join(path.dirname(r.resolve('@playwright/test/package.json')), 'cli.js'))")
+          sudo python3 -B .github/scripts/playwright-deps.py --node "$(command -v node)" --cli "$cli"
       - name: Install pinned browsers
         timeout-minutes: 5
         run: pnpm --filter socialprune exec playwright install chromium firefox webkit

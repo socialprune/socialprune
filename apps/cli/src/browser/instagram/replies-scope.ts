@@ -3,13 +3,47 @@ import type { ReplyScopeDiagnostic } from './report.ts';
 
 export const REPLY_SCOPE_DEPTH = 12;
 export const REPLY_ROWS = ':scope > ul > li, :scope > div > ul > li';
+export const EXPANDED_REPLY_LISTS = ':scope > div > div > ul';
+/** Additional expanded wrapper only, never a page-wide or text-only row. */
+export async function matchedReplyRows(
+  root: Locator,
+  address: { kind: 'p' | 'reel'; code: string },
+) {
+  let rows = root.locator(REPLY_ROWS);
+  const candidates = root.locator(':scope > div > div > ul > li');
+  for (const row of await candidates.all()) {
+    const links = row.locator('a[href*="/c/"]');
+    if ((await links.count()) !== 1) continue;
+    const href = await links.getAttribute('href', { timeout: 150 });
+    if (
+      !href ||
+      !new RegExp(`^/${address.kind}/${address.code}/c/[0-9]{1,40}/$`).test(
+        href,
+      )
+    )
+      continue;
+    const times = row.locator('time[datetime]');
+    if (
+      (await times.count()) !== 1 ||
+      (await links.locator('time[datetime]').count()) !== 1
+    )
+      continue;
+    const time = await times.getAttribute('datetime', { timeout: 150 });
+    if (!time || !Number.isFinite(Date.parse(time))) continue;
+    rows = rows.or(row);
+  }
+  return rows;
+}
 const BUTTONS = 'button,[role="button"]';
 export const replyControls = (root: Locator) =>
   root.locator(BUTTONS).filter({
     hasText: /^(?:View|Hide|See|Load).*repl/iu,
   });
-export async function ownReplyControls(root: Locator) {
-  const nested = replyControls(root.locator(REPLY_ROWS));
+export async function ownReplyControls(
+  root: Locator,
+  rows = root.locator(REPLY_ROWS),
+) {
+  const nested = replyControls(rows);
   let own = root.locator('xpath=./*[false()]');
   for (const control of await replyControls(root).all())
     if ((await control.and(nested).count()) === 0) own = own.or(control);

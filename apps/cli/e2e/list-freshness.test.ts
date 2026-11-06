@@ -25,7 +25,16 @@ import { commentReplies } from '../src/browser/instagram/replies.ts';
 import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 
-test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
+test.each([
+  'shown',
+  'missing',
+  'wrapped',
+  'wrapped-foreign',
+  'wrapped-no-time',
+  'wrapped-mismatch',
+  'mismatch',
+  'blocked',
+] as const)(
   'POSTCLICK reply expansion %s records the actual click and scoped after-shape without relaxing answer agreement',
   async (mode) => {
     const fixture = await instagramFixture(1),
@@ -47,17 +56,30 @@ test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
             html,
           );
         if (!group) throw new Error('Generated expansion group missing');
-        const rows =
-          mode === 'mismatch'
+        let rows =
+          mode === 'mismatch' || mode === 'wrapped-mismatch'
             ? group[1]!.replace(
                 'Generated reply 0 with local text',
                 'Generated different reply',
               )
             : group[1]!;
+        if (mode.startsWith('wrapped')) {
+          rows = rows.replace(
+            '<span>1w</span>',
+            `<a href="/p/${IG_FIXTURE.code}/c/900001/"><time datetime="${item.createdAt}">1w</time></a>`,
+          );
+          if (mode === 'wrapped-foreign')
+            rows = rows.replaceAll(
+              `/p/${IG_FIXTURE.code}/c/`,
+              '/p/GeneratedForeign/c/',
+            );
+          if (mode === 'wrapped-no-time')
+            rows = rows.replace(/<time datetime="[^"]+">1w<\/time>/gu, '1w');
+        }
         const expanded =
           mode === 'missing'
             ? ''
-            : mode === 'wrapped'
+            : mode.startsWith('wrapped')
               ? `<div><div><ul>${rows}</ul></div></div>`
               : `<ul>${rows}</ul>`;
         const script = `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
@@ -98,15 +120,16 @@ test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
           expansion = value;
         },
       );
-      if (mode === 'shown') expect((await reading).entries).toHaveLength(5);
+      if (mode === 'shown' || mode === 'wrapped')
+        expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
         await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
       else
         await expect(reading).rejects.toMatchObject({
           reason:
-            mode === 'wrapped'
+            mode === 'wrapped-foreign' || mode === 'wrapped-no-time'
               ? 'reply-scope-unverified'
-              : mode === 'mismatch'
+              : mode === 'mismatch' || mode === 'wrapped-mismatch'
                 ? 'reply-answer-mismatch'
                 : 'reply-controls-changed',
         });
@@ -117,7 +140,14 @@ test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
       expect(parsed.clicks[0]).toMatchObject({
         clicked: mode !== 'blocked',
         rowsBefore: 0,
-        rowsAfter: mode === 'shown' || mode === 'mismatch' ? 5 : 0,
+        rowsAfter: [
+          'shown',
+          'mismatch',
+          'wrapped',
+          'wrapped-mismatch',
+        ].includes(mode)
+          ? 5
+          : 0,
         observationFailed: false,
         controlsAfter: { count: mode === 'blocked' ? 1 : 0 },
         candidatesAfter: {
@@ -128,11 +158,11 @@ test.each(['shown', 'missing', 'wrapped', 'mismatch', 'blocked'] as const)(
         nestedListAppeared: !['missing', 'blocked'].includes(mode),
       });
       expect(parsed.stopAt).toBe(
-        mode === 'shown'
+        mode === 'shown' || mode === 'wrapped'
           ? null
-          : mode === 'wrapped'
+          : mode === 'wrapped-foreign' || mode === 'wrapped-no-time'
             ? 'reply-group'
-            : mode === 'mismatch'
+            : mode === 'mismatch' || mode === 'wrapped-mismatch'
               ? 'answer-check'
               : mode === 'blocked'
                 ? 'click'

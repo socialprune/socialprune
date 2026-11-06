@@ -37,7 +37,8 @@ export async function afterExpansion(
     click.controlsAfter = after.controls;
     click.candidatesAfter = after.candidates;
     click.nestedListAppeared =
-      after.candidates.ul + after.candidates.roleLists > listsBefore;
+      (await root.locator('ul:visible,[role="list"]:visible').count()) >
+      listsBefore;
     click.observationFailed = false;
   } catch {
     // A failed diagnostic must not replace the actual click/guard failure.

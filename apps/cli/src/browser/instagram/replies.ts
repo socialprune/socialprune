@@ -308,8 +308,8 @@ export async function commentReplies(
         site = 'row-block';
         if ((await blocks.count()) !== 1)
           throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
-        const value = await textBlock(blocks, 150);
         site = 'row-text';
+        const value = await textBlock(blocks, 150);
         if (!value)
           throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
         const links = blocks.locator('a[href*="/c/"]');
@@ -424,7 +424,7 @@ export async function commentReplies(
         observationFailed: true,
       };
       const listsBefore = expansionDiagnostic
-        ? await root.locator('ul,[role="list"]').count()
+        ? await root.locator('ul:visible,[role="list"]:visible').count()
         : 0;
       if (expansionDiagnostic) expansion.clicks.push(click);
       site = 'click';

@@ -18,6 +18,8 @@ import {
   ReplyAnswerDiagnosticSchema,
   NewestProbeSchema,
   SortControlStructureSchema,
+  ReplyExpansionDiagnosticSchema,
+  WidenedProbeSchema,
 } from './report.ts';
 import { emptyReplyScope } from './replies.ts';
 import { rowShape } from './row-shape.ts';
@@ -28,6 +30,79 @@ import { replyAnswerDiagnostic } from './replies-answer.ts';
 import { emptySortDiagnostic } from './newest-sort.ts';
 import { emptyProbeView } from './list-probe.ts';
 import { emptySortStructure } from './sort-structure.ts';
+import { widenedWindow } from './widened-probe.ts';
+
+test('POSTCLICK diagnostics reject contents, arbitrary stop sites and extra windows', () => {
+  const expansion = {
+    stopAt: 'postclick-no-growth',
+    clicks: [
+      {
+        clicked: true,
+        rowsBefore: 0,
+        rowsAfter: 0,
+        controlsAfter: { count: 0, capped: false, controls: [] },
+        candidatesAfter: {
+          li: 0,
+          ul: 0,
+          roleLists: 0,
+          divButtons: 1,
+          commentPermalinks: 1,
+          datedTimes: 1,
+          ownHandleLinks: 1,
+        },
+        nestedListAppeared: false,
+        observationFailed: false,
+      },
+    ],
+  };
+  expect(ReplyExpansionDiagnosticSchema.safeParse(expansion).success).toBe(
+    true,
+  );
+  for (const mutation of [
+    { text: 'Generated private content' },
+    { stopAt: 'private label' },
+    { clicks: Array(11).fill(expansion.clicks[0]) },
+  ])
+    expect(
+      ReplyExpansionDiagnosticSchema.safeParse({ ...expansion, ...mutation })
+        .success,
+    ).toBe(false);
+  const probe = {
+    radiusDays: 7,
+    filter: {
+      readbackObserved: true,
+      startMatches: true,
+      endMatches: true,
+      applied: true,
+    },
+    initial: emptyProbeView(),
+    scrolls: [],
+    scrollCount: 0,
+    observationFailed: false,
+    timeoutWait: null,
+    failedStep: 'none',
+  };
+  expect(WidenedProbeSchema.safeParse(probe).success).toBe(true);
+  for (const mutation of [
+    { radiusDays: 8 },
+    { date: '2025-01-01' },
+    { scrollCount: 4 },
+    { failedStep: 'private label' },
+  ])
+    expect(
+      WidenedProbeSchema.safeParse({ ...probe, ...mutation }).success,
+    ).toBe(false);
+});
+test('POSTCLICK wider windows use calendar days across month, year and leap-day boundaries', () => {
+  expect(widenedWindow('2024-03-01T23:30:00Z', 7)).toEqual([
+    '2024-02-23',
+    '2024-03-08',
+  ]);
+  expect(widenedWindow('2025-01-01T00:30:00Z', 31)).toEqual([
+    '2024-12-01',
+    '2025-02-01',
+  ]);
+});
 
 test('newestreply report contracts reject contents and unknown answer/sort classes', () => {
   const answer = replyAnswerDiagnostic(

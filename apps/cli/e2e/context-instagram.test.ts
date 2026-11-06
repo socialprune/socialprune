@@ -2645,6 +2645,76 @@ test.each(['extra-line', 'german-age', 'unknown-age'] as const)(
   },
 );
 
+test.each([
+  'wider-7',
+  'wider-31',
+  'wider-absent',
+  'wider-filter-failure',
+  'wider-account-change',
+] as const)(
+  'POSTCLICK wider diagnostic %s uses read-back dropdown windows without storing or changing main stops',
+  async (variant) => {
+    const h = await harness('success', 1, 5000);
+    h.fake.listProbe(variant);
+    h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+    try {
+      expect(await h.start(true)).toMatchObject(
+        variant === 'wider-account-change'
+          ? { code: 'ACCOUNT_MISMATCH', token: 'account-changed' }
+          : { code: 'CANCELLED', token: 'stopped' },
+      );
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(report.steps[0]);
+      expect(step.widenedProbes).toHaveLength(
+        variant === 'wider-account-change' ? 1 : 2,
+      );
+      for (const probe of step.widenedProbes!) {
+        const failed = variant === 'wider-filter-failure';
+        expect(probe, JSON.stringify(probe)).toMatchObject({
+          filter: {
+            readbackObserved: !failed,
+            startMatches: !failed,
+            endMatches: !failed,
+            applied: !failed,
+          },
+          observationFailed: failed || variant === 'wider-account-change',
+        });
+        if (!failed && variant !== 'wider-account-change') {
+          expect(probe.initial).toMatchObject({
+            observed: true,
+            scrollContainerObserved: true,
+          });
+          expect(
+            probe.initial.targetMatched ||
+              probe.scrolls.some((scroll) => scroll.targetMatched),
+          ).toBe(
+            variant === 'wider-7' ||
+              (variant === 'wider-31' && probe.radiusDays === 31),
+          );
+          expect(probe.scrollCount).toBe(probe.scrolls.length);
+          expect(probe.scrollCount).toBeLessThanOrEqual(3);
+        }
+      }
+      expect(
+        await h.store.read((tx) => records(tx.instagramContext)),
+      ).toHaveLength(0);
+      expect(
+        h.fake.requests.some((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toBe(false);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+);
+
 test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
   'listprobe %s distinguishes filtered lazy rows, alternate filter date and bounded absence',
   async (variant) => {
@@ -7110,7 +7180,20 @@ test.each([
         mode === 'conflict' ? 'conflict' : accepted ? 'script' : 'absent',
       );
       expect(diagnostic.script?.objectsInspected).toBeGreaterThan(0);
-      if (mode === 'matching')
+      if (mode === 'matching') {
+        expect(
+          ContextStepReportSchema.parse(report.steps[0]).replyExpansion,
+        ).toMatchObject({
+          stopAt: null,
+          clicks: [
+            {
+              clicked: true,
+              rowsBefore: 3,
+              rowsAfter: 3,
+              controlsAfter: { count: 0 },
+            },
+          ],
+        });
         expect(
           ContextStepReportSchema.parse(report.steps[0]).replyControls,
         ).toMatchObject({
@@ -7123,6 +7206,7 @@ test.each([
             },
           ],
         });
+      }
       if (['id', 'author', 'time', 'text'].includes(mode))
         expect(
           diagnostic.script?.failedChecks[

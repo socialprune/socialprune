@@ -629,8 +629,9 @@ export const ReplyExpansionDiagnosticSchema = z.strictObject({
         observationFailed: z.boolean(),
         poll: z
           .strictObject({
-            elapsedMs: z.number().int().min(0).max(5000),
-            firstGrowthMs: z.number().int().min(0).max(5000).nullable(),
+            maxMs: z.literal(5000),
+            elapsedMs: count,
+            firstGrowthMs: count.nullable(),
             timeout: z.boolean(),
             observationFailed: z.boolean(),
             samples: z.number().int().min(0).max(51),

@@ -157,6 +157,7 @@ export interface RowReadCounts {
   windowDiagnostic?: import('./report.ts').ListWindow;
   filteredProbe?: import('./report.ts').FilteredProbe;
   newestProbe?: import('./report.ts').NewestProbe;
+  widenedProbes?: import('./report.ts').WidenedProbe[];
 }
 export function accountMatches(
   expected: string,

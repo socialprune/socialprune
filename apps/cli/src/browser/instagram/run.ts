@@ -940,6 +940,7 @@ export async function runContextWithDependencies(
                 rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
+                widenedProbes: rowCounts.widenedProbes,
                 oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
@@ -974,6 +975,7 @@ export async function runContextWithDependencies(
                 rowShape: rowCounts.rowShape,
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
+                widenedProbes: rowCounts.widenedProbes,
                 oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
@@ -1032,6 +1034,7 @@ export async function runContextWithDependencies(
           rowShape: rowCounts.rowShape,
           filteredProbe: rowCounts.filteredProbe,
           newestProbe: rowCounts.newestProbe,
+          widenedProbes: rowCounts.widenedProbes,
           oldestSortStructure: rowCounts.oldestSortStructure,
           listRowsAfterApply: rowCounts.initialDiagnostic,
           listPageUnfiltered: rowCounts.unfilteredDiagnostic,
@@ -1303,6 +1306,9 @@ export async function runContextWithDependencies(
                   (value) => {
                     stepReport.replyControls = value;
                   },
+                  (value) => {
+                    stepReport.replyExpansion = value;
+                  },
                 ),
               true,
               false,
@@ -1431,6 +1437,9 @@ export async function runContextWithDependencies(
                 () => answers!.scriptValues(),
                 (value) => {
                   stepReport.replyControls = value;
+                },
+                (value) => {
+                  stepReport.replyExpansion = value;
                 },
               ),
             false,

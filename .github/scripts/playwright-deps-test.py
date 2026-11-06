@@ -31,7 +31,7 @@ class Policy(unittest.TestCase):
         def wait(_):
             deps.wait_for_locks(3, lambda: [{'class': 'dpkg', 'ageSeconds': 1}], lambda: now[0], lambda n: now.__setitem__(0, now[0] + n))
         with self.assertRaisesRegex(RuntimeError, '^APT_LOCK_TIMEOUT$'):
-            deps.install(['generated'], lambda *args: calls.append(args), wait, lambda: now[0])
+            deps.install(['generated'], lambda *args: calls.append(args), wait, lambda: now[0], lambda: self.fail('mirror change before lock release'))
         self.assertEqual(calls, [])
 
     def test_timeout_is_cleaned_before_recovery_and_only_one_retry(self):
@@ -40,19 +40,28 @@ class Policy(unittest.TestCase):
         def run(command, seconds):
             events.append((command, seconds))
             return next(returns)
-        self.assertEqual(deps.install(['generated'], run, lambda _: events.append('wait'), lambda: 0), 0)
-        self.assertEqual(events, ['wait', (['generated'], 960), 'wait', (['dpkg', '--configure', '-a'], 60), 'wait', (['generated'], 600)])
+        self.assertEqual(deps.install(['generated'], run, lambda _: events.append('wait'), lambda: 0, lambda: events.append('mirror')), 0)
+        self.assertEqual(events, ['wait', (['generated'], 960), 'wait', (['dpkg', '--configure', '-a'], 60), 'mirror', 'wait', (['generated'], 600)])
         with self.assertRaisesRegex(RuntimeError, '^APT_INSTALL_FAILED$'):
-            deps.install(['generated'], lambda command, _: 0 if command[0] == 'dpkg' else 1, lambda _: None, lambda: 0)
+            deps.install(['generated'], lambda command, _: 0 if command[0] == 'dpkg' else 1, lambda _: None, lambda: 0, lambda: None)
 
     def test_recovery_failure_and_total_deadline_fail_closed(self):
         with self.assertRaisesRegex(RuntimeError, '^APT_RECOVERY_FAILED$'):
-            deps.install(['generated'], lambda *_: 1, lambda _: None, lambda: 0)
+            deps.install(['generated'], lambda *_: 1, lambda _: None, lambda: 0, lambda: self.fail('mirror before recovery'))
         now = [0]
         def wait(_):
             now[0] = 1740
         with self.assertRaisesRegex(RuntimeError, '^APT_SETUP_TIMEOUT$'):
-            deps.install(['generated'], lambda *_: self.fail('command after deadline'), wait, lambda: now[0])
+            deps.install(['generated'], lambda *_: self.fail('command after deadline'), wait, lambda: now[0], lambda: None)
+
+    def test_retry_mirror_changes_only_explicit_disposable_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder, 'mirrors.txt')
+            deps.canonical_mirror(path)
+            self.assertFalse(path.exists())
+            path.write_text('http://azure.archive.ubuntu.com/ubuntu/\n')
+            deps.canonical_mirror(path)
+            self.assertEqual(path.read_text(), 'https://archive.ubuntu.com/ubuntu/\n')
 
     def test_owned_group_cleanup_escalates_term_to_kill(self):
         import signal
@@ -88,6 +97,7 @@ class Policy(unittest.TestCase):
                 if holder.poll() is None:
                     holder.kill()
                     holder.wait()
+                holder.stdout.close()
 
 
 if __name__ == '__main__':

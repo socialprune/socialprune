@@ -112,7 +112,17 @@ def terminate_owned_group(group):
             time.sleep(1)
 
 
-def install(command, run=run_bounded, wait=wait_for_locks, clock=time.monotonic):
+def canonical_mirror(path=Path('/etc/apt/apt-mirrors.txt')):
+    # On the disposable runner only, change the mirror-list file after a failed
+    # install. apt still verifies the distribution's signed package indexes.
+    if not path.exists():
+        emit('APT_MIRROR_RETRY', state='not-applicable')
+        return
+    path.write_text('https://archive.ubuntu.com/ubuntu/\n')
+    emit('APT_MIRROR_RETRY', state='canonical-https')
+
+
+def install(command, run=run_bounded, wait=wait_for_locks, clock=time.monotonic, fallback=canonical_mirror):
     # Stay inside the existing 30-minute step, including lock waits and cleanup.
     deadline = clock() + 1740
     for attempt, allowance in enumerate((960, 600), 1):
@@ -134,6 +144,7 @@ def install(command, run=run_bounded, wait=wait_for_locks, clock=time.monotonic)
             raise RuntimeError('APT_SETUP_TIMEOUT')
         if run(['dpkg', '--configure', '-a'], min(60, remaining)) != 0:
             raise RuntimeError('APT_RECOVERY_FAILED')
+        fallback()
     raise RuntimeError('APT_INSTALL_FAILED')
 
 

@@ -58,6 +58,7 @@ import {
 import type { NewestProbe } from './report.ts';
 import { applyNewestSort, emptySortDiagnostic } from './newest-sort.ts';
 import { sortControlStructure } from './sort-structure.ts';
+import { widenedFilterProbes } from './widened-probe.ts';
 
 export interface ContextDependencies {
   origin: string;
@@ -190,7 +191,7 @@ export async function navigateList(
   deps: ContextDependencies,
   guard: () => void,
   rowCounts: RowReadCounts,
-  probePhase?: 'newest-navigation' | 'newest-reload',
+  probePhase?: 'newest-navigation' | 'newest-reload' | 'wider-navigation',
 ) {
   guard();
   const navigationStart = performance.now();
@@ -666,6 +667,7 @@ export async function loadList(
       rowCounts.newestProbe = newest;
       const probeStarted = performance.now();
       let reader: Awaited<ReturnType<typeof listProbeReader>> | undefined;
+      let widerAllowed = false;
       try {
         reader = await probeWait(
           'probe-attach',
@@ -742,11 +744,13 @@ export async function loadList(
         newest.observationFailed =
           !newest.view.observed || !newest.sortReadback;
         sort.failedStep = newest.sortReadback ? 'none' : 'readback';
+        widerAllowed = true;
       } catch (error) {
         if (!(error instanceof ProbeTimeout)) throw error;
         await checked();
         newest.observationFailed = true;
         newest.timeoutWait = error.wait;
+        widerAllowed = true;
       } finally {
         newest.sort!.elapsedMs = Math.max(
           0,
@@ -754,11 +758,35 @@ export async function loadList(
         );
         if (reader) {
           try {
-            await probeWait('probe-close', () => reader!.close(), checked);
-          } catch (error) {
-            if (!(error instanceof ProbeTimeout)) throw error;
-            newest.observationFailed = true;
-            newest.timeoutWait ??= error.wait;
+            if (widerAllowed) {
+              rowCounts.widenedProbes = [];
+              await widenedFilterProbes(
+                page,
+                item.createdAt,
+                guard,
+                checked,
+                () =>
+                  navigateList(
+                    page,
+                    expected,
+                    deps,
+                    guard,
+                    rowCounts,
+                    'wider-navigation',
+                  ),
+                reader,
+                deps.pace.scrollMs,
+                rowCounts.widenedProbes,
+              );
+            }
+          } finally {
+            try {
+              await probeWait('probe-close', () => reader!.close(), checked);
+            } catch (error) {
+              if (!(error instanceof ProbeTimeout)) throw error;
+              newest.observationFailed = true;
+              newest.timeoutWait ??= error.wait;
+            }
           }
         }
       }

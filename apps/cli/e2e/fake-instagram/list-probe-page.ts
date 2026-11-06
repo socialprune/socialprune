@@ -12,7 +12,12 @@ export type ListProbeCase =
   | 'newest-default-ascending'
   | 'newest-default-tied'
   | 'newest-default-unknown'
-  | 'newest-default-short';
+  | 'newest-default-short'
+  | 'wider-7'
+  | 'wider-31'
+  | 'wider-absent'
+  | 'wider-filter-failure'
+  | 'wider-account-change';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
@@ -92,6 +97,22 @@ export function listProbePage(
         'node.onclick=()=>location.href=',
         `const dates=${JSON.stringify(probe === 'newest-default-ascending' ? ['2025-01-01', '2025-01-02', '2025-01-03'] : probe === 'newest-default-tied' ? ['2025-01-03', '2025-01-03', '2025-01-03'] : ['2025-01-03', '2025-01-02', '2025-01-01'])};const time=document.createElement('time');time.setAttribute('datetime',${JSON.stringify(probe)}==='newest-default-unknown'?'unreadable':dates[index]+'T12:00:00Z');node.append(time);node.onclick=()=>location.href=`,
       );
+  }
+  if (probe.startsWith('wider-')) {
+    const offset = probe === 'wider-7' ? 5 : 20;
+    source = source.replace(
+      'const mode=accountVariant(),mixed=',
+      `if(start&&end){const shifted=new Date(Date.parse(target.at)+${offset}*86400000).toISOString().slice(0,10);chosen=fillers.slice(0,3);if(${JSON.stringify(probe)}!=='wider-absent'&&start<=shifted&&end>=shifted)chosen.push(target);${probe === 'wider-account-change' ? "if((Date.parse(end)-Date.parse(start))/86400000>4){document.querySelector('nav a').href='/generated_other_profile/';}" : ''}}const mode=accountVariant(),mixed=`,
+    );
+    if (probe === 'wider-filter-failure')
+      source = source.replace(
+        "const apply=document.createElement('div');",
+        "if(sessionStorage.getItem('probe-filtered')==='true')controls.end.year.remove();const apply=document.createElement('div');",
+      );
+    source = source.replace(
+      'applied=true;sessionStorage',
+      "applied=true;if(dirty.start&&dirty.end)sessionStorage.setItem('probe-filtered','true');sessionStorage",
+    );
   }
   return source;
 }

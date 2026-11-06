@@ -414,6 +414,18 @@ const probeFailure = {
 };
 export const FilteredProbeSchema = z.strictObject({
   ...probeFailure,
+  zeroRows: z
+    .strictObject({
+      emptyStatePresent: z.boolean(),
+      loadingPresent: z.boolean(),
+      listContainerPresent: z.boolean(),
+      waitedMs: z.number().int().min(0).max(5000),
+      secondObserved: z.boolean(),
+      secondOwnRows: count,
+      changed: z.boolean(),
+      observationFailed: z.boolean(),
+    })
+    .optional(),
   initial: ListProbeViewSchema,
   scrolls: z
     .array(
@@ -526,6 +538,7 @@ export const NewestProbeSchema = z.strictObject({
 export type FilteredProbe = z.infer<typeof FilteredProbeSchema>;
 export const WidenedProbeSchema = FilteredProbeSchema.extend({
   radiusDays: z.union([z.literal(7), z.literal(31)]),
+  subsetGap: z.boolean().optional(),
   filter: z.strictObject({
     readbackObserved: z.boolean(),
     startMatches: z.boolean(),
@@ -614,6 +627,33 @@ export const ReplyExpansionDiagnosticSchema = z.strictObject({
           .nullable(),
         nestedListAppeared: z.boolean().nullable(),
         observationFailed: z.boolean(),
+        poll: z
+          .strictObject({
+            elapsedMs: z.number().int().min(0).max(5000),
+            firstGrowthMs: z.number().int().min(0).max(5000).nullable(),
+            timeout: z.boolean(),
+            observationFailed: z.boolean(),
+            samples: z.number().int().min(0).max(51),
+            after: z
+              .array(
+                z.strictObject({
+                  location: z.enum([
+                    'scope',
+                    'parent',
+                    'next-sibling',
+                    'elsewhere-in-main',
+                  ]),
+                  li: count,
+                  ul: count,
+                  otherCommentPermalinks: count,
+                  datedTimes: count,
+                  progressbars: count,
+                  loadingSvgs: count,
+                }),
+              )
+              .max(4),
+          })
+          .optional(),
       }),
     )
     .max(10),
@@ -896,6 +936,7 @@ export const ContextStepReportSchema = z
     afterDialogSameAsAfterApply: z.boolean().optional(),
     listWindow: ListWindowSchema.optional(),
     filteredProbe: FilteredProbeSchema.optional(),
+    diagnosticControl: z.boolean().optional(),
     newestProbe: NewestProbeSchema.optional(),
     widenedProbes: z.array(WidenedProbeSchema).max(2).optional(),
     ready: z.strictObject({ postMs: count }).optional(),

@@ -32,6 +32,12 @@ test.each([
   'wrapped-foreign',
   'wrapped-no-time',
   'wrapped-mismatch',
+  'sibling-ul',
+  'sibling-rows',
+  'sibling-delayed',
+  'sibling-foreign',
+  'sibling-no-time',
+  'sibling-mismatch',
   'mismatch',
   'blocked',
 ] as const)(
@@ -57,13 +63,15 @@ test.each([
           );
         if (!group) throw new Error('Generated expansion group missing');
         let rows =
-          mode === 'mismatch' || mode === 'wrapped-mismatch'
+          mode === 'mismatch' ||
+          mode === 'wrapped-mismatch' ||
+          mode === 'sibling-mismatch'
             ? group[1]!.replace(
                 'Generated reply 0 with local text',
                 'Generated different reply',
               )
             : group[1]!;
-        if (mode.startsWith('wrapped')) {
+        if (mode.startsWith('wrapped') || mode.startsWith('sibling')) {
           rows = rows.replace(
             '<span>1w</span>',
             `<a href="/p/${IG_FIXTURE.code}/c/900001/"><time datetime="${item.createdAt}">1w</time></a>`,
@@ -73,7 +81,12 @@ test.each([
               `/p/${IG_FIXTURE.code}/c/`,
               '/p/GeneratedForeign/c/',
             );
-          if (mode === 'wrapped-no-time')
+          if (mode === 'sibling-foreign')
+            rows = rows.replaceAll(
+              `/p/${IG_FIXTURE.code}/c/`,
+              '/p/GeneratedForeign/c/',
+            );
+          if (mode === 'wrapped-no-time' || mode === 'sibling-no-time')
             rows = rows.replace(/<time datetime="[^"]+">1w<\/time>/gu, '1w');
         }
         const expanded =
@@ -82,7 +95,9 @@ test.each([
             : mode.startsWith('wrapped')
               ? `<div><div><ul>${rows}</ul></div></div>`
               : `<ul>${rows}</ul>`;
-        const script = `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
+        const script = mode.startsWith('sibling')
+          ? `const scope=this.parentElement;this.remove();${mode === 'sibling-delayed' ? 'setTimeout(()=>{' : ''}scope.insertAdjacentHTML('afterend',${JSON.stringify(mode === 'sibling-rows' ? rows : `<ul>${rows}</ul>`)});${mode === 'sibling-delayed' ? '},300)' : ''}`
+          : `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
         html = html.replace(
           group[0],
           `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>${mode === 'blocked' ? '<div style="position:fixed;inset:0;z-index:9999;background:white"></div>' : ''}`,
@@ -120,7 +135,11 @@ test.each([
           expansion = value;
         },
       );
-      if (mode === 'shown' || mode === 'wrapped')
+      if (
+        mode === 'shown' ||
+        mode === 'wrapped' ||
+        ['sibling-ul', 'sibling-rows', 'sibling-delayed'].includes(mode)
+      )
         expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
         await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
@@ -129,7 +148,9 @@ test.each([
           reason:
             mode === 'wrapped-foreign' || mode === 'wrapped-no-time'
               ? 'reply-scope-unverified'
-              : mode === 'mismatch' || mode === 'wrapped-mismatch'
+              : mode === 'mismatch' ||
+                  mode === 'wrapped-mismatch' ||
+                  mode === 'sibling-mismatch'
                 ? 'reply-answer-mismatch'
                 : 'reply-controls-changed',
         });
@@ -137,6 +158,25 @@ test.each([
         replyExpansion: expansion,
       }).replyExpansion!;
       expect(parsed.clicks).toHaveLength(1);
+      if (mode.startsWith('sibling')) {
+        expect(parsed.clicks[0]?.poll).toMatchObject({
+          timeout: mode === 'sibling-foreign',
+          observationFailed: false,
+        });
+        expect(
+          parsed.clicks[0]?.poll?.after.find(
+            (value) => value.location === 'next-sibling',
+          )?.li,
+        ).toBe(5);
+        expect(parsed.stopAt).toBe(
+          mode === 'sibling-foreign' || mode === 'sibling-no-time'
+            ? 'postclick-no-growth'
+            : mode === 'sibling-mismatch'
+              ? 'answer-check'
+              : null,
+        );
+        return;
+      }
       expect(parsed.clicks[0]).toMatchObject({
         clicked: mode !== 'blocked',
         rowsBefore: 0,

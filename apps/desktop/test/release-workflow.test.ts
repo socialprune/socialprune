@@ -162,6 +162,8 @@ test('Linux browser jobs bound the measured apt bottleneck separately from brows
   for (const [name, filter, minutes] of [
     ['e2e', '@socialprune/web', 60],
     ['review-e2e', 'socialprune', 40],
+    ['e2e-layout', '@socialprune/web', 60],
+    ['e2e-builds', '@socialprune/web', 50],
   ] as const) {
     const job = workflow.jobs[name]!;
     expect(job['timeout-minutes']).toBe(minutes);
@@ -178,22 +180,83 @@ test('Linux browser jobs bound the measured apt bottleneck separately from brows
       shell: 'bash',
     });
     const install = job.steps[dependencies]!.run!;
-    expect(install).toContain('for duration in 16m 10m; do');
-    expect(install).toContain(
-      `timeout --signal=TERM --kill-after=30s "$duration" pnpm --filter ${filter} exec playwright install-deps chromium firefox webkit`,
+    const guardPath = '.github/scripts/playwright-deps.py';
+    expect(install).toContain(`sudo python3 -B ${guardPath}`);
+    expect(install).toContain('--node "$(command -v node)" --cli "$cli"');
+    const guard = await readFile(join(root, guardPath), 'utf8');
+    const bounds = JSON.parse(guard.match(/^BOUNDS = (\{[^\n]+\})$/m)![1]!) as {
+      installSeconds: number[];
+      lockSeconds: number;
+      probeSeconds: number;
+      recoverySeconds: number;
+      terminateSeconds: number;
+      reapSeconds: number;
+      pollSeconds: number;
+      pauseSeconds: number;
+      totalSeconds: number;
+    };
+    expect(bounds.installSeconds.length).toBeGreaterThan(0);
+    expect(bounds.installSeconds.length).toBeLessThanOrEqual(2);
+    for (const value of [
+      ...bounds.installSeconds,
+      bounds.lockSeconds,
+      bounds.probeSeconds,
+      bounds.recoverySeconds,
+      bounds.terminateSeconds,
+      bounds.reapSeconds,
+      bounds.pollSeconds,
+      bounds.totalSeconds,
+    ])
+      expect(value).toBeGreaterThan(0);
+    expect(bounds.pauseSeconds).toBe(0);
+    const attempts = bounds.installSeconds.length;
+    const recoveries = attempts - 1;
+    const commands = attempts + recoveries;
+    const cleanup =
+      bounds.terminateSeconds + bounds.reapSeconds + bounds.pollSeconds;
+    const nominal =
+      bounds.installSeconds.reduce((sum, seconds) => sum + seconds, 0) +
+      (attempts + recoveries) * (bounds.lockSeconds + bounds.probeSeconds) +
+      recoveries * (bounds.recoverySeconds + bounds.pauseSeconds) +
+      commands * cleanup;
+    // The shared deadline truncates later allowances; include the last probe
+    // and cleanup overrun instead of assuming every nominal maximum can fit.
+    const worstCase = Math.min(
+      nominal,
+      bounds.totalSeconds + bounds.probeSeconds + cleanup,
     );
-    expect(install).toContain(
-      'if [ "$attempt" -eq 2 ]; then exit "$status"; fi',
+    const stepSeconds = job.steps[dependencies]!['timeout-minutes']! * 60;
+    expect(worstCase).toBeLessThan(stepSeconds);
+    expect(
+      stepSeconds + job.steps[browsers]!['timeout-minutes']! * 60,
+    ).toBeLessThan(job['timeout-minutes'] * 60);
+    expect(guard).toContain("enumerate(BOUNDS['installSeconds'], 1)");
+    expect(guard).toContain("deadline = clock() + BOUNDS['totalSeconds']");
+    expect(guard).toContain('min(allowance, remaining)');
+    expect(guard).toContain("min(BOUNDS['recoverySeconds'], remaining)");
+    expect(guard).toContain(
+      "if attempt == len(BOUNDS['installSeconds']):\n            raise RuntimeError('APT_INSTALL_FAILED')",
     );
-    expect(install).toContain(
-      'timeout --signal=TERM --kill-after=10s 60s sudo dpkg --configure -a',
+    expect(guard).toContain('raise SystemExit(1)');
+    expect(guard).toContain('child.wait(timeout=seconds)');
+    expect(guard).toContain("timeout=BOUNDS['probeSeconds']");
+    expect(guard).toContain("clock() + BOUNDS['lockSeconds']");
+    expect(guard).toContain("time.sleep(BOUNDS['terminateSeconds'])");
+    expect(guard).toContain(
+      "deadline = time.monotonic() + BOUNDS['reapSeconds']",
     );
-    expect(install).not.toMatch(
-      /continue-on-error|\|\| true|--allow-unauthenticated|trusted=yes/,
+    expect(guard).toContain("child.wait(timeout=BOUNDS['reapSeconds'])");
+    expect(guard).toContain("raise RuntimeError('APT_CLEANUP_TIMEOUT')");
+    expect(guard).toContain(
+      "path.write_text('https://archive.ubuntu.com/ubuntu/\\n')",
     );
-    // The first attempt encloses the measured 14m09s successful install.
-    // 16m + 10m + two 30s kill allowances + 70s dpkg + 10s pause < 30m.
-    expect((16 + 10) * 60 + 2 * 30 + 60 + 10 + 10).toBeLessThan(30 * 60);
+    expect(guard).not.toMatch(/path\.write_text\(['"]http:/);
+    expect(guard.match(/path\.write_text\(/g)).toHaveLength(1);
+    expect(
+      install + guard + JSON.stringify(job.steps[dependencies]),
+    ).not.toMatch(
+      /continue-on-error|\|\| true|--allow-unauthenticated|trusted=yes|AllowUnauthenticated|AllowInsecureRepositories|Check-Valid-Until|--no-check-certificate/,
+    );
     expect(job.steps[browsers]).toMatchObject({
       'timeout-minutes': 5,
       run: `pnpm --filter ${filter} exec playwright install chromium firefox webkit`,

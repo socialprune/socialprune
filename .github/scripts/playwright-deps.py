@@ -10,6 +10,8 @@ import subprocess
 import time
 from pathlib import Path
 
+# Read by the workflow contract test; all runtime allowances use these values.
+BOUNDS = {"installSeconds": [960, 600], "lockSeconds": 120, "probeSeconds": 5, "recoverySeconds": 60, "terminateSeconds": 1, "reapSeconds": 5, "pollSeconds": 0.05, "pauseSeconds": 0, "totalSeconds": 1740}
 
 LOCKS = (
     '/var/lib/dpkg/lock-frontend',
@@ -43,7 +45,7 @@ def lock_holders():
         return []
     # Only closed process classes and ages leave this probe, never argv.
     result = subprocess.run(
-        ['fuser', *busy], capture_output=True, text=True, timeout=5, check=False
+        ['fuser', *busy], capture_output=True, text=True, timeout=BOUNDS['probeSeconds'], check=False
     )
     holders = []
     for pid in sorted(set(result.stdout.split())):
@@ -92,12 +94,20 @@ def run_bounded(command, seconds):
         # chain. It can end its own root apt descendants before dpkg recovery.
         # Always sweep the owned group, including when its leader exited first.
         terminate_owned_group(child.pid)
-        child.wait()
+        deadline = time.monotonic() + BOUNDS['reapSeconds']
+        try:
+            child.wait(timeout=BOUNDS['reapSeconds'])
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('APT_CLEANUP_TIMEOUT')
         # Linux subreaper adoption lets us reap killed orphan grandchildren,
         # so recovery cannot race an owned apt process still holding a lock.
         while True:
             try:
-                os.waitpid(-child.pid, 0)
+                pid, _ = os.waitpid(-child.pid, os.WNOHANG)
+                if pid == 0:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('APT_CLEANUP_TIMEOUT')
+                    time.sleep(BOUNDS['pollSeconds'])
             except ChildProcessError:
                 break
 
@@ -109,7 +119,7 @@ def terminate_owned_group(group):
         except ProcessLookupError:
             return
         if sig == signal.SIGTERM:
-            time.sleep(1)
+            time.sleep(BOUNDS['terminateSeconds'])
 
 
 def canonical_mirror(path=Path('/etc/apt/apt-mirrors.txt')):
@@ -124,10 +134,11 @@ def canonical_mirror(path=Path('/etc/apt/apt-mirrors.txt')):
 
 def install(command, run=run_bounded, wait=wait_for_locks, clock=time.monotonic, fallback=canonical_mirror):
     # Stay inside the existing 30-minute step, including lock waits and cleanup.
-    deadline = clock() + 1740
-    for attempt, allowance in enumerate((960, 600), 1):
-        wait(min(deadline, clock() + 120))
-        remaining = int(deadline - clock()) - 2
+    deadline = clock() + BOUNDS['totalSeconds']
+    cleanup = BOUNDS['terminateSeconds'] + BOUNDS['reapSeconds'] + 1
+    for attempt, allowance in enumerate(BOUNDS['installSeconds'], 1):
+        wait(min(deadline, clock() + BOUNDS['lockSeconds']))
+        remaining = int(deadline - clock()) - cleanup
         if remaining <= 0:
             raise RuntimeError('APT_SETUP_TIMEOUT')
         emit('APT_INSTALL_ATTEMPT', attempt=attempt, limitSeconds=min(allowance, remaining))
@@ -136,13 +147,13 @@ def install(command, run=run_bounded, wait=wait_for_locks, clock=time.monotonic,
             emit('APT_INSTALL_PASSED', attempt=attempt)
             return 0
         emit('APT_INSTALL_FAILED', attempt=attempt, exitCode=status)
-        if attempt == 2:
+        if attempt == len(BOUNDS['installSeconds']):
             raise RuntimeError('APT_INSTALL_FAILED')
-        wait(min(deadline, clock() + 120))
-        remaining = int(deadline - clock()) - 2
+        wait(min(deadline, clock() + BOUNDS['lockSeconds']))
+        remaining = int(deadline - clock()) - cleanup
         if remaining <= 0:
             raise RuntimeError('APT_SETUP_TIMEOUT')
-        if run(['dpkg', '--configure', '-a'], min(60, remaining)) != 0:
+        if run(['dpkg', '--configure', '-a'], min(BOUNDS['recoverySeconds'], remaining)) != 0:
             raise RuntimeError('APT_RECOVERY_FAILED')
         fallback()
     raise RuntimeError('APT_INSTALL_FAILED')

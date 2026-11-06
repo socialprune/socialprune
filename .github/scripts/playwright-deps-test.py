@@ -71,6 +71,13 @@ class Policy(unittest.TestCase):
         self.assertEqual(kill.call_args_list[1].args, (123, signal.SIGKILL if hasattr(signal, 'SIGKILL') else 9))
         sleep.assert_called_once_with(1)
 
+    def test_cleanup_reaping_has_a_deadline(self):
+        child = unittest.mock.Mock(pid=123)
+        with patch.object(deps.subprocess, 'Popen', return_value=child), patch.object(deps, 'terminate_owned_group'), patch.object(deps.os, 'waitpid', return_value=(0, 0), create=True), patch.object(deps.os, 'WNOHANG', 1, create=True), patch.object(deps.time, 'monotonic', side_effect=[0, deps.BOUNDS['reapSeconds']]), patch.object(deps.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, '^APT_CLEANUP_TIMEOUT$'):
+                deps.run_bounded(['generated'], 1)
+        child.wait.assert_any_call(timeout=deps.BOUNDS['reapSeconds'])
+
     @unittest.skipUnless(sys.platform == 'linux', 'real POSIX locks/process groups require Linux')
     def test_real_record_lock_and_owned_descendant_cleanup(self):
         deps.enable_subreaper()

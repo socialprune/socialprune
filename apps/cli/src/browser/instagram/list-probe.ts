@@ -5,6 +5,7 @@ import { rowTextDiagnostic } from './list-diagnostic.ts';
 import { normalize } from './plan.ts';
 import { checkPage, relativeAgeMs, outsideProfilePaths } from './selectors.ts';
 import { ContextStop } from './report.ts';
+import { LIST_EMPTY_TEXTS } from './list-navigation.ts';
 import type { ProbeWait } from './report.ts';
 export const NEWEST_ORDER_ROWS = 3;
 type TimeRange = { low: number; high: number };
@@ -101,6 +102,7 @@ const empty = () => ({
   rows: [] as ReturnType<typeof rowProjection>[],
   container: null as Container | null,
   order: newestRowOrder([]),
+  markers: { empty: false, loading: false, container: false },
 });
 
 export function rowAgeClass(
@@ -286,6 +288,18 @@ export function probeProjection(
     }
   }
   result.capped = result.ownRows > 30;
+  result.markers.container = names.some((_, index) => {
+    const position = positions.get(index);
+    return (
+      main[index] &&
+      !excluded[index] &&
+      position !== undefined &&
+      ['auto', 'scroll'].includes(
+        snapshot.strings[layout.styles[position]?.[2] ?? -1] ?? '',
+      ) &&
+      (layout.clientRects?.[position]?.[3] ?? 0) > 0
+    );
+  });
   result.observed = true;
   result.order = newestRowOrder(ownTimes);
   // Walk from the actual counted own row, not an arbitrary page scroller or
@@ -319,6 +333,7 @@ type Projection = ReturnType<typeof probeProjection>;
 export const probeView = ({
   container,
   order: _order,
+  markers: _markers,
   ...value
 }: Projection) => ({
   ...value,
@@ -331,9 +346,11 @@ export async function boundedProbe(
   scroll: () => Promise<boolean>,
   settle: () => Promise<void>,
   checked: () => Promise<void> = async () => {},
+  settleZero: () => Promise<void> = settle,
 ) {
   const result = {
     initial: emptyProbeView(),
+    zeroRows: undefined as import('./report.ts').FilteredProbe['zeroRows'],
     observationFailed: false,
     timeoutWait: null as ProbeWait | null,
     scrolls: [] as {
@@ -348,6 +365,25 @@ export async function boundedProbe(
     let current = await probeWait('filtered-read', read, checked);
     result.initial = probeView(current);
     result.observationFailed = !current.observed;
+    if (current.observed && current.ownRows === 0) {
+      const started = performance.now();
+      await probeWait('filtered-settle', settleZero, checked);
+      const waitedMs = Math.min(5000, Math.round(performance.now() - started));
+      const second = await probeWait('filtered-read', read, checked);
+      result.zeroRows = {
+        emptyStatePresent: current.markers?.empty ?? false,
+        loadingPresent: current.markers?.loading ?? false,
+        listContainerPresent: current.markers?.container ?? false,
+        waitedMs,
+        secondObserved: second.observed,
+        secondOwnRows: second.ownRows,
+        changed: second.ownRows !== current.ownRows,
+        observationFailed: !second.observed,
+      };
+      current = second;
+      result.observationFailed ||= !second.observed;
+      result.initial = probeView(second);
+    }
     for (let index = 0; index < 3; index++) {
       if (
         !current.observed ||
@@ -406,8 +442,27 @@ export async function listProbeReader(
           includeDOMRects: true,
         });
         const result = probeProjection(snapshot, text, at, handle, now);
+        const main = page.locator('main');
+        let empty = false;
+        for (const label of LIST_EMPTY_TEXTS)
+          empty ||= (await main.getByText(label, { exact: true }).count()) > 0;
+        const markers = {
+          empty,
+          loading:
+            (await main
+              .locator(
+                '[role="progressbar"],[aria-busy="true"],svg[aria-label="Loading" i]',
+              )
+              .count()) > 0,
+          container:
+            (await main
+              .locator('[role="list"],ul,div[style*="overflow"]')
+              .count()) > 0 ||
+            result.container !== null ||
+            result.markers.container,
+        };
         container = result.container;
-        return result;
+        return { ...result, markers };
       } catch (error) {
         await checked();
         if (error instanceof Error && error.name === 'TimeoutError')

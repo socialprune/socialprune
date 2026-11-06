@@ -46,6 +46,8 @@ Since c-postclick on 2026-11-06, reply reports retain each attempted expansion's
 
 The replies reader also accepts exact numbered expansion-control variants only when their count matches the agreeing focal answer, and reports closed control shapes without labels. A diagnostic Newest choice with disabled Apply and no selection attributes may be read back from the first three own rows only after leaving the menu without Apply; all three times must establish non-increasing order with a distinct decrease, while unknown, tied or ascending observations stay inconclusive. The main Oldest path is unchanged, and these paths are tested on generated pages only.
 
+The c-control clarification of 2026-11-06 adds a bounded post-click reply neighborhood observation and exact immediately following sibling reply groups, still with permalink, time, row structure and page-answer checks. `context instagram --diagnostic-control <ids-file> --limit 1` selects one existing list-confirmed comment only under a listDiagnostic order, binds it in the dry-run plan and runs the existing filter probes without changing its record or creating a confirmation attempt. Zero-row diagnostic probes retain markers and a second settled count; contradictory wider-window zeros are inconclusive. Generated-page tests cover these paths; real-account behavior remains unmeasured.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

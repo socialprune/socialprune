@@ -55,6 +55,13 @@ export const contextInstagramCommand = buildCommand({
         brief:
           'Explicit file of Instagram item IDs to reconsider after earlier results',
       },
+      'diagnostic-control': {
+        kind: 'parsed',
+        parse: String,
+        optional: true,
+        brief:
+          'Explicit file with one already list-confirmed item ID; list diagnostic and limit 1 only',
+      },
       exclude: {
         kind: 'parsed',
         parse: String,
@@ -123,6 +130,7 @@ export const contextInstagramCommand = buildCommand({
       'refresh-replies': boolean;
       json: boolean;
       include?: string;
+      'diagnostic-control'?: string;
       exclude?: string;
       list?: string;
       profile?: string;
@@ -141,6 +149,13 @@ export const contextInstagramCommand = buildCommand({
       limit > (flags.order ? 600 : 200) ||
       (flags.json && flags.list) ||
       (flags.order && flags.include) ||
+      (flags['diagnostic-control'] &&
+        (!flags.order ||
+          flags.limit !== '1' ||
+          flags.include ||
+          flags.exclude ||
+          flags['refresh-likes'] ||
+          flags['refresh-replies'])) ||
       (flags['refresh-likes'] && flags['refresh-replies'])
     )
       throw new CliError('INVALID_ARGUMENTS');
@@ -164,6 +179,19 @@ export const contextInstagramCommand = buildCommand({
         }
     if ([...exclude].some((id) => include.has(id)))
       throw new CliError('INVALID_ARGUMENTS');
+    let diagnosticControl: string | undefined;
+    if (flags['diagnostic-control']) {
+      const bytes = await readFile(flags['diagnostic-control']);
+      if (bytes.length > 65536) throw new CliError('INVALID_ARGUMENTS');
+      const ids = bytes
+        .toString('utf8')
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (ids.length !== 1 || !InstagramItemIdSchema.safeParse(ids[0]).success)
+        throw new CliError('INVALID_ARGUMENTS');
+      diagnosticControl = ids[0];
+    }
     const path = await workspacePath(flags.workspace, false),
       store = await SQLiteStore.open(path.path, { readOnly: flags.dryRun });
     try {
@@ -174,6 +202,7 @@ export const contextInstagramCommand = buildCommand({
         exclude,
         flags['refresh-likes'],
         flags['refresh-replies'],
+        diagnosticControl,
       );
       if (
         plan.handle &&
@@ -182,13 +211,17 @@ export const contextInstagramCommand = buildCommand({
       )
         throw new CliError('ACCOUNT_MISMATCH');
       plan.handle ||= handle ?? '';
-      if (flags.order && flags.plan !== plan.hash)
+      if (
+        flags.order &&
+        flags.plan !== plan.hash &&
+        !(flags.dryRun && diagnosticControl && flags.plan === undefined)
+      )
         throw new CliError('STALE_PLAN');
       const order = flags.order
         ? await readContextOrder(
             flags.order,
             plan.handle,
-            flags.plan!,
+            flags.plan ?? plan.hash,
             plan.hash,
           )
         : undefined;
@@ -199,6 +232,8 @@ export const contextInstagramCommand = buildCommand({
         Boolean(plan.refreshLikes),
         Boolean(plan.refreshReplies),
       );
+      if (diagnosticControl && order?.value.listDiagnostic !== true)
+        throw new CliError('CONTEXT_ORDER_INVALID');
       const pace = contextPace(order, plan.canary);
       const data = contextSummary(plan, flags.lang, pace),
         text = contextList(plan);

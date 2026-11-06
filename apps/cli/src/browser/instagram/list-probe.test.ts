@@ -279,3 +279,27 @@ test('replyempty partial filtered observation survives a scroll wait timeout and
     }).success,
   ).toBe(false);
 });
+test.each([false, true])(
+  'CONTROL zero-row second read changed=%s retains markers and bounded observation',
+  async (changed) => {
+    const empty = probeProjection(snapshot([]), target, at, handle, now);
+    empty.markers = { empty: !changed, loading: changed, container: true };
+    const filled = probeProjection(snapshot([target]), target, at, handle, now);
+    let reads = 0;
+    const result = await boundedProbe(
+      () => Promise.resolve(++reads === 1 || !changed ? empty : filled),
+      () => Promise.resolve(false),
+      () => Promise.resolve(),
+    );
+    expect(result.zeroRows).toMatchObject({
+      emptyStatePresent: !changed,
+      loadingPresent: changed,
+      listContainerPresent: true,
+      changed,
+      secondObserved: true,
+      secondOwnRows: changed ? 1 : 0,
+      observationFailed: false,
+    });
+    expect(result.initial.targetMatched).toBe(changed);
+  },
+);

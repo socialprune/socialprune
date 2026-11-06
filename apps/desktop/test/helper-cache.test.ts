@@ -7,14 +7,168 @@ import {
   writeFile,
   rm,
   mkdir,
+  open,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { cachedHelper } from '../packaging/helper-cache.ts';
 import { cleanStaleHelperScratch } from '../packaging/helper-scratch.ts';
+import { WINDOWS_QUERY_TIMEOUT_MS } from '../packaging/windows-powershell.ts';
+
+const faults = vi.hoisted(() => ({
+  open: undefined as undefined | ((path: unknown, flags: unknown) => void),
+  mkdir: undefined as undefined | (() => void),
+}));
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    mkdir: (...args: Parameters<typeof actual.mkdir>) => {
+      faults.mkdir?.();
+      return actual.mkdir(...args);
+    },
+    open: (...args: Parameters<typeof actual.open>) => {
+      faults.open?.(args[0], args[1]);
+      return actual.open(...args);
+    },
+  };
+});
+
+test.each(['EPERM', 'EACCES', 'EBUSY'])(
+  'transient %s on the lock waits then acquires without stealing it',
+  async (code) => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-cache-unit-'));
+    let attempts = 0;
+    let calls = 0;
+    const times: number[] = [];
+    faults.open = (path, flags) => {
+      if (String(path).endsWith('.lock') && flags === 'wx') {
+        times.push(Date.now());
+        if (++attempts <= 3)
+          throw Object.assign(new Error('injected lock sharing'), { code });
+      }
+    };
+    try {
+      const result = await cachedHelper('sharing', {
+        cacheDirectory: root,
+        compiler: async (_source, output) => {
+          calls++;
+          await writeFile(output, 'MZgenerated');
+        },
+      });
+      expect(attempts).toBe(4);
+      expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(60);
+      expect(calls).toBe(1);
+      expect(await readFile(result, 'utf8')).toBe('MZgenerated');
+      expect(
+        (await readdir(root)).filter((name) => name.endsWith('.lock')),
+      ).toEqual([]);
+    } finally {
+      faults.open = undefined;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.each(['EPERM', 'EBUSY', 'EEXIST'])(
+  'persistent %s on the lock reaches the existing deadline without deleting another owner',
+  async (code) => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-cache-unit-'));
+    let attempts = 0;
+    let lock: string | undefined;
+    let compiled = false;
+    const now = vi
+      .spyOn(Date, 'now')
+      .mockImplementation(() =>
+        attempts < 2 ? 0 : WINDOWS_QUERY_TIMEOUT_MS * 2,
+      );
+    faults.open = (path, flags) => {
+      if (String(path).endsWith('.lock') && flags === 'wx') {
+        lock = String(path);
+        attempts++;
+        throw Object.assign(new Error('injected lock sharing'), { code });
+      }
+    };
+    try {
+      const result = cachedHelper('persistent', {
+        cacheDirectory: root,
+        compiler: () => {
+          compiled = true;
+          return Promise.resolve();
+        },
+      });
+      await expect(result).rejects.toThrow(/^HELPER_CACHE_LOCK_TIMEOUT$/);
+      expect(attempts).toBe(2);
+      expect(compiled).toBe(false);
+      // Injection owns no filesystem lock. A separate real owner stays intact.
+      faults.open = undefined;
+      const owner = await open(lock!, 'wx');
+      try {
+        await owner.writeFile('another-owner');
+        attempts = 0;
+        faults.open = (path) => {
+          if (String(path) === lock) {
+            attempts++;
+            throw Object.assign(new Error('sharing'), { code });
+          }
+        };
+        await expect(
+          cachedHelper('persistent', { cacheDirectory: root }),
+        ).rejects.toThrow(/^HELPER_CACHE_LOCK_TIMEOUT$/);
+        expect(await readFile(lock!, 'utf8')).toBe('another-owner');
+      } finally {
+        await owner.close();
+      }
+    } finally {
+      faults.open = undefined;
+      now.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.each(['probe', 'mkdir'])(
+  'an unwritable cache root at %s fails immediately with a closed error before lock acquisition',
+  async (stage) => {
+    const root = await mkdtemp(join(tmpdir(), 'sp-cache-unit-'));
+    let opened = 0;
+    let denied = 0;
+    let compiled = false;
+    const deny = () => {
+      denied++;
+      throw Object.assign(new Error('private permission detail'), {
+        code: 'EACCES',
+      });
+    };
+    if (stage === 'mkdir') faults.mkdir = deny;
+    faults.open = () => {
+      opened++;
+      deny();
+    };
+    try {
+      await expect(
+        cachedHelper('denied', {
+          cacheDirectory: root,
+          compiler: () => {
+            compiled = true;
+            return Promise.resolve();
+          },
+        }),
+      ).rejects.toThrow(/^HELPER_CACHE_ROOT_NOT_WRITABLE$/);
+      expect(opened).toBe(stage === 'probe' ? 1 : 0);
+      expect(denied).toBe(1);
+      expect(compiled).toBe(false);
+      expect(await readdir(root)).toEqual([]);
+    } finally {
+      faults.open = undefined;
+      faults.mkdir = undefined;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test('miss publishes once; hit retains the identical file; source and compiler options have distinct keys', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sp-cache-unit-'));

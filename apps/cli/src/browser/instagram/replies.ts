@@ -19,10 +19,15 @@ import type { ReplyControlsDiagnostic } from './report.ts';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
 import {
+  neighborhood,
+  siblingReplyRows,
+  pollReplyGrowth,
+  expandedRows,
+} from './reply-neighborhood.ts';
+import {
   structuralReplyScope,
   REPLY_ROWS,
   ownReplyControls,
-  matchedReplyRows,
   EXPANDED_REPLY_LISTS,
 } from './replies-scope.ts';
 
@@ -276,6 +281,8 @@ export async function commentReplies(
       bodies,
       scriptValues(),
     );
+    const siblingsAllowed =
+      (await (await siblingReplyRows(root, address)).count()) === 0;
     for (;;) {
       site = 'page-address';
       guard();
@@ -287,13 +294,16 @@ export async function commentReplies(
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
       const rows =
         clicks > 0
-          ? await matchedReplyRows(root, address)
+          ? await expandedRows(root, address, siblingsAllowed)
           : root.locator(REPLY_ROWS);
       const count = await rows.count();
       site = 'reply-group';
       if (
         (await root.locator('a[href*="/c/"]').count()) -
-          (await rows.locator('a[href*="/c/"]').count()) !==
+          (await rows
+            .locator('a[href*="/c/"]')
+            .and(root.locator('a[href*="/c/"]'))
+            .count()) !==
           1 ||
         (await root
           .locator(`:scope > ul, :scope > div > ul, ${EXPANDED_REPLY_LISTS}`)
@@ -434,6 +444,12 @@ export async function commentReplies(
         ? await root.locator('ul:visible,[role="list"]:visible').count()
         : 0;
       if (expansionDiagnostic) expansion.clicks.push(click);
+      const beforeNeighborhood = await neighborhood(
+        page,
+        root,
+        address,
+        match.id,
+      );
       site = 'click';
       try {
         try {
@@ -461,21 +477,24 @@ export async function commentReplies(
         await checkPage(page);
         // Allow the scoped read response/render to expose rows before re-reading
         // its replacement control. The existing step deadline remains the bound.
-        const previousCount = count;
-        while (
-          performance.now() < deadline &&
-          (await rows.count()) === previousCount &&
-          (await control.count()) === controls
-        ) {
-          await new Promise((resolve) =>
-            setTimeout(
-              resolve,
-              Math.min(100, Math.max(1, deadline - performance.now())),
-            ),
-          );
-          guard();
-          await checkPage(page);
-        }
+        click.poll = {
+          elapsedMs: 0,
+          firstGrowthMs: null,
+          timeout: true,
+          observationFailed: false,
+          samples: 0,
+          after: [],
+        };
+        await pollReplyGrowth(
+          page,
+          root,
+          address,
+          match.id,
+          beforeNeighborhood,
+          deadline,
+          guard,
+          click.poll,
+        );
       } finally {
         if (expansionDiagnostic) {
           await afterExpansion(

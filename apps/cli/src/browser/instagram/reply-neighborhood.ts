@@ -116,11 +116,15 @@ export async function pollReplyGrowth(
           value.otherCommentPermalinks >
           (before[index]?.otherCommentPermalinks ?? 0),
       );
-      if (growth) {
-        poll.firstGrowthMs = Math.min(
-          MAX_POLL_MS,
-          Math.round(performance.now() - started),
-        );
+      const visibleRows =
+        (await (
+          await expandedRows(root, address, true)
+        )
+          .filter({ visible: true })
+          .count()) > 0;
+      if ((growth || visibleRows) && poll.firstGrowthMs === null)
+        poll.firstGrowthMs = Math.round(performance.now() - started);
+      if (visibleRows) {
         poll.timeout = false;
         break;
       }
@@ -133,10 +137,7 @@ export async function pollReplyGrowth(
     if (performance.now() >= end) break;
     await sleep(Math.min(100, Math.max(1, end - performance.now())));
   }
-  poll.elapsedMs = Math.min(
-    MAX_POLL_MS,
-    Math.round(performance.now() - started),
-  );
+  poll.elapsedMs = Math.round(performance.now() - started);
 }
 export async function expandedRows(
   root: Locator,

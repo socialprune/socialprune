@@ -688,6 +688,7 @@ export async function loadList(
           () => active.scroll(),
           () => active.settle(deps.pace.scrollMs),
           checked,
+          () => active.settle(Math.min(1000, deps.pace.scrollMs)),
         );
         await navigateList(
           page,

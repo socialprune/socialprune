@@ -1421,6 +1421,21 @@ async function harness(
     setLimit(value: number) {
       limit = value;
     },
+    async setDiagnosticControl(id: string) {
+      limit = 1;
+      Object.assign(
+        plan,
+        await planContext(
+          store,
+          plan.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          false,
+          id,
+        ),
+      );
+    },
     setMaxSteps(value: number) {
       maxSteps = value;
     },
@@ -2720,6 +2735,89 @@ test.each([
   },
 );
 
+test('CONTROL known list confirmation is a non-writing positive control in all three filter windows', async () => {
+  const h = await harness('not-shown', 1, 5000);
+  try {
+    await h.start(true);
+    const prior = await h.store.read((tx) =>
+      tx.instagramContext.get(h.fixture.items[0]!.id),
+    );
+    expect(prior?.confirmedBy).toBe('list');
+    await h.setDiagnosticControl(prior!.itemId);
+    h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+    const before = h.fake.requests.length;
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      code: 'CANCELLED',
+      token: 'stopped',
+    });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[] };
+    const step = ContextStepReportSchema.parse(report.steps[0]);
+    expect(step.diagnosticControl).toBe(true);
+    expect(step.filteredProbe?.initial.targetMatched).toBe(true);
+    expect(
+      step.widenedProbes?.map((probe) => probe.initial.targetMatched),
+    ).toEqual([true, true]);
+    expect(
+      step.filteredProbe?.initial.rows.some(
+        (row) => row.authorEqualsHandle && row.targetMatched,
+      ),
+    ).toBe(true);
+    expect(
+      await h.store.read((tx) => tx.instagramContext.get(prior!.itemId)),
+    ).toEqual(prior);
+    expect(
+      h.fake.requests
+        .slice(before)
+        .some((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toBe(false);
+    expect(
+      (await h.store.browserJournal()).attempts.filter(
+        (attempt) => attempt.runId === run.runId,
+      ),
+    ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
+test('CONTROL wider31 zero after wider7 positives is an observation gap with a second settled read', async () => {
+  const h = await harness('success', 1, 5000);
+  h.fake.listProbe('wider-zero-gap');
+  h.setPace({ listDiagnostic: true, maxSteps: 1, secondsPerStep: 30 });
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CANCELLED' });
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const raw = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[] };
+    const step = ContextStepReportSchema.parse(raw.steps[0]);
+    expect(step.widenedProbes?.[0]?.initial.ownRows).toBeGreaterThan(0);
+    expect(
+      step.widenedProbes?.[1],
+      JSON.stringify(step.widenedProbes),
+    ).toMatchObject({
+      radiusDays: 31,
+      subsetGap: true,
+      observationFailed: true,
+      zeroRows: {
+        secondObserved: true,
+        secondOwnRows: 0,
+        changed: false,
+        observationFailed: false,
+      },
+    });
+  } finally {
+    await h.close();
+  }
+});
 test.each(['below-first', 'other-date', 'absent', 'newest-selected'] as const)(
   'listprobe %s distinguishes filtered lazy rows, alternate filter date and bounded absence',
   async (variant) => {

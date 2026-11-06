@@ -20,7 +20,6 @@ import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
 import {
   neighborhood,
-  siblingReplyRows,
   pollReplyGrowth,
   expandedRows,
 } from './reply-neighborhood.ts';
@@ -281,8 +280,7 @@ export async function commentReplies(
       bodies,
       scriptValues(),
     );
-    const siblingsAllowed =
-      (await (await siblingReplyRows(root, address)).count()) === 0;
+    let siblingsAllowed = false;
     for (;;) {
       site = 'page-address';
       guard();
@@ -298,12 +296,11 @@ export async function commentReplies(
           : root.locator(REPLY_ROWS);
       const count = await rows.count();
       site = 'reply-group';
+      const scopedRows =
+        clicks > 0 ? await expandedRows(root, address, false) : rows;
       if (
         (await root.locator('a[href*="/c/"]').count()) -
-          (await rows
-            .locator('a[href*="/c/"]')
-            .and(root.locator('a[href*="/c/"]'))
-            .count()) !==
+          (await scopedRows.locator('a[href*="/c/"]').count()) !==
           1 ||
         (await root
           .locator(`:scope > ul, :scope > div > ul, ${EXPANDED_REPLY_LISTS}`)
@@ -444,6 +441,11 @@ export async function commentReplies(
         ? await root.locator('ul:visible,[role="list"]:visible').count()
         : 0;
       if (expansionDiagnostic) expansion.clicks.push(click);
+      if (clicks === 0)
+        siblingsAllowed =
+          (await root
+            .locator('xpath=following-sibling::*[1][self::li or self::ul]')
+            .count()) === 0;
       const beforeNeighborhood = await neighborhood(
         page,
         root,
@@ -478,6 +480,7 @@ export async function commentReplies(
         // Allow the scoped read response/render to expose rows before re-reading
         // its replacement control. The existing step deadline remains the bound.
         click.poll = {
+          maxMs: 5000,
           elapsedMs: 0,
           firstGrowthMs: null,
           timeout: true,
@@ -504,6 +507,7 @@ export async function commentReplies(
             listsBefore,
             click,
             address,
+            siblingsAllowed,
           );
           expansionDiagnostic(expansion);
         }

@@ -15,7 +15,10 @@ import {
   contextList,
 } from './plan.ts';
 import { InstagramContextWriter } from '@socialprune/core/workspace/instagram-context-writer';
-import { writeInstagramContextContract } from '@socialprune/core/workspace/store-contract';
+import {
+  writeInstagramContextContract,
+  instagramContractRecord,
+} from '@socialprune/core/workspace/store-contract';
 import { executeCli } from '../../cli/adapter.ts';
 import { createNodeContext } from '../../cli/node-context.ts';
 import * as profiles from '../profile.ts';
@@ -108,6 +111,143 @@ test('REPLIES-1 refresh plan excludes observed empty replies and binds the CLI m
         planned: 0,
       },
     );
+  } finally {
+    await h.close();
+  }
+});
+test('CONTROL explicit list-confirmed target plan and CLI bind the file, order, limit and unchanged record', async () => {
+  const h = await excludeFixture();
+  try {
+    const item = h.fixture.items[0]!,
+      record = {
+        ...instagramContractRecord(item),
+        confirmedBy: 'list' as const,
+        comment: { id: null, createdAt: null, expandClicks: 0 },
+      };
+    await h.store.write((tx) => tx.instagramContext.add(record));
+    const plan = await planContext(
+      h.store,
+      h.accountKey,
+      new Set(),
+      new Set(),
+      false,
+      false,
+      item.id,
+    );
+    expect(plan.rows.map((row) => row.item.id)).toEqual([item.id]);
+    expect(plan.canary).toBe(false);
+    expect(plan.hash).not.toBe((await planContext(h.store, h.accountKey)).hash);
+    await expect(
+      planContext(
+        h.store,
+        h.accountKey,
+        new Set(),
+        new Set(),
+        false,
+        false,
+        h.fixture.items[1]!.id,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENTS' });
+    const second = h.fixture.items[1]!;
+    await h.store.write((tx) =>
+      tx.instagramContext.add({
+        ...instagramContractRecord(second),
+        itemId: second.id,
+        comment: { id: '910002', createdAt: second.createdAt, expandClicks: 0 },
+      }),
+    );
+    await expect(
+      planContext(
+        h.store,
+        h.accountKey,
+        new Set(),
+        new Set(),
+        false,
+        false,
+        h.fixture.items[1]!.id,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENTS' });
+    const file = join(h.directory, 'control.txt'),
+      order = join(h.directory, 'control-order.json');
+    await writeFile(file, item.id + '\n');
+    await writeFile(
+      order,
+      JSON.stringify({
+        scope: 'context-instagram',
+        account: plan.handle,
+        givenAt: IG_FIXTURE.now,
+        words: 'Generated list control only',
+        listDiagnostic: true,
+        maxSteps: 1,
+      }),
+    );
+    for (const [limit, code] of [
+      ['1', 0],
+      ['2', 2],
+    ] as const) {
+      const result = await invokeContext([
+        '--workspace',
+        h.directory,
+        '--account',
+        h.accountKey,
+        '--diagnostic-control',
+        file,
+        '--order',
+        order,
+        '--limit',
+        limit,
+        '--dry-run',
+        '--json',
+      ]);
+      expect(result.code, result.stdout + result.stderr).toBe(code);
+      if (code === 0)
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          data: { planned: 1, planHash: plan.hash },
+        });
+      expect(result.stdout + result.stderr).not.toContain(item.id);
+    }
+    expect(
+      await h.store.read((tx) => tx.instagramContext.get(item.id)),
+    ).toEqual(record);
+    for (const extra of [
+      [],
+      ['--order', order],
+      ['--order', order, '--limit', '2'],
+      ['--order', order, '--limit', '1', '--refresh-replies'],
+    ]) {
+      const refused = await invokeContext([
+        '--workspace',
+        h.directory,
+        '--account',
+        h.accountKey,
+        '--diagnostic-control',
+        file,
+        ...extra,
+        '--dry-run',
+        '--json',
+      ]);
+      expect(refused.code).toBe(2);
+      expect(refused.stdout + refused.stderr).not.toContain(item.id);
+    }
+    await writeFile(file, item.id + '\n' + item.id + '\n');
+    expect(
+      (
+        await invokeContext([
+          '--workspace',
+          h.directory,
+          '--account',
+          h.accountKey,
+          '--diagnostic-control',
+          file,
+          '--order',
+          order,
+          '--limit',
+          '1',
+          '--dry-run',
+          '--json',
+        ])
+      ).code,
+    ).toBe(2);
   } finally {
     await h.close();
   }

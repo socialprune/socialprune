@@ -159,8 +159,11 @@ test.each([
       }).replyExpansion!;
       expect(parsed.clicks).toHaveLength(1);
       if (mode.startsWith('sibling')) {
+        expect(parsed.clicks[0]?.rowsAfter).toBe(
+          mode === 'sibling-foreign' || mode === 'sibling-no-time' ? 0 : 5,
+        );
         expect(parsed.clicks[0]?.poll).toMatchObject({
-          timeout: mode === 'sibling-foreign',
+          timeout: mode === 'sibling-foreign' || mode === 'sibling-no-time',
           observationFailed: false,
         });
         expect(

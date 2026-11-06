@@ -146,6 +146,11 @@ export async function runContextWithDependencies(
     Boolean(options.plan.refreshLikes),
     Boolean(options.plan.refreshReplies),
   );
+  if (
+    options.plan.diagnosticControl &&
+    (options.order?.value.listDiagnostic !== true || options.limit !== 1)
+  )
+    throw new CliError('CONTEXT_ORDER_INVALID');
   const pace = contextPace(options.order, options.plan.canary, {
     ...CONTEXT_PACE,
     ...deps.pace,
@@ -176,6 +181,7 @@ export async function runContextWithDependencies(
         options.exclude,
         Boolean(options.plan.refreshLikes),
         Boolean(options.plan.refreshReplies),
+        options.plan.diagnosticControl,
       )
     ).hash !== options.plan.hash
   )
@@ -573,6 +579,7 @@ export async function runContextWithDependencies(
           options.exclude,
           Boolean(options.plan.refreshLikes),
           Boolean(options.plan.refreshReplies),
+          options.plan.diagnosticControl,
         )
       ).hash !== options.plan.hash
     )
@@ -741,15 +748,16 @@ export async function runContextWithDependencies(
       );
       const attemptId = crypto.randomUUID();
       stage = 'attempt';
-      await writer.sending({
-        runId,
-        attemptId,
-        itemId: row.item.id,
-        at: options.now().toISOString(),
-        refreshLikes: options.plan.refreshLikes,
-        refreshReplies: options.plan.refreshReplies,
-      });
-      pendingAttempt = attemptId;
+      if (!options.plan.diagnosticControl)
+        await writer.sending({
+          runId,
+          attemptId,
+          itemId: row.item.id,
+          at: options.now().toISOString(),
+          refreshLikes: options.plan.refreshLikes,
+          refreshReplies: options.plan.refreshReplies,
+        });
+      pendingAttempt = options.plan.diagnosticControl ? undefined : attemptId;
       let settled = false;
       let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
         'not-shown';
@@ -941,6 +949,9 @@ export async function runContextWithDependencies(
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
                 widenedProbes: rowCounts.widenedProbes,
+                diagnosticControl: options.plan.diagnosticControl
+                  ? true
+                  : undefined,
                 oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
@@ -976,6 +987,9 @@ export async function runContextWithDependencies(
                 filteredProbe: rowCounts.filteredProbe,
                 newestProbe: rowCounts.newestProbe,
                 widenedProbes: rowCounts.widenedProbes,
+                diagnosticControl: options.plan.diagnosticControl
+                  ? true
+                  : undefined,
                 oldestSortStructure: rowCounts.oldestSortStructure,
                 listRowsAfterApply: rowCounts.initialDiagnostic,
                 listPageUnfiltered: rowCounts.unfilteredDiagnostic,
@@ -1035,6 +1049,7 @@ export async function runContextWithDependencies(
           filteredProbe: rowCounts.filteredProbe,
           newestProbe: rowCounts.newestProbe,
           widenedProbes: rowCounts.widenedProbes,
+          diagnosticControl: options.plan.diagnosticControl ? true : undefined,
           oldestSortStructure: rowCounts.oldestSortStructure,
           listRowsAfterApply: rowCounts.initialDiagnostic,
           listPageUnfiltered: rowCounts.unfilteredDiagnostic,

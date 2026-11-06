@@ -27,6 +27,7 @@ export interface ContextRow {
   marked: boolean;
 }
 export interface ContextPlan {
+  diagnosticControl?: string;
   refreshLikes?: boolean;
   refreshReplies?: boolean;
   accountKey: string;
@@ -48,6 +49,7 @@ export async function planContext(
   exclude: ReadonlySet<string> = new Set(),
   refreshLikes = false,
   refreshReplies = false,
+  diagnosticControl?: string,
 ): Promise<ContextPlan> {
   if (refreshLikes && refreshReplies) throw new CliError('INVALID_ARGUMENTS');
   if ([...exclude].some((id) => include.has(id)))
@@ -230,6 +232,21 @@ export async function planContext(
           humanDecisions.get(item.id) === true,
       });
     }
+    if (diagnosticControl) {
+      const item = items.find((value) => value.id === diagnosticControl);
+      const context = item ? await tx.instagramContext.get(item.id) : undefined;
+      if (
+        !item ||
+        !context ||
+        context.confirmedBy !== 'list' ||
+        refreshLikes ||
+        refreshReplies ||
+        include.size ||
+        exclude.size
+      )
+        throw new CliError('INVALID_ARGUMENTS');
+      rows.splice(0, rows.length, { item, context, marked: false });
+    }
     rows.sort(
       (a, b) =>
         Number(b.marked) - Number(a.marked) ||
@@ -243,19 +260,25 @@ export async function planContext(
     const hash = createHash('sha256')
       .update(
         JSON.stringify(
-          refreshLikes || refreshReplies
+          diagnosticControl
             ? {
-                mode: refreshReplies ? 'refresh-replies' : 'refresh-likes',
-                rows: selected.map((row) => ({
-                  ...row,
-                  context: rows.find((entry) => entry.item.id === row.itemId)!
-                    .context,
-                })),
-                exclude: [...exclude].sort(),
+                mode: 'diagnostic-control',
+                rows: selected,
+                context: rows[0]!.context,
               }
-            : exclude.size
-              ? { rows: selected, exclude: [...exclude].sort() }
-              : selected,
+            : refreshLikes || refreshReplies
+              ? {
+                  mode: refreshReplies ? 'refresh-replies' : 'refresh-likes',
+                  rows: selected.map((row) => ({
+                    ...row,
+                    context: rows.find((entry) => entry.item.id === row.itemId)!
+                      .context,
+                  })),
+                  exclude: [...exclude].sort(),
+                }
+              : exclude.size
+                ? { rows: selected, exclude: [...exclude].sort() }
+                : selected,
         ),
       )
       .digest('hex');
@@ -267,6 +290,7 @@ export async function planContext(
       if (run.canaryAcceptedAt) accepted = true;
     }
     return {
+      ...(diagnosticControl ? { diagnosticControl } : {}),
       ...(refreshLikes ? { refreshLikes: true } : {}),
       ...(refreshReplies ? { refreshReplies: true } : {}),
       accountKey,
@@ -276,7 +300,7 @@ export async function planContext(
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       rows,
       hash,
-      canary: refreshLikes ? false : !accepted,
+      canary: refreshLikes || diagnosticControl ? false : !accepted,
       manual,
       confirmed,
       excluded,

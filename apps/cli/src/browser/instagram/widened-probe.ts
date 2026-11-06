@@ -105,9 +105,21 @@ export async function widenedFilterProbes(
           () => reader.scroll(),
           () => reader.settle(settleMs),
           checked,
+          () => reader.settle(Math.min(1000, settleMs)),
         ),
       );
       result.scrollCount = result.scrolls.length;
+      const prior = reports.find((probe) => probe.radiusDays === 7);
+      if (
+        radiusDays === 31 &&
+        prior &&
+        !prior.observationFailed &&
+        prior.initial.ownRows > 0 &&
+        result.initial.ownRows === 0
+      ) {
+        result.subsetGap = true;
+        result.observationFailed = true;
+      }
       if (!result.observationFailed) result.failedStep = 'none';
     } catch (error) {
       // Only a failed diagnostic filter/timeout is inconclusive. Every platform,

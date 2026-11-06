@@ -17,7 +17,8 @@ export type ListProbeCase =
   | 'wider-31'
   | 'wider-absent'
   | 'wider-filter-failure'
-  | 'wider-account-change';
+  | 'wider-account-change'
+  | 'wider-zero-gap';
 export const PROBE_CLIENT_HEIGHT = 160;
 /** Synthetic rows and filter semantics, no account-derived material. */
 export function listProbePage(
@@ -113,6 +114,11 @@ export function listProbePage(
       'applied=true;sessionStorage',
       "applied=true;if(dirty.start&&dirty.end)sessionStorage.setItem('probe-filtered','true');sessionStorage",
     );
+    if (probe === 'wider-zero-gap')
+      source = source.replace(
+        'const mode=accountVariant(),mixed=',
+        'if(start&&end&&(Date.parse(end)-Date.parse(start))/86400000>20)chosen=[];const mode=accountVariant(),mixed=',
+      );
   }
   return source;
 }

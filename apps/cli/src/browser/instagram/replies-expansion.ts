@@ -2,6 +2,7 @@ import type { Locator } from 'playwright-core';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { checkedReplyControls } from './reply-controls.ts';
 import { ownReplyControls, matchedReplyRows } from './replies-scope.ts';
+import { expandedRows } from './reply-neighborhood.ts';
 
 /** Counts only, within the already verified focal scope. Never a row oracle. */
 export async function expansionShape(
@@ -34,10 +35,13 @@ export async function afterExpansion(
   listsBefore: number,
   click: ReplyExpansionDiagnostic['clicks'][number],
   address: { kind: 'p' | 'reel'; code: string },
+  siblingsAllowed = false,
 ) {
   try {
     const after = await expansionShape(root, handle, total, address);
     click.rowsAfter = after.rows;
+    if (siblingsAllowed)
+      click.rowsAfter = await (await expandedRows(root, address, true)).count();
     click.controlsAfter = after.controls;
     click.candidatesAfter = after.candidates;
     click.nestedListAppeared =

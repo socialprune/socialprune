@@ -12,6 +12,24 @@ import {
 } from '../../../e2e/fake-instagram/realshape-page.ts';
 import { listPage } from '../../../e2e/fake-instagram/pages.ts';
 import { listProbePage } from '../../../e2e/fake-instagram/list-probe-page.ts';
+import { assertRecordedEvents } from '../../../e2e/fake-instagram/recorder.ts';
+
+test('POSTCLICK diagnostic recorder admits only generated container-height or main wheel deltas', () => {
+  const events = (y: number) => [
+    {
+      inputs: [],
+      choices: [],
+      clicks: [],
+      added: [],
+      wheels: [{ area: 'list', x: 0, y }],
+    },
+  ];
+  const allowed = [IG_FIXTURE.scroll.delta, IG_FIXTURE.scroll.listClientHeight];
+  expect(() => assertRecordedEvents(events(420))).toThrow();
+  expect(() => assertRecordedEvents(events(420), allowed)).not.toThrow();
+  expect(() => assertRecordedEvents(events(700), allowed)).not.toThrow();
+  expect(() => assertRecordedEvents(events(421), allowed)).toThrow();
+});
 
 test('realshape generated page mutations produce malformed rows and absent or sibling focal times without real content', async () => {
   const fixture = await instagramFixture(1),

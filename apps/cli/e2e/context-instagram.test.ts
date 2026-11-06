@@ -1379,7 +1379,12 @@ async function harness(
         maxRetries: 10,
         retryDelay: 100,
       });
-      assertRecordedEvents(fake.events, fake.listWheelDelta);
+      assertRecordedEvents(
+        fake.events,
+        paceFields['listDiagnostic'] === true
+          ? [fake.listWheelDelta, IG_FIXTURE.scroll.listClientHeight]
+          : fake.listWheelDelta,
+      );
     })().finally(() => {
       diagnostics.close();
       closeSettled = true;

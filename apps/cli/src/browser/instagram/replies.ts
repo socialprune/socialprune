@@ -198,8 +198,10 @@ async function checkedScope(
         scriptValues,
         match,
         address.code,
+        guard,
       );
       shape.soleComment = sole.diagnostic;
+      diagnostic?.(shape);
       return sole.accepted;
     },
   );
@@ -214,6 +216,7 @@ export async function replyScopeDiagnostic(
   guard: () => void,
   bodies: readonly unknown[] = [],
   scriptValues: readonly unknown[] = [],
+  publish?: (value: ReplyScopeDiagnostic) => void,
 ) {
   let result = emptyReplyScope();
   try {
@@ -223,6 +226,7 @@ export async function replyScopeDiagnostic(
       guard,
       (value) => {
         result = value;
+        publish?.(value);
       },
       bodies,
       scriptValues,

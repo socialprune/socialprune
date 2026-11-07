@@ -910,6 +910,7 @@
   "desktop.token.notice-error": "Instagram zeigt einen Fehlerhinweis. Der Lauf wurde gestoppt.",
   "desktop.token.rate-signal": "Instagram hat ein Limit- oder Kontoprüfsignal geliefert. Der Lauf wurde gestoppt.",
   "desktop.token.list-timeout": "Die Instagram-Kommentarliste wurde nicht rechtzeitig geladen.",
+  "desktop.token.step-deadline": "Der Instagram-Leseschritt hat seine Zeitgrenze überschritten. Sein unvollständiger Strukturbericht wurde aufbewahrt.",
   "desktop.token.post-timeout": "Der Instagram-Beitrag wurde nicht rechtzeitig geladen.",
   "desktop.token.navigation": "Die erwartete Instagram-Seite konnte nicht geöffnet werden.",
   "desktop.token.browser-closed": "Der Plattformbrowser wurde geschlossen. Der Lauf wurde gestoppt.",

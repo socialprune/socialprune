@@ -158,6 +158,7 @@ const tokenIds = [
   'desktop.token.notice-error',
   'desktop.token.rate-signal',
   'desktop.token.list-timeout',
+  'desktop.token.step-deadline',
   'desktop.token.post-timeout',
   'desktop.token.navigation',
   'desktop.token.browser-closed',

@@ -114,6 +114,8 @@ import type { WindowPlacement } from '../launch.ts';
 import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
 import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
+import { stepDeadline } from './step-deadline.ts';
+import type { ReplyScopeDiagnostic } from './report.ts';
 
 export interface ContextOptions {
   session?: RunSession;
@@ -321,6 +323,8 @@ export async function runContextWithDependencies(
   let deletionWarning: BrowserRun['instagramWarning'];
   const deletionWarningWrites = new Set<Promise<void>>();
   let stage: ContextCauseStage = 'run';
+  let reading: ReturnType<typeof stepDeadline> | undefined;
+  let deadlineClose: Promise<void> | undefined;
   const recordCause = (caught: unknown, at: ContextCauseStage) => {
     if (!(caught instanceof CliError) && !report.cause)
       report.cause = contextCause(caught, runId, at, steps);
@@ -347,6 +351,7 @@ export async function runContextWithDependencies(
   process.on('SIGTERM', stop);
   const guard = () => {
     if (networkFailure) throw networkFailure;
+    reading?.check();
     network?.check();
     pages?.check();
     if (closed) throw new ContextStop('PLATFORM_CHECK', 'browser-closed');
@@ -631,6 +636,7 @@ export async function runContextWithDependencies(
       Math.max(0, pace.perDay - prior.used),
     );
     const waitToReopen = async (retry: PostRetry) => {
+      reading?.clear();
       guard();
       await checkPage(page);
       await checkpoint();
@@ -763,107 +769,186 @@ export async function runContextWithDependencies(
         'not-shown';
       let reopening: ReturnType<PostOpenRetries['begin']> = null;
       let reopenTarget: string | null = null;
-      for (let candidate = 0; candidate < 3; candidate++) {
-        await sampleMemory();
-        postRequests?.close();
-        stage = 'pace';
-        const pausedBefore = controls?.pausedMs ?? 0;
-        await controls?.checkpoint(resumeChecks, waits.signal);
-        last += (controls?.pausedMs ?? 0) - pausedBefore;
-        if (
-          used >= pace.perDay ||
-          dateInZone(options.now(), options.plan.timeZone) !== day ||
-          steps >= max
-        ) {
-          stage = 'settlement';
-          await writer.settle({
-            attemptId,
-            state:
-              used >= pace.perDay ||
-              dateInZone(options.now(), options.plan.timeZone) !== day
-                ? 'failed'
-                : 'unconfirmed',
-            code:
+      let abortOuter = false;
+      const reportStart = report.steps.length;
+      reading = stepDeadline((elapsedMs, budgetMs) => {
+        waits.abort();
+        const step = (
+          report.steps.length > reportStart
+            ? report.steps.at(-1)
+            : { result: 'step-deadline', confirmed: false }
+        ) as Record<string, unknown>;
+        if (!report.steps.includes(step)) report.steps.push(step);
+        step['result'] = 'step-deadline';
+        const stages = [
+          'attempt',
+          'checkpoint',
+          'list-read',
+          'post-open',
+          'post-read',
+          'capture',
+          'answers',
+          'compare',
+          'canary-check',
+          'settlement',
+          'other',
+        ] as const;
+        step['deadline'] = {
+          budgetMs,
+          elapsedMs,
+          stage: stages.some((value) => value === stage) ? stage : 'other',
+          expired: true,
+        };
+        const scope = step['replyScope'] as ReplyScopeDiagnostic | undefined;
+        if (scope?.soleComment) {
+          scope.soleComment.observationFailed = true;
+          scope.soleComment.observationStop = 'step-deadline';
+          if (
+            scope.soleComment.firstFailedGate === 'none' ||
+            scope.soleComment.firstFailedGate === 'not-evaluated'
+          )
+            scope.soleComment.firstFailedGate = 'sole-observation';
+        }
+        const closing = page.close({ runBeforeUnload: false }).catch(() => {});
+        deadlineClose = Promise.race([closing, retryPoll(1000)]);
+      });
+      const stepAnswers = answers,
+        stepNetwork = network;
+      await reading.run(async () => {
+        const answers = stepAnswers,
+          network = stepNetwork;
+        for (let candidate = 0; candidate < 3; candidate++) {
+          reading!.clear();
+          await sampleMemory();
+          postRequests?.close();
+          stage = 'pace';
+          const pausedBefore = controls?.pausedMs ?? 0;
+          await controls?.checkpoint(resumeChecks, waits.signal);
+          last += (controls?.pausedMs ?? 0) - pausedBefore;
+          if (
+            used >= pace.perDay ||
+            dateInZone(options.now(), options.plan.timeZone) !== day ||
+            steps >= max
+          ) {
+            stage = 'settlement';
+            await writer.settle({
+              attemptId,
+              state:
+                used >= pace.perDay ||
+                dateInZone(options.now(), options.plan.timeZone) !== day
+                  ? 'failed'
+                  : 'unconfirmed',
+              code:
+                used >= pace.perDay ||
+                dateInZone(options.now(), options.plan.timeZone) !== day
+                  ? 'daily-cap'
+                  : lastUnconfirmed,
+              at: options.now().toISOString(),
+            });
+            pendingAttempt = undefined;
+            rejectIncomplete();
+            endReason =
               used >= pace.perDay ||
               dateInZone(options.now(), options.plan.timeZone) !== day
                 ? 'daily-cap'
-                : lastUnconfirmed,
-            at: options.now().toISOString(),
-          });
-          pendingAttempt = undefined;
-          rejectIncomplete();
-          endReason =
-            used >= pace.perDay ||
-            dateInZone(options.now(), options.plan.timeZone) !== day
-              ? 'daily-cap'
-              : 'done';
-          break outer;
-        }
-        if (batch >= pace.batch) {
-          if (pace.pauseMs) {
+                : 'done';
+            abortOuter = true;
+            return;
+          }
+          if (batch >= pace.batch) {
+            if (pace.pauseMs) {
+              options.session?.update({
+                phase: 'batch-pause',
+                remainingMs: pace.pauseMs,
+                until: new Date(
+                  options.now().getTime() + pace.pauseMs,
+                ).toISOString(),
+              });
+              await boundaryWait(pace.pauseMs);
+              options.session?.update({ phase: 'running' });
+            }
+            batch = 0;
+          }
+          const wait = last + pace.intervalMs - options.now().getTime();
+          if (wait > 0) {
             options.session?.update({
-              phase: 'batch-pause',
-              remainingMs: pace.pauseMs,
-              until: new Date(
-                options.now().getTime() + pace.pauseMs,
+              nextStepAt: new Date(
+                options.now().getTime() + wait,
               ).toISOString(),
             });
-            await boundaryWait(pace.pauseMs);
-            options.session?.update({ phase: 'running' });
+            await boundaryWait(wait);
           }
-          batch = 0;
-        }
-        const wait = last + pace.intervalMs - options.now().getTime();
-        if (wait > 0) {
-          options.session?.update({
-            nextStepAt: new Date(options.now().getTime() + wait).toISOString(),
-          });
-          await boundaryWait(wait);
-        }
-        stage = 'checkpoint';
-        await checkpoint();
-        if (dateInZone(options.now(), options.plan.timeZone) !== day) {
-          stage = 'settlement';
-          await writer.settle({
-            attemptId,
-            state: 'failed',
-            code: 'daily-cap',
-            at: options.now().toISOString(),
-          });
-          pendingAttempt = undefined;
-          rejectIncomplete();
-          endReason = 'daily-cap';
-          break outer;
-        }
-        await controls?.checkpoint(resumeChecks, waits.signal);
-        stage = 'attempt';
-        await writer.step(
-          runId,
-          options.now().toISOString(),
-          options.plan.timeZone,
-        );
-        if (candidate === 0 && !reopening) commentsTried++;
-        steps++;
-        used++;
-        batch++;
-        last = options.now().getTime();
-        if (reopening) reopening.retryStep = steps;
-        options.session?.progress(
-          used,
-          completed,
-          (await options.store.browserJournal()).attempts.filter(
-            (value) => value.runId === runId,
-          ),
-        );
-        answers.reset(
-          options.plan.canary || Boolean(options.order?.value.listDiagnostic),
-        );
-        answerReport = undefined;
-        const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
-        stage = 'list-read';
-        const list = await (async () => {
-          if (options.plan.refreshLikes || options.plan.refreshReplies) {
-            if (options.plan.refreshReplies)
+          stage = 'checkpoint';
+          await checkpoint();
+          if (dateInZone(options.now(), options.plan.timeZone) !== day) {
+            stage = 'settlement';
+            await writer.settle({
+              attemptId,
+              state: 'failed',
+              code: 'daily-cap',
+              at: options.now().toISOString(),
+            });
+            pendingAttempt = undefined;
+            rejectIncomplete();
+            endReason = 'daily-cap';
+            abortOuter = true;
+            return;
+          }
+          await controls?.checkpoint(resumeChecks, waits.signal);
+          stage = 'attempt';
+          reading!.begin(deps.responseMs * 12);
+          await writer.step(
+            runId,
+            options.now().toISOString(),
+            options.plan.timeZone,
+          );
+          if (candidate === 0 && !reopening) commentsTried++;
+          steps++;
+          used++;
+          batch++;
+          last = options.now().getTime();
+          if (reopening) reopening.retryStep = steps;
+          options.session?.progress(
+            used,
+            completed,
+            (await options.store.browserJournal()).attempts.filter(
+              (value) => value.runId === runId,
+            ),
+          );
+          answers.reset(
+            options.plan.canary || Boolean(options.order?.value.listDiagnostic),
+          );
+          answerReport = undefined;
+          const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+          stage = 'list-read';
+          const list = await (async () => {
+            if (options.plan.refreshLikes || options.plan.refreshReplies) {
+              if (options.plan.refreshReplies)
+                return {
+                  account: options.plan.handle,
+                  manualReason: undefined,
+                  candidates: [
+                    {
+                      index: 0,
+                      username: options.plan.handle,
+                      text: row.item.text,
+                      age: '',
+                    },
+                  ],
+                  rowCount: 0,
+                  emptySkipped: 0,
+                  otherName: 0,
+                  scrollLoads: 0,
+                  full: false,
+                  oldestWithinWeek: false,
+                };
+              await navigateList(
+                page,
+                options.plan.handle,
+                deps,
+                guard,
+                rowCounts,
+              );
               return {
                 account: options.plan.handle,
                 manualReason: undefined,
@@ -882,133 +967,284 @@ export async function runContextWithDependencies(
                 full: false,
                 oldestWithinWeek: false,
               };
-            await navigateList(
-              page,
-              options.plan.handle,
-              deps,
-              guard,
-              rowCounts,
-            );
-            return {
-              account: options.plan.handle,
-              manualReason: undefined,
-              candidates: [
-                {
-                  index: 0,
-                  username: options.plan.handle,
-                  text: row.item.text,
-                  age: '',
-                },
-              ],
-              rowCount: 0,
-              emptySkipped: 0,
-              otherName: 0,
-              scrollLoads: 0,
-              full: false,
-              oldestWithinWeek: false,
-            };
+            }
+            try {
+              const result = await loadList(
+                page,
+                row.item,
+                options.plan.handle,
+                deps,
+                guard,
+                options.plan.canary && steps === 1,
+                options.now(),
+                rowCounts,
+                freshness,
+                answers.bodies,
+                options.order?.value.listDiagnostic,
+                options.plan.timeZone,
+              );
+              if (reopening?.stage === 'list') {
+                reopening.outcome = 'ready';
+                reopening = null;
+              }
+              return result;
+            } catch (caught) {
+              if (
+                caught instanceof ContextStop &&
+                caught.token === 'list-timeout'
+              ) {
+                const timeoutStep = {
+                  image: {
+                    status: 'not-attempted',
+                    bytes: 0,
+                    ...imageDiagnostic(null, null, []),
+                  },
+                  ready: { postMs: 0 },
+                  filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
+                  listTimeout: rowCounts.listTimeout,
+                  rowSignature: rowCounts.rowSignature,
+                  listRegions: rowCounts.regions,
+                  listRows: rowCounts.diagnostic,
+                  rowShape: rowCounts.rowShape,
+                  filteredProbe: rowCounts.filteredProbe,
+                  newestProbe: rowCounts.newestProbe,
+                  widenedProbes: rowCounts.widenedProbes,
+                  diagnosticControl: options.plan.diagnosticControl
+                    ? true
+                    : undefined,
+                  oldestSortStructure: rowCounts.oldestSortStructure,
+                  listRowsAfterApply: rowCounts.initialDiagnostic,
+                  listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                  unfilteredOldestSortApplied:
+                    rowCounts.unfilteredOldestSortApplied,
+                  listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                  filterDialogClosedObserved:
+                    rowCounts.filterDialogClosedObserved,
+                  afterDialogSameAsAfterApply:
+                    rowCounts.afterDialogSameAsAfterApply,
+                  listWindow: rowCounts.windowDiagnostic,
+                  rows: 0,
+                  emptySkipped: rowCounts.emptySkipped,
+                  handleOnlySkipped: rowCounts.handleOnlySkipped,
+                  otherName: rowCounts.otherName,
+                  candidates: 0,
+                  confirmed: false,
+                  result: 'list-timeout',
+                };
+                report.steps.push(timeoutStep);
+                activeStep = timeoutStep;
+                if (reopening?.stage === 'list') reopening.outcome = 'timeout';
+              } else if (
+                options.order?.value.listDiagnostic &&
+                (rowCounts.diagnostic || rowCounts.rowShape)
+              ) {
+                report.steps.push({
+                  result: 'list-diagnostic',
+                  confirmed: false,
+                  candidates: 0,
+                  listRows: rowCounts.diagnostic,
+                  rowShape: rowCounts.rowShape,
+                  filteredProbe: rowCounts.filteredProbe,
+                  newestProbe: rowCounts.newestProbe,
+                  widenedProbes: rowCounts.widenedProbes,
+                  diagnosticControl: options.plan.diagnosticControl
+                    ? true
+                    : undefined,
+                  oldestSortStructure: rowCounts.oldestSortStructure,
+                  listRowsAfterApply: rowCounts.initialDiagnostic,
+                  listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                  unfilteredOldestSortApplied:
+                    rowCounts.unfilteredOldestSortApplied,
+                  listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                  filterDialogClosedObserved:
+                    rowCounts.filterDialogClosedObserved,
+                  afterDialogSameAsAfterApply:
+                    rowCounts.afterDialogSameAsAfterApply,
+                  listWindow: rowCounts.windowDiagnostic,
+                });
+              }
+              const retry = postRetries.beginList(
+                caught,
+                [row.item.id],
+                steps,
+                options.plan.canary,
+                used < pace.perDay &&
+                  steps < max &&
+                  dateInZone(options.now(), options.plan.timeZone) === day,
+              );
+              if (!retry) throw caught;
+              await sampleMemory();
+              await waitToReopen(retry);
+              reopening = retry;
+              return null;
+            } finally {
+              report.rows.emptySkipped += rowCounts.emptySkipped;
+              report.rows.otherName += rowCounts.otherName;
+            }
+          })();
+          if (!list) {
+            candidate--;
+            continue;
           }
-          try {
-            const result = await loadList(
-              page,
-              row.item,
-              options.plan.handle,
-              deps,
-              guard,
-              options.plan.canary && steps === 1,
-              options.now(),
-              rowCounts,
-              freshness,
-              answers.bodies,
-              options.order?.value.listDiagnostic,
-              options.plan.timeZone,
-            );
-            if (reopening?.stage === 'list') {
-              reopening.outcome = 'ready';
-              reopening = null;
-            }
-            return result;
-          } catch (caught) {
+          if (accountBefore === null) accountBeforeClass = 'expected';
+          accountBefore ??= list.account;
+          accountAfter = list.account;
+          options.session?.before(before, accountBefore);
+          await network?.flush();
+          stage = 'answers';
+          await answers.flush(deps.responseMs);
+          const stepReport: Record<string, unknown> = {
+            image: {
+              status: 'not-attempted',
+              bytes: 0,
+              ...imageDiagnostic(null, null, []),
+            },
+            ready: { postMs: 0 },
+            filterByLists:
+              !options.plan.refreshLikes && !options.plan.refreshReplies,
+            rowSignature: rowCounts.rowSignature,
+            listRegions: rowCounts.regions,
+            listRows: rowCounts.diagnostic,
+            rowShape: rowCounts.rowShape,
+            filteredProbe: rowCounts.filteredProbe,
+            newestProbe: rowCounts.newestProbe,
+            widenedProbes: rowCounts.widenedProbes,
+            diagnosticControl: options.plan.diagnosticControl
+              ? true
+              : undefined,
+            oldestSortStructure: rowCounts.oldestSortStructure,
+            listRowsAfterApply: rowCounts.initialDiagnostic,
+            listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+            unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,
+            listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+            filterDialogClosedObserved: rowCounts.filterDialogClosedObserved,
+            afterDialogSameAsAfterApply: rowCounts.afterDialogSameAsAfterApply,
+            listWindow: rowCounts.windowDiagnostic,
+            rows: list.rowCount,
+            emptySkipped: list.emptySkipped,
+            handleOnlySkipped: rowCounts.handleOnlySkipped,
+            otherName: list.otherName,
+            candidates: list.candidates.length,
+            scrollLoads: list.scrollLoads,
+            expansionClicks: 0,
+            expansionScrolls: 0,
+            confirmed: false,
+            roles: ['button', 'dialog', 'combobox'],
+            controls: [
+              ...CLICK_NAMES,
+              POST_SCROLL_ACTION,
+              'date-year-list',
+              'date-month-list',
+              'date-day-list',
+            ],
+            fields: {},
+            listPairing: answers.bodies.some(pairedCode),
+            oldestWithinWeek: list.oldestWithinWeek,
+            ...(list.manualReason
+              ? { listTimeout: rowCounts.listTimeout }
+              : {}),
+          };
+          report.steps.push(stepReport);
+          if (list.manualReason) await checkpoint();
+          activeStep = stepReport;
+          if (options.order?.value.listDiagnostic) {
+            // A diagnostic observes the existing list path only. It never opens a
+            // candidate, settles a negative lookup or accepts a canary.
+            stepReport.result = 'list-diagnostic';
+            throw new ContextStop('CANCELLED', 'stopped');
+          }
+          answers.reset(
+            true,
+            options.plan.refreshReplies ||
+              options.order?.value.captureReplies === true ||
+              options.order?.value.replyDiagnostic === true,
+          );
+          answerReport = options.plan.canary
+            ? () => {
+                stepReport.secondSource = answers.summary(
+                  postAddress(page.url(), deps.origin)?.code ?? null,
+                );
+              }
+            : undefined;
+          answerReport?.();
+          profileNames.push(list.account);
+          if (list.manualReason || list.full || !list.candidates[candidate]) {
+            stage = 'settlement';
+            await writer.settle({
+              attemptId,
+              state: 'not-listed',
+              code: list.manualReason ?? (list.full ? 'window-full' : 'no-row'),
+              at: options.now().toISOString(),
+            });
+            pendingAttempt = undefined;
+            settled = true;
+            stepReport.result =
+              list.manualReason ?? (list.full ? 'window-full' : 'no-row');
+            if (list.manualReason) report.rows.imageOnlySkipped++;
+            break;
+          }
+          stage = 'post-open';
+          activeReady = { postMs: 0 };
+          stepReport.ready = activeReady;
+          const openedAt = performance.now();
+          if (options.plan.refreshReplies) reading!.begin(deps.responseMs);
+          postRequests = network.beginPostRequests(page);
+          const postRequestsForStep = postRequests;
+          Object.defineProperty(stepReport, 'postRequests', {
+            enumerable: true,
+            get: () => postRequestsForStep.summary(),
+          });
+          let opened: boolean;
+          let target: string | null = reopenTarget;
+          const navigation = (request: Request) => {
             if (
-              caught instanceof ContextStop &&
-              caught.token === 'list-timeout'
-            ) {
-              const timeoutStep = {
-                image: {
-                  status: 'not-attempted',
-                  bytes: 0,
-                  ...imageDiagnostic(null, null, []),
-                },
-                ready: { postMs: 0 },
-                filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
-                listTimeout: rowCounts.listTimeout,
-                rowSignature: rowCounts.rowSignature,
-                listRegions: rowCounts.regions,
-                listRows: rowCounts.diagnostic,
-                rowShape: rowCounts.rowShape,
-                filteredProbe: rowCounts.filteredProbe,
-                newestProbe: rowCounts.newestProbe,
-                widenedProbes: rowCounts.widenedProbes,
-                diagnosticControl: options.plan.diagnosticControl
-                  ? true
-                  : undefined,
-                oldestSortStructure: rowCounts.oldestSortStructure,
-                listRowsAfterApply: rowCounts.initialDiagnostic,
-                listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-                unfilteredOldestSortApplied:
-                  rowCounts.unfilteredOldestSortApplied,
-                listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-                filterDialogClosedObserved:
-                  rowCounts.filterDialogClosedObserved,
-                afterDialogSameAsAfterApply:
-                  rowCounts.afterDialogSameAsAfterApply,
-                listWindow: rowCounts.windowDiagnostic,
-                rows: 0,
-                emptySkipped: rowCounts.emptySkipped,
-                handleOnlySkipped: rowCounts.handleOnlySkipped,
-                otherName: rowCounts.otherName,
-                candidates: 0,
-                confirmed: false,
-                result: 'list-timeout',
-              };
-              report.steps.push(timeoutStep);
-              activeStep = timeoutStep;
-              if (reopening?.stage === 'list') reopening.outcome = 'timeout';
-            } else if (
-              options.order?.value.listDiagnostic &&
-              (rowCounts.diagnostic || rowCounts.rowShape)
-            ) {
-              report.steps.push({
-                result: 'list-diagnostic',
-                confirmed: false,
-                candidates: 0,
-                listRows: rowCounts.diagnostic,
-                rowShape: rowCounts.rowShape,
-                filteredProbe: rowCounts.filteredProbe,
-                newestProbe: rowCounts.newestProbe,
-                widenedProbes: rowCounts.widenedProbes,
-                diagnosticControl: options.plan.diagnosticControl
-                  ? true
-                  : undefined,
-                oldestSortStructure: rowCounts.oldestSortStructure,
-                listRowsAfterApply: rowCounts.initialDiagnostic,
-                listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-                unfilteredOldestSortApplied:
-                  rowCounts.unfilteredOldestSortApplied,
-                listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-                filterDialogClosedObserved:
-                  rowCounts.filterDialogClosedObserved,
-                afterDialogSameAsAfterApply:
-                  rowCounts.afterDialogSameAsAfterApply,
-                listWindow: rowCounts.windowDiagnostic,
-              });
-            }
-            const retry = postRetries.beginList(
+              !request.isNavigationRequest() ||
+              request.frame() !== page.mainFrame()
+            )
+              return;
+            const address = postReopenTarget(request.url(), deps.origin);
+            if (address) target = address;
+          };
+          page.on('request', navigation);
+          try {
+            opened =
+              (options.plan.refreshLikes || options.plan.refreshReplies) &&
+              row.context
+                ? await reopenCandidate(
+                    page,
+                    `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
+                    deps,
+                    guard,
+                    options.plan.refreshReplies
+                      ? options.plan.handle
+                      : undefined,
+                  )
+                : reopening && reopenTarget
+                  ? await reopenCandidate(page, reopenTarget, deps, guard)
+                  : await openCandidate(
+                      page,
+                      list.candidates[candidate]!.index,
+                      deps,
+                      guard,
+                    );
+            if (reopening) reopening.outcome = 'ready';
+            reopening = null;
+            reopenTarget = null;
+          } catch (caught) {
+            target ??= postReopenTarget(page.url(), deps.origin);
+            activeReady.postMs = Math.max(
+              0,
+              Math.round(performance.now() - openedAt),
+            );
+            if (reopening && errorClass(caught) === 'timeout')
+              reopening.outcome = 'timeout';
+            const retry = postRetries.begin(
               caught,
-              [row.item.id],
+              [row.item.id, ...(target ? [target] : [])],
               steps,
               options.plan.canary,
-              used < pace.perDay &&
+              target !== null &&
+                used < pace.perDay &&
                 steps < max &&
                 dateInZone(options.now(), options.plan.timeZone) === day,
             );
@@ -1016,308 +1252,281 @@ export async function runContextWithDependencies(
             await sampleMemory();
             await waitToReopen(retry);
             reopening = retry;
-            return null;
+            reopenTarget = target;
+            candidate--;
+            continue;
           } finally {
-            report.rows.emptySkipped += rowCounts.emptySkipped;
-            report.rows.otherName += rowCounts.otherName;
-          }
-        })();
-        if (!list) {
-          candidate--;
-          continue;
-        }
-        if (accountBefore === null) accountBeforeClass = 'expected';
-        accountBefore ??= list.account;
-        accountAfter = list.account;
-        options.session?.before(before, accountBefore);
-        await network?.flush();
-        stage = 'answers';
-        await answers.flush(deps.responseMs);
-        const stepReport: Record<string, unknown> = {
-          image: {
-            status: 'not-attempted',
-            bytes: 0,
-            ...imageDiagnostic(null, null, []),
-          },
-          ready: { postMs: 0 },
-          filterByLists:
-            !options.plan.refreshLikes && !options.plan.refreshReplies,
-          rowSignature: rowCounts.rowSignature,
-          listRegions: rowCounts.regions,
-          listRows: rowCounts.diagnostic,
-          rowShape: rowCounts.rowShape,
-          filteredProbe: rowCounts.filteredProbe,
-          newestProbe: rowCounts.newestProbe,
-          widenedProbes: rowCounts.widenedProbes,
-          diagnosticControl: options.plan.diagnosticControl ? true : undefined,
-          oldestSortStructure: rowCounts.oldestSortStructure,
-          listRowsAfterApply: rowCounts.initialDiagnostic,
-          listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-          unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,
-          listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-          filterDialogClosedObserved: rowCounts.filterDialogClosedObserved,
-          afterDialogSameAsAfterApply: rowCounts.afterDialogSameAsAfterApply,
-          listWindow: rowCounts.windowDiagnostic,
-          rows: list.rowCount,
-          emptySkipped: list.emptySkipped,
-          handleOnlySkipped: rowCounts.handleOnlySkipped,
-          otherName: list.otherName,
-          candidates: list.candidates.length,
-          scrollLoads: list.scrollLoads,
-          expansionClicks: 0,
-          expansionScrolls: 0,
-          confirmed: false,
-          roles: ['button', 'dialog', 'combobox'],
-          controls: [
-            ...CLICK_NAMES,
-            POST_SCROLL_ACTION,
-            'date-year-list',
-            'date-month-list',
-            'date-day-list',
-          ],
-          fields: {},
-          listPairing: answers.bodies.some(pairedCode),
-          oldestWithinWeek: list.oldestWithinWeek,
-          ...(list.manualReason ? { listTimeout: rowCounts.listTimeout } : {}),
-        };
-        report.steps.push(stepReport);
-        if (list.manualReason) await checkpoint();
-        activeStep = stepReport;
-        if (options.order?.value.listDiagnostic) {
-          // A diagnostic observes the existing list path only. It never opens a
-          // candidate, settles a negative lookup or accepts a canary.
-          stepReport.result = 'list-diagnostic';
-          throw new ContextStop('CANCELLED', 'stopped');
-        }
-        answers.reset(
-          true,
-          options.plan.refreshReplies ||
-            options.order?.value.captureReplies === true ||
-            options.order?.value.replyDiagnostic === true,
-        );
-        answerReport = options.plan.canary
-          ? () => {
-              stepReport.secondSource = answers!.summary(
-                postAddress(page.url(), deps.origin)?.code ?? null,
+            if (activeReady && activeReady.postMs === 0)
+              activeReady.postMs = Math.max(
+                0,
+                Math.round(performance.now() - openedAt),
               );
-            }
-          : undefined;
-        answerReport?.();
-        profileNames.push(list.account);
-        if (list.manualReason || list.full || !list.candidates[candidate]) {
-          stage = 'settlement';
-          await writer.settle({
-            attemptId,
-            state: 'not-listed',
-            code: list.manualReason ?? (list.full ? 'window-full' : 'no-row'),
-            at: options.now().toISOString(),
-          });
-          pendingAttempt = undefined;
-          settled = true;
-          stepReport.result =
-            list.manualReason ?? (list.full ? 'window-full' : 'no-row');
-          if (list.manualReason) report.rows.imageOnlySkipped++;
-          break;
-        }
-        stage = 'post-open';
-        activeReady = { postMs: 0 };
-        stepReport.ready = activeReady;
-        const openedAt = performance.now();
-        postRequests = network.beginPostRequests(page);
-        const postRequestsForStep = postRequests;
-        Object.defineProperty(stepReport, 'postRequests', {
-          enumerable: true,
-          get: () => postRequestsForStep.summary(),
-        });
-        let opened: boolean;
-        let target: string | null = reopenTarget;
-        const navigation = (request: Request) => {
-          if (
-            !request.isNavigationRequest() ||
-            request.frame() !== page.mainFrame()
-          )
-            return;
-          const address = postReopenTarget(request.url(), deps.origin);
-          if (address) target = address;
-        };
-        page.on('request', navigation);
-        try {
-          opened =
-            (options.plan.refreshLikes || options.plan.refreshReplies) &&
-            row.context
-              ? await reopenCandidate(
-                  page,
-                  `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
-                  deps,
-                  guard,
-                  options.plan.refreshReplies ? options.plan.handle : undefined,
-                )
-              : reopening && reopenTarget
-                ? await reopenCandidate(page, reopenTarget, deps, guard)
-                : await openCandidate(
-                    page,
-                    list.candidates[candidate]!.index,
-                    deps,
-                    guard,
-                  );
-          if (reopening) reopening.outcome = 'ready';
-          reopening = null;
-          reopenTarget = null;
-        } catch (caught) {
-          target ??= postReopenTarget(page.url(), deps.origin);
-          activeReady.postMs = Math.max(
-            0,
-            Math.round(performance.now() - openedAt),
-          );
-          if (reopening && errorClass(caught) === 'timeout')
-            reopening.outcome = 'timeout';
-          const retry = postRetries.begin(
-            caught,
-            [row.item.id, ...(target ? [target] : [])],
-            steps,
-            options.plan.canary,
-            target !== null &&
-              used < pace.perDay &&
-              steps < max &&
-              dateInZone(options.now(), options.plan.timeZone) === day,
-          );
-          if (!retry) throw caught;
-          await sampleMemory();
-          await waitToReopen(retry);
-          reopening = retry;
-          reopenTarget = target;
-          candidate--;
-          continue;
-        } finally {
-          if (activeReady && activeReady.postMs === 0)
-            activeReady.postMs = Math.max(
-              0,
-              Math.round(performance.now() - openedAt),
-            );
-          activeReady = undefined;
-          page.off('request', navigation);
-        }
-        if (!opened) {
-          stage = 'settlement';
-          await writer.settle({
-            attemptId,
-            state:
-              options.plan.refreshLikes || options.plan.refreshReplies
-                ? 'failed'
-                : 'unavailable',
-            code:
-              options.plan.refreshLikes || options.plan.refreshReplies
-                ? refreshOutcome({ opened: false, context: row.context })
-                : null,
-            at: options.now().toISOString(),
-          });
-          pendingAttempt = undefined;
-          settled = true;
-          stepReport.result =
-            options.plan.refreshLikes || options.plan.refreshReplies
-              ? 'post-unavailable'
-              : 'unavailable';
-          break;
-        }
-        stage = 'post-read';
-        if (
-          options.plan.refreshReplies &&
-          row.context?.confirmedBy === 'post'
-        ) {
-          stepReport.replyScope = await replyScopeDiagnostic(
-            page,
-            {
-              id: row.context.comment.id,
-              createdAt: row.context.comment.createdAt,
-              exportCreatedAt: row.item.createdAt,
-              username: options.plan.handle,
-              text: row.item.text,
-            },
-            guard,
-            answers.bodies,
-            answers.scriptValues(),
-          );
-        }
-        const read = await confirmOnPost(
-          page,
-          row.item,
-          options.plan.handle,
-          deps,
-          guard,
-        );
-        stepReport.expansionClicks = read.expandClicks;
-        stepReport.expansionScrolls = read.expansionScrolls;
-        stepReport.ownerCount = read.post.ownerCount;
-        await answers.flush(deps.responseMs);
-        stepReport.image = {
-          status: 'not-attempted',
-          bytes: 0,
-          ...imageDiagnostic(read.post.code, read.source, answers.bodies),
-        };
-        if (options.plan.canary) {
-          await answers.flush(deps.responseMs);
-          stepReport.secondSource = answers.summary(read.post.code);
-        }
-        await checkpoint();
-        if (options.plan.refreshLikes || options.plan.refreshReplies) {
-          const outcome = refreshOutcome({
-            opened: true,
-            context: row.context,
-            post: read.post,
-            result: read.result,
-          });
-          if (outcome) {
+            activeReady = undefined;
+            page.off('request', navigation);
+          }
+          if (!opened) {
             stage = 'settlement';
             await writer.settle({
               attemptId,
-              state: 'failed',
-              code: outcome,
+              state:
+                options.plan.refreshLikes || options.plan.refreshReplies
+                  ? 'failed'
+                  : 'unavailable',
+              code:
+                options.plan.refreshLikes || options.plan.refreshReplies
+                  ? refreshOutcome({ opened: false, context: row.context })
+                  : null,
               at: options.now().toISOString(),
             });
             pendingAttempt = undefined;
             settled = true;
-            stepReport.result = outcome;
+            stepReport.result =
+              options.plan.refreshLikes || options.plan.refreshReplies
+                ? 'post-unavailable'
+                : 'unavailable';
             break;
           }
-          if (read.result.state !== 'confirmed')
-            throw new ContextStop('PLATFORM_CHECK', 'post-structure');
-          if (options.plan.refreshReplies) {
-            let answerChecked = false;
+          stage = 'post-read';
+          if (
+            options.plan.refreshReplies &&
+            row.context?.confirmedBy === 'post'
+          ) {
+            stepReport.replyScope = await replyScopeDiagnostic(
+              page,
+              {
+                id: row.context.comment.id,
+                createdAt: row.context.comment.createdAt,
+                exportCreatedAt: row.item.createdAt,
+                username: options.plan.handle,
+                text: row.item.text,
+              },
+              guard,
+              answers.bodies,
+              answers.scriptValues(),
+              (value) => {
+                stepReport.replyScope = value;
+              },
+            );
+          }
+          const read = await confirmOnPost(
+            page,
+            row.item,
+            options.plan.handle,
+            deps,
+            guard,
+          );
+          stepReport.expansionClicks = read.expandClicks;
+          stepReport.expansionScrolls = read.expansionScrolls;
+          stepReport.ownerCount = read.post.ownerCount;
+          await answers.flush(deps.responseMs);
+          stepReport.image = {
+            status: 'not-attempted',
+            bytes: 0,
+            ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+          };
+          if (options.plan.canary) {
+            await answers.flush(deps.responseMs);
+            stepReport.secondSource = answers.summary(read.post.code);
+          }
+          await checkpoint();
+          if (options.plan.refreshLikes || options.plan.refreshReplies) {
+            const outcome = refreshOutcome({
+              opened: true,
+              context: row.context,
+              post: read.post,
+              result: read.result,
+            });
+            if (outcome) {
+              stage = 'settlement';
+              await writer.settle({
+                attemptId,
+                state: 'failed',
+                code: outcome,
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              settled = true;
+              stepReport.result = outcome;
+              break;
+            }
+            if (read.result.state !== 'confirmed')
+              throw new ContextStop('PLATFORM_CHECK', 'post-structure');
+            if (options.plan.refreshReplies) {
+              let answerChecked = false;
+              const match = {
+                ...read.result.comment,
+                exportCreatedAt: row.item.createdAt,
+                username: options.plan.handle,
+                text: row.item.text,
+              };
+              const replies = await captureRepliesForMode(
+                () =>
+                  commentReplies(
+                    page,
+                    answers.bodies,
+                    match,
+                    guard,
+                    openedAt + deps.responseMs,
+                    (ms) => deps.sleep(ms),
+                    deps.pace.expandMs,
+                    (value) => {
+                      answerChecked = value;
+                    },
+                    () =>
+                      answers.flush(
+                        Math.max(
+                          1,
+                          openedAt + deps.responseMs - performance.now(),
+                        ),
+                      ),
+                    (value) => {
+                      stepReport.replyScope = value;
+                    },
+                    (value) => {
+                      stepReport.replyAnswer = value;
+                    },
+                    () => answers.bodyPaths,
+                    () => answers.htmlDiagnostic(match),
+                    () => answers.scriptValues(),
+                    (value) => {
+                      stepReport.replyControls = value;
+                    },
+                    (value) => {
+                      stepReport.replyExpansion = value;
+                    },
+                  ),
+                true,
+                false,
+                (reason) => {
+                  stepReport.replies = {
+                    read: 0,
+                    moreCount: 0,
+                    capped: false,
+                    reason,
+                  };
+                },
+              );
+              if (!replies) throw new ReplyReadFailure('reply-read-failed');
+              await checkpoint();
+              await writer.fillReplies(
+                attemptId,
+                replies,
+                options.now().toISOString(),
+              );
+              pendingAttempt = undefined;
+              settled = true;
+              completed++;
+              stepReport.result = 'replies-refreshed';
+              stepReport.replies = {
+                read: replies.entries.length,
+                moreCount: replies.moreCount,
+                capped: replies.capped,
+                answerChecked,
+              };
+              checkedItemIds.push(row.item.id);
+              repliesAnswerChecked &&= answerChecked;
+              break;
+            }
+            const likes = await commentLikes(page, answers.bodies, {
+              ...read.result.comment,
+              username: options.plan.handle,
+              text: row.item.text,
+            });
+            await checkpoint();
+            await writer.fillLikes(
+              attemptId,
+              likes,
+              options.now().toISOString(),
+            );
+            pendingAttempt = undefined;
+            settled = true;
+            completed++;
+            stepReport.result = 'likes-refreshed';
+            break;
+          }
+          const fromList =
+            Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
+            read.result.state === 'unconfirmed' &&
+            read.result.code === 'not-shown' &&
+            list.candidates.length === 1 &&
+            list.candidates[0]!.username.toLowerCase() ===
+              options.plan.handle.toLowerCase() &&
+            normalize(list.candidates[0]!.text) === normalize(row.item.text) &&
+            read.post.ownerCount === 1 &&
+            read.post.ownerMatchesProfile &&
+            ownerName(read.post.owner) ===
+              ownerName(row.item.reference.ownerHandle ?? '');
+          if (read.result.state !== 'confirmed' && !fromList) {
+            lastUnconfirmed = read.result.code;
+            stepReport.result = read.result.code;
+            if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
+            const code =
+              list.candidates.length > 3 ? 'several' : read.result.code;
+            stage = 'settlement';
+            await writer.settle({
+              attemptId,
+              state: 'unconfirmed',
+              code,
+              at: options.now().toISOString(),
+            });
+            pendingAttempt = undefined;
+            settled = true;
+            if (options.plan.canary && code === 'owner')
+              Object.assign(stepReport, {
+                ownerLinksOneAccount: read.post.ownerCount === 1,
+                ownerEqualsExport:
+                  ownerName(read.post.owner) ===
+                  ownerName(row.item.reference.ownerHandle ?? ''),
+                firstProfileNamesOwner: read.post.ownerMatchesProfile,
+              });
+            break;
+          }
+          stage = 'capture';
+          const captures = await (deps.capture ?? capturePost)(
+            options.workspace,
+            read.post.code,
+            read.post.element,
+            read.source,
+            answers.images,
+            deps.policy,
+          );
+          let capturedReplies: InstagramContext['replies'];
+          if (read.result.state === 'confirmed') {
             const match = {
               ...read.result.comment,
               exportCreatedAt: row.item.createdAt,
               username: options.plan.handle,
               text: row.item.text,
             };
-            const replies = await captureRepliesForMode(
+            capturedReplies = await captureRepliesForMode(
               () =>
                 commentReplies(
                   page,
-                  answers!.bodies,
+                  answers.bodies,
                   match,
                   guard,
                   openedAt + deps.responseMs,
                   (ms) => deps.sleep(ms),
                   deps.pace.expandMs,
-                  (value) => {
-                    answerChecked = value;
-                  },
+                  () => {},
                   () =>
-                    answers!.flush(
+                    answers.flush(
                       Math.max(
                         1,
                         openedAt + deps.responseMs - performance.now(),
                       ),
                     ),
-                  (value) => {
-                    stepReport.replyScope = value;
-                  },
+                  options.order?.value.replyDiagnostic === true
+                    ? (value) => {
+                        stepReport.replyScope = value;
+                      }
+                    : undefined,
                   (value) => {
                     stepReport.replyAnswer = value;
                   },
-                  () => answers!.bodyPaths,
-                  () => answers!.htmlDiagnostic(match),
-                  () => answers!.scriptValues(),
+                  () => answers.bodyPaths,
+                  () => answers.htmlDiagnostic(match),
+                  () => answers.scriptValues(),
                   (value) => {
                     stepReport.replyControls = value;
                   },
@@ -1325,8 +1534,8 @@ export async function runContextWithDependencies(
                     stepReport.replyExpansion = value;
                   },
                 ),
-              true,
               false,
+              options.order?.value.captureReplies === true,
               (reason) => {
                 stepReport.replies = {
                   read: 0,
@@ -1336,246 +1545,118 @@ export async function runContextWithDependencies(
                 };
               },
             );
-            if (!replies) throw new ReplyReadFailure('reply-read-failed');
             await checkpoint();
-            await writer.fillReplies(
-              attemptId,
-              replies,
-              options.now().toISOString(),
-            );
-            pendingAttempt = undefined;
-            settled = true;
-            completed++;
-            stepReport.result = 'replies-refreshed';
-            stepReport.replies = {
-              read: replies.entries.length,
-              moreCount: replies.moreCount,
-              capped: replies.capped,
-              answerChecked,
-            };
-            checkedItemIds.push(row.item.id);
-            repliesAnswerChecked &&= answerChecked;
-            break;
           }
-          const likes = await commentLikes(page, answers.bodies, {
-            ...read.result.comment,
-            username: options.plan.handle,
-            text: row.item.text,
-          });
+          const record: InstagramContext = {
+            ...(capturedReplies ? { replies: capturedReplies } : {}),
+            ...(read.result.state === 'confirmed'
+              ? {
+                  likes: await commentLikes(page, answers.bodies, {
+                    ...read.result.comment,
+                    username: options.plan.handle,
+                    text: row.item.text,
+                  }),
+                }
+              : {}),
+            itemId: row.item.id,
+            accountKey: options.plan.accountKey,
+            ...(read.result.state === 'confirmed'
+              ? {
+                  ownerCheck: ownerName(row.item.reference.ownerHandle ?? '')
+                    ? ('matched-export' as const)
+                    : ('not-in-export' as const),
+                  confirmedBy: 'post' as const,
+                  comment: {
+                    id: read.result.comment.id,
+                    createdAt: read.result.comment.createdAt,
+                    expandClicks: read.expandClicks,
+                  },
+                }
+              : {
+                  ownerCheck: 'matched-export' as const,
+                  confirmedBy: 'list' as const,
+                  comment: {
+                    id: null,
+                    createdAt: null,
+                    expandClicks: read.expandClicks,
+                  },
+                }),
+            post: {
+              kind: read.post.kind,
+              code: read.post.code,
+              owner: read.post.owner,
+              ownerCount: read.post.ownerCount,
+              createdAt: read.post.createdAt,
+              caption: read.post.caption,
+              captionComplete: read.post.captionComplete,
+            },
+            image: captures.image,
+            screenshot: captures.screenshot,
+            confirmedAt: options.now().toISOString(),
+            runId,
+            attemptId,
+          };
+          stage = 'answers';
+          await answers.flush(deps.responseMs);
+          if (options.plan.canary)
+            stepReport.secondSource = answers.summary(read.post.code);
           await checkpoint();
-          await writer.fillLikes(attemptId, likes, options.now().toISOString());
+          stage = 'compare';
+          const check: CanaryCheck = {
+            confirmed: true,
+            fields: compareSources(record, read.source, answers.bodies),
+            ownerShown: Boolean(read.post.owner),
+            timeShown: read.post.createdAt !== null,
+            imageStored: record.image.status === 'stored',
+            screenshotStored: record.screenshot.status === 'stored',
+          };
+          if (options.plan.canary) checks.push(check);
+          Object.assign(stepReport, {
+            ...(record.replies
+              ? {
+                  replies: {
+                    read: record.replies.entries.length,
+                    moreCount: record.replies.moreCount,
+                    capped: record.replies.capped,
+                  },
+                }
+              : {}),
+            confirmed: true,
+            result: 'confirmed',
+            confirmedBy: record.confirmedBy,
+            fields: check.fields,
+            ownerShown: check.ownerShown,
+            timeShown: check.timeShown,
+            image: {
+              status: record.image.status,
+              bytes: captures.imageBytes,
+              ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+            },
+            screenshot: {
+              status: record.screenshot.status,
+              bytes: captures.shotBytes,
+            },
+            paths: [
+              ...new Set(answers.bodies.flatMap((body) => keyPaths(body))),
+            ],
+          });
+          stage = 'canary-check';
+          if (options.order && options.plan.canary) automaticCanaryCheck(check);
+          await checkpoint();
+          stage = 'settlement';
+          await writer.confirm(record);
+          if (automatic) {
+            checkedAttempts.set(attemptId, check);
+            checkedItemIds.push(row.item.id);
+          }
           pendingAttempt = undefined;
           settled = true;
           completed++;
-          stepReport.result = 'likes-refreshed';
+          report.confirmations[record.confirmedBy]++;
           break;
         }
-        const fromList =
-          Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
-          read.result.state === 'unconfirmed' &&
-          read.result.code === 'not-shown' &&
-          list.candidates.length === 1 &&
-          list.candidates[0]!.username.toLowerCase() ===
-            options.plan.handle.toLowerCase() &&
-          normalize(list.candidates[0]!.text) === normalize(row.item.text) &&
-          read.post.ownerCount === 1 &&
-          read.post.ownerMatchesProfile &&
-          ownerName(read.post.owner) ===
-            ownerName(row.item.reference.ownerHandle ?? '');
-        if (read.result.state !== 'confirmed' && !fromList) {
-          lastUnconfirmed = read.result.code;
-          stepReport.result = read.result.code;
-          if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
-          const code =
-            list.candidates.length > 3 ? 'several' : read.result.code;
-          stage = 'settlement';
-          await writer.settle({
-            attemptId,
-            state: 'unconfirmed',
-            code,
-            at: options.now().toISOString(),
-          });
-          pendingAttempt = undefined;
-          settled = true;
-          if (options.plan.canary && code === 'owner')
-            Object.assign(stepReport, {
-              ownerLinksOneAccount: read.post.ownerCount === 1,
-              ownerEqualsExport:
-                ownerName(read.post.owner) ===
-                ownerName(row.item.reference.ownerHandle ?? ''),
-              firstProfileNamesOwner: read.post.ownerMatchesProfile,
-            });
-          break;
-        }
-        stage = 'capture';
-        const captures = await (deps.capture ?? capturePost)(
-          options.workspace,
-          read.post.code,
-          read.post.element,
-          read.source,
-          answers.images,
-          deps.policy,
-        );
-        let capturedReplies: InstagramContext['replies'];
-        if (read.result.state === 'confirmed') {
-          const match = {
-            ...read.result.comment,
-            exportCreatedAt: row.item.createdAt,
-            username: options.plan.handle,
-            text: row.item.text,
-          };
-          capturedReplies = await captureRepliesForMode(
-            () =>
-              commentReplies(
-                page,
-                answers!.bodies,
-                match,
-                guard,
-                openedAt + deps.responseMs,
-                (ms) => deps.sleep(ms),
-                deps.pace.expandMs,
-                () => {},
-                () =>
-                  answers!.flush(
-                    Math.max(1, openedAt + deps.responseMs - performance.now()),
-                  ),
-                options.order?.value.replyDiagnostic === true
-                  ? (value) => {
-                      stepReport.replyScope = value;
-                    }
-                  : undefined,
-                (value) => {
-                  stepReport.replyAnswer = value;
-                },
-                () => answers!.bodyPaths,
-                () => answers!.htmlDiagnostic(match),
-                () => answers!.scriptValues(),
-                (value) => {
-                  stepReport.replyControls = value;
-                },
-                (value) => {
-                  stepReport.replyExpansion = value;
-                },
-              ),
-            false,
-            options.order?.value.captureReplies === true,
-            (reason) => {
-              stepReport.replies = {
-                read: 0,
-                moreCount: 0,
-                capped: false,
-                reason,
-              };
-            },
-          );
-          await checkpoint();
-        }
-        const record: InstagramContext = {
-          ...(capturedReplies ? { replies: capturedReplies } : {}),
-          ...(read.result.state === 'confirmed'
-            ? {
-                likes: await commentLikes(page, answers.bodies, {
-                  ...read.result.comment,
-                  username: options.plan.handle,
-                  text: row.item.text,
-                }),
-              }
-            : {}),
-          itemId: row.item.id,
-          accountKey: options.plan.accountKey,
-          ...(read.result.state === 'confirmed'
-            ? {
-                ownerCheck: ownerName(row.item.reference.ownerHandle ?? '')
-                  ? ('matched-export' as const)
-                  : ('not-in-export' as const),
-                confirmedBy: 'post' as const,
-                comment: {
-                  id: read.result.comment.id,
-                  createdAt: read.result.comment.createdAt,
-                  expandClicks: read.expandClicks,
-                },
-              }
-            : {
-                ownerCheck: 'matched-export' as const,
-                confirmedBy: 'list' as const,
-                comment: {
-                  id: null,
-                  createdAt: null,
-                  expandClicks: read.expandClicks,
-                },
-              }),
-          post: {
-            kind: read.post.kind,
-            code: read.post.code,
-            owner: read.post.owner,
-            ownerCount: read.post.ownerCount,
-            createdAt: read.post.createdAt,
-            caption: read.post.caption,
-            captionComplete: read.post.captionComplete,
-          },
-          image: captures.image,
-          screenshot: captures.screenshot,
-          confirmedAt: options.now().toISOString(),
-          runId,
-          attemptId,
-        };
-        stage = 'answers';
-        await answers.flush(deps.responseMs);
-        if (options.plan.canary)
-          stepReport.secondSource = answers.summary(read.post.code);
-        await checkpoint();
-        stage = 'compare';
-        const check: CanaryCheck = {
-          confirmed: true,
-          fields: compareSources(record, read.source, answers.bodies),
-          ownerShown: Boolean(read.post.owner),
-          timeShown: read.post.createdAt !== null,
-          imageStored: record.image.status === 'stored',
-          screenshotStored: record.screenshot.status === 'stored',
-        };
-        if (options.plan.canary) checks.push(check);
-        Object.assign(stepReport, {
-          ...(record.replies
-            ? {
-                replies: {
-                  read: record.replies.entries.length,
-                  moreCount: record.replies.moreCount,
-                  capped: record.replies.capped,
-                },
-              }
-            : {}),
-          confirmed: true,
-          result: 'confirmed',
-          confirmedBy: record.confirmedBy,
-          fields: check.fields,
-          ownerShown: check.ownerShown,
-          timeShown: check.timeShown,
-          image: {
-            status: record.image.status,
-            bytes: captures.imageBytes,
-            ...imageDiagnostic(read.post.code, read.source, answers.bodies),
-          },
-          screenshot: {
-            status: record.screenshot.status,
-            bytes: captures.shotBytes,
-          },
-          paths: [...new Set(answers.bodies.flatMap((body) => keyPaths(body)))],
-        });
-        stage = 'canary-check';
-        if (options.order && options.plan.canary) automaticCanaryCheck(check);
-        await checkpoint();
-        stage = 'settlement';
-        await writer.confirm(record);
-        if (automatic) {
-          checkedAttempts.set(attemptId, check);
-          checkedItemIds.push(row.item.id);
-        }
-        pendingAttempt = undefined;
-        settled = true;
-        completed++;
-        report.confirmations[record.confirmedBy]++;
-        break;
-      }
+      });
+      if (abortOuter) break outer;
       await sampleMemory();
       if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
       stage = 'progress';
@@ -1645,6 +1726,8 @@ export async function runContextWithDependencies(
             ? 'platform-check'
             : 'error';
   } finally {
+    reading?.clear();
+    if (reading?.expired && deadlineClose) await deadlineClose;
     await sampleMemory();
     await memory?.dispose();
     if (memory) report.memory = RunMemorySchema.parse(memorySummary());
@@ -1688,7 +1771,31 @@ export async function runContextWithDependencies(
     ): Promise<boolean> => {
       stage = at;
       try {
-        await action();
+        if (
+          reading?.expired &&
+          [
+            'network',
+            'read-back',
+            'browser-close',
+            'confirmation-close',
+          ].includes(at)
+        ) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              Promise.resolve().then(action),
+              new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(
+                  () =>
+                    reject(new ContextStop('PLATFORM_CHECK', 'step-deadline')),
+                  1000,
+                );
+              }),
+            ]);
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        } else await action();
         return true;
       } catch (caught) {
         retain(caught, at);
@@ -1723,6 +1830,21 @@ export async function runContextWithDependencies(
       persistedCause = report.cause;
       persistedRuntime = runtimeVersion;
     };
+    // Deadline evidence must reach disk before any browser/network readback.
+    // A frozen renderer cannot be allowed to withhold the partial step report.
+    if (reading?.expired && began) {
+      await finalize('structure-report', structure);
+      if (pendingAttempt)
+        await finalize('settlement', async () => {
+          await writer.settle({
+            attemptId: pendingAttempt!,
+            state: 'failed',
+            at: options.now().toISOString(),
+            code: 'step-deadline',
+          });
+          pendingAttempt = undefined;
+        });
+    }
     await finalize('answers', async () => {
       postRequests?.close();
       await answers?.flush(deps.responseMs);
@@ -1736,7 +1858,12 @@ export async function runContextWithDependencies(
             attemptId: pendingAttempt!,
             state: 'failed',
             at: options.now().toISOString(),
-            code: error instanceof CliError ? error.code : 'CONTEXT_FAILED',
+            code:
+              error instanceof ContextStop && error.token === 'step-deadline'
+                ? 'step-deadline'
+                : error instanceof CliError
+                  ? error.code
+                  : 'CONTEXT_FAILED',
           });
           pendingAttempt = undefined;
         });
@@ -1831,7 +1958,8 @@ export async function runContextWithDependencies(
         }),
         accountSame:
           accountBefore !== null &&
-          accountBefore.toLowerCase() === accountAfter?.toLowerCase() &&
+          String(accountBefore).toLowerCase() ===
+            (accountAfter as string | null)?.toLowerCase() &&
           profileNames.every(
             (name) => name.toLowerCase() === accountBefore?.toLowerCase(),
           ),

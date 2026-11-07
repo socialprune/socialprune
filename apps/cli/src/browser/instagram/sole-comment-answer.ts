@@ -32,7 +32,9 @@ export function inspectSoleCommentAnswer(
   scripts: readonly unknown[],
   match: ReplyMatch,
   code: string,
+  guard: () => void = () => {},
 ) {
+  guard();
   const combined = combinedReplyAnswer(bodies, match, scripts),
     answer = combined.answer;
   const diagnostic: SoleCommentDiagnostic = {
@@ -74,6 +76,7 @@ export function inspectSoleCommentAnswer(
   let valid = true,
     visits = 0;
   const walk = (input: unknown, depth: number, inSet = false, post = false) => {
+    guard();
     if (++visits > 100000 || depth > 40) {
       valid = false;
       diagnostic.answerTraversalCapped = true;
@@ -148,10 +151,12 @@ export function inspectSoleCommentAnswer(
     }
   };
   for (const input of [...bodies, ...scripts]) {
+    guard();
     if (diagnostic.answerTraversalCapped) break;
     walk(input, 0);
   }
   diagnostic.answerCommentSetSize = comments.size;
+  guard();
   diagnostic.answerSetValid =
     valid &&
     !diagnostic.answerTraversalCapped &&

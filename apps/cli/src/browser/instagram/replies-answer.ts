@@ -68,6 +68,7 @@ function entry(input: unknown): (Entry & { id: string }) | null {
 /** Only captured response objects bound to the exact focal comment qualify. */
 export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
   let visits = 0,
+    capped = false,
     present = false,
     valid = true,
     total = 0;
@@ -90,11 +91,15 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
   };
   const walk = (input: unknown, depth: number) => {
     if (++visits > 100000 || depth > 40) {
+      capped = true;
       valid = false;
       return;
     }
     if (Array.isArray(input)) {
-      for (const item of input) walk(item, depth + 1);
+      for (const item of input) {
+        if (capped) break;
+        walk(item, depth + 1);
+      }
       return;
     }
     const value = object(input);
@@ -137,6 +142,7 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
     }
     for (const [key, item] of Object.entries(value))
       if (
+        !capped &&
         ![
           'variables',
           'params',
@@ -146,7 +152,10 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
       )
         walk(item, depth + 1);
   };
-  for (const body of bodies) walk(body, 0);
+  for (const body of bodies) {
+    if (capped) break;
+    walk(body, 0);
+  }
   return {
     present,
     valid,

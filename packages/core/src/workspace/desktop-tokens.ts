@@ -134,6 +134,7 @@ export const InstagramStopTokenSchema = z.enum([
   'rate-signal',
   'list-timeout',
   'post-timeout',
+  'step-deadline',
   'navigation',
   'browser-closed',
   'extensions-added',

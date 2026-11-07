@@ -910,6 +910,7 @@
   "desktop.token.notice-error": "Instagram shows an error notice. The run stopped.",
   "desktop.token.rate-signal": "Instagram returned a limit or account-check signal. The run stopped.",
   "desktop.token.list-timeout": "The Instagram comments list did not load in time.",
+  "desktop.token.step-deadline": "The Instagram reading step exceeded its time limit. Its partial structure report was retained.",
   "desktop.token.post-timeout": "The Instagram post did not load in time.",
   "desktop.token.navigation": "The expected Instagram page could not be opened.",
   "desktop.token.browser-closed": "The platform browser closed. The run stopped.",

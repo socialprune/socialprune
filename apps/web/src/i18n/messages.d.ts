@@ -489,6 +489,7 @@ declare global {
     'desktop.token.several': Record<never, never>;
     'desktop.token.shape-changed': Record<never, never>;
     'desktop.token.size-cap': Record<never, never>;
+    'desktop.token.step-deadline': Record<never, never>;
     'desktop.token.still-gone': Record<never, never>;
     'desktop.token.stopped': Record<never, never>;
     'desktop.token.stopped-by-person': Record<never, never>;

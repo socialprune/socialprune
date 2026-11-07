@@ -318,6 +318,7 @@ export type RowShapeDiagnostic = z.infer<typeof RowShapeDiagnosticSchema>;
 export const SoleCommentDiagnosticSchema = z.strictObject({
   observed: z.boolean(),
   observationFailed: z.boolean(),
+  observationStop: z.literal('step-deadline').optional(),
   answerNamesFocal: z.boolean(),
   answerValid: z.boolean(),
   childCountProofSource: z.enum(['network', 'script', 'conflict', 'absent']),
@@ -1010,6 +1011,26 @@ export const ListWindowSchema = z
 export type ListWindow = z.infer<typeof ListWindowSchema>;
 export const ContextStepReportSchema = z
   .looseObject({
+    deadline: z
+      .strictObject({
+        budgetMs: count,
+        elapsedMs: count,
+        stage: z.enum([
+          'attempt',
+          'checkpoint',
+          'list-read',
+          'post-open',
+          'post-read',
+          'capture',
+          'answers',
+          'compare',
+          'canary-check',
+          'settlement',
+          'other',
+        ]),
+        expired: z.literal(true),
+      })
+      .optional(),
     replies: z
       .strictObject({
         read: z.number().int().min(0).max(50),
@@ -1085,6 +1106,7 @@ export const CONTEXT_STOP_TOKENS = [
   'rate-signal',
   'list-timeout',
   'post-timeout',
+  'step-deadline',
   'navigation',
   'browser-closed',
   'extensions-added',

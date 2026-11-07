@@ -167,7 +167,7 @@ export function checkedReplyRows(
   if (!answer.present) return { reason: 'reply-answer-absent' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
-  if (answer.present && !capped && answer.total > rows.length)
+  if (answer.present && !capped && answer.total !== rows.length)
     return { reason: 'reply-answer-incomplete' as const };
   const entries: Entry[] = [];
   for (const row of rows) {

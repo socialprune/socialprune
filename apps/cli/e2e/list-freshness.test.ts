@@ -26,7 +26,15 @@ import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
 
-test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
+test.each([
+  'matching',
+  'id',
+  'time',
+  'author',
+  'text',
+  'hidden-text',
+  'conflict',
+] as const)(
   'ROWANSWER deep row %s uses answer content only after DOM presence checks',
   async (variant) => {
     const fixture = await instagramFixture(1),
@@ -46,7 +54,17 @@ test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
         const group =
           /<button onclick="this.nextElementSibling.hidden=false;this.remove\(\)">View all 5 replies<\/button><ul hidden>.*?<\/ul>/s;
         if (!group.test(html)) throw new Error('Generated expansion missing');
-        const script = `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${deepReplyRows(5, IG_FIXTURE.code, item.createdAt, variant)}</ul></div></div><div role="button">Hide all replies</div>`)}),600)`;
+        let rows = deepReplyRows(
+          5,
+          IG_FIXTURE.code,
+          item.createdAt,
+          variant === 'hidden-text' || variant === 'conflict'
+            ? 'matching'
+            : variant,
+        );
+        if (variant === 'hidden-text')
+          rows = rows.replace('<span dir="auto">', '<span hidden dir="auto">');
+        const script = `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div><div role="button">Hide all replies</div>`)}),600)`;
         html = html.replace(
           group,
           `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>`,
@@ -58,6 +76,14 @@ test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
       );
       await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
       const bodies = [await (await response).json()];
+      if (variant === 'conflict')
+        bodies.push({
+          parent_comment_id: IG_FIXTURE.commentId,
+          pk: '900000',
+          user: { username: 'generated_conflicting' },
+          text: 'Generated other source',
+          created_at: Date.parse(item.createdAt) / 1000,
+        });
       let report: unknown;
       const reading = commentReplies(
         page,
@@ -99,13 +125,22 @@ test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
                 : { count: index + 2, source: 'answer' },
           })),
         });
-      } else
+      } else if (variant === 'conflict')
+        await expect(reading).rejects.toMatchObject({
+          reason: 'reply-controls-changed',
+        });
+      else
         await expect(reading).rejects.toMatchObject({
           token: 'comment-structure',
         });
       const parsed = ContextStepReportSchema.parse({
         replyExpansion: report,
       }).replyExpansion!;
+      if (variant === 'conflict') {
+        expect(parsed.clicks).toEqual([]);
+        expect(parsed.stopAt).toBe('controls');
+        return;
+      }
       expect(parsed.rows?.[0]).toMatchObject({
         directChildCount: 1,
         divBlocks: 1,
@@ -115,7 +150,14 @@ test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
         permalinkDepths: [9],
         times: 1,
         extraction: variant === 'matching' ? 'answer' : 'none',
-        failedStep: variant === 'matching' ? 'none' : `answer-${variant}`,
+        failedStep:
+          variant === 'matching'
+            ? 'none'
+            : variant === 'conflict'
+              ? 'answer-id'
+              : variant === 'hidden-text'
+                ? 'answer-text'
+                : `answer-${variant}`,
       });
       expect(parsed.rows?.[0]?.spansByDepth).toHaveLength(12);
       expect(parsed.rows?.[0]?.spansByDepth.slice(0, 4)).toEqual([0, 0, 0, 0]);

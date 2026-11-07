@@ -128,6 +128,17 @@ test('realfix missing focal answers never authorize an empty or populated replie
         reason: 'reply-answer-absent',
       });
 });
+test('ROWANSWER uncapped writes require exactly the answer total, not duplicate row inflation', () => {
+  expect(
+    checkedReplyRows(
+      [sourceAnswer],
+      match,
+      [...sourceDom, ...sourceDom],
+      false,
+      0,
+    ),
+  ).toEqual({ reason: 'reply-answer-incomplete' });
+});
 
 test.each(['owner', 'utc', 'both'] as const)(
   'newestreply threaded focal answers accept %s field forms',

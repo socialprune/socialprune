@@ -7327,7 +7327,7 @@ test.each([
   180000,
 );
 
-test.each(['legacy', 'adjacent'] as const)(
+test.each(['legacy', 'adjacent', 'answer'] as const)(
   'REPLYUL delayed div rows %s and inert control persist five answer-checked refreshes once',
   async (layout) => {
     const h = await harness('success', 5, 30000);
@@ -7339,6 +7339,7 @@ test.each(['legacy', 'adjacent'] as const)(
       h.fake.replyControl('View all 5 replies');
       h.fake.replyDivRows();
       if (layout === 'adjacent') h.fake.replyAdjacentText();
+      if (layout === 'answer') h.fake.replyAnswerRows();
       h.fake.replyAnswer(false);
       h.fake.scriptReplies('matching');
       expect(
@@ -7354,7 +7355,12 @@ test.each(['legacy', 'adjacent'] as const)(
           (record) =>
             record.replies?.entries.length === 5 &&
             record.replies.moreCount === 0 &&
-            !record.replies.capped,
+            !record.replies.capped &&
+            record.replies.entries.every(
+              (entry, index) =>
+                entry.likes.count === (index === 1 ? null : index + 2) &&
+                entry.likes.source === (index === 1 ? null : 'answer'),
+            ),
         ),
       ).toBe(true);
       const run = (await h.store.browserJournal()).runs.at(-1)!;
@@ -7381,7 +7387,12 @@ test.each(['legacy', 'adjacent'] as const)(
               controlsAfter: {
                 controls: [
                   {
-                    shape: layout === 'adjacent' ? 'other' : 'hide-replies',
+                    shape:
+                      layout === 'answer'
+                        ? 'hide-all-replies'
+                        : layout === 'adjacent'
+                          ? 'other'
+                          : 'hide-replies',
                     accepted: false,
                   },
                 ],

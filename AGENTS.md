@@ -52,6 +52,8 @@ The c-replyul clarification of 2026-11-07 reads div reply rows under a single ne
 
 The c-rowtext clarification of 2026-11-07 adds bounded per-reply child/span/link/time diagnostics and a reply-only unique profile-link/adjacent-text extraction path after the legacy block. Page-answer agreement remains mandatory, and post-expansion unknown controls are inert only when the matched rows equal the valid answer total; incomplete unknown controls refuse. List diagnostics classify observed handles/images without times without guessing a page cause. Focal extraction and main list behavior are unchanged; generated pages prove these paths, not real-account behavior.
 
+Since c-rowanswer on 2026-11-07, a matched reply row that both DOM extractors cannot read may bind its single same-post permalink ID and exact time to one valid page-answer entry, prove that author's profile link and the answer text's visible containment, and use the answer's content and likes. Missing or mismatching ID, time, author or text refuses through closed answer steps; row diagnostics count spans through depth 12 and distinct profile hrefs without values. REPLIES-1 A, source admission, caps, write-once storage and the portable reply schema remain unchanged. Deep generated wrappers exercise this path; real-account behavior remains unmeasured.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

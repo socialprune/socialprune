@@ -181,6 +181,17 @@ jobs:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
         run: node .github/scripts/browser-suite.mjs run context apps/cli/test-results/browser-suites ${{ matrix.shard }}
+      - name: Measure Instagram placement and foreground ownership on Windows
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        timeout-minutes: 4
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() && matrix.shard == 1 }}
+        with:
+          name: instagram-placement-${{ github.run_attempt }}
+          path: apps/cli/test-results/placement/
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

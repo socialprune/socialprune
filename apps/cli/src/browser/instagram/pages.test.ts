@@ -1,7 +1,95 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page } from 'playwright-core';
-import { contextPages } from './pages.ts';
+import { backgroundPage, contextPages, ContextPagesSchema } from './pages.ts';
+
+test.each([false, true])(
+  'PLACEMENT target creation is background and same-window mismatch %s fails closed',
+  async (foreignWindow) => {
+    const anchor = { isClosed: () => false };
+    const page = {
+      isClosed: () => false,
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const send = vi
+      .fn()
+      .mockImplementation((method: string, args?: { targetId?: string }) => {
+        if (method === 'Target.getTargetInfo')
+          return Promise.resolve({
+            targetInfo: {
+              targetId: 'anchor',
+              browserContextId: 'generated-context',
+            },
+          });
+        if (method === 'Browser.getWindowForTarget')
+          return Promise.resolve({
+            windowId: args?.targetId && foreignWindow ? 2 : 1,
+          });
+        if (method === 'Target.createTarget')
+          return Promise.resolve({ targetId: 'created' });
+        throw new Error('UNEXPECTED_CDP_METHOD');
+      });
+    const context = {
+      pages: () => [anchor],
+      newCDPSession: (value: unknown) =>
+        Promise.resolve({
+          send:
+            value === anchor
+              ? send
+              : () => Promise.resolve({ targetInfo: { targetId: 'created' } }),
+          detach: () => Promise.resolve(),
+        }),
+      waitForEvent: async (
+        _name: string,
+        options: { predicate: (page: unknown) => Promise<boolean> },
+      ) => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(await options.predicate(page)).toBe(true);
+        return page;
+      },
+    } as unknown as BrowserContext;
+    if (foreignWindow) {
+      await expect(backgroundPage(context)).rejects.toMatchObject({
+        token: 'unexpected-page',
+      });
+      expect(page.close).toHaveBeenCalledOnce();
+    } else expect(await backgroundPage(context)).toBe(page);
+    expect(send).toHaveBeenCalledWith('Target.createTarget', {
+      url: 'about:blank',
+      background: true,
+      newWindow: false,
+      browserContextId: 'generated-context',
+    });
+    expect(
+      send.mock.calls.some(
+        ([method]) =>
+          method === 'Target.activateTarget' || method === 'Page.bringToFront',
+      ),
+    ).toBe(false);
+  },
+);
+
+test('PLACEMENT page report refuses fabricated or over-limit counts', () => {
+  const counts = {
+    startupClosed: 0,
+    unexpectedOpened: 0,
+    pageLimit: 3,
+    ownedOpen: 2,
+    ownedPeak: 2,
+    backgroundCreated: 3,
+    replaced: 1,
+  };
+  expect(ContextPagesSchema.safeParse(counts).success).toBe(true);
+  expect(
+    ContextPagesSchema.safeParse({ ...counts, ownedPeak: 4 }).success,
+  ).toBe(false);
+  expect(
+    ContextPagesSchema.safeParse({
+      ...counts,
+      title: 'Generated private title',
+    }).success,
+  ).toBe(false);
+});
 
 test('startup pages close without navigation; a late page closes and fails exact ownership', async () => {
   const events = new EventEmitter(),
@@ -28,7 +116,11 @@ test('startup pages close without navigation; a late page closes and fails exact
       return Promise.resolve(page);
     },
   }) as unknown as BrowserContext;
-  const boundary = contextPages(context, (error) => failures.push(error.token));
+  const boundary = contextPages(
+    context,
+    (error) => failures.push(error.token),
+    () => context.newPage(),
+  );
   const confirmation = await boundary.startupPage();
   expect(confirmation).not.toBe(local);
   expect(extra.isClosed()).toBe(true);
@@ -42,7 +134,10 @@ test('startup pages close without navigation; a late page closes and fails exact
     token: 'unexpected-page',
   });
   expect(foreign.isClosed()).toBe(true);
-  expect(boundary.counts).toEqual({ startupClosed: 2, unexpectedOpened: 1 });
+  expect(boundary.counts).toMatchObject({
+    startupClosed: 2,
+    unexpectedOpened: 1,
+  });
   expect(failures).toEqual(['unexpected-page']);
   boundary.dispose();
   expect(events.listenerCount('page')).toBe(0);
@@ -66,7 +161,11 @@ test('page close failure is a closed stop, not a successful startup-closed count
       return Promise.resolve(local);
     },
   }) as unknown as BrowserContext;
-  const boundary = contextPages(context, () => {});
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => context.newPage(),
+  );
   try {
     await expect(boundary.startupPage()).rejects.toThrow('Generated private');
     expect(boundary.counts.startupClosed).toBe(0);
@@ -101,14 +200,21 @@ test('a context with no blank page closes every restored page and creates its ow
       return Promise.resolve(blank);
     },
   }) as unknown as BrowserContext;
-  const boundary = contextPages(context, () => {});
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => context.newPage(),
+  );
   try {
     expect(await boundary.startupPage()).toBe(blank);
     expect(closed).toEqual([
       'generated-restored-one',
       'generated-restored-two',
     ]);
-    expect(boundary.counts).toEqual({ startupClosed: 2, unexpectedOpened: 0 });
+    expect(boundary.counts).toMatchObject({
+      startupClosed: 2,
+      unexpectedOpened: 0,
+    });
   } finally {
     boundary.dispose();
   }
@@ -144,7 +250,11 @@ test('an unowned page racing an authorized creation is never mistaken for the cr
       return Promise.resolve(reading);
     },
   }) as unknown as BrowserContext;
-  const boundary = contextPages(context, () => {});
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => context.newPage(),
+  );
   try {
     await boundary.startupPage();
     expect(await boundary.newPage()).toBe(reading);
@@ -182,7 +292,11 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
       return page;
     },
   }) as unknown as BrowserContext;
-  const boundary = contextPages(context, () => {});
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => context.newPage(),
+  );
   try {
     const anchor = await boundary.startupPage();
     const reading = await boundary.newPage();
@@ -195,7 +309,15 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
     await expect(boundary.replace(make())).rejects.toThrow(
       'CONTEXT_PAGE_NOT_OWNED',
     );
-    expect(boundary.counts).toEqual({ startupClosed: 1, unexpectedOpened: 0 });
+    expect(boundary.snapshot()).toEqual({
+      startupClosed: 1,
+      unexpectedOpened: 0,
+      pageLimit: 3,
+      ownedOpen: 2,
+      ownedPeak: 2,
+      backgroundCreated: 3,
+      replaced: 1,
+    });
   } finally {
     boundary.dispose();
   }

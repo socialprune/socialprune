@@ -26,6 +26,21 @@ import { CliResultSchema } from './schemas.ts';
 import { xGuide } from '@socialprune/adapter-x/guide';
 import { instagramGuide } from '@socialprune/adapter-instagram/guide';
 
+test.each(['1940,20,1600,1000', '1,2,0,4'])(
+  'PLACEMENT context window option %s parses before command side effects',
+  async (window) => {
+    const capture = capturedContext(services);
+    const code = await executeCli(
+      ['context', 'instagram', '--window', window, '--dry-run', '--json'],
+      capture.context,
+    );
+    expect(code).not.toBe(0);
+    expect(capture.stderr.join('')).not.toContain('Unknown flag');
+    expect(capture.stdout.join('')).toContain('INVALID_ARGUMENTS');
+    expect(capture.opened).toEqual([]);
+  },
+);
+
 const archive = fileURLToPath(
   new URL(
     '../../../../fixtures/synthetic/x/current-minimal/archive/',

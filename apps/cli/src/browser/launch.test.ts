@@ -1,7 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Page } from 'playwright-core';
-import { launchRunBrowser } from './launch.ts';
+import {
+  launchRunBrowser,
+  parseWindowPlacement,
+  windowArguments,
+} from './launch.ts';
 import { productionDriver } from './x/driver.ts';
 
 const { launch } = vi.hoisted(() => ({ launch: vi.fn() }));
@@ -10,6 +14,30 @@ vi.mock('playwright-core', () => ({
 }));
 afterEach(() => {
   vi.clearAllMocks();
+});
+test.each(['1940,20,1600,1000', '-1680,-20,1600,1000', '0,0,1,1'])(
+  'PLACEMENT accepts explicit integer bounds %s',
+  (value) => {
+    const [x, y, width, height] = value.split(',').map(Number);
+    expect(parseWindowPlacement(value)).toEqual({ x, y, width, height });
+    expect(windowArguments(parseWindowPlacement(value))).toEqual([
+      `--window-position=${x},${y}`,
+      `--window-size=${width},${height}`,
+    ]);
+  },
+);
+test.each([
+  '1,2,0,4',
+  '1,2,-3,4',
+  '1,2,3',
+  '1,2,3,4,5',
+  '1.5,2,3,4',
+  '1, 2,3,4',
+  '1e3,2,3,4',
+  'NaN,2,3,4',
+  '9007199254740992,2,3,4',
+])('PLACEMENT rejects malformed bounds %s', (value) => {
+  expect(() => parseWindowPlacement(value)).toThrow();
 });
 
 function generatedContext() {

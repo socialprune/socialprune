@@ -1175,6 +1175,10 @@ async function harness(
   variant: Variant = 'success',
   count = 1,
   responseMs = 1500,
+  launchOverride?: (
+    path: string,
+    executablePath: string,
+  ) => Promise<BrowserContext>,
 ) {
   const diagnostics = contextDiagnostics(variant);
   const directory = await mkdtemp(join(tmpdir(), 'sp-context-fake-')),
@@ -1284,15 +1288,17 @@ async function harness(
           },
           capture: captureOverride,
           async launch(path, executablePath) {
-            context = await chromium.launchPersistentContext(path, {
-              executablePath,
-              headless: true,
-              offline: true,
-              chromiumSandbox: true,
-              args: ['--enable-automation'],
-              ignoreDefaultArgs: ['--disable-infobars'],
-              serviceWorkers: 'block',
-            });
+            context = launchOverride
+              ? await launchOverride(path, executablePath)
+              : await chromium.launchPersistentContext(path, {
+                  executablePath,
+                  headless: true,
+                  offline: true,
+                  chromiumSandbox: true,
+                  args: ['--enable-automation'],
+                  ignoreDefaultArgs: ['--disable-infobars'],
+                  serviceWorkers: 'block',
+                });
             diagnostics.observe(context);
             const probe = await context.newCDPSession(context.pages()[0]!);
             const command = await probe.send('Browser.getBrowserCommandLine');
@@ -2050,6 +2056,55 @@ test.each(memoryBenchmark ? [memoryStepCount] : [3])(
   },
   1200000,
 );
+export async function placementGeneratedRun(
+  launch: (path: string, executablePath: string) => Promise<BrowserContext>,
+  measurePage: (action: () => Promise<Page>) => Promise<Page>,
+) {
+  const h = await harness('success', 2, 30000, launch);
+  await fullRunReady(h);
+  h.setLimit(1);
+  const original = pagesHelpers.contextPages;
+  const boundary = vi
+    .spyOn(pagesHelpers, 'contextPages')
+    .mockImplementation((...args) => {
+      const pages = original(...args),
+        make = pages.newPage.bind(pages);
+      pages.newPage = () => measurePage(make);
+      return pages;
+    });
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 1,
+    });
+    const run = (await h.store.browserJournal()).runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    return report;
+  } finally {
+    boundary.mockRestore();
+    await h.close();
+  }
+}
+
+test('PLACEMENT persistent generated lifecycle emits a bounded run result', async () => {
+  const h = await harness('success', 2, 1500);
+  await fullRunReady(h);
+  h.setLimit(1);
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 1,
+    });
+  } finally {
+    await h.close();
+  }
+}, 30000);
+
 test('C35 IG19 recycles once between20 and21 in the same context without additional platform navigation', async () => {
   const h = await harness('success', 23);
   await fullRunReady(h);

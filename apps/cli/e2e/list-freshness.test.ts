@@ -25,6 +25,39 @@ import { commentReplies } from '../src/browser/instagram/replies.ts';
 import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
+import { contextPages } from '../src/browser/instagram/pages.ts';
+
+test('PLACEMENT background pages retain one window identity and a closed three-page ceiling', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: chromium.executablePath(),
+  });
+  const context = await browser.newContext();
+  await context.newPage();
+  const boundary = contextPages(context, () => {});
+  try {
+    await boundary.startupPage();
+    const first = await boundary.newPage();
+    const next = await boundary.replace(first);
+    expect(first.isClosed()).toBe(true);
+    expect(next.isClosed()).toBe(false);
+    expect(boundary.snapshot()).toMatchObject({
+      pageLimit: 3,
+      ownedOpen: 2,
+      ownedPeak: 2,
+      backgroundCreated: 3,
+      replaced: 1,
+    });
+    await boundary.newPage();
+    await expect(boundary.newPage()).rejects.toMatchObject({
+      token: 'unexpected-page',
+    });
+    expect(boundary.snapshot().ownedPeak).toBe(3);
+  } finally {
+    boundary.dispose();
+    await browser.close();
+  }
+});
 
 test.each([
   'script',

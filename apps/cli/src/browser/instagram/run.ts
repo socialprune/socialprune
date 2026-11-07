@@ -259,7 +259,8 @@ export async function runContextWithDependencies(
     finalization?: { stage: string; stop: ReturnType<typeof stopDetails> }[];
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
-    pages?: { startupClosed: number; unexpectedOpened: number };
+    pages?: ReturnType<ReturnType<typeof contextPages>['snapshot']>;
+    windowPlacement?: WindowPlacement | null;
     rows: { emptySkipped: number; otherName: number; imageOnlySkipped: number };
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
@@ -629,6 +630,7 @@ export async function runContextWithDependencies(
       );
       pages = contextPages(context, platformStop);
       report.pages = pages.counts;
+      report.windowPlacement = options.windowPlacement ?? null;
       context.once('close', () => {
         closed = true;
         cancel();
@@ -1985,6 +1987,7 @@ export async function runContextWithDependencies(
       }
     };
     const structure = async () => {
+      if (pages) report.pages = pages.snapshot();
       if (error) report.stop = stopDetails(error);
       report.limits = limitSignals.summary();
       report.retries = PostRetriesSchema.parse(postRetries.summary());

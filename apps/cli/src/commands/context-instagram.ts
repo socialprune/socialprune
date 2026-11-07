@@ -18,6 +18,8 @@ import {
   validateContextOrder,
 } from '../browser/instagram/order.ts';
 import { contextPace, paceText } from '../browser/instagram/pace.ts';
+import { parseWindowPlacement } from '../browser/launch.ts';
+import type { WindowPlacement } from '../browser/launch.ts';
 
 export const contextInstagramCommand = buildCommand({
   parameters: {
@@ -107,6 +109,13 @@ export const contextInstagramCommand = buildCommand({
         optional: true,
         brief: 'Installed browser',
       },
+      window: {
+        kind: 'parsed',
+        parse: parseWindowPlacement,
+        optional: true,
+        brief:
+          'Visible browser bounds x,y,width,height; valid in dry-run without opening a browser',
+      },
       lang: {
         kind: 'enum',
         values: ['en', 'de'],
@@ -138,6 +147,7 @@ export const contextInstagramCommand = buildCommand({
       order?: string;
       limit?: string;
       browser?: 'chrome' | 'edge';
+      window?: WindowPlacement;
       lang: 'en' | 'de';
     },
   ) {
@@ -291,6 +301,7 @@ export const contextInstagramCommand = buildCommand({
         workspace: flags.workspace,
         profile: flags.profile,
         executablePath,
+        windowPlacement: flags.window,
         list,
         include,
         exclude,

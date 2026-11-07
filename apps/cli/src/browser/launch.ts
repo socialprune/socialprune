@@ -23,6 +23,19 @@ export interface WindowPlacement {
   width: number;
   height: number;
 }
+export function parseWindowPlacement(value: string): WindowPlacement {
+  if (!/^-?\d+,-?\d+,\d+,\d+$/u.test(value))
+    throw new CliError('INVALID_ARGUMENTS');
+  const [x, y, width, height] = value.split(',').map(Number) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  const placement = { x, y, width, height };
+  windowArguments(placement);
+  return placement;
+}
 export function windowArguments(placement?: WindowPlacement): string[] {
   if (!placement) return [];
   if (

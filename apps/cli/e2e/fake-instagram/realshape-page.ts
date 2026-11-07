@@ -6,6 +6,9 @@ export type ReplyShapeCase =
   | 'root-changed'
   | 'structural'
   | 'no-replies'
+  | 'plain-zero'
+  | 'plain-zero-expand'
+  | 'plain-zero-permalink'
   | 'top-level-decoy';
 export function rowShapePage(html: string, shape: RowShapeCase) {
   if (shape === 'handle-only')
@@ -33,7 +36,7 @@ export function replyShapePage(
   id: string,
   shape: ReplyShapeCase,
 ) {
-  if (shape === 'no-replies') {
+  if (shape === 'no-replies' || shape.startsWith('plain-zero')) {
     const stack: { name: string; start: number }[] = [];
     let start = -1,
       end = -1;
@@ -61,6 +64,31 @@ export function replyShapePage(
     const focal = html
       .slice(start, end)
       .replace('<div role="button">Reply</div>', '');
+    if (shape.startsWith('plain-zero')) {
+      const siblings = Array.from(
+        { length: 9 },
+        (_, index) =>
+          `<div><a href="/p/Generated/c/${777000 + index}/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>${index % 2 === 0 ? '<div role="button">View all 2 replies</div>' : ''}</div>`,
+      ).join('');
+      const local =
+        shape === 'plain-zero-expand'
+          ? '<div role="button">View all 1 replies</div>'
+          : shape === 'plain-zero-permalink'
+            ? '<a href="/p/Generated/c/888888/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>'
+            : '';
+      return (
+        html.slice(0, start) +
+        '<div><div><div>' +
+        '<div><div>' +
+        focal +
+        '</div></div>' +
+        local +
+        '</div>' +
+        siblings +
+        '</div></div>' +
+        html.slice(end)
+      );
+    }
     return (
       html.slice(0, start) +
       '<div><div><div>' +

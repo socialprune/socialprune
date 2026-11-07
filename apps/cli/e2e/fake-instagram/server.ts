@@ -448,6 +448,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         if (
           replyCount &&
           replyShapeCase !== 'no-replies' &&
+          !replyShapeCase?.startsWith('plain-zero') &&
           html
             .split('<script>')[0]!
             .includes(

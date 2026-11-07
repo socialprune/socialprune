@@ -54,6 +54,8 @@ The c-rowtext clarification of 2026-11-07 adds bounded per-reply child/span/link
 
 Since c-rowanswer on 2026-11-07, a matched reply row that both DOM extractors cannot read may bind its single same-post permalink ID and exact time to one valid page-answer entry, prove that author's profile link and the answer text's visible containment, and use the answer's content and likes. Missing or mismatching ID, time, author or text refuses through closed answer steps; row diagnostics count spans through depth 12 and distinct profile hrefs without values. REPLIES-1 A, source admission, caps, write-once storage and the portable reply schema remain unchanged. Deep generated wrappers exercise this path; real-account behavior remains unmeasured.
 
+Since c-zeroscope on 2026-11-07, an exact valid answer explicitly proving zero children may retain an observed-empty reply field for a plain focal item among sibling comments with replies. The deepest isolated focal element must contain only its own permalink and dated time, no reply control, rows or other permalink, and a separate untruncated comment-list boundary. Positive, absent, mismatched and contaminated cases refuse. This narrow path has generated-data proof; other reading and storage behavior is unchanged.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

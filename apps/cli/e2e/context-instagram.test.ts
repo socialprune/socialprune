@@ -7429,6 +7429,136 @@ test.each(['legacy', 'adjacent', 'answer'] as const)(
   },
   180000,
 );
+test.each([
+  'count',
+  'empty-list',
+  'network',
+  'positive',
+  'missing',
+  'wrong-focal',
+  'wrong-id',
+  'wrong-author',
+  'wrong-time',
+  'conflict',
+  'expand',
+  'permalink',
+] as const)(
+  'ZEROSCOPE plain comment among reply-bearing siblings %s requires exact zero answer and isolated focal item',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      const before = await h.store.read((tx) => records(tx.instagramContext));
+      h.fake.directPostAccount('expected');
+      h.fake.replies(mode === 'positive' ? 2 : 0);
+      h.fake.replyAnswer(mode === 'network');
+      if (mode !== 'missing' && mode !== 'network')
+        h.fake.scriptReplies(
+          mode === 'wrong-id'
+            ? 'id'
+            : mode === 'wrong-author'
+              ? 'author'
+              : mode === 'wrong-time'
+                ? 'time'
+                : mode === 'conflict'
+                  ? 'conflict'
+                  : mode === 'empty-list'
+                    ? 'list'
+                    : mode === 'wrong-focal'
+                      ? 'text'
+                      : 'matching',
+        );
+      h.fake.replyShape(
+        mode === 'expand'
+          ? 'plain-zero-expand'
+          : mode === 'permalink'
+            ? 'plain-zero-permalink'
+            : 'plain-zero',
+      );
+      const accepted =
+        mode === 'count' || mode === 'empty-list' || mode === 'network';
+      expect(
+        await h.start({ refreshReplies: true }),
+        h.notices.join('\n'),
+      ).toMatchObject(
+        accepted
+          ? { completed: 5, endReason: 'canary' }
+          : { code: 'INSTAGRAM_SHAPE_CHANGED' },
+      );
+      const after = await h.store.read((tx) => records(tx.instagramContext));
+      if (accepted) {
+        expect(after.map(({ replies: _replies, ...record }) => record)).toEqual(
+          before,
+        );
+        expect(
+          after.every(
+            (record) =>
+              record.replies?.entries.length === 0 &&
+              record.replies.moreCount === 0 &&
+              !record.replies.capped,
+          ),
+        ).toBe(true);
+        expect(
+          (
+            await planContext(
+              h.store,
+              h.plan.accountKey,
+              new Set(),
+              new Set(),
+              false,
+              true,
+            )
+          ).rows,
+        ).toHaveLength(0);
+      } else
+        expect(after.every((record) => record.replies === undefined)).toBe(
+          true,
+        );
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(report.steps[0]);
+      if (accepted) {
+        expect(step.replyScope).toMatchObject({
+          failedCheck: 'none',
+          chosenDepth: 10,
+        });
+        expect(step.replyScope?.levels).toHaveLength(11);
+        expect(
+          step.replyScope?.levels[10]?.children.some(
+            (child) => !child.containsFocal && child.expandControls > 0,
+          ),
+        ).toBe(true);
+        expect(step.replies).toMatchObject({
+          read: 0,
+          answerChecked: true,
+          capped: false,
+        });
+        expect(step.replyAnswer).toMatchObject({
+          source: mode === 'network' ? 'network' : 'script',
+          answerValid: true,
+          answerTotal: 0,
+        });
+      }
+      expect(
+        report.steps.every(
+          (raw) =>
+            ContextStepReportSchema.parse(raw).replyExpansion?.clicks.length ===
+            0,
+        ),
+      ).toBe(true);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(report)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
 test.each(['matching', 'missing', 'disagreement', 'threaded'] as const)(
   'replyempty depth-11 foreign permalink and no expand control: %s focal answer',
   async (mode) => {

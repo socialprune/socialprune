@@ -18,9 +18,13 @@ export function replyControlShape(label: string, answerTotal: number | null) {
         ? ('view-all-n-replies' as const)
         : numbered
           ? ('view-replies-n' as const)
-          : /^Hide replies(?: \(\d+\))?$/u.test(text)
-            ? ('hide-replies' as const)
-            : ('other' as const);
+          : /^Hide all(?: [1-9]\d{0,5})? replies(?: \(\d+\))?$/u.test(text)
+            ? ('hide-all-replies' as const)
+            : /^View(?: [1-9]\d{0,5})? more replies(?: \(\d+\))?$/u.test(text)
+              ? ('view-more-replies' as const)
+              : /^Hide replies(?: \(\d+\))?$/u.test(text)
+                ? ('hide-replies' as const)
+                : ('other' as const);
   const numberEqualsAnswer =
     number === undefined || answerTotal === null
       ? null
@@ -39,6 +43,7 @@ export async function checkedReplyControls(
   controls: Locator,
   answerTotal: number | null,
   afterExpansion = false,
+  rowsAfter?: number,
 ) {
   const count = await controls.count();
   const diagnostic: ReplyControlsDiagnostic = {
@@ -71,12 +76,19 @@ export async function checkedReplyControls(
   }
   return {
     diagnostic,
-    control: accepted,
+    control:
+      afterExpansion && answerTotal !== null && rowsAfter === answerTotal
+        ? undefined
+        : accepted,
     valid:
       !diagnostic.capped &&
       diagnostic.controls.every(
         (value) =>
-          value.accepted || (afterExpansion && value.shape === 'hide-replies'),
+          value.accepted ||
+          (afterExpansion &&
+            (value.shape === 'hide-replies' ||
+              value.shape === 'hide-all-replies' ||
+              (answerTotal !== null && rowsAfter === answerTotal))),
       ) &&
       count <= 1,
   };

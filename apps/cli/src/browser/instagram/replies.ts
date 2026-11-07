@@ -18,6 +18,7 @@ import { checkedReplyControls } from './reply-controls.ts';
 import type { ReplyControlsDiagnostic } from './report.ts';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
+import { replyRowShape, readReplyRow } from './reply-row.ts';
 import {
   neighborhood,
   pollReplyGrowth,
@@ -328,15 +329,14 @@ export async function commentReplies(
         }
         const row = rows.nth(index);
         if (!(await row.isVisible())) continue;
-        const blocks = row.locator(':scope > div:not([role])');
-        site = 'row-block';
-        if ((await blocks.count()) !== 1)
-          throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
         site = 'row-text';
-        const value = await textBlock(blocks, 150);
+        const rowDiagnostic = await replyRowShape(row, match.username, index);
+        (expansion.rows ??= [])[index] = rowDiagnostic;
+        const value = await readReplyRow(row, rowDiagnostic, clicks > 0);
         if (!value)
           throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
-        const links = blocks.locator('a[href*="/c/"]');
+        rowDiagnostic.failedStep = 'permalink';
+        const links = value.links;
         const href =
           (await links.count()) === 1
             ? await links.getAttribute('href', { timeout: 150 })
@@ -346,7 +346,10 @@ export async function commentReplies(
               `^/${address.kind}/${address.code}/c/([0-9]{1,40})/$`,
             ).exec(href)?.[1]
           : undefined;
+        if (rowDiagnostic.extraction === 'adjacent' && !id)
+          throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
         const time = links.locator('time[datetime]');
+        rowDiagnostic.failedStep = 'time';
         const rawTime =
           (await time.count()) === 1
             ? await time.getAttribute('datetime', { timeout: 150 })
@@ -355,6 +358,14 @@ export async function commentReplies(
           id && rawTime && Number.isFinite(Date.parse(rawTime))
             ? new Date(rawTime).toISOString()
             : null;
+        if (
+          rowDiagnostic.extraction === 'adjacent' &&
+          (!id ||
+            !createdAt ||
+            (await row.locator('time[datetime]').count()) !== 1)
+        )
+          throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
+        rowDiagnostic.failedStep = 'none';
         const key =
           id ?? JSON.stringify([value.username, value.text, createdAt, index]);
         if (seen.has(key)) continue;
@@ -375,15 +386,7 @@ export async function commentReplies(
         entries.push({
           ...(id ? { id } : {}),
           account: value.username,
-          text: (
-            await blocks
-              .locator(':scope > div')
-              .nth(1)
-              .locator(':scope > span[dir="auto"]')
-              .innerText({ timeout: 150 })
-          )
-            .normalize('NFC')
-            .trim(),
+          text: value.rawText,
           createdAt,
           likes:
             answer !== null
@@ -401,6 +404,7 @@ export async function commentReplies(
         scopedControls,
         answer.present && answer.valid ? answer.total : null,
         clicks > 0,
+        count,
       );
       if (checkedControls.diagnostic.count > 0 || clicks === 0)
         controlsDiagnostic?.(checkedControls.diagnostic);

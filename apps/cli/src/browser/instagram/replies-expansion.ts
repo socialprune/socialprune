@@ -20,6 +20,7 @@ export async function expansionShape(
         await ownReplyControls(root, rows),
         total,
         true,
+        await rows.count(),
       )
     ).diagnostic,
     candidates: {

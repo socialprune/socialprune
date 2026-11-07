@@ -47,6 +47,11 @@ test.each([
   'ul-div-wrapper',
   'ul-div-preexisting',
   'ul-div-duplicate',
+  'rowtext-adjacent',
+  'rowtext-authors',
+  'rowtext-texts',
+  'rowtext-mismatch',
+  'rowtext-control-incomplete',
   'mismatch',
   'blocked',
 ] as const)(
@@ -75,7 +80,8 @@ test.each([
           mode === 'mismatch' ||
           mode === 'wrapped-mismatch' ||
           mode === 'sibling-mismatch' ||
-          mode === 'ul-div-mismatch'
+          mode === 'ul-div-mismatch' ||
+          mode === 'rowtext-mismatch'
             ? group[1]!.replace(
                 'Generated reply 0 with local text',
                 'Generated different reply',
@@ -84,7 +90,8 @@ test.each([
         if (
           mode.startsWith('wrapped') ||
           mode.startsWith('sibling') ||
-          mode.startsWith('ul-div')
+          mode.startsWith('ul-div') ||
+          mode.startsWith('rowtext')
         ) {
           rows = rows.replace(
             '<span>1w</span>',
@@ -107,8 +114,25 @@ test.each([
           )
             rows = rows.replace(/<time datetime="[^"]+">1w<\/time>/gu, '1w');
         }
-        if (mode.startsWith('ul-div'))
+        if (mode.startsWith('ul-div') || mode.startsWith('rowtext'))
           rows = rows.replaceAll('<li>', '<div>').replaceAll('</li>', '</div>');
+        if (mode.startsWith('rowtext')) {
+          rows = Array.from(
+            { length: mode === 'rowtext-control-incomplete' ? 4 : 5 },
+            (_, index) =>
+              `<div><div><a href="/generated_reply_${index}/">generated_reply_${index}</a><span dir="auto">${mode === 'rowtext-mismatch' && index === 0 ? 'Generated different reply' : `Generated reply ${index} with local text`}</span><a href="/p/${IG_FIXTURE.code}/c/${900000 + index}/"><time datetime="${item.createdAt}">1w</time></a></div><div role="button">${index + 2} likes</div></div>`,
+          ).join('');
+          if (mode === 'rowtext-authors')
+            rows = rows.replace(
+              '</a><span dir="auto">',
+              '</a><a href="/generated_extra/">generated_extra</a><span dir="auto">',
+            );
+          if (mode === 'rowtext-texts')
+            rows = rows.replace(
+              '</span><a href="/p/',
+              '</span><span dir="auto">Generated extra text</span><a href="/p/',
+            );
+        }
         if (mode === 'ul-div-duplicate')
           rows = rows.replace('900001', '900000');
         if (mode === 'ul-div-wrapper') rows = `<div>${rows}</div>`;
@@ -118,11 +142,12 @@ test.each([
             : mode.startsWith('wrapped')
               ? `<div><div><ul>${rows}</ul></div></div>`
               : `<ul>${rows}</ul>`;
-        const script = mode.startsWith('ul-div')
-          ? `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div>${mode === 'ul-div-hide' ? '<div role="button" onclick="this.dataset.clicked=\'true\'">Hide replies</div>' : mode === 'ul-div-unknown' ? '<div role="button">See replies</div>' : ''}`)}),600)`
-          : mode.startsWith('sibling')
-            ? `const scope=this.parentElement;this.remove();${mode === 'sibling-delayed' ? 'setTimeout(()=>{' : ''}scope.insertAdjacentHTML('afterend',${JSON.stringify(mode === 'sibling-rows' ? rows : `<ul>${rows}</ul>`)});${mode === 'sibling-delayed' ? '},300)' : ''}`
-            : `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
+        const script =
+          mode.startsWith('ul-div') || mode.startsWith('rowtext')
+            ? `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div>${mode === 'ul-div-hide' ? '<div role="button" onclick="this.dataset.clicked=\'true\'">Hide replies</div>' : mode === 'ul-div-unknown' || mode.startsWith('rowtext') ? '<div role="button" onclick="this.dataset.clicked=\'true\'">See replies</div>' : ''}`)}),600)`
+            : mode.startsWith('sibling')
+              ? `const scope=this.parentElement;this.remove();${mode === 'sibling-delayed' ? 'setTimeout(()=>{' : ''}scope.insertAdjacentHTML('afterend',${JSON.stringify(mode === 'sibling-rows' ? rows : `<ul>${rows}</ul>`)});${mode === 'sibling-delayed' ? '},300)' : ''}`
+              : `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
         html = html.replace(
           group[0],
           `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>${mode === 'blocked' ? '<div style="position:fixed;inset:0;z-index:9999;background:white"></div>' : ''}`,
@@ -175,11 +200,17 @@ test.each([
           'ul-div',
           'ul-div-hide',
           'ul-div-wrapper',
+          'ul-div-unknown',
+          'rowtext-adjacent',
         ].includes(mode)
       )
         expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
         await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
+      else if (mode === 'rowtext-authors' || mode === 'rowtext-texts')
+        await expect(reading).rejects.toMatchObject({
+          token: 'comment-structure',
+        });
       else
         await expect(reading).rejects.toMatchObject({
           reason:
@@ -196,12 +227,44 @@ test.each([
                 ? 'reply-answer-mismatch'
                 : mode === 'ul-div-duplicate'
                   ? 'reply-answer-incomplete'
-                  : 'reply-controls-changed',
+                  : mode === 'rowtext-mismatch'
+                    ? 'reply-answer-mismatch'
+                    : 'reply-controls-changed',
         });
       const parsed = ContextStepReportSchema.parse({
         replyExpansion: expansion,
       }).replyExpansion!;
       expect(parsed.clicks).toHaveLength(1);
+      if (mode.startsWith('rowtext')) {
+        expect(parsed.rows?.[0]).toMatchObject({
+          observationFailed: false,
+          authorLinks: mode === 'rowtext-authors' ? 2 : 1,
+          failedStep:
+            mode === 'rowtext-authors'
+              ? 'author'
+              : mode === 'rowtext-texts'
+                ? 'text'
+                : 'none',
+        });
+        for (const content of [
+          item.text,
+          item.account.handle!,
+          'generated_reply_0',
+          'Generated reply 0 with local text',
+        ])
+          expect(JSON.stringify(parsed)).not.toContain(content);
+        expect(await page.locator('[data-clicked="true"]').count()).toBe(0);
+        expect(parsed.stopAt).toBe(
+          mode === 'rowtext-authors' || mode === 'rowtext-texts'
+            ? 'row-text'
+            : mode === 'rowtext-mismatch'
+              ? 'answer-check'
+              : mode === 'rowtext-control-incomplete'
+                ? 'controls'
+                : null,
+        );
+        return;
+      }
       if (mode.startsWith('ul-div')) {
         expect(parsed.clicks[0]?.clicked).toBe(true);
         if (mode === 'ul-div-foreign')
@@ -229,7 +292,7 @@ test.each([
                 mode === 'ul-div-preexisting'
               ? 'reply-group'
               : mode === 'ul-div-unknown'
-                ? 'controls'
+                ? null
                 : mode === 'ul-div-duplicate'
                   ? 'answer-check'
                   : null,

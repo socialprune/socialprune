@@ -75,3 +75,41 @@ test('REPLYUL hide is inert only after expansion and unknown controls still refu
     expect(after.diagnostic.controls[0]?.accepted).toBe(false);
   }
 });
+test.each([
+  'Hide all replies',
+  'Hide all 5 replies',
+  'View more replies',
+  'View 5 more replies',
+  'See replies',
+])(
+  'ROWTEXT complete control %s stays inert and incomplete unknown controls stop',
+  async (label) => {
+    const control = {
+      innerText: () => Promise.resolve(label),
+      getAttribute: () => Promise.resolve('button'),
+      locator: () => ({ count: () => Promise.resolve(1) }),
+    } as unknown as Locator;
+    const group = {
+      count: () => Promise.resolve(1),
+      all: () => Promise.resolve([control]),
+    } as unknown as Locator;
+    expect((await checkedReplyControls(group, 5, false, 5)).valid).toBe(false);
+    expect(await checkedReplyControls(group, 5, true, 5)).toMatchObject({
+      valid: true,
+      control: undefined,
+    });
+    expect((await checkedReplyControls(group, null, true, 5)).valid).toBe(
+      label.startsWith('Hide all'),
+    );
+    expect((await checkedReplyControls(group, 5, true, 4)).valid).toBe(
+      label.startsWith('Hide all'),
+    );
+    expect(replyControlShape(label, 5).shape).toBe(
+      label.startsWith('Hide all')
+        ? 'hide-all-replies'
+        : label.startsWith('View')
+          ? 'view-more-replies'
+          : 'other',
+    );
+  },
+);

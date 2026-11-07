@@ -162,6 +162,16 @@ export const ListNavigationSchema = z
     observationFailed: z.boolean(),
     waitedForReadiness: z.boolean().optional(),
     filterDialogPresent: z.boolean().optional(),
+    pageKind: z
+      .enum([
+        'dated-rows',
+        'handles-images-no-times',
+        'empty-marker',
+        'no-times',
+        'filter-dialog',
+        'unobserved',
+      ])
+      .optional(),
     listContainerScrollable: z.boolean().nullable().optional(),
     knownEmptyStatePresent: z.boolean(),
     containers: z.strictObject({
@@ -574,6 +584,8 @@ export const ReplyControlsDiagnosticSchema = z.strictObject({
           'view-all-n-replies',
           'view-replies-n',
           'hide-replies',
+          'hide-all-replies',
+          'view-more-replies',
           'other',
         ]),
         digitsPresent: z.boolean(),
@@ -607,6 +619,47 @@ export const REPLY_STOP_SITES = [
 ] as const;
 export const ReplyExpansionDiagnosticSchema = z.strictObject({
   stopAt: z.enum(REPLY_STOP_SITES).nullable(),
+  rows: z
+    .array(
+      z.strictObject({
+        index: z.number().int().min(0).max(49),
+        observed: z.boolean(),
+        observationFailed: z.boolean(),
+        directChildCount: count,
+        childrenCapped: z.boolean(),
+        children: z
+          .array(
+            z.strictObject({
+              tag: z.enum([
+                'div',
+                'span',
+                'a',
+                'time',
+                'button',
+                'ul',
+                'li',
+                'other',
+              ]),
+              role: z
+                .enum(['button', 'link', 'list', 'listitem', 'other'])
+                .nullable(),
+            }),
+          )
+          .max(20),
+        divBlocks: count,
+        spansByDepth: z.array(count).length(4),
+        ownHandleLinks: count,
+        authorLinks: count,
+        permalinks: count,
+        times: count,
+        permalinkDepths: z.array(z.number().int().min(1).max(12)).max(20),
+        deeperPermalinks: count,
+        extraction: z.enum(['legacy', 'adjacent', 'none']),
+        failedStep: z.enum(['none', 'author', 'text', 'time', 'permalink']),
+      }),
+    )
+    .max(50)
+    .optional(),
   clicks: z
     .array(
       z.strictObject({
@@ -659,6 +712,9 @@ export const ReplyExpansionDiagnosticSchema = z.strictObject({
     )
     .max(10),
 });
+export type ReplyRowDiagnostic = NonNullable<
+  z.infer<typeof ReplyExpansionDiagnosticSchema>['rows']
+>[number];
 export type ReplyExpansionDiagnostic = z.infer<
   typeof ReplyExpansionDiagnosticSchema
 >;

@@ -38,6 +38,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let threadedReplyAnswer = false;
   let replyControlLabel = 'View replies';
   let replyDivRows = false;
+  let replyAdjacentText = false;
   let scriptReplyCase:
     | 'matching'
     | 'id'
@@ -460,6 +461,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             items[Math.max(0, index)]!.createdAt,
             replyControlLabel,
             replyDivRows,
+            replyAdjacentText,
           );
         if (replyShapeCase)
           html = replyShapePage(
@@ -739,6 +741,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replyDivRows() {
       replyDivRows = true;
+    },
+    replyAdjacentText() {
+      replyDivRows = true;
+      replyAdjacentText = true;
     },
     scriptReplies(value: NonNullable<typeof scriptReplyCase>) {
       scriptReplyCase = value;

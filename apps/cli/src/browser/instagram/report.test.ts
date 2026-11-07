@@ -93,6 +93,47 @@ test('POSTCLICK diagnostics reject contents, arbitrary stop sites and extra wind
       WidenedProbeSchema.safeParse({ ...probe, ...mutation }).success,
     ).toBe(false);
 });
+test('ROWTEXT row diagnostics reject contents, arbitrary tags and over-cap row observations', () => {
+  const row = {
+    index: 0,
+    observed: true,
+    observationFailed: false,
+    directChildCount: 2,
+    childrenCapped: false,
+    children: [
+      { tag: 'div', role: null },
+      { tag: 'div', role: 'button' },
+    ],
+    divBlocks: 1,
+    spansByDepth: [0, 1, 0, 0],
+    ownHandleLinks: 0,
+    authorLinks: 1,
+    permalinks: 1,
+    times: 1,
+    permalinkDepths: [2],
+    deeperPermalinks: 0,
+    extraction: 'adjacent',
+    failedStep: 'none',
+  };
+  const report = { stopAt: null, clicks: [], rows: [row] };
+  expect(ReplyExpansionDiagnosticSchema.safeParse(report).success).toBe(true);
+  for (const changed of [
+    { ...row, text: 'Generated content' },
+    { ...row, failedStep: 'private error' },
+    { ...row, children: [{ tag: 'generated-element', role: null }] },
+    { ...row, spansByDepth: [1, 2, 3, 4, 5] },
+  ])
+    expect(
+      ReplyExpansionDiagnosticSchema.safeParse({ ...report, rows: [changed] })
+        .success,
+    ).toBe(false);
+  expect(
+    ReplyExpansionDiagnosticSchema.safeParse({
+      ...report,
+      rows: Array(51).fill(row),
+    }).success,
+  ).toBe(false);
+});
 test('POSTCLICK wider windows use calendar days across month, year and leap-day boundaries', () => {
   expect(widenedWindow('2024-03-01T23:30:00Z', 7)).toEqual([
     '2024-02-23',

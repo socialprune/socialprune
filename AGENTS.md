@@ -50,6 +50,8 @@ The c-control clarification of 2026-11-06 adds a bounded post-click reply neighb
 
 The c-replyul clarification of 2026-11-07 reads div reply rows under a single newly appeared focal reply list, with exact non-focal same-post permalinks, valid times, the existing author/text blocks and page-answer agreement. A closed Hide replies control after expansion stays inert and unclicked; other unknown controls refuse. Generated delayed-list and refusal tests pass; the normal list path and no-row outcome are unchanged.
 
+The c-rowtext clarification of 2026-11-07 adds bounded per-reply child/span/link/time diagnostics and a reply-only unique profile-link/adjacent-text extraction path after the legacy block. Page-answer agreement remains mandatory, and post-expansion unknown controls are inert only when the matched rows equal the valid answer total; incomplete unknown controls refuse. List diagnostics classify observed handles/images without times without guessing a page cause. Focal extraction and main list behavior are unchanged; generated pages prove these paths, not real-account behavior.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

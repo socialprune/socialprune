@@ -190,4 +190,30 @@ test('IG-list snapshot projection counts containers, dates and real overflow wit
       'generated_handle',
     ),
   ).toMatchObject({ observed: false, observationFailed: true });
+  const blank = structuredClone(doc);
+  blank.nodes.nodeName = blank.nodes.nodeName!.map((index) =>
+    strings[index] === 'TIME' ? string('SPAN') : index,
+  );
+  const noTimes = navigationCounts(
+    { strings, documents: [blank] },
+    'https://www.instagram.com',
+    '2025-01-02T12:00:00Z',
+    'generated_handle',
+  );
+  expect(noTimes.pageKind).toBe('empty-marker');
+  blank.nodes.nodeValue = blank.nodes.nodeValue!.map((index) =>
+    strings[index] === 'No results' ? string('Generated content') : index,
+  );
+  const image = blank.nodes.nodeName.findIndex(
+    (index) => strings[index] === 'IMG',
+  );
+  blank.nodes.parentIndex![image] = main;
+  expect(
+    navigationCounts(
+      { strings, documents: [blank] },
+      'https://www.instagram.com',
+      '2025-01-02T12:00:00Z',
+      'generated_handle',
+    ).pageKind,
+  ).toBe('handles-images-no-times');
 });

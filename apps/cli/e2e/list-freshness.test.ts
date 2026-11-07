@@ -52,6 +52,8 @@ test.each([
   'rowtext-texts',
   'rowtext-mismatch',
   'rowtext-control-incomplete',
+  'rowtext-author-mismatch',
+  'rowtext-embedded',
   'mismatch',
   'blocked',
 ] as const)(
@@ -132,6 +134,15 @@ test.each([
               '</span><a href="/p/',
               '</span><span dir="auto">Generated extra text</span><a href="/p/',
             );
+          if (mode === 'rowtext-author-mismatch')
+            rows = rows.replaceAll('generated_reply_0', 'generated_other');
+          if (mode === 'rowtext-embedded')
+            rows = rows
+              .replace(
+                '<div><a href="/generated_reply_0/">',
+                '<div><span dir="auto"><a href="/generated_reply_0/">',
+              )
+              .replace('1w</time></a></div>', '1w</time></a></span></div>');
         }
         if (mode === 'ul-div-duplicate')
           rows = rows.replace('900001', '900000');
@@ -207,7 +218,11 @@ test.each([
         expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
         await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
-      else if (mode === 'rowtext-authors' || mode === 'rowtext-texts')
+      else if (
+        mode === 'rowtext-authors' ||
+        mode === 'rowtext-texts' ||
+        mode === 'rowtext-embedded'
+      )
         await expect(reading).rejects.toMatchObject({
           token: 'comment-structure',
         });
@@ -227,7 +242,8 @@ test.each([
                 ? 'reply-answer-mismatch'
                 : mode === 'ul-div-duplicate'
                   ? 'reply-answer-incomplete'
-                  : mode === 'rowtext-mismatch'
+                  : mode === 'rowtext-mismatch' ||
+                      mode === 'rowtext-author-mismatch'
                     ? 'reply-answer-mismatch'
                     : 'reply-controls-changed',
         });
@@ -242,7 +258,7 @@ test.each([
           failedStep:
             mode === 'rowtext-authors'
               ? 'author'
-              : mode === 'rowtext-texts'
+              : mode === 'rowtext-texts' || mode === 'rowtext-embedded'
                 ? 'text'
                 : 'none',
         });
@@ -255,9 +271,11 @@ test.each([
           expect(JSON.stringify(parsed)).not.toContain(content);
         expect(await page.locator('[data-clicked="true"]').count()).toBe(0);
         expect(parsed.stopAt).toBe(
-          mode === 'rowtext-authors' || mode === 'rowtext-texts'
+          mode === 'rowtext-authors' ||
+            mode === 'rowtext-texts' ||
+            mode === 'rowtext-embedded'
             ? 'row-text'
-            : mode === 'rowtext-mismatch'
+            : mode === 'rowtext-mismatch' || mode === 'rowtext-author-mismatch'
               ? 'answer-check'
               : mode === 'rowtext-control-incomplete'
                 ? 'controls'

@@ -7,6 +7,7 @@ export function addRepliesPage(
   at: string,
   label = 'View replies',
   divRows = false,
+  adjacentText = false,
 ) {
   const entries = Array.from({ length: count }, (_, index) => {
     const author = `generated_reply_${index}`;
@@ -19,14 +20,20 @@ export function addRepliesPage(
   // The generated ancestry check fixes the group to the permalink's fifth
   // ancestor, outside the inner text/actions row but inside this comment.
   const position = end + '<div role="button">Reply</div></div></div>'.length;
-  const rows = entries
-    .replace(
-      '<span>1w</span>',
-      `<a href="/p/${code}/c/900001/"><time datetime="${at}">1w</time></a>`,
-    )
-    .replaceAll('<li>', '<div>')
-    .replaceAll('</li>', '</div>');
-  const delayed = `const root=this.parentElement;this.remove();setTimeout(()=>mutate(()=>root.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div><div role="button">Hide replies</div>`)})),600)`;
+  const rows = adjacentText
+    ? Array.from(
+        { length: count },
+        (_, index) =>
+          `<div><div><a href="/generated_reply_${index}/">generated_reply_${index}</a><span dir="auto">Generated reply ${index} with local text</span><a href="/p/${code}/c/${900000 + index}/"><time datetime="${at}">1w</time></a></div><div role="button">${index + 2} likes</div></div>`,
+      ).join('')
+    : entries
+        .replace(
+          '<span>1w</span>',
+          `<a href="/p/${code}/c/900001/"><time datetime="${at}">1w</time></a>`,
+        )
+        .replaceAll('<li>', '<div>')
+        .replaceAll('</li>', '</div>');
+  const delayed = `const root=this.parentElement;this.remove();setTimeout(()=>mutate(()=>root.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div><div role="button">${adjacentText ? 'See replies' : 'Hide replies'}</div>`)})),600)`;
   const group = divRows
     ? `<div role="button" onclick="${delayed.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">${label}</div>`
     : `<button onclick="this.nextElementSibling.hidden=false;this.remove()">${label}</button><ul hidden>${entries}</ul>`;

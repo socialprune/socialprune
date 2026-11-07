@@ -61,6 +61,13 @@ export function emptyNavigation() {
     observationFailed: true,
     waitedForReadiness: false,
     filterDialogPresent: false,
+    pageKind: 'unobserved' as
+      | 'dated-rows'
+      | 'handles-images-no-times'
+      | 'empty-marker'
+      | 'no-times'
+      | 'filter-dialog'
+      | 'unobserved',
     listContainerScrollable: null as boolean | null,
     knownEmptyStatePresent: false,
     containers: {
@@ -237,6 +244,16 @@ export function navigationCounts(
   result.listContainerScrollable = foundList ? scrollableList : null;
   result.observed = true;
   result.observationFailed = false;
+  result.pageKind = result.filterDialogPresent
+    ? 'filter-dialog'
+    : result.containers.main.timeElements > 0
+      ? 'dated-rows'
+      : result.knownEmptyStatePresent
+        ? 'empty-marker'
+        : result.containers.main.handleElements > 0 &&
+            result.containers.main.images > 0
+          ? 'handles-images-no-times'
+          : 'no-times';
   return ListNavigationSchema.parse(result);
 }
 

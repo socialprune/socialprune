@@ -135,6 +135,9 @@ export async function readReplyRow(
   );
   if (
     (await span.count()) !== 1 ||
+    (await span
+      .locator('xpath=ancestor::a | ancestor::span[@dir="auto"]')
+      .count()) !== 0 ||
     (await profile
       .locator('xpath=..')
       .locator(':scope > span[dir="auto"]')

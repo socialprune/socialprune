@@ -113,3 +113,15 @@ test.each([
     );
   },
 );
+test('ROWTEXT complete row count never forgives a mismatching numbered expansion control', async () => {
+  const control = {
+    innerText: () => Promise.resolve('View all 4 replies'),
+    getAttribute: () => Promise.resolve('button'),
+    locator: () => ({ count: () => Promise.resolve(1) }),
+  } as unknown as Locator;
+  const group = {
+    count: () => Promise.resolve(1),
+    all: () => Promise.resolve([control]),
+  } as unknown as Locator;
+  expect((await checkedReplyControls(group, 5, true, 5)).valid).toBe(false);
+});

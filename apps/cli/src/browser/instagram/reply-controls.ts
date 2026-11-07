@@ -77,7 +77,10 @@ export async function checkedReplyControls(
   return {
     diagnostic,
     control:
-      afterExpansion && answerTotal !== null && rowsAfter === answerTotal
+      afterExpansion &&
+      answerTotal !== null &&
+      rowsAfter === answerTotal &&
+      diagnostic.controls.every((value) => !value.accepted)
         ? undefined
         : accepted,
     valid:
@@ -88,7 +91,10 @@ export async function checkedReplyControls(
           (afterExpansion &&
             (value.shape === 'hide-replies' ||
               value.shape === 'hide-all-replies' ||
-              (answerTotal !== null && rowsAfter === answerTotal))),
+              ((value.shape === 'other' ||
+                value.shape === 'view-more-replies') &&
+                answerTotal !== null &&
+                rowsAfter === answerTotal))),
       ) &&
       count <= 1,
   };

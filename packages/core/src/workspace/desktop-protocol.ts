@@ -310,6 +310,7 @@ export const RunEndSchema = z
       ![
         'error',
         'platform-check',
+        'step-deadline',
         'shape-changed',
         'account-mismatch',
         'canary-mismatch',

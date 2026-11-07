@@ -44,6 +44,7 @@ export type DisplayEndReason =
   | 'canary-mismatch'
   | 'done'
   | 'platform-check'
+  | 'step-deadline'
   | 'account-mismatch'
   | 'shape-changed'
   | 'canary'
@@ -114,6 +115,10 @@ const END_REASON = {
   'platform-check': {
     en: 'The page was not recognized.',
     de: 'Die Seite wurde nicht erkannt.',
+  },
+  'step-deadline': {
+    en: 'The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.',
+    de: 'Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
   },
   'account-mismatch': {
     en: 'The signed-in account does not match the expected account.',

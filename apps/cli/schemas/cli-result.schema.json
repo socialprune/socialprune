@@ -784,6 +784,23 @@
             {
               "type": "object",
               "properties": {
+                "code": { "type": "string", "const": "STEP_DEADLINE" },
+                "message": {
+                  "type": "string",
+                  "enum": [
+                    "The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.",
+                    "Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt."
+                  ]
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
                 "code": { "type": "string", "const": "RUN_STOPPED" },
                 "message": {
                   "type": "string",

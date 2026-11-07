@@ -1013,6 +1013,25 @@ export const ListWindowSchema = z
 export type ListWindow = z.infer<typeof ListWindowSchema>;
 export const ContextStepReportSchema = z
   .looseObject({
+    postReadingBudget: z
+      .strictObject({
+        navigationMs: count,
+        reopenMs: count,
+        focalSearchMs: count,
+        replyResponseMs: count,
+        marginMs: count,
+        budgetMs: count,
+      })
+      .refine(
+        (value) =>
+          value.budgetMs ===
+          value.navigationMs +
+            value.reopenMs +
+            value.focalSearchMs +
+            value.replyResponseMs +
+            value.marginMs,
+      )
+      .optional(),
     deadline: z
       .strictObject({
         budgetMs: count,

@@ -65,6 +65,10 @@ import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
 import * as replyScopeHelpers from '../src/browser/instagram/replies-scope.ts';
 import * as deadlineHelpers from '../src/browser/instagram/step-deadline.ts';
+import {
+  readXWarningFile,
+  requireXWarningFileClear,
+} from '../src/workspace/x-warning-file.ts';
 import * as replyHelpers from '../src/browser/instagram/replies.ts';
 import * as automaticHelpers from '../src/browser/instagram/automatic-run.ts';
 import { ConfirmationState } from '../src/browser/confirmation-state.ts';
@@ -7439,6 +7443,14 @@ test('STALL sole diagnostic nonsettling page count ends with partial report and 
   let injected = false;
   const original = replyScopeHelpers.structuralReplyScope;
   const spy = vi.spyOn(replyScopeHelpers, 'structuralReplyScope');
+  let active: ReturnType<typeof deadlineHelpers.stepDeadline> | undefined;
+  const createDeadline = deadlineHelpers.stepDeadline;
+  const budgetSpy = vi
+    .spyOn(deadlineHelpers, 'stepDeadline')
+    .mockImplementation((expired) => {
+      active = createDeadline(expired);
+      return active;
+    });
   try {
     expect(await h.start(true)).toMatchObject({ completed: 5 });
     const prior = await h.store.read((tx) => records(tx.instagramContext));
@@ -7455,6 +7467,7 @@ test('STALL sole diagnostic nonsettling page count ends with partial report and 
           key === 'count'
             ? () => {
                 injected = true;
+                active!.begin(150);
                 return new Promise<number>((_resolve, reject) =>
                   focal
                     .page()
@@ -7476,16 +7489,10 @@ test('STALL sole diagnostic nonsettling page count ends with partial report and 
       });
       return original(wrapped, ...args);
     });
-    const running = h.start({ refreshReplies: true });
-    const result = await Promise.race([
-      running,
-      new Promise((resolve) =>
-        setTimeout(() => resolve({ testLimitReached: true }), 7000),
-      ),
-    ]);
+    const result = await h.start({ refreshReplies: true });
     expect(injected).toBe(true);
     expect(result, h.notices.join('\n')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'STEP_DEADLINE',
       token: 'step-deadline',
     });
     const journal = await h.store.browserJournal(),
@@ -7518,9 +7525,10 @@ test('STALL sole diagnostic nonsettling page count ends with partial report and 
     expect(h.notices.join('')).toContain('Stop detail: step-deadline');
   } finally {
     spy.mockRestore();
+    budgetSpy.mockRestore();
     await h.close();
   }
-}, 30000);
+}, 180000);
 test('STALL2 ordered sole zero reaches a carried batch pause before reading, without a confirmation action', async () => {
   const h = await harness('success', 5, 30000);
   let release!: () => void;
@@ -8252,6 +8260,50 @@ test('REPLIES revision F1 first direct refresh canary is accepted only after fiv
     await h.close();
   }
 });
+test('DEADLINE a generated focal rendered after 35 seconds does not stop the reply reader', async () => {
+  const h = await harness('success', 5, 30000);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    h.fake.directPostAccount('expected');
+    h.fake.replies(0);
+    h.fake.replyAnswer(false);
+    h.fake.scriptReplies('matching');
+    h.fake.soleCommentSet('one');
+    h.fake.replyShape('sole-zero');
+    h.fake.delayPost(0, 10000, 25000);
+    await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
+    const result = await h.start({ refreshReplies: true });
+    expect(result, h.notices.join('\n')).toMatchObject({ completed: 5 });
+    const journal = await h.store.browserJournal();
+    const run = journal.runs.at(-1)!;
+    expect(run.endReason).toBe('done');
+    expect(run.instagramWarning).toBeUndefined();
+    const raw = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[] };
+    expect(
+      ContextStepReportSchema.parse(raw.steps[0]).postReadingBudget,
+    ).toMatchObject({ budgetMs: 680000, reopenMs: 60000 });
+    expect(ContextStepReportSchema.parse(raw.steps[0])).toMatchObject({
+      result: 'replies-refreshed',
+      replies: { answerChecked: true, read: 0 },
+    });
+    expect(
+      ContextStepReportSchema.parse(raw.steps[0]).deadline,
+    ).toBeUndefined();
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).every(
+        (record) => record.replies !== undefined,
+      ),
+    ).toBe(true);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+
 test('STALL a nonsettling captured step ends the main reader without context writes or an unended run', async () => {
   const h = await harness('success', 1, 3000);
   const original = deadlineHelpers.stepDeadline;
@@ -8269,19 +8321,46 @@ test('STALL a nonsettling captured step ends the main reader without context wri
   try {
     const result = await h.start(true);
     expect(result, h.notices.join('\n')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'STEP_DEADLINE',
       token: 'step-deadline',
     });
     const run = (await h.store.browserJournal()).runs[0]!;
     expect(run.endedAt).not.toBeNull();
-    expect(run.endReason).toBe('platform-check');
+    expect(run.endReason).toBe('step-deadline');
+    expect(run.instagramWarning).toBeUndefined();
+    expect(
+      await h.store
+        .browserOutcomeWriter()
+        .xWarning(h.plan.accountKey, undefined, 'instagram'),
+    ).toBeNull();
+    expect(await readXWarningFile(h.profile, 'instagram')).toBeNull();
+    await expect(
+      requireXWarningFileClear(h.profile, IG_FIXTURE.now, 'UTC', 'instagram'),
+    ).resolves.toBeUndefined();
+    await expect(
+      requireXWarningFileClear(
+        h.profile,
+        '2026-10-27T12:00:00.000Z',
+        'UTC',
+        'instagram',
+      ),
+    ).resolves.toBeUndefined();
+    expect(h.notices.join('')).toContain(
+      'reading step exceeded its time budget',
+    );
+    expect(h.notices.join('')).not.toContain(
+      'Ended: Instagram showed a sign-in',
+    );
     const raw = JSON.parse(
       await readFile(
         join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
         'utf8',
       ),
     ) as { steps: unknown[]; stop: unknown };
-    expect(raw.stop).toMatchObject({ token: 'step-deadline' });
+    expect(raw.stop).toMatchObject({
+      code: 'STEP_DEADLINE',
+      token: 'step-deadline',
+    });
     expect(
       ContextStepReportSchema.parse(raw.steps[0])['deadline'],
     ).toMatchObject({ expired: true, budgetMs: 150, stage: 'capture' });

@@ -1358,6 +1358,7 @@
                   "stopped-by-person",
                   "error",
                   "platform-check",
+                  "step-deadline",
                   "canary",
                   "size-cap",
                   "shape-changed"

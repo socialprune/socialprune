@@ -809,6 +809,7 @@
   "desktop.token.IG_WARNING_CARD_REQUIRED": "Lies die Instagram-Warnkarte und bestätige genau diesen Lauf im Terminal, bevor das Löschen starten kann.",
   "desktop.token.IG_WARNING_RESTORE_BLOCKED": "Ein Arbeitsbereich mit unbestätigter Instagram-Warnung lässt sich nicht durch ein Backup ersetzen. Lies und bestätige zuerst die Karte dieses Laufs.",
   "desktop.token.PLATFORM_CHECK": "Die Seite wurde nicht erkannt oder verlangt eine Kontoprüfung. Der Lauf wurde gestoppt.",
+  "desktop.token.STEP_DEADLINE": "Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.",
   "desktop.token.RUN_STOPPED": "Der Lauf hat bei einem Problem angehalten. Prüfe sein Journal, bevor du fortfährst.",
   "desktop.token.DELETE_FAILED": "Das Löschen konnte nicht beendet werden. Kein automatischer Wiederholungsversuch wurde gemacht.",
   "desktop.token.SHARING_NOT_CONFIRMED": "Das Teilen von Eintragstext mit einem Agenten wurde nicht bestätigt.",

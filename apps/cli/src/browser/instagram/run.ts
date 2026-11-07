@@ -114,7 +114,11 @@ import type { WindowPlacement } from '../launch.ts';
 import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
 import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
-import { stepDeadline, readingStepBudget } from './step-deadline.ts';
+import {
+  stepDeadline,
+  readingStepBudget,
+  postReadingBudget,
+} from './step-deadline.ts';
 import {
   automaticRun,
   unattendedWaitBudget,
@@ -1279,11 +1283,18 @@ export async function runContextWithDependencies(
               break;
             }
             stage = 'post-open';
-            phase('post-open', readingStepBudget(deps.responseMs, deps.pace));
+            const postBudget = postReadingBudget(deps.responseMs, deps.pace);
+            const phaseBudget = options.plan.refreshReplies
+              ? postBudget.budgetMs
+              : readingStepBudget(deps.responseMs, deps.pace);
+            phase('post-open', phaseBudget);
             activeReady = { postMs: 0 };
             stepReport.ready = activeReady;
             const openedAt = performance.now();
-            if (options.plan.refreshReplies) reading!.begin(deps.responseMs);
+            if (options.plan.refreshReplies) {
+              stepReport.postReadingBudget = postBudget;
+              reading!.begin(postBudget.budgetMs);
+            }
             postRequests = network.beginPostRequests(page);
             const postRequestsForStep = postRequests;
             Object.defineProperty(stepReport, 'postRequests', {
@@ -1383,12 +1394,12 @@ export async function runContextWithDependencies(
               break;
             }
             stage = 'post-read';
-            phase('post-read', readingStepBudget(deps.responseMs, deps.pace));
+            phase('post-read', phaseBudget);
             if (
               options.plan.refreshReplies &&
               row.context?.confirmedBy === 'post'
             ) {
-              phase('reply-scope', deps.responseMs);
+              phase('reply-scope', phaseBudget);
               stepReport.replyScope = await replyScopeDiagnostic(
                 page,
                 {
@@ -1406,7 +1417,7 @@ export async function runContextWithDependencies(
                 },
               );
             }
-            phase('post-read', readingStepBudget(deps.responseMs, deps.pace));
+            phase('post-read', phaseBudget);
             const read = await confirmOnPost(
               page,
               row.item,
@@ -1452,6 +1463,7 @@ export async function runContextWithDependencies(
                 throw new ContextStop('PLATFORM_CHECK', 'post-structure');
               if (options.plan.refreshReplies) {
                 phase('reply-read', deps.responseMs);
+                const replyDeadline = performance.now() + deps.responseMs;
                 let answerChecked = false;
                 const match = {
                   ...read.result.comment,
@@ -1466,7 +1478,7 @@ export async function runContextWithDependencies(
                       answers.bodies,
                       match,
                       guard,
-                      openedAt + deps.responseMs,
+                      replyDeadline,
                       (ms) => deps.sleep(ms),
                       deps.pace.expandMs,
                       (value) => {
@@ -1474,10 +1486,7 @@ export async function runContextWithDependencies(
                       },
                       () =>
                         answers.flush(
-                          Math.max(
-                            1,
-                            openedAt + deps.responseMs - performance.now(),
-                          ),
+                          Math.max(1, replyDeadline - performance.now()),
                         ),
                       (value) => {
                         stepReport.replyScope = value;
@@ -1847,7 +1856,9 @@ export async function runContextWithDependencies(
           ? 'shape-changed'
           : caught instanceof CliError && caught.code === 'PLATFORM_CHECK'
             ? 'platform-check'
-            : 'error';
+            : caught instanceof CliError && caught.code === 'STEP_DEADLINE'
+              ? 'step-deadline'
+              : 'error';
   } finally {
     auto.close();
     reading?.clear();
@@ -1890,7 +1901,9 @@ export async function runContextWithDependencies(
             ? 'shape-changed'
             : caught instanceof CliError && caught.code === 'PLATFORM_CHECK'
               ? 'platform-check'
-              : 'error';
+              : caught instanceof CliError && caught.code === 'STEP_DEADLINE'
+                ? 'step-deadline'
+                : 'error';
     };
     const finalize = async (
       at: FinalStage,
@@ -1919,7 +1932,9 @@ export async function runContextWithDependencies(
                   () =>
                     reject(
                       new ContextStop(
-                        'PLATFORM_CHECK',
+                        reading?.expired && !auto.expired
+                          ? 'STEP_DEADLINE'
+                          : 'PLATFORM_CHECK',
                         auto.expired
                           ? 'run-wait-deadline'
                           : reading?.expired

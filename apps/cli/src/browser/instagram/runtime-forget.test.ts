@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page } from 'playwright-core';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { observeContextRuntime } from './network.ts';
+import { runWaitTrace } from './automatic-run.ts';
 
 test('C35 only the replaced reading page loses close/crash listeners; other closures still stop', () => {
   const context = new EventEmitter(),
@@ -27,4 +28,54 @@ test('C35 only the replaced reading page loses close/crash listeners; other clos
     0,
   );
   expect(context.listenerCount('close')).toBe(0);
+});
+test('WAIT3 runtime receipt records page close before expiry and browser disconnect after watchdog close', () => {
+  vi.useFakeTimers();
+  try {
+    const browser = new EventEmitter();
+    const page = new EventEmitter();
+    const trace = runWaitTrace();
+    trace.phase('checkpoint');
+    trace.checkpoint('profile-snapshot');
+    const runtime = observeContextRuntime(
+      { browser: () => browser } as unknown as BrowserContext,
+      () => ({ step: 3, stage: 'checkpoint' }),
+      (event) => {
+        if (event !== 'page-crash') trace.event(event);
+      },
+    );
+    runtime.own(page as unknown as Page);
+    vi.advanceTimersByTime(10);
+    page.emit('close');
+    vi.advanceTimersByTime(20);
+    trace.expire();
+    trace.event('watchdog-close-request');
+    browser.emit('disconnected');
+    expect(trace.summary()).toMatchObject({
+      expiry: {
+        elapsedMs: 30,
+        checkpointStep: 'profile-snapshot',
+        checkpointStepStartedMs: 0,
+      },
+      events: [
+        { event: 'page-close', elapsedMs: 10, order: 'before-expiry' },
+        {
+          event: 'watchdog-close-request',
+          elapsedMs: 30,
+          order: 'after-expiry',
+        },
+        { event: 'browser-disconnected', elapsedMs: 30, order: 'after-expiry' },
+      ],
+    });
+    expect(runtime.summary()).toMatchObject({
+      browserDisconnects: 1,
+      unexpectedPageCloses: 1,
+    });
+    runtime.dispose();
+    expect(
+      browser.listenerCount('disconnected') + page.listenerCount('close'),
+    ).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });

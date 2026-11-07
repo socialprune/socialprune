@@ -77,25 +77,28 @@ test('D7 warning classification is closed and belongs only to an ended X warning
     );
 });
 
-test('DEADLINE reading failure has its own end and cannot carry an Instagram warning', () => {
-  const run = {
-    runId: 'generated-reading-deadline',
-    platform: 'instagram',
-    accountKey: 'instagram:generated',
-    mode: 'context',
-    planHash: null,
-    startedAt: '2026-10-24T10:00:00.000Z',
-    endedAt: '2026-10-24T10:01:00.000Z',
-    endReason: 'step-deadline',
-    bodyShapes: {},
-    profileReport: null,
-  };
-  expect(BrowserRunSchema.safeParse(run).success).toBe(true);
-  for (const kind of ['http-429', 'limit-notice', 'warning-notice'])
-    expect(
-      BrowserRunSchema.safeParse({
-        ...run,
-        instagramWarning: { kind, at: run.endedAt, zone: 'UTC' },
-      }).success,
-    ).toBe(false);
-});
+test.each(['step-deadline', 'run-wait-deadline'])(
+  'DEADLINE %s has its own end and cannot carry an Instagram warning',
+  (endReason) => {
+    const run = {
+      runId: 'generated-reading-deadline',
+      platform: 'instagram',
+      accountKey: 'instagram:generated',
+      mode: 'context',
+      planHash: null,
+      startedAt: '2026-10-24T10:00:00.000Z',
+      endedAt: '2026-10-24T10:01:00.000Z',
+      endReason,
+      bodyShapes: {},
+      profileReport: null,
+    };
+    expect(BrowserRunSchema.safeParse(run).success).toBe(true);
+    for (const kind of ['http-429', 'limit-notice', 'warning-notice'])
+      expect(
+        BrowserRunSchema.safeParse({
+          ...run,
+          instagramWarning: { kind, at: run.endedAt, zone: 'UTC' },
+        }).success,
+      ).toBe(false);
+  },
+);

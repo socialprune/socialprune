@@ -182,6 +182,9 @@ export function observePageMemory(page: Page) {
 export function observeContextRuntime(
   context: BrowserContext,
   position: () => { step: number; stage: ContextCauseStage },
+  observed: (
+    event: 'page-crash' | 'page-close' | 'browser-disconnected',
+  ) => void = () => {},
 ) {
   let browser: Browser | null = null;
   const counts = {
@@ -204,6 +207,7 @@ export function observeContextRuntime(
   };
   const record = (event: RuntimeReport['events'][number]['event']) => {
     if (disposed || (closing && event !== 'page-crash')) return;
+    observed(event);
     const { step, stage } = position();
     const key = `${event}|${step}|${stage}`;
     const group = events.get(key) ?? { event, step, stage, count: 0 };

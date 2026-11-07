@@ -223,3 +223,50 @@ test('STALL bounded synchronous sole traversal honors an expired step guard', ()
   ).toThrow('Generated expired guard');
   expect(checks).toBe(3);
 });
+test.each([
+  'caption',
+  'hidden',
+  'duplicate',
+  'other-parent',
+  'focal-child',
+  'ambiguous',
+] as const)(
+  'SCOPE2 second answer entry %s is diagnosed without inventing a sole proof',
+  (kind) => {
+    const extra = { ...focal, pk: '456', text: 'Generated other entry' };
+    const value =
+      kind === 'caption'
+        ? { code, comment_count: 1, comments: [focal], caption: extra }
+        : {
+            code,
+            comment_count: 1,
+            comments: [
+              focal,
+              kind === 'duplicate'
+                ? { ...focal }
+                : kind === 'other-parent'
+                  ? { ...extra, parent_comment_id: '789' }
+                  : kind === 'focal-child'
+                    ? { ...extra, parent_comment_id: match.id }
+                    : kind === 'hidden'
+                      ? { ...extra, is_hidden: true }
+                      : extra,
+            ],
+          };
+    const result = inspectSoleCommentAnswer([], [value], match, code);
+    expect(result.accepted).toBe(kind === 'duplicate');
+    expect(result.diagnostic).toMatchObject({
+      answerValid: true,
+      childCountProofClass: 'zero',
+      answerCommentSetSize: kind === 'duplicate' ? 1 : 2,
+      firstFailedGate: kind === 'duplicate' ? 'none' : 'sole-answer-set',
+      answerExtraEntries: {
+        captionObjects: kind === 'caption' ? 1 : 0,
+        otherParentReferences: kind === 'other-parent' ? 1 : 0,
+        focalChildReferences: kind === 'focal-child' ? 1 : 0,
+        unresolvedObjects: kind === 'hidden' || kind === 'ambiguous' ? 1 : 0,
+        duplicateFocalObjects: kind === 'duplicate' ? 1 : 0,
+      },
+    });
+  },
+);

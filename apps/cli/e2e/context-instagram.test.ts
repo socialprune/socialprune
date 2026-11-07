@@ -7878,6 +7878,118 @@ test.each(['sole', 'sibling'] as const)(
   },
   30000,
 );
+test.each(['before', 'after'] as const)(
+  'WAIT3 checkpoint timeout retains %s expiry runtime ordering and no warning gates',
+  async (order) => {
+    const h = await harness('success', 1, 30000);
+    const original = profileHelpers.profileSnapshot;
+    let entered = false;
+    const snapshot = vi
+      .spyOn(profileHelpers, 'profileSnapshot')
+      .mockImplementation(async (path) => {
+        if (h.notices.at(-1) === 'Phase: checkpoint\n' && !entered) {
+          entered = true;
+          if (order === 'before') await h.context!.pages().at(-1)!.close();
+          return await new Promise<Awaited<ReturnType<typeof original>>>(
+            () => {},
+          );
+        }
+        return original(path);
+      });
+    const originalAuto = automaticHelpers.automaticRun;
+    const runClock = vi
+      .spyOn(automaticHelpers, 'automaticRun')
+      .mockImplementation((enabled, expired) => {
+        const run = originalAuto(enabled, expired);
+        const phase = run.phase.bind(run);
+        run.phase = (name, ms) => phase(name, name === 'checkpoint' ? 200 : ms);
+        return run;
+      });
+    try {
+      const result = await h.start(true);
+      expect(result).toMatchObject({
+        code: 'RUN_WAIT_DEADLINE',
+        token: 'run-wait-deadline',
+      });
+      expect(entered).toBe(true);
+      const journal = await h.store.browserJournal();
+      const run = journal.runs.at(-1)!;
+      expect(run).toMatchObject({
+        endReason: 'run-wait-deadline',
+        pageOpens: 0,
+      });
+      expect(run.instagramWarning).toBeUndefined();
+      expect(
+        await h.store
+          .browserOutcomeWriter()
+          .xWarning(h.plan.accountKey, undefined, 'instagram'),
+      ).toBeNull();
+      expect(await readXWarningFile(h.profile, 'instagram')).toBeNull();
+      await expect(
+        requireXWarningFileClear(h.profile, IG_FIXTURE.now, 'UTC', 'instagram'),
+      ).resolves.toBeUndefined();
+      await expect(
+        requireXWarningFileClear(
+          h.profile,
+          '2026-10-27T12:00:00.000Z',
+          'UTC',
+          'instagram',
+        ),
+      ).resolves.toBeUndefined();
+      const raw = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { runWaitTrace: unknown; runDeadline: unknown; stop: unknown };
+      const trace = automaticHelpers.RunWaitTraceSchema.parse(raw.runWaitTrace);
+      expect(raw.stop).toMatchObject({
+        code: 'RUN_WAIT_DEADLINE',
+        token: 'run-wait-deadline',
+      });
+      expect(raw.runDeadline).toMatchObject({
+        phase: 'checkpoint',
+        budgetMs: 200,
+      });
+      expect(trace.expiry).toMatchObject({
+        phase: 'checkpoint',
+        checkpointStep: 'profile-snapshot',
+      });
+      expect(
+        trace.events.some(
+          (event) =>
+            event.event === 'page-close' &&
+            event.order ===
+              (order === 'before' ? 'before-expiry' : 'after-expiry'),
+        ),
+      ).toBe(true);
+      expect(
+        trace.events
+          .filter(
+            (event) =>
+              event.event === 'watchdog-close-request' ||
+              event.event === 'browser-disconnected',
+          )
+          .every((event) => event.order === 'after-expiry'),
+      ).toBe(true);
+      expect(h.notices.join('')).not.toContain(
+        'Ended: Instagram showed a sign-in',
+      );
+    } finally {
+      runClock.mockRestore();
+      snapshot.mockRestore();
+      for (
+        let check = 0;
+        check < 50 && (await profileInUse(h.profile));
+        check++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      await h.close();
+    }
+  },
+  30000,
+);
+
 test('STALL2 unattended run watchdog stops a nonsettling carried batch before any reading', async () => {
   const h = await harness('success', 5, 30000);
   let release!: () => void;
@@ -7926,11 +8038,12 @@ test('STALL2 unattended run watchdog stops a nonsettling carried batch before an
     expect(
       await h.start({ refreshReplies: true }),
       h.notices.join('\n'),
-    ).toMatchObject({ code: 'PLATFORM_CHECK', token: 'run-wait-deadline' });
+    ).toMatchObject({ code: 'RUN_WAIT_DEADLINE', token: 'run-wait-deadline' });
     const journal = await h.store.browserJournal(),
       run = journal.runs.at(-1)!;
     expect(run.pageOpens).toBe(0);
     expect(run.endedAt).not.toBeNull();
+    expect(run.endReason).toBe('run-wait-deadline');
     expect(
       journal.attempts
         .filter((attempt) => attempt.runId === run.runId)

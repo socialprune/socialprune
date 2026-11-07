@@ -57,6 +57,7 @@ export const DesktopCliErrorCodeSchema = z.enum([
   'ACCOUNT_NAME_MISSING',
   'PLATFORM_CHECK',
   'STEP_DEADLINE',
+  'RUN_WAIT_DEADLINE',
   'RUN_STOPPED',
   'DELETE_FAILED',
   'SHARING_NOT_CONFIRMED',

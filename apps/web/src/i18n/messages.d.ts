@@ -366,6 +366,7 @@ declare global {
     'desktop.token.REVIEW_ASSETS_MISSING': Record<never, never>;
     'desktop.token.REVIEW_FAILED': Record<never, never>;
     'desktop.token.RUN_STOPPED': Record<never, never>;
+    'desktop.token.RUN_WAIT_DEADLINE': Record<never, never>;
     'desktop.token.SCAN_FAILED': Record<never, never>;
     'desktop.token.SCHEMAS_FAILED': Record<never, never>;
     'desktop.token.SHAPE_CHANGED': Record<never, never>;

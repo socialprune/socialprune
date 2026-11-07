@@ -70,6 +70,8 @@ Since c-deadline on 2026-11-07, reply refresh uses a post-reading watchdog deriv
 
 Since c-scopecap on 2026-11-07, the admitted zero-reply sibling boundary checks every child rather than using its 32 recorded diagnostic entries to decide. Read-only locator and XPath counts stop unverified above 512 children or 20,000 elements at that level, without executing a page script. The report keeps complete boundary counts and at most 32 child shapes; sibling expansion counts are null because they are not read. The focal's isolated-root and answer checks remain unchanged, and generated cases cover middle and late focals among 40 comments, contamination, duplicate focals, nonzero replies and both scan bounds.
 
+Since c-scopecap2 on 2026-11-07, run-owned wait expiry ends as `RUN_WAIT_DEADLINE` and `run-wait-deadline`, with its own German and English text and no warning classification. A bounded passive trace retains the pending checkpoint sub-step, phase-relative times and the ordering of page closes, browser disconnects and the watchdog's own close request. Checkpoint guards, budgets and pace are unchanged. Sole-answer diagnostics now count caption objects, explicit focal-child and other-parent references, unresolved extra objects and exact focal duplicates without changing admission. Generated evidence distinguishes those cases; accepting an extra answer entry and the real report's separate two-time focal remain unresolved.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

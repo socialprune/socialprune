@@ -66,13 +66,15 @@ export function contextEnd(
     ],
   };
   const text =
-    token === 'step-deadline' || reason === 'step-deadline'
-      ? INSTAGRAM_STOP_MESSAGES['step-deadline'][lang]
-      : token === 'list-timeout'
-        ? lang === 'de'
-          ? 'Die gefilterte Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt; der Kommentar bleibt für einen späteren Plan offen.'
-          : 'The filtered comments list could not be read reliably. The run stopped; the comment remains eligible for a later plan.'
-        : (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
+    token === 'run-wait-deadline' || reason === 'run-wait-deadline'
+      ? INSTAGRAM_STOP_MESSAGES['run-wait-deadline'][lang]
+      : token === 'step-deadline' || reason === 'step-deadline'
+        ? INSTAGRAM_STOP_MESSAGES['step-deadline'][lang]
+        : token === 'list-timeout'
+          ? lang === 'de'
+            ? 'Die gefilterte Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt; der Kommentar bleibt für einen späteren Plan offen.'
+            : 'The filtered comments list could not be read reliably. The run stopped; the comment remains eligible for a later plan.'
+          : (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
   return lang === 'de'
     ? `Beendet: ${text} ${automatic ? 'Das Browserfenster wird automatisch geschlossen.' : 'Schließe das Instagram-Fenster, um den Lauf zu beenden.'}`
     : `Ended: ${text} ${automatic ? 'The browser window closes automatically.' : 'Close the Instagram window to finish.'}`;

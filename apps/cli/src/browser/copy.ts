@@ -45,6 +45,7 @@ export type DisplayEndReason =
   | 'done'
   | 'platform-check'
   | 'step-deadline'
+  | 'run-wait-deadline'
   | 'account-mismatch'
   | 'shape-changed'
   | 'canary'
@@ -119,6 +120,10 @@ const END_REASON = {
   'step-deadline': {
     en: 'The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.',
     de: 'Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
+  },
+  'run-wait-deadline': {
+    en: 'An Instagram run phase exceeded its wait budget. The run stopped and retained its partial report.',
+    de: 'Eine Phase des Instagram-Laufs hat ihr Wartebudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
   },
   'account-mismatch': {
     en: 'The signed-in account does not match the expected account.',

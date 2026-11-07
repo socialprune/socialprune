@@ -58,6 +58,7 @@ const tokenIds = [
   'desktop.token.IG_WARNING_RESTORE_BLOCKED',
   'desktop.token.PLATFORM_CHECK',
   'desktop.token.STEP_DEADLINE',
+  'desktop.token.RUN_WAIT_DEADLINE',
   'desktop.token.RUN_STOPPED',
   'desktop.token.DELETE_FAILED',
   'desktop.token.SHARING_NOT_CONFIRMED',

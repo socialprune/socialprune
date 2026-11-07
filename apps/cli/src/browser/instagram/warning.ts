@@ -8,7 +8,12 @@ export function instagramWarningKind(
   if (error instanceof InstagramDeleteStop && error.detail === 'limit-notice')
     return 'limit-notice';
   if (!(error instanceof ContextStop)) return undefined;
-  if (error.code === 'STEP_DEADLINE' || error.token === 'step-deadline')
+  if (
+    error.code === 'STEP_DEADLINE' ||
+    error.token === 'step-deadline' ||
+    error.code === 'RUN_WAIT_DEADLINE' ||
+    error.token === 'run-wait-deadline'
+  )
     return undefined;
   if (error.token === 'http-429') return 'http-429';
   if (error.token === 'rate-limit') return 'limit-notice';

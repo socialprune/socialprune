@@ -331,6 +331,15 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
   ]),
   answerCommentSetSize: count,
   answerSetValid: z.boolean(),
+  answerExtraEntries: z
+    .strictObject({
+      captionObjects: count,
+      otherParentReferences: count,
+      focalChildReferences: count,
+      unresolvedObjects: count,
+      duplicateFocalObjects: count,
+    })
+    .optional(),
   answerTraversalCapped: z.boolean(),
   declaredCountSeen: count,
   declaredCountsAllOne: z.boolean().nullable(),

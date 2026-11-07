@@ -55,6 +55,13 @@ export function inspectSoleCommentAnswer(
               : 'positive',
     answerCommentSetSize: 0,
     answerSetValid: true,
+    answerExtraEntries: {
+      captionObjects: 0,
+      otherParentReferences: 0,
+      focalChildReferences: 0,
+      unresolvedObjects: 0,
+      duplicateFocalObjects: 0,
+    },
     answerTraversalCapped: false,
     declaredCountSeen: 0,
     declaredCountsAllOne: null,
@@ -77,7 +84,14 @@ export function inspectSoleCommentAnswer(
   const comments = new Set<string>();
   let valid = true,
     visits = 0;
-  const walk = (input: unknown, depth: number, inSet = false, post = false) => {
+  let focalObjects = 0;
+  const walk = (
+    input: unknown,
+    depth: number,
+    inSet = false,
+    post = false,
+    inCaption = false,
+  ) => {
     guard();
     if (++visits > 100000 || depth > 40) {
       valid = false;
@@ -87,7 +101,7 @@ export function inspectSoleCommentAnswer(
     if (Array.isArray(input)) {
       for (const next of input) {
         if (diagnostic.answerTraversalCapped) break;
-        walk(next, depth + 1, inSet, post);
+        walk(next, depth + 1, inSet, post, inCaption);
       }
       return;
     }
@@ -132,9 +146,19 @@ export function inspectSoleCommentAnswer(
       (value.created_at ?? value.created_at_utc) ===
         Date.parse(match.createdAt) / 1000;
     diagnostic.answerNamesFocal ||= namesFocal;
+    if (namesFocal && focalObjects++ > 0)
+      diagnostic.answerExtraEntries!.duplicateFocalObjects++;
     if (commentId && (inSet || commentLike)) {
       comments.add(commentId);
-      if (!namesFocal) valid = false;
+      if (!namesFocal) {
+        valid = false;
+        const extra = diagnostic.answerExtraEntries!;
+        const parent = id(value.parent_comment_id);
+        if (inCaption) extra.captionObjects++;
+        else if (parent === match.id) extra.focalChildReferences++;
+        else if (parent) extra.otherParentReferences++;
+        else extra.unresolvedObjects++;
+      }
     } else if (
       inSet &&
       !('node' in value) &&
@@ -149,6 +173,7 @@ export function inspectSoleCommentAnswer(
           depth + 1,
           commentSets.has(key) || (inSet && !['user', 'owner'].includes(key)),
           inPost,
+          inCaption || key === 'caption' || key === 'edge_media_to_caption',
         );
     }
   };

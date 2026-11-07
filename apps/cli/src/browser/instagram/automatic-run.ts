@@ -26,6 +26,109 @@ export const RUN_PHASES = [
   'ended',
 ] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
+export const CHECKPOINT_STEPS = [
+  'guard',
+  'profile-snapshot',
+  'extensions-check',
+  'complete',
+] as const;
+const CheckpointStepSchema = z.enum(CHECKPOINT_STEPS).nullable();
+const tracePosition = {
+  phase: z.enum(RUN_PHASES),
+  phaseSequence: z.number().int().nonnegative(),
+  elapsedMs: z.number().int().nonnegative(),
+  checkpointStep: CheckpointStepSchema,
+  checkpointStepStartedMs: z.number().int().nonnegative().nullable(),
+};
+export const RunWaitTraceSchema = z.strictObject({
+  expiry: z.strictObject(tracePosition).optional(),
+  droppedEvents: z.number().int().nonnegative(),
+  events: z
+    .array(
+      z.strictObject({
+        ...tracePosition,
+        event: z.enum([
+          'page-close',
+          'browser-disconnected',
+          'watchdog-close-request',
+        ]),
+        order: z.enum(['no-expiry', 'before-expiry', 'after-expiry']),
+      }),
+    )
+    .max(128),
+});
+
+/** Diagnostic monotonic ordering only; never arms, resets or checks a guard. */
+export function runWaitTrace() {
+  let phase: RunPhase = 'run-start',
+    phaseSequence = 0,
+    at = performance.now();
+  let checkpointStep: (typeof CHECKPOINT_STEPS)[number] | null = null;
+  let checkpointStepStartedMs: number | null = null;
+  const position = () => ({
+    phase,
+    phaseSequence,
+    elapsedMs: Math.max(0, Math.round(performance.now() - at)),
+    checkpointStep,
+    checkpointStepStartedMs,
+  });
+  let expiry: ReturnType<typeof position> | undefined;
+  let ordinal = 0,
+    expiredOrdinal = Infinity,
+    droppedEvents = 0;
+  const events: (ReturnType<typeof position> & {
+    event: 'page-close' | 'browser-disconnected' | 'watchdog-close-request';
+    ordinal: number;
+  })[] = [];
+  return {
+    phase(value: RunPhase) {
+      if (expiry) return;
+      phase = value;
+      phaseSequence++;
+      at = performance.now();
+      checkpointStep = null;
+      checkpointStepStartedMs = null;
+    },
+    checkpoint(value: (typeof CHECKPOINT_STEPS)[number]) {
+      if (!expiry) {
+        checkpointStep = value;
+        checkpointStepStartedMs = Math.max(
+          0,
+          Math.round(performance.now() - at),
+        );
+      }
+    },
+    expire() {
+      if (!expiry) {
+        expiry = position();
+        expiredOrdinal = ++ordinal;
+      }
+    },
+    event(
+      event: 'page-close' | 'browser-disconnected' | 'watchdog-close-request',
+    ) {
+      if (events.length >= 128) {
+        droppedEvents++;
+        return;
+      }
+      events.push({ ...position(), event, ordinal: ++ordinal });
+    },
+    summary() {
+      return RunWaitTraceSchema.parse({
+        ...(expiry ? { expiry } : {}),
+        droppedEvents,
+        events: events.map(({ ordinal, ...value }) => ({
+          ...value,
+          order: !expiry
+            ? 'no-expiry'
+            : ordinal < expiredOrdinal
+              ? 'before-expiry'
+              : 'after-expiry',
+        })),
+      });
+    },
+  };
+}
 export const AutomaticRunEvidenceSchema = z.strictObject({
   phases: z.array(z.enum(RUN_PHASES)).max(1000),
   automaticWaits: z
@@ -44,6 +147,7 @@ export const AutomaticRunEvidenceSchema = z.strictObject({
       elapsedMs: z.number().int().nonnegative(),
     })
     .optional(),
+  runWaitTrace: RunWaitTraceSchema.optional(),
 });
 export const unattendedWaitBudget = (expectedMs: number, responseMs: number) =>
   Math.max(0, expectedMs) + Math.max(30000, responseMs);
@@ -75,7 +179,7 @@ export function automaticRun(
       end = at + budgetMs;
       expire = () => {
         if (failure) return;
-        failure = new ContextStop('PLATFORM_CHECK', 'run-wait-deadline');
+        failure = new ContextStop('RUN_WAIT_DEADLINE', 'run-wait-deadline');
         try {
           expired(phase, budgetMs, Math.round(performance.now() - at));
         } finally {

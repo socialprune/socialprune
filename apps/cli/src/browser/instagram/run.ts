@@ -123,6 +123,7 @@ import {
   automaticRun,
   unattendedWaitBudget,
   AutomaticRunEvidenceSchema,
+  runWaitTrace,
 } from './automatic-run.ts';
 import type { RunPhase } from './automatic-run.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
@@ -343,17 +344,21 @@ export async function runContextWithDependencies(
   let reading: ReturnType<typeof stepDeadline> | undefined;
   let deadlineClose: Promise<void> | undefined;
   const unattended = options.order?.value.acceptCanary === true;
+  const waitTrace = runWaitTrace();
   const auto = automaticRun(unattended, (phase, budgetMs, elapsedMs) => {
+    waitTrace.expire();
     waits.abort();
     report.runDeadline = { phase, budgetMs, elapsedMs };
     const step = report.steps.at(-1) as Record<string, unknown> | undefined;
     if (step) step['result'] = 'run-wait-deadline';
     // Abort only this run's browser to settle late Playwright calls.
+    if (context) waitTrace.event('watchdog-close-request');
     void context?.close().catch(() => {});
   });
   let lastPhase: RunPhase | undefined;
   const phase = (value: RunPhase, expectedMs = 0) => {
     auto.phase(value, unattendedWaitBudget(expectedMs, deps.responseMs));
+    waitTrace.phase(value);
     if (value !== lastPhase) {
       options.notice(`Phase: ${value}\n`);
       lastPhase = value;
@@ -426,14 +431,19 @@ export async function runContextWithDependencies(
   };
   deps = { ...deps, sleep: (ms) => pause(ms) };
   const checkpoint = async () => {
+    waitTrace.checkpoint('guard');
     guard();
-    if (extensionsChanged(before, await profileSnapshot(options.profile)))
+    waitTrace.checkpoint('profile-snapshot');
+    const snapshot = await profileSnapshot(options.profile);
+    waitTrace.checkpoint('extensions-check');
+    if (extensionsChanged(before, snapshot))
       throw new ContextStop(
         options.order && options.plan.canary
           ? 'CANARY_CHECK_FAILED'
           : 'PLATFORM_CHECK',
         'extensions-added',
       );
+    waitTrace.checkpoint('complete');
   };
   const platformStop = (caught: ContextStop) => {
     const kind = instagramWarningKind(caught);
@@ -597,7 +607,13 @@ export async function runContextWithDependencies(
       }
       stage = 'browser-setup';
       phase('browser-setup');
-      runtime = observeContextRuntime(context, () => ({ step: steps, stage }));
+      runtime = observeContextRuntime(
+        context,
+        () => ({ step: steps, stage }),
+        (event) => {
+          if (event !== 'page-crash') waitTrace.event(event);
+        },
+      );
       options.session?.browser(() => {
         runtime?.closing();
         return context!.close();
@@ -1858,7 +1874,10 @@ export async function runContextWithDependencies(
             ? 'platform-check'
             : caught instanceof CliError && caught.code === 'STEP_DEADLINE'
               ? 'step-deadline'
-              : 'error';
+              : caught instanceof CliError &&
+                  caught.code === 'RUN_WAIT_DEADLINE'
+                ? 'run-wait-deadline'
+                : 'error';
   } finally {
     auto.close();
     reading?.clear();
@@ -1903,7 +1922,10 @@ export async function runContextWithDependencies(
               ? 'platform-check'
               : caught instanceof CliError && caught.code === 'STEP_DEADLINE'
                 ? 'step-deadline'
-                : 'error';
+                : caught instanceof CliError &&
+                    caught.code === 'RUN_WAIT_DEADLINE'
+                  ? 'run-wait-deadline'
+                  : 'error';
     };
     const finalize = async (
       at: FinalStage,
@@ -1934,7 +1956,7 @@ export async function runContextWithDependencies(
                       new ContextStop(
                         reading?.expired && !auto.expired
                           ? 'STEP_DEADLINE'
-                          : 'PLATFORM_CHECK',
+                          : 'RUN_WAIT_DEADLINE',
                         auto.expired
                           ? 'run-wait-deadline'
                           : reading?.expired
@@ -1977,6 +1999,7 @@ export async function runContextWithDependencies(
           ...AutomaticRunEvidenceSchema.parse({
             phases: report.phases ?? [],
             automaticWaits: report.automaticWaits ?? [],
+            runWaitTrace: waitTrace.summary(),
             ...(report.runDeadline ? { runDeadline: report.runDeadline } : {}),
           }),
           steps: report.steps.map((step) =>

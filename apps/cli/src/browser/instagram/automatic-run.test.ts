@@ -4,12 +4,73 @@ import {
   unattendedWaitBudget,
   RUN_PHASES,
   AutomaticRunEvidenceSchema,
+  runWaitTrace,
+  RunWaitTraceSchema,
 } from './automatic-run.ts';
 test('STALL2 carried waits retain their full scheduled time plus a bounded completion margin', () => {
   expect(unattendedWaitBudget(900000, 30000)).toBe(930000);
   expect(unattendedWaitBudget(30000, 30000)).toBe(60000);
   expect(unattendedWaitBudget(60000, 1000)).toBe(90000);
   expect(new Set(RUN_PHASES).size).toBe(RUN_PHASES.length);
+});
+test('WAIT3 checkpoint trace freezes the pending read and orders equal-tick close events around expiry', () => {
+  vi.useFakeTimers();
+  try {
+    const trace = runWaitTrace();
+    trace.phase('checkpoint');
+    trace.checkpoint('profile-snapshot');
+    vi.advanceTimersByTime(10);
+    trace.event('page-close');
+    trace.expire();
+    trace.event('watchdog-close-request');
+    trace.phase('finalization');
+    trace.checkpoint('complete');
+    trace.event('browser-disconnected');
+    const result = trace.summary();
+    expect(result.expiry).toMatchObject({
+      phase: 'checkpoint',
+      checkpointStep: 'profile-snapshot',
+      elapsedMs: 10,
+    });
+    expect(result.events.map((event) => event.order)).toEqual([
+      'before-expiry',
+      'after-expiry',
+      'after-expiry',
+    ]);
+    expect(
+      result.events.every(
+        (event) =>
+          event.phaseSequence === result.expiry?.phaseSequence &&
+          event.elapsedMs === 10,
+      ),
+    ).toBe(true);
+    expect(
+      RunWaitTraceSchema.safeParse({
+        ...result,
+        events: [{ ...result.events[0], text: 'Generated private text' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      RunWaitTraceSchema.safeParse({
+        ...result,
+        expiry: { ...result.expiry, checkpointStep: 'unknown' },
+      }).success,
+    ).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+test('WAIT3 trace retention is bounded and keeps explicit dropped-event evidence', () => {
+  const trace = runWaitTrace();
+  trace.phase('checkpoint');
+  trace.checkpoint('guard');
+  for (let index = 0; index < 130; index++) trace.event('page-close');
+  trace.expire();
+  expect(trace.summary().events).toHaveLength(128);
+  expect(trace.summary().droppedEvents).toBe(2);
+  expect(
+    trace.summary().events.every((event) => event.order === 'before-expiry'),
+  ).toBe(true);
 });
 test('STALL2 progress evidence accepts closed phases and numbers only', () => {
   const base = {
@@ -45,6 +106,7 @@ test('STALL2 unattended watchdog stops an unresolved phase and late guard work',
       written = true;
     });
     const rejected = expect(result).rejects.toMatchObject({
+      code: 'RUN_WAIT_DEADLINE',
       token: 'run-wait-deadline',
     });
     await vi.advanceTimersByTimeAsync(50);

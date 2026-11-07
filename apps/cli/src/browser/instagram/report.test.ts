@@ -176,6 +176,27 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     { ...base, pagePermalinks: '1' },
     { ...base, pageOwnReplyControls: -1 },
     { ...base, pageForeignReplyControls: '1' },
+    {
+      ...base,
+      answerExtraEntries: {
+        captionObjects: 1,
+        otherParentReferences: 0,
+        focalChildReferences: 0,
+        unresolvedObjects: 0,
+        duplicateFocalObjects: 0,
+        text: 'Generated private text',
+      },
+    },
+    {
+      ...base,
+      answerExtraEntries: {
+        captionObjects: -1,
+        otherParentReferences: 0,
+        focalChildReferences: 0,
+        unresolvedObjects: 0,
+        duplicateFocalObjects: 0,
+      },
+    },
   ])
     expect(parse(invalid)).toBe(false);
 });

@@ -66,6 +66,27 @@ test.each(['en', 'de'] as const)(
     );
   },
 );
+test.each(['en', 'de'] as const)(
+  'WAIT3 run deadline has its own localized nonwarning result in %s',
+  (lang) => {
+    const error = new ContextStop('RUN_WAIT_DEADLINE', 'run-wait-deadline');
+    error.warningKind = 'warning-notice';
+    expect(instagramWarningKind(error)).toBeUndefined();
+    const failure = contextFailure(error, lang);
+    expect(
+      errorObject(failure.code, undefined, undefined, failure.instagramStop),
+    ).toMatchObject({
+      code: 'RUN_WAIT_DEADLINE',
+      message: INSTAGRAM_STOP_MESSAGES['run-wait-deadline'][lang],
+    });
+    expect(contextEnd('run-wait-deadline', lang, true, error.token)).toContain(
+      INSTAGRAM_STOP_MESSAGES['run-wait-deadline'][lang],
+    );
+    expect(contextEnd('platform-check', lang, true, error.token)).toContain(
+      INSTAGRAM_STOP_MESSAGES['run-wait-deadline'][lang],
+    );
+  },
+);
 
 test('STALL general budget includes existing dropdown, scroll, expansion and diagnostic waits', () => {
   expect(readingStepBudget(1000, { scrollMs: 0, expandMs: 0 })).toBe(42000);

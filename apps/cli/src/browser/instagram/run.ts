@@ -115,6 +115,8 @@ import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
 import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
 import { stepDeadline, readingStepBudget } from './step-deadline.ts';
+import { automaticRun, unattendedWaitBudget } from './automatic-run.ts';
+import type { RunPhase } from './automatic-run.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 
 export interface ContextOptions {
@@ -253,6 +255,13 @@ export async function runContextWithDependencies(
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
+    phases?: RunPhase[];
+    runDeadline?: { phase: RunPhase; budgetMs: number; elapsedMs: number };
+    automaticWaits?: {
+      phase: RunPhase;
+      expectedMs: number;
+      budgetMs: number;
+    }[];
     recycling: {
       intervalSteps: 20;
       count: number;
@@ -325,6 +334,44 @@ export async function runContextWithDependencies(
   let stage: ContextCauseStage = 'run';
   let reading: ReturnType<typeof stepDeadline> | undefined;
   let deadlineClose: Promise<void> | undefined;
+  const unattended = options.order?.value.acceptCanary === true;
+  const auto = automaticRun(unattended, (phase, budgetMs, elapsedMs) => {
+    waits.abort();
+    report.runDeadline = { phase, budgetMs, elapsedMs };
+    const step = report.steps.at(-1) as Record<string, unknown> | undefined;
+    if (step) step['result'] = 'run-wait-deadline';
+    // Abort only this run's browser to settle late Playwright calls.
+    void context?.close().catch(() => {});
+  });
+  let lastPhase: RunPhase | undefined;
+  const phase = (value: RunPhase, expectedMs = 0) => {
+    auto.phase(value, unattendedWaitBudget(expectedMs, deps.responseMs));
+    if (value !== lastPhase) {
+      options.notice(`Phase: ${value}\n`);
+      lastPhase = value;
+    }
+    const phases = (report.phases ??= []);
+    if (phases.length < 1000 && phases.at(-1) !== value) phases.push(value);
+    if (['pace-wait', 'batch-pause', 'reopen-wait'].includes(value)) {
+      const budgetMs = unattendedWaitBudget(expectedMs, deps.responseMs);
+      options.notice(
+        `Wait: ${value}; expectedMs=${Math.round(expectedMs)}; deadlineMs=${Math.round(budgetMs)}\n`,
+      );
+      const records = (report.automaticWaits ??= []);
+      if (records.length < 1000)
+        records.push({
+          phase: value,
+          expectedMs: Math.round(expectedMs),
+          budgetMs: Math.round(budgetMs),
+        });
+    }
+  };
+  const confirmationWait = (action: 'start' | 'continue' | 'matches') => {
+    if (unattended)
+      throw new ContextStop('CANARY_CHECK_FAILED', 'canary-auto-undecided');
+    phase('confirmation-wait');
+    return confirmation.wait(action);
+  };
   const recordCause = (caught: unknown, at: ContextCauseStage) => {
     if (!(caught instanceof CliError) && !report.cause)
       report.cause = contextCause(caught, runId, at, steps);
@@ -351,6 +398,7 @@ export async function runContextWithDependencies(
   process.on('SIGTERM', stop);
   const guard = () => {
     if (networkFailure) throw networkFailure;
+    auto.check();
     reading?.check();
     network?.check();
     pages?.check();
@@ -484,452 +532,504 @@ export async function runContextWithDependencies(
     });
   };
   try {
-    stage = 'run-start';
-    options.session?.before(before, null);
-    options.notice(summary.warning + '\n');
-    const start = options.order
-      ? Promise.resolve(true)
-      : confirmation.wait('start');
-    // Launch itself can resume signed-in pages. Give their guarded requests a
-    // durable run identity before opening the context, not after manual Start.
-    await options.store.read(async (tx) => {
-      for await (const run of tx.browserRuns.iterate())
-        if (run.accountKey === options.plan.accountKey && !run.endedAt) {
-          if (!run.ownerPid) throw new CliError('WORKSPACE_BUSY');
-          let alive = true;
-          try {
-            process.kill(run.ownerPid, 0);
-          } catch (caught) {
-            if (
-              caught &&
-              typeof caught === 'object' &&
-              'code' in caught &&
-              caught.code === 'ESRCH'
-            )
-              alive = false;
+    await auto.run(async () => {
+      stage = 'run-start';
+      phase('run-start');
+      options.session?.before(before, null);
+      options.notice(summary.warning + '\n');
+      const start = options.order
+        ? Promise.resolve(true)
+        : confirmationWait('start');
+      // Launch itself can resume signed-in pages. Give their guarded requests a
+      // durable run identity before opening the context, not after manual Start.
+      await options.store.read(async (tx) => {
+        for await (const run of tx.browserRuns.iterate())
+          if (run.accountKey === options.plan.accountKey && !run.endedAt) {
+            if (!run.ownerPid) throw new CliError('WORKSPACE_BUSY');
+            let alive = true;
+            try {
+              process.kill(run.ownerPid, 0);
+            } catch (caught) {
+              if (
+                caught &&
+                typeof caught === 'object' &&
+                'code' in caught &&
+                caught.code === 'ESRCH'
+              )
+                alive = false;
+            }
+            if (alive) throw new CliError('WORKSPACE_BUSY');
           }
-          if (alive) throw new CliError('WORKSPACE_BUSY');
-        }
-    });
-    await options.store
-      .browserOutcomeWriter()
-      .recover(options.plan.accountKey, options.now().toISOString());
-    await writer.startRun({
-      runId,
-      accountKey: options.plan.accountKey,
-      planHash: options.plan.hash,
-      startedAt: options.now().toISOString(),
-      canary: options.plan.canary,
-      ownerPid: process.pid,
-    });
-    options.store
-      .browserOutcomeWriter()
-      .bindXWarningProfile(options.profile, 'instagram');
-    began = true;
-    if (options.order)
+      });
       await options.store
         .browserOutcomeWriter()
-        .recordContextOrder(runId, options.order.sha256);
-    stage = 'browser-launch';
-    context = await deps.launch(options.profile, options.executablePath);
-    stage = 'browser-setup';
-    runtime = observeContextRuntime(context, () => ({ step: steps, stage }));
-    options.session?.browser(() => {
-      runtime?.closing();
-      return context!.close();
-    }, browserClosed(context));
-    network = await guardInstagramNetwork(
-      context,
-      options.session ? '' : new URL(confirmation.url).origin,
-      (value) => options.store.browserOutcomeWriter().request(runId, value),
-      deps.policy,
-      limitSignals,
-      platformStop,
-      (page) => (pages ? pages.allowed(page) : Promise.resolve(true)),
-    );
-    pages = contextPages(context, platformStop);
-    report.pages = pages.counts;
-    context.once('close', () => {
-      closed = true;
-      cancel();
-    });
-    const local = await pages.startupPage();
-    runtime.own(local);
-    if (options.session?.ownedWindow) {
-      try {
-        options.session.ownedWindow(await captureOwnedWindow(context, local));
-      } catch {
-        console.error('OWNED_WINDOW_UNAVAILABLE');
+        .recover(options.plan.accountKey, options.now().toISOString());
+      await writer.startRun({
+        runId,
+        accountKey: options.plan.accountKey,
+        planHash: options.plan.hash,
+        startedAt: options.now().toISOString(),
+        canary: options.plan.canary,
+        ownerPid: process.pid,
+      });
+      options.store
+        .browserOutcomeWriter()
+        .bindXWarningProfile(options.profile, 'instagram');
+      began = true;
+      if (options.order)
+        await options.store
+          .browserOutcomeWriter()
+          .recordContextOrder(runId, options.order.sha256);
+      stage = 'browser-launch';
+      phase('browser-launch');
+      context = await deps.launch(options.profile, options.executablePath);
+      stage = 'browser-setup';
+      phase('browser-setup');
+      runtime = observeContextRuntime(context, () => ({ step: steps, stage }));
+      options.session?.browser(() => {
+        runtime?.closing();
+        return context!.close();
+      }, browserClosed(context));
+      network = await guardInstagramNetwork(
+        context,
+        options.session ? '' : new URL(confirmation.url).origin,
+        (value) => options.store.browserOutcomeWriter().request(runId, value),
+        deps.policy,
+        limitSignals,
+        platformStop,
+        (page) => (pages ? pages.allowed(page) : Promise.resolve(true)),
+      );
+      pages = contextPages(context, platformStop);
+      report.pages = pages.counts;
+      context.once('close', () => {
+        closed = true;
+        cancel();
+      });
+      const local = await pages.startupPage();
+      runtime.own(local);
+      if (options.session?.ownedWindow) {
+        try {
+          options.session.ownedWindow(await captureOwnedWindow(context, local));
+        } catch {
+          console.error('OWNED_WINDOW_UNAVAILABLE');
+        }
       }
-    }
-    await network.flush();
-    guard();
-    await context.setOffline(false);
-    if (!options.session) await local.goto(confirmation.launchUrl);
-    options.notice(`Confirmation: ${confirmation.url}\n`);
-    stage = 'start';
-    if (
-      !(await Promise.race([start, cancelled, interrupted.then(() => false)]))
-    ) {
+      await network.flush();
       guard();
-      throw new ContextStop('CANCELLED', 'stopped');
-    }
-    guard();
-    if (
-      (
-        await planContext(
+      await context.setOffline(false);
+      if (!options.session) await local.goto(confirmation.launchUrl);
+      options.notice(`Confirmation: ${confirmation.url}\n`);
+      stage = 'start';
+      if (
+        !(await Promise.race([start, cancelled, interrupted.then(() => false)]))
+      ) {
+        guard();
+        throw new ContextStop('CANCELLED', 'stopped');
+      }
+      guard();
+      if (unattended) confirmation.update({ phase: 'running' });
+      if (
+        (
+          await planContext(
+            options.store,
+            options.plan.accountKey,
+            options.include,
+            options.exclude,
+            Boolean(options.plan.refreshLikes),
+            Boolean(options.plan.refreshReplies),
+            options.plan.diagnosticControl,
+          )
+        ).hash !== options.plan.hash
+      )
+        throw new CliError('STALE_PLAN');
+      stage = 'checkpoint';
+      phase('checkpoint');
+      await checkpoint();
+      // Keep the window-identity anchor open; only this separate reading page may recycle.
+      let page = await pages.newPage();
+      runtime.own(page);
+      memory = observePageMemory(page);
+      answers = pageAnswers(page, deps.policy);
+      const day = dateInZone(options.now(), options.plan.timeZone),
+        prior = await instagramDailyCount(
           options.store,
           options.plan.accountKey,
-          options.include,
-          options.exclude,
-          Boolean(options.plan.refreshLikes),
-          Boolean(options.plan.refreshReplies),
-          options.plan.diagnosticControl,
-        )
-      ).hash !== options.plan.hash
-    )
-      throw new CliError('STALE_PLAN');
-    stage = 'checkpoint';
-    await checkpoint();
-    // Keep the window-identity anchor open; only this separate reading page may recycle.
-    let page = await pages.newPage();
-    runtime.own(page);
-    memory = observePageMemory(page);
-    answers = pageAnswers(page, deps.policy);
-    const day = dateInZone(options.now(), options.plan.timeZone),
-      prior = await instagramDailyCount(
-        options.store,
-        options.plan.accountKey,
-        options.now(),
-        options.plan.timeZone,
+          options.now(),
+          options.plan.timeZone,
+        );
+      let used = prior.used,
+        last = prior.last,
+        batch = prior.used ? ((prior.used - 1) % pace.batch) + 1 : 0;
+      const controls = options.session?.controls;
+      let lastRecycleAt = 0;
+      const resumeChecks = async () => {
+        // The next counted, paced list step verifies account and language before
+        // opening a post. Resume itself must not navigate an uncounted page.
+        stage = 'checkpoint';
+        await checkpoint();
+      };
+      const boundaryWait = async (ms: number, kind: RunPhase = 'pace-wait') => {
+        phase(kind, ms);
+        if (controls) {
+          await Promise.race([
+            controls.delay(
+              ms,
+              (duration, localSignal) =>
+                sleep(duration, AbortSignal.any([waits.signal, localSignal])),
+              resumeChecks,
+              waits.signal,
+              (remaining, next) => options.session?.waiting(remaining, next),
+            ),
+            interrupted,
+          ]);
+          guard();
+        } else await pause(ms);
+      };
+      const max = Math.min(
+        options.limit,
+        options.order?.value.maxSteps ?? 600,
+        Math.max(0, pace.perDay - prior.used),
       );
-    let used = prior.used,
-      last = prior.last,
-      batch = prior.used ? ((prior.used - 1) % pace.batch) + 1 : 0;
-    const controls = options.session?.controls;
-    let lastRecycleAt = 0;
-    const resumeChecks = async () => {
-      // The next counted, paced list step verifies account and language before
-      // opening a post. Resume itself must not navigate an uncounted page.
-      stage = 'checkpoint';
-      await checkpoint();
-    };
-    const boundaryWait = async (ms: number) => {
-      if (controls) {
-        await Promise.race([
-          controls.delay(
-            ms,
-            (duration, localSignal) =>
-              sleep(duration, AbortSignal.any([waits.signal, localSignal])),
-            resumeChecks,
-            waits.signal,
-            (remaining, next) => options.session?.waiting(remaining, next),
-          ),
-          interrupted,
-        ]);
-        guard();
-      } else await pause(ms);
-    };
-    const max = Math.min(
-      options.limit,
-      options.order?.value.maxSteps ?? 600,
-      Math.max(0, pace.perDay - prior.used),
-    );
-    const waitToReopen = async (retry: PostRetry) => {
-      reading?.clear();
-      guard();
-      await checkPage(page);
-      await checkpoint();
-      stage = retry.stage === 'list' ? 'list-read' : 'post-open';
-      const startedWait = options.now().getTime();
-      const watcher = new AbortController();
-      const checkWaitingPage = async () => {
+      const waitToReopen = async (retry: PostRetry) => {
+        reading?.clear();
+        phase('reopen-wait', POST_REOPEN_WAIT_MS);
         guard();
         await checkPage(page);
-        if (new URL(page.url()).pathname.replace(/\/$/, '') === COMMENTS_PATH) {
-          const value = accountClass(
-            options.plan.handle,
-            await outsideProfilePaths(page),
+        await checkpoint();
+        stage = retry.stage === 'list' ? 'list-read' : 'post-open';
+        const startedWait = options.now().getTime();
+        const watcher = new AbortController();
+        const checkWaitingPage = async () => {
+          guard();
+          await checkPage(page);
+          if (
+            new URL(page.url()).pathname.replace(/\/$/, '') === COMMENTS_PATH
+          ) {
+            const value = accountClass(
+              options.plan.handle,
+              await outsideProfilePaths(page),
+            );
+            accountAfterClass = value;
+            if (value !== 'expected')
+              throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+          }
+        };
+        let crash!: () => void;
+        const crashed = new Promise<never>((_resolve, reject) => {
+          crash = () => {
+            const failure = new Error();
+            failure.name = 'PageCrashedError';
+            reject(failure);
+          };
+          page.once('crash', crash);
+        });
+        const watch = (async () => {
+          for (;;) {
+            await retryPoll(250, undefined, { signal: watcher.signal });
+            await checkWaitingPage();
+          }
+        })();
+        options.session?.update({
+          phase: 'running',
+          remainingMs: POST_REOPEN_WAIT_MS,
+          until: new Date(
+            options.now().getTime() + POST_REOPEN_WAIT_MS,
+          ).toISOString(),
+        });
+        try {
+          await Promise.race([
+            boundaryWait(POST_REOPEN_WAIT_MS, 'reopen-wait'),
+            watch,
+            crashed,
+          ]);
+          await checkWaitingPage();
+          await checkpoint();
+        } finally {
+          retry.waitedMs = Math.max(
+            0,
+            Math.round(options.now().getTime() - startedWait),
           );
-          accountAfterClass = value;
-          if (value !== 'expected')
-            throw new ContextStop('ACCOUNT_MISMATCH', 'account-changed');
+          watcher.abort();
+          page.off('crash', crash);
+          // Promise.race already observes a later rejection from the watcher.
         }
       };
-      let crash!: () => void;
-      const crashed = new Promise<never>((_resolve, reject) => {
-        crash = () => {
-          const failure = new Error();
-          failure.name = 'PageCrashedError';
-          reject(failure);
-        };
-        page.once('crash', crash);
-      });
-      const watch = (async () => {
-        for (;;) {
-          await retryPoll(250, undefined, { signal: watcher.signal });
-          await checkWaitingPage();
+      outer: for (const row of chosen) {
+        if (options.plan.canary && completed === 5) break;
+        if (steps >= max) {
+          rejectIncomplete();
+          if (used >= pace.perDay) endReason = 'daily-cap';
+          break;
         }
-      })();
-      options.session?.update({
-        phase: 'running',
-        remainingMs: POST_REOPEN_WAIT_MS,
-        until: new Date(
-          options.now().getTime() + POST_REOPEN_WAIT_MS,
-        ).toISOString(),
-      });
-      try {
-        await Promise.race([boundaryWait(POST_REOPEN_WAIT_MS), watch, crashed]);
-        await checkWaitingPage();
+        if (
+          used >= pace.perDay ||
+          dateInZone(options.now(), options.plan.timeZone) !== day
+        ) {
+          rejectIncomplete();
+          endReason = 'daily-cap';
+          break;
+        }
+        stage = 'checkpoint';
         await checkpoint();
-      } finally {
-        retry.waitedMs = Math.max(
-          0,
-          Math.round(options.now().getTime() - startedWait),
-        );
-        watcher.abort();
-        page.off('crash', crash);
-        // Promise.race already observes a later rejection from the watcher.
-      }
-    };
-    outer: for (const row of chosen) {
-      if (options.plan.canary && completed === 5) break;
-      if (steps >= max) {
-        rejectIncomplete();
-        if (used >= pace.perDay) endReason = 'daily-cap';
-        break;
-      }
-      if (
-        used >= pace.perDay ||
-        dateInZone(options.now(), options.plan.timeZone) !== day
-      ) {
-        rejectIncomplete();
-        endReason = 'daily-cap';
-        break;
-      }
-      stage = 'checkpoint';
-      await checkpoint();
-      if (
-        pageRecycleDue(
-          steps,
-          lastRecycleAt,
-          options.plan.canary,
-          pendingAttempt !== undefined,
-        )
-      ) {
-        await sampleMemory();
-        postRequests?.close();
-        postRequests = undefined;
-        answerReport = undefined;
-        await answers.flush(deps.responseMs);
-        answers.dispose();
-        await memory.dispose();
-        retiredMemory.push(memory.summary());
-        runtime.forget(page);
-        page = await pages.replace(page);
-        runtime.own(page);
-        memory = observePageMemory(page);
-        answers = pageAnswers(page, deps.policy);
-        lastRecycleAt = steps;
-        report.recycling.count++;
-        report.recycling.events.push({
-          afterStep: steps,
-          nextStep: steps + 1,
-          reason: 'step-interval',
-          checks: 'next-list',
-        });
-        PageRecyclingSchema.parse(report.recycling);
-        report.memory = memorySummary();
-        await checkpoint();
-      }
-      options.session?.entry(
-        entryView(
-          row.item,
-          options.plan.refreshReplies
-            ? 'refresh-comment-replies'
-            : options.plan.refreshLikes
-              ? 'refresh-comment-likes'
-              : 'confirm-comment',
-        ),
-      );
-      const attemptId = crypto.randomUUID();
-      stage = 'attempt';
-      if (!options.plan.diagnosticControl)
-        await writer.sending({
-          runId,
-          attemptId,
-          itemId: row.item.id,
-          at: options.now().toISOString(),
-          refreshLikes: options.plan.refreshLikes,
-          refreshReplies: options.plan.refreshReplies,
-        });
-      pendingAttempt = options.plan.diagnosticControl ? undefined : attemptId;
-      let settled = false;
-      let lastUnconfirmed: 'owner' | 'time' | 'text' | 'several' | 'not-shown' =
-        'not-shown';
-      let reopening: ReturnType<PostOpenRetries['begin']> = null;
-      let reopenTarget: string | null = null;
-      let abortOuter = false;
-      const reportStart = report.steps.length;
-      reading = stepDeadline((elapsedMs, budgetMs) => {
-        waits.abort();
-        const step = (
-          report.steps.length > reportStart
-            ? report.steps.at(-1)
-            : { result: 'step-deadline', confirmed: false }
-        ) as Record<string, unknown>;
-        if (!report.steps.includes(step)) report.steps.push(step);
-        step['result'] = 'step-deadline';
-        const stages = [
-          'attempt',
-          'checkpoint',
-          'list-read',
-          'post-open',
-          'post-read',
-          'capture',
-          'answers',
-          'compare',
-          'canary-check',
-          'settlement',
-          'other',
-        ] as const;
-        step['deadline'] = {
-          budgetMs,
-          elapsedMs,
-          stage: stages.some((value) => value === stage) ? stage : 'other',
-          expired: true,
-        };
-        const scope = step['replyScope'] as ReplyScopeDiagnostic | undefined;
-        if (scope?.soleComment) {
-          scope.soleComment.observationFailed = true;
-          scope.soleComment.observationStop = 'step-deadline';
-          if (
-            scope.soleComment.firstFailedGate === 'none' ||
-            scope.soleComment.firstFailedGate === 'not-evaluated'
+        if (
+          pageRecycleDue(
+            steps,
+            lastRecycleAt,
+            options.plan.canary,
+            pendingAttempt !== undefined,
           )
-            scope.soleComment.firstFailedGate = 'sole-observation';
-        }
-        const closing = page.close({ runBeforeUnload: false }).catch(() => {});
-        deadlineClose = Promise.race([closing, retryPoll(1000)]);
-      });
-      const stepAnswers = answers,
-        stepNetwork = network;
-      await reading.run(async () => {
-        const answers = stepAnswers,
-          network = stepNetwork;
-        for (let candidate = 0; candidate < 3; candidate++) {
-          reading!.clear();
+        ) {
           await sampleMemory();
           postRequests?.close();
-          stage = 'pace';
-          const pausedBefore = controls?.pausedMs ?? 0;
-          await controls?.checkpoint(resumeChecks, waits.signal);
-          last += (controls?.pausedMs ?? 0) - pausedBefore;
-          if (
-            used >= pace.perDay ||
-            dateInZone(options.now(), options.plan.timeZone) !== day ||
-            steps >= max
-          ) {
-            stage = 'settlement';
-            await writer.settle({
-              attemptId,
-              state:
-                used >= pace.perDay ||
-                dateInZone(options.now(), options.plan.timeZone) !== day
-                  ? 'failed'
-                  : 'unconfirmed',
-              code:
+          postRequests = undefined;
+          answerReport = undefined;
+          await answers.flush(deps.responseMs);
+          answers.dispose();
+          await memory.dispose();
+          retiredMemory.push(memory.summary());
+          runtime.forget(page);
+          page = await pages.replace(page);
+          runtime.own(page);
+          memory = observePageMemory(page);
+          answers = pageAnswers(page, deps.policy);
+          lastRecycleAt = steps;
+          report.recycling.count++;
+          report.recycling.events.push({
+            afterStep: steps,
+            nextStep: steps + 1,
+            reason: 'step-interval',
+            checks: 'next-list',
+          });
+          PageRecyclingSchema.parse(report.recycling);
+          report.memory = memorySummary();
+          await checkpoint();
+        }
+        options.session?.entry(
+          entryView(
+            row.item,
+            options.plan.refreshReplies
+              ? 'refresh-comment-replies'
+              : options.plan.refreshLikes
+                ? 'refresh-comment-likes'
+                : 'confirm-comment',
+          ),
+        );
+        const attemptId = crypto.randomUUID();
+        stage = 'attempt';
+        phase('attempt');
+        if (!options.plan.diagnosticControl)
+          await writer.sending({
+            runId,
+            attemptId,
+            itemId: row.item.id,
+            at: options.now().toISOString(),
+            refreshLikes: options.plan.refreshLikes,
+            refreshReplies: options.plan.refreshReplies,
+          });
+        pendingAttempt = options.plan.diagnosticControl ? undefined : attemptId;
+        let settled = false;
+        let lastUnconfirmed:
+          'owner' | 'time' | 'text' | 'several' | 'not-shown' = 'not-shown';
+        let reopening: ReturnType<PostOpenRetries['begin']> = null;
+        let reopenTarget: string | null = null;
+        let abortOuter = false;
+        const reportStart = report.steps.length;
+        reading = stepDeadline((elapsedMs, budgetMs) => {
+          waits.abort();
+          const step = (
+            report.steps.length > reportStart
+              ? report.steps.at(-1)
+              : { result: 'step-deadline', confirmed: false }
+          ) as Record<string, unknown>;
+          if (!report.steps.includes(step)) report.steps.push(step);
+          step['result'] = 'step-deadline';
+          const stages = [
+            'attempt',
+            'checkpoint',
+            'list-read',
+            'post-open',
+            'post-read',
+            'capture',
+            'answers',
+            'compare',
+            'canary-check',
+            'settlement',
+            'other',
+          ] as const;
+          step['deadline'] = {
+            budgetMs,
+            elapsedMs,
+            stage: stages.some((value) => value === stage) ? stage : 'other',
+            expired: true,
+          };
+          const scope = step['replyScope'] as ReplyScopeDiagnostic | undefined;
+          if (scope?.soleComment) {
+            scope.soleComment.observationFailed = true;
+            scope.soleComment.observationStop = 'step-deadline';
+            if (
+              scope.soleComment.firstFailedGate === 'none' ||
+              scope.soleComment.firstFailedGate === 'not-evaluated'
+            )
+              scope.soleComment.firstFailedGate = 'sole-observation';
+          }
+          const closing = page
+            .close({ runBeforeUnload: false })
+            .catch(() => {});
+          deadlineClose = Promise.race([closing, retryPoll(1000)]);
+        });
+        const stepAnswers = answers,
+          stepNetwork = network;
+        await reading.run(async () => {
+          const answers = stepAnswers,
+            network = stepNetwork;
+          for (let candidate = 0; candidate < 3; candidate++) {
+            reading!.clear();
+            await sampleMemory();
+            postRequests?.close();
+            stage = 'pace';
+            const pausedBefore = controls?.pausedMs ?? 0;
+            await controls?.checkpoint(resumeChecks, waits.signal);
+            last += (controls?.pausedMs ?? 0) - pausedBefore;
+            if (
+              used >= pace.perDay ||
+              dateInZone(options.now(), options.plan.timeZone) !== day ||
+              steps >= max
+            ) {
+              stage = 'settlement';
+              await writer.settle({
+                attemptId,
+                state:
+                  used >= pace.perDay ||
+                  dateInZone(options.now(), options.plan.timeZone) !== day
+                    ? 'failed'
+                    : 'unconfirmed',
+                code:
+                  used >= pace.perDay ||
+                  dateInZone(options.now(), options.plan.timeZone) !== day
+                    ? 'daily-cap'
+                    : lastUnconfirmed,
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              rejectIncomplete();
+              endReason =
                 used >= pace.perDay ||
                 dateInZone(options.now(), options.plan.timeZone) !== day
                   ? 'daily-cap'
-                  : lastUnconfirmed,
-              at: options.now().toISOString(),
-            });
-            pendingAttempt = undefined;
-            rejectIncomplete();
-            endReason =
-              used >= pace.perDay ||
-              dateInZone(options.now(), options.plan.timeZone) !== day
-                ? 'daily-cap'
-                : 'done';
-            abortOuter = true;
-            return;
-          }
-          if (batch >= pace.batch) {
-            if (pace.pauseMs) {
+                  : 'done';
+              abortOuter = true;
+              return;
+            }
+            if (batch >= pace.batch) {
+              if (pace.pauseMs) {
+                options.session?.update({
+                  phase: 'batch-pause',
+                  remainingMs: pace.pauseMs,
+                  until: new Date(
+                    options.now().getTime() + pace.pauseMs,
+                  ).toISOString(),
+                });
+                await boundaryWait(pace.pauseMs, 'batch-pause');
+                options.session?.update({ phase: 'running' });
+              }
+              batch = 0;
+            }
+            const wait = last + pace.intervalMs - options.now().getTime();
+            if (wait > 0) {
               options.session?.update({
-                phase: 'batch-pause',
-                remainingMs: pace.pauseMs,
-                until: new Date(
-                  options.now().getTime() + pace.pauseMs,
+                nextStepAt: new Date(
+                  options.now().getTime() + wait,
                 ).toISOString(),
               });
-              await boundaryWait(pace.pauseMs);
-              options.session?.update({ phase: 'running' });
+              await boundaryWait(wait);
             }
-            batch = 0;
-          }
-          const wait = last + pace.intervalMs - options.now().getTime();
-          if (wait > 0) {
-            options.session?.update({
-              nextStepAt: new Date(
-                options.now().getTime() + wait,
-              ).toISOString(),
-            });
-            await boundaryWait(wait);
-          }
-          stage = 'checkpoint';
-          await checkpoint();
-          if (dateInZone(options.now(), options.plan.timeZone) !== day) {
-            stage = 'settlement';
-            await writer.settle({
-              attemptId,
-              state: 'failed',
-              code: 'daily-cap',
-              at: options.now().toISOString(),
-            });
-            pendingAttempt = undefined;
-            rejectIncomplete();
-            endReason = 'daily-cap';
-            abortOuter = true;
-            return;
-          }
-          await controls?.checkpoint(resumeChecks, waits.signal);
-          stage = 'attempt';
-          reading!.begin(
-            readingStepBudget(
-              deps.responseMs,
-              deps.pace,
-              options.order?.value.listDiagnostic === true,
-            ),
-          );
-          await writer.step(
-            runId,
-            options.now().toISOString(),
-            options.plan.timeZone,
-          );
-          if (candidate === 0 && !reopening) commentsTried++;
-          steps++;
-          used++;
-          batch++;
-          last = options.now().getTime();
-          if (reopening) reopening.retryStep = steps;
-          options.session?.progress(
-            used,
-            completed,
-            (await options.store.browserJournal()).attempts.filter(
-              (value) => value.runId === runId,
-            ),
-          );
-          answers.reset(
-            options.plan.canary || Boolean(options.order?.value.listDiagnostic),
-          );
-          answerReport = undefined;
-          const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
-          stage = 'list-read';
-          const list = await (async () => {
-            if (options.plan.refreshLikes || options.plan.refreshReplies) {
-              if (options.plan.refreshReplies)
+            stage = 'checkpoint';
+            phase('checkpoint');
+            await checkpoint();
+            if (dateInZone(options.now(), options.plan.timeZone) !== day) {
+              stage = 'settlement';
+              await writer.settle({
+                attemptId,
+                state: 'failed',
+                code: 'daily-cap',
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              rejectIncomplete();
+              endReason = 'daily-cap';
+              abortOuter = true;
+              return;
+            }
+            await controls?.checkpoint(resumeChecks, waits.signal);
+            stage = 'attempt';
+            reading!.begin(
+              readingStepBudget(
+                deps.responseMs,
+                deps.pace,
+                options.order?.value.listDiagnostic === true,
+              ),
+            );
+            await writer.step(
+              runId,
+              options.now().toISOString(),
+              options.plan.timeZone,
+            );
+            if (candidate === 0 && !reopening) commentsTried++;
+            steps++;
+            used++;
+            batch++;
+            last = options.now().getTime();
+            if (reopening) reopening.retryStep = steps;
+            options.session?.progress(
+              used,
+              completed,
+              (await options.store.browserJournal()).attempts.filter(
+                (value) => value.runId === runId,
+              ),
+            );
+            answers.reset(
+              options.plan.canary ||
+                Boolean(options.order?.value.listDiagnostic),
+            );
+            answerReport = undefined;
+            const rowCounts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+            stage = 'list-read';
+            phase(
+              'list-open',
+              readingStepBudget(
+                deps.responseMs,
+                deps.pace,
+                options.order?.value.listDiagnostic === true,
+              ),
+            );
+            const list = await (async () => {
+              if (options.plan.refreshLikes || options.plan.refreshReplies) {
+                if (options.plan.refreshReplies)
+                  return {
+                    account: options.plan.handle,
+                    manualReason: undefined,
+                    candidates: [
+                      {
+                        index: 0,
+                        username: options.plan.handle,
+                        text: row.item.text,
+                        age: '',
+                      },
+                    ],
+                    rowCount: 0,
+                    emptySkipped: 0,
+                    otherName: 0,
+                    scrollLoads: 0,
+                    full: false,
+                    oldestWithinWeek: false,
+                  };
+                await navigateList(
+                  page,
+                  options.plan.handle,
+                  deps,
+                  guard,
+                  rowCounts,
+                );
                 return {
                   account: options.plan.handle,
                   manualReason: undefined,
@@ -948,133 +1048,291 @@ export async function runContextWithDependencies(
                   full: false,
                   oldestWithinWeek: false,
                 };
-              await navigateList(
-                page,
-                options.plan.handle,
-                deps,
-                guard,
-                rowCounts,
-              );
-              return {
-                account: options.plan.handle,
-                manualReason: undefined,
-                candidates: [
-                  {
-                    index: 0,
-                    username: options.plan.handle,
-                    text: row.item.text,
-                    age: '',
-                  },
-                ],
-                rowCount: 0,
-                emptySkipped: 0,
-                otherName: 0,
-                scrollLoads: 0,
-                full: false,
-                oldestWithinWeek: false,
-              };
+              }
+              try {
+                const result = await loadList(
+                  page,
+                  row.item,
+                  options.plan.handle,
+                  deps,
+                  guard,
+                  options.plan.canary && steps === 1,
+                  options.now(),
+                  rowCounts,
+                  freshness,
+                  answers.bodies,
+                  options.order?.value.listDiagnostic,
+                  options.plan.timeZone,
+                );
+                if (reopening?.stage === 'list') {
+                  reopening.outcome = 'ready';
+                  reopening = null;
+                }
+                return result;
+              } catch (caught) {
+                if (
+                  caught instanceof ContextStop &&
+                  caught.token === 'list-timeout'
+                ) {
+                  const timeoutStep = {
+                    image: {
+                      status: 'not-attempted',
+                      bytes: 0,
+                      ...imageDiagnostic(null, null, []),
+                    },
+                    ready: { postMs: 0 },
+                    filterByLists:
+                      rowCounts.listTimeout?.filter.applied ?? false,
+                    listTimeout: rowCounts.listTimeout,
+                    rowSignature: rowCounts.rowSignature,
+                    listRegions: rowCounts.regions,
+                    listRows: rowCounts.diagnostic,
+                    rowShape: rowCounts.rowShape,
+                    filteredProbe: rowCounts.filteredProbe,
+                    newestProbe: rowCounts.newestProbe,
+                    widenedProbes: rowCounts.widenedProbes,
+                    diagnosticControl: options.plan.diagnosticControl
+                      ? true
+                      : undefined,
+                    oldestSortStructure: rowCounts.oldestSortStructure,
+                    listRowsAfterApply: rowCounts.initialDiagnostic,
+                    listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                    unfilteredOldestSortApplied:
+                      rowCounts.unfilteredOldestSortApplied,
+                    listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                    filterDialogClosedObserved:
+                      rowCounts.filterDialogClosedObserved,
+                    afterDialogSameAsAfterApply:
+                      rowCounts.afterDialogSameAsAfterApply,
+                    listWindow: rowCounts.windowDiagnostic,
+                    rows: 0,
+                    emptySkipped: rowCounts.emptySkipped,
+                    handleOnlySkipped: rowCounts.handleOnlySkipped,
+                    otherName: rowCounts.otherName,
+                    candidates: 0,
+                    confirmed: false,
+                    result: 'list-timeout',
+                  };
+                  report.steps.push(timeoutStep);
+                  activeStep = timeoutStep;
+                  if (reopening?.stage === 'list')
+                    reopening.outcome = 'timeout';
+                } else if (
+                  options.order?.value.listDiagnostic &&
+                  (rowCounts.diagnostic || rowCounts.rowShape)
+                ) {
+                  report.steps.push({
+                    result: 'list-diagnostic',
+                    confirmed: false,
+                    candidates: 0,
+                    listRows: rowCounts.diagnostic,
+                    rowShape: rowCounts.rowShape,
+                    filteredProbe: rowCounts.filteredProbe,
+                    newestProbe: rowCounts.newestProbe,
+                    widenedProbes: rowCounts.widenedProbes,
+                    diagnosticControl: options.plan.diagnosticControl
+                      ? true
+                      : undefined,
+                    oldestSortStructure: rowCounts.oldestSortStructure,
+                    listRowsAfterApply: rowCounts.initialDiagnostic,
+                    listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+                    unfilteredOldestSortApplied:
+                      rowCounts.unfilteredOldestSortApplied,
+                    listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+                    filterDialogClosedObserved:
+                      rowCounts.filterDialogClosedObserved,
+                    afterDialogSameAsAfterApply:
+                      rowCounts.afterDialogSameAsAfterApply,
+                    listWindow: rowCounts.windowDiagnostic,
+                  });
+                }
+                const retry = postRetries.beginList(
+                  caught,
+                  [row.item.id],
+                  steps,
+                  options.plan.canary,
+                  used < pace.perDay &&
+                    steps < max &&
+                    dateInZone(options.now(), options.plan.timeZone) === day,
+                );
+                if (!retry) throw caught;
+                await sampleMemory();
+                await waitToReopen(retry);
+                reopening = retry;
+                return null;
+              } finally {
+                report.rows.emptySkipped += rowCounts.emptySkipped;
+                report.rows.otherName += rowCounts.otherName;
+              }
+            })();
+            if (!list) {
+              candidate--;
+              continue;
             }
-            try {
-              const result = await loadList(
-                page,
-                row.item,
-                options.plan.handle,
-                deps,
-                guard,
-                options.plan.canary && steps === 1,
-                options.now(),
-                rowCounts,
-                freshness,
-                answers.bodies,
-                options.order?.value.listDiagnostic,
-                options.plan.timeZone,
-              );
-              if (reopening?.stage === 'list') {
-                reopening.outcome = 'ready';
-                reopening = null;
-              }
-              return result;
-            } catch (caught) {
+            if (accountBefore === null) accountBeforeClass = 'expected';
+            accountBefore ??= list.account;
+            accountAfter = list.account;
+            options.session?.before(before, accountBefore);
+            await network?.flush();
+            stage = 'answers';
+            phase('answers', deps.responseMs);
+            await answers.flush(deps.responseMs);
+            const stepReport: Record<string, unknown> = {
+              image: {
+                status: 'not-attempted',
+                bytes: 0,
+                ...imageDiagnostic(null, null, []),
+              },
+              ready: { postMs: 0 },
+              filterByLists:
+                !options.plan.refreshLikes && !options.plan.refreshReplies,
+              rowSignature: rowCounts.rowSignature,
+              listRegions: rowCounts.regions,
+              listRows: rowCounts.diagnostic,
+              rowShape: rowCounts.rowShape,
+              filteredProbe: rowCounts.filteredProbe,
+              newestProbe: rowCounts.newestProbe,
+              widenedProbes: rowCounts.widenedProbes,
+              diagnosticControl: options.plan.diagnosticControl
+                ? true
+                : undefined,
+              oldestSortStructure: rowCounts.oldestSortStructure,
+              listRowsAfterApply: rowCounts.initialDiagnostic,
+              listPageUnfiltered: rowCounts.unfilteredDiagnostic,
+              unfilteredOldestSortApplied:
+                rowCounts.unfilteredOldestSortApplied,
+              listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
+              filterDialogClosedObserved: rowCounts.filterDialogClosedObserved,
+              afterDialogSameAsAfterApply:
+                rowCounts.afterDialogSameAsAfterApply,
+              listWindow: rowCounts.windowDiagnostic,
+              rows: list.rowCount,
+              emptySkipped: list.emptySkipped,
+              handleOnlySkipped: rowCounts.handleOnlySkipped,
+              otherName: list.otherName,
+              candidates: list.candidates.length,
+              scrollLoads: list.scrollLoads,
+              expansionClicks: 0,
+              expansionScrolls: 0,
+              confirmed: false,
+              roles: ['button', 'dialog', 'combobox'],
+              controls: [
+                ...CLICK_NAMES,
+                POST_SCROLL_ACTION,
+                'date-year-list',
+                'date-month-list',
+                'date-day-list',
+              ],
+              fields: {},
+              listPairing: answers.bodies.some(pairedCode),
+              oldestWithinWeek: list.oldestWithinWeek,
+              ...(list.manualReason
+                ? { listTimeout: rowCounts.listTimeout }
+                : {}),
+            };
+            report.steps.push(stepReport);
+            if (list.manualReason) await checkpoint();
+            activeStep = stepReport;
+            if (options.order?.value.listDiagnostic) {
+              // A diagnostic observes the existing list path only. It never opens a
+              // candidate, settles a negative lookup or accepts a canary.
+              stepReport.result = 'list-diagnostic';
+              throw new ContextStop('CANCELLED', 'stopped');
+            }
+            answers.reset(
+              true,
+              options.plan.refreshReplies ||
+                options.order?.value.captureReplies === true ||
+                options.order?.value.replyDiagnostic === true,
+            );
+            answerReport = options.plan.canary
+              ? () => {
+                  stepReport.secondSource = answers.summary(
+                    postAddress(page.url(), deps.origin)?.code ?? null,
+                  );
+                }
+              : undefined;
+            answerReport?.();
+            profileNames.push(list.account);
+            if (list.manualReason || list.full || !list.candidates[candidate]) {
+              stage = 'settlement';
+              await writer.settle({
+                attemptId,
+                state: 'not-listed',
+                code:
+                  list.manualReason ?? (list.full ? 'window-full' : 'no-row'),
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              settled = true;
+              stepReport.result =
+                list.manualReason ?? (list.full ? 'window-full' : 'no-row');
+              if (list.manualReason) report.rows.imageOnlySkipped++;
+              break;
+            }
+            stage = 'post-open';
+            phase('post-open', readingStepBudget(deps.responseMs, deps.pace));
+            activeReady = { postMs: 0 };
+            stepReport.ready = activeReady;
+            const openedAt = performance.now();
+            if (options.plan.refreshReplies) reading!.begin(deps.responseMs);
+            postRequests = network.beginPostRequests(page);
+            const postRequestsForStep = postRequests;
+            Object.defineProperty(stepReport, 'postRequests', {
+              enumerable: true,
+              get: () => postRequestsForStep.summary(),
+            });
+            let opened: boolean;
+            let target: string | null = reopenTarget;
+            const navigation = (request: Request) => {
               if (
-                caught instanceof ContextStop &&
-                caught.token === 'list-timeout'
-              ) {
-                const timeoutStep = {
-                  image: {
-                    status: 'not-attempted',
-                    bytes: 0,
-                    ...imageDiagnostic(null, null, []),
-                  },
-                  ready: { postMs: 0 },
-                  filterByLists: rowCounts.listTimeout?.filter.applied ?? false,
-                  listTimeout: rowCounts.listTimeout,
-                  rowSignature: rowCounts.rowSignature,
-                  listRegions: rowCounts.regions,
-                  listRows: rowCounts.diagnostic,
-                  rowShape: rowCounts.rowShape,
-                  filteredProbe: rowCounts.filteredProbe,
-                  newestProbe: rowCounts.newestProbe,
-                  widenedProbes: rowCounts.widenedProbes,
-                  diagnosticControl: options.plan.diagnosticControl
-                    ? true
-                    : undefined,
-                  oldestSortStructure: rowCounts.oldestSortStructure,
-                  listRowsAfterApply: rowCounts.initialDiagnostic,
-                  listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-                  unfilteredOldestSortApplied:
-                    rowCounts.unfilteredOldestSortApplied,
-                  listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-                  filterDialogClosedObserved:
-                    rowCounts.filterDialogClosedObserved,
-                  afterDialogSameAsAfterApply:
-                    rowCounts.afterDialogSameAsAfterApply,
-                  listWindow: rowCounts.windowDiagnostic,
-                  rows: 0,
-                  emptySkipped: rowCounts.emptySkipped,
-                  handleOnlySkipped: rowCounts.handleOnlySkipped,
-                  otherName: rowCounts.otherName,
-                  candidates: 0,
-                  confirmed: false,
-                  result: 'list-timeout',
-                };
-                report.steps.push(timeoutStep);
-                activeStep = timeoutStep;
-                if (reopening?.stage === 'list') reopening.outcome = 'timeout';
-              } else if (
-                options.order?.value.listDiagnostic &&
-                (rowCounts.diagnostic || rowCounts.rowShape)
-              ) {
-                report.steps.push({
-                  result: 'list-diagnostic',
-                  confirmed: false,
-                  candidates: 0,
-                  listRows: rowCounts.diagnostic,
-                  rowShape: rowCounts.rowShape,
-                  filteredProbe: rowCounts.filteredProbe,
-                  newestProbe: rowCounts.newestProbe,
-                  widenedProbes: rowCounts.widenedProbes,
-                  diagnosticControl: options.plan.diagnosticControl
-                    ? true
-                    : undefined,
-                  oldestSortStructure: rowCounts.oldestSortStructure,
-                  listRowsAfterApply: rowCounts.initialDiagnostic,
-                  listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-                  unfilteredOldestSortApplied:
-                    rowCounts.unfilteredOldestSortApplied,
-                  listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-                  filterDialogClosedObserved:
-                    rowCounts.filterDialogClosedObserved,
-                  afterDialogSameAsAfterApply:
-                    rowCounts.afterDialogSameAsAfterApply,
-                  listWindow: rowCounts.windowDiagnostic,
-                });
-              }
-              const retry = postRetries.beginList(
+                !request.isNavigationRequest() ||
+                request.frame() !== page.mainFrame()
+              )
+                return;
+              const address = postReopenTarget(request.url(), deps.origin);
+              if (address) target = address;
+            };
+            page.on('request', navigation);
+            try {
+              opened =
+                (options.plan.refreshLikes || options.plan.refreshReplies) &&
+                row.context
+                  ? await reopenCandidate(
+                      page,
+                      `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
+                      deps,
+                      guard,
+                      options.plan.refreshReplies
+                        ? options.plan.handle
+                        : undefined,
+                    )
+                  : reopening && reopenTarget
+                    ? await reopenCandidate(page, reopenTarget, deps, guard)
+                    : await openCandidate(
+                        page,
+                        list.candidates[candidate]!.index,
+                        deps,
+                        guard,
+                      );
+              if (reopening) reopening.outcome = 'ready';
+              reopening = null;
+              reopenTarget = null;
+            } catch (caught) {
+              target ??= postReopenTarget(page.url(), deps.origin);
+              activeReady.postMs = Math.max(
+                0,
+                Math.round(performance.now() - openedAt),
+              );
+              if (reopening && errorClass(caught) === 'timeout')
+                reopening.outcome = 'timeout';
+              const retry = postRetries.begin(
                 caught,
-                [row.item.id],
+                [row.item.id, ...(target ? [target] : [])],
                 steps,
                 options.plan.canary,
-                used < pace.perDay &&
+                target !== null &&
+                  used < pace.perDay &&
                   steps < max &&
                   dateInZone(options.now(), options.plan.timeZone) === day,
               );
@@ -1082,290 +1340,266 @@ export async function runContextWithDependencies(
               await sampleMemory();
               await waitToReopen(retry);
               reopening = retry;
-              return null;
+              reopenTarget = target;
+              candidate--;
+              continue;
             } finally {
-              report.rows.emptySkipped += rowCounts.emptySkipped;
-              report.rows.otherName += rowCounts.otherName;
-            }
-          })();
-          if (!list) {
-            candidate--;
-            continue;
-          }
-          if (accountBefore === null) accountBeforeClass = 'expected';
-          accountBefore ??= list.account;
-          accountAfter = list.account;
-          options.session?.before(before, accountBefore);
-          await network?.flush();
-          stage = 'answers';
-          await answers.flush(deps.responseMs);
-          const stepReport: Record<string, unknown> = {
-            image: {
-              status: 'not-attempted',
-              bytes: 0,
-              ...imageDiagnostic(null, null, []),
-            },
-            ready: { postMs: 0 },
-            filterByLists:
-              !options.plan.refreshLikes && !options.plan.refreshReplies,
-            rowSignature: rowCounts.rowSignature,
-            listRegions: rowCounts.regions,
-            listRows: rowCounts.diagnostic,
-            rowShape: rowCounts.rowShape,
-            filteredProbe: rowCounts.filteredProbe,
-            newestProbe: rowCounts.newestProbe,
-            widenedProbes: rowCounts.widenedProbes,
-            diagnosticControl: options.plan.diagnosticControl
-              ? true
-              : undefined,
-            oldestSortStructure: rowCounts.oldestSortStructure,
-            listRowsAfterApply: rowCounts.initialDiagnostic,
-            listPageUnfiltered: rowCounts.unfilteredDiagnostic,
-            unfilteredOldestSortApplied: rowCounts.unfilteredOldestSortApplied,
-            listPageAfterDialogClosed: rowCounts.dialogClosedDiagnostic,
-            filterDialogClosedObserved: rowCounts.filterDialogClosedObserved,
-            afterDialogSameAsAfterApply: rowCounts.afterDialogSameAsAfterApply,
-            listWindow: rowCounts.windowDiagnostic,
-            rows: list.rowCount,
-            emptySkipped: list.emptySkipped,
-            handleOnlySkipped: rowCounts.handleOnlySkipped,
-            otherName: list.otherName,
-            candidates: list.candidates.length,
-            scrollLoads: list.scrollLoads,
-            expansionClicks: 0,
-            expansionScrolls: 0,
-            confirmed: false,
-            roles: ['button', 'dialog', 'combobox'],
-            controls: [
-              ...CLICK_NAMES,
-              POST_SCROLL_ACTION,
-              'date-year-list',
-              'date-month-list',
-              'date-day-list',
-            ],
-            fields: {},
-            listPairing: answers.bodies.some(pairedCode),
-            oldestWithinWeek: list.oldestWithinWeek,
-            ...(list.manualReason
-              ? { listTimeout: rowCounts.listTimeout }
-              : {}),
-          };
-          report.steps.push(stepReport);
-          if (list.manualReason) await checkpoint();
-          activeStep = stepReport;
-          if (options.order?.value.listDiagnostic) {
-            // A diagnostic observes the existing list path only. It never opens a
-            // candidate, settles a negative lookup or accepts a canary.
-            stepReport.result = 'list-diagnostic';
-            throw new ContextStop('CANCELLED', 'stopped');
-          }
-          answers.reset(
-            true,
-            options.plan.refreshReplies ||
-              options.order?.value.captureReplies === true ||
-              options.order?.value.replyDiagnostic === true,
-          );
-          answerReport = options.plan.canary
-            ? () => {
-                stepReport.secondSource = answers.summary(
-                  postAddress(page.url(), deps.origin)?.code ?? null,
+              if (activeReady && activeReady.postMs === 0)
+                activeReady.postMs = Math.max(
+                  0,
+                  Math.round(performance.now() - openedAt),
                 );
-              }
-            : undefined;
-          answerReport?.();
-          profileNames.push(list.account);
-          if (list.manualReason || list.full || !list.candidates[candidate]) {
-            stage = 'settlement';
-            await writer.settle({
-              attemptId,
-              state: 'not-listed',
-              code: list.manualReason ?? (list.full ? 'window-full' : 'no-row'),
-              at: options.now().toISOString(),
-            });
-            pendingAttempt = undefined;
-            settled = true;
-            stepReport.result =
-              list.manualReason ?? (list.full ? 'window-full' : 'no-row');
-            if (list.manualReason) report.rows.imageOnlySkipped++;
-            break;
-          }
-          stage = 'post-open';
-          activeReady = { postMs: 0 };
-          stepReport.ready = activeReady;
-          const openedAt = performance.now();
-          if (options.plan.refreshReplies) reading!.begin(deps.responseMs);
-          postRequests = network.beginPostRequests(page);
-          const postRequestsForStep = postRequests;
-          Object.defineProperty(stepReport, 'postRequests', {
-            enumerable: true,
-            get: () => postRequestsForStep.summary(),
-          });
-          let opened: boolean;
-          let target: string | null = reopenTarget;
-          const navigation = (request: Request) => {
-            if (
-              !request.isNavigationRequest() ||
-              request.frame() !== page.mainFrame()
-            )
-              return;
-            const address = postReopenTarget(request.url(), deps.origin);
-            if (address) target = address;
-          };
-          page.on('request', navigation);
-          try {
-            opened =
-              (options.plan.refreshLikes || options.plan.refreshReplies) &&
-              row.context
-                ? await reopenCandidate(
-                    page,
-                    `${deps.origin}/${row.context.post.kind === 'reel' ? 'reel' : 'p'}/${row.context.post.code}/`,
-                    deps,
-                    guard,
-                    options.plan.refreshReplies
-                      ? options.plan.handle
-                      : undefined,
-                  )
-                : reopening && reopenTarget
-                  ? await reopenCandidate(page, reopenTarget, deps, guard)
-                  : await openCandidate(
-                      page,
-                      list.candidates[candidate]!.index,
-                      deps,
-                      guard,
-                    );
-            if (reopening) reopening.outcome = 'ready';
-            reopening = null;
-            reopenTarget = null;
-          } catch (caught) {
-            target ??= postReopenTarget(page.url(), deps.origin);
-            activeReady.postMs = Math.max(
-              0,
-              Math.round(performance.now() - openedAt),
-            );
-            if (reopening && errorClass(caught) === 'timeout')
-              reopening.outcome = 'timeout';
-            const retry = postRetries.begin(
-              caught,
-              [row.item.id, ...(target ? [target] : [])],
-              steps,
-              options.plan.canary,
-              target !== null &&
-                used < pace.perDay &&
-                steps < max &&
-                dateInZone(options.now(), options.plan.timeZone) === day,
-            );
-            if (!retry) throw caught;
-            await sampleMemory();
-            await waitToReopen(retry);
-            reopening = retry;
-            reopenTarget = target;
-            candidate--;
-            continue;
-          } finally {
-            if (activeReady && activeReady.postMs === 0)
-              activeReady.postMs = Math.max(
-                0,
-                Math.round(performance.now() - openedAt),
-              );
-            activeReady = undefined;
-            page.off('request', navigation);
-          }
-          if (!opened) {
-            stage = 'settlement';
-            await writer.settle({
-              attemptId,
-              state:
-                options.plan.refreshLikes || options.plan.refreshReplies
-                  ? 'failed'
-                  : 'unavailable',
-              code:
-                options.plan.refreshLikes || options.plan.refreshReplies
-                  ? refreshOutcome({ opened: false, context: row.context })
-                  : null,
-              at: options.now().toISOString(),
-            });
-            pendingAttempt = undefined;
-            settled = true;
-            stepReport.result =
-              options.plan.refreshLikes || options.plan.refreshReplies
-                ? 'post-unavailable'
-                : 'unavailable';
-            break;
-          }
-          stage = 'post-read';
-          if (
-            options.plan.refreshReplies &&
-            row.context?.confirmedBy === 'post'
-          ) {
-            stepReport.replyScope = await replyScopeDiagnostic(
-              page,
-              {
-                id: row.context.comment.id,
-                createdAt: row.context.comment.createdAt,
-                exportCreatedAt: row.item.createdAt,
-                username: options.plan.handle,
-                text: row.item.text,
-              },
-              guard,
-              answers.bodies,
-              answers.scriptValues(),
-              (value) => {
-                stepReport.replyScope = value;
-              },
-            );
-          }
-          const read = await confirmOnPost(
-            page,
-            row.item,
-            options.plan.handle,
-            deps,
-            guard,
-          );
-          stepReport.expansionClicks = read.expandClicks;
-          stepReport.expansionScrolls = read.expansionScrolls;
-          stepReport.ownerCount = read.post.ownerCount;
-          await answers.flush(deps.responseMs);
-          stepReport.image = {
-            status: 'not-attempted',
-            bytes: 0,
-            ...imageDiagnostic(read.post.code, read.source, answers.bodies),
-          };
-          if (options.plan.canary) {
-            await answers.flush(deps.responseMs);
-            stepReport.secondSource = answers.summary(read.post.code);
-          }
-          await checkpoint();
-          if (options.plan.refreshLikes || options.plan.refreshReplies) {
-            const outcome = refreshOutcome({
-              opened: true,
-              context: row.context,
-              post: read.post,
-              result: read.result,
-            });
-            if (outcome) {
+              activeReady = undefined;
+              page.off('request', navigation);
+            }
+            if (!opened) {
               stage = 'settlement';
               await writer.settle({
                 attemptId,
-                state: 'failed',
-                code: outcome,
+                state:
+                  options.plan.refreshLikes || options.plan.refreshReplies
+                    ? 'failed'
+                    : 'unavailable',
+                code:
+                  options.plan.refreshLikes || options.plan.refreshReplies
+                    ? refreshOutcome({ opened: false, context: row.context })
+                    : null,
                 at: options.now().toISOString(),
               });
               pendingAttempt = undefined;
               settled = true;
-              stepReport.result = outcome;
+              stepReport.result =
+                options.plan.refreshLikes || options.plan.refreshReplies
+                  ? 'post-unavailable'
+                  : 'unavailable';
               break;
             }
-            if (read.result.state !== 'confirmed')
-              throw new ContextStop('PLATFORM_CHECK', 'post-structure');
-            if (options.plan.refreshReplies) {
-              let answerChecked = false;
+            stage = 'post-read';
+            phase('post-read', readingStepBudget(deps.responseMs, deps.pace));
+            if (
+              options.plan.refreshReplies &&
+              row.context?.confirmedBy === 'post'
+            ) {
+              phase('reply-scope', deps.responseMs);
+              stepReport.replyScope = await replyScopeDiagnostic(
+                page,
+                {
+                  id: row.context.comment.id,
+                  createdAt: row.context.comment.createdAt,
+                  exportCreatedAt: row.item.createdAt,
+                  username: options.plan.handle,
+                  text: row.item.text,
+                },
+                guard,
+                answers.bodies,
+                answers.scriptValues(),
+                (value) => {
+                  stepReport.replyScope = value;
+                },
+              );
+            }
+            phase('post-read', readingStepBudget(deps.responseMs, deps.pace));
+            const read = await confirmOnPost(
+              page,
+              row.item,
+              options.plan.handle,
+              deps,
+              guard,
+            );
+            stepReport.expansionClicks = read.expandClicks;
+            stepReport.expansionScrolls = read.expansionScrolls;
+            stepReport.ownerCount = read.post.ownerCount;
+            await answers.flush(deps.responseMs);
+            stepReport.image = {
+              status: 'not-attempted',
+              bytes: 0,
+              ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+            };
+            if (options.plan.canary) {
+              await answers.flush(deps.responseMs);
+              stepReport.secondSource = answers.summary(read.post.code);
+            }
+            await checkpoint();
+            if (options.plan.refreshLikes || options.plan.refreshReplies) {
+              const outcome = refreshOutcome({
+                opened: true,
+                context: row.context,
+                post: read.post,
+                result: read.result,
+              });
+              if (outcome) {
+                stage = 'settlement';
+                await writer.settle({
+                  attemptId,
+                  state: 'failed',
+                  code: outcome,
+                  at: options.now().toISOString(),
+                });
+                pendingAttempt = undefined;
+                settled = true;
+                stepReport.result = outcome;
+                break;
+              }
+              if (read.result.state !== 'confirmed')
+                throw new ContextStop('PLATFORM_CHECK', 'post-structure');
+              if (options.plan.refreshReplies) {
+                phase('reply-read', deps.responseMs);
+                let answerChecked = false;
+                const match = {
+                  ...read.result.comment,
+                  exportCreatedAt: row.item.createdAt,
+                  username: options.plan.handle,
+                  text: row.item.text,
+                };
+                const replies = await captureRepliesForMode(
+                  () =>
+                    commentReplies(
+                      page,
+                      answers.bodies,
+                      match,
+                      guard,
+                      openedAt + deps.responseMs,
+                      (ms) => deps.sleep(ms),
+                      deps.pace.expandMs,
+                      (value) => {
+                        answerChecked = value;
+                      },
+                      () =>
+                        answers.flush(
+                          Math.max(
+                            1,
+                            openedAt + deps.responseMs - performance.now(),
+                          ),
+                        ),
+                      (value) => {
+                        stepReport.replyScope = value;
+                      },
+                      (value) => {
+                        stepReport.replyAnswer = value;
+                      },
+                      () => answers.bodyPaths,
+                      () => answers.htmlDiagnostic(match),
+                      () => answers.scriptValues(),
+                      (value) => {
+                        stepReport.replyControls = value;
+                      },
+                      (value) => {
+                        stepReport.replyExpansion = value;
+                      },
+                    ),
+                  true,
+                  false,
+                  (reason) => {
+                    stepReport.replies = {
+                      read: 0,
+                      moreCount: 0,
+                      capped: false,
+                      reason,
+                    };
+                  },
+                );
+                if (!replies) throw new ReplyReadFailure('reply-read-failed');
+                phase('canary-check');
+                if (unattended && !answerChecked)
+                  throw new ContextStop(
+                    'CANARY_CHECK_FAILED',
+                    'canary-auto-undecided',
+                  );
+                await checkpoint();
+                phase('settlement');
+                await writer.fillReplies(
+                  attemptId,
+                  replies,
+                  options.now().toISOString(),
+                );
+                pendingAttempt = undefined;
+                settled = true;
+                completed++;
+                stepReport.result = 'replies-refreshed';
+                stepReport.replies = {
+                  read: replies.entries.length,
+                  moreCount: replies.moreCount,
+                  capped: replies.capped,
+                  answerChecked,
+                };
+                checkedItemIds.push(row.item.id);
+                repliesAnswerChecked &&= answerChecked;
+                break;
+              }
+              const likes = await commentLikes(page, answers.bodies, {
+                ...read.result.comment,
+                username: options.plan.handle,
+                text: row.item.text,
+              });
+              await checkpoint();
+              await writer.fillLikes(
+                attemptId,
+                likes,
+                options.now().toISOString(),
+              );
+              pendingAttempt = undefined;
+              settled = true;
+              completed++;
+              stepReport.result = 'likes-refreshed';
+              break;
+            }
+            const fromList =
+              Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
+              read.result.state === 'unconfirmed' &&
+              read.result.code === 'not-shown' &&
+              list.candidates.length === 1 &&
+              list.candidates[0]!.username.toLowerCase() ===
+                options.plan.handle.toLowerCase() &&
+              normalize(list.candidates[0]!.text) ===
+                normalize(row.item.text) &&
+              read.post.ownerCount === 1 &&
+              read.post.ownerMatchesProfile &&
+              ownerName(read.post.owner) ===
+                ownerName(row.item.reference.ownerHandle ?? '');
+            if (read.result.state !== 'confirmed' && !fromList) {
+              lastUnconfirmed = read.result.code;
+              stepReport.result = read.result.code;
+              if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
+              const code =
+                list.candidates.length > 3 ? 'several' : read.result.code;
+              stage = 'settlement';
+              await writer.settle({
+                attemptId,
+                state: 'unconfirmed',
+                code,
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              settled = true;
+              if (options.plan.canary && code === 'owner')
+                Object.assign(stepReport, {
+                  ownerLinksOneAccount: read.post.ownerCount === 1,
+                  ownerEqualsExport:
+                    ownerName(read.post.owner) ===
+                    ownerName(row.item.reference.ownerHandle ?? ''),
+                  firstProfileNamesOwner: read.post.ownerMatchesProfile,
+                });
+              break;
+            }
+            stage = 'capture';
+            phase('capture', deps.responseMs);
+            const captures = await (deps.capture ?? capturePost)(
+              options.workspace,
+              read.post.code,
+              read.post.element,
+              read.source,
+              answers.images,
+              deps.policy,
+            );
+            let capturedReplies: InstagramContext['replies'];
+            if (read.result.state === 'confirmed') {
               const match = {
                 ...read.result.comment,
                 exportCreatedAt: row.item.createdAt,
                 username: options.plan.handle,
                 text: row.item.text,
               };
-              const replies = await captureRepliesForMode(
+              capturedReplies = await captureRepliesForMode(
                 () =>
                   commentReplies(
                     page,
@@ -1375,9 +1609,7 @@ export async function runContextWithDependencies(
                     openedAt + deps.responseMs,
                     (ms) => deps.sleep(ms),
                     deps.pace.expandMs,
-                    (value) => {
-                      answerChecked = value;
-                    },
+                    () => {},
                     () =>
                       answers.flush(
                         Math.max(
@@ -1385,9 +1617,11 @@ export async function runContextWithDependencies(
                           openedAt + deps.responseMs - performance.now(),
                         ),
                       ),
-                    (value) => {
-                      stepReport.replyScope = value;
-                    },
+                    options.order?.value.replyDiagnostic === true
+                      ? (value) => {
+                          stepReport.replyScope = value;
+                        }
+                      : undefined,
                     (value) => {
                       stepReport.replyAnswer = value;
                     },
@@ -1401,8 +1635,8 @@ export async function runContextWithDependencies(
                       stepReport.replyExpansion = value;
                     },
                   ),
-                true,
                 false,
+                options.order?.value.captureReplies === true,
                 (reason) => {
                   stepReport.replies = {
                     read: 0,
@@ -1412,313 +1646,188 @@ export async function runContextWithDependencies(
                   };
                 },
               );
-              if (!replies) throw new ReplyReadFailure('reply-read-failed');
               await checkpoint();
-              await writer.fillReplies(
-                attemptId,
-                replies,
-                options.now().toISOString(),
-              );
-              pendingAttempt = undefined;
-              settled = true;
-              completed++;
-              stepReport.result = 'replies-refreshed';
-              stepReport.replies = {
-                read: replies.entries.length,
-                moreCount: replies.moreCount,
-                capped: replies.capped,
-                answerChecked,
-              };
-              checkedItemIds.push(row.item.id);
-              repliesAnswerChecked &&= answerChecked;
-              break;
             }
-            const likes = await commentLikes(page, answers.bodies, {
-              ...read.result.comment,
-              username: options.plan.handle,
-              text: row.item.text,
-            });
-            await checkpoint();
-            await writer.fillLikes(
+            const record: InstagramContext = {
+              ...(capturedReplies ? { replies: capturedReplies } : {}),
+              ...(read.result.state === 'confirmed'
+                ? {
+                    likes: await commentLikes(page, answers.bodies, {
+                      ...read.result.comment,
+                      username: options.plan.handle,
+                      text: row.item.text,
+                    }),
+                  }
+                : {}),
+              itemId: row.item.id,
+              accountKey: options.plan.accountKey,
+              ...(read.result.state === 'confirmed'
+                ? {
+                    ownerCheck: ownerName(row.item.reference.ownerHandle ?? '')
+                      ? ('matched-export' as const)
+                      : ('not-in-export' as const),
+                    confirmedBy: 'post' as const,
+                    comment: {
+                      id: read.result.comment.id,
+                      createdAt: read.result.comment.createdAt,
+                      expandClicks: read.expandClicks,
+                    },
+                  }
+                : {
+                    ownerCheck: 'matched-export' as const,
+                    confirmedBy: 'list' as const,
+                    comment: {
+                      id: null,
+                      createdAt: null,
+                      expandClicks: read.expandClicks,
+                    },
+                  }),
+              post: {
+                kind: read.post.kind,
+                code: read.post.code,
+                owner: read.post.owner,
+                ownerCount: read.post.ownerCount,
+                createdAt: read.post.createdAt,
+                caption: read.post.caption,
+                captionComplete: read.post.captionComplete,
+              },
+              image: captures.image,
+              screenshot: captures.screenshot,
+              confirmedAt: options.now().toISOString(),
+              runId,
               attemptId,
-              likes,
-              options.now().toISOString(),
-            );
+            };
+            stage = 'answers';
+            phase('answers', deps.responseMs);
+            await answers.flush(deps.responseMs);
+            if (options.plan.canary)
+              stepReport.secondSource = answers.summary(read.post.code);
+            await checkpoint();
+            stage = 'compare';
+            const check: CanaryCheck = {
+              confirmed: true,
+              fields: compareSources(record, read.source, answers.bodies),
+              ownerShown: Boolean(read.post.owner),
+              timeShown: read.post.createdAt !== null,
+              imageStored: record.image.status === 'stored',
+              screenshotStored: record.screenshot.status === 'stored',
+            };
+            if (options.plan.canary) checks.push(check);
+            Object.assign(stepReport, {
+              ...(record.replies
+                ? {
+                    replies: {
+                      read: record.replies.entries.length,
+                      moreCount: record.replies.moreCount,
+                      capped: record.replies.capped,
+                    },
+                  }
+                : {}),
+              confirmed: true,
+              result: 'confirmed',
+              confirmedBy: record.confirmedBy,
+              fields: check.fields,
+              ownerShown: check.ownerShown,
+              timeShown: check.timeShown,
+              image: {
+                status: record.image.status,
+                bytes: captures.imageBytes,
+                ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+              },
+              screenshot: {
+                status: record.screenshot.status,
+                bytes: captures.shotBytes,
+              },
+              paths: [
+                ...new Set(answers.bodies.flatMap((body) => keyPaths(body))),
+              ],
+            });
+            stage = 'canary-check';
+            phase('canary-check');
+            if (options.order && options.plan.canary)
+              automaticCanaryCheck(check);
+            await checkpoint();
+            stage = 'settlement';
+            phase('settlement');
+            await writer.confirm(record);
+            if (automatic) {
+              checkedAttempts.set(attemptId, check);
+              checkedItemIds.push(row.item.id);
+            }
             pendingAttempt = undefined;
             settled = true;
             completed++;
-            stepReport.result = 'likes-refreshed';
+            report.confirmations[record.confirmedBy]++;
             break;
           }
-          const fromList =
-            Boolean(ownerName(row.item.reference.ownerHandle ?? '')) &&
-            read.result.state === 'unconfirmed' &&
-            read.result.code === 'not-shown' &&
-            list.candidates.length === 1 &&
-            list.candidates[0]!.username.toLowerCase() ===
-              options.plan.handle.toLowerCase() &&
-            normalize(list.candidates[0]!.text) === normalize(row.item.text) &&
-            read.post.ownerCount === 1 &&
-            read.post.ownerMatchesProfile &&
-            ownerName(read.post.owner) ===
-              ownerName(row.item.reference.ownerHandle ?? '');
-          if (read.result.state !== 'confirmed' && !fromList) {
-            lastUnconfirmed = read.result.code;
-            stepReport.result = read.result.code;
-            if (candidate + 1 < Math.min(list.candidates.length, 3)) continue;
-            const code =
-              list.candidates.length > 3 ? 'several' : read.result.code;
-            stage = 'settlement';
-            await writer.settle({
-              attemptId,
-              state: 'unconfirmed',
-              code,
-              at: options.now().toISOString(),
-            });
-            pendingAttempt = undefined;
-            settled = true;
-            if (options.plan.canary && code === 'owner')
-              Object.assign(stepReport, {
-                ownerLinksOneAccount: read.post.ownerCount === 1,
-                ownerEqualsExport:
-                  ownerName(read.post.owner) ===
-                  ownerName(row.item.reference.ownerHandle ?? ''),
-                firstProfileNamesOwner: read.post.ownerMatchesProfile,
-              });
-            break;
-          }
-          stage = 'capture';
-          const captures = await (deps.capture ?? capturePost)(
-            options.workspace,
-            read.post.code,
-            read.post.element,
-            read.source,
-            answers.images,
-            deps.policy,
-          );
-          let capturedReplies: InstagramContext['replies'];
-          if (read.result.state === 'confirmed') {
-            const match = {
-              ...read.result.comment,
-              exportCreatedAt: row.item.createdAt,
-              username: options.plan.handle,
-              text: row.item.text,
-            };
-            capturedReplies = await captureRepliesForMode(
-              () =>
-                commentReplies(
-                  page,
-                  answers.bodies,
-                  match,
-                  guard,
-                  openedAt + deps.responseMs,
-                  (ms) => deps.sleep(ms),
-                  deps.pace.expandMs,
-                  () => {},
-                  () =>
-                    answers.flush(
-                      Math.max(
-                        1,
-                        openedAt + deps.responseMs - performance.now(),
-                      ),
-                    ),
-                  options.order?.value.replyDiagnostic === true
-                    ? (value) => {
-                        stepReport.replyScope = value;
-                      }
-                    : undefined,
-                  (value) => {
-                    stepReport.replyAnswer = value;
-                  },
-                  () => answers.bodyPaths,
-                  () => answers.htmlDiagnostic(match),
-                  () => answers.scriptValues(),
-                  (value) => {
-                    stepReport.replyControls = value;
-                  },
-                  (value) => {
-                    stepReport.replyExpansion = value;
-                  },
-                ),
-              false,
-              options.order?.value.captureReplies === true,
-              (reason) => {
-                stepReport.replies = {
-                  read: 0,
-                  moreCount: 0,
-                  capped: false,
-                  reason,
-                };
-              },
-            );
-            await checkpoint();
-          }
-          const record: InstagramContext = {
-            ...(capturedReplies ? { replies: capturedReplies } : {}),
-            ...(read.result.state === 'confirmed'
-              ? {
-                  likes: await commentLikes(page, answers.bodies, {
-                    ...read.result.comment,
-                    username: options.plan.handle,
-                    text: row.item.text,
-                  }),
-                }
-              : {}),
-            itemId: row.item.id,
-            accountKey: options.plan.accountKey,
-            ...(read.result.state === 'confirmed'
-              ? {
-                  ownerCheck: ownerName(row.item.reference.ownerHandle ?? '')
-                    ? ('matched-export' as const)
-                    : ('not-in-export' as const),
-                  confirmedBy: 'post' as const,
-                  comment: {
-                    id: read.result.comment.id,
-                    createdAt: read.result.comment.createdAt,
-                    expandClicks: read.expandClicks,
-                  },
-                }
-              : {
-                  ownerCheck: 'matched-export' as const,
-                  confirmedBy: 'list' as const,
-                  comment: {
-                    id: null,
-                    createdAt: null,
-                    expandClicks: read.expandClicks,
-                  },
-                }),
-            post: {
-              kind: read.post.kind,
-              code: read.post.code,
-              owner: read.post.owner,
-              ownerCount: read.post.ownerCount,
-              createdAt: read.post.createdAt,
-              caption: read.post.caption,
-              captionComplete: read.post.captionComplete,
-            },
-            image: captures.image,
-            screenshot: captures.screenshot,
-            confirmedAt: options.now().toISOString(),
-            runId,
-            attemptId,
-          };
-          stage = 'answers';
-          await answers.flush(deps.responseMs);
-          if (options.plan.canary)
-            stepReport.secondSource = answers.summary(read.post.code);
-          await checkpoint();
-          stage = 'compare';
-          const check: CanaryCheck = {
-            confirmed: true,
-            fields: compareSources(record, read.source, answers.bodies),
-            ownerShown: Boolean(read.post.owner),
-            timeShown: read.post.createdAt !== null,
-            imageStored: record.image.status === 'stored',
-            screenshotStored: record.screenshot.status === 'stored',
-          };
-          if (options.plan.canary) checks.push(check);
-          Object.assign(stepReport, {
-            ...(record.replies
-              ? {
-                  replies: {
-                    read: record.replies.entries.length,
-                    moreCount: record.replies.moreCount,
-                    capped: record.replies.capped,
-                  },
-                }
-              : {}),
-            confirmed: true,
-            result: 'confirmed',
-            confirmedBy: record.confirmedBy,
-            fields: check.fields,
-            ownerShown: check.ownerShown,
-            timeShown: check.timeShown,
-            image: {
-              status: record.image.status,
-              bytes: captures.imageBytes,
-              ...imageDiagnostic(read.post.code, read.source, answers.bodies),
-            },
-            screenshot: {
-              status: record.screenshot.status,
-              bytes: captures.shotBytes,
-            },
-            paths: [
-              ...new Set(answers.bodies.flatMap((body) => keyPaths(body))),
-            ],
+        });
+        if (abortOuter) break outer;
+        phase('progress');
+        await sampleMemory();
+        if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
+        stage = 'progress';
+        options.session?.progress(
+          used,
+          completed,
+          (await options.store.browserJournal()).attempts.filter(
+            (value) => value.runId === runId,
+          ),
+        );
+        options.session?.instagram(limitSignals.summary());
+        if (options.plan.canary && !options.order) {
+          const continuing = confirmationWait('continue');
+          confirmation.update({
+            phase: 'canary',
+            completed,
+            result: JSON.stringify(report.steps.at(-1)),
           });
-          stage = 'canary-check';
-          if (options.order && options.plan.canary) automaticCanaryCheck(check);
-          await checkpoint();
-          stage = 'settlement';
-          await writer.confirm(record);
-          if (automatic) {
-            checkedAttempts.set(attemptId, check);
-            checkedItemIds.push(row.item.id);
+          if (
+            !(await Promise.race([
+              continuing,
+              cancelled,
+              interrupted.then(() => false),
+            ]))
+          ) {
+            guard();
+            throw new ContextStop('CANCELLED', 'stopped');
           }
-          pendingAttempt = undefined;
-          settled = true;
-          completed++;
-          report.confirmations[record.confirmedBy]++;
-          break;
-        }
-      });
-      if (abortOuter) break outer;
-      await sampleMemory();
-      if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
-      stage = 'progress';
-      options.session?.progress(
-        used,
-        completed,
-        (await options.store.browserJournal()).attempts.filter(
-          (value) => value.runId === runId,
-        ),
-      );
-      options.session?.instagram(limitSignals.summary());
-      if (options.plan.canary && !options.order) {
-        const continuing = confirmation.wait('continue');
-        confirmation.update({
-          phase: 'canary',
-          completed,
-          result: JSON.stringify(report.steps.at(-1)),
-        });
-        if (
-          !(await Promise.race([
-            continuing,
-            cancelled,
-            interrupted.then(() => false),
-          ]))
-        ) {
-          guard();
-          throw new ContextStop('CANCELLED', 'stopped');
-        }
-      } else
-        confirmation.update({
-          completed,
-          result: options.plan.refreshReplies
-            ? options.lang === 'de'
-              ? `${steps} Schritte gelesen, ${completed} Antwort-Beobachtungen ergänzt.`
-              : `${steps} steps read, ${completed} reply observations added.`
-            : options.plan.refreshLikes
+        } else
+          confirmation.update({
+            completed,
+            result: options.plan.refreshReplies
               ? options.lang === 'de'
-                ? `${steps} Schritte gelesen, ${completed} Likes-Angaben ergänzt.`
-                : `${steps} steps read, ${completed} like observations added.`
-              : options.lang === 'de'
-                ? `${steps} Schritte gelesen, ${completed} Kommentare bestätigt.`
-                : `${steps} steps read, ${completed} comments confirmed.`,
-        });
-    }
-    await sampleMemory();
-    if (options.plan.canary && commentsTried === 15 && completed < 5)
-      throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
-    stage = 'canary-check';
-    if (
-      automatic &&
-      chosen.length &&
-      !(options.plan.refreshReplies && !repliesAnswerChecked)
-    )
-      await assertAutomaticCanary();
-    if (options.plan.canary && report.steps.length > 0 && endReason === 'done')
-      endReason = 'canary';
+                ? `${steps} Schritte gelesen, ${completed} Antwort-Beobachtungen ergänzt.`
+                : `${steps} steps read, ${completed} reply observations added.`
+              : options.plan.refreshLikes
+                ? options.lang === 'de'
+                  ? `${steps} Schritte gelesen, ${completed} Likes-Angaben ergänzt.`
+                  : `${steps} steps read, ${completed} like observations added.`
+                : options.lang === 'de'
+                  ? `${steps} Schritte gelesen, ${completed} Kommentare bestätigt.`
+                  : `${steps} steps read, ${completed} comments confirmed.`,
+          });
+      }
+      await sampleMemory();
+      if (options.plan.canary && commentsTried === 15 && completed < 5)
+        throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+      stage = 'canary-check';
+      phase('canary-check');
+      if (
+        automatic &&
+        chosen.length &&
+        !(options.plan.refreshReplies && !repliesAnswerChecked)
+      )
+        await assertAutomaticCanary();
+      if (unattended && options.plan.refreshReplies && !repliesAnswerChecked)
+        throw new ContextStop('CANARY_CHECK_FAILED', 'canary-auto-undecided');
+      if (
+        options.plan.canary &&
+        report.steps.length > 0 &&
+        endReason === 'done'
+      )
+        endReason = 'canary';
+    });
+    endReason = String(endReason) as NonNullable<BrowserRun['endReason']>;
   } catch (caught) {
     recordCause(caught, stage);
     error = caught;
@@ -1732,9 +1841,11 @@ export async function runContextWithDependencies(
             ? 'platform-check'
             : 'error';
   } finally {
+    auto.close();
     reading?.clear();
     if (reading?.expired && deadlineClose) await deadlineClose;
-    if (!reading?.expired) {
+    options.notice('Phase: finalization\n');
+    if (!(reading?.expired || auto.expired || unattended)) {
       await sampleMemory();
       await memory?.dispose();
     }
@@ -1780,10 +1891,13 @@ export async function runContextWithDependencies(
       stage = at;
       try {
         if (
-          reading?.expired &&
+          (reading?.expired || auto.expired || unattended) &&
           [
             'network',
+            'snapshot',
+            'answers',
             'read-back',
+            'automatic-check',
             'browser-close',
             'confirmation-close',
           ].includes(at)
@@ -1795,8 +1909,19 @@ export async function runContextWithDependencies(
               new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
                   () =>
-                    reject(new ContextStop('PLATFORM_CHECK', 'step-deadline')),
-                  1000,
+                    reject(
+                      new ContextStop(
+                        'PLATFORM_CHECK',
+                        auto.expired
+                          ? 'run-wait-deadline'
+                          : reading?.expired
+                            ? 'step-deadline'
+                            : 'run-wait-deadline',
+                      ),
+                    ),
+                  reading?.expired || auto.expired
+                    ? 1000
+                    : Math.max(30000, deps.responseMs),
                 );
               }),
             ]);
@@ -1840,7 +1965,7 @@ export async function runContextWithDependencies(
     };
     // Deadline evidence must reach disk before any browser/network readback.
     // A frozen renderer cannot be allowed to withhold the partial step report.
-    if (reading?.expired && began) {
+    if ((reading?.expired || auto.expired || unattended) && began) {
       await finalize('structure-report', structure);
       let disposalTimer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -1853,13 +1978,13 @@ export async function runContextWithDependencies(
       } finally {
         if (disposalTimer) clearTimeout(disposalTimer);
       }
-      if (pendingAttempt)
+      if (pendingAttempt && (reading?.expired || auto.expired))
         await finalize('settlement', async () => {
           await writer.settle({
             attemptId: pendingAttempt!,
             state: 'failed',
             at: options.now().toISOString(),
-            code: 'step-deadline',
+            code: auto.expired ? 'run-wait-deadline' : 'step-deadline',
           });
           pendingAttempt = undefined;
         });
@@ -1878,8 +2003,13 @@ export async function runContextWithDependencies(
             state: 'failed',
             at: options.now().toISOString(),
             code:
-              error instanceof ContextStop && error.token === 'step-deadline'
-                ? 'step-deadline'
+              error instanceof ContextStop &&
+              [
+                'step-deadline',
+                'run-wait-deadline',
+                'canary-auto-undecided',
+              ].includes(error.token)
+                ? error.token
                 : error instanceof CliError
                   ? error.code
                   : 'CONTEXT_FAILED',
@@ -1902,7 +2032,7 @@ export async function runContextWithDependencies(
         if (written)
           await finalize('manual-match', async () => {
             options.notice(`Structure report: ${reportPath}\n`);
-            const accepting = confirmation.wait('matches');
+            const accepting = confirmationWait('matches');
             confirmation.update({
               phase: 'match',
               result:
@@ -2133,6 +2263,7 @@ export async function runContextWithDependencies(
       announcedCause = report.cause;
     }
     if (reportPath) options.notice(`Structure report: ${reportPath}\n`);
+    options.notice('Phase: ended\n');
     const text = contextEnd(
       options.order?.value.listDiagnostic &&
         error instanceof ContextStop &&

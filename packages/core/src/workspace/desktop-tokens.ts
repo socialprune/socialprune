@@ -135,6 +135,8 @@ export const InstagramStopTokenSchema = z.enum([
   'list-timeout',
   'post-timeout',
   'step-deadline',
+  'run-wait-deadline',
+  'canary-auto-undecided',
   'navigation',
   'browser-closed',
   'extensions-added',
@@ -229,6 +231,8 @@ export const RunJournalCodeSchema = z.enum([
   'list-image-only',
   'post-unavailable',
   'comment-not-shown',
+  'run-wait-deadline',
+  'canary-auto-undecided',
   'step-deadline',
   'daily-cap',
 ]);

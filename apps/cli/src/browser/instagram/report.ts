@@ -1107,6 +1107,8 @@ export const CONTEXT_STOP_TOKENS = [
   'list-timeout',
   'post-timeout',
   'step-deadline',
+  'run-wait-deadline',
+  'canary-auto-undecided',
   'navigation',
   'browser-closed',
   'extensions-added',

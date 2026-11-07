@@ -911,6 +911,8 @@
   "desktop.token.rate-signal": "Instagram hat ein Limit- oder Kontoprüfsignal geliefert. Der Lauf wurde gestoppt.",
   "desktop.token.list-timeout": "Die Instagram-Kommentarliste wurde nicht rechtzeitig geladen.",
   "desktop.token.step-deadline": "Der Instagram-Leseschritt hat seine Zeitgrenze überschritten. Sein unvollständiger Strukturbericht wurde aufbewahrt.",
+  "desktop.token.run-wait-deadline": "Eine Phase des automatischen Instagram-Laufs wurde nicht innerhalb ihrer Zeitgrenze abgeschlossen.",
+  "desktop.token.canary-auto-undecided": "Die automatische Instagram-Stichprobe konnte diese Beobachtung nicht bestätigen. Der Lauf wurde beendet, ohne auf eine Person zu warten.",
   "desktop.token.post-timeout": "Der Instagram-Beitrag wurde nicht rechtzeitig geladen.",
   "desktop.token.navigation": "Die erwartete Instagram-Seite konnte nicht geöffnet werden.",
   "desktop.token.browser-closed": "Der Plattformbrowser wurde geschlossen. Der Lauf wurde gestoppt.",

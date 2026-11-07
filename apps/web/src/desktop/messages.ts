@@ -159,6 +159,8 @@ const tokenIds = [
   'desktop.token.rate-signal',
   'desktop.token.list-timeout',
   'desktop.token.step-deadline',
+  'desktop.token.run-wait-deadline',
+  'desktop.token.canary-auto-undecided',
   'desktop.token.post-timeout',
   'desktop.token.navigation',
   'desktop.token.browser-closed',

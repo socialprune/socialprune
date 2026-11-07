@@ -405,6 +405,7 @@ declare global {
     'desktop.token.body-timeout': Record<never, never>;
     'desktop.token.browser-closed': Record<never, never>;
     'desktop.token.canary': Record<never, never>;
+    'desktop.token.canary-auto-undecided': Record<never, never>;
     'desktop.token.canary-check': Record<never, never>;
     'desktop.token.canary-mismatch': Record<never, never>;
     'desktop.token.challenge': Record<never, never>;
@@ -484,6 +485,7 @@ declare global {
     'desktop.token.reply-window-incomplete': Record<never, never>;
     'desktop.token.request-journal': Record<never, never>;
     'desktop.token.row-structure': Record<never, never>;
+    'desktop.token.run-wait-deadline': Record<never, never>;
     'desktop.token.second-source': Record<never, never>;
     'desktop.token.sending': Record<never, never>;
     'desktop.token.several': Record<never, never>;

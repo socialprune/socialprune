@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest';
-import { soleCommentAnswer } from './sole-comment-answer.ts';
+import {
+  soleCommentAnswer,
+  inspectSoleCommentAnswer,
+} from './sole-comment-answer.ts';
 const match = {
   id: '123',
   username: 'generated_own',
@@ -124,4 +127,84 @@ test.each([
     for (let index = 0; index < 42; index++) value = { data: value };
   }
   expect(soleCommentAnswer(bodies, [value], match, code)).toBe(false);
+});
+test('SOLEDIAG script-only zero proof and absent post count remain distinct from declared-count failure', () => {
+  const absent = inspectSoleCommentAnswer([], [focal], match, code);
+  expect(absent).toMatchObject({
+    accepted: true,
+    diagnostic: {
+      answerNamesFocal: true,
+      childCountProofSource: 'script',
+      childCountProofClass: 'zero',
+      answerCommentSetSize: 1,
+      answerSetValid: true,
+      declaredCountSeen: 0,
+      declaredCountsAllOne: null,
+      firstFailedGate: 'none',
+    },
+  });
+  const two = inspectSoleCommentAnswer(
+    [],
+    [{ code, comment_count: 2, comments: [focal] }],
+    match,
+    code,
+  );
+  expect(two).toMatchObject({
+    accepted: false,
+    diagnostic: {
+      answerNamesFocal: true,
+      childCountProofClass: 'zero',
+      answerCommentSetSize: 1,
+      answerSetValid: true,
+      declaredCountSeen: 1,
+      declaredCountsAllOne: false,
+      firstFailedGate: 'sole-declared-count',
+    },
+  });
+  const other = inspectSoleCommentAnswer(
+    [],
+    [{ code, comments: [focal, { ...focal, pk: '456' }] }],
+    match,
+    code,
+  );
+  expect(other).toMatchObject({
+    accepted: false,
+    diagnostic: {
+      answerNamesFocal: true,
+      answerCommentSetSize: 2,
+      answerSetValid: false,
+      declaredCountSeen: 0,
+      declaredCountsAllOne: null,
+      firstFailedGate: 'sole-answer-set',
+    },
+  });
+});
+test('SOLEDIAG continued count traversal stays bounded after a refusal and retains all declared observations', () => {
+  const result = inspectSoleCommentAnswer(
+    [],
+    [
+      {
+        code,
+        comment_count: 2,
+        comments: [focal],
+        data: { comments_count: 1 },
+      },
+    ],
+    match,
+    code,
+  );
+  expect(result).toMatchObject({
+    accepted: false,
+    diagnostic: {
+      declaredCountSeen: 2,
+      declaredCountsAllOne: false,
+      answerTraversalCapped: false,
+      answerCommentSetSize: 1,
+      firstFailedGate: 'sole-declared-count',
+    },
+  });
+  expect(
+    inspectSoleCommentAnswer([], [{ variables: { data: focal } }], match, code)
+      .diagnostic.firstFailedGate,
+  ).toBe('sole-answer-focal');
 });

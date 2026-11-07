@@ -200,7 +200,62 @@ export async function structuralReplyScope(
     )
       emptyScope ??= { root, depth, avatar: shape.avatarObserved };
   }
-  if (zeroAnswer && isolated && soleAnswer()) {
+  const answerAccepted = soleAnswer();
+  const sole = shape.soleComment;
+  if (sole) {
+    guard();
+    try {
+      const main = focal.locator('xpath=ancestor::main');
+      sole.pageMainCount = await main.count();
+      sole.pageFocalPermalinks = await main.locator(focalSelector).count();
+      sole.pagePermalinks = await main.locator('a[href*="/c/"]').count();
+      const postPrefix =
+        focalSelector.slice(0, focalSelector.indexOf('/c/')) + '/c/';
+      sole.pageSamePostPermalinks = await main
+        .locator(postPrefix.replace('a[href="', 'a[href^="') + '"]')
+        .count();
+      sole.pageExpandControls = await replyControls(main).count();
+      sole.pageReplyControls = await main
+        .locator(BUTTONS)
+        .filter({ hasText: /^Reply$/u })
+        .count();
+      sole.pageRows = await main.locator(REPLY_ROWS).count();
+      sole.focalPresent = Boolean(isolated);
+      if (isolated) {
+        sole.focalPermalinks = await isolated.root
+          .locator('a[href*="/c/"]')
+          .count();
+        sole.focalTimes = await isolated.root.locator('time[datetime]').count();
+        sole.focalRows = await isolated.root.locator(REPLY_ROWS).count();
+        sole.focalControls = await replyControls(isolated.root).count();
+      }
+      if (sole.firstFailedGate === 'none') {
+        sole.firstFailedGate =
+          sole.pageMainCount !== 1
+            ? 'sole-page-main'
+            : sole.pageFocalPermalinks !== 1 || sole.pagePermalinks !== 1
+              ? 'sole-page-permalinks'
+              : sole.pageExpandControls !== 0 || sole.pageReplyControls !== 0
+                ? 'sole-page-controls'
+                : sole.pageRows !== 0
+                  ? 'sole-page-rows'
+                  : !isolated ||
+                      sole.focalPermalinks !== 1 ||
+                      sole.focalTimes !== 1 ||
+                      sole.focalControls !== 0 ||
+                      sole.focalRows !== 0
+                    ? 'sole-focal'
+                    : 'none';
+      }
+      sole.observed = true;
+    } catch {
+      guard();
+      sole.observationFailed = true;
+      if (sole.firstFailedGate === 'none')
+        sole.firstFailedGate = 'sole-observation';
+    }
+  }
+  if (zeroAnswer && isolated && answerAccepted) {
     guard();
     const main = focal.locator('xpath=ancestor::main');
     if (

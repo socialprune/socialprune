@@ -18,7 +18,7 @@ import { checkedReplyControls } from './reply-controls.ts';
 import type { ReplyControlsDiagnostic } from './report.ts';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
-import { soleCommentAnswer } from './sole-comment-answer.ts';
+import { inspectSoleCommentAnswer } from './sole-comment-answer.ts';
 import {
   replyRowShape,
   readReplyRow,
@@ -192,7 +192,16 @@ async function checkedScope(
     answer.present && answer.valid && answer.total === 0,
     shape,
     guard,
-    () => soleCommentAnswer(bodies, scriptValues, match, address.code),
+    () => {
+      const sole = inspectSoleCommentAnswer(
+        bodies,
+        scriptValues,
+        match,
+        address.code,
+      );
+      shape.soleComment = sole.diagnostic;
+      return sole.accepted;
+    },
   );
   if (!root) return fail('scope-depth');
   shape.observed = true;

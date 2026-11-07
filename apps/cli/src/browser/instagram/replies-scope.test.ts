@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { Locator } from 'playwright-core';
 import { emptyReplyScope } from './replies.ts';
+import { inspectSoleCommentAnswer } from './sole-comment-answer.ts';
 import { REPLY_ROWS, structuralReplyScope } from './replies-scope.ts';
 
 const focalSelector = 'a[href="/p/Generated/c/123/"]';
@@ -257,3 +258,98 @@ test.each(['foreign-in-focal', 'direct-anchor', 'capped'] as const)(
     expect(shape.chosenDepth).toBeNull();
   },
 );
+test('SOLEDIAG focal-time gate is observed without changing scope refusal', async () => {
+  const match = {
+    id: '123',
+    username: 'generated',
+    text: 'Generated focal',
+    createdAt: '2025-01-01T00:00:00.000Z',
+  };
+  const answer = inspectSoleCommentAnswer(
+    [],
+    [
+      {
+        pk: match.id,
+        user: { username: match.username },
+        text: match.text,
+        created_at: Date.parse(match.createdAt) / 1000,
+        child_comment_count: 0,
+      },
+    ],
+    match,
+    'Generated',
+  );
+  const base = fixture(Array.from({ length: 12 }, () => ({ times: 2 }))),
+    main = fixture([{ times: 2 }]).locator('xpath=ancestor::*[1]');
+  const focal = {
+    locator: (selector: string) =>
+      selector === 'xpath=ancestor::main' ? main : base.locator(selector),
+  } as unknown as Locator;
+  const shape = emptyReplyScope();
+  await structuralReplyScope(
+    focal,
+    focalSelector,
+    true,
+    shape,
+    () => {},
+    () => {
+      shape.soleComment = answer.diagnostic;
+      return answer.accepted;
+    },
+  );
+  expect(shape.soleComment).toMatchObject({
+    observed: true,
+    focalTimes: 2,
+    firstFailedGate: 'sole-focal',
+  });
+});
+test('SOLEDIAG failed page observation is explicit and does not replace a thrown guard', async () => {
+  const match = {
+    id: '123',
+    username: 'generated',
+    text: 'Generated focal',
+    createdAt: '2025-01-01T00:00:00.000Z',
+  };
+  const answer = inspectSoleCommentAnswer(
+    [],
+    [
+      {
+        pk: match.id,
+        user: { username: match.username },
+        text: match.text,
+        created_at: Date.parse(match.createdAt) / 1000,
+        child_comment_count: 0,
+      },
+    ],
+    match,
+    'Generated',
+  );
+  const base = fixture(Array.from({ length: 12 }, () => ({ times: 1 })));
+  let failed = false;
+  const main = {
+    count: () => {
+      failed = true;
+      return Promise.reject(new Error('Generated unavailable observation'));
+    },
+  };
+  const focal = {
+    locator: (selector: string) =>
+      selector === 'xpath=ancestor::main' ? main : base.locator(selector),
+  } as unknown as Locator;
+  const shape = emptyReplyScope();
+  await expect(
+    structuralReplyScope(
+      focal,
+      focalSelector,
+      true,
+      shape,
+      () => {
+        if (failed) throw new Error('Generated stop guard');
+      },
+      () => {
+        shape.soleComment = answer.diagnostic;
+        return answer.accepted;
+      },
+    ),
+  ).rejects.toThrow('Generated stop guard');
+});

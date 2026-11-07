@@ -135,6 +135,46 @@ test('ROWTEXT row diagnostics reject contents, arbitrary tags and over-cap row o
     }).success,
   ).toBe(false);
 });
+test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment report', () => {
+  const base = {
+    observed: true,
+    observationFailed: false,
+    answerNamesFocal: true,
+    answerValid: true,
+    childCountProofSource: 'script',
+    childCountProofClass: 'zero',
+    answerCommentSetSize: 1,
+    answerSetValid: true,
+    answerTraversalCapped: false,
+    declaredCountSeen: 0,
+    declaredCountsAllOne: null,
+    pageMainCount: 1,
+    pageFocalPermalinks: 1,
+    pagePermalinks: 1,
+    pageSamePostPermalinks: 1,
+    pageReplyControls: 0,
+    pageExpandControls: 0,
+    pageRows: 0,
+    focalPresent: true,
+    focalPermalinks: 1,
+    focalTimes: 1,
+    focalRows: 0,
+    focalControls: 0,
+    firstFailedGate: 'none',
+  };
+  const parse = (sole: unknown) =>
+    ContextStepReportSchema.safeParse({
+      replyScope: { ...emptyReplyScope(), soleComment: sole },
+    }).success;
+  expect(parse(base)).toBe(true);
+  for (const invalid of [
+    { ...base, text: 'Generated private text' },
+    { ...base, firstFailedGate: 'generated-message' },
+    { ...base, declaredCountSeen: -1 },
+    { ...base, pagePermalinks: '1' },
+  ])
+    expect(parse(invalid)).toBe(false);
+});
 test('POSTCLICK wider windows use calendar days across month, year and leap-day boundaries', () => {
   expect(widenedWindow('2024-03-01T23:30:00Z', 7)).toEqual([
     '2024-02-23',

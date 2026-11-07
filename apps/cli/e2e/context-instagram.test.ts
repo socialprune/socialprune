@@ -7493,13 +7493,37 @@ test.each(['no-count', 'one', 'two', 'other'] as const)(
           scopeKind: 'sole-comment',
           failedCheck: 'none',
           chosenDepth: 12,
+          soleComment: {
+            observed: true,
+            observationFailed: false,
+            answerNamesFocal: true,
+            answerValid: true,
+            childCountProofSource: 'script',
+            childCountProofClass: 'zero',
+            answerCommentSetSize: 1,
+            answerSetValid: true,
+            declaredCountSeen: mode === 'one' ? 1 : 0,
+            declaredCountsAllOne: mode === 'one' ? true : null,
+            pagePermalinks: 1,
+            pageReplyControls: 0,
+            pageExpandControls: 0,
+            focalPermalinks: 1,
+            focalTimes: 1,
+            firstFailedGate: 'none',
+          },
         });
         expect(step.replies).toMatchObject({
           read: 0,
           answerChecked: true,
           capped: false,
         });
-      }
+      } else
+        expect(step.replyScope?.soleComment).toMatchObject({
+          observed: true,
+          answerNamesFocal: true,
+          firstFailedGate:
+            mode === 'two' ? 'sole-declared-count' : 'sole-answer-set',
+        });
       expect(step.replyExpansion?.clicks).toEqual([]);
       for (const value of [h.fixture.items[0]!.text, h.plan.handle])
         expect(JSON.stringify(raw)).not.toContain(value);

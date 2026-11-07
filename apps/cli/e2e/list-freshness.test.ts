@@ -28,6 +28,8 @@ import { deepReplyRows } from './fake-instagram/replies-page.ts';
 
 test.each([
   'script',
+  'script-raw',
+  'script-empty-list',
   'network',
   'count-one',
   'other-answer',
@@ -111,13 +113,38 @@ test.each([
         undefined,
         undefined,
         undefined,
-        () => (mode === 'missing' ? [] : mode === 'network' ? [] : script),
+        () =>
+          mode === 'script-raw'
+            ? [focal]
+            : mode === 'script-empty-list'
+              ? [
+                  {
+                    pk: focal.pk,
+                    user: focal.user,
+                    text: focal.text,
+                    created_at: focal.created_at,
+                    child_comments: [],
+                  },
+                ]
+              : mode === 'missing'
+                ? []
+                : mode === 'network'
+                  ? []
+                  : script,
         undefined,
         (value) => {
           expansion = value;
         },
       );
-      if (['script', 'network', 'count-one'].includes(mode)) {
+      if (
+        [
+          'script',
+          'script-raw',
+          'script-empty-list',
+          'network',
+          'count-one',
+        ].includes(mode)
+      ) {
         expect(await reading).toMatchObject({
           entries: [],
           moreCount: 0,
@@ -141,6 +168,50 @@ test.each([
         ContextStepReportSchema.parse({ replyExpansion: expansion })
           .replyExpansion?.clicks,
       ).toEqual([]);
+      const sole = ContextStepReportSchema.parse({ replyScope: scope })
+        .replyScope?.soleComment;
+      expect(sole).toMatchObject({
+        observed: true,
+        observationFailed: false,
+        answerNamesFocal: mode !== 'mismatch' && mode !== 'missing',
+        declaredCountSeen: mode === 'count-one' || mode === 'count-two' ? 1 : 0,
+        declaredCountsAllOne:
+          mode === 'count-two' ? false : mode === 'count-one' ? true : null,
+        pagePermalinks: mode === 'permalink' ? 2 : 1,
+        firstFailedGate:
+          mode === 'other-answer'
+            ? 'sole-answer-set'
+            : mode === 'count-two'
+              ? 'sole-declared-count'
+              : mode === 'control' || mode === 'reply'
+                ? 'sole-page-controls'
+                : mode === 'permalink'
+                  ? 'sole-page-permalinks'
+                  : mode === 'positive'
+                    ? 'sole-child-proof'
+                    : mode === 'missing' || mode === 'mismatch'
+                      ? 'sole-answer-focal'
+                      : 'none',
+      });
+      if (
+        [
+          'script',
+          'script-raw',
+          'script-empty-list',
+          'network',
+          'count-one',
+        ].includes(mode)
+      )
+        expect(sole).toMatchObject({
+          answerCommentSetSize: 1,
+          childCountProofClass: 'zero',
+          pageReplyControls: 0,
+          pageExpandControls: 0,
+          focalPermalinks: 1,
+          focalTimes: 1,
+          focalRows: 0,
+          focalControls: 0,
+        });
       expect(
         await page.locator(`main a[href^="/p/${IG_FIXTURE.code}/c/"]`).count(),
       ).toBe(1);

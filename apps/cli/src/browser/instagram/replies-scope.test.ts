@@ -352,4 +352,9 @@ test('SOLEDIAG failed page observation is explicit and does not replace a thrown
       },
     ),
   ).rejects.toThrow('Generated stop guard');
+  expect(shape.soleComment).toMatchObject({
+    observed: false,
+    observationFailed: true,
+    firstFailedGate: 'sole-observation',
+  });
 });

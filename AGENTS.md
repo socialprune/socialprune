@@ -58,6 +58,8 @@ Since c-zeroscope on 2026-11-07, an exact valid answer explicitly proving zero c
 
 Since c-solescope on 2026-11-07, explicit zero evidence may also admit a sole rendered focal comment when the answer set contains no other current-post comment, every declared post comment count is one, and the whole post has no other comment permalink or reply/expand control. The clean deepest focal element is reported as `sole-comment`; sibling isolation, final answer agreement, caps and storage remain unchanged. Generated sole-post tests cover this branch; its real-account behavior remains unmeasured.
 
+Since c-solediag on 2026-11-07, a sole-comment attempt reports count-only answer-set, declared-count, page and focal-element evidence with a closed first-failing-gate token and explicit observation failures. A missing declared post count was already accepted with exact script zero evidence and no other comment; no acceptance or stop rule changed. Generated diagnostic cases pass, while the account refusal's cause awaits the new report.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

@@ -249,10 +249,10 @@ export async function structuralReplyScope(
       }
       sole.observed = true;
     } catch {
-      guard();
       sole.observationFailed = true;
       if (sole.firstFailedGate === 'none')
         sole.firstFailedGate = 'sole-observation';
+      guard();
     }
   }
   if (zeroAnswer && isolated && answerAccepted) {

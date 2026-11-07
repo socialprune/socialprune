@@ -281,6 +281,7 @@ export async function commentReplies(
       scriptValues(),
     );
     let siblingsAllowed = false;
+    let appearedListFocal: string | undefined;
     for (;;) {
       site = 'page-address';
       guard();
@@ -292,19 +293,28 @@ export async function commentReplies(
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
       const rows =
         clicks > 0
-          ? await expandedRows(root, address, siblingsAllowed)
+          ? await expandedRows(
+              root,
+              address,
+              siblingsAllowed,
+              appearedListFocal,
+            )
           : root.locator(REPLY_ROWS);
       const count = await rows.count();
       site = 'reply-group';
       const scopedRows =
-        clicks > 0 ? await expandedRows(root, address, false) : rows;
+        clicks > 0
+          ? await expandedRows(root, address, false, appearedListFocal)
+          : rows;
       if (
         (await root.locator('a[href*="/c/"]').count()) -
           (await scopedRows.locator('a[href*="/c/"]').count()) !==
           1 ||
         (await root
           .locator(`:scope > ul, :scope > div > ul, ${EXPANDED_REPLY_LISTS}`)
-          .count()) > 1
+          .count()) > 1 ||
+        (appearedListFocal !== undefined &&
+          (await root.locator('ul').count()) > 1)
       ) {
         diagnostic?.({ ...shape, failedCheck: 'reply-group' });
         throw new ReplyReadFailure('reply-scope-unverified');
@@ -390,6 +400,7 @@ export async function commentReplies(
       const checkedControls = await checkedReplyControls(
         scopedControls,
         answer.present && answer.valid ? answer.total : null,
+        clicks > 0,
       );
       if (checkedControls.diagnostic.count > 0 || clicks === 0)
         controlsDiagnostic?.(checkedControls.diagnostic);
@@ -446,6 +457,8 @@ export async function commentReplies(
           (await root
             .locator('xpath=following-sibling::*[1][self::li or self::ul]')
             .count()) === 0;
+      if (clicks === 0 && (await root.locator('ul').count()) === 0)
+        appearedListFocal = match.id;
       const beforeNeighborhood = await neighborhood(
         page,
         root,
@@ -497,6 +510,7 @@ export async function commentReplies(
           deadline,
           guard,
           click.poll,
+          appearedListFocal,
         );
       } finally {
         if (expansionDiagnostic) {
@@ -508,6 +522,7 @@ export async function commentReplies(
             click,
             address,
             siblingsAllowed,
+            appearedListFocal,
           );
           expansionDiagnostic(expansion);
         }

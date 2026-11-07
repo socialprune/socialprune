@@ -10,12 +10,17 @@ export async function expansionShape(
   handle: string,
   total: number | null,
   address: { kind: 'p' | 'reel'; code: string },
+  appearedListFocal?: string,
 ) {
-  const rows = await matchedReplyRows(root, address);
+  const rows = await matchedReplyRows(root, address, appearedListFocal);
   return {
     rows: await rows.count(),
     controls: (
-      await checkedReplyControls(await ownReplyControls(root, rows), total)
+      await checkedReplyControls(
+        await ownReplyControls(root, rows),
+        total,
+        true,
+      )
     ).diagnostic,
     candidates: {
       li: await root.locator('li').count(),
@@ -36,12 +41,21 @@ export async function afterExpansion(
   click: ReplyExpansionDiagnostic['clicks'][number],
   address: { kind: 'p' | 'reel'; code: string },
   siblingsAllowed = false,
+  appearedListFocal?: string,
 ) {
   try {
-    const after = await expansionShape(root, handle, total, address);
+    const after = await expansionShape(
+      root,
+      handle,
+      total,
+      address,
+      appearedListFocal,
+    );
     click.rowsAfter = after.rows;
     if (siblingsAllowed)
-      click.rowsAfter = await (await expandedRows(root, address, true)).count();
+      click.rowsAfter = await (
+        await expandedRows(root, address, true, appearedListFocal)
+      ).count();
     click.controlsAfter = after.controls;
     click.candidatesAfter = after.candidates;
     click.nestedListAppeared =

@@ -38,6 +38,15 @@ test.each([
   'sibling-foreign',
   'sibling-no-time',
   'sibling-mismatch',
+  'ul-div',
+  'ul-div-hide',
+  'ul-div-foreign',
+  'ul-div-no-time',
+  'ul-div-mismatch',
+  'ul-div-unknown',
+  'ul-div-wrapper',
+  'ul-div-preexisting',
+  'ul-div-duplicate',
   'mismatch',
   'blocked',
 ] as const)(
@@ -65,13 +74,18 @@ test.each([
         let rows =
           mode === 'mismatch' ||
           mode === 'wrapped-mismatch' ||
-          mode === 'sibling-mismatch'
+          mode === 'sibling-mismatch' ||
+          mode === 'ul-div-mismatch'
             ? group[1]!.replace(
                 'Generated reply 0 with local text',
                 'Generated different reply',
               )
             : group[1]!;
-        if (mode.startsWith('wrapped') || mode.startsWith('sibling')) {
+        if (
+          mode.startsWith('wrapped') ||
+          mode.startsWith('sibling') ||
+          mode.startsWith('ul-div')
+        ) {
           rows = rows.replace(
             '<span>1w</span>',
             `<a href="/p/${IG_FIXTURE.code}/c/900001/"><time datetime="${item.createdAt}">1w</time></a>`,
@@ -81,27 +95,43 @@ test.each([
               `/p/${IG_FIXTURE.code}/c/`,
               '/p/GeneratedForeign/c/',
             );
-          if (mode === 'sibling-foreign')
+          if (mode === 'sibling-foreign' || mode === 'ul-div-foreign')
             rows = rows.replaceAll(
               `/p/${IG_FIXTURE.code}/c/`,
               '/p/GeneratedForeign/c/',
             );
-          if (mode === 'wrapped-no-time' || mode === 'sibling-no-time')
+          if (
+            mode === 'wrapped-no-time' ||
+            mode === 'sibling-no-time' ||
+            mode === 'ul-div-no-time'
+          )
             rows = rows.replace(/<time datetime="[^"]+">1w<\/time>/gu, '1w');
         }
+        if (mode.startsWith('ul-div'))
+          rows = rows.replaceAll('<li>', '<div>').replaceAll('</li>', '</div>');
+        if (mode === 'ul-div-duplicate')
+          rows = rows.replace('900001', '900000');
+        if (mode === 'ul-div-wrapper') rows = `<div>${rows}</div>`;
         const expanded =
           mode === 'missing'
             ? ''
             : mode.startsWith('wrapped')
               ? `<div><div><ul>${rows}</ul></div></div>`
               : `<ul>${rows}</ul>`;
-        const script = mode.startsWith('sibling')
-          ? `const scope=this.parentElement;this.remove();${mode === 'sibling-delayed' ? 'setTimeout(()=>{' : ''}scope.insertAdjacentHTML('afterend',${JSON.stringify(mode === 'sibling-rows' ? rows : `<ul>${rows}</ul>`)});${mode === 'sibling-delayed' ? '},300)' : ''}`
-          : `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
+        const script = mode.startsWith('ul-div')
+          ? `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div>${mode === 'ul-div-hide' ? '<div role="button" onclick="this.dataset.clicked=\'true\'">Hide replies</div>' : mode === 'ul-div-unknown' ? '<div role="button">See replies</div>' : ''}`)}),600)`
+          : mode.startsWith('sibling')
+            ? `const scope=this.parentElement;this.remove();${mode === 'sibling-delayed' ? 'setTimeout(()=>{' : ''}scope.insertAdjacentHTML('afterend',${JSON.stringify(mode === 'sibling-rows' ? rows : `<ul>${rows}</ul>`)});${mode === 'sibling-delayed' ? '},300)' : ''}`
+            : `this.insertAdjacentHTML('afterend',${JSON.stringify(expanded)});this.remove()`;
         html = html.replace(
           group[0],
           `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>${mode === 'blocked' ? '<div style="position:fixed;inset:0;z-index:9999;background:white"></div>' : ''}`,
         );
+        if (mode === 'ul-div-preexisting')
+          html = html.replace(
+            '>View all 5 replies</div>',
+            '>View all 5 replies</div><ul hidden></ul>',
+          );
         await route.fulfill({ response, body: html });
       });
       const response = page.waitForResponse((response) =>
@@ -138,7 +168,14 @@ test.each([
       if (
         mode === 'shown' ||
         mode === 'wrapped' ||
-        ['sibling-ul', 'sibling-rows', 'sibling-delayed'].includes(mode)
+        [
+          'sibling-ul',
+          'sibling-rows',
+          'sibling-delayed',
+          'ul-div',
+          'ul-div-hide',
+          'ul-div-wrapper',
+        ].includes(mode)
       )
         expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
@@ -146,18 +183,59 @@ test.each([
       else
         await expect(reading).rejects.toMatchObject({
           reason:
-            mode === 'wrapped-foreign' || mode === 'wrapped-no-time'
+            mode === 'wrapped-foreign' ||
+            mode === 'wrapped-no-time' ||
+            mode === 'ul-div-foreign' ||
+            mode === 'ul-div-no-time' ||
+            mode === 'ul-div-preexisting'
               ? 'reply-scope-unverified'
               : mode === 'mismatch' ||
                   mode === 'wrapped-mismatch' ||
-                  mode === 'sibling-mismatch'
+                  mode === 'sibling-mismatch' ||
+                  mode === 'ul-div-mismatch'
                 ? 'reply-answer-mismatch'
-                : 'reply-controls-changed',
+                : mode === 'ul-div-duplicate'
+                  ? 'reply-answer-incomplete'
+                  : 'reply-controls-changed',
         });
       const parsed = ContextStepReportSchema.parse({
         replyExpansion: expansion,
       }).replyExpansion!;
       expect(parsed.clicks).toHaveLength(1);
+      if (mode.startsWith('ul-div')) {
+        expect(parsed.clicks[0]?.clicked).toBe(true);
+        if (mode === 'ul-div-foreign')
+          expect(parsed.clicks[0]?.poll?.firstGrowthMs).toBeNull();
+        else
+          expect(parsed.clicks[0]?.poll?.firstGrowthMs).toBeGreaterThanOrEqual(
+            500,
+          );
+        expect(parsed.clicks[0]?.candidatesAfter).toMatchObject({
+          li: 0,
+          ul: mode === 'ul-div-preexisting' ? 2 : 1,
+          commentPermalinks: 6,
+        });
+        if (mode === 'ul-div-hide') {
+          expect(parsed.clicks[0]?.controlsAfter?.controls).toMatchObject([
+            { shape: 'hide-replies', accepted: false },
+          ]);
+          expect(await page.locator('[data-clicked="true"]').count()).toBe(0);
+        }
+        expect(parsed.stopAt).toBe(
+          mode === 'ul-div-mismatch'
+            ? 'answer-check'
+            : mode === 'ul-div-foreign' ||
+                mode === 'ul-div-no-time' ||
+                mode === 'ul-div-preexisting'
+              ? 'reply-group'
+              : mode === 'ul-div-unknown'
+                ? 'controls'
+                : mode === 'ul-div-duplicate'
+                  ? 'answer-check'
+                  : null,
+        );
+        return;
+      }
       if (mode.startsWith('sibling')) {
         expect(parsed.clicks[0]?.rowsAfter).toBe(
           mode === 'sibling-foreign' || mode === 'sibling-no-time' ? 0 : 5,

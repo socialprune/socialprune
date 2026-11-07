@@ -38,6 +38,7 @@ export function replyControlShape(label: string, answerTotal: number | null) {
 export async function checkedReplyControls(
   controls: Locator,
   answerTotal: number | null,
+  afterExpansion = false,
 ) {
   const count = await controls.count();
   const diagnostic: ReplyControlsDiagnostic = {
@@ -73,7 +74,10 @@ export async function checkedReplyControls(
     control: accepted,
     valid:
       !diagnostic.capped &&
-      diagnostic.controls.every((value) => value.accepted) &&
+      diagnostic.controls.every(
+        (value) =>
+          value.accepted || (afterExpansion && value.shape === 'hide-replies'),
+      ) &&
       count <= 1,
   };
 }

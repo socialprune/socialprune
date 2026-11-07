@@ -8,9 +8,25 @@ export const EXPANDED_REPLY_LISTS = ':scope > div > div > ul';
 export async function matchedReplyRows(
   root: Locator,
   address: { kind: 'p' | 'reel'; code: string },
+  appearedListFocal?: string,
 ) {
   let rows = root.locator(REPLY_ROWS);
-  const candidates = root.locator(':scope > div > div > ul > li');
+  let candidates = root.locator(':scope > div > div > ul > li');
+  if (appearedListFocal && (await root.locator('ul').count()) === 1) {
+    let group = root.locator('ul');
+    // Pass through single structural wrappers, stopping at the nearest repeated
+    // children of this one new list. Never collect overlapping descendants.
+    for (let depth = 0; depth < REPLY_SCOPE_DEPTH; depth++) {
+      const children = group.locator(':scope > *');
+      if (
+        (await children.count()) !== 1 ||
+        (await children.locator('a[href*="/c/"]').count()) <= 1
+      )
+        break;
+      group = children;
+    }
+    candidates = candidates.or(group.locator(':scope > div'));
+  }
   for (const row of await candidates.all()) {
     const links = row.locator('a[href*="/c/"]');
     if ((await links.count()) !== 1) continue;
@@ -19,7 +35,9 @@ export async function matchedReplyRows(
       !href ||
       !new RegExp(`^/${address.kind}/${address.code}/c/[0-9]{1,40}/$`).test(
         href,
-      )
+      ) ||
+      (appearedListFocal &&
+        href === `/${address.kind}/${address.code}/c/${appearedListFocal}/`)
     )
       continue;
     const times = row.locator('time[datetime]');

@@ -102,6 +102,7 @@ export async function pollReplyGrowth(
   deadline: number,
   guard: () => void,
   poll: Poll,
+  appearedListFocal?: string,
 ) {
   const started = performance.now(),
     end = Math.min(deadline, started + MAX_POLL_MS);
@@ -118,7 +119,7 @@ export async function pollReplyGrowth(
       );
       const visibleRows =
         (await (
-          await expandedRows(root, address, true)
+          await expandedRows(root, address, true, appearedListFocal)
         )
           .filter({ visible: true })
           .count()) > 0;
@@ -143,8 +144,9 @@ export async function expandedRows(
   root: Locator,
   address: Address,
   siblingsAllowed: boolean,
+  appearedListFocal?: string,
 ) {
-  const scoped = await matchedReplyRows(root, address);
+  const scoped = await matchedReplyRows(root, address, appearedListFocal);
   return siblingsAllowed
     ? scoped.or(await siblingReplyRows(root, address))
     : scoped;

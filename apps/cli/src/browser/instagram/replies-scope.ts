@@ -138,6 +138,41 @@ export async function structuralReplyScope(
       (await root.locator('a[href*="/c/"]').count()) -
       (await rows.locator('a[href*="/c/"]').count());
     if (focalCount !== 1 || other !== 1) {
+      // An exact admitted zero answer needs no surrounding reply wrapper. The
+      // deepest isolated focal item is bounded by this first comment-list edge;
+      // sibling comments' controls are never part of that item or clicked.
+      if (zeroAnswer && level.children.length > 0) {
+        const focalChildren = level.children.filter(
+          (child) => child.containsFocal,
+        );
+        const foreignChildren = level.children.filter(
+          (child) => !child.containsFocal && child.otherPermalinks > 0,
+        );
+        let plainBoundary =
+          focalChildren.length === 1 &&
+          focalChildren[0]!.otherPermalinks === 0 &&
+          foreignChildren.length > 0 &&
+          !level.childrenCapped;
+        for (const child of await children.all())
+          if (
+            (await child
+              .locator('xpath=self::a[contains(@href,"/c/")]')
+              .count()) > 0
+          )
+            plainBoundary = false;
+        if (!(
+          plainBoundary &&
+          isolated &&
+          (await isolated.root.locator(focalSelector).count()) === 1 &&
+          (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
+          (await isolated.root.locator('time[datetime]').count()) === 1 &&
+          (await replyControls(isolated.root).count()) === 0 &&
+          (await isolated.root.locator(REPLY_ROWS).count()) === 0
+        ))
+          return null;
+        shape.avatarObserved = isolated.avatar;
+        return choose(isolated.root, isolated.depth);
+      }
       // The first foreign top-level permalink bounds the whole isolated
       // comment below it. No Reply action or avatar is needed to locate that
       // boundary; the answer check still decides whether absence can be saved.

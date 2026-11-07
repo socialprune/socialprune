@@ -11,6 +11,13 @@ type Level = {
   main?: number;
   reply?: number;
   images?: number;
+  times?: number;
+  children?: {
+    focal?: boolean;
+    other?: number;
+    control?: number;
+    selfLink?: boolean;
+  }[];
 };
 function fixture(levels: Level[]) {
   const empty = {
@@ -30,7 +37,29 @@ function fixture(levels: Level[]) {
     locator: (selector: string) => {
       if (selector === 'xpath=ancestor::main') return counted(level.main ?? 1);
       if (selector === ':scope > *')
-        return { ...counted(0), all: () => Promise.resolve([]) };
+        return {
+          ...counted(level.children?.length ?? 0),
+          all: () =>
+            Promise.resolve(
+              (level.children ?? []).map((child) => ({
+                ...empty,
+                locator: (inner: string) => {
+                  if (inner === focalSelector)
+                    return counted(child.focal ? 1 : 0);
+                  if (inner === 'a[href*="/c/"]')
+                    return counted((child.focal ? 1 : 0) + (child.other ?? 0));
+                  if (inner === 'xpath=self::a[contains(@href,"/c/")]')
+                    return counted(child.selfLink ? 1 : 0);
+                  if (inner === 'button,[role="button"]')
+                    return {
+                      ...empty,
+                      filter: () => counted(child.control ?? 0),
+                    };
+                  return empty;
+                },
+              })),
+            ),
+        };
       if (selector === REPLY_ROWS)
         return {
           ...counted(level.rows ?? 0),
@@ -43,6 +72,7 @@ function fixture(levels: Level[]) {
       if (selector === ':scope > ul, :scope > div > ul')
         return counted(level.rows ? 1 : 0);
       if (selector === 'img') return counted(level.images ?? 0);
+      if (selector === 'time[datetime]') return counted(level.times ?? 0);
       if (selector === 'button,[role="button"]')
         return {
           ...empty,
@@ -152,3 +182,78 @@ test('realfix zero-child answer proves absence only at a focal Reply action, wit
     expect(shape.levels.length).toBeLessThanOrEqual(12);
   }
 });
+test.each([true, false])(
+  'ZEROSCOPE deepest plain item isolates sibling controls only with zero=%s',
+  async (zero) => {
+    const shape = emptyReplyScope();
+    const root = await structuralReplyScope(
+      fixture([
+        ...Array.from({ length: 10 }, (): Level => ({ times: 1 })),
+        {
+          foreign: 9,
+          controls: 5,
+          children: [
+            { focal: true },
+            ...Array.from({ length: 9 }, () => ({ other: 1, control: 1 })),
+          ],
+        },
+      ]),
+      focalSelector,
+      zero,
+      shape,
+      () => {},
+    );
+    expect(root === null).toBe(!zero);
+    expect(shape.chosenDepth).toBe(zero ? 10 : null);
+    expect(shape.levels).toHaveLength(11);
+  },
+);
+test.each([0, 2])(
+  'ZEROSCOPE candidate must contain the sole focal time, times=%s',
+  async (times) => {
+    const shape = emptyReplyScope();
+    const root = await structuralReplyScope(
+      fixture([
+        { times },
+        {
+          foreign: 9,
+          controls: 5,
+          children: [{ focal: true }, { other: 1, control: 1 }],
+        },
+      ]),
+      focalSelector,
+      true,
+      shape,
+      () => {},
+    );
+    expect(root).toBeNull();
+    expect(shape.chosenDepth).toBeNull();
+  },
+);
+test.each(['foreign-in-focal', 'direct-anchor', 'capped'] as const)(
+  'ZEROSCOPE rejects contaminated boundary %s',
+  async (kind) => {
+    const shape = emptyReplyScope();
+    const children =
+      kind === 'capped'
+        ? Array.from({ length: 33 }, (_, index) => ({
+            focal: index === 0,
+            other: index === 0 ? 0 : 1,
+            control: 1,
+          }))
+        : [
+            { focal: true, other: kind === 'foreign-in-focal' ? 1 : 0 },
+            { other: 1, control: 1, selfLink: kind === 'direct-anchor' },
+          ];
+    expect(
+      await structuralReplyScope(
+        fixture([{ times: 1 }, { foreign: 9, controls: 5, children }]),
+        focalSelector,
+        true,
+        shape,
+        () => {},
+      ),
+    ).toBeNull();
+    expect(shape.chosenDepth).toBeNull();
+  },
+);

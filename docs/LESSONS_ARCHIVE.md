@@ -645,3 +645,30 @@ Rules carried over from the maintainer's earlier projects already sit in `AGENTS
 **Metrics:**
 - Prevented: 0 times
 - Violated: 1 time (2026-10-29 to 2026-11-05, see Problem)
+
+### [LL-2026-11-002] 2026-11-07 VERIFICATION: Derive a stall bound from the run's own declared waits before stopping it
+
+**ID:** LL-2026-11-002
+**Severity:** HIGH
+**Category:** VERIFICATION
+**Expires:** Never (kernel). The minutes, step counts and file names below are evidence from 2026-11-07.
+**Feedback:** Self-detected on 2026-11-07 at 14:00 UTC, when the lane's return showed that a carried batch pause reproduces the silent wait the parent had stopped twice.
+**Problem:** Two replies canaries on the maintainer's account (09:00 and 11:35 UTC) printed nothing after their start line and kept one attempt in `sending`. The parent declared a process stall after 10 and 12 minutes and killed its own run trees, then dispatched two repair rounds for a hang. The written order for those canaries still had the reading pace's default pause of 15 minutes after 20 steps in a day, and that day's earlier canaries had already passed 20 steps. Both runs were most likely inside that scheduled pause. The parent had set its stall bound from how long earlier canaries took, not from the waits the order and the program declare. One extra repair round, two lost runs and about five hours went to a wait that was working as specified.
+**5 Whys Analysis:**
+1. Why were the runs stopped? -> They showed no output and no progress for longer than the parent's bound.
+2. Why was the bound 10 to 12 minutes? -> Earlier canaries had ended within a few minutes, so anything longer looked stuck.
+3. Why was the 15-minute pause not considered? -> The parent did not read the order's pace fields or the program's pause rules before choosing the bound, and the pause carried over from earlier runs of the same day.
+4. Why did the run not say it was pausing? -> The program printed no phase or wait lines, so a scheduled wait and a hang looked the same from outside.
+5. Why? -> Root cause: no control required the parent to derive a stall bound from the run's declared waits (pace, batch pause, reopen, person confirmation) before classifying a silent run as stalled.
+**Rule(s):**
+1. Before calling a silent run stalled, compute its longest legitimate wait from the order and the program's pace and pause rules, including waits carried over from earlier runs, and set the stall bound above that wait.
+2. A run that can wait silently must announce each wait with its bound; until it does, treat silence shorter than the longest legitimate wait as waiting, not as a stall.
+3. When stopping a run anyway, name the wait that was ruled out and how it was ruled out.
+4. Here, from 2026-11-07: Instagram reading orders carry `batchPause`; the program prints `Phase:` and `Wait` lines since 55477e3; a declared wait is a stall only after its stated bound plus two minutes.
+**Detection Pattern:** a run quiet longer than earlier runs but shorter than a pause the program is allowed to take; a stall bound taken from past durations; a repair round dispatched for a hang without a phase trace.
+**Affected Files:** docs/LESSONS_ARCHIVE.md. Retrieval anchor: the wakeup prompts that start Instagram runs ("a declared Wait is not a stall until its stated bound plus 2 minutes") and the handoff `BOARD.md` entry E1042.
+**Related Lessons:** LL-2026-10-017 (shorten the feedback loop before slowing work), LL-2026-10-011 (search the session's own steps before explaining a state).
+**Regression / Verification Note:** applied on 2026-11-07 at 14:22 UTC: canary 17 ran with the Phase and Wait lines and without the batch pause, ended on its own within two minutes, and its stop was read from the report instead of a timeout.
+**Metrics:**
+- Prevented: 0 times
+- Violated: 1 time (2026-11-07 09:10 and 11:47 UTC, see Problem)

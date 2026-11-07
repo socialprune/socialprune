@@ -70,7 +70,7 @@ test('C23 retry wait cannot be shortened by a production environment or fake ent
     'utf8',
   );
   expect(policy).toContain('POST_REOPEN_WAIT_MS = 60000');
-  expect(runner).toContain('boundaryWait(POST_REOPEN_WAIT_MS)');
+  expect(runner).toContain("boundaryWait(POST_REOPEN_WAIT_MS, 'reopen-wait')");
   expect(driver).toContain('await sleep(ms, undefined, { signal })');
   for (const source of [policy, runner, driver])
     for (const forbidden of [
@@ -93,7 +93,9 @@ test('C25 list and post retries share one fixed wait and one policy while initia
   expect(policy).toContain('instanceof FilteredListTimeout');
   expect(runner.match(/new PostOpenRetries\(/g)).toHaveLength(1);
   expect(runner).toContain('postRetries.beginList(');
-  expect(runner.match(/boundaryWait\(POST_REOPEN_WAIT_MS\)/g)).toHaveLength(1);
+  expect(
+    runner.match(/boundaryWait\(POST_REOPEN_WAIT_MS, 'reopen-wait'\)/g),
+  ).toHaveLength(1);
   expect(runner).toContain('await waitToReopen(retry)');
   expect(driver).toMatch(/filtered\s*\?\s*new FilteredListTimeout\(\)/);
   expect(driver.match(/true,\s*\);/g)?.length).toBeGreaterThanOrEqual(2);

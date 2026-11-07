@@ -896,7 +896,13 @@ export async function runContextWithDependencies(
           }
           await controls?.checkpoint(resumeChecks, waits.signal);
           stage = 'attempt';
-          reading!.begin(readingStepBudget(deps.responseMs));
+          reading!.begin(
+            readingStepBudget(
+              deps.responseMs,
+              deps.pace,
+              options.order?.value.listDiagnostic === true,
+            ),
+          );
           await writer.step(
             runId,
             options.now().toISOString(),

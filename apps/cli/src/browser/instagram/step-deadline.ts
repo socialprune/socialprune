@@ -1,8 +1,20 @@
 import { ContextStop } from './report.ts';
 
-// Existing list reads allow ten load windows. Keep two more for navigation and
-// filter readback; pace, confirmation and the explicit reopen wait are excluded.
-export const readingStepBudget = (responseMs: number) => responseMs * 12;
+// Sum the existing bounded work rather than treating responseMs as its whole
+// duration: six selectOption waits, ten list scrolls/expansions, and (only for
+// list diagnostics) four extra navigations, two date windows and probe settles.
+// Pace, confirmation and the explicit reopen wait stay outside this budget.
+export const readingStepBudget = (
+  responseMs: number,
+  pace: { scrollMs: number; expandMs: number },
+  diagnostic = false,
+) =>
+  responseMs * 12 +
+  6 * 5000 +
+  10 * (pace.scrollMs + pace.expandMs) +
+  (diagnostic
+    ? 4 * (15000 + responseMs) + 2 * 6 * 5000 + 14 * pace.scrollMs + 3000
+    : 0);
 
 /** One active reading budget, not a pace or person-confirmation timeout. */
 export function stepDeadline(
@@ -36,8 +48,8 @@ export function stepDeadline(
   };
   return {
     begin(ms: number) {
-      clear();
       this.check();
+      clear();
       started = performance.now();
       budget = Math.max(1, ms);
       end = started + budget;

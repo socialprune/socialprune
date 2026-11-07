@@ -1,5 +1,15 @@
 import { expect, test, vi } from 'vitest';
-import { stepDeadline } from './step-deadline.ts';
+import { stepDeadline, readingStepBudget } from './step-deadline.ts';
+
+test('STALL general budget includes existing dropdown, scroll, expansion and diagnostic waits', () => {
+  expect(readingStepBudget(1000, { scrollMs: 0, expandMs: 0 })).toBe(42000);
+  expect(readingStepBudget(1000, { scrollMs: 0, expandMs: 0 }, true)).toBe(
+    169000,
+  );
+  expect(readingStepBudget(30000, { scrollMs: 3000, expandMs: 3000 })).toBe(
+    450000,
+  );
+});
 
 test('STALL deadline expires nonsettling work once, is sticky for late work and retains elapsed evidence', async () => {
   vi.useFakeTimers();

@@ -329,6 +329,39 @@ test('realshape row and reply diagnostic schemas reject text, links, IDs and unk
       levels: [level],
     }).success,
   ).toBe(true);
+  const boundary = {
+    observed: true,
+    overBound: false,
+    totalChildren: 40,
+    inspectedElements: 240,
+    focalChildren: 1,
+    focalOtherPermalinks: 0,
+    foreignChildren: 39,
+    directAnchors: 0,
+  };
+  expect(
+    ReplyScopeDiagnosticSchema.safeParse({
+      ...scope,
+      levels: [
+        {
+          ...level,
+          zeroBoundary: boundary,
+          children: [{ ...level.children[0], expandControls: null }],
+        },
+      ],
+    }).success,
+  ).toBe(true);
+  for (const zeroBoundary of [
+    { ...boundary, text: plantedUrl },
+    { ...boundary, totalChildren: -1 },
+    { ...boundary, observed: 'true' },
+  ])
+    expect(
+      ReplyScopeDiagnosticSchema.safeParse({
+        ...scope,
+        levels: [{ ...level, zeroBoundary }],
+      }).success,
+    ).toBe(false);
   for (const invalid of [
     { ...scope, chosenDepth: 13 },
     { ...scope, levels: Array(13).fill(level) },

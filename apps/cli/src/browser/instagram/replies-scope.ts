@@ -4,6 +4,98 @@ import type { ReplyScopeDiagnostic } from './report.ts';
 export const REPLY_SCOPE_DEPTH = 12;
 export const REPLY_ROWS = ':scope > ul > li, :scope > div > ul > li';
 export const EXPANDED_REPLY_LISTS = ':scope > div > div > ul';
+export const ZERO_SCOPE_CHILD_LIMIT = 512;
+export const ZERO_SCOPE_ELEMENT_LIMIT = 20000;
+
+/** Read only element shape and permalink counts, never sibling controls/text. */
+async function zeroBoundary(root: Locator, focalSelector: string) {
+  return root.evaluate(
+    (node, limits) => {
+      type ElementShape = {
+        children: ArrayLike<ElementShape>;
+        tagName: string;
+        getAttribute: (name: string) => string | null;
+        matches: (selector: string) => boolean;
+      };
+      const parent = node as unknown as ElementShape;
+      const total = parent.children.length;
+      const result = {
+        total,
+        observed: false,
+        overBound: total > limits.children,
+        elements: 0,
+        focalChildren: 0,
+        focalOtherPermalinks: 0,
+        foreignChildren: 0,
+        directAnchors: 0,
+        children: [] as {
+          containsFocal: boolean;
+          otherPermalinks: number;
+          times: number;
+          expandControls: null;
+          images: number;
+        }[],
+      };
+      if (result.overBound) return result;
+      for (let index = 0; index < total; index++) {
+        let focal = 0,
+          links = 0,
+          times = 0,
+          images = 0;
+        const child = parent.children[index]!;
+        if (
+          child.tagName.toLowerCase() === 'a' &&
+          child.getAttribute('href')?.includes('/c/')
+        )
+          result.directAnchors++;
+        const stack = [child];
+        while (stack.length) {
+          const element = stack.pop()!;
+          if (result.elements >= limits.elements) {
+            result.overBound = true;
+            return result;
+          }
+          result.elements++;
+          const tag = element.tagName.toLowerCase();
+          if (element.matches(limits.focal)) focal++;
+          if (tag === 'a' && element.getAttribute('href')?.includes('/c/'))
+            links++;
+          if (tag === 'time') times++;
+          if (tag === 'img') images++;
+          if (
+            element.children.length >
+            limits.elements - result.elements - stack.length
+          ) {
+            result.overBound = true;
+            return result;
+          }
+          for (let next = element.children.length - 1; next >= 0; next--)
+            stack.push(element.children[next]!);
+        }
+        const other = Math.max(0, links - focal);
+        if (focal > 0) {
+          result.focalChildren++;
+          result.focalOtherPermalinks += other;
+        } else if (other > 0) result.foreignChildren++;
+        if (index < 32)
+          result.children.push({
+            containsFocal: focal > 0,
+            otherPermalinks: other,
+            times,
+            expandControls: null,
+            images,
+          });
+      }
+      result.observed = true;
+      return result;
+    },
+    {
+      focal: focalSelector,
+      children: ZERO_SCOPE_CHILD_LIMIT,
+      elements: ZERO_SCOPE_ELEMENT_LIMIT,
+    },
+  );
+}
 /** Additional expanded wrapper only, never a page-wide or text-only row. */
 export async function matchedReplyRows(
   root: Locator,
@@ -127,6 +219,55 @@ export async function structuralReplyScope(
       (await root.locator('xpath=ancestor::main').count()) !== 1
     )
       break;
+    const rows = root.locator(REPLY_ROWS);
+    const rowCount = await rows.count();
+    const focalCount = await root.locator(focalSelector).count();
+    const other =
+      (await root.locator('a[href*="/c/"]').count()) -
+      (await rows.locator('a[href*="/c/"]').count());
+    if (zeroAnswer && (focalCount !== 1 || other !== 1)) {
+      let boundary: Awaited<ReturnType<typeof zeroBoundary>>;
+      try {
+        boundary = await zeroBoundary(root, focalSelector);
+      } catch {
+        guard();
+        return null;
+      }
+      guard();
+      shape.levels.push({
+        depth,
+        childrenCapped: boundary.total > 32,
+        children: boundary.children,
+        zeroBoundary: {
+          observed: boundary.observed,
+          overBound: boundary.overBound,
+          totalChildren: boundary.total,
+          inspectedElements: boundary.elements,
+          focalChildren: boundary.focalChildren,
+          focalOtherPermalinks: boundary.focalOtherPermalinks,
+          foreignChildren: boundary.foreignChildren,
+          directAnchors: boundary.directAnchors,
+        },
+      });
+      if (!(
+        boundary.observed &&
+        !boundary.overBound &&
+        focalCount === 1 &&
+        boundary.focalChildren === 1 &&
+        boundary.focalOtherPermalinks === 0 &&
+        boundary.foreignChildren > 0 &&
+        boundary.directAnchors === 0 &&
+        isolated &&
+        (await isolated.root.locator(focalSelector).count()) === 1 &&
+        (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
+        (await isolated.root.locator('time[datetime]').count()) === 1 &&
+        (await replyControls(isolated.root).count()) === 0 &&
+        (await isolated.root.locator(REPLY_ROWS).count()) === 0
+      ))
+        return null;
+      shape.avatarObserved = isolated.avatar;
+      return choose(isolated.root, isolated.depth);
+    }
     const children = root.locator(':scope > *');
     const level: ReplyScopeDiagnostic['levels'][number] = {
       depth,
@@ -162,51 +303,13 @@ export async function structuralReplyScope(
       });
     }
     shape.levels.push(level);
-    const rows = root.locator(REPLY_ROWS);
     const controls = replyControls(root);
     const rowControls = replyControls(rows);
     const count = (await controls.count()) - (await rowControls.count());
-    const rowCount = await rows.count();
-    const focalCount = await root.locator(focalSelector).count();
-    const other =
-      (await root.locator('a[href*="/c/"]').count()) -
-      (await rows.locator('a[href*="/c/"]').count());
     if (focalCount !== 1 || other !== 1) {
       // An exact admitted zero answer needs no surrounding reply wrapper. The
       // deepest isolated focal item is bounded by this first comment-list edge;
       // sibling comments' controls are never part of that item or clicked.
-      if (zeroAnswer && level.children.length > 0) {
-        const focalChildren = level.children.filter(
-          (child) => child.containsFocal,
-        );
-        const foreignChildren = level.children.filter(
-          (child) => !child.containsFocal && child.otherPermalinks > 0,
-        );
-        let plainBoundary =
-          focalChildren.length === 1 &&
-          focalChildren[0]!.otherPermalinks === 0 &&
-          foreignChildren.length > 0 &&
-          !level.childrenCapped;
-        for (const child of await children.all())
-          if (
-            (await child
-              .locator('xpath=self::a[contains(@href,"/c/")]')
-              .count()) > 0
-          )
-            plainBoundary = false;
-        if (!(
-          plainBoundary &&
-          isolated &&
-          (await isolated.root.locator(focalSelector).count()) === 1 &&
-          (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
-          (await isolated.root.locator('time[datetime]').count()) === 1 &&
-          (await replyControls(isolated.root).count()) === 0 &&
-          (await isolated.root.locator(REPLY_ROWS).count()) === 0
-        ))
-          return null;
-        shape.avatarObserved = isolated.avatar;
-        return choose(isolated.root, isolated.depth);
-      }
       // The first foreign top-level permalink bounds the whole isolated
       // comment below it. No Reply action or avatar is needed to locate that
       // boundary; the answer check still decides whether absence can be saved.

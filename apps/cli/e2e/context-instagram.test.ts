@@ -7234,6 +7234,194 @@ async function acceptRepliesCanary(
 }
 
 test.each([
+  'middle',
+  'end',
+  'permalink',
+  'no-foreign',
+  'two-focal',
+  'anchor',
+  'positive',
+  'nonzero-read',
+  'over-bound',
+  'over-elements',
+] as const)(
+  'SCOPECAP forty sibling main reply refresh %s retains exact zero isolation',
+  async (mode) => {
+    const h = await harness('success', 1, 30000);
+    try {
+      const item = h.fixture.items[0]!;
+      const writer = new InstagramContextWriter(h.store);
+      await writer.startRun({
+        runId: 'generated-scopecap-seed',
+        accountKey: h.plan.accountKey,
+        planHash: h.plan.hash,
+        startedAt: IG_FIXTURE.now,
+      });
+      await writer.sending({
+        runId: 'generated-scopecap-seed',
+        attemptId: 'generated-scopecap-seed-attempt',
+        itemId: item.id,
+        at: IG_FIXTURE.now,
+      });
+      await writer.confirm({
+        confirmedBy: 'post',
+        ownerCheck: 'matched-export',
+        itemId: item.id,
+        accountKey: h.plan.accountKey,
+        post: {
+          kind: 'p',
+          code: IG_FIXTURE.code,
+          owner: item.reference.ownerHandle!,
+          ownerCount: 1,
+          caption: null,
+          captionComplete: true,
+          createdAt: null,
+        },
+        comment: {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          expandClicks: 0,
+        },
+        image: { file: null, host: null, status: 'not-captured' },
+        screenshot: { file: null, bytes: null, status: 'failed' },
+        confirmedAt: IG_FIXTURE.now,
+        runId: 'generated-scopecap-seed',
+        attemptId: 'generated-scopecap-seed-attempt',
+      });
+      await writer.endRun({
+        runId: 'generated-scopecap-seed',
+        endedAt: IG_FIXTURE.now,
+        endReason: 'done',
+        bodyShapes: {},
+        profileReport: {
+          accountBefore: h.plan.handle,
+          accountAfter: h.plan.handle,
+          extensionsBefore: 0,
+          extensionsAfter: 0,
+          changedFiles: [],
+          unexpectedRequests: [],
+        },
+      });
+      const before = await h.store.read((tx) => records(tx.instagramContext));
+      h.fake.directPostAccount('expected');
+      h.fake.replies(mode === 'positive' || mode === 'nonzero-read' ? 2 : 0);
+      if (mode === 'nonzero-read') h.fake.replyAdjacentText();
+      h.fake.replyAnswer(true);
+      h.fake.replyShape(
+        mode === 'nonzero-read'
+          ? 'nonzero-forty'
+          : mode === 'over-elements'
+            ? 'plain-zero-over-elements'
+            : mode === 'over-bound'
+              ? 'plain-zero-over-bound'
+              : mode === 'end'
+                ? 'plain-zero-forty-end'
+                : mode === 'permalink'
+                  ? 'plain-zero-forty-permalink'
+                  : mode === 'no-foreign'
+                    ? 'plain-zero-forty-no-foreign'
+                    : mode === 'two-focal'
+                      ? 'plain-zero-forty-two-focal'
+                      : mode === 'anchor'
+                        ? 'plain-zero-forty-anchor'
+                        : 'plain-zero-forty-middle',
+      );
+      await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
+      h.setLimit(1);
+      const result = await h.start({ refreshReplies: true });
+      const accepted =
+        mode === 'middle' || mode === 'end' || mode === 'nonzero-read';
+      expect(result, h.notices.join('\n')).toMatchObject(
+        accepted
+          ? { completed: 1, endReason: 'done' }
+          : mode === 'two-focal'
+            ? { code: 'PLATFORM_CHECK', token: 'post-structure' }
+            : {
+                code: 'INSTAGRAM_SHAPE_CHANGED',
+                token: 'reply-scope-unverified',
+              },
+      );
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(report.steps[0]);
+      if (mode === 'nonzero-read') {
+        expect(step.replies).toMatchObject({ read: 2, answerChecked: true });
+        expect(
+          step.replyScope!.levels.every(
+            (level) => level.zeroBoundary === undefined,
+          ),
+        ).toBe(true);
+      } else if (accepted) {
+        expect(step).toMatchObject({
+          result: 'replies-refreshed',
+          replies: { read: 0, answerChecked: true },
+          replyScope: { failedCheck: 'none' },
+        });
+        const boundary = step.replyScope!.levels.at(-1)!;
+        expect(boundary.childrenCapped).toBe(true);
+        expect(boundary.children).toHaveLength(32);
+        expect(boundary.zeroBoundary).toMatchObject({
+          observed: true,
+          overBound: false,
+          totalChildren: 40,
+          focalChildren: 1,
+          focalOtherPermalinks: 0,
+          foreignChildren: 39,
+          directAnchors: 0,
+        });
+        expect(
+          boundary.children.every((child) => child.expandControls === null),
+        ).toBe(true);
+        expect(boundary.children.some((child) => child.containsFocal)).toBe(
+          mode === 'middle',
+        );
+        expect(
+          (await h.store.read((tx) => records(tx.instagramContext))).every(
+            (record) => record.replies?.entries.length === 0,
+          ),
+        ).toBe(true);
+      } else {
+        if (mode !== 'two-focal')
+          expect(step.replies?.reason).toBe('reply-scope-unverified');
+        expect(
+          await h.store.read((tx) => records(tx.instagramContext)),
+        ).toEqual(before);
+        if (mode === 'positive')
+          expect(
+            step.replyScope!.levels.every(
+              (level) => level.zeroBoundary === undefined,
+            ),
+          ).toBe(true);
+        if (mode.startsWith('over-'))
+          expect(step.replyScope!.levels.at(-1)?.zeroBoundary).toMatchObject({
+            observed: false,
+            overBound: true,
+          });
+      }
+      if (mode !== 'two-focal' && mode !== 'nonzero-read')
+        expect(
+          report.steps.every(
+            (raw) =>
+              ContextStepReportSchema.parse(raw).replyExpansion?.clicks
+                .length === 0,
+          ),
+        ).toBe(true);
+      expect(h.fake.events.flatMap((event) => event.clicks)).not.toContain(
+        'View all 2 replies',
+      );
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+
+test.each([
   'matching',
   'id',
   'author',
@@ -8016,7 +8204,7 @@ test.each([
         expect(step.replyScope?.levels).toHaveLength(11);
         expect(
           step.replyScope?.levels[10]?.children.some(
-            (child) => !child.containsFocal && child.expandControls > 0,
+            (child) => !child.containsFocal && child.expandControls === null,
           ),
         ).toBe(true);
         expect(step.replies).toMatchObject({

@@ -34,6 +34,40 @@ function fixture(levels: Level[]) {
   });
   const root = (level: Level) => ({
     ...empty,
+    evaluate: <T, A>(read: (node: unknown, args: A) => T, args: A) => {
+      const node = (
+        tagName: string,
+        children: unknown[] = [],
+        focal = false,
+        link = false,
+      ) => ({
+        tagName,
+        children,
+        getAttribute: () => (link ? '/p/Generated/c/123/' : null),
+        matches: () => focal,
+      });
+      const children =
+        level.children ??
+        (level.foreign ? [{ focal: true }, { other: 1 }] : []);
+      return Promise.resolve(
+        read(
+          node(
+            'DIV',
+            children.map((child) =>
+              child.selfLink
+                ? node('A', [], false, true)
+                : node('DIV', [
+                    ...(child.focal ? [node('A', [], true, true)] : []),
+                    ...Array.from({ length: child.other ?? 0 }, () =>
+                      node('A', [], false, true),
+                    ),
+                  ]),
+            ),
+          ),
+          args,
+        ),
+      );
+    },
     count: () => Promise.resolve(1),
     locator: (selector: string) => {
       if (selector === 'xpath=ancestor::main') return counted(level.main ?? 1);
@@ -144,7 +178,7 @@ test.each([true, false])(
     expect(
       await structuralReplyScope(
         fixture([
-          ...Array.from({ length: 10 }, (): Level => ({})),
+          ...Array.from({ length: 10 }, (): Level => ({ times: 1 })),
           { foreign: 1 },
         ]),
         focalSelector,
@@ -231,13 +265,13 @@ test.each([0, 2])(
     expect(shape.chosenDepth).toBeNull();
   },
 );
-test.each(['foreign-in-focal', 'direct-anchor', 'capped'] as const)(
+test.each(['foreign-in-focal', 'direct-anchor', 'over-bound'] as const)(
   'ZEROSCOPE rejects contaminated boundary %s',
   async (kind) => {
     const shape = emptyReplyScope();
     const children =
-      kind === 'capped'
-        ? Array.from({ length: 33 }, (_, index) => ({
+      kind === 'over-bound'
+        ? Array.from({ length: 513 }, (_, index) => ({
             focal: index === 0,
             other: index === 0 ? 0 : 1,
             control: 1,
@@ -256,6 +290,104 @@ test.each(['foreign-in-focal', 'direct-anchor', 'capped'] as const)(
       ),
     ).toBeNull();
     expect(shape.chosenDepth).toBeNull();
+  },
+);
+test.each([20, 38])(
+  'SCOPECAP evaluates all forty children with focal at %s and caps only diagnostics',
+  async (index) => {
+    const shape = emptyReplyScope();
+    const root = await structuralReplyScope(
+      fixture([
+        { times: 1 },
+        {
+          foreign: 39,
+          controls: 39,
+          children: Array.from({ length: 40 }, (_, ordinal) => ({
+            focal: ordinal === index,
+            other: ordinal === index ? 0 : 1,
+            control: 1,
+          })),
+        },
+      ]),
+      focalSelector,
+      true,
+      shape,
+      () => {},
+    );
+    expect(root).not.toBeNull();
+    expect(shape.chosenDepth).toBe(1);
+    expect(shape.levels.at(-1)).toMatchObject({
+      childrenCapped: true,
+      zeroBoundary: {
+        observed: true,
+        overBound: false,
+        totalChildren: 40,
+        focalChildren: 1,
+        foreignChildren: 39,
+        directAnchors: 0,
+      },
+    });
+    expect(shape.levels.at(-1)?.children).toHaveLength(32);
+    expect(
+      shape.levels
+        .at(-1)
+        ?.children.every((child) => child.expandControls === null),
+    ).toBe(true);
+  },
+);
+test.each([
+  'no-foreign',
+  'two-focal',
+  'at-child-limit',
+  'observation-failed',
+] as const)(
+  'SCOPECAP complete-boundary condition %s fails closed unless exactly isolated',
+  async (mode) => {
+    const shape = emptyReplyScope();
+    const length = mode === 'at-child-limit' ? 512 : 40;
+    const focal = fixture([
+      { times: 1 },
+      {
+        foreign: 39,
+        controls: 39,
+        children: Array.from({ length }, (_, index) => ({
+          focal: index === length - 1 || (mode === 'two-focal' && index === 0),
+          other: index === length - 1 || mode === 'no-foreign' ? 0 : 1,
+        })),
+      },
+    ]);
+    const target =
+      mode === 'observation-failed'
+        ? ({
+            locator: (selector: string) => {
+              const root = focal.locator(selector);
+              return new Proxy(root, {
+                get(object, property) {
+                  return property === 'evaluate'
+                    ? () =>
+                        Promise.reject(
+                          new Error('Generated unreadable boundary'),
+                        )
+                    : (Reflect.get(object, property) as unknown);
+                },
+              });
+            },
+          } as unknown as Locator)
+        : focal;
+    const root = await structuralReplyScope(
+      target,
+      focalSelector,
+      true,
+      shape,
+      () => {},
+    );
+    expect(root === null).toBe(mode !== 'at-child-limit');
+    if (mode === 'at-child-limit')
+      expect(shape.levels.at(-1)?.zeroBoundary).toMatchObject({
+        observed: true,
+        overBound: false,
+        totalChildren: 512,
+      });
   },
 );
 test('SOLEDIAG focal-time gate is observed without changing scope refusal', async () => {

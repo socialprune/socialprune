@@ -407,13 +407,25 @@ export const ReplyScopeDiagnosticSchema = z.strictObject({
       z.strictObject({
         depth: z.number().int().min(1).max(12),
         childrenCapped: z.boolean(),
+        zeroBoundary: z
+          .strictObject({
+            observed: z.boolean(),
+            overBound: z.boolean(),
+            totalChildren: count,
+            inspectedElements: count,
+            focalChildren: count,
+            focalOtherPermalinks: count,
+            foreignChildren: count,
+            directAnchors: count,
+          })
+          .optional(),
         children: z
           .array(
             z.strictObject({
               containsFocal: z.boolean(),
               otherPermalinks: count,
               times: count,
-              expandControls: count,
+              expandControls: count.nullable(),
               images: count,
             }),
           )

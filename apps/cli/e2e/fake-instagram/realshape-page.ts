@@ -9,6 +9,15 @@ export type ReplyShapeCase =
   | 'plain-zero'
   | 'plain-zero-expand'
   | 'plain-zero-permalink'
+  | 'plain-zero-forty-middle'
+  | 'plain-zero-forty-end'
+  | 'plain-zero-forty-permalink'
+  | 'plain-zero-forty-no-foreign'
+  | 'plain-zero-forty-two-focal'
+  | 'plain-zero-forty-anchor'
+  | 'plain-zero-over-bound'
+  | 'plain-zero-over-elements'
+  | 'nonzero-forty'
   | 'sole-zero'
   | 'sole-zero-control'
   | 'sole-zero-permalink'
@@ -44,6 +53,17 @@ export function replyShapePage(
   id: string,
   shape: ReplyShapeCase,
 ) {
+  if (shape === 'nonzero-forty') {
+    const siblings = Array.from(
+      { length: 39 },
+      (_, index) =>
+        `<div><a href="/p/Generated/c/${777000 + index}/"><time datetime="2025-01-01T00:00:00Z">1w</time></a><div role="button">View all 2 replies</div></div>`,
+    ).join('');
+    return html.replace(
+      '<div id="comment-rows">',
+      '<div id="comment-rows">' + siblings,
+    );
+  }
   if (
     shape === 'no-replies' ||
     shape.startsWith('plain-zero') ||
@@ -110,6 +130,41 @@ export function replyShapePage(
       );
     }
     if (shape.startsWith('plain-zero')) {
+      if (
+        shape.startsWith('plain-zero-forty') ||
+        shape.startsWith('plain-zero-over-')
+      ) {
+        const total = shape === 'plain-zero-over-bound' ? 513 : 40;
+        const focalIndex = shape === 'plain-zero-forty-end' ? 38 : 20;
+        const block =
+          '<div><div><div>' +
+          focal +
+          '</div></div>' +
+          (shape === 'plain-zero-forty-permalink'
+            ? '<a href="/p/Generated/c/888888/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>'
+            : '') +
+          '</div>';
+        const siblings = Array.from({ length: total }, (_, index) => {
+          if (
+            index === focalIndex ||
+            (shape === 'plain-zero-forty-two-focal' && index === 39)
+          )
+            return block;
+          if (shape === 'plain-zero-forty-no-foreign')
+            return '<div><span>Generated empty sibling</span></div>';
+          const link = `<a href="/p/Generated/c/${777000 + index}/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>`;
+          return shape === 'plain-zero-forty-anchor' && index === 39
+            ? link
+            : `<div>${link}<img src="/profiles/comment.png" alt=""><div role="button">View all 2 replies</div>${shape === 'plain-zero-over-elements' && index === 0 ? '<span></span>'.repeat(20001) : ''}</div>`;
+        }).join('');
+        return (
+          html.slice(0, start) +
+          '<div><div>' +
+          siblings +
+          '</div></div>' +
+          html.slice(end)
+        );
+      }
       const siblings = Array.from(
         { length: 9 },
         (_, index) =>

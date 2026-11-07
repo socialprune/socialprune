@@ -132,7 +132,14 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
           valid = false;
         else total = Math.max(total, typeof count === 'number' ? count : 0);
         if (children !== undefined && !Array.isArray(children)) valid = false;
-        if (Array.isArray(children)) for (const child of children) add(child);
+        if (Array.isArray(children)) {
+          if (children.length > 100000) {
+            capped = true;
+            valid = false;
+            return;
+          }
+          for (const child of children) add(child);
+        }
       }
     }
     // Standalone child-comment responses explicitly bind every row to its parent.

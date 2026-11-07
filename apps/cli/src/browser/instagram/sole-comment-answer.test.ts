@@ -208,3 +208,18 @@ test('SOLEDIAG continued count traversal stays bounded after a refusal and retai
       .diagnostic.firstFailedGate,
   ).toBe('sole-answer-focal');
 });
+test('STALL bounded synchronous sole traversal honors an expired step guard', () => {
+  let checks = 0;
+  expect(() =>
+    inspectSoleCommentAnswer(
+      [],
+      [{ code, comments: [focal] }],
+      match,
+      code,
+      () => {
+        if (++checks === 3) throw new Error('Generated expired guard');
+      },
+    ),
+  ).toThrow('Generated expired guard');
+  expect(checks).toBe(3);
+});

@@ -229,6 +229,7 @@ export const RunJournalCodeSchema = z.enum([
   'list-image-only',
   'post-unavailable',
   'comment-not-shown',
+  'step-deadline',
   'daily-cap',
 ]);
 

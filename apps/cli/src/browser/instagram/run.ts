@@ -114,7 +114,7 @@ import type { WindowPlacement } from '../launch.ts';
 import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
 import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
-import { stepDeadline } from './step-deadline.ts';
+import { stepDeadline, readingStepBudget } from './step-deadline.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 
 export interface ContextOptions {
@@ -896,7 +896,7 @@ export async function runContextWithDependencies(
           }
           await controls?.checkpoint(resumeChecks, waits.signal);
           stage = 'attempt';
-          reading!.begin(deps.responseMs * 12);
+          reading!.begin(readingStepBudget(deps.responseMs));
           await writer.step(
             runId,
             options.now().toISOString(),
@@ -1728,8 +1728,10 @@ export async function runContextWithDependencies(
   } finally {
     reading?.clear();
     if (reading?.expired && deadlineClose) await deadlineClose;
-    await sampleMemory();
-    await memory?.dispose();
+    if (!reading?.expired) {
+      await sampleMemory();
+      await memory?.dispose();
+    }
     if (memory) report.memory = RunMemorySchema.parse(memorySummary());
     let matches = false,
       reportPath: string | undefined;
@@ -1834,6 +1836,17 @@ export async function runContextWithDependencies(
     // A frozen renderer cannot be allowed to withhold the partial step report.
     if (reading?.expired && began) {
       await finalize('structure-report', structure);
+      let disposalTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          memory?.dispose(),
+          new Promise<void>((resolve) => {
+            disposalTimer = setTimeout(resolve, 1000);
+          }),
+        ]);
+      } finally {
+        if (disposalTimer) clearTimeout(disposalTimer);
+      }
       if (pendingAttempt)
         await finalize('settlement', async () => {
           await writer.settle({

@@ -63,6 +63,8 @@ import * as networkHelpers from '../src/browser/instagram/network.ts';
 import * as pagesHelpers from '../src/browser/instagram/pages.ts';
 import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
+import * as replyScopeHelpers from '../src/browser/instagram/replies-scope.ts';
+import * as deadlineHelpers from '../src/browser/instagram/step-deadline.ts';
 import {
   applyNewestSort,
   emptySortDiagnostic,
@@ -7429,6 +7431,93 @@ test.each(['legacy', 'adjacent', 'answer'] as const)(
   },
   180000,
 );
+test('STALL sole diagnostic nonsettling page count ends with partial report and settled attempt', async () => {
+  const h = await harness('success', 5, 3000);
+  let injected = false;
+  const original = replyScopeHelpers.structuralReplyScope;
+  const spy = vi.spyOn(replyScopeHelpers, 'structuralReplyScope');
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const prior = await h.store.read((tx) => records(tx.instagramContext));
+    h.fake.directPostAccount('expected');
+    h.fake.replies(0);
+    h.fake.replyAnswer(false);
+    h.fake.scriptReplies('matching');
+    h.fake.soleCommentSet('no-count');
+    h.fake.replyShape('sole-zero');
+    spy.mockImplementation(async (focal, ...args) => {
+      const main = focal.locator('xpath=ancestor::main');
+      const stuck = new Proxy(main, {
+        get: (target, key) =>
+          key === 'count'
+            ? () => {
+                injected = true;
+                return new Promise<number>((_resolve, reject) =>
+                  focal
+                    .page()
+                    .once('close', () =>
+                      reject(new Error('Generated observation closed')),
+                    ),
+                );
+              }
+            : (Reflect.get(target, key, target) as unknown),
+      });
+      const wrapped = new Proxy(focal, {
+        get: (target, key) =>
+          key === 'locator'
+            ? (selector: string) =>
+                selector === 'xpath=ancestor::main'
+                  ? stuck
+                  : target.locator(selector)
+            : (Reflect.get(target, key, target) as unknown),
+      });
+      return original(wrapped, ...args);
+    });
+    const running = h.start({ refreshReplies: true });
+    const result = await Promise.race([
+      running,
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ testLimitReached: true }), 7000),
+      ),
+    ]);
+    expect(injected).toBe(true);
+    expect(result, h.notices.join('\n')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'step-deadline',
+    });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs.at(-1)!;
+    expect(run.endedAt).not.toBeNull();
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.runId === run.runId)
+        .map((attempt) => attempt.state),
+    ).toEqual(['sending', 'failed']);
+    const raw = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { stop: unknown; steps: unknown[] };
+    expect(raw.stop).toMatchObject({ token: 'step-deadline' });
+    const step = ContextStepReportSchema.parse(raw.steps.at(-1));
+    expect(step.replyScope?.soleComment).toMatchObject({
+      answerNamesFocal: true,
+      childCountProofSource: 'script',
+      declaredCountSeen: 0,
+      observationFailed: true,
+      observationStop: 'step-deadline',
+    });
+    expect(step['result']).toBe('step-deadline');
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      prior,
+    );
+    expect(h.notices.join('')).toContain('Stop detail: step-deadline');
+  } finally {
+    spy.mockRestore();
+    await h.close();
+  }
+}, 30000);
 test.each(['no-count', 'one', 'two', 'other'] as const)(
   'SOLESCOPE sole post refresh %s persists empty only with sole answer set',
   async (mode) => {
@@ -7878,6 +7967,47 @@ test('REPLIES revision F1 first direct refresh canary is accepted only after fiv
     await h.close();
   }
 });
+test('STALL a nonsettling captured step ends the main reader without context writes or an unended run', async () => {
+  const h = await harness('success', 1, 3000);
+  const original = deadlineHelpers.stepDeadline;
+  let active: ReturnType<typeof original> | undefined;
+  const budget = vi
+    .spyOn(deadlineHelpers, 'stepDeadline')
+    .mockImplementation((expired) => {
+      active = original(expired);
+      return active;
+    });
+  h.setCapture(() => {
+    active!.begin(150);
+    return new Promise(() => {});
+  });
+  try {
+    const result = await h.start(true);
+    expect(result, h.notices.join('\n')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+      token: 'step-deadline',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    expect(run.endedAt).not.toBeNull();
+    expect(run.endReason).toBe('platform-check');
+    const raw = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[]; stop: unknown };
+    expect(raw.stop).toMatchObject({ token: 'step-deadline' });
+    expect(
+      ContextStepReportSchema.parse(raw.steps[0])['deadline'],
+    ).toMatchObject({ expired: true, budgetMs: 150, stage: 'capture' });
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      [],
+    );
+  } finally {
+    budget.mockRestore();
+    await h.close();
+  }
+}, 30000);
 
 test('realfix no-answer first direct refresh writes nothing and cannot be accepted by hand', async () => {
   const h = await harness('success', 5, 30000);

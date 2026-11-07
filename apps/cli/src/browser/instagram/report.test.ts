@@ -175,6 +175,26 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
   ])
     expect(parse(invalid)).toBe(false);
 });
+test('STALL deadline partial report contains only a closed stage and measured budget', () => {
+  const deadline = {
+    budgetMs: 120000,
+    elapsedMs: 120001,
+    stage: 'answers',
+    expired: true,
+  };
+  expect(
+    ContextStepReportSchema.safeParse({ deadline, result: 'step-deadline' })
+      .success,
+  ).toBe(true);
+  for (const invalid of [
+    { ...deadline, stage: 'Generated private function' },
+    { ...deadline, text: 'Generated entry' },
+    { ...deadline, budgetMs: -1 },
+  ])
+    expect(
+      ContextStepReportSchema.safeParse({ deadline: invalid }).success,
+    ).toBe(false);
+});
 test('POSTCLICK wider windows use calendar days across month, year and leap-day boundaries', () => {
   expect(widenedWindow('2024-03-01T23:30:00Z', 7)).toEqual([
     '2024-02-23',

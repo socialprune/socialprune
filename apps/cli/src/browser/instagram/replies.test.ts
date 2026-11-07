@@ -8,7 +8,11 @@ import {
 } from './replies.ts';
 import { ContextStop, stopDetails } from './report.ts';
 import * as selectors from './selectors.ts';
-import { checkedReplyRows, replyAnswerDiagnostic } from './replies-answer.ts';
+import {
+  checkedReplyRows,
+  replyAnswerDiagnostic,
+  answerReplies,
+} from './replies-answer.ts';
 import * as scope from './replies-scope.ts';
 
 const match = {
@@ -138,6 +142,35 @@ test('ROWANSWER uncapped writes require exactly the answer total, not duplicate 
       0,
     ),
   ).toEqual({ reason: 'reply-answer-incomplete' });
+});
+test('STALL response traversal stops visiting array entries after its declared object cap', () => {
+  let visited = 0;
+  const values = Array.from({ length: 100100 }, () => ({}));
+  Object.defineProperty(values, 100050, {
+    get: () => {
+      visited++;
+      return sourceAnswer;
+    },
+  });
+  const result = answerReplies([values], match);
+  expect(result.valid).toBe(false);
+  expect(visited).toBe(0);
+});
+test('STALL oversized direct child lists refuse before iterating their rows', () => {
+  let visited = 0;
+  const children = Array.from({ length: 100001 }, () => ({}));
+  Object.defineProperty(children, 0, {
+    get: () => {
+      visited++;
+      return {};
+    },
+  });
+  const result = answerReplies(
+    [{ ...sourceAnswer, preview_child_comments: children }],
+    match,
+  );
+  expect(result.valid).toBe(false);
+  expect(visited).toBe(0);
 });
 
 test.each(['owner', 'utc', 'both'] as const)(

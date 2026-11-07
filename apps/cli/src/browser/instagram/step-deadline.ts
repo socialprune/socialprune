@@ -1,5 +1,9 @@
 import { ContextStop } from './report.ts';
 
+// Existing list reads allow ten load windows. Keep two more for navigation and
+// filter readback; pace, confirmation and the explicit reopen wait are excluded.
+export const readingStepBudget = (responseMs: number) => responseMs * 12;
+
 /** One active reading budget, not a pace or person-confirmation timeout. */
 export function stepDeadline(
   expired: (elapsedMs: number, budgetMs: number) => void,

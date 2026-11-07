@@ -153,11 +153,9 @@ test.each([
         failedStep:
           variant === 'matching'
             ? 'none'
-            : variant === 'conflict'
-              ? 'answer-id'
-              : variant === 'hidden-text'
-                ? 'answer-text'
-                : `answer-${variant}`,
+            : variant === 'hidden-text'
+              ? 'answer-text'
+              : `answer-${variant}`,
       });
       expect(parsed.rows?.[0]?.spansByDepth).toHaveLength(12);
       expect(parsed.rows?.[0]?.spansByDepth.slice(0, 4)).toEqual([0, 0, 0, 0]);

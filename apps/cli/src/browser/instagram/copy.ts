@@ -1,5 +1,9 @@
 import type { BrowserLanguage } from '../copy.ts';
-import { CliError, instagramStop } from '../../cli/errors.ts';
+import {
+  CliError,
+  instagramStop,
+  INSTAGRAM_STOP_MESSAGES,
+} from '../../cli/errors.ts';
 import { ContextStop } from './report.ts';
 
 /** Carry only a closed token and language, never the exception's text. */
@@ -62,11 +66,13 @@ export function contextEnd(
     ],
   };
   const text =
-    token === 'list-timeout'
-      ? lang === 'de'
-        ? 'Die gefilterte Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt; der Kommentar bleibt für einen späteren Plan offen.'
-        : 'The filtered comments list could not be read reliably. The run stopped; the comment remains eligible for a later plan.'
-      : (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
+    token === 'step-deadline' || reason === 'step-deadline'
+      ? INSTAGRAM_STOP_MESSAGES['step-deadline'][lang]
+      : token === 'list-timeout'
+        ? lang === 'de'
+          ? 'Die gefilterte Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt; der Kommentar bleibt für einen späteren Plan offen.'
+          : 'The filtered comments list could not be read reliably. The run stopped; the comment remains eligible for a later plan.'
+        : (endings[reason] ?? endings.error)![lang === 'de' ? 1 : 0];
   return lang === 'de'
     ? `Beendet: ${text} ${automatic ? 'Das Browserfenster wird automatisch geschlossen.' : 'Schließe das Instagram-Fenster, um den Lauf zu beenden.'}`
     : `Ended: ${text} ${automatic ? 'The browser window closes automatically.' : 'Close the Instagram window to finish.'}`;

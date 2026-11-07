@@ -276,6 +276,12 @@ export const CLI_ERRORS = {
     exitCode: 1,
     retryable: false,
   },
+  STEP_DEADLINE: {
+    message:
+      'The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.',
+    exitCode: 1,
+    retryable: false,
+  },
   RUN_STOPPED: {
     message:
       'The browser run stopped at the first problem. Check its journal before continuing.',
@@ -483,6 +489,10 @@ export type CliErrorCode = keyof typeof CLI_ERRORS;
 // These describe observed reader failures, never platform warning pages. Unknown
 // tokens retain the original error table, rather than guessing a classification.
 export const INSTAGRAM_STOP_MESSAGES = {
+  'step-deadline': {
+    en: 'The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.',
+    de: 'Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
+  },
   'list-timeout': {
     en: 'The filtered Instagram comments list could not be read reliably. The run stopped.',
     de: 'Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.',
@@ -567,6 +577,7 @@ export type InstagramStop = {
 const INSTAGRAM_STOP_CODES: Partial<
   Record<CliErrorCode, readonly InstagramStop['token'][]>
 > = {
+  STEP_DEADLINE: ['step-deadline'],
   PLATFORM_CHECK: [
     'list-timeout',
     'post-timeout',

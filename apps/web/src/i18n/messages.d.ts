@@ -375,6 +375,7 @@ declare global {
     'desktop.token.STALE': Record<never, never>;
     'desktop.token.STALE_PLAN': Record<never, never>;
     'desktop.token.STALE_PREVIEW': Record<never, never>;
+    'desktop.token.STEP_DEADLINE': Record<never, never>;
     'desktop.token.STORAGE': Record<never, never>;
     'desktop.token.STORAGE_FULL': Record<never, never>;
     'desktop.token.STRUCTURED_OUTPUT_REFUSED': Record<never, never>;

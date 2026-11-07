@@ -57,6 +57,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let probeCase: ListProbeCase | undefined;
   let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
+  const delayedPosts = new Map<
+    number,
+    { navigationMs: number; renderMs: number }
+  >();
   let windowLists:
     'populated-empty' | 'empty-empty' | 'populated-populated' | undefined;
   let delayedFilterClose = false;
@@ -414,6 +418,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           slowPosts.set(index, slow - 1);
           await delay(6500);
         }
+        const delayed = delayedPosts.get(index);
+        if (delayed) await delay(delayed.navigationMs);
         response.writeHead(200, { 'Content-Type': 'text/html' });
         let html = postPage(
           items[Math.max(0, index)]!,
@@ -526,6 +532,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           html = html.replace(
             '<div id="comment-rows">',
             '<div id="comment-rows"><div data-generated="comment">I will try again later! my action blocked the door</div>',
+          );
+        if (delayed)
+          html = html.replace(
+            /<main>([\s\S]*?)<\/main>/u,
+            (_whole: string, content: string) =>
+              `<main><template id="generated-delayed-post">${content}</template></main><script>setTimeout(()=>mutate(()=>{const t=document.getElementById('generated-delayed-post');t.replaceWith(t.content)}),${delayed.renderMs})</script>`,
           );
         response.end(
           imageShape
@@ -763,6 +775,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replyShape(value: ReplyShapeCase) {
       replyShapeCase = value;
+    },
+    delayPost(index: number, navigationMs: number, renderMs: number) {
+      delayedPosts.set(index, { navigationMs, renderMs });
     },
     soleCommentSet(value: 'no-count' | 'one' | 'two' | 'other') {
       soleCommentSet = value;

@@ -66,6 +66,8 @@ Since c-stall2 on 2026-11-07, `acceptCanary` orders never fall back to a person-
 
 Since c-solereply on 2026-11-07, the sole-comment zero-reply gate distinguishes the focal comment's own Reply action from foreign Reply controls. The action's nearest permalink-bearing ancestor must lie below main and contain only the focal permalink and its single dated time. Every page Reply action must qualify, with no expansion controls or reply rows; closed own and foreign counts appear in the sole diagnostics. Generated positive and refusal cases exercise storage through the existing answer check; real-account behavior is not established by those tests.
 
+Since c-deadline on 2026-11-07, reply refresh uses a post-reading watchdog derived from the existing navigation, readiness, single reopen, focal-search and reply-response bounds, with a closed budget breakdown in the structure report. Its reply-response window starts after focal confirmation; search attempts and answer checks are unchanged. A true step timeout ends as `STEP_DEADLINE` and `step-deadline`, with its own German and English text, partial evidence and no warning classification. Generated tests cover a focal rendered after 35 seconds, expiry, warning-gate absence and the existing comment-not-shown continuation; real-account timing remains unmeasured by those tests.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

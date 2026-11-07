@@ -1,4 +1,23 @@
 import { ContextStop } from './report.ts';
+import { POST_REOPEN_WAIT_MS } from './retry.ts';
+
+/** Ceiling for the existing post path, not extra focal-search attempts. */
+export function postReadingBudget(
+  responseMs: number,
+  pace: { expandMs: number },
+) {
+  const bounds = {
+    navigationMs: 4 * responseMs, // navigation and readiness, twice if reopened
+    reopenMs: POST_REOPEN_WAIT_MS,
+    focalSearchMs: 11 * responseMs + 10 * (5000 + 2 * pace.expandMs),
+    replyResponseMs: responseMs,
+    marginMs: Math.max(30000, responseMs),
+  };
+  return {
+    ...bounds,
+    budgetMs: Object.values(bounds).reduce((total, value) => total + value, 0),
+  };
+}
 
 // Sum the existing bounded work rather than treating responseMs as its whole
 // duration: six selectOption waits, ten list scrolls/expansions, and (only for
@@ -36,7 +55,7 @@ export function stepDeadline(
   };
   const expire = () => {
     if (failure) return;
-    failure = new ContextStop('PLATFORM_CHECK', 'step-deadline');
+    failure = new ContextStop('STEP_DEADLINE', 'step-deadline');
     try {
       expired(
         Math.max(0, Math.round(performance.now() - started)),

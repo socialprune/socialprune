@@ -1,4 +1,5 @@
 import { ContextStop } from './report.ts';
+import { z } from 'zod';
 
 export const RUN_PHASES = [
   'run-start',
@@ -25,6 +26,25 @@ export const RUN_PHASES = [
   'ended',
 ] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
+export const AutomaticRunEvidenceSchema = z.strictObject({
+  phases: z.array(z.enum(RUN_PHASES)).max(1000),
+  automaticWaits: z
+    .array(
+      z.strictObject({
+        phase: z.enum(['pace-wait', 'batch-pause', 'reopen-wait']),
+        expectedMs: z.number().int().nonnegative(),
+        budgetMs: z.number().int().nonnegative(),
+      }),
+    )
+    .max(1000),
+  runDeadline: z
+    .strictObject({
+      phase: z.enum(RUN_PHASES),
+      budgetMs: z.number().int().nonnegative(),
+      elapsedMs: z.number().int().nonnegative(),
+    })
+    .optional(),
+});
 export const unattendedWaitBudget = (expectedMs: number, responseMs: number) =>
   Math.max(0, expectedMs) + Math.max(30000, responseMs);
 

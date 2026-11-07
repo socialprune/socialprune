@@ -115,7 +115,11 @@ import { entryView } from '../run-session.ts';
 import type { RunSession } from '../run-session.ts';
 import { pageRecycleDue, PAGE_RECYCLE_INTERVAL } from './recycle.ts';
 import { stepDeadline, readingStepBudget } from './step-deadline.ts';
-import { automaticRun, unattendedWaitBudget } from './automatic-run.ts';
+import {
+  automaticRun,
+  unattendedWaitBudget,
+  AutomaticRunEvidenceSchema,
+} from './automatic-run.ts';
 import type { RunPhase } from './automatic-run.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 
@@ -583,6 +587,10 @@ export async function runContextWithDependencies(
       stage = 'browser-launch';
       phase('browser-launch');
       context = await deps.launch(options.profile, options.executablePath);
+      if (auto.expired) {
+        void context.close().catch(() => {});
+        auto.check();
+      }
       stage = 'browser-setup';
       phase('browser-setup');
       runtime = observeContextRuntime(context, () => ({ step: steps, stage }));
@@ -1951,6 +1959,11 @@ export async function runContextWithDependencies(
         runId,
         {
           ...report,
+          ...AutomaticRunEvidenceSchema.parse({
+            phases: report.phases ?? [],
+            automaticWaits: report.automaticWaits ?? [],
+            ...(report.runDeadline ? { runDeadline: report.runDeadline } : {}),
+          }),
           steps: report.steps.map((step) =>
             ContextStepReportSchema.parse(step),
           ),

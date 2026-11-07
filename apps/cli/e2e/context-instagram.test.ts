@@ -65,6 +65,9 @@ import * as driverHelpers from '../src/browser/instagram/driver.ts';
 import * as selectorHelpers from '../src/browser/instagram/selectors.ts';
 import * as replyScopeHelpers from '../src/browser/instagram/replies-scope.ts';
 import * as deadlineHelpers from '../src/browser/instagram/step-deadline.ts';
+import * as replyHelpers from '../src/browser/instagram/replies.ts';
+import * as automaticHelpers from '../src/browser/instagram/automatic-run.ts';
+import { ConfirmationState } from '../src/browser/confirmation-state.ts';
 import {
   applyNewestSort,
   emptySortDiagnostic,
@@ -7518,6 +7521,252 @@ test('STALL sole diagnostic nonsettling page count ends with partial report and 
     await h.close();
   }
 }, 30000);
+test('STALL2 ordered sole zero reaches a carried batch pause before reading, without a confirmation action', async () => {
+  const h = await harness('success', 5, 30000);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let pauseSeen = false;
+  const wait = vi.spyOn(ConfirmationState.prototype, 'wait');
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const writer = new InstagramContextWriter(h.store),
+      runId = 'generated-carried-batch';
+    await writer.startRun({
+      runId,
+      accountKey: h.plan.accountKey,
+      planHash: h.plan.hash,
+      startedAt: IG_FIXTURE.now,
+    });
+    for (let index = 0; index < 15; index++)
+      await writer.step(runId, IG_FIXTURE.now);
+    await writer.endRun({
+      runId,
+      endedAt: IG_FIXTURE.now,
+      endReason: 'done',
+      bodyShapes: {},
+      profileReport: {
+        accountBefore: h.plan.handle,
+        accountAfter: h.plan.handle,
+        extensionsBefore: 0,
+        extensionsAfter: 0,
+        changedFiles: [],
+        unexpectedRequests: [],
+      },
+    });
+    h.fake.directPostAccount('expected');
+    h.fake.replies(0);
+    h.fake.replyAnswer(false);
+    h.fake.scriptReplies('matching');
+    h.fake.soleCommentSet('no-count');
+    h.fake.replyShape('sole-zero');
+    h.setPace({ acceptCanary: true, maxSteps: 5, secondsPerStep: 30 });
+    h.notices.length = 0;
+    wait.mockClear();
+    h.afterWait(async (ms) => {
+      if (ms === 900000) {
+        pauseSeen = true;
+        await held;
+      }
+    });
+    const running = h.start({ refreshReplies: true });
+    await expect.poll(() => pauseSeen, { timeout: 10000 }).toBe(true);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    expect(
+      (await h.store.browserJournal()).attempts
+        .filter((attempt) => attempt.runId === run.runId)
+        .map((attempt) => attempt.state),
+    ).toEqual(['sending']);
+    expect(run.pageOpens).toBe(0);
+    expect(wait).not.toHaveBeenCalled();
+    expect(h.notices.join('')).toContain('Phase: batch-pause\n');
+    expect(h.notices.join('')).toContain(
+      'Wait: batch-pause; expectedMs=900000; deadlineMs=930000\n',
+    );
+    release();
+    expect(await running, h.notices.join('\n')).toMatchObject({
+      completed: 5,
+      endReason: 'canary',
+    });
+    expect(wait).not.toHaveBeenCalled();
+    const lines = h.notices
+      .join('')
+      .split('\n')
+      .filter((line) => line.startsWith('Phase: '));
+    for (const value of [
+      'post-open',
+      'reply-scope',
+      'reply-read',
+      'canary-check',
+      'settlement',
+      'ended',
+    ])
+      expect(lines).toContain(`Phase: ${value}`);
+    expect(lines).not.toContain('Phase: confirmation-wait');
+    const after = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${after.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[]; automaticWaits: unknown[] };
+    expect(
+      report.steps.map(
+        (step) => ContextStepReportSchema.parse(step).replies?.answerChecked,
+      ),
+    ).toEqual([true, true, true, true, true]);
+    expect(report.automaticWaits).toContainEqual({
+      phase: 'batch-pause',
+      expectedMs: 900000,
+      budgetMs: 930000,
+    });
+  } finally {
+    release();
+    wait.mockRestore();
+    await h.close();
+  }
+}, 120000);
+test.each(['sole', 'sibling'] as const)(
+  'STALL2 ordered unchecked %s zero canary stops instead of falling back to Matches',
+  async (shape) => {
+    const h = await harness('success', 5, 30000);
+    const original = replyHelpers.commentReplies;
+    const read = vi.spyOn(replyHelpers, 'commentReplies');
+    const wait = vi.spyOn(ConfirmationState.prototype, 'wait');
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(0);
+      h.fake.replyAnswer(false);
+      h.fake.scriptReplies('matching');
+      h.fake.soleCommentSet('no-count');
+      h.fake.replyShape(shape === 'sole' ? 'sole-zero' : 'plain-zero');
+      h.setPace({ acceptCanary: true, maxSteps: 5, secondsPerStep: 30 });
+      wait.mockClear();
+      read.mockImplementation(async (...args) => {
+        const result = await original(...args);
+        args[7]?.(false);
+        return result;
+      });
+      const result = await Promise.race([
+        h.start({ refreshReplies: true }),
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ testLimitReached: true }), 7000),
+        ),
+      ]);
+      expect(result, h.notices.join('\n')).toMatchObject({
+        code: 'CANARY_CHECK_FAILED',
+        token: 'canary-auto-undecided',
+      });
+      expect(wait).not.toHaveBeenCalled();
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).every(
+          (record) => record.replies === undefined,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      expect(run.endedAt).not.toBeNull();
+      const raw = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { stop: unknown };
+      expect(raw.stop).toMatchObject({ token: 'canary-auto-undecided' });
+    } finally {
+      read.mockRestore();
+      wait.mockRestore();
+      await h.close();
+    }
+  },
+  30000,
+);
+test('STALL2 unattended run watchdog stops a nonsettling carried batch before any reading', async () => {
+  const h = await harness('success', 5, 30000);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = automaticHelpers.unattendedWaitBudget;
+  const budget = vi
+    .spyOn(automaticHelpers, 'unattendedWaitBudget')
+    .mockImplementation((expected, response) =>
+      expected === 900000 ? 200 : original(expected, response),
+    );
+  const wait = vi.spyOn(ConfirmationState.prototype, 'wait');
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const writer = new InstagramContextWriter(h.store),
+      prior = 'generated-stuck-batch';
+    await writer.startRun({
+      runId: prior,
+      accountKey: h.plan.accountKey,
+      planHash: h.plan.hash,
+      startedAt: IG_FIXTURE.now,
+    });
+    for (let i = 0; i < 15; i++) await writer.step(prior, IG_FIXTURE.now);
+    await writer.endRun({
+      runId: prior,
+      endedAt: IG_FIXTURE.now,
+      endReason: 'done',
+      bodyShapes: {},
+      profileReport: {
+        accountBefore: h.plan.handle,
+        accountAfter: h.plan.handle,
+        extensionsBefore: 0,
+        extensionsAfter: 0,
+        changedFiles: [],
+        unexpectedRequests: [],
+      },
+    });
+    const before = await h.store.read((tx) => records(tx.instagramContext));
+    h.setPace({ acceptCanary: true, maxSteps: 5, secondsPerStep: 30 });
+    wait.mockClear();
+    h.notices.length = 0;
+    h.afterWait(async (ms) => {
+      if (ms === 900000) await held;
+    });
+    expect(
+      await h.start({ refreshReplies: true }),
+      h.notices.join('\n'),
+    ).toMatchObject({ code: 'PLATFORM_CHECK', token: 'run-wait-deadline' });
+    const journal = await h.store.browserJournal(),
+      run = journal.runs.at(-1)!;
+    expect(run.pageOpens).toBe(0);
+    expect(run.endedAt).not.toBeNull();
+    expect(
+      journal.attempts
+        .filter((attempt) => attempt.runId === run.runId)
+        .map((attempt) => attempt.state),
+    ).toEqual(['sending', 'failed']);
+    expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
+      before,
+    );
+    expect(wait).not.toHaveBeenCalled();
+    const raw = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { stop: unknown; runDeadline: unknown; phases: string[] };
+    expect(raw.stop).toMatchObject({ token: 'run-wait-deadline' });
+    expect(raw.runDeadline).toMatchObject({
+      phase: 'batch-pause',
+      budgetMs: 200,
+    });
+    expect(raw.phases).toContain('batch-pause');
+    expect(h.notices.join('')).toContain('Phase: batch-pause\n');
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(run.pageOpens).toBe(0);
+  } finally {
+    release();
+    budget.mockRestore();
+    wait.mockRestore();
+    await h.close();
+  }
+}, 60000);
 test.each(['no-count', 'one', 'two', 'other'] as const)(
   'SOLESCOPE sole post refresh %s persists empty only with sole answer set',
   async (mode) => {

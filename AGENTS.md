@@ -62,6 +62,8 @@ Since c-solediag on 2026-11-07, a sole-comment attempt reports count-only answer
 
 Since c-stall on 2026-11-07, counted Instagram reads have a watchdog outside pace and person-confirmation waits. Reply refresh uses the existing post response deadline; a general step budgets its response windows and existing bounded dropdown, scroll, expansion and diagnostic waits. Expiry records `step-deadline`, closes the owned reading page, retains partial structure evidence and settles the attempt without a context write. A deliberately nonsettling sole-page observation and a stalled capture are tested on generated data; the exact cause of the maintainer's account stall remains unproven. Acceptance rules are unchanged, and forced termination can still prevent in-process finalization.
 
+Since c-stall2 on 2026-11-07, `acceptCanary` orders never fall back to a person-confirmation wait: undecided reply checks stop before writing, while answer-checked empty replies count as confirmations. Runs print closed phase lines and scheduled wait bounds; an unattended run watchdog covers exempt waits without shortening their pace or batch pause. Generated carried-batch and nonsettling-wait tests distinguish a scheduled pause from a stall; the account cause remains unproven.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

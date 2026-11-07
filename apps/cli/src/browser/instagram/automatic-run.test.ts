@@ -3,12 +3,31 @@ import {
   automaticRun,
   unattendedWaitBudget,
   RUN_PHASES,
+  AutomaticRunEvidenceSchema,
 } from './automatic-run.ts';
 test('STALL2 carried waits retain their full scheduled time plus a bounded completion margin', () => {
   expect(unattendedWaitBudget(900000, 30000)).toBe(930000);
   expect(unattendedWaitBudget(30000, 30000)).toBe(60000);
   expect(unattendedWaitBudget(60000, 1000)).toBe(90000);
   expect(new Set(RUN_PHASES).size).toBe(RUN_PHASES.length);
+});
+test('STALL2 progress evidence accepts closed phases and numbers only', () => {
+  const base = {
+    phases: ['batch-pause', 'post-open', 'reply-scope'],
+    automaticWaits: [
+      { phase: 'batch-pause', expectedMs: 900000, budgetMs: 930000 },
+    ],
+  };
+  expect(AutomaticRunEvidenceSchema.safeParse(base).success).toBe(true);
+  for (const invalid of [
+    { ...base, phases: ['Generated entry'] },
+    { ...base, text: 'Generated private text' },
+    {
+      ...base,
+      runDeadline: { phase: 'pace-wait', budgetMs: -1, elapsedMs: 3 },
+    },
+  ])
+    expect(AutomaticRunEvidenceSchema.safeParse(invalid).success).toBe(false);
 });
 test('STALL2 unattended watchdog stops an unresolved phase and late guard work', async () => {
   vi.useFakeTimers();

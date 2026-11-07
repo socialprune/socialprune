@@ -63,6 +63,8 @@ export function inspectSoleCommentAnswer(
     pagePermalinks: null,
     pageSamePostPermalinks: null,
     pageReplyControls: null,
+    pageOwnReplyControls: null,
+    pageForeignReplyControls: null,
     pageExpandControls: null,
     pageRows: null,
     focalPresent: null,

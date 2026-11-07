@@ -7767,20 +7767,49 @@ test('STALL2 unattended run watchdog stops a nonsettling carried batch before an
     await h.close();
   }
 }, 60000);
-test.each(['no-count', 'one', 'two', 'other'] as const)(
+test.each([
+  'no-count',
+  'one',
+  'two',
+  'other',
+  'own-reply',
+  'own-foreign',
+  'own-expand',
+  'own-time',
+] as const)(
   'SOLESCOPE sole post refresh %s persists empty only with sole answer set',
   async (mode) => {
     const h = await harness('success', 5, 30000);
     try {
-      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      expect(await h.start(true), h.notices.join('\n')).toMatchObject({
+        completed: 5,
+      });
       const before = await h.store.read((tx) => records(tx.instagramContext));
       h.fake.directPostAccount('expected');
       h.fake.replies(0);
       h.fake.replyAnswer(false);
       h.fake.scriptReplies('matching');
-      h.fake.soleCommentSet(mode);
-      h.fake.replyShape('sole-zero');
-      const accepted = mode === 'no-count' || mode === 'one';
+      h.fake.soleCommentSet(
+        mode === 'no-count' ||
+          mode === 'one' ||
+          mode === 'two' ||
+          mode === 'other'
+          ? mode
+          : 'one',
+      );
+      h.fake.replyShape(
+        mode === 'own-reply'
+          ? 'sole-zero-own-reply'
+          : mode === 'own-foreign'
+            ? 'sole-zero-own-foreign'
+            : mode === 'own-expand'
+              ? 'sole-zero-own-expand'
+              : mode === 'own-time'
+                ? 'sole-zero-own-time'
+                : 'sole-zero',
+      );
+      const accepted =
+        mode === 'no-count' || mode === 'one' || mode === 'own-reply';
       expect(
         await h.start({ refreshReplies: true }),
         h.notices.join('\n'),
@@ -7840,10 +7869,13 @@ test.each(['no-count', 'one', 'two', 'other'] as const)(
             childCountProofClass: 'zero',
             answerCommentSetSize: 1,
             answerSetValid: true,
-            declaredCountSeen: mode === 'one' ? 1 : 0,
-            declaredCountsAllOne: mode === 'one' ? true : null,
+            declaredCountSeen: mode === 'one' || mode === 'own-reply' ? 1 : 0,
+            declaredCountsAllOne:
+              mode === 'one' || mode === 'own-reply' ? true : null,
             pagePermalinks: 1,
-            pageReplyControls: 0,
+            pageReplyControls: mode === 'own-reply' ? 1 : 0,
+            pageOwnReplyControls: mode === 'own-reply' ? 1 : 0,
+            pageForeignReplyControls: 0,
             pageExpandControls: 0,
             focalPermalinks: 1,
             focalTimes: 1,
@@ -7860,7 +7892,11 @@ test.each(['no-count', 'one', 'two', 'other'] as const)(
           observed: true,
           answerNamesFocal: true,
           firstFailedGate:
-            mode === 'two' ? 'sole-declared-count' : 'sole-answer-set',
+            mode === 'two'
+              ? 'sole-declared-count'
+              : mode.startsWith('own-')
+                ? 'sole-page-controls'
+                : 'sole-answer-set',
         });
       expect(step.replyExpansion?.clicks).toEqual([]);
       for (const value of [h.fixture.items[0]!.text, h.plan.handle])

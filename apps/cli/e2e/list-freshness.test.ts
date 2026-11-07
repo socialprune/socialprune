@@ -32,6 +32,10 @@ test.each([
   'script-empty-list',
   'network',
   'count-one',
+  'own-reply',
+  'own-foreign',
+  'own-expand',
+  'own-time',
   'other-answer',
   'count-two',
   'control',
@@ -54,7 +58,15 @@ test.each([
           ? 'sole-zero-permalink'
           : mode === 'reply'
             ? 'sole-zero-reply'
-            : 'sole-zero',
+            : mode === 'own-reply'
+              ? 'sole-zero-own-reply'
+              : mode === 'own-foreign'
+                ? 'sole-zero-own-foreign'
+                : mode === 'own-expand'
+                  ? 'sole-zero-own-expand'
+                  : mode === 'own-time'
+                    ? 'sole-zero-own-time'
+                    : 'sole-zero',
     );
     const browser = await chromium.launch({
       headless: true,
@@ -143,6 +155,7 @@ test.each([
           'script-empty-list',
           'network',
           'count-one',
+          'own-reply',
         ].includes(mode)
       ) {
         expect(await reading).toMatchObject({
@@ -183,7 +196,13 @@ test.each([
             ? 'sole-answer-set'
             : mode === 'count-two'
               ? 'sole-declared-count'
-              : mode === 'control' || mode === 'reply'
+              : [
+                    'control',
+                    'reply',
+                    'own-foreign',
+                    'own-expand',
+                    'own-time',
+                  ].includes(mode)
                 ? 'sole-page-controls'
                 : mode === 'permalink'
                   ? 'sole-page-permalinks'
@@ -193,6 +212,20 @@ test.each([
                       ? 'sole-answer-focal'
                       : 'none',
       });
+      if (mode.startsWith('own-') || mode === 'reply')
+        expect(sole).toMatchObject({
+          pageReplyControls: mode === 'own-foreign' ? 2 : 1,
+          pageOwnReplyControls: [
+            'own-reply',
+            'own-foreign',
+            'own-expand',
+          ].includes(mode)
+            ? 1
+            : 0,
+          pageForeignReplyControls: ['own-reply', 'own-expand'].includes(mode)
+            ? 0
+            : 1,
+        });
       if (
         [
           'script',
@@ -200,12 +233,15 @@ test.each([
           'script-empty-list',
           'network',
           'count-one',
+          'own-reply',
         ].includes(mode)
       )
         expect(sole).toMatchObject({
           answerCommentSetSize: 1,
           childCountProofClass: 'zero',
-          pageReplyControls: 0,
+          pageReplyControls: mode === 'own-reply' ? 1 : 0,
+          pageOwnReplyControls: mode === 'own-reply' ? 1 : 0,
+          pageForeignReplyControls: 0,
           pageExpandControls: 0,
           focalPermalinks: 1,
           focalTimes: 1,

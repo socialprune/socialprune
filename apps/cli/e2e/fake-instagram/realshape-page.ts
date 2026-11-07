@@ -13,6 +13,10 @@ export type ReplyShapeCase =
   | 'sole-zero-control'
   | 'sole-zero-permalink'
   | 'sole-zero-reply'
+  | 'sole-zero-own-reply'
+  | 'sole-zero-own-foreign'
+  | 'sole-zero-own-expand'
+  | 'sole-zero-own-time'
   | 'top-level-decoy';
 export function rowShapePage(html: string, shape: RowShapeCase) {
   if (shape === 'handle-only')
@@ -76,7 +80,7 @@ export function replyShapePage(
       const local =
         shape === 'sole-zero-control'
           ? '<div role="button">View replies</div>'
-          : shape === 'sole-zero-reply'
+          : shape === 'sole-zero-reply' || shape.startsWith('sole-zero-own-')
             ? '<div role="button">Reply</div>'
             : shape === 'sole-zero-permalink'
               ? '<a href="/p/Generated/c/888888/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>'
@@ -84,13 +88,23 @@ export function replyShapePage(
       const list = html.indexOf('<div id="comment-rows">');
       if (list < 0) throw new Error('Generated sole comment list missing');
       return (
-        html.slice(0, html.indexOf('>', list) + 1) +
+        html
+          .slice(0, html.indexOf('>', list) + 1)
+          .replace(
+            '<main>',
+            `<main>${shape === 'sole-zero-reply' || shape === 'sole-zero-own-foreign' ? '<button>Reply</button>' : ''}`,
+          ) +
         '<div><img src="/profiles/comment.png" alt=""><div></div><div>' +
         '<div>'.repeat(8) +
         focal +
         '</div>'.repeat(8) +
         '</div>' +
-        local +
+        (shape === 'sole-zero-reply' ? '' : local) +
+        (shape === 'sole-zero-own-expand'
+          ? '<div role="button">Hide replies</div>'
+          : shape === 'sole-zero-own-time'
+            ? '<time datetime="2025-01-01T00:00:00Z">1w</time>'
+            : '') +
         '</div>' +
         html.slice(end)
       );

@@ -153,6 +153,8 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     pagePermalinks: 1,
     pageSamePostPermalinks: 1,
     pageReplyControls: 0,
+    pageOwnReplyControls: 0,
+    pageForeignReplyControls: 0,
     pageExpandControls: 0,
     pageRows: 0,
     focalPresent: true,
@@ -172,6 +174,8 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     { ...base, firstFailedGate: 'generated-message' },
     { ...base, declaredCountSeen: -1 },
     { ...base, pagePermalinks: '1' },
+    { ...base, pageOwnReplyControls: -1 },
+    { ...base, pageForeignReplyControls: '1' },
   ])
     expect(parse(invalid)).toBe(false);
 });

@@ -339,6 +339,8 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
   pagePermalinks: count.nullable(),
   pageSamePostPermalinks: count.nullable(),
   pageReplyControls: count.nullable(),
+  pageOwnReplyControls: count.nullable(),
+  pageForeignReplyControls: count.nullable(),
   pageExpandControls: count.nullable(),
   pageRows: count.nullable(),
   focalPresent: z.boolean().nullable(),

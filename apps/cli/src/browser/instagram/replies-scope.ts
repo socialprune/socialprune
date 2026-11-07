@@ -53,6 +53,39 @@ export async function matchedReplyRows(
   return rows;
 }
 const BUTTONS = 'button,[role="button"]';
+const replyActions = (root: Locator) =>
+  root.locator(BUTTONS).filter({ hasText: /^Reply$/u });
+
+/** The nearest permalink-bearing item must belong only to the focal comment. */
+async function focalReplyActions(
+  main: Locator,
+  focalSelector: string,
+  guard: () => void,
+) {
+  const actions = replyActions(main),
+    total = await actions.count();
+  let own = 0;
+  if (total <= 50)
+    for (const action of await actions.all()) {
+      guard();
+      const item = action.locator(
+        'xpath=ancestor::*[descendant::a[contains(@href,"/c/")]][1]',
+      );
+      if (
+        (await item.count()) === 1 &&
+        (await item.locator('xpath=ancestor::main').count()) === 1 &&
+        (await item.locator(focalSelector).count()) === 1 &&
+        (await item.locator('a[href*="/c/"]').count()) === 1 &&
+        (await item.locator('time[datetime]').count()) === 1 &&
+        (await item
+          .locator(focalSelector)
+          .locator('time[datetime]')
+          .count()) === 1
+      )
+        own++;
+    }
+  return { total, own, foreign: total - own };
+}
 export const replyControls = (root: Locator) =>
   root.locator(BUTTONS).filter({
     hasText: /^(?:View|Hide|See|Load).*repl/iu,
@@ -202,6 +235,7 @@ export async function structuralReplyScope(
   }
   const answerAccepted = soleAnswer();
   const sole = shape.soleComment;
+  let actionCounts: Awaited<ReturnType<typeof focalReplyActions>> | undefined;
   if (sole) {
     guard();
     try {
@@ -215,10 +249,10 @@ export async function structuralReplyScope(
         .locator(postPrefix.replace('a[href="', 'a[href^="') + '"]')
         .count();
       sole.pageExpandControls = await replyControls(main).count();
-      sole.pageReplyControls = await main
-        .locator(BUTTONS)
-        .filter({ hasText: /^Reply$/u })
-        .count();
+      actionCounts = await focalReplyActions(main, focalSelector, guard);
+      sole.pageReplyControls = actionCounts.total;
+      sole.pageOwnReplyControls = actionCounts.own;
+      sole.pageForeignReplyControls = actionCounts.foreign;
       sole.pageRows = await main.locator(REPLY_ROWS).count();
       sole.focalPresent = Boolean(isolated);
       if (isolated) {
@@ -235,7 +269,9 @@ export async function structuralReplyScope(
             ? 'sole-page-main'
             : sole.pageFocalPermalinks !== 1 || sole.pagePermalinks !== 1
               ? 'sole-page-permalinks'
-              : sole.pageExpandControls !== 0 || sole.pageReplyControls !== 0
+              : sole.pageExpandControls !== 0 ||
+                  sole.pageReplyControls !== sole.pageOwnReplyControls ||
+                  sole.pageForeignReplyControls !== 0
                 ? 'sole-page-controls'
                 : sole.pageRows !== 0
                   ? 'sole-page-rows'
@@ -258,15 +294,14 @@ export async function structuralReplyScope(
   if (zeroAnswer && isolated && answerAccepted) {
     guard();
     const main = focal.locator('xpath=ancestor::main');
+    actionCounts ??= await focalReplyActions(main, focalSelector, guard);
     if (
       (await main.count()) === 1 &&
       (await main.locator(focalSelector).count()) === 1 &&
       (await main.locator('a[href*="/c/"]').count()) === 1 &&
       (await replyControls(main).count()) === 0 &&
-      (await main
-        .locator(BUTTONS)
-        .filter({ hasText: /^Reply$/u })
-        .count()) === 0 &&
+      actionCounts.total === actionCounts.own &&
+      actionCounts.foreign === 0 &&
       (await main.locator(REPLY_ROWS).count()) === 0 &&
       (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
       (await isolated.root.locator('time[datetime]').count()) === 1 &&

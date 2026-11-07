@@ -24,6 +24,114 @@ import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
 import { commentReplies } from '../src/browser/instagram/replies.ts';
 import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
+import { deepReplyRows } from './fake-instagram/replies-page.ts';
+
+test.each(['matching', 'id', 'time', 'author', 'text'] as const)(
+  'ROWANSWER deep row %s uses answer content only after DOM presence checks',
+  async (variant) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(5);
+    fake.replyControl('View all 5 replies');
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      await page.route('**/p/**', async (route) => {
+        const response = await route.fetch();
+        let html = await response.text();
+        const group =
+          /<button onclick="this.nextElementSibling.hidden=false;this.remove\(\)">View all 5 replies<\/button><ul hidden>.*?<\/ul>/s;
+        if (!group.test(html)) throw new Error('Generated expansion missing');
+        const script = `const scope=this.parentElement;this.remove();setTimeout(()=>scope.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${deepReplyRows(5, IG_FIXTURE.code, item.createdAt, variant)}</ul></div></div><div role="button">Hide all replies</div>`)}),600)`;
+        html = html.replace(
+          group,
+          `<div role="button" onclick="${script.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">View all 5 replies</div>`,
+        );
+        await route.fulfill({ response, body: html });
+      });
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const bodies = [await (await response).json()];
+      let report: unknown;
+      const reading = commentReplies(
+        page,
+        bodies,
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 15000,
+        async () => {},
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (value) => {
+          report = value;
+        },
+      );
+      if (variant === 'matching') {
+        const result = await reading;
+        expect(result).toMatchObject({
+          capped: false,
+          moreCount: 0,
+          entries: Array.from({ length: 5 }, (_, index) => ({
+            account: `generated_reply_${index}`,
+            text: `Generated reply ${index} with local text`,
+            createdAt: item.createdAt,
+            likes:
+              index === 1
+                ? { count: null, source: null }
+                : { count: index + 2, source: 'answer' },
+          })),
+        });
+      } else
+        await expect(reading).rejects.toMatchObject({
+          token: 'comment-structure',
+        });
+      const parsed = ContextStepReportSchema.parse({
+        replyExpansion: report,
+      }).replyExpansion!;
+      expect(parsed.rows?.[0]).toMatchObject({
+        directChildCount: 1,
+        divBlocks: 1,
+        authorLinks: 3,
+        authorDistinctHrefs: 2,
+        permalinks: 1,
+        permalinkDepths: [9],
+        times: 1,
+        extraction: variant === 'matching' ? 'answer' : 'none',
+        failedStep: variant === 'matching' ? 'none' : `answer-${variant}`,
+      });
+      expect(parsed.rows?.[0]?.spansByDepth).toHaveLength(12);
+      expect(parsed.rows?.[0]?.spansByDepth.slice(0, 4)).toEqual([0, 0, 0, 0]);
+      for (const value of [
+        item.text,
+        item.account.handle!,
+        'generated_reply_0',
+        'Generated reply 0 with local text',
+      ])
+        expect(JSON.stringify(parsed)).not.toContain(value);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
 
 test.each([
   'shown',
@@ -216,19 +324,14 @@ test.each([
           'ul-div-wrapper',
           'ul-div-unknown',
           'rowtext-adjacent',
+          'rowtext-authors',
+          'rowtext-texts',
+          'rowtext-embedded',
         ].includes(mode)
       )
         expect((await reading).entries).toHaveLength(5);
       else if (mode === 'blocked')
         await expect(reading).rejects.toMatchObject({ name: 'TimeoutError' });
-      else if (
-        mode === 'rowtext-authors' ||
-        mode === 'rowtext-texts' ||
-        mode === 'rowtext-embedded'
-      )
-        await expect(reading).rejects.toMatchObject({
-          token: 'comment-structure',
-        });
       else
         await expect(reading).rejects.toMatchObject({
           reason:
@@ -265,12 +368,14 @@ test.each([
         expect(parsed.rows?.[0]).toMatchObject({
           observationFailed: false,
           authorLinks: mode === 'rowtext-authors' ? 2 : 1,
-          failedStep:
-            mode === 'rowtext-authors'
-              ? 'author'
-              : mode === 'rowtext-texts' || mode === 'rowtext-embedded'
-                ? 'text'
-                : 'none',
+          failedStep: 'none',
+          extraction: [
+            'rowtext-authors',
+            'rowtext-texts',
+            'rowtext-embedded',
+          ].includes(mode)
+            ? 'answer'
+            : 'adjacent',
         });
         for (const content of [
           item.text,
@@ -281,15 +386,11 @@ test.each([
           expect(JSON.stringify(parsed)).not.toContain(content);
         expect(await page.locator('[data-clicked="true"]').count()).toBe(0);
         expect(parsed.stopAt).toBe(
-          mode === 'rowtext-authors' ||
-            mode === 'rowtext-texts' ||
-            mode === 'rowtext-embedded'
-            ? 'row-text'
-            : mode === 'rowtext-mismatch' || mode === 'rowtext-author-mismatch'
-              ? 'answer-check'
-              : mode === 'rowtext-control-incomplete'
-                ? 'controls'
-                : null,
+          mode === 'rowtext-mismatch' || mode === 'rowtext-author-mismatch'
+            ? 'answer-check'
+            : mode === 'rowtext-control-incomplete'
+              ? 'controls'
+              : null,
         );
         return;
       }

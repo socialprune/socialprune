@@ -18,7 +18,11 @@ import { checkedReplyControls } from './reply-controls.ts';
 import type { ReplyControlsDiagnostic } from './report.ts';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
-import { replyRowShape, readReplyRow } from './reply-row.ts';
+import {
+  replyRowShape,
+  readReplyRow,
+  readAnswerBoundReply,
+} from './reply-row.ts';
 import {
   neighborhood,
   pollReplyGrowth,
@@ -337,7 +341,14 @@ export async function commentReplies(
         );
         if (priorRow < 0) rowReports.push(rowDiagnostic);
         else rowReports[priorRow] = rowDiagnostic;
-        const value = await readReplyRow(row, rowDiagnostic, clicks > 0);
+        const value =
+          (await readReplyRow(row, rowDiagnostic, clicks > 0)) ??
+          (await readAnswerBoundReply(
+            row,
+            address,
+            combinedReplyAnswer(bodies, match, scriptValues()).answer,
+            rowDiagnostic,
+          ));
         if (!value)
           throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');
         rowDiagnostic.failedStep = 'permalink';
@@ -375,6 +386,11 @@ export async function commentReplies(
           id ?? JSON.stringify([value.username, value.text, createdAt, index]);
         if (seen.has(key)) continue;
         seen.add(key);
+        if (value.answerEntry) {
+          entries.push(value.answerEntry);
+          if (entries.length === REPLY_CAP) break;
+          continue;
+        }
         const answer =
           id && createdAt
             ? answerLikes(bodies, { ...value, id, createdAt })

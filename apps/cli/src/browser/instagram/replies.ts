@@ -331,7 +331,12 @@ export async function commentReplies(
         if (!(await row.isVisible())) continue;
         site = 'row-text';
         const rowDiagnostic = await replyRowShape(row, match.username, index);
-        (expansion.rows ??= [])[index] = rowDiagnostic;
+        const rowReports = (expansion.rows ??= []);
+        const priorRow = rowReports.findIndex(
+          (report) => report.index === index,
+        );
+        if (priorRow < 0) rowReports.push(rowDiagnostic);
+        else rowReports[priorRow] = rowDiagnostic;
         const value = await readReplyRow(row, rowDiagnostic, clicks > 0);
         if (!value)
           throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'comment-structure');

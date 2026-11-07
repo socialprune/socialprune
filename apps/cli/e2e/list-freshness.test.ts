@@ -54,6 +54,7 @@ test.each([
   'rowtext-control-incomplete',
   'rowtext-author-mismatch',
   'rowtext-embedded',
+  'rowtext-hidden',
   'mismatch',
   'blocked',
 ] as const)(
@@ -143,6 +144,8 @@ test.each([
                 '<div><span dir="auto"><a href="/generated_reply_0/">',
               )
               .replace('1w</time></a></div>', '1w</time></a></span></div>');
+          if (mode === 'rowtext-hidden')
+            rows = rows.replace('<div><div>', '<div hidden><div>');
         }
         if (mode === 'ul-div-duplicate')
           rows = rows.replace('900001', '900000');
@@ -245,13 +248,20 @@ test.each([
                   : mode === 'rowtext-mismatch' ||
                       mode === 'rowtext-author-mismatch'
                     ? 'reply-answer-mismatch'
-                    : 'reply-controls-changed',
+                    : mode === 'rowtext-hidden'
+                      ? 'reply-answer-incomplete'
+                      : 'reply-controls-changed',
         });
       const parsed = ContextStepReportSchema.parse({
         replyExpansion: expansion,
       }).replyExpansion!;
       expect(parsed.clicks).toHaveLength(1);
       if (mode.startsWith('rowtext')) {
+        if (mode === 'rowtext-hidden') {
+          expect(parsed.rows?.map((row) => row.index)).toEqual([1, 2, 3, 4]);
+          expect(parsed.stopAt).toBe('answer-check');
+          return;
+        }
         expect(parsed.rows?.[0]).toMatchObject({
           observationFailed: false,
           authorLinks: mode === 'rowtext-authors' ? 2 : 1,

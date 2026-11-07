@@ -317,6 +317,7 @@ export const RowShapeDiagnosticSchema = z.strictObject({
 export type RowShapeDiagnostic = z.infer<typeof RowShapeDiagnosticSchema>;
 export const ReplyScopeDiagnosticSchema = z.strictObject({
   observed: z.boolean(),
+  scopeKind: z.enum(['structural', 'sole-comment']).optional(),
   failedCheck: z.enum([
     'none',
     'address',

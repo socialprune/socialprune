@@ -75,6 +75,7 @@ export async function structuralReplyScope(
   zeroAnswer: boolean,
   shape: ReplyScopeDiagnostic,
   guard: () => void,
+  soleAnswer: () => boolean = () => false,
 ) {
   let emptyScope: { root: Locator; depth: number; avatar: boolean } | undefined;
   let isolated: { root: Locator; depth: number; avatar: boolean } | undefined;
@@ -198,6 +199,29 @@ export async function structuralReplyScope(
         .count()) > 0
     )
       emptyScope ??= { root, depth, avatar: shape.avatarObserved };
+  }
+  if (zeroAnswer && isolated && soleAnswer()) {
+    guard();
+    const main = focal.locator('xpath=ancestor::main');
+    if (
+      (await main.count()) === 1 &&
+      (await main.locator(focalSelector).count()) === 1 &&
+      (await main.locator('a[href*="/c/"]').count()) === 1 &&
+      (await replyControls(main).count()) === 0 &&
+      (await main
+        .locator(BUTTONS)
+        .filter({ hasText: /^Reply$/u })
+        .count()) === 0 &&
+      (await main.locator(REPLY_ROWS).count()) === 0 &&
+      (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
+      (await isolated.root.locator('time[datetime]').count()) === 1 &&
+      (await replyControls(isolated.root).count()) === 0 &&
+      (await isolated.root.locator(REPLY_ROWS).count()) === 0
+    ) {
+      shape.scopeKind = 'sole-comment';
+      shape.avatarObserved = isolated.avatar;
+      return choose(isolated.root, isolated.depth);
+    }
   }
   if (shape.levels.length >= REPLY_SCOPE_DEPTH || !emptyScope) return null;
   shape.levels = shape.levels.slice(0, emptyScope.depth);

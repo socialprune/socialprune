@@ -61,6 +61,7 @@ export const IG_FIXTURE = {
     'Load more comments',
     'View replies',
     'View all 3 replies',
+    'View all 5 replies',
     'Comment row',
   ],
 } as const;

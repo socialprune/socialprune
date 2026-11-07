@@ -25,7 +25,7 @@ export async function matchedReplyRows(
         break;
       group = children;
     }
-    candidates = candidates.or(group.locator(':scope > div'));
+    candidates = candidates.or(group.locator(':scope > *'));
   }
   for (const row of await candidates.all()) {
     const links = row.locator('a[href*="/c/"]');

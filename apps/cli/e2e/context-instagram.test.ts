@@ -7327,6 +7327,80 @@ test.each([
   180000,
 );
 
+test('REPLYUL delayed div rows and Hide control persist five answer-checked refreshes once', async () => {
+  const h = await harness('success', 5, 30000);
+  try {
+    expect(await h.start(true)).toMatchObject({ completed: 5 });
+    const before = await h.store.read((tx) => records(tx.instagramContext));
+    h.fake.directPostAccount('expected');
+    h.fake.replies(5);
+    h.fake.replyControl('View all 5 replies');
+    h.fake.replyDivRows();
+    h.fake.replyAnswer(false);
+    h.fake.scriptReplies('matching');
+    expect(
+      await h.start({ refreshReplies: true }),
+      h.notices.join('\n'),
+    ).toMatchObject({ completed: 5, endReason: 'canary' });
+    const after = await h.store.read((tx) => records(tx.instagramContext));
+    expect(after.map(({ replies: _replies, ...record }) => record)).toEqual(
+      before,
+    );
+    expect(
+      after.every(
+        (record) =>
+          record.replies?.entries.length === 5 &&
+          record.replies.moreCount === 0 &&
+          !record.replies.capped,
+      ),
+    ).toBe(true);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: unknown[] };
+    for (const raw of report.steps) {
+      const step = ContextStepReportSchema.parse(raw);
+      expect(step.replies).toMatchObject({
+        read: 5,
+        answerChecked: true,
+        capped: false,
+      });
+      expect(step.replyExpansion).toMatchObject({
+        stopAt: null,
+        clicks: [
+          {
+            clicked: true,
+            rowsBefore: 0,
+            rowsAfter: 5,
+            controlsAfter: {
+              controls: [{ shape: 'hide-replies', accepted: false }],
+            },
+          },
+        ],
+      });
+      expect(
+        step.replyExpansion?.clicks[0]?.poll?.firstGrowthMs,
+      ).toBeGreaterThanOrEqual(500);
+    }
+    expect(
+      (
+        await planContext(
+          h.store,
+          h.plan.accountKey,
+          new Set(),
+          new Set(),
+          false,
+          true,
+        )
+      ).rows,
+    ).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+}, 180000);
 test.each(['matching', 'missing', 'disagreement', 'threaded'] as const)(
   'replyempty depth-11 foreign permalink and no expand control: %s focal answer',
   async (mode) => {

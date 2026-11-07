@@ -48,6 +48,8 @@ The replies reader also accepts exact numbered expansion-control variants only w
 
 The c-control clarification of 2026-11-06 adds a bounded post-click reply neighborhood observation and exact immediately following sibling reply groups, still with permalink, time, row structure and page-answer checks. `context instagram --diagnostic-control <ids-file> --limit 1` selects one existing list-confirmed comment only under a listDiagnostic order, binds it in the dry-run plan and runs the existing filter probes without changing its record or creating a confirmation attempt. Zero-row diagnostic probes retain markers and a second settled count; contradictory wider-window zeros are inconclusive. Generated-page tests cover these paths; real-account behavior remains unmeasured.
 
+The c-replyul clarification of 2026-11-07 reads div reply rows under a single newly appeared focal reply list, with exact non-focal same-post permalinks, valid times, the existing author/text blocks and page-answer agreement. A closed Hide replies control after expansion stays inert and unclicked; other unknown controls refuse. Generated delayed-list and refusal tests pass; the normal list path and no-row outcome are unchanged.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

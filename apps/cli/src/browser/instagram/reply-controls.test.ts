@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { replyControlShape } from './reply-controls.ts';
+import { replyControlShape, checkedReplyControls } from './reply-controls.ts';
+import type { Locator } from 'playwright-core';
 import { ReplyControlsDiagnosticSchema } from './report.ts';
 test.each(['View all 5 replies', 'View replies (5)'])(
   'REPCTL exact %s needs matching explicit answer count',
@@ -48,4 +49,29 @@ test('REPCTL closed diagnostics contain no label and reject extra contents', () 
       label: 'Generated private label',
     }).success,
   ).toBe(false);
+});
+test('REPLYUL hide is inert only after expansion and unknown controls still refuse', async () => {
+  for (const label of [
+    'Hide replies',
+    'Hide replies (5)',
+    'Hide replies now',
+    'See replies',
+  ]) {
+    const control = {
+      innerText: () => Promise.resolve(label),
+      getAttribute: () => Promise.resolve('button'),
+      locator: () => ({ count: () => Promise.resolve(1) }),
+    } as unknown as Locator;
+    const group = {
+      count: () => Promise.resolve(1),
+      all: () => Promise.resolve([control]),
+    } as unknown as Locator;
+    expect((await checkedReplyControls(group, 5)).valid).toBe(false);
+    const after = await checkedReplyControls(group, 5, true);
+    expect(after.valid).toBe(
+      label === 'Hide replies' || label === 'Hide replies (5)',
+    );
+    expect(after.control).toBeUndefined();
+    expect(after.diagnostic.controls[0]?.accepted).toBe(false);
+  }
 });

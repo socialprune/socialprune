@@ -6,6 +6,7 @@ export function addRepliesPage(
   code: string,
   at: string,
   label = 'View replies',
+  divRows = false,
 ) {
   const entries = Array.from({ length: count }, (_, index) => {
     const author = `generated_reply_${index}`;
@@ -18,7 +19,17 @@ export function addRepliesPage(
   // The generated ancestry check fixes the group to the permalink's fifth
   // ancestor, outside the inner text/actions row but inside this comment.
   const position = end + '<div role="button">Reply</div></div></div>'.length;
-  const group = `<button onclick="this.nextElementSibling.hidden=false;this.remove()">${label}</button><ul hidden>${entries}</ul>`;
+  const rows = entries
+    .replace(
+      '<span>1w</span>',
+      `<a href="/p/${code}/c/900001/"><time datetime="${at}">1w</time></a>`,
+    )
+    .replaceAll('<li>', '<div>')
+    .replaceAll('</li>', '</div>');
+  const delayed = `const root=this.parentElement;this.remove();setTimeout(()=>mutate(()=>root.insertAdjacentHTML('beforeend',${JSON.stringify(`<div><div><ul>${rows}</ul></div></div><div role="button">Hide replies</div>`)})),600)`;
+  const group = divRows
+    ? `<div role="button" onclick="${delayed.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">${label}</div>`
+    : `<button onclick="this.nextElementSibling.hidden=false;this.remove()">${label}</button><ul hidden>${entries}</ul>`;
   return (html.slice(0, position) + group + html.slice(position)).replace(
     '</main>',
     "<aside data-reply-decoy><button onclick=\"this.parentElement.setAttribute('data-clicked','true')\">View replies</button></aside></main>",

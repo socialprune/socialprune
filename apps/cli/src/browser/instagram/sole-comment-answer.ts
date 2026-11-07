@@ -106,8 +106,7 @@ export function soleCommentAnswer(
         walk(
           next,
           depth + 1,
-          commentSets.has(key) ||
-            (inSet && ['edges', 'node', 'nodes', 'items'].includes(key)),
+          commentSets.has(key) || (inSet && !['user', 'owner'].includes(key)),
           inPost,
         );
     }

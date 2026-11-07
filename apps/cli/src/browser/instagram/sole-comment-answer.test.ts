@@ -81,6 +81,7 @@ test.each([
   'count-two',
   'count-string',
   'unknown-comment',
+  'nested-other',
   'mixed-source',
   'count-only',
   'capped',
@@ -109,6 +110,11 @@ test.each([
   }
   if (kind === 'unknown-comment')
     value = { code, comments: [focal, { pk: '456' }] };
+  if (kind === 'nested-other')
+    value = {
+      code,
+      comments: { nodes: [focal], extra: { data: { pk: '456' } } },
+    };
   if (kind === 'mixed-source') {
     value = focal;
     bodies = [{ comments: [{ ...focal, pk: '456' }] }];

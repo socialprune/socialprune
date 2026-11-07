@@ -7429,6 +7429,86 @@ test.each(['legacy', 'adjacent', 'answer'] as const)(
   },
   180000,
 );
+test.each(['no-count', 'one', 'two', 'other'] as const)(
+  'SOLESCOPE sole post refresh %s persists empty only with sole answer set',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      const before = await h.store.read((tx) => records(tx.instagramContext));
+      h.fake.directPostAccount('expected');
+      h.fake.replies(0);
+      h.fake.replyAnswer(false);
+      h.fake.scriptReplies('matching');
+      h.fake.soleCommentSet(mode);
+      h.fake.replyShape('sole-zero');
+      const accepted = mode === 'no-count' || mode === 'one';
+      expect(
+        await h.start({ refreshReplies: true }),
+        h.notices.join('\n'),
+      ).toMatchObject(
+        accepted
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token: 'reply-scope-unverified',
+            },
+      );
+      const after = await h.store.read((tx) => records(tx.instagramContext));
+      if (accepted) {
+        expect(after.map(({ replies: _replies, ...record }) => record)).toEqual(
+          before,
+        );
+        expect(
+          after.every(
+            (record) =>
+              record.replies?.entries.length === 0 &&
+              record.replies.moreCount === 0 &&
+              !record.replies.capped,
+          ),
+        ).toBe(true);
+        expect(
+          (
+            await planContext(
+              h.store,
+              h.plan.accountKey,
+              new Set(),
+              new Set(),
+              false,
+              true,
+            )
+          ).rows,
+        ).toHaveLength(0);
+      } else expect(after).toEqual(before);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const raw = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(raw.steps[0]);
+      if (accepted) {
+        expect(step.replyScope).toMatchObject({
+          scopeKind: 'sole-comment',
+          failedCheck: 'none',
+          chosenDepth: 12,
+        });
+        expect(step.replies).toMatchObject({
+          read: 0,
+          answerChecked: true,
+          capped: false,
+        });
+      }
+      expect(step.replyExpansion?.clicks).toEqual([]);
+      for (const value of [h.fixture.items[0]!.text, h.plan.handle])
+        expect(JSON.stringify(raw)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
 test.each([
   'count',
   'empty-list',

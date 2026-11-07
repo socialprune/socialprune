@@ -40,6 +40,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let replyDivRows = false;
   let replyAdjacentText = false;
   let replyAnswerRows = false;
+  let soleCommentSet: 'no-count' | 'one' | 'two' | 'other' | undefined;
   let scriptReplyCase:
     | 'matching'
     | 'id'
@@ -449,6 +450,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           replyCount &&
           replyShapeCase !== 'no-replies' &&
           !replyShapeCase?.startsWith('plain-zero') &&
+          !replyShapeCase?.startsWith('sole-zero') &&
           html
             .split('<script>')[0]!
             .includes(
@@ -512,7 +514,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           if (scriptReplyCase === 'parameter') focal = { variables: focal };
           html = html.replace(
             '</head>',
-            `<script type="application/json">${JSON.stringify({ data: focal }).replaceAll('<', '\\u003c')}</script></head>`,
+            `<script type="application/json">${JSON.stringify({ data: soleCommentSet ? { code: `${IG_FIXTURE.code}${i || ''}`, ...(soleCommentSet === 'one' ? { comment_count: 1 } : soleCommentSet === 'two' ? { comment_count: 2 } : {}), comments: [focal, ...(soleCommentSet === 'other' ? [{ ...focal, pk: '888777', text: 'Generated other comment' }] : [])] } : focal }).replaceAll('<', '\\u003c')}</script></head>`,
           );
         }
         if (listDecoration === 'caption')
@@ -761,6 +763,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     replyShape(value: ReplyShapeCase) {
       replyShapeCase = value;
+    },
+    soleCommentSet(value: 'no-count' | 'one' | 'two' | 'other') {
+      soleCommentSet = value;
     },
     listProbe(value: ListProbeCase) {
       probeCase = value;

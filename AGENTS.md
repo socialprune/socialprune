@@ -56,6 +56,8 @@ Since c-rowanswer on 2026-11-07, a matched reply row that both DOM extractors ca
 
 Since c-zeroscope on 2026-11-07, an exact valid answer explicitly proving zero children may retain an observed-empty reply field for a plain focal item among sibling comments with replies. The deepest isolated focal element must contain only its own permalink and dated time, no reply control, rows or other permalink, and a separate untruncated comment-list boundary. Positive, absent, mismatched and contaminated cases refuse. This narrow path has generated-data proof; other reading and storage behavior is unchanged.
 
+Since c-solescope on 2026-11-07, explicit zero evidence may also admit a sole rendered focal comment when the answer set contains no other current-post comment, every declared post comment count is one, and the whole post has no other comment permalink or reply/expand control. The clean deepest focal element is reported as `sole-comment`; sibling isolation, final answer agreement, caps and storage remain unchanged. Generated sole-post tests cover this branch; its real-account behavior remains unmeasured.
+
 ## Hard constraints
 
 These hold in every phase. Changing one takes an explicit decision by the maintainer.

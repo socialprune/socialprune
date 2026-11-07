@@ -27,6 +27,137 @@ import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
 
 test.each([
+  'script',
+  'network',
+  'count-one',
+  'other-answer',
+  'count-two',
+  'control',
+  'permalink',
+  'reply',
+  'positive',
+  'mismatch',
+  'missing',
+] as const)(
+  'SOLESCOPE sole rendered comment %s requires zero answer and sole post evidence',
+  async (mode) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(0);
+    fake.replyAnswer(true);
+    fake.replyShape(
+      mode === 'control'
+        ? 'sole-zero-control'
+        : mode === 'permalink'
+          ? 'sole-zero-permalink'
+          : mode === 'reply'
+            ? 'sole-zero-reply'
+            : 'sole-zero',
+    );
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      const response = page.waitForResponse((response) =>
+        response.url().includes('/data/'),
+      );
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const network = (await (await response).json()) as unknown;
+      const focal = {
+        pk: IG_FIXTURE.commentId,
+        user: { username: item.account.handle! },
+        text: mode === 'mismatch' ? 'Generated wrong text' : item.text,
+        created_at: Date.parse(item.createdAt) / 1000,
+        child_comment_count: mode === 'positive' ? 1 : 0,
+      };
+      const script = [
+        {
+          code: IG_FIXTURE.code,
+          ...(mode === 'count-one'
+            ? { comment_count: 1 }
+            : mode === 'count-two'
+              ? { comment_count: 2 }
+              : {}),
+          comments: [
+            focal,
+            ...(mode === 'other-answer'
+              ? [{ ...focal, pk: '888777', text: 'Generated other comment' }]
+              : []),
+          ],
+        },
+      ];
+      let scope: unknown, expansion: unknown;
+      const reading = commentReplies(
+        page,
+        mode === 'network' ? [network] : [],
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 15000,
+        async () => {},
+        0,
+        undefined,
+        undefined,
+        (value) => {
+          scope = value;
+        },
+        undefined,
+        undefined,
+        undefined,
+        () => (mode === 'missing' ? [] : mode === 'network' ? [] : script),
+        undefined,
+        (value) => {
+          expansion = value;
+        },
+      );
+      if (['script', 'network', 'count-one'].includes(mode)) {
+        expect(await reading).toMatchObject({
+          entries: [],
+          moreCount: 0,
+          capped: false,
+        });
+        expect(scope).toMatchObject({
+          failedCheck: 'none',
+          scopeKind: 'sole-comment',
+          focalCount: 1,
+          focalTimeExact: true,
+        });
+        expect(
+          ContextStepReportSchema.parse({ replyScope: scope }).replyScope
+            ?.scopeKind,
+        ).toBe('sole-comment');
+      } else
+        await expect(reading).rejects.toMatchObject({
+          reason: 'reply-scope-unverified',
+        });
+      expect(
+        ContextStepReportSchema.parse({ replyExpansion: expansion })
+          .replyExpansion?.clicks,
+      ).toEqual([]);
+      expect(
+        await page.locator(`main a[href^="/p/${IG_FIXTURE.code}/c/"]`).count(),
+      ).toBe(1);
+      for (const value of [
+        item.text,
+        item.account.handle!,
+        IG_FIXTURE.commentId,
+      ])
+        expect(JSON.stringify({ scope, expansion })).not.toContain(value);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+
+test.each([
   'matching',
   'id',
   'time',

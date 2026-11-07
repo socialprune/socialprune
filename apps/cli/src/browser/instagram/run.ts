@@ -1979,7 +1979,8 @@ export async function runContextWithDependencies(
     // Deadline evidence must reach disk before any browser/network readback.
     // A frozen renderer cannot be allowed to withhold the partial step report.
     if ((reading?.expired || auto.expired || unattended) && began) {
-      await finalize('structure-report', structure);
+      if (reading?.expired || auto.expired)
+        await finalize('structure-report', structure);
       let disposalTimer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([

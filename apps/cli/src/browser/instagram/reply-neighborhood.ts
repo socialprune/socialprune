@@ -126,6 +126,8 @@ export async function pollReplyGrowth(
       if ((growth || visibleRows) && poll.firstGrowthMs === null)
         poll.firstGrowthMs = Math.round(performance.now() - started);
       if (visibleRows) {
+        // Rows may appear between the neighborhood and row reads in this sample.
+        poll.after = await neighborhood(page, root, address, focal);
         poll.timeout = false;
         break;
       }

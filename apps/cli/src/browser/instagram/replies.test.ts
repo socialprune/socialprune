@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import type { Page } from 'playwright-core';
+import type { Locator, Page } from 'playwright-core';
 import {
   commentReplies,
   captureRepliesForMode,
@@ -14,6 +14,52 @@ import {
   answerReplies,
 } from './replies-answer.ts';
 import * as scope from './replies-scope.ts';
+import { pollReplyGrowth } from './reply-neighborhood.ts';
+
+test('STALL2 poll evidence refreshes when reply rows appear between the neighborhood and row reads', async () => {
+  let appeared = false;
+  const node = {
+    locator: () => node,
+    or: () => node,
+    filter: () => node,
+    all: () => Promise.resolve([]),
+    count: () => Promise.resolve(appeared ? 5 : 0),
+  };
+  const checked = vi.spyOn(selectors, 'checkPage').mockResolvedValue(undefined);
+  const rows = vi.spyOn(scope, 'matchedReplyRows').mockImplementation(() => {
+    appeared = true;
+    return Promise.resolve(node as unknown as Locator);
+  });
+  const poll: Parameters<typeof pollReplyGrowth>[7] = {
+    maxMs: 5000,
+    elapsedMs: 0,
+    firstGrowthMs: null,
+    timeout: true,
+    observationFailed: false,
+    samples: 0,
+    after: [],
+  };
+  try {
+    await pollReplyGrowth(
+      { locator: () => node } as unknown as Page,
+      node as unknown as Locator,
+      { kind: 'p', code: 'GeneratedPost' },
+      '123',
+      [],
+      performance.now() + 5000,
+      () => {},
+      poll,
+    );
+    expect(poll.timeout).toBe(false);
+    expect(poll.observationFailed).toBe(false);
+    expect(
+      poll.after.find((value) => value.location === 'next-sibling')?.li,
+    ).toBe(5);
+  } finally {
+    rows.mockRestore();
+    checked.mockRestore();
+  }
+});
 
 const match = {
   id: '123',

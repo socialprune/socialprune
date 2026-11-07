@@ -9,92 +9,53 @@ export const ZERO_SCOPE_ELEMENT_LIMIT = 20000;
 
 /** Read only element shape and permalink counts, never sibling controls/text. */
 async function zeroBoundary(root: Locator, focalSelector: string) {
-  return root.evaluate(
-    (node, limits) => {
-      type ElementShape = {
-        children: ArrayLike<ElementShape>;
-        tagName: string;
-        getAttribute: (name: string) => string | null;
-        matches: (selector: string) => boolean;
-      };
-      const parent = node as unknown as ElementShape;
-      const total = parent.children.length;
-      const result = {
-        total,
-        observed: false,
-        overBound: total > limits.children,
-        elements: 0,
-        focalChildren: 0,
-        focalOtherPermalinks: 0,
-        foreignChildren: 0,
-        directAnchors: 0,
-        children: [] as {
-          containsFocal: boolean;
-          otherPermalinks: number;
-          times: number;
-          expandControls: null;
-          images: number;
-        }[],
-      };
-      if (result.overBound) return result;
-      for (let index = 0; index < total; index++) {
-        let focal = 0,
-          links = 0,
-          times = 0,
-          images = 0;
-        const child = parent.children[index]!;
-        if (
-          child.tagName.toLowerCase() === 'a' &&
-          child.getAttribute('href')?.includes('/c/')
-        )
-          result.directAnchors++;
-        const stack = [child];
-        while (stack.length) {
-          const element = stack.pop()!;
-          if (result.elements >= limits.elements) {
-            result.overBound = true;
-            return result;
-          }
-          result.elements++;
-          const tag = element.tagName.toLowerCase();
-          if (element.matches(limits.focal)) focal++;
-          if (tag === 'a' && element.getAttribute('href')?.includes('/c/'))
-            links++;
-          if (tag === 'time') times++;
-          if (tag === 'img') images++;
-          if (
-            element.children.length >
-            limits.elements - result.elements - stack.length
-          ) {
-            result.overBound = true;
-            return result;
-          }
-          for (let next = element.children.length - 1; next >= 0; next--)
-            stack.push(element.children[next]!);
-        }
-        const other = Math.max(0, links - focal);
-        if (focal > 0) {
-          result.focalChildren++;
-          result.focalOtherPermalinks += other;
-        } else if (other > 0) result.foreignChildren++;
-        if (index < 32)
-          result.children.push({
-            containsFocal: focal > 0,
-            otherPermalinks: other,
-            times,
-            expandControls: null,
-            images,
-          });
-      }
-      result.observed = true;
-      return result;
-    },
-    {
-      focal: focalSelector,
-      children: ZERO_SCOPE_CHILD_LIMIT,
-      elements: ZERO_SCOPE_ELEMENT_LIMIT,
-    },
-  );
+  const children = root.locator(':scope > *');
+  const total = await children.count();
+  const result = {
+    total,
+    observed: false,
+    overBound: total > ZERO_SCOPE_CHILD_LIMIT,
+    elements: 0,
+    focalChildren: 0,
+    focalOtherPermalinks: 0,
+    foreignChildren: 0,
+    directAnchors: 0,
+    children: [] as ReplyScopeDiagnostic['levels'][number]['children'],
+  };
+  if (result.overBound) return result;
+  result.elements = await root.locator('*').count();
+  if (result.elements > ZERO_SCOPE_ELEMENT_LIMIT) {
+    result.overBound = true;
+    return result;
+  }
+  // The selector comes only from the validated post address and numeric ID.
+  const href = focalSelector.slice('a[href="'.length, -2);
+  const focalTest = `descendant-or-self::a[@href="${href}"]`;
+  const links = 'descendant-or-self::a[contains(@href,"/c/")]';
+  const focalChildren = root.locator(`xpath=./*[${focalTest}]`);
+  result.focalChildren = await focalChildren.count();
+  result.focalOtherPermalinks = await focalChildren
+    .locator(`xpath=${links}[not(@href="${href}")]`)
+    .count();
+  result.foreignChildren = await root
+    .locator(`xpath=./*[not(${focalTest}) and ${links}]`)
+    .count();
+  result.directAnchors = await root.locator(':scope > a[href*="/c/"]').count();
+  for (const child of (await children.all()).slice(0, 32)) {
+    const focal = await child.locator(`xpath=${focalTest}`).count();
+    result.children.push({
+      containsFocal: focal > 0,
+      otherPermalinks: Math.max(
+        0,
+        (await child.locator(`xpath=${links}`).count()) - focal,
+      ),
+      times: await child.locator('xpath=descendant-or-self::time').count(),
+      expandControls: null,
+      images: await child.locator('xpath=descendant-or-self::img').count(),
+    });
+  }
+  result.observed = true;
+  return result;
 }
 /** Additional expanded wrapper only, never a page-wide or text-only row. */
 export async function matchedReplyRows(

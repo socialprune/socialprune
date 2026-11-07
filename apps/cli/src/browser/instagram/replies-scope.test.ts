@@ -34,43 +34,32 @@ function fixture(levels: Level[]) {
   });
   const root = (level: Level) => ({
     ...empty,
-    evaluate: <T, A>(read: (node: unknown, args: A) => T, args: A) => {
-      const node = (
-        tagName: string,
-        children: unknown[] = [],
-        focal = false,
-        link = false,
-      ) => ({
-        tagName,
-        children,
-        getAttribute: () => (link ? '/p/Generated/c/123/' : null),
-        matches: () => focal,
-      });
-      const children =
-        level.children ??
-        (level.foreign ? [{ focal: true }, { other: 1 }] : []);
-      return Promise.resolve(
-        read(
-          node(
-            'DIV',
-            children.map((child) =>
-              child.selfLink
-                ? node('A', [], false, true)
-                : node('DIV', [
-                    ...(child.focal ? [node('A', [], true, true)] : []),
-                    ...Array.from({ length: child.other ?? 0 }, () =>
-                      node('A', [], false, true),
-                    ),
-                  ]),
-            ),
-          ),
-          args,
-        ),
-      );
-    },
     count: () => Promise.resolve(1),
     locator: (selector: string) => {
       if (selector === 'xpath=ancestor::main') return counted(level.main ?? 1);
+      if (selector === '*') return counted((level.children?.length ?? 0) * 3);
+      if (selector.startsWith('xpath=./*[descendant-or-self::a'))
+        return {
+          ...counted(
+            (level.children ?? []).filter((child) => child.focal).length,
+          ),
+          locator: () =>
+            counted(
+              (level.children ?? [])
+                .filter((child) => child.focal)
+                .reduce((sum, child) => sum + (child.other ?? 0), 0),
+            ),
+        };
+      if (selector.startsWith('xpath=./*[not(descendant-or-self::a'))
+        return counted(
+          (level.children ?? []).filter(
+            (child) => !child.focal && (child.other ?? 0) > 0,
+          ).length,
+        );
+      if (selector === ':scope > a[href*="/c/"]')
+        return counted(
+          (level.children ?? []).filter((child) => child.selfLink).length,
+        );
       if (selector === ':scope > *')
         return {
           ...counted(level.children?.length ?? 0),
@@ -79,9 +68,15 @@ function fixture(levels: Level[]) {
               (level.children ?? []).map((child) => ({
                 ...empty,
                 locator: (inner: string) => {
-                  if (inner === focalSelector)
+                  if (
+                    inner === focalSelector ||
+                    inner.startsWith('xpath=descendant-or-self::a[@href=')
+                  )
                     return counted(child.focal ? 1 : 0);
-                  if (inner === 'a[href*="/c/"]')
+                  if (
+                    inner === 'a[href*="/c/"]' ||
+                    inner.startsWith('xpath=descendant-or-self::a[contains')
+                  )
                     return counted((child.focal ? 1 : 0) + (child.other ?? 0));
                   if (inner === 'xpath=self::a[contains(@href,"/c/")]')
                     return counted(child.selfLink ? 1 : 0);
@@ -179,7 +174,7 @@ test.each([true, false])(
       await structuralReplyScope(
         fixture([
           ...Array.from({ length: 10 }, (): Level => ({ times: 1 })),
-          { foreign: 1 },
+          { foreign: 1, children: [{ focal: true }, { other: 1 }] },
         ]),
         focalSelector,
         zeroAnswer,
@@ -363,11 +358,17 @@ test.each([
               const root = focal.locator(selector);
               return new Proxy(root, {
                 get(object, property) {
-                  return property === 'evaluate'
-                    ? () =>
-                        Promise.reject(
-                          new Error('Generated unreadable boundary'),
-                        )
+                  return property === 'locator'
+                    ? (selector: string) => {
+                        if (selector === '*')
+                          return {
+                            count: () =>
+                              Promise.reject(
+                                new Error('Generated unreadable boundary'),
+                              ),
+                          };
+                        return object.locator(selector);
+                      }
                     : (Reflect.get(object, property) as unknown);
                 },
               });

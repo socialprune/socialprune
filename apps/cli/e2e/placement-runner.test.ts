@@ -629,7 +629,7 @@ test('PLACEMENT X deletion run with restored tabs keeps the window, the foregrou
           });
           launched();
           await restoredSeen;
-          return pageDriver({
+          const driver = await pageDriver({
             context,
             origin: fake.origin,
             allowedOrigins: [fake.origin],
@@ -641,6 +641,15 @@ test('PLACEMENT X deletion run with restored tabs keeps the window, the foregrou
             onRateLimit: options.onRateLimit,
             onWindow: options.onWindow,
           });
+          // As in production the window stays open after the run; the probe
+          // reads it and closes it in its own teardown.
+          return {
+            ...driver,
+            close: () => {
+              driver.endPages?.();
+              return Promise.resolve();
+            },
+          };
         },
       },
     );

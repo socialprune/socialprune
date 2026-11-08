@@ -2232,6 +2232,123 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
   }
 }, 180000);
 
+test('RESET-LANG-1 a direct reply refresh crosses the 20 to 21 renderer reset and checks the language only on platform pages', async () => {
+  // Run 0a43cac2: after the same-tab renderer reset the direct refresh read
+  // the language of the CLI's own reset page and stopped with PAGE_LANGUAGE.
+  // The reply reading budget derives from the response window, as in REPLIES-1.
+  const h = await harness('success', 22, 30000);
+  // Seed post confirmations directly, as SCOPECAP does, so the measured run
+  // is the reply refresh itself and its renderer reset after step 20.
+  const writer = new InstagramContextWriter(h.store);
+  await writer.startRun({
+    runId: 'generated-resetlang-seed',
+    accountKey: h.plan.accountKey,
+    planHash: h.plan.hash,
+    startedAt: IG_FIXTURE.now,
+  });
+  for (const [index, item] of h.fixture.items.entries()) {
+    const attemptId = `generated-resetlang-seed-${index}`;
+    await writer.sending({
+      runId: 'generated-resetlang-seed',
+      attemptId,
+      itemId: item.id,
+      at: IG_FIXTURE.now,
+    });
+    await writer.confirm({
+      confirmedBy: 'post',
+      ownerCheck: 'matched-export',
+      itemId: item.id,
+      accountKey: h.plan.accountKey,
+      post: {
+        kind: 'p',
+        code: `${IG_FIXTURE.code}${index || ''}`,
+        owner: item.reference.ownerHandle!,
+        ownerCount: 1,
+        caption: null,
+        captionComplete: true,
+        createdAt: null,
+      },
+      comment: {
+        id: String(BigInt(IG_FIXTURE.commentId) + BigInt(index)),
+        createdAt: item.createdAt,
+        expandClicks: 0,
+      },
+      image: { file: null, host: null, status: 'not-captured' },
+      screenshot: { file: null, bytes: null, status: 'failed' },
+      confirmedAt: IG_FIXTURE.now,
+      runId: 'generated-resetlang-seed',
+      attemptId,
+    });
+  }
+  await writer.endRun({
+    runId: 'generated-resetlang-seed',
+    endedAt: IG_FIXTURE.now,
+    endReason: 'done',
+    bodyShapes: {},
+    profileReport: {
+      accountBefore: h.plan.handle,
+      accountAfter: h.plan.handle,
+      extensionsBefore: 0,
+      extensionsAfter: 0,
+      changedFiles: [],
+      unexpectedRequests: [],
+    },
+  });
+  h.setLimit(21);
+  h.setMaxSteps(21);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
+  const originalPages = pagesHelpers.contextPages;
+  const urls: string[] = [];
+  const create = vi
+    .spyOn(pagesHelpers, 'contextPages')
+    .mockImplementation((...args) => {
+      const boundary = originalPages(...args);
+      const reset = boundary.resetRenderer.bind(boundary);
+      boundary.resetRenderer = async (page, timeout) => {
+        const same = await reset(page, timeout);
+        urls.push(same.url());
+        return same;
+      };
+      return boundary;
+    });
+  try {
+    h.fake.directPostAccount('expected');
+    h.fake.replies(3);
+    await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
+    urls.length = 0;
+    const before = h.fake.requests.length;
+    const result = await h.start({ refreshReplies: true });
+    expect(result, h.notices.join('\n')).toMatchObject({
+      completed: 21,
+      steps: 21,
+    });
+    // The reset leaves the reader blank, as a fresh startup page, never on
+    // the reset page; the next platform page is checked as before.
+    expect(urls).toEqual(['about:blank']);
+    const requests = h.fake.requests.slice(before);
+    expect(
+      requests.filter((request) => /^\/p\//.test(request.path)),
+    ).toHaveLength(21);
+    expect(
+      requests.some((request) => request.path.startsWith('/your_activity/')),
+    ).toBe(false);
+    const run = (await h.store.browserJournal()).runs.at(-1)!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as unknown;
+    expect(report).toMatchObject({
+      recycling: { count: 1, events: [{ afterStep: 20, nextStep: 21 }] },
+      pages: { rendererResets: 1 },
+    });
+  } finally {
+    create.mockRestore();
+    await h.close();
+  }
+}, 300000);
+
 test.each(['account', 'language', 'extension', 'http-429'] as const)(
   'C35 IG19 recycle retains the %s guard before next comment confirmation',
   async (mode) => {

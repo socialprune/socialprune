@@ -348,9 +348,11 @@ test('a context with no blank page closes every restored page and creates its ow
   );
   try {
     expect(await boundary.startupPage()).toBe(blank);
+    // SETUP-1: the run's own page exists before any restored page closes, so
+    // the window always keeps a tab; then they close in launch order.
     expect(closed).toEqual([
-      'generated-restored-two',
       'generated-restored-one',
+      'generated-restored-two',
     ]);
     expect(boundary.counts).toMatchObject({
       startupClosed: 2,
@@ -519,6 +521,121 @@ test('T1 a page in another window stays open at startup, but any page after star
     expect(failures).toEqual(['unexpected-page']);
   } finally {
     sameWindow.mockImplementation(() => Promise.resolve(true));
+    boundary.dispose();
+  }
+});
+/** A generated tab whose close is recorded in one shared order. */
+function generatedTab(name: string, order: string[]) {
+  let closed = false;
+  return {
+    name,
+    isClosed: () => closed,
+    selfClose() {
+      closed = true;
+      order.push(`${name} closed by the browser`);
+    },
+    close: () => {
+      closed = true;
+      order.push(`${name} closed by the run`);
+      return Promise.resolve();
+    },
+  };
+}
+test('SETUP-1 a tab restored during startup is closed only after the first owned page exists in the window', async () => {
+  // Run ffb022ab: Edge restored a tab while startup ran and replaced its own
+  // launch tab; closing the restored tab first left the window empty and the
+  // background creation failed with a protocol error.
+  const order: string[] = [],
+    events = new EventEmitter();
+  const launchTab = generatedTab('launch', order),
+    restored = generatedTab('restored', order),
+    own = generatedTab('owned', order);
+  const live: ReturnType<typeof generatedTab>[] = [launchTab];
+  const context = Object.assign(events, {
+    pages: () => live.filter((tab) => !tab.isClosed()),
+  }) as unknown as BrowserContext;
+  let calls = 0;
+  const create = () => {
+    calls++;
+    if (calls === 1) {
+      // The restored tab arrives and the browser drops its launch tab while
+      // the first creation, anchored on the launch tab, is in flight.
+      live.push(restored);
+      events.emit('page', restored);
+      launchTab.selfClose();
+      return Promise.reject(new Error('Protocol error (Target.createTarget)'));
+    }
+    order.push('owned created');
+    return Promise.resolve(own as unknown as Page);
+  };
+  const failures: string[] = [];
+  const boundary = contextPages(
+    context,
+    (error) => failures.push(error.token),
+    create,
+  );
+  try {
+    expect(await boundary.startupPage()).toBe(own);
+    await boundary.flush();
+    expect(order).toEqual([
+      'launch closed by the browser',
+      'owned created',
+      'restored closed by the run',
+    ]);
+    expect(failures).toEqual([]);
+    expect(boundary.snapshot()).toMatchObject({
+      ownedOpen: 1,
+      backgroundCreated: 1,
+      startupClosed: 1,
+      unexpectedOpened: 0,
+      targetFailure: null,
+    });
+  } finally {
+    boundary.dispose();
+  }
+});
+test('SETUP-1 a run window that closed before the first owned page stops with its own closed stage, not an unexpected error', async () => {
+  const order: string[] = [],
+    events = new EventEmitter();
+  const launchTab = generatedTab('launch', order);
+  const context = Object.assign(events, {
+    pages: () => [launchTab].filter((tab) => !tab.isClosed()),
+  }) as unknown as BrowserContext;
+  const boundary = contextPages(context, vi.fn(), () => {
+    launchTab.selfClose();
+    return Promise.reject(new Error('Protocol error (Target.createTarget)'));
+  });
+  try {
+    await expect(boundary.startupPage()).rejects.toMatchObject({
+      code: 'TAB_INVENTORY',
+      token: 'tab-inventory',
+      stage: 'run-window-closed',
+    });
+    expect(boundary.snapshot()).toMatchObject({
+      targetFailure: 'run-window-closed',
+      backgroundCreated: 0,
+    });
+    expect(() => boundary.check()).toThrow();
+  } finally {
+    boundary.dispose();
+  }
+});
+test('SETUP-1 a creation failure with its anchor still open stops at once, without a second creation', async () => {
+  const order: string[] = [],
+    events = new EventEmitter();
+  const launchTab = generatedTab('launch', order);
+  const context = Object.assign(events, {
+    pages: () => [launchTab].filter((tab) => !tab.isClosed()),
+  }) as unknown as BrowserContext;
+  const create = vi.fn(() =>
+    Promise.reject(new Error('Protocol error (Target.createTarget)')),
+  );
+  const boundary = contextPages(context, vi.fn(), create);
+  try {
+    await expect(boundary.startupPage()).rejects.toThrow('Protocol error');
+    expect(create).toHaveBeenCalledOnce();
+    expect(launchTab.isClosed()).toBe(false);
+  } finally {
     boundary.dispose();
   }
 });

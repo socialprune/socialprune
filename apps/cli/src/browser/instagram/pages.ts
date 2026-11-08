@@ -129,6 +129,13 @@ export function contextPages(
     disposed = false;
   let anchor = initial[0];
   let creating: Promise<Page> | undefined;
+  // Until the first owned page exists, a page that appears during startup
+  // (a tab the browser is still restoring) is not closed: closing it while
+  // the browser replaces its own launch tab would close the run window.
+  let ownedReady!: () => void;
+  const firstOwned = new Promise<void>((resolve) => {
+    ownedReady = resolve;
+  });
   let failure: ContextStop | undefined;
   const fail = () => {
     if (!failure) {
@@ -172,9 +179,12 @@ export function contextPages(
     if (owned.has(page)) return true;
     const pending = creating;
     if (pending) {
-      const created = await pending;
+      // A failed creation is handled by its caller; the page is still classified.
+      const created = await pending.catch(() => undefined);
       if (created === page) return true;
     }
+    if (startup) await firstOwned;
+    if (owned.has(page)) return true;
     await reject(page);
     return false;
   };
@@ -249,21 +259,59 @@ export function contextPages(
     },
     async startupPage(): Promise<Page> {
       // Even a launch tab still at about:blank may have a restore navigation
-      // pending. Create our own page and close every page inherited at launch.
-      const runInitial = await inheritedWindowPages(context).catch(
-        (error: unknown) => {
-          if (error instanceof TabInventoryStop)
-            counts.targetFailure = error.stage;
-          throw error;
-        },
-      );
-      for (const page of runInitial.slice(1)) await reject(page);
-      const page = await this.newPage();
-      for (const page of runInitial) await reject(page, true);
-      await Promise.all([...closing.values()]);
-      await audit(true);
-      startup = false;
-      return page;
+      // pending. Create our own page first, in the run window, and only then
+      // close every page inherited at launch, so the window never runs out of
+      // tabs while the browser is still restoring or replacing its launch tab.
+      try {
+        let runInitial: Page[] | undefined;
+        for (let attempt = 0; !runInitial; attempt++) {
+          try {
+            runInitial = await inheritedWindowPages(context);
+          } catch (error) {
+            // The launch tab can close itself while it is read. Read again,
+            // at most twice, only when a launch page really closed; any other
+            // inventory failure stops as before.
+            const closedMeanwhile = initial.some((page) => page.isClosed());
+            if (
+              closedMeanwhile &&
+              !context.pages().some((page) => !page.isClosed())
+            )
+              throw new TabInventoryStop('run-window-closed');
+            if (!closedMeanwhile || attempt >= 2) throw error;
+          }
+        }
+        let page: Page | undefined;
+        for (let attempt = 0; attempt < 3 && !page; attempt++) {
+          const candidate = [...runInitial, ...context.pages()].find(
+            (value) => !value.isClosed(),
+          );
+          if (!candidate) break;
+          anchor = candidate;
+          try {
+            page = await this.newPage();
+          } catch (error) {
+            // Only a creation whose anchor closed under it is tried again,
+            // from another live tab of the run window.
+            if (error instanceof ContextStop || !candidate.isClosed())
+              throw error;
+          }
+        }
+        if (!page) throw new TabInventoryStop('run-window-closed');
+        ownedReady();
+        for (const inherited of runInitial) await reject(inherited, true);
+        await Promise.all([...closing.values()]);
+        await audit(true);
+        startup = false;
+        return page;
+      } catch (error) {
+        if (error instanceof TabInventoryStop) {
+          counts.targetFailure = error.stage;
+          failure ??= error;
+        }
+        throw error;
+      } finally {
+        ownedReady();
+      }
     },
     async replace(page: Page): Promise<Page> {
       if (!owned.has(page)) throw new Error('CONTEXT_PAGE_NOT_OWNED');

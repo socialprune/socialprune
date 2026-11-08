@@ -26,6 +26,7 @@ export const TAB_FAILURE_STAGES = [
   'children-timeout',
   'children-protocol',
   'children-ambiguous',
+  'run-window-closed',
   'tab-count',
   'close',
   'settle',

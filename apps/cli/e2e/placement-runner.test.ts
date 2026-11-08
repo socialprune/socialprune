@@ -147,6 +147,27 @@ async function bounded(
     clearTimeout(timer);
   }
 }
+/** Windows sharing errors while the other process holds the file. */
+const busy = (error: unknown) =>
+  error instanceof Error &&
+  'code' in error &&
+  (error.code === 'EBUSY' || error.code === 'EPERM');
+/**
+ * The sentinel reads its activation file every 20 ms; a write that meets the
+ * read gets EBUSY on Windows (run 42527716244, Edge generated run stopped at
+ * browser-setup with fs-EBUSY). Retry for at most 1 s, then fail.
+ */
+async function writeShared(path: string, value: string) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await writeFile(path, value);
+      return;
+    } catch (error) {
+      if (!busy(error) || attempt >= 40) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
 async function waitFile(path: string) {
   for (let attempt = 0; attempt < 200; attempt++) {
     try {
@@ -155,7 +176,7 @@ async function waitFile(path: string) {
       if (!(
         error instanceof Error &&
         'code' in error &&
-        error.code === 'ENOENT'
+        (error.code === 'ENOENT' || busy(error))
       ))
         throw error;
     }
@@ -246,7 +267,7 @@ async function foregroundSentinel(
       let handle!: string;
       for (;;) {
         attempt++;
-        await writeFile(activate, `${name}#${attempt}`);
+        await writeShared(activate, `${name}#${attempt}`);
         await new Promise((resolve) => setTimeout(resolve, 150));
         watcher = startHelper(`${name}-${attempt}`);
         handle = await watcher.initial();

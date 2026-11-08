@@ -691,10 +691,11 @@ test('PLACEMENT X deletion run with restored tabs keeps the window, the foregrou
     });
     receipt.runForeground = runWatch;
     receipt.result = result;
-    const platform = context!
-      .pages()
-      .find((value) => value.url().startsWith(fake.origin))!;
-    const session = await context!.newCDPSession(platform);
+    // Every owned page shares the run window; read its bounds through one.
+    const owned = context!.pages().find((value) => !value.isClosed());
+    receipt.ownedPagesListed = context!.pages().length;
+    expect(owned).toBeTruthy();
+    const session = await context!.newCDPSession(owned!);
     const { bounds } = await session.send('Browser.getWindowForTarget');
     await session.detach();
     receipt.bounds = bounds;

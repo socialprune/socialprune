@@ -343,6 +343,15 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
       duplicateFocalObjects: count,
     })
     .optional(),
+  /**
+   * REPLY-SOLE-3: caption objects outside the post's own caption key, by their
+   * relation to this post: the same caption ID as the excluded one, the
+   * caption of an item in this post's own carousel list, or anything else
+   * (which still refuses). Counts only, absent when there were none.
+   */
+  captionRelations: z
+    .strictObject({ sameId: count, samePostMedia: count, other: count })
+    .optional(),
   answerTraversalCapped: z.boolean(),
   declaredCountSeen: count,
   declaredCountsAllOne: z.boolean().nullable(),

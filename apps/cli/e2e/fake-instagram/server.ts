@@ -14,6 +14,45 @@ import { rowShapePage, replyShapePage } from './realshape-page.ts';
 import type { RowShapeCase, ReplyShapeCase } from './realshape-page.ts';
 import type { DeleteCase } from './delete-page.ts';
 
+export type SoleCommentSet =
+  | 'no-count'
+  | 'one'
+  | 'two'
+  | 'other'
+  | 'caption-duplicate'
+  | 'caption-carousel'
+  | 'caption-foreign';
+/**
+ * REPLY-SOLE-3 generated caption shapes beside the post's own caption: the
+ * same caption again under the caption edge, a carousel item's own caption,
+ * or a caption object of another media nested in a related list.
+ */
+function soleCaptions(set: SoleCommentSet, focalSeconds: number) {
+  if (!set.startsWith('caption-')) return {};
+  const caption = {
+    pk: '777001',
+    user: { username: 'generated_owner' },
+    text: 'Generated caption text',
+    created_at: focalSeconds - 3600,
+  };
+  return {
+    caption,
+    ...(set === 'caption-duplicate'
+      ? { edge_media_to_caption: { edges: [{ node: { ...caption } }] } }
+      : set === 'caption-carousel'
+        ? {
+            carousel_media: [
+              { pk: '777100', caption: { ...caption, pk: '777002' } },
+            ],
+          }
+        : {
+            related_media: [
+              { pk: '777200', caption: { ...caption, pk: '777003' } },
+            ],
+          }),
+  };
+}
+
 export async function fakeInstagram(port: number, items: readonly Item[]) {
   let variant: Variant = 'success',
     zone = 0,
@@ -43,7 +82,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   // Declared replies the generated page never shows; with entries the answer
   // also lists them, without entries it only counts them.
   let replyHidden: { count: number; entries: boolean } | undefined;
-  let soleCommentSet: 'no-count' | 'one' | 'two' | 'other' | undefined;
+  let soleCommentSet: SoleCommentSet | undefined;
   let scriptReplyCase:
     | 'matching'
     | 'id'
@@ -523,7 +562,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           if (scriptReplyCase === 'parameter') focal = { variables: focal };
           html = html.replace(
             '</head>',
-            `<script type="application/json">${JSON.stringify({ data: soleCommentSet ? { code: `${IG_FIXTURE.code}${i || ''}`, ...(soleCommentSet === 'one' ? { comment_count: 1 } : soleCommentSet === 'two' ? { comment_count: 2 } : {}), comments: [focal, ...(soleCommentSet === 'other' ? [{ ...focal, pk: '888777', text: 'Generated other comment' }] : [])] } : focal }).replaceAll('<', '\\u003c')}</script></head>`,
+            `<script type="application/json">${JSON.stringify({ data: soleCommentSet ? { code: `${IG_FIXTURE.code}${i || ''}`, ...(soleCommentSet === 'one' || soleCommentSet.startsWith('caption-') ? { comment_count: 1 } : soleCommentSet === 'two' ? { comment_count: 2 } : {}), comments: [focal, ...(soleCommentSet === 'other' ? [{ ...focal, pk: '888777', text: 'Generated other comment' }] : [])], ...soleCaptions(soleCommentSet, Number(focal.created_at)) } : focal }).replaceAll('<', '\\u003c')}</script></head>`,
           );
         }
         if (listDecoration === 'caption')
@@ -789,7 +828,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     delayPost(index: number, navigationMs: number, renderMs: number) {
       delayedPosts.set(index, { navigationMs, renderMs });
     },
-    soleCommentSet(value: 'no-count' | 'one' | 'two' | 'other') {
+    soleCommentSet(value: SoleCommentSet) {
       soleCommentSet = value;
     },
     listProbe(value: ListProbeCase) {

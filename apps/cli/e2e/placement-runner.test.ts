@@ -922,3 +922,149 @@ test(
   },
   X_BUDGET_MS,
 );
+
+// SETUP-1: startup with 0, 1 and 8 restored tabs. Per case about 3 s seed,
+// 1 s launch, the 15 s restore bound, 1 s startup, 2 watches x 5 s activation
+// bound and 3 teardown operations x 5 s: 3 + 1 + 15 + 1 + 10 + 15 = 45 s.
+const STARTUP_BUDGET_MS = 45000;
+for (const restoredTabs of [0, 1, 8])
+  test(
+    `PLACEMENT startup with ${restoredTabs} restored tabs keeps the run window and creates the first owned page in it`,
+    async () => {
+      runnerOnly();
+      const out = resolve('apps/cli/test-results/placement');
+      await mkdir(out, { recursive: true });
+      const { browserName, executable } = browserChoice();
+      const { receipt, mark } = newReceipt(browserName, { restoredTabs });
+      const root = await mkdtemp(join(tmpdir(), 'sp-placement-startup-'));
+      const profile = join(root, 'profile');
+      const stalls: string[] = [];
+      let sentinel: Awaited<ReturnType<typeof foregroundSentinel>> | undefined;
+      let fake: Awaited<ReturnType<typeof fakeInstagram>> | undefined;
+      let context: BrowserContext | undefined;
+      let boundary: ReturnType<typeof contextPages> | undefined;
+      try {
+        sentinel = await foregroundSentinel(root, receipt);
+        const placement = placementFor(sentinel.area);
+        receipt.placement = placement;
+        fake = await fakeInstagram(4549, (await instagramFixture(1)).items);
+        if (restoredTabs > 0) {
+          // The browser itself writes the generated session.
+          const seed = await chromium.launchPersistentContext(profile, {
+            executablePath: executable,
+            headless: browserName !== 'msedge',
+            chromiumSandbox: true,
+            args: ['--enable-automation'],
+            ignoreDefaultArgs: ['--disable-infobars'],
+            serviceWorkers: 'block',
+          });
+          for (let index = 0; index < restoredTabs; index++) {
+            const tab = index === 0 ? seed.pages()[0]! : await seed.newPage();
+            await tab.goto(
+              fake.origin + '/your_activity/interactions/comments',
+            );
+          }
+          await seed.close();
+        }
+        mark('seeded');
+        receipt.launch = await sentinel.watch('launch', async () => {
+          context = await chromium.launchPersistentContext(profile, {
+            executablePath: executable,
+            headless: false,
+            chromiumSandbox: true,
+            viewport: null,
+            offline: true,
+            args: [
+              '--enable-automation',
+              ...windowArguments(placement),
+              '--restore-last-session',
+            ],
+            ignoreDefaultArgs: ['--disable-infobars'],
+            serviceWorkers: 'block',
+          });
+        });
+        const restoredAt = Date.now();
+        const targets = await context!.browser()!.newBrowserCDPSession();
+        let restored = { ms: 0, pages: 0, fixturePages: 0 };
+        try {
+          for (;;) {
+            const { targetInfos } = await targets.send('Target.getTargets');
+            restored = {
+              ms: Date.now() - restoredAt,
+              pages: targetInfos.filter((value) => value.type === 'page')
+                .length,
+              fixturePages: targetInfos.filter(
+                (value) =>
+                  value.type === 'page' && value.url.startsWith(fake!.origin),
+              ).length,
+            };
+            if (
+              restored.fixturePages >= restoredTabs ||
+              restored.ms > RESTORE_BOUND_MS
+            )
+              break;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        } finally {
+          await targets.detach();
+        }
+        receipt.restored = restored;
+        receipt.launchPages = context!.pages().length;
+        expect(restored.fixturePages).toBeGreaterThanOrEqual(restoredTabs);
+        mark('restored');
+        boundary = contextPages(context!, () => {});
+        let reading!: Awaited<ReturnType<typeof boundary.startupPage>>;
+        const startup = await sentinel.watch('startup', async () => {
+          try {
+            reading = await boundary!.startupPage();
+          } finally {
+            receipt.pages = boundary!.snapshot();
+          }
+        });
+        mark('startup');
+        const session = await context!.newCDPSession(reading);
+        const { bounds } = await session.send('Browser.getWindowForTarget');
+        await session.detach();
+        receipt.bounds = bounds;
+        expect(startup.changed).toBe(false);
+        expect(reading.isClosed()).toBe(false);
+        expect(boundary.snapshot()).toMatchObject({
+          ownedOpen: 1,
+          backgroundCreated: 1,
+          remainingNonOwned: 0,
+          targetFailure: null,
+          unexpectedOpened: 0,
+        });
+        expect(bounds).toMatchObject({
+          left: placement.x,
+          top: placement.y,
+          width: placement.width,
+          height: placement.height,
+          windowState: 'normal',
+        });
+        receipt.status = 'passed';
+      } catch (error) {
+        receipt.error = errorClass(error);
+        throw error;
+      } finally {
+        mark('teardownStart');
+        boundary?.dispose();
+        await bounded('context', async () => context?.close(), stalls);
+        await bounded('fake', async () => fake?.close(), stalls);
+        await bounded('sentinel', async () => sentinel?.stop(), stalls);
+        await bounded(
+          'temp',
+          () => rm(root, { recursive: true, force: true }),
+          stalls,
+        );
+        mark('teardownEnd');
+        receipt.teardownStalls = stalls;
+        await writeFile(
+          join(out, `placement-startup-${restoredTabs}-${browserName}.json`),
+          JSON.stringify(receipt, null, 2),
+        );
+      }
+      expect(stalls).toEqual([]);
+    },
+    STARTUP_BUDGET_MS,
+  );

@@ -26,6 +26,7 @@ export const TAB_FAILURE_STAGES = [
   'children-timeout',
   'children-protocol',
   'children-ambiguous',
+  'tab-count',
   'close',
   'settle',
 ] as const;
@@ -33,7 +34,7 @@ export type TabFailureStage = (typeof TAB_FAILURE_STAGES)[number];
 export class TabInventoryStop extends ContextStop {
   readonly stage: TabFailureStage;
   constructor(stage: TabFailureStage) {
-    super('PLATFORM_CHECK', 'tab-inventory');
+    super('TAB_INVENTORY', 'tab-inventory');
     this.stage = stage;
   }
 }
@@ -244,67 +245,84 @@ export async function auditBrowserTabs(
       stage = 'owned-missing';
       if ([...ids].some((id) => !same.some((value) => value.targetId === id)))
         throw new Error('OWNED_TAB_MISSING');
-      const covered = new Set<string>(),
-        nonOwned: z.infer<typeof info>[] = [],
-        childrenOf = new Map<string, Set<string>>();
-      let tabs = 0;
-      for (const value of same.filter((value) => value.type === 'tab')) {
-        tabs++;
-        let children: Set<string>;
-        try {
-          children = await tabChildren(client, value.targetId);
-        } catch (error) {
-          throw new TabInventoryStop(childStage(error));
-        }
-        childrenOf.set(value.targetId, children);
-        for (const child of children) covered.add(child);
-        stage = 'children-ambiguous';
-        if (![...children].some((child) => ids.has(child)))
-          nonOwned.push(value);
-        else if (children.size !== 1) throw new Error('TAB_CHILD_AMBIGUOUS');
+      const pages = same.filter((value) => value.type === 'page'),
+        wrappers = same.filter((value) => value.type === 'tab');
+      // Every tab holds one page and each owned page sits in its own tab. So
+      // the window holds max(tabs, pages) tabs, and the ones that are not ours
+      // are that count minus the owned pages. This needs no attach to a tab,
+      // which real Edge refused (run de31b06a, children-attach).
+      stage = 'tab-count';
+      if (wrappers.length && wrappers.length < ids.size)
+        throw new Error('TAB_COUNT');
+      const tabs = Math.max(wrappers.length, pages.length);
+      return {
+        tabs,
+        nonOwned: tabs - ids.size,
+        nonOwnedPages: pages.filter((value) => !ids.has(value.targetId)),
+        pageless: Math.max(0, wrappers.length - pages.length),
+        wrappers,
+      };
+    };
+    /** closeTarget returns before the browser destroys the tab. */
+    const contextTabs = (listed: z.infer<typeof info>[]) =>
+      listed.filter(
+        (value) =>
+          value.type === 'tab' &&
+          value.browserContextId === anchorInfo.browserContextId,
+      ).length;
+    const closeAll = async (targets: z.infer<typeof info>[]) => {
+      if (!targets.length) return 0;
+      stage = 'list';
+      const tabsBefore = contextTabs(await listTargets());
+      stage = 'close';
+      for (const value of targets)
+        await client.send('Target.closeTarget', { targetId: value.targetId });
+      // Wait for the closed targets, and the tab of each closed page, to
+      // leave the list, then run the same strict inspection; a target still
+      // present stays counted.
+      const gone = new Set(targets.map((value) => value.targetId));
+      const pending = (listed: z.infer<typeof info>[]) =>
+        listed.some((value) => gone.has(value.targetId)) ||
+        (tabsBefore > 0 && contextTabs(listed) > tabsBefore - targets.length);
+      stage = 'settle';
+      const deadline = Date.now() + settleMs;
+      let listed = await listTargets();
+      while (pending(listed) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        listed = await listTargets();
       }
-      for (const value of same.filter(
-        (value) => value.type === 'page' && !covered.has(value.targetId),
-      )) {
-        tabs++;
-        if (!ids.has(value.targetId)) nonOwned.push(value);
-      }
-      return { tabs, nonOwned, childrenOf };
+      return targets.filter(
+        (value) => !listed.some((entry) => entry.targetId === value.targetId),
+      ).length;
     };
     let state = await inspect();
     if (closeStartup) {
-      const attempted = state.nonOwned;
-      stage = 'close';
-      for (const value of attempted) {
-        await client.send('Target.closeTarget', { targetId: value.targetId });
+      if (state.nonOwnedPages.length) {
+        result.closed.page += await closeAll(state.nonOwnedPages);
+        state = await inspect();
       }
-      // closeTarget returns before the browser destroys the tab. Wait for the
-      // closed targets and their page children to leave the list, then run the
-      // same strict inspection; a target still present stays counted.
-      const gone = new Set<string>();
-      for (const value of attempted) {
-        gone.add(value.targetId);
-        for (const child of state.childrenOf.get(value.targetId) ?? [])
-          gone.add(child);
+      if (state.nonOwned && state.pageless) {
+        // A tab without a page target can only be told apart by its child
+        // page, read through an attach. Where the browser refuses the
+        // attach, the run stops rather than guess which tab is ours.
+        const unowned: z.infer<typeof info>[] = [];
+        for (const value of state.wrappers) {
+          let children: Set<string>;
+          try {
+            children = await tabChildren(client, value.targetId);
+          } catch (error) {
+            throw new TabInventoryStop(childStage(error));
+          }
+          stage = 'children-ambiguous';
+          if (![...children].some((child) => ids.has(child)))
+            unowned.push(value);
+          else if (children.size !== 1) throw new Error('TAB_CHILD_AMBIGUOUS');
+        }
+        result.closed.tab += await closeAll(unowned);
+        state = await inspect();
       }
-      stage = 'settle';
-      const deadline = Date.now() + settleMs;
-      while (
-        gone.size &&
-        (await listTargets()).some((value) => gone.has(value.targetId)) &&
-        Date.now() < deadline
-      )
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      state = await inspect();
-      for (const value of attempted)
-        if (
-          !state.nonOwned.some(
-            (remaining) => remaining.targetId === value.targetId,
-          )
-        )
-          result.closed[value.type as 'page' | 'tab']++;
     }
-    result.nonOwned = state.nonOwned.length;
+    result.nonOwned = state.nonOwned;
     result.tabs = state.tabs;
     return result;
   } catch (error) {

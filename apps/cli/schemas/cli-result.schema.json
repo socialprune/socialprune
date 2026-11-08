@@ -818,6 +818,26 @@
             {
               "type": "object",
               "properties": {
+                "code": { "type": "string", "const": "TAB_INVENTORY" },
+                "message": {
+                  "type": "string",
+                  "enum": [
+                    "The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.",
+                    "The tabs in the Instagram run window could not be checked. The run stopped.",
+                    "Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden. Der Lauf wurde gestoppt.",
+                    "A tab outside this run remains in its browser window. The run stopped.",
+                    "Im Browserfenster bleibt ein Tab, der nicht zu diesem Lauf gehört. Der Lauf wurde gestoppt."
+                  ]
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
                 "code": { "type": "string", "const": "RUN_STOPPED" },
                 "message": {
                   "type": "string",

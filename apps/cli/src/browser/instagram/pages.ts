@@ -193,7 +193,7 @@ export function contextPages(
       counts.remainingNonOwned = state.nonOwned;
       counts.targetChecks++;
       if (state.nonOwned !== 0 || state.tabs > counts.pageLimit) {
-        failure ??= new ContextStop('PLATFORM_CHECK', 'non-owned-tab');
+        failure ??= new ContextStop('TAB_INVENTORY', 'non-owned-tab');
         onStop(failure);
         throw failure;
       }
@@ -202,7 +202,7 @@ export function contextPages(
       failure ??=
         error instanceof ContextStop
           ? error
-          : new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+          : new ContextStop('TAB_INVENTORY', 'tab-inventory');
       onStop(failure);
       throw failure;
     }

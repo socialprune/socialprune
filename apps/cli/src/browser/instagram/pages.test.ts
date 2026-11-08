@@ -302,6 +302,7 @@ test.each(['remaining', 'inventory'] as const)(
       else
         tabAudit.mockRejectedValueOnce(new Error('Generated observer failed'));
       await expect(boundary.assertTabs()).rejects.toMatchObject({
+        code: 'TAB_INVENTORY',
         token: mode === 'remaining' ? 'non-owned-tab' : 'tab-inventory',
       });
       expect(boundary.snapshot().remainingNonOwned).toBe(

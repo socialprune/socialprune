@@ -1895,7 +1895,9 @@ export async function runContextWithDependencies(
               : caught instanceof CliError &&
                   caught.code === 'RUN_WAIT_DEADLINE'
                 ? 'run-wait-deadline'
-                : 'error';
+                : caught instanceof CliError && caught.code === 'TAB_INVENTORY'
+                  ? 'tab-inventory'
+                  : 'error';
   } finally {
     auto.close();
     reading?.clear();
@@ -1943,7 +1945,10 @@ export async function runContextWithDependencies(
                 : caught instanceof CliError &&
                     caught.code === 'RUN_WAIT_DEADLINE'
                   ? 'run-wait-deadline'
-                  : 'error';
+                  : caught instanceof CliError &&
+                      caught.code === 'TAB_INVENTORY'
+                    ? 'tab-inventory'
+                    : 'error';
     };
     const finalize = async (
       at: FinalStage,

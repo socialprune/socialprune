@@ -46,6 +46,7 @@ export type DisplayEndReason =
   | 'platform-check'
   | 'step-deadline'
   | 'run-wait-deadline'
+  | 'tab-inventory'
   | 'account-mismatch'
   | 'shape-changed'
   | 'canary'
@@ -124,6 +125,10 @@ const END_REASON = {
   'run-wait-deadline': {
     en: 'An Instagram run phase exceeded its wait budget. The run stopped and retained its partial report.',
     de: 'Eine Phase des Instagram-Laufs hat ihr Wartebudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
+  },
+  'tab-inventory': {
+    en: 'The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.',
+    de: 'Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden, oder ein Tab außerhalb dieses Laufs blieb offen. Der Lauf wurde gestoppt.',
   },
   'account-mismatch': {
     en: 'The signed-in account does not match the expected account.',

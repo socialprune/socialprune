@@ -288,6 +288,12 @@ export const CLI_ERRORS = {
     exitCode: 1,
     retryable: false,
   },
+  TAB_INVENTORY: {
+    message:
+      'The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
   RUN_STOPPED: {
     message:
       'The browser run stopped at the first problem. Check its journal before continuing.',
@@ -597,6 +603,7 @@ const INSTAGRAM_STOP_CODES: Partial<
 > = {
   STEP_DEADLINE: ['step-deadline'],
   RUN_WAIT_DEADLINE: ['run-wait-deadline'],
+  TAB_INVENTORY: ['tab-inventory', 'non-owned-tab'],
   PLATFORM_CHECK: [
     'list-timeout',
     'post-timeout',

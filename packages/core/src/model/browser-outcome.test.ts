@@ -77,7 +77,7 @@ test('D7 warning classification is closed and belongs only to an ended X warning
     );
 });
 
-test.each(['step-deadline', 'run-wait-deadline'])(
+test.each(['step-deadline', 'run-wait-deadline', 'tab-inventory'])(
   'DEADLINE %s has its own end and cannot carry an Instagram warning',
   (endReason) => {
     const run = {

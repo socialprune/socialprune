@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,18 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
   expect(process.env['GITHUB_ACTIONS']).toBe('true');
   const out = resolve('apps/cli/test-results/placement');
   await mkdir(out, { recursive: true });
+  // eslint-disable-next-line no-restricted-properties -- Test-only runner browser choice, never a credential.
+  const browserName = process.env['SP_PLACEMENT_BROWSER'] ?? 'chromium';
+  expect(['chromium', 'msedge']).toContain(browserName);
+  // The runner's installed Microsoft Edge, as the starter uses --browser edge.
+  const executable =
+    browserName === 'msedge'
+      ? [
+          'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+          'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+        ].find((path) => existsSync(path))
+      : chromium.executablePath();
+  expect(executable).toBeTruthy();
   const root = await mkdtemp(join(tmpdir(), 'sp-placement-probe-'));
   const ready = join(root, 'sentinel.ready'),
     activate = join(root, 'sentinel.activate'),
@@ -52,6 +65,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       'GetForegroundWindow/5ms/native-helper, CDP window identity and bounds',
     // eslint-disable-next-line no-restricted-properties -- Test-only source identity, never a credential.
     source: process.env['GITHUB_SHA'],
+    browser: browserName,
   };
   const waitFile = async (path: string) => {
     for (let attempt = 0; attempt < 200; attempt++) {
@@ -126,7 +140,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     fake = await fakeInstagram(4549, fixture.items);
     // The browser itself writes the generated session; no profile file edits.
     const seed = await chromium.launchPersistentContext(join(root, 'profile'), {
-      executablePath: chromium.executablePath(),
+      executablePath: executable!,
       headless: true,
       chromiumSandbox: true,
       args: ['--enable-automation'],
@@ -140,7 +154,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     await seed.close();
     const launch = await watch('launch', async () => {
       context = await chromium.launchPersistentContext(join(root, 'profile'), {
-        executablePath: chromium.executablePath(),
+        executablePath: executable!,
         headless: false,
         chromiumSandbox: true,
         viewport: null,
@@ -242,8 +256,13 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     const bounds = first.bounds;
     receipt.bounds = bounds;
     receipt.pagesCount = boundary.snapshot();
-    expect(boundary.counts.targetClosed.tab).toBeGreaterThanOrEqual(6);
+    // Restored tabs close as their page targets, or as tab targets where a
+    // tab has no page; both count, and nothing non-owned remains.
+    expect(
+      boundary.counts.targetClosed.page + boundary.counts.targetClosed.tab,
+    ).toBeGreaterThanOrEqual(6);
     expect(boundary.counts.remainingNonOwned).toBe(0);
+    expect(boundary.counts.targetFailure).toBeNull();
     expect(initial.changed).toBe(false);
     await selectedReader('selectedAtStart', 1);
     const confirmationCreated = await watch('confirmationCreate', async () => {
@@ -308,9 +327,9 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     context = undefined;
     let runPages = 0;
     const generated = await placementGeneratedRun(
-      async (path, executable) => {
+      async (path) => {
         await watch('generatedLaunch', async () => {
-          context = await launchRunBrowser(path, executable, placement, true);
+          context = await launchRunBrowser(path, executable!, placement, true);
         });
         return context!;
       },
@@ -353,7 +372,10 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     boundary.dispose();
   } finally {
     await writeFile(
-      join(out, 'placement.json'),
+      join(
+        out,
+        browserName === 'msedge' ? 'placement-msedge.json' : 'placement.json',
+      ),
       JSON.stringify(receipt, null, 2),
     );
     await context?.close();

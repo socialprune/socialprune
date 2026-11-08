@@ -79,6 +79,7 @@ export const BrowserRunSchema = z
         'platform-check',
         'step-deadline',
         'run-wait-deadline',
+        'tab-inventory',
         'canary',
         'size-cap',
         'shape-changed',

@@ -59,6 +59,7 @@ const tokenIds = [
   'desktop.token.PLATFORM_CHECK',
   'desktop.token.STEP_DEADLINE',
   'desktop.token.RUN_WAIT_DEADLINE',
+  'desktop.token.TAB_INVENTORY',
   'desktop.token.RUN_STOPPED',
   'desktop.token.DELETE_FAILED',
   'desktop.token.SHARING_NOT_CONFIRMED',

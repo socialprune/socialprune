@@ -146,7 +146,8 @@ jobs:
     needs: select
     if: needs.select.outputs.context == 'true' && inputs.placement-only != true
     runs-on: windows-latest
-    timeout-minutes: 40
+    # 40 before the added Edge placement step in shard 1 (up to 4 minutes).
+    timeout-minutes: 44
     strategy:
       fail-fast: false
       matrix:
@@ -189,6 +190,12 @@ jobs:
         if: ${{ !cancelled() && matrix.shard == 1 }}
         timeout-minutes: 4
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - name: Measure Instagram placement on the runner's installed Microsoft Edge
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        timeout-minutes: 4
+        env:
+          SP_PLACEMENT_BROWSER: msedge
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && matrix.shard == 1 }}
         with:
@@ -207,7 +214,8 @@ jobs:
   placement:
     if: inputs.placement-only == true
     runs-on: windows-latest
-    timeout-minutes: 10
+    # 10 before the added Edge probe step (up to 4 minutes).
+    timeout-minutes: 14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -223,6 +231,12 @@ jobs:
         timeout-minutes: 5
       - name: Measure foreground and placement before full-suite admission
         timeout-minutes: 4
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - name: Measure placement on the runner's installed Microsoft Edge
+        if: ${{ !cancelled() }}
+        timeout-minutes: 4
+        env:
+          SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - name: Verify focused reader recycle and sibling-zero canary
         timeout-minutes: 4

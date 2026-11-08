@@ -312,6 +312,7 @@ export const RunEndSchema = z
         'platform-check',
         'step-deadline',
         'run-wait-deadline',
+        'tab-inventory',
         'shape-changed',
         'account-mismatch',
         'canary-mismatch',

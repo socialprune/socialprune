@@ -7,7 +7,12 @@ import {
 import { instagramWarningKind } from './warning.ts';
 import { ContextStop } from './report.ts';
 import { contextEnd, contextFailure } from './copy.ts';
-import { errorObject, INSTAGRAM_STOP_MESSAGES } from '../../cli/errors.ts';
+import {
+  CLI_ERRORS,
+  errorObject,
+  INSTAGRAM_STOP_MESSAGES,
+} from '../../cli/errors.ts';
+import { TabInventoryStop } from './browser-tabs.ts';
 
 test('DEADLINE post budget sums navigation/readiness, one reopen, bounded focal search, reply response and margin', () => {
   expect(postReadingBudget(30000, { expandMs: 3000 })).toEqual({
@@ -85,6 +90,43 @@ test.each(['en', 'de'] as const)(
     expect(contextEnd('platform-check', lang, true, error.token)).toContain(
       INSTAGRAM_STOP_MESSAGES['run-wait-deadline'][lang],
     );
+  },
+);
+test.each([
+  ['en', 'tab-inventory'],
+  ['de', 'tab-inventory'],
+  ['en', 'non-owned-tab'],
+  ['de', 'non-owned-tab'],
+] as const)(
+  'TABS-EDGE %s %s has its own nonwarning result, never PLATFORM_CHECK or its sign-in sentence',
+  (lang, token) => {
+    const error = new TabInventoryStop('children-attach');
+    const stop =
+      token === 'tab-inventory'
+        ? error
+        : new ContextStop('TAB_INVENTORY', token);
+    stop.warningKind = 'warning-notice';
+    expect(instagramWarningKind(stop)).toBeUndefined();
+    const failure = contextFailure(stop, lang);
+    expect(failure.code).toBe('TAB_INVENTORY');
+    const object = errorObject(
+      failure.code,
+      undefined,
+      undefined,
+      failure.instagramStop,
+    );
+    expect(object).toMatchObject({
+      code: 'TAB_INVENTORY',
+      message: INSTAGRAM_STOP_MESSAGES[token][lang],
+    });
+    expect(object.message).not.toBe(CLI_ERRORS.PLATFORM_CHECK.message);
+    for (const ended of [
+      contextEnd('tab-inventory', lang, true, token),
+      contextEnd('error', lang, false, token),
+    ]) {
+      expect(ended).toContain(INSTAGRAM_STOP_MESSAGES[token][lang]);
+      expect(ended).not.toMatch(/sign-in|Anmeldung|challenge|Kontoprüfung/u);
+    }
   },
 );
 

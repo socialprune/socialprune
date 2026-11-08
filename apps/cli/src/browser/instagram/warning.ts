@@ -12,7 +12,10 @@ export function instagramWarningKind(
     error.code === 'STEP_DEADLINE' ||
     error.token === 'step-deadline' ||
     error.code === 'RUN_WAIT_DEADLINE' ||
-    error.token === 'run-wait-deadline'
+    error.token === 'run-wait-deadline' ||
+    error.code === 'TAB_INVENTORY' ||
+    error.token === 'tab-inventory' ||
+    error.token === 'non-owned-tab'
   )
     return undefined;
   if (error.token === 'http-429') return 'http-429';

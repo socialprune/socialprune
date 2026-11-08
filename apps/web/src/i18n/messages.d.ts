@@ -383,6 +383,7 @@ declare global {
     'desktop.token.STRUCTURE_FAILED': Record<never, never>;
     'desktop.token.SUBMISSION_CONFLICT': Record<never, never>;
     'desktop.token.SUMMARY_FAILED': Record<never, never>;
+    'desktop.token.TAB_INVENTORY': Record<never, never>;
     'desktop.token.UNEXPECTED_ACTION': Record<never, never>;
     'desktop.token.UNKNOWN_CATEGORY': Record<never, never>;
     'desktop.token.UNKNOWN_FORMAT': Record<never, never>;

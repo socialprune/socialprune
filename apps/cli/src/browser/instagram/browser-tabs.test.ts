@@ -108,9 +108,150 @@ function fixture(
     client,
   };
 }
+/**
+ * Real Edge shape (run de31b06a): every tab holds one page, and an attach to
+ * a tab target is refused. Closing a page also removes its tab.
+ */
+function edgeFixture(
+  mode: 'restored' | 'late' | 'pageless' | 'lingering' = 'restored',
+) {
+  const tabOf = new Map([
+    ['own-page', 'own-tab'],
+    ['restored-page-1', 'restored-tab-1'],
+    ['restored-page-2', 'restored-tab-2'],
+    ['other-window-page', 'other-window-tab'],
+  ]);
+  const targets = new Map<
+    string,
+    { type: string; browserContextId: string; window: number }
+  >();
+  for (const [page, tab] of tabOf) {
+    const window = page.startsWith('other-window') ? 2 : 1;
+    if (mode === 'late' && page.startsWith('restored') && page.endsWith('2'))
+      continue;
+    targets.set(page, { type: 'page', browserContextId: 'run', window });
+    targets.set(tab, { type: 'tab', browserContextId: 'run', window });
+  }
+  if (mode === 'pageless')
+    targets.set('sleeping-tab', {
+      type: 'tab',
+      browserContextId: 'run',
+      window: 1,
+    });
+  targets.set('other-context-page', {
+    type: 'page',
+    browserContextId: 'foreign',
+    window: 1,
+  });
+  // In lingering mode a closed page's tab stays listed for two lists.
+  const lingering = new Map<string, number>();
+  const closed: string[] = [],
+    attached: string[] = [];
+  const client = Object.assign(new EventEmitter(), {
+    detach: vi.fn().mockResolvedValue(undefined),
+    send: (method: string, args?: Record<string, unknown>) => {
+      const target = typeof args?.targetId === 'string' ? args.targetId : '';
+      if (method === 'Target.getTargetInfo')
+        return Promise.resolve({
+          targetInfo: {
+            targetId: 'own-page',
+            type: 'page',
+            browserContextId: 'run',
+          },
+        });
+      if (method === 'Browser.getWindowForTarget')
+        return Promise.resolve({
+          windowId: target ? targets.get(target)!.window : 1,
+        });
+      if (method === 'Target.getTargets') {
+        for (const [id, left] of lingering)
+          if (left === 0) {
+            lingering.delete(id);
+            targets.delete(id);
+          } else lingering.set(id, left - 1);
+        return Promise.resolve({
+          targetInfos: [...targets].map(([targetId, value]) => ({
+            targetId,
+            ...value,
+          })),
+        });
+      }
+      if (method === 'Target.attachToTarget') {
+        attached.push(target);
+        return Promise.reject(new Error('Generated attach refused'));
+      }
+      if (method === 'Target.closeTarget') {
+        closed.push(target);
+        targets.delete(target);
+        const tab = tabOf.get(target);
+        if (tab && mode === 'lingering') lingering.set(tab, 2);
+        else if (tab) targets.delete(tab);
+        return Promise.resolve({ success: true });
+      }
+      throw new Error('Unexpected method');
+    },
+  });
+  const page = { isClosed: () => false } as Page;
+  return {
+    context: {
+      newCDPSession: () => Promise.resolve(client),
+    } as unknown as BrowserContext,
+    page,
+    closed,
+    attached,
+    targets,
+  };
+}
+test.each(['restored', 'lingering'] as const)(
+  'TABS-EDGE %s: restored tabs close and count without any attach to a tab target',
+  async (mode) => {
+    const f = edgeFixture(mode);
+    expect(await auditBrowserTabs(f.context, new Set([f.page]), true)).toEqual({
+      closed: { page: 2, tab: 0 },
+      nonOwned: 0,
+      tabs: 1,
+    });
+    expect(f.closed.sort()).toEqual(['restored-page-1', 'restored-page-2']);
+    expect(f.attached).toEqual([]);
+    expect(f.targets.has('other-window-page')).toBe(true);
+    expect(f.targets.has('other-context-page')).toBe(true);
+    // A step boundary reads the same state without closing or attaching.
+    expect(await auditBrowserTabs(f.context, new Set([f.page]), false)).toEqual(
+      { closed: { page: 0, tab: 0 }, nonOwned: 0, tabs: 1 },
+    );
+    expect(f.attached).toEqual([]);
+  },
+);
+test('TABS-EDGE a later foreign tab at a step boundary counts as non-owned without a close or attach', async () => {
+  const f = edgeFixture('late');
+  expect(await auditBrowserTabs(f.context, new Set([f.page]), false)).toEqual({
+    closed: { page: 0, tab: 0 },
+    nonOwned: 1,
+    tabs: 2,
+  });
+  expect(f.closed).toEqual([]);
+  expect(f.attached).toEqual([]);
+});
+test('TABS-EDGE a tab without a page fails closed where the attach is refused', async () => {
+  const f = edgeFixture('pageless');
+  await expect(
+    auditBrowserTabs(f.context, new Set([f.page]), true, { settleMs: 300 }),
+  ).rejects.toMatchObject({ token: 'tab-inventory', stage: 'children-attach' });
+  // The restored pages are still closed first; the sleeping tab stays open.
+  expect(f.closed.sort()).toEqual(['restored-page-1', 'restored-page-2']);
+  expect(f.targets.has('sleeping-tab')).toBe(true);
+  // At a step boundary the same tab is counted and stops the run.
+  expect(
+    await auditBrowserTabs(f.context, new Set([f.page]), false),
+  ).toMatchObject({ nonOwned: 1, tabs: 2 });
+});
 test('browser audit closes unattached tab wrappers and uncovered pages but not owned or foreign targets', async () => {
   const f = fixture();
-  expect(await auditBrowserTabs(f.context, new Set([f.page]), true)).toEqual({
+  expect(
+    await auditBrowserTabs(f.context, new Set([f.page]), true, {
+      settleMs: 300,
+    }),
+  ).toEqual({
     closed: { page: 1, tab: 1 },
     nonOwned: 0,
     tabs: 1,
@@ -127,7 +268,7 @@ test.each(['unclosed', 'late'] as const)(
       await auditBrowserTabs(f.context, new Set([f.page]), mode !== 'late', {
         settleMs: 300,
       }),
-    ).toMatchObject({ nonOwned: 2, tabs: 3 });
+    ).toMatchObject({ nonOwned: 1, tabs: 2 });
     if (mode === 'unclosed')
       expect(
         await auditBrowserTabs(f.context, new Set([f.page]), true, {
@@ -139,7 +280,11 @@ test.each(['unclosed', 'late'] as const)(
 );
 test('browser inventory waits for its own closes to leave the list before the strict re-inspection', async () => {
   const f = fixture('lagging');
-  expect(await auditBrowserTabs(f.context, new Set([f.page]), true)).toEqual({
+  expect(
+    await auditBrowserTabs(f.context, new Set([f.page]), true, {
+      settleMs: 500,
+    }),
+  ).toEqual({
     closed: { page: 1, tab: 1 },
     nonOwned: 0,
     tabs: 1,

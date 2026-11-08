@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: browser-suites-${{ github.ref }}
+  group: browser-suites-${{ github.ref }}-${{ inputs.placement-only && 'placement' || 'suites' }}
   cancel-in-progress: true
 
 jobs:

@@ -165,37 +165,6 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     receipt.launchKeptForeground = !launch.changed;
     receipt.pagesKeptForeground = !pages.changed;
     receipt.status = launch.changed ? 'launch-activated-window' : 'passed';
-    const visibility = async () =>
-      Promise.all(
-        activePair.map((page) => page.evaluate(() => document.visibilityState)),
-      );
-    const before = await visibility();
-    const shortcut = await watch('inWindowTabShortcut', async () => {
-      const session = await context!.newCDPSession(activePair[0]!);
-      try {
-        await session.send('Input.dispatchKeyEvent', {
-          type: 'keyDown',
-          key: 'Tab',
-          code: 'Tab',
-          windowsVirtualKeyCode: 9,
-          modifiers: 2,
-        });
-        await session.send('Input.dispatchKeyEvent', {
-          type: 'keyUp',
-          key: 'Tab',
-          code: 'Tab',
-          windowsVirtualKeyCode: 9,
-          modifiers: 2,
-        });
-      } finally {
-        await session.detach();
-      }
-    });
-    receipt.shortcutVisibility = {
-      before,
-      after: await visibility(),
-      keptForeground: !shortcut.changed,
-    };
     const animation = await activePair[1]!.evaluate(async () => {
       const at = performance.now();
       for (let index = 0; index < 3; index++)

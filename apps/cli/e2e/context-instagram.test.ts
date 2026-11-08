@@ -8487,6 +8487,79 @@ test('STALL2 unattended run watchdog stops a nonsettling carried batch before an
   }
 }, 60000);
 test.each([
+  'caption-duplicate',
+  'caption-carousel',
+  'caption-foreign',
+] as const)(
+  'REPLY-SOLE-3 sole post refresh with %s beside the post caption',
+  async (mode) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true), h.notices.join('\n')).toMatchObject({
+        completed: 5,
+      });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(0);
+      h.fake.replyAnswer(false);
+      h.fake.scriptReplies('matching');
+      h.fake.soleCommentSet(mode);
+      h.fake.replyShape('sole-zero');
+      const accepted = mode !== 'caption-foreign';
+      expect(
+        await h.start({ refreshReplies: true }),
+        h.notices.join('\n'),
+      ).toMatchObject(
+        accepted
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token: 'reply-scope-unverified',
+            },
+      );
+      const after = await h.store.read((tx) => records(tx.instagramContext));
+      expect(
+        after.every((record) =>
+          accepted
+            ? record.replies?.entries.length === 0
+            : record.replies === undefined,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const raw = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const sole = ContextStepReportSchema.parse(raw.steps[0]).replyScope
+        ?.soleComment;
+      expect(sole).toMatchObject({
+        captionEntriesExcluded: 1,
+        answerSetValid: accepted,
+        firstFailedGate: accepted ? 'none' : 'sole-answer-set',
+        captionRelations: {
+          sameId: mode === 'caption-duplicate' ? 1 : 0,
+          samePostMedia: mode === 'caption-carousel' ? 1 : 0,
+          other: mode === 'caption-foreign' ? 1 : 0,
+        },
+        answerExtraEntries: {
+          captionObjects: accepted ? 0 : 1,
+        },
+      });
+      for (const value of [
+        '777001',
+        '777002',
+        '777003',
+        'Generated caption text',
+      ])
+        expect(JSON.stringify(raw)).not.toContain(value);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test.each([
   'no-count',
   'one',
   'two',

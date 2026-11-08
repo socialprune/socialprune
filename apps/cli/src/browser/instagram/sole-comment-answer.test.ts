@@ -273,10 +273,160 @@ test.each([
     });
   },
 );
+// REPLY-SOLE-3: a second caption object is excluded only when it is provably
+// this post's caption. Generated shapes; no real answer was copied.
+const ownCaption = {
+  pk: '456',
+  user: { username: 'generated_owner' },
+  text: 'Generated caption entry',
+  created_at: 1735603200,
+};
+test.each([
+  [
+    'duplicate caption ID under the post caption edge',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: ownCaption,
+      edge_media_to_caption: { edges: [{ node: { ...ownCaption } }] },
+    },
+    { sameId: 1, samePostMedia: 0, other: 0 },
+  ],
+  [
+    'duplicate caption ID in a second response for the post',
+    [
+      { code, comment_count: 1, comments: [focal], caption: ownCaption },
+      {
+        items: [
+          { code, edge_media_to_caption: { edges: [{ node: ownCaption }] } },
+        ],
+      },
+    ],
+    { sameId: 1, samePostMedia: 0, other: 0 },
+  ],
+  [
+    'caption of a carousel item of the same post',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: ownCaption,
+      carousel_media: [
+        {
+          pk: '900',
+          caption: { ...ownCaption, pk: '457', text: 'Generated item caption' },
+        },
+      ],
+    },
+    { sameId: 0, samePostMedia: 1, other: 0 },
+  ],
+] as const)(
+  'REPLY-SOLE-3 %s is this post caption and keeps the sole zero proof',
+  (_name, value, relations) => {
+    const result = inspectSoleCommentAnswer(
+      [],
+      Array.isArray(value) ? value : [value],
+      match,
+      code,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.diagnostic).toMatchObject({
+      answerCommentSetSize: 1,
+      captionEntriesExcluded: 1,
+      answerSetValid: true,
+      firstFailedGate: 'none',
+      captionRelations: relations,
+      answerExtraEntries: { captionObjects: 0 },
+    });
+    // The duplicate carries the same time, a carousel caption never feeds it.
+    expect(result.captionTime).toEqual({ seconds: ownCaption.created_at });
+    for (const secret of [ownCaption.pk, ownCaption.text, '457', '900'])
+      expect(JSON.stringify(result.diagnostic)).not.toContain(secret);
+  },
+);
+test.each([
+  [
+    'caption of another post outside this post',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: ownCaption,
+      related: [{ pk: '901', caption: { ...ownCaption, pk: '458' } }],
+    },
+  ],
+  [
+    'caption object inside a comment set',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal, { caption: { ...ownCaption, pk: '459' } }],
+      caption: ownCaption,
+    },
+  ],
+  [
+    'caption ID of this post also listed as a comment',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal, { ...ownCaption }],
+      caption: ownCaption,
+    },
+  ],
+  [
+    'second caption with another ID under the post caption edge',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: ownCaption,
+      edge_media_to_caption: {
+        edges: [{ node: { ...ownCaption, pk: '460' } }],
+      },
+    },
+  ],
+  [
+    'carousel item caption that names the focal ID',
+    {
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: ownCaption,
+      carousel_media: [{ caption: { ...ownCaption, pk: match.id } }],
+    },
+  ],
+] as const)('REPLY-SOLE-3 %s still refuses', (_name, value) => {
+  const result = inspectSoleCommentAnswer([], [value], match, code);
+  expect(result.accepted).toBe(false);
+  expect(result.diagnostic.firstFailedGate).toBe('sole-answer-set');
+  expect(result.diagnostic.answerSetValid).toBe(false);
+});
+test('REPLY-SOLE-3 relation counts stay closed and refused captions keep their count', () => {
+  const result = inspectSoleCommentAnswer(
+    [],
+    [
+      {
+        code,
+        comment_count: 1,
+        comments: [focal],
+        caption: ownCaption,
+        related: [{ caption: { ...ownCaption, pk: '458' } }],
+        edge_media_to_caption: { edges: [{ node: ownCaption }] },
+      },
+    ],
+    match,
+    code,
+  );
+  expect(result.diagnostic).toMatchObject({
+    captionRelations: { sameId: 1, samePostMedia: 0, other: 1 },
+    answerExtraEntries: { captionObjects: 1 },
+    answerCommentSetSize: 2,
+  });
+});
 test.each([
   'no-post-code',
   'inside-comment-set',
-  'nested-media',
   'caption-list',
   'focal-id',
   'other-post-and-extra',
@@ -289,31 +439,24 @@ test.each([
         ? { comment_count: 1, comments: [focal], caption: extra }
         : kind === 'inside-comment-set'
           ? { code, comment_count: 1, comments: [focal, { caption: extra }] }
-          : kind === 'nested-media'
-            ? {
-                code,
-                comment_count: 1,
-                comments: [focal],
-                carousel_media: [{ caption: extra }],
-              }
-            : kind === 'caption-list'
-              ? { code, comment_count: 1, comments: [focal], caption: [extra] }
-              : kind === 'focal-id'
-                ? {
-                    code,
-                    comment_count: 1,
-                    comments: [focal],
-                    caption: { ...extra, pk: match.id },
-                  }
-                : {
-                    code,
-                    comment_count: 1,
-                    comments: [
-                      focal,
-                      { ...extra, pk: '457', parent_comment_id: '789' },
-                    ],
-                    caption: extra,
-                  };
+          : kind === 'caption-list'
+            ? { code, comment_count: 1, comments: [focal], caption: [extra] }
+            : kind === 'focal-id'
+              ? {
+                  code,
+                  comment_count: 1,
+                  comments: [focal],
+                  caption: { ...extra, pk: match.id },
+                }
+              : {
+                  code,
+                  comment_count: 1,
+                  comments: [
+                    focal,
+                    { ...extra, pk: '457', parent_comment_id: '789' },
+                  ],
+                  caption: extra,
+                };
     const result = inspectSoleCommentAnswer([], [value], match, code);
     expect(result.accepted).toBe(false);
     expect(result.diagnostic.firstFailedGate).toBe('sole-answer-set');

@@ -91,6 +91,15 @@ export function inspectSoleCommentAnswer(
   let valid = true,
     visits = 0;
   let focalObjects = 0;
+  // REPLY-SOLE-3: caption-keyed objects outside the post's own caption key,
+  // decided after the walk against every primary caption ID and set member.
+  const candidates: {
+    id: string;
+    inPost: boolean;
+    mediaCaption: boolean;
+    times: unknown[];
+  }[] = [];
+  const setIds = new Set<string>();
   const walk = (
     input: unknown,
     depth: number,
@@ -98,6 +107,8 @@ export function inspectSoleCommentAnswer(
     post = false,
     inCaption = false,
     postCaption = false,
+    mediaItem = false,
+    mediaCaption = false,
   ) => {
     guard();
     if (++visits > 100000 || depth > 40) {
@@ -108,7 +119,7 @@ export function inspectSoleCommentAnswer(
     if (Array.isArray(input)) {
       for (const next of input) {
         if (diagnostic.answerTraversalCapped) break;
-        walk(next, depth + 1, inSet, post, inCaption);
+        walk(next, depth + 1, inSet, post, inCaption, false, mediaItem);
       }
       return;
     }
@@ -182,7 +193,24 @@ export function inspectSoleCommentAnswer(
       )
         captionTimeUnreadable = true;
       else for (const time of times) captionSeconds.add(time as number);
+    } else if (
+      commentId &&
+      !namesFocal &&
+      commentLike &&
+      inCaption &&
+      !inSet &&
+      commentId !== match.id
+    ) {
+      candidates.push({
+        id: commentId,
+        inPost,
+        mediaCaption,
+        times: [value.created_at, value.created_at_utc].filter(
+          (time) => time !== undefined,
+        ),
+      });
     } else if (commentId && (inSet || commentLike)) {
+      if (inSet) setIds.add(commentId);
       comments.add(commentId);
       if (!namesFocal) {
         valid = false;
@@ -209,6 +237,9 @@ export function inspectSoleCommentAnswer(
           inPost,
           inCaption || key === 'caption' || key === 'edge_media_to_caption',
           ownCode === code && key === 'caption',
+          // Only the direct items of this post's own carousel list.
+          inPost && !inSet && key === 'carousel_media',
+          mediaItem && !inCaption && key === 'caption',
         );
     }
   };
@@ -217,6 +248,39 @@ export function inspectSoleCommentAnswer(
     if (diagnostic.answerTraversalCapped) break;
     walk(input, 0);
   }
+  const relations = { sameId: 0, samePostMedia: 0, other: 0 };
+  const commentIds = new Set([...comments, ...setIds]);
+  for (const candidate of candidates) {
+    guard();
+    // Never a comment or comment-set member, never another relation.
+    const relation = commentIds.has(candidate.id)
+      ? 'other'
+      : candidate.inPost && captionIds.has(candidate.id)
+        ? 'sameId'
+        : candidate.inPost && candidate.mediaCaption
+          ? 'samePostMedia'
+          : 'other';
+    relations[relation]++;
+    if (relation === 'sameId') {
+      // The same caption seen twice must carry the same time.
+      if (
+        candidate.times.some(
+          (time) =>
+            typeof time !== 'number' ||
+            !Number.isSafeInteger(time) ||
+            time <= 0,
+        )
+      )
+        captionTimeUnreadable = true;
+      else
+        for (const time of candidate.times) captionSeconds.add(time as number);
+    } else if (relation === 'other') {
+      comments.add(candidate.id);
+      valid = false;
+      diagnostic.answerExtraEntries!.captionObjects++;
+    }
+  }
+  if (candidates.length) diagnostic.captionRelations = relations;
   diagnostic.answerCommentSetSize = comments.size;
   guard();
   diagnostic.answerSetValid =

@@ -76,6 +76,13 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     source: process.env['GITHUB_SHA'],
     browser: browserName,
   };
+  // Wall time per segment, so the test's budget is derived from measurement.
+  const startedAt = Date.now(),
+    phaseMs: Record<string, number> = {};
+  receipt.phaseMs = phaseMs;
+  const mark = (name: string) => {
+    phaseMs[name] = Date.now() - startedAt;
+  };
   const waitFile = async (path: string) => {
     for (let attempt = 0; attempt < 200; attempt++) {
       try {
@@ -97,8 +104,20 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       handle: string;
       area: { x: number; y: number; width: number; height: number };
     };
+    mark('sentinelReady');
     const helper = await prepareWindowsQuery(); // Existing cached native helper, runner only.
+    mark('helperReady');
+    const watchMs: Record<string, number> = {};
+    receipt.watchMs = watchMs;
     const watch = async (name: string, action: () => Promise<void>) => {
+      const watchStarted = Date.now();
+      try {
+        return await watchOnce(name, action);
+      } finally {
+        watchMs[name] = Date.now() - watchStarted;
+      }
+    };
+    const watchOnce = async (name: string, action: () => Promise<void>) => {
       const readyPath = join(root, name + '.ready'),
         stopPath = join(root, name + '.stop');
       await writeFile(activate, name);
@@ -163,6 +182,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       await tab.goto(fake.origin + '/your_activity/interactions/comments');
     }
     await seed.close();
+    mark('seeded');
     const launch = await watch('launch', async () => {
       context = await chromium.launchPersistentContext(join(root, 'profile'), {
         executablePath: executable!,
@@ -213,6 +233,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     receipt.restoredSamples = restored.length;
     receipt.restoredLaunchPages = context!.pages().length;
     expect(restored.at(-1)!.fixturePages).toBeGreaterThanOrEqual(7);
+    mark('restored');
     await context!.setOffline(false);
     await context!.route('**/*', (route) =>
       new URL(route.request().url()).origin === fake!.origin
@@ -233,7 +254,17 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     const boundary = contextPages(partial, () => {});
     receipt.launchKeptForeground = !launch.changed;
     receipt.status = 'measuring-reader-design';
+    const tabReadMs: Record<string, number> = {};
+    receipt.tabReadMs = tabReadMs;
     const selectedReader = async (name: string, count: number) => {
+      const readStarted = Date.now();
+      try {
+        await selectedReaderOnce(name, count);
+      } finally {
+        tabReadMs[name] = Date.now() - readStarted;
+      }
+    };
+    const selectedReaderOnce = async (name: string, count: number) => {
       const browserSession = await context!.browser()!.newBrowserCDPSession();
       try {
         const processes = await browserSession.send(
@@ -365,8 +396,10 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     await selectedReader('selectedAfterCap', 2);
     receipt.pagesKeptForeground = true;
     receipt.status = 'reader-design-passed-launch-reported-separately';
+    mark('readerDesign');
     await context!.close();
     context = undefined;
+    mark('readerContextClosed');
     let runPages = 0;
     const generated = await placementGeneratedRun(
       async (path) => {
@@ -397,6 +430,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
         return page;
       },
     );
+    mark('generatedRun');
     receipt.generatedRun = {
       pages: generated.pages,
       rows: generated.rows,
@@ -413,20 +447,23 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     console.log('PLACEMENT_FOREGROUND_RECEIPT', JSON.stringify(receipt));
     boundary.dispose();
   } finally {
-    await writeFile(
-      join(
-        out,
-        browserName === 'msedge' ? 'placement-msedge.json' : 'placement.json',
-      ),
-      JSON.stringify(receipt, null, 2),
+    mark('teardownStart');
+    const receiptPath = join(
+      out,
+      browserName === 'msedge' ? 'placement-msedge.json' : 'placement.json',
     );
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
     await context?.close();
     await fake?.close();
     await writeFile(stop, 'stop');
     await sentinelDone;
     await rm(root, { recursive: true, force: true });
+    mark('teardownEnd');
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
   }
-});
+  // MEASUREMENT ONLY: room to finish so phaseMs is complete; replaced by a
+  // derived budget before this branch is offered.
+}, 400000);
 
 /** The same Windows foreground sentinel as above, for the X probe. */
 async function foregroundSentinel(root: string) {

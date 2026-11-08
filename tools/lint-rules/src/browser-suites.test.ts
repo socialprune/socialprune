@@ -499,8 +499,9 @@ test('the standalone workflow keeps other suites serial and case-shards context 
     workflow.match(/run: node .github\/scripts\/browser-suite.mjs run /g),
   ).toHaveLength(5);
   // Five suite/aggregate jobs plus the opt-in isolated foreground probe, whose
-  // budget grew from 10 to 18 minutes with its two Microsoft Edge probe steps.
-  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|18)\n/g)).toHaveLength(
+  // budget grew from 10 to 22 minutes with its Microsoft Edge probe steps and
+  // the 6-minute Instagram placement steps.
+  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|22)\n/g)).toHaveLength(
     6,
   );
   expect(workflow).toContain('placement-only:');

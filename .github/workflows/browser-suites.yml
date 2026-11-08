@@ -146,9 +146,9 @@ jobs:
     needs: select
     if: needs.select.outputs.context == 'true' && inputs.placement-only != true
     runs-on: windows-latest
-    # 40 before the added Edge placement steps in shard 1 (Instagram and X,
-    # up to 4 minutes each).
-    timeout-minutes: 48
+    # 40 before the placement steps in shard 1, then 48 with three 4-minute
+    # steps; the two Instagram steps now cap at 6 minutes each: 48 + 2 + 2.
+    timeout-minutes: 52
     strategy:
       fail-fast: false
       matrix:
@@ -189,11 +189,15 @@ jobs:
         run: node .github/scripts/browser-suite.mjs run context apps/cli/test-results/browser-suites ${{ matrix.shard }}
       - name: Measure Instagram placement and foreground ownership on Windows
         if: ${{ !cancelled() && matrix.shard == 1 }}
-        timeout-minutes: 4
+        # Declared test budgets in placement-runner.test.ts: helper 60 s +
+        # launch segment 75 s + generated run 180 s + about 10 s vitest start
+        # = 325 s, so 6 minutes.
+        timeout-minutes: 6
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - name: Measure Instagram placement on the runner's installed Microsoft Edge
         if: ${{ !cancelled() && matrix.shard == 1 }}
-        timeout-minutes: 4
+        # Same derivation as the Chromium step: 325 s, so 6 minutes.
+        timeout-minutes: 6
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
@@ -221,9 +225,9 @@ jobs:
   placement:
     if: inputs.placement-only == true
     runs-on: windows-latest
-    # 10 before the added Edge probe steps (Instagram and X, up to 4 minutes
-    # each).
-    timeout-minutes: 18
+    # 10 before the Edge probe steps, then 18 with the Instagram and X Edge
+    # steps; the two Instagram steps now cap at 6 minutes each: 18 + 2 + 2.
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -238,11 +242,13 @@ jobs:
       - run: pnpm --filter socialprune exec playwright install chromium
         timeout-minutes: 5
       - name: Measure foreground and placement before full-suite admission
-        timeout-minutes: 4
+        # Declared test budgets: 60 + 75 + 180 s + about 10 s start = 325 s.
+        timeout-minutes: 6
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - name: Measure placement on the runner's installed Microsoft Edge
         if: ${{ !cancelled() }}
-        timeout-minutes: 4
+        # Same derivation as the Chromium step: 325 s, so 6 minutes.
+        timeout-minutes: 6
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"

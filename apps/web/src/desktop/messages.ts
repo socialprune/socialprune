@@ -183,6 +183,8 @@ const tokenIds = [
   'desktop.token.comment-structure',
   'desktop.token.unexpected-action',
   'desktop.token.unexpected-page',
+  'desktop.token.tab-inventory',
+  'desktop.token.non-owned-tab',
   'desktop.token.request-journal',
   'desktop.token.second-source',
   'desktop.token.field-mismatch',

@@ -935,6 +935,8 @@
   "desktop.token.comment-structure": "Der Kommentar hat eine unbekannte Struktur.",
   "desktop.token.unexpected-action": "Eine kontoändernde Anfrage wurde blockiert. Der Leselauf wurde gestoppt.",
   "desktop.token.unexpected-page": "Der Browser hat eine unerwartete Seite erreicht. Der Lauf wurde gestoppt.",
+  "desktop.token.tab-inventory": "Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden. Der Lauf wurde gestoppt.",
+  "desktop.token.non-owned-tab": "Im Browserfenster bleibt ein Tab, der nicht zu diesem Lauf gehört. Der Lauf wurde gestoppt.",
   "desktop.token.request-journal": "Das Anfragejournal konnte nicht geschrieben werden. Der Lauf wurde gestoppt.",
   "desktop.token.second-source": "Die Seitenantwort konnte ein gespeichertes Feld nicht bestätigen.",
   "desktop.token.field-mismatch": "Ein gespeichertes Feld weicht von der Seitenantwort ab.",

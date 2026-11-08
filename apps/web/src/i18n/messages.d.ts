@@ -453,6 +453,7 @@ declare global {
     'desktop.token.media-origin': Record<never, never>;
     'desktop.token.navigation': Record<never, never>;
     'desktop.token.no-row': Record<never, never>;
+    'desktop.token.non-owned-tab': Record<never, never>;
     'desktop.token.not-completed': Record<never, never>;
     'desktop.token.not-deleted': Record<never, never>;
     'desktop.token.not-found': Record<never, never>;
@@ -497,6 +498,7 @@ declare global {
     'desktop.token.still-gone': Record<never, never>;
     'desktop.token.stopped': Record<never, never>;
     'desktop.token.stopped-by-person': Record<never, never>;
+    'desktop.token.tab-inventory': Record<never, never>;
     'desktop.token.text': Record<never, never>;
     'desktop.token.time': Record<never, never>;
     'desktop.token.tombstone': Record<never, never>;

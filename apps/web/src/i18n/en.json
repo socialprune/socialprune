@@ -935,6 +935,8 @@
   "desktop.token.comment-structure": "The comment has an unrecognized structure.",
   "desktop.token.unexpected-action": "An account-changing request was blocked. The reading run stopped.",
   "desktop.token.unexpected-page": "The browser reached an unexpected page. The run stopped.",
+  "desktop.token.tab-inventory": "The tabs in the Instagram run window could not be checked. The run stopped.",
+  "desktop.token.non-owned-tab": "A tab outside this run remains in its browser window. The run stopped.",
   "desktop.token.request-journal": "The request journal could not be written. The run stopped.",
   "desktop.token.second-source": "The page response could not confirm a stored field.",
   "desktop.token.field-mismatch": "A stored field differs from the page response.",

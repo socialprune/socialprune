@@ -13,8 +13,108 @@ import {
   restoreBackup,
 } from '@socialprune/core/workspace/backup';
 
+test('REPLY-SET-2 v12 to v13 copies first, changes no record, then keeps a marked set through CLI and portable backups', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sp-replyset-migration-'));
+  const path = join(root, 'socialprune.sqlite');
+  try {
+    const memory = createMemoryStore();
+    const prior = await writeInstagramContextContract(memory);
+    const initial = await memory.read(readWorkspace);
+    await memory.close();
+    const first = await SQLiteStore.open(path, { initial });
+    await first.close();
+    const raw = new DatabaseSync(path);
+    // Layout 12 and 13 share every table and trigger; only the versions move.
+    raw.exec(
+      "UPDATE meta SET data=json_set(data,'$.schemaVersion',12); PRAGMA user_version=12;",
+    );
+    const recordBefore = String(
+      raw
+        .prepare('SELECT data FROM instagram_context WHERE item_id=?')
+        .get(prior.itemId)!.data,
+    );
+    raw.close();
+    const before = await readFile(path);
+    const store = await SQLiteStore.open(path);
+    try {
+      expect((await store.read(readWorkspace)).schemaVersion).toBe(13);
+      expect(
+        await store.read((tx) => tx.instagramContext.get(prior.itemId)),
+      ).toEqual(prior);
+      const marked = {
+        ...prior,
+        replies: {
+          entries: [
+            {
+              account: 'generated_reply_0',
+              text: 'Generated reply 0',
+              createdAt: null,
+              likes: { count: null, source: null },
+              source: 'shown' as const,
+            },
+          ],
+          moreCount: 2,
+          capped: false,
+          set: {
+            state: 'incomplete' as const,
+            declaredTotal: 3,
+            hiddenCount: 2,
+          },
+        },
+      };
+      await store.write((tx) => tx.instagramContext.fillReplies(marked));
+      // CLI -> portable reader (the browser's) -> CLI again.
+      const portable = createMemoryStore();
+      try {
+        await restoreBackup(portable, createBackup(store).chunks);
+        expect(
+          (await portable.read((tx) => tx.instagramContext.get(prior.itemId)))
+            ?.replies,
+        ).toEqual(marked.replies);
+        const empty = createMemoryStore();
+        const blank = await empty.read(readWorkspace);
+        await empty.close();
+        const restored = await SQLiteStore.open(join(root, 'restored.sqlite'), {
+          initial: blank,
+        });
+        try {
+          await restoreBackup(restored, createBackup(portable).chunks);
+          expect(
+            (await readBackup(createBackup(restored).chunks)).instagramContext,
+          ).toEqual([marked]);
+        } finally {
+          await restored.close();
+        }
+      } finally {
+        await portable.close();
+      }
+    } finally {
+      await store.close();
+    }
+    const copies = (await readdir(root)).filter((name) =>
+      name.endsWith('.before-migration.sqlite'),
+    );
+    expect(copies).toHaveLength(1);
+    expect(await readFile(join(root, copies[0]!))).toEqual(before);
+    const copy = new DatabaseSync(join(root, copies[0]!), { readOnly: true });
+    try {
+      expect(
+        String(
+          copy
+            .prepare('SELECT data FROM instagram_context WHERE item_id=?')
+            .get(prior.itemId)!.data,
+        ),
+      ).toBe(recordBefore);
+    } finally {
+      copy.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test.each([false, true])(
-  'REPLIES-1 v11 to v12 copies before migration, invents no replies and rolls back failure=%s',
+  'REPLIES-1 v11 to current copies before migration, invents no replies and rolls back failure=%s',
   async (failure) => {
     const root = await mkdtemp(join(tmpdir(), 'sp-replies-migration-'));
     const path = join(root, 'socialprune.sqlite');
@@ -69,7 +169,7 @@ BEGIN SELECT RAISE(ABORT,'write-once'); END;`;
       }
       const store = await SQLiteStore.open(path);
       try {
-        expect((await store.read(readWorkspace)).schemaVersion).toBe(12);
+        expect((await store.read(readWorkspace)).schemaVersion).toBe(13);
         expect(
           await store.read((tx) => tx.instagramContext.get(prior.itemId)),
         ).toEqual(prior);

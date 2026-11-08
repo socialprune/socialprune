@@ -210,6 +210,71 @@ export function replySetCounts(
   };
 }
 
+/**
+ * REPLY-SET-2 (parent decision on REPLY-SET-1, option A): only after the
+ * expansion left a single "Hide all replies" control, every shown row matched
+ * exactly one distinct answer entry and the answer declares more replies than
+ * the page shows. Answer entries no row claimed are kept as answer-only; the
+ * set is complete when they cover the declared total, else incomplete with
+ * the declared total and the hidden count. Every other mismatch still stops.
+ */
+function hiddenReplySet(
+  answer: { total: number; entries: readonly (Entry & { id: string })[] },
+  rows: readonly ShownRow[],
+) {
+  const claimed = new Set<string>();
+  const entries: Entry[] = [];
+  for (const row of rows) {
+    const matches = answerMatches(answer.entries, row);
+    if (matches.length !== 1 || claimed.has(matches[0]!.id))
+      return { reason: 'reply-answer-mismatch' as const };
+    claimed.add(matches[0]!.id);
+    entries.push({
+      ...fields(matches[0]!),
+      createdAt: row.createdAt,
+      source: 'shown',
+    });
+  }
+  for (const value of answer.entries)
+    if (!claimed.has(value.id))
+      entries.push({ ...fields(value), source: 'answer-only' });
+  if (entries.length > 50)
+    return { reason: 'reply-answer-incomplete' as const };
+  const hiddenCount = answer.total - entries.length;
+  return {
+    observation: {
+      entries,
+      moreCount: Math.max(0, hiddenCount),
+      capped: false,
+      set:
+        hiddenCount > 0
+          ? {
+              state: 'incomplete' as const,
+              declaredTotal: answer.total,
+              hiddenCount,
+            }
+          : { state: 'complete' as const },
+    },
+    answerChecked: true,
+  };
+}
+
+/** The per-step report of a marked set: its state and counts only. */
+export function replySetReport(
+  replies: NonNullable<InstagramContext['replies']>,
+) {
+  return replies.set
+    ? {
+        set: replies.set.state,
+        answerOnly: replies.entries.filter(
+          (entry) => entry.source === 'answer-only',
+        ).length,
+        hidden:
+          replies.set.state === 'incomplete' ? replies.set.hiddenCount : 0,
+      }
+    : {};
+}
+
 export function checkedReplyRows(
   bodies: readonly unknown[],
   match: ReplyMatch,
@@ -217,11 +282,19 @@ export function checkedReplyRows(
   capped: boolean,
   moreCount: number,
   scriptValues: readonly unknown[] = [],
+  hideAllAfterExpansion = false,
 ) {
   const answer = combinedReplyAnswer(bodies, match, scriptValues).answer;
   if (!answer.present) return { reason: 'reply-answer-absent' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
+  if (
+    !capped &&
+    hideAllAfterExpansion &&
+    rows.length > 0 &&
+    answer.total > rows.length
+  )
+    return hiddenReplySet(answer, rows);
   if (answer.present && !capped && answer.total !== rows.length)
     return { reason: 'reply-answer-incomplete' as const };
   const entries: Entry[] = [];

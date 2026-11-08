@@ -64,7 +64,7 @@ import {
 } from '@socialprune/core/criteria';
 
 // Physical layouts have their own history, independent of backup writers.
-export const SQLITE_LAYOUT_VERSION = 12;
+export const SQLITE_LAYOUT_VERSION = 13;
 
 const plansLayout = `
 CREATE TABLE IF NOT EXISTS review_plans (action_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;

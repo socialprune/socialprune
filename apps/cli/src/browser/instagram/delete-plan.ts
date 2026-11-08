@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { DecisionEvent, InstagramContext, Item } from '@socialprune/core';
-import { validateInstagramContextItem } from '@socialprune/core';
+import {
+  repliesObserved,
+  validateInstagramContextItem,
+} from '@socialprune/core';
 import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import type { PlannedEntry } from '../../workspace/browser-journal.ts';
 import { CliError } from '../../cli/errors.ts';
@@ -34,10 +37,13 @@ export const INSTAGRAM_DELETE_WARNING = {
   de: 'Die Regeln von Instagram erlauben diese Art von Automatisierung nicht. Instagram kann dein Konto dafür sperren oder einschränken, auch bei diesem Tempo. Dieser Lauf löscht nur deine markierten, eindeutig identifizierten Kommentare in deinem angemeldeten Browser. SocialPrune verbirgt die Programmsteuerung nicht. Ein Kommentar zu einem auf Facebook geteilten Reel kann auch dort entfernt werden. Nutze es nur für dein eigenes Konto und nur, wenn du das in Kauf nimmst.',
 };
 export const INSTAGRAM_DELETION_PROTOCOL = 'ig-del-v1-a-1';
-/** Presence is the read receipt: a null count and an empty reply list qualify. */
+/**
+ * Presence is the read receipt: a null count and an empty reply list qualify.
+ * An incomplete reply set (REPLY-SET-2) still counts as replies missing.
+ */
 export function instagramArchiveMissing(context: InstagramContext) {
   const likes = context.likes === undefined,
-    replies = context.replies === undefined;
+    replies = !repliesObserved(context.replies);
   return likes && replies
     ? 'both'
     : likes

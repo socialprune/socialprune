@@ -106,6 +106,7 @@ import {
   replyScopeDiagnostic,
 } from './replies.ts';
 import { refreshOutcome } from './refresh.ts';
+import { replySetReport } from './replies-answer.ts';
 import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
 import { contextPages } from './pages.ts';
@@ -1572,6 +1573,7 @@ export async function runContextWithDependencies(
                   moreCount: replies.moreCount,
                   capped: replies.capped,
                   answerChecked,
+                  ...replySetReport(replies),
                 };
                 checkedItemIds.push(row.item.id);
                 repliesAnswerChecked &&= answerChecked;
@@ -1771,6 +1773,7 @@ export async function runContextWithDependencies(
                       read: record.replies.entries.length,
                       moreCount: record.replies.moreCount,
                       capped: record.replies.capped,
+                      ...replySetReport(record.replies),
                     },
                   }
                 : {}),

@@ -4862,7 +4862,7 @@ test.each(POST_NOTICE_FIXTURE.cases)(
       );
       try {
         expect(database.prepare('PRAGMA user_version').get()).toMatchObject({
-          user_version: 12,
+          user_version: 13,
         });
       } finally {
         database.close();
@@ -7735,7 +7735,7 @@ test.each([
   ['entries', true],
   ['count-only', false],
 ] as const)(
-  'REPLY-SET-1 7 declared / 5 shown then hide-all-replies, answer %s: counted set, unchanged stop, replies stay unobserved',
+  'REPLY-SET-2 7 declared / 5 shown then hide-all-replies, answer %s: stored as a marked set and the run continues',
   async (_mode, withEntries) => {
     const h = await harness('success', 5, 30000);
     try {
@@ -7747,19 +7747,27 @@ test.each([
       expect(
         await h.start({ refreshReplies: true }),
         h.notices.join('\n'),
-      ).toMatchObject({
-        code: 'INSTAGRAM_SHAPE_CHANGED',
-        token: 'reply-answer-incomplete',
-      });
+      ).toMatchObject({ completed: 5, endReason: 'canary' });
       const contexts = await h.store.read((tx) => records(tx.instagramContext));
-      // No replies record means the deletion guard keeps counting it as missing.
-      expect(
-        contexts.every(
-          (record) =>
-            record.replies === undefined &&
-            instagramArchiveMissing(record) !== null,
-        ),
-      ).toBe(true);
+      for (const record of contexts) {
+        expect(record.replies).toMatchObject(
+          withEntries
+            ? { moreCount: 0, capped: false, set: { state: 'complete' } }
+            : {
+                moreCount: 2,
+                capped: false,
+                set: { state: 'incomplete', declaredTotal: 7, hiddenCount: 2 },
+              },
+        );
+        expect(record.replies!.entries.map((entry) => entry.source)).toEqual([
+          ...Array.from({ length: 5 }, () => 'shown'),
+          ...(withEntries ? ['answer-only', 'answer-only'] : []),
+        ]);
+        // DEL-ARCHIV-1: an incomplete set keeps the comment's replies missing.
+        expect(
+          ['replies', 'both'].includes(instagramArchiveMissing(record) ?? ''),
+        ).toBe(!withEntries);
+      }
       const run = (await h.store.browserJournal()).runs.at(-1)!;
       const report = JSON.parse(
         await readFile(
@@ -7768,9 +7776,14 @@ test.each([
         ),
       ) as { steps: unknown[] };
       const step = ContextStepReportSchema.parse(report.steps[0]);
-      expect(step.replies).toMatchObject({
-        read: 0,
-        reason: 'reply-answer-incomplete',
+      expect(step.replies).toEqual({
+        read: withEntries ? 7 : 5,
+        moreCount: withEntries ? 0 : 2,
+        capped: false,
+        answerChecked: true,
+        set: withEntries ? 'complete' : 'incomplete',
+        answerOnly: withEntries ? 2 : 0,
+        hidden: withEntries ? 0 : 2,
       });
       expect(step.replyAnswer).toMatchObject({
         source: 'network',
@@ -7784,7 +7797,7 @@ test.each([
         hiddenCount: withEntries ? 0 : 2,
       });
       expect(step.replyExpansion).toMatchObject({
-        stopAt: 'answer-check',
+        stopAt: null,
         clicks: [
           {
             clicked: true,
@@ -7803,7 +7816,9 @@ test.each([
         'Generated reply 0 with local text',
         '900000',
       ])
-        expect(JSON.stringify(step.replyAnswer)).not.toContain(value);
+        expect(JSON.stringify([step.replyAnswer, step.replies])).not.toContain(
+          value,
+        );
     } finally {
       await h.close();
     }

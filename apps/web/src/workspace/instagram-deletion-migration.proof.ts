@@ -69,7 +69,7 @@ test.each([false, true])(
           : {
               first: current,
               second: current,
-              version: 12,
+              version: 13,
               duplicateRejected: true,
               addOnly: true,
             },

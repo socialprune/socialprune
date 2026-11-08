@@ -501,7 +501,7 @@ test('the standalone workflow keeps other suites serial and case-shards context 
   // Five suite/aggregate jobs plus the opt-in isolated foreground probe, whose
   // budget grew from 10 to 22 minutes with its Microsoft Edge probe steps and
   // the 6-minute Instagram placement steps.
-  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|22)\n/g)).toHaveLength(
+  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|28)\n/g)).toHaveLength(
     6,
   );
   expect(workflow).toContain('placement-only:');
@@ -511,7 +511,9 @@ test('the standalone workflow keeps other suites serial and case-shards context 
   );
   // The probe runs on the pinned Chromium and on the runner's installed Edge,
   // in the placement-only job and in context shard 1.
-  expect(workflow.match(/SP_PLACEMENT_BROWSER: msedge\n/g)).toHaveLength(4);
+  expect(workflow.match(/SP_PLACEMENT_BROWSER: msedge\n/g)).toHaveLength(5);
+  // The RENDER-1 covered and minimized rendering probe, placement-only job.
+  expect(workflow.match(/-t "\^RENDER-1"\n/g)).toHaveLength(2);
   // The X deletion run's placement and restored-tab probe on Edge, in both.
   expect(workflow.match(/-t "\^PLACEMENT X deletion"\n/g)).toHaveLength(2);
   expect(workflow).toContain('shard: [1, 2, 3, 4]');

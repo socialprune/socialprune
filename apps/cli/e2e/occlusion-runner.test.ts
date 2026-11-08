@@ -150,10 +150,10 @@ test(
             args: [
               '--enable-automation',
               ...windowArguments(placement),
-              ...extra,
+              ...extra.args,
             ],
             serviceWorkers: 'block',
-            ignoreDefaultArgs: ['--disable-infobars'],
+            ignoreDefaultArgs: ['--disable-infobars', ...extra.drop],
           },
         );
         const result: Record<string, unknown> = {};

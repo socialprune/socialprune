@@ -944,6 +944,7 @@
   "desktop.token.canary-check": "Die beobachtete Stichprobe hat ihre Prüfungen nicht bestanden.",
   "desktop.token.disk-low": "Auf dem Laufwerk des Arbeitsbereichs ist zu wenig Platz frei. Der Lauf wurde gestoppt.",
   "desktop.token.stopped": "Der Lauf wurde gestoppt.",
+  "desktop.token.window-not-rendering": "Das Fenster des Laufs hat bei drei Kommentaren nacheinander nichts gezeichnet, etwa weil es minimiert oder verdeckt war. Der Lauf wurde gestoppt.",
   "desktop.token.media-origin": "Die Medienadresse liegt außerhalb der erlaubten Hosts.",
   "desktop.token.media-format": "Die Medienantwort hat ein unerwartetes Format.",
   "desktop.token.media-exists": "Die Mediendatei existiert bereits mit anderem Inhalt.",
@@ -1009,5 +1010,6 @@
   "desktop.token.window-full": "Der geprüfte Listenteil endete, bevor der Kommentar gefunden wurde.",
   "desktop.token.list-image-only": "Die geprüfte Liste zeigte Bildelemente ohne lesbaren Kommentartext. Der Kommentar bleibt zur manuellen Prüfung.",
   "desktop.token.post-unavailable": "Der Beitrag war beim Ergänzen der Likes nicht verfügbar. Nur auf deine Auswahl erneut prüfen.",
-  "desktop.token.comment-not-shown": "Der bestätigte Kommentar wurde beim Ergänzen der Likes nicht angezeigt. Nur auf deine Auswahl erneut prüfen."
+  "desktop.token.comment-not-shown": "Der bestätigte Kommentar wurde beim Ergänzen der Likes nicht angezeigt. Nur auf deine Auswahl erneut prüfen.",
+  "desktop.token.deferred-not-rendered": "Das Fenster des Laufs hat nichts gezeichnet, deshalb wurden die Antworten nicht gelesen. Der nächste Lauf liest diesen Kommentar erneut."
 }

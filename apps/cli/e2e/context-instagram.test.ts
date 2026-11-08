@@ -7278,6 +7278,232 @@ test('IG-LIKES refresh reopens the confirmed post once and preserves the origina
   }
 });
 
+/**
+ * DEFER-1: replaces only the reply control's own click with the driver error a
+ * window that renders no frames produces (or an intercepted click), so the
+ * real reader classifies it through its own dispatch record. Generated pages
+ * only; no real page or call log was copied.
+ */
+function replyClickTimeout(mode: 'not-rendering' | 'intercepted') {
+  const error = new Error(
+    [
+      'locator.click: Timeout 1000ms exceeded.',
+      'Call log:',
+      "  - waiting for locator('generated')",
+      '  - locator resolved to <button>View replies</button>',
+      '  - attempting click action',
+      ...(mode === 'not-rendering'
+        ? ['    - waiting for element to be visible, enabled and stable']
+        : [
+            '    - element is visible, enabled and stable',
+            '    - scrolling into view if needed',
+            '    - done scrolling',
+            '    - <div></div> intercepts pointer events',
+          ]),
+    ].join('\n'),
+  );
+  error.name = 'TimeoutError';
+  return error;
+}
+function failReplyClicks(
+  plan: (click: number) => 'not-rendering' | 'intercepted' | null,
+) {
+  const original = replyHelpers.commentReplies;
+  const read = vi.spyOn(replyHelpers, 'commentReplies');
+  let restoreClick: (() => void) | undefined,
+    clicks = 0;
+  read.mockImplementation(async (...args) => {
+    if (!restoreClick) {
+      // The production driver's own Locator class, reached from its page.
+      const proto = Object.getPrototypeOf(args[0].locator('body')) as {
+        click: (this: Locator, options?: unknown) => Promise<void>;
+      };
+      const real = proto.click;
+      proto.click = async function (this: Locator, options?: unknown) {
+        const label = await this.innerText({ timeout: 150 }).catch(() => '');
+        if (label.trim() === 'View replies') {
+          const mode = plan(++clicks);
+          if (mode) throw replyClickTimeout(mode);
+        }
+        return real.call(this, options);
+      };
+      restoreClick = () => {
+        proto.click = real;
+      };
+    }
+    return original(...args);
+  });
+  return {
+    get clicks() {
+      return clicks;
+    },
+    restore() {
+      restoreClick?.();
+      read.mockRestore();
+    },
+  };
+}
+async function deferHarness(canary: boolean) {
+  const h = await harness('success', 5, 30000);
+  expect(await h.start(true)).toMatchObject({ completed: 5 });
+  h.fake.directPostAccount('expected');
+  h.fake.replies(1);
+  if (!canary)
+    await acceptRepliesCanary(h.store, h.plan.accountKey, h.directory);
+  return h;
+}
+async function lastRun(h: Awaited<ReturnType<typeof harness>>) {
+  const journal = await h.store.browserJournal();
+  const run = journal.runs.at(-1)!;
+  // The structure report keeps this file name for main runs too.
+  const report = JSON.parse(
+    await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    ),
+  ) as {
+    steps: Record<string, unknown>[];
+    deferred?: { notRendered: number; consecutiveMax: number };
+    stop?: { token?: string };
+  };
+  return {
+    run,
+    report,
+    settled: journal.attempts
+      .filter((attempt) => attempt.runId === run.runId && attempt.settles)
+      .map((attempt) => [attempt.state, attempt.code]),
+  };
+}
+const refreshPlanRows = async (h: Awaited<ReturnType<typeof harness>>) =>
+  (
+    await planContext(
+      h.store,
+      h.plan.accountKey,
+      new Set(),
+      new Set(),
+      false,
+      true,
+    )
+  ).rows.map((row) => row.item.id);
+
+test('DEFER-1 a reply click on a window that renders nothing defers that comment, stores nothing and the run continues', async () => {
+  const h = await deferHarness(false);
+  const clicks = failReplyClicks((click) =>
+    click === 2 ? 'not-rendering' : null,
+  );
+  try {
+    const planned = (await refreshPlanRows(h)).length;
+    expect(planned).toBeGreaterThanOrEqual(3);
+    expect(
+      await h.start({ refreshReplies: true }),
+      h.notices.join('\n'),
+    ).toMatchObject({
+      completed: planned - 1,
+      steps: planned,
+      endReason: 'done',
+    });
+    const { report, settled } = await lastRun(h);
+    expect(settled).toEqual(
+      Array.from({ length: planned }, (_, index) =>
+        index === 1 ? ['failed', 'deferred-not-rendered'] : ['read', null],
+      ),
+    );
+    expect(report.deferred).toEqual({ notRendered: 1, consecutiveMax: 1 });
+    const step = ContextStepReportSchema.parse(report.steps[1]);
+    expect(step['result']).toBe('deferred-not-rendered');
+    expect(step.replies?.reason).toBe('deferred-not-rendered');
+    expect(step.replyExpansion).toMatchObject({
+      stopAt: 'click',
+      clicks: [
+        {
+          clicked: false,
+          dispatch: {
+            failure: 'actionability-unsettled',
+            boxStableBefore: true,
+          },
+        },
+      ],
+    });
+    const contexts = await h.store.read((tx) => records(tx.instagramContext));
+    const deferred = contexts.filter((record) => record.replies === undefined);
+    // Unobserved as before: deletion keeps it under replies missing.
+    expect(deferred).toHaveLength(1);
+    expect(instagramArchiveMissing(deferred[0]!)).not.toBeNull();
+    expect(await refreshPlanRows(h)).toEqual([deferred[0]!.itemId]);
+  } finally {
+    clicks.restore();
+    await h.close();
+  }
+}, 180000);
+
+test('DEFER-1 three deferred comments in a row stop the run with window-not-rendering and stay planned', async () => {
+  const h = await deferHarness(false);
+  const clicks = failReplyClicks(() => 'not-rendering');
+  try {
+    const planned = await refreshPlanRows(h);
+    expect(planned.length).toBeGreaterThan(3);
+    expect(
+      await h.start({ refreshReplies: true }),
+      h.notices.join('\n'),
+    ).toMatchObject({ code: 'CONTEXT_FAILED', token: 'window-not-rendering' });
+    const { run, report, settled } = await lastRun(h);
+    expect(run.endReason).toBe('error');
+    expect(settled).toEqual(
+      Array.from({ length: 3 }, () => ['failed', 'deferred-not-rendered']),
+    );
+    expect(clicks.clicks).toBe(3);
+    expect(report.deferred).toEqual({ notRendered: 3, consecutiveMax: 3 });
+    expect(report.stop).toMatchObject({ token: 'window-not-rendering' });
+    expect(await refreshPlanRows(h)).toEqual(planned);
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext)))
+        .filter(
+          (record) =>
+            record.replies === undefined &&
+            instagramArchiveMissing(record) !== null,
+        )
+        .map((record) => record.itemId)
+        .sort(),
+    ).toEqual([...planned].sort());
+  } finally {
+    clicks.restore();
+    await h.close();
+  }
+}, 180000);
+
+test.each([
+  ['an intercepted click in a main run', false, 'intercepted'],
+  ['a non-rendering click in a canary', true, 'not-rendering'],
+] as const)(
+  'DEFER-1 %s keeps the stop and defers nothing',
+  async (_name, canary, mode) => {
+    const h = await deferHarness(canary);
+    const clicks = failReplyClicks((click) => (click === 1 ? mode : null));
+    try {
+      const result = await h.start({ refreshReplies: true });
+      expect(result, h.notices.join('\n')).toMatchObject({
+        code: 'CONTEXT_FAILED',
+      });
+      expect(result).not.toMatchObject({ token: 'window-not-rendering' });
+      const { settled, report } = await lastRun(h);
+      expect(settled.some(([, code]) => code === 'deferred-not-rendered')).toBe(
+        false,
+      );
+      expect(report.deferred).toEqual({ notRendered: 0, consecutiveMax: 0 });
+      expect(
+        ContextStepReportSchema.parse(report.steps[0]).replyExpansion?.clicks[0]
+          ?.dispatch?.failure,
+      ).toBe(
+        mode === 'intercepted' ? 'intercepted' : 'actionability-unsettled',
+      );
+    } finally {
+      clicks.restore();
+      await h.close();
+    }
+  },
+  180000,
+);
+
 async function acceptRepliesCanary(
   store: SQLiteStore,
   accountKey: string,

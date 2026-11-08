@@ -944,6 +944,7 @@
   "desktop.token.canary-check": "The watched sample did not pass its checks.",
   "desktop.token.disk-low": "The workspace drive has too little free space. The run stopped.",
   "desktop.token.stopped": "The run was stopped.",
+  "desktop.token.window-not-rendering": "The run window drew nothing for three comments in a row, for example because it was minimized or covered. The run stopped.",
   "desktop.token.media-origin": "The media address is outside the permitted hosts.",
   "desktop.token.media-format": "The media response has an unexpected format.",
   "desktop.token.media-exists": "The media file already exists with different contents.",
@@ -1009,5 +1010,6 @@
   "desktop.token.window-full": "The inspected list window ended before the comment was found.",
   "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review.",
   "desktop.token.post-unavailable": "The post was unavailable while adding likes. Recheck only when you select it.",
-  "desktop.token.comment-not-shown": "The confirmed comment was not shown while adding likes. Recheck only when you select it."
+  "desktop.token.comment-not-shown": "The confirmed comment was not shown while adding likes. Recheck only when you select it.",
+  "desktop.token.deferred-not-rendered": "The run window drew nothing, so the replies were not read. The next run reads this comment again."
 }

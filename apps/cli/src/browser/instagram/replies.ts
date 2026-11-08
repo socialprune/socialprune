@@ -56,6 +56,35 @@ export class ReplyReadFailure extends Error {
     this.reason = reason;
   }
 }
+/**
+ * DEFER-1: the reply control click timed out waiting for the page to render
+ * (the driver's visible/enabled/stable wait never finished while two wall-time
+ * box reads before the click agreed). A minimized or covered window renders
+ * no frames, so nothing about the replies was observed. The original driver
+ * error stays attached so a caller that may not defer keeps today's stop.
+ */
+export class ReplyDeferred extends Error {
+  readonly original: unknown;
+  constructor(original: unknown) {
+    super('deferred-not-rendered');
+    this.name = 'ReplyDeferred';
+    this.original = original;
+  }
+}
+/** Only this dispatch record proves a page that is not rendering. */
+export function clickNotRendering(
+  dispatch: {
+    failure: string;
+    boxStableBefore: boolean | null;
+  },
+  timedOut: boolean,
+): boolean {
+  return (
+    timedOut &&
+    dispatch.failure === 'actionability-unsettled' &&
+    dispatch.boxStableBefore === true
+  );
+}
 
 export const REPLY_CAP = 50;
 
@@ -64,12 +93,19 @@ export async function captureRepliesForMode<T>(
   read: () => Promise<T>,
   refresh: boolean,
   capture: boolean,
-  failed: (reason: ReplyReason) => void,
+  failed: (reason: ReplyReason | 'deferred-not-rendered') => void,
 ): Promise<T | undefined> {
   if (!refresh && !capture) return undefined;
   try {
     return await read();
   } catch (error) {
+    if (error instanceof ReplyDeferred) {
+      failed('deferred-not-rendered');
+      // A refresh step settles or stops in its caller; a main run keeps the
+      // confirmation without replies, as for every other reply failure.
+      if (refresh) throw error;
+      return undefined;
+    }
     // Notice, account, language, network and cancellation guards retain their stops.
     if (
       error instanceof CliError &&
@@ -557,6 +593,8 @@ export async function commentReplies(
               entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
             );
           }
+          if (clickNotRendering(dispatch, classified.timedOut))
+            throw new ReplyDeferred(error);
           throw error;
         }
         click.clicked = true;

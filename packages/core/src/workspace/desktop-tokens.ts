@@ -169,6 +169,7 @@ export const InstagramStopTokenSchema = z.enum([
   'canary-check',
   'disk-low',
   'stopped',
+  'window-not-rendering',
 ]);
 /** apps/cli/src/browser/x/fill/report.ts: ErrorStopClass. */
 export const RunErrorClassSchema = z.enum([
@@ -236,6 +237,7 @@ export const RunJournalCodeSchema = z.enum([
   'list-image-only',
   'post-unavailable',
   'comment-not-shown',
+  'deferred-not-rendered',
   'run-wait-deadline',
   'canary-auto-undecided',
   'step-deadline',

@@ -103,8 +103,11 @@ import {
   commentReplies,
   captureRepliesForMode,
   ReplyReadFailure,
+  ReplyDeferred,
   replyScopeDiagnostic,
 } from './replies.ts';
+/** DEFER-1: consecutive non-rendering reply steps before the run stops. */
+export const DEFERRED_STOP_AFTER = 3;
 import { refreshOutcome } from './refresh.ts';
 import { navigateList } from './driver.ts';
 import { setTimeout as retryPoll } from 'node:timers/promises';
@@ -267,6 +270,8 @@ export async function runContextWithDependencies(
     }[];
     windowPlacement?: WindowPlacement | null;
     rows: { emptySkipped: number; otherName: number; imageOnlySkipped: number };
+    // DEFER-1: steps whose reply click showed a page that renders no frames.
+    deferred: { notRendered: number; consecutiveMax: number };
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -293,6 +298,7 @@ export async function runContextWithDependencies(
     retries: { used: 0, entries: [] },
     pace: paceSummary(pace),
     rows: { emptySkipped: 0, otherName: 0, imageOnlySkipped: 0 },
+    deferred: { notRendered: 0, consecutiveMax: 0 },
     recycling: { intervalSteps: PAGE_RECYCLE_INTERVAL, count: 0, events: [] },
     runtime: {
       pageCrashes: 0,
@@ -302,6 +308,18 @@ export async function runContextWithDependencies(
       observationFailed: false,
       events: [],
     },
+  };
+  // A run whose window renders nothing would walk the whole plan blind.
+  let deferredInRow = 0,
+    stepDeferred = false;
+  const countDeferred = () => {
+    stepDeferred = true;
+    report.deferred.notRendered++;
+    deferredInRow++;
+    report.deferred.consecutiveMax = Math.max(
+      report.deferred.consecutiveMax,
+      deferredInRow,
+    );
   };
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
@@ -1505,50 +1523,78 @@ export async function runContextWithDependencies(
                   username: options.plan.handle,
                   text: row.item.text,
                 };
-                const replies = await captureRepliesForMode(
-                  () =>
-                    commentReplies(
-                      page,
-                      answers.bodies,
-                      match,
-                      guard,
-                      replyDeadline,
-                      (ms) => deps.sleep(ms),
-                      deps.pace.expandMs,
-                      (value) => {
-                        answerChecked = value;
-                      },
-                      () =>
-                        answers.flush(
-                          Math.max(1, replyDeadline - performance.now()),
-                        ),
-                      (value) => {
-                        stepReport.replyScope = value;
-                      },
-                      (value) => {
-                        stepReport.replyAnswer = value;
-                      },
-                      () => answers.bodyPaths,
-                      () => answers.htmlDiagnostic(match),
-                      () => answers.scriptValues(),
-                      (value) => {
-                        stepReport.replyControls = value;
-                      },
-                      (value) => {
-                        stepReport.replyExpansion = value;
-                      },
-                    ),
-                  true,
-                  false,
-                  (reason) => {
-                    stepReport.replies = {
-                      read: 0,
-                      moreCount: 0,
-                      capped: false,
-                      reason,
-                    };
-                  },
-                );
+                let replies:
+                  Awaited<ReturnType<typeof commentReplies>> | undefined;
+                try {
+                  replies = await captureRepliesForMode(
+                    () =>
+                      commentReplies(
+                        page,
+                        answers.bodies,
+                        match,
+                        guard,
+                        replyDeadline,
+                        (ms) => deps.sleep(ms),
+                        deps.pace.expandMs,
+                        (value) => {
+                          answerChecked = value;
+                        },
+                        () =>
+                          answers.flush(
+                            Math.max(1, replyDeadline - performance.now()),
+                          ),
+                        (value) => {
+                          stepReport.replyScope = value;
+                        },
+                        (value) => {
+                          stepReport.replyAnswer = value;
+                        },
+                        () => answers.bodyPaths,
+                        () => answers.htmlDiagnostic(match),
+                        () => answers.scriptValues(),
+                        (value) => {
+                          stepReport.replyControls = value;
+                        },
+                        (value) => {
+                          stepReport.replyExpansion = value;
+                        },
+                      ),
+                    true,
+                    false,
+                    (reason) => {
+                      stepReport.replies = {
+                        read: 0,
+                        moreCount: 0,
+                        capped: false,
+                        reason,
+                      };
+                    },
+                  );
+                } catch (caught) {
+                  // A canary keeps today's stop on the original driver error.
+                  if (!(caught instanceof ReplyDeferred)) throw caught;
+                  if (options.plan.canary) throw caught.original;
+                  // Nothing was observed: no replies stored, the comment stays
+                  // planned for a later run and missing for deletion.
+                  stage = 'settlement';
+                  phase('settlement');
+                  await writer.settle({
+                    attemptId,
+                    state: 'failed',
+                    code: 'deferred-not-rendered',
+                    at: options.now().toISOString(),
+                  });
+                  pendingAttempt = undefined;
+                  settled = true;
+                  stepReport.result = 'deferred-not-rendered';
+                  countDeferred();
+                  if (deferredInRow >= DEFERRED_STOP_AFTER)
+                    throw new ContextStop(
+                      'CONTEXT_FAILED',
+                      'window-not-rendering',
+                    );
+                  break;
+                }
                 if (!replies) throw new ReplyReadFailure('reply-read-failed');
                 phase('canary-check');
                 if (unattended && !answerChecked)
@@ -1695,6 +1741,8 @@ export async function runContextWithDependencies(
                     capped: false,
                     reason,
                   };
+                  // The confirmation stands; only its replies wait, as before.
+                  if (reason === 'deferred-not-rendered') countDeferred();
                 },
               );
               await checkpoint();
@@ -1814,6 +1862,8 @@ export async function runContextWithDependencies(
         });
         if (abortOuter) break outer;
         phase('progress');
+        if (!stepDeferred) deferredInRow = 0;
+        stepDeferred = false;
         await sampleMemory();
         if (!settled) throw new ContextStop('CONTEXT_FAILED', 'post-structure');
         stage = 'progress';

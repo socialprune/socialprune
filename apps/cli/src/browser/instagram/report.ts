@@ -1167,6 +1167,7 @@ export const ContextStepReportSchema = z
             'reply-answer-conflict',
             'reply-answer-mismatch',
             'reply-read-failed',
+            'deferred-not-rendered',
           ])
           .optional(),
         answerChecked: z.boolean().optional(),
@@ -1258,6 +1259,7 @@ export const CONTEXT_STOP_TOKENS = [
   'canary-check',
   'disk-low',
   'stopped',
+  'window-not-rendering',
 ] as const;
 export type ContextStopToken = (typeof CONTEXT_STOP_TOKENS)[number];
 export const AccountCheckSchema = z

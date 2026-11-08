@@ -192,6 +192,7 @@ const tokenIds = [
   'desktop.token.canary-check',
   'desktop.token.disk-low',
   'desktop.token.stopped',
+  'desktop.token.window-not-rendering',
   'desktop.token.media-origin',
   'desktop.token.media-format',
   'desktop.token.media-exists',
@@ -259,6 +260,7 @@ const tokenIds = [
   'desktop.token.list-image-only',
   'desktop.token.post-unavailable',
   'desktop.token.comment-not-shown',
+  'desktop.token.deferred-not-rendered',
 ] as const satisfies readonly (keyof MessageArguments)[];
 const tokenMessages = new Map<string, (typeof tokenIds)[number]>(
   tokenIds.map((id) => [id.slice('desktop.token.'.length), id]),

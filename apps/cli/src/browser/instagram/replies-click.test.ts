@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { REPLY_CLICK_FAILURES, replyClickFailure } from './replies-click.ts';
 import { ReplyExpansionDiagnosticSchema } from './report.ts';
+import { clickNotRendering } from './replies.ts';
 
 function timeout(...log: string[]) {
   const error = new Error(
@@ -207,6 +208,45 @@ test('REPLYCLICK report keeps earlier clicks readable and accepts only closed di
   expect(parse({ ...click, dispatch: { ...dispatch, attempts: 101 } })).toBe(
     false,
   );
+});
+
+test('DEFER-1 only an unsettled actionability wait with a stable box before the click means a page that renders nothing', () => {
+  const unsettled = replyClickFailure(
+    timeout(
+      resolved,
+      '  - attempting click action',
+      '    - waiting for element to be visible, enabled and stable',
+    ),
+  );
+  const intercepted = replyClickFailure(
+    timeout(
+      resolved,
+      '  - attempting click action',
+      '    - element is visible, enabled and stable',
+      '    - scrolling into view if needed',
+      '    - done scrolling',
+      '    - <div></div> intercepts pointer events',
+    ),
+  );
+  expect(clickNotRendering({ ...unsettled, boxStableBefore: true }, true)).toBe(
+    true,
+  );
+  for (const boxStableBefore of [false, null])
+    expect(clickNotRendering({ ...unsettled, boxStableBefore }, true)).toBe(
+      false,
+    );
+  expect(
+    clickNotRendering({ ...unsettled, boxStableBefore: true }, false),
+  ).toBe(false);
+  for (const failure of REPLY_CLICK_FAILURES.filter(
+    (value) => value !== 'actionability-unsettled',
+  ))
+    expect(clickNotRendering({ failure, boxStableBefore: true }, true)).toBe(
+      false,
+    );
+  expect(
+    clickNotRendering({ ...intercepted, boxStableBefore: true }, true),
+  ).toBe(false);
 });
 
 test('REPLYCLICK non-timeout errors stay closed', () => {

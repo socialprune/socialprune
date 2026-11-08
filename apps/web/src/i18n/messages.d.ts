@@ -419,6 +419,7 @@ declare global {
     'desktop.token.confirmed': Record<never, never>;
     'desktop.token.count': Record<never, never>;
     'desktop.token.daily-cap': Record<never, never>;
+    'desktop.token.deferred-not-rendered': Record<never, never>;
     'desktop.token.delete-comment': Record<never, never>;
     'desktop.token.delete-post': Record<never, never>;
     'desktop.token.deleted': Record<never, never>;
@@ -513,6 +514,7 @@ declare global {
     'desktop.token.unspecified': Record<never, never>;
     'desktop.token.verify': Record<never, never>;
     'desktop.token.window-full': Record<never, never>;
+    'desktop.token.window-not-rendering': Record<never, never>;
     'desktop.token.withdrawn': Record<never, never>;
     'desktop.token.x-window-long': Record<never, never>;
     'desktop.truncated': Record<never, never>;

@@ -4,6 +4,7 @@ import {
   validateOriginal,
   validateInstagramContexts,
   migrateInstagramContext,
+  replySetMarked,
 } from '../model/index.ts';
 import type { WorkspaceCounts, WorkspaceV2 } from '../model/index.ts';
 import { WorkspaceError } from './errors.ts';
@@ -114,6 +115,12 @@ export function validateWorkspace(input: unknown): WorkspaceV2 {
   const parsed = WorkspaceV2Schema.safeParse(candidate);
   if (!parsed.success) throw new WorkspaceError('INVALID_WORKSPACE');
   const workspace = parsed.data;
+  // REPLY-SET-2: set markers and entry sources exist only from version 13.
+  if (
+    workspace.schemaVersion < 13 &&
+    workspace.instagramContext?.some((record) => replySetMarked(record))
+  )
+    throw new WorkspaceError('INVALID_WORKSPACE');
   if (
     workspace.schemaVersion < 12 &&
     (workspace.instagramContext?.some(

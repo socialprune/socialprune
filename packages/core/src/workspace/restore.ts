@@ -13,6 +13,7 @@ import {
   BrowserRunSchema,
   BrowserAttemptSchema,
   InstagramContextSchema,
+  replySetMarked,
   migrateInstagramContext,
   validateInstagramContexts,
   WORKSPACE_SCHEMA_VERSION,
@@ -385,6 +386,8 @@ export async function restoreBackup(
             : InstagramContextSchema.parse(record.value);
       acceptUnique(name, value.itemId);
       instagramContext.push(value);
+      if (version < 13 && replySetMarked(value))
+        throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       if (version < 12 && value.replies !== undefined)
         throw new WorkspaceError('BACKUP_INVALID_SCHEMA');
       if (version < 11 && value.likes !== undefined)

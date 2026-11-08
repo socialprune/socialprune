@@ -14,6 +14,7 @@ import {
   answerReplies,
 } from './replies-answer.ts';
 import * as scope from './replies-scope.ts';
+import { InstagramRepliesSchema, repliesObserved } from '@socialprune/core';
 import { pollReplyGrowth } from './reply-neighborhood.ts';
 
 test('STALL2 poll evidence refreshes when reply rows appear between the neighborhood and row reads', async () => {
@@ -806,4 +807,101 @@ test('REPLY-SET-1 a duplicate answer entry for one shown row is never counted as
     answerOnlyEntries: 1,
     hiddenCount: 0,
   });
+});
+
+// REPLY-SET-2: the same generated 7/5 shape after "Hide all replies".
+test('REPLY-SET-2 7 declared / 5 shown with full answer entries stores all 7, two of them answer-only', () => {
+  const checked = checkedReplyRows(
+    [setFocal(7)],
+    match,
+    shown,
+    false,
+    0,
+    [],
+    true,
+  );
+  expect(checked).toEqual({
+    answerChecked: true,
+    observation: {
+      entries: [
+        ...shown.map((row) => ({
+          account: row.account,
+          text: row.text,
+          createdAt: row.createdAt,
+          likes: { count: null, source: null },
+          source: 'shown',
+        })),
+        ...[5, 6].map((ordinal) => ({
+          account: `generated_reply_${ordinal}`,
+          text: `Generated reply ${ordinal} with local text`,
+          createdAt: match.createdAt,
+          likes: { count: null, source: null },
+          source: 'answer-only',
+        })),
+      ],
+      moreCount: 0,
+      capped: false,
+      set: { state: 'complete' },
+    },
+  });
+  expect(
+    InstagramRepliesSchema.safeParse(
+      (checked as { observation: unknown }).observation,
+    ).success,
+  ).toBe(true);
+});
+test('REPLY-SET-2 7 declared / 5 shown with a count only stores the 5 and an incomplete set of 7 with 2 hidden', () => {
+  const checked = checkedReplyRows(
+    [setFocal(5)],
+    match,
+    shown,
+    false,
+    0,
+    [],
+    true,
+  );
+  expect(checked).toMatchObject({
+    answerChecked: true,
+    observation: {
+      moreCount: 2,
+      capped: false,
+      set: { state: 'incomplete', declaredTotal: 7, hiddenCount: 2 },
+    },
+  });
+  const observation = (
+    checked as { observation: { entries: { source?: string }[] } }
+  ).observation;
+  expect(observation.entries.map((entry) => entry.source)).toEqual(
+    Array.from({ length: 5 }, () => 'shown'),
+  );
+  expect(InstagramRepliesSchema.safeParse(observation).success).toBe(true);
+  expect(repliesObserved(InstagramRepliesSchema.parse(observation))).toBe(
+    false,
+  );
+});
+test.each([
+  [
+    'a shown row without an answer match',
+    [...shown.slice(0, 4), { ...setRow(4), text: 'Generated other text' }],
+    7,
+  ],
+  [
+    'a conflicting 6th shown row',
+    [...shown, { ...setRow(5), account: 'generated_absent' }],
+    7,
+  ],
+  ['a shown row matching an entry twice', [...shown.slice(0, 4), setRow(0)], 7],
+] as const)('REPLY-SET-2 %s still stops', (_name, rows, entries) => {
+  expect(
+    checkedReplyRows([setFocal(entries)], match, rows, false, 0, [], true),
+  ).toEqual({ reason: 'reply-answer-mismatch' });
+});
+test('REPLY-SET-2 without the hide-all control, or with nothing shown, the declared total above the rows still stops', () => {
+  for (const [rows, hideAll] of [
+    [shown, false],
+    [[], true],
+  ] as const)
+    expect(
+      checkedReplyRows([setFocal(7)], match, rows, false, 0, [], hideAll),
+    ).toEqual({ reason: 'reply-answer-incomplete' });
 });

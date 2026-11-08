@@ -313,6 +313,7 @@ export async function commentReplies(
     let moreCount = 0,
       capped = false,
       clicks = 0,
+      hideAllAfterExpansion = false,
       beforeExpansion: number | undefined;
     if (performance.now() >= deadline)
       throw new ReplyReadFailure('reply-window-empty');
@@ -481,6 +482,11 @@ export async function commentReplies(
       );
       if (checkedControls.diagnostic.count > 0 || clicks === 0)
         controlsDiagnostic?.(checkedControls.diagnostic);
+      // REPLY-SET-2: the page offers only to hide what it has shown.
+      hideAllAfterExpansion =
+        clicks > 0 &&
+        checkedControls.diagnostic.count === 1 &&
+        checkedControls.diagnostic.controls[0]?.shape === 'hide-all-replies';
       const control = checkedControls.control;
       const controls = control ? await control.count() : 0;
       if (!checkedControls.valid)
@@ -651,6 +657,7 @@ export async function commentReplies(
       capped,
       moreCount,
       scriptValues(),
+      hideAllAfterExpansion,
     );
     answerDiagnostic?.(
       replyAnswerDiagnostic(

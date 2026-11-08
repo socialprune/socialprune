@@ -9,6 +9,7 @@ import {
   INSTAGRAM_DELETION_PROTOCOL,
   instagramDeleteSummary,
   requireInstagramArchive,
+  instagramArchiveMissing,
 } from './delete-plan.ts';
 import {
   instagramDeleteBudget,
@@ -191,6 +192,63 @@ test('DEL-ARCHIV-1 excludes missing archive parts, keeps null likes and empty or
           : 'Likes still need to be read for 2 comments',
       );
     }
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('REPLY-SET-2 an incomplete reply set counts as replies missing in the dry run, a complete answer-only set as observed', async () => {
+  const workspace = await instagramDeleteFixture(3);
+  const contexts = workspace.instagramContext!;
+  const reply = (source: 'shown' | 'answer-only') => ({
+    account: 'generated_reply',
+    text: `Generated ${source} reply`,
+    createdAt: null,
+    likes: { count: null, source: null },
+    source,
+  });
+  for (const context of contexts) context.likes = { count: null, source: null };
+  contexts[0]!.replies = {
+    entries: [reply('shown')],
+    moreCount: 2,
+    capped: false,
+    set: { state: 'incomplete', declaredTotal: 3, hiddenCount: 2 },
+  };
+  contexts[1]!.replies = {
+    entries: [reply('shown'), reply('answer-only')],
+    moreCount: 0,
+    capped: false,
+    set: { state: 'complete' },
+  };
+  contexts[2]!.replies = { entries: [], moreCount: 0, capped: false };
+  const root = await mkdtemp(join(tmpdir(), 'sp-delguard-replyset-'));
+  const store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
+    initial: workspace,
+  });
+  try {
+    const plan = await planInstagramDeletion(
+      store,
+      workspace.items[0]!.account.key,
+    );
+    expect(plan.rows.map((row) => row.item.id)).toEqual(
+      workspace.items.slice(1).map((item) => item.id),
+    );
+    expect(instagramDeleteSummary(plan, 'en')).toMatchObject({
+      planned: 2,
+      archiveMissing: { likes: 0, replies: 1, both: 0 },
+      archiveCapped: 0,
+    });
+    expect(instagramArchiveMissing(contexts[0]!)).toBe('replies');
+    expect(instagramArchiveMissing(contexts[1]!)).toBeNull();
+    // The driver's re-read uses the same reader and refuses the incomplete one.
+    await expect(
+      requireInstagramArchive(store, {
+        ...plan.rows[0]!,
+        item: workspace.items[0]!,
+        context: contexts[0]! as (typeof plan.rows)[0]['context'],
+      }),
+    ).rejects.toMatchObject({ code: 'RUN_STOPPED' });
   } finally {
     await store.close();
     await rm(root, { recursive: true, force: true });

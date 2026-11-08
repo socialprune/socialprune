@@ -1180,6 +1180,10 @@ export const ContextStepReportSchema = z
           ])
           .optional(),
         answerChecked: z.boolean().optional(),
+        // REPLY-SET-2: present only on a marked set; counts, never values.
+        set: z.enum(['complete', 'incomplete']).optional(),
+        answerOnly: count.optional(),
+        hidden: count.optional(),
       })
       .optional(),
     image: StepImageSchema.optional(),

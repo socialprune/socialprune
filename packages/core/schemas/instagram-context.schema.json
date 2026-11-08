@@ -54,6 +54,10 @@
                     },
                     "required": ["count", "source"],
                     "additionalProperties": false
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": ["shown", "answer-only"]
                   }
                 },
                 "required": ["account", "text", "createdAt", "likes"],
@@ -65,7 +69,37 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
-            "capped": { "type": "boolean" }
+            "capped": { "type": "boolean" },
+            "set": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": { "type": "string", "const": "complete" }
+                  },
+                  "required": ["state"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": { "type": "string", "const": "incomplete" },
+                    "declaredTotal": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "hiddenCount": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["state", "declaredTotal", "hiddenCount"],
+                  "additionalProperties": false
+                }
+              ]
+            }
           },
           "required": ["entries", "moreCount", "capped"],
           "additionalProperties": false
@@ -296,6 +330,10 @@
                     },
                     "required": ["count", "source"],
                     "additionalProperties": false
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": ["shown", "answer-only"]
                   }
                 },
                 "required": ["account", "text", "createdAt", "likes"],
@@ -307,7 +345,37 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
-            "capped": { "type": "boolean" }
+            "capped": { "type": "boolean" },
+            "set": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": { "type": "string", "const": "complete" }
+                  },
+                  "required": ["state"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": { "type": "string", "const": "incomplete" },
+                    "declaredTotal": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "hiddenCount": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["state", "declaredTotal", "hiddenCount"],
+                  "additionalProperties": false
+                }
+              ]
+            }
           },
           "required": ["entries", "moreCount", "capped"],
           "additionalProperties": false

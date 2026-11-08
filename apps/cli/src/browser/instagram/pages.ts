@@ -182,12 +182,12 @@ export function contextPages(
       // Even a launch tab still at about:blank may have a restore navigation
       // pending. Create our own page and close every page inherited at launch.
       for (const page of initial.slice(1)) await reject(page);
-      const confirmation = await this.newPage();
+      const page = await this.newPage();
       startup = false;
       for (const page of initial) await reject(page, true);
       await Promise.all([...closing.values()]);
       startup = false;
-      return confirmation;
+      return page;
     },
     async replace(page: Page): Promise<Page> {
       if (!owned.has(page)) throw new Error('CONTEXT_PAGE_NOT_OWNED');

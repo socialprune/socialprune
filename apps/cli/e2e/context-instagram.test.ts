@@ -2096,11 +2096,31 @@ test('PLACEMENT persistent generated lifecycle emits a bounded run result', asyn
   const h = await harness('success', 2, 1500);
   await fullRunReady(h);
   h.setLimit(1);
+  const original = pagesHelpers.contextPages;
+  let reader: Page | undefined, confirmation: Page | undefined;
+  const boundary = vi
+    .spyOn(pagesHelpers, 'contextPages')
+    .mockImplementation((...args) => {
+      const pages = original(...args),
+        make = pages.newPage.bind(pages);
+      pages.newPage = async () => {
+        const page = await make();
+        if (!reader) reader = page;
+        else confirmation = page;
+        return page;
+      };
+      return pages;
+    });
   try {
     expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
       completed: 1,
     });
+    expect(reader).toBeDefined();
+    expect(confirmation).toBeDefined();
+    expect(new URL(reader!.url()).origin).toBe(h.fake.origin);
+    expect(new URL(confirmation!.url()).origin).not.toBe(h.fake.origin);
   } finally {
+    boundary.mockRestore();
     await h.close();
   }
 }, 30000);

@@ -635,7 +635,11 @@ export async function runContextWithDependencies(
         closed = true;
         cancel();
       });
-      const local = await pages.startupPage();
+      // Natural close-selection leaves this fresh sole owned page selected.
+      // Never reuse an inherited tab, even when its URL is still about:blank.
+      let page = await pages.startupPage();
+      runtime.own(page);
+      const local = await pages.newPage();
       runtime.own(local);
       if (options.session?.ownedWindow) {
         try {
@@ -675,9 +679,7 @@ export async function runContextWithDependencies(
       stage = 'checkpoint';
       phase('checkpoint');
       await checkpoint();
-      // Keep the window-identity anchor open; only this separate reading page may recycle.
-      let page = await pages.newPage();
-      runtime.own(page);
+      // Confirmation stays in the background; only the selected reader recycles.
       memory = observePageMemory(page);
       answers = pageAnswers(page, deps.policy);
       const day = dateInZone(options.now(), options.plan.timeZone),

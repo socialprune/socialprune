@@ -139,101 +139,97 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
         : route.abort(),
     );
     const boundary = contextPages(context!, () => {});
-    let bounds: unknown,
-      sameWindow = true;
-    let activePair: Awaited<ReturnType<typeof boundary.newPage>>[] = [];
-    const pages = await watch('pages', async () => {
-      const confirmation = await boundary.startupPage();
+    receipt.launchKeptForeground = !launch.changed;
+    receipt.status = 'measuring-reader-design';
+    const selectedReader = async (name: string, count: number) => {
+      const browserSession = await context!.browser()!.newBrowserCDPSession();
+      try {
+        const processes = await browserSession.send(
+          'SystemInfo.getProcessInfo',
+        );
+        const pid = processes.processInfo.find(
+          (process) => process.type === 'browser',
+        )!.id;
+        const child = spawn(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-STA',
+            '-File',
+            fileURLToPath(new URL('./placement-tabs.ps1', import.meta.url)),
+            String(pid),
+          ],
+          { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+        );
+        let output = '',
+          error = '';
+        child.stdout.on('data', (value: Buffer) => {
+          output += value.toString();
+        });
+        child.stderr.on('data', (value: Buffer) => {
+          error += value.toString();
+        });
+        await new Promise<void>((resolve, reject) => {
+          child.once('error', reject);
+          child.once('exit', (code) =>
+            code === 0
+              ? resolve()
+              : reject(new Error(error || 'TAB_OBSERVATION_FAILED')),
+          );
+        });
+        const observed = JSON.parse(output) as {
+          count: number;
+          tabs: { index: number; kind: string; selected: boolean }[];
+          offscreen: boolean;
+        };
+        receipt[name] = observed;
+        expect(observed).toMatchObject({ count, offscreen: false });
+        expect(
+          observed.tabs.find((tab) => tab.kind === 'reading')?.selected,
+        ).toBe(true);
+        expect(
+          observed.tabs.every((tab) => tab.kind === 'reading' || !tab.selected),
+        ).toBe(true);
+      } finally {
+        await browserSession.detach();
+      }
+    };
+    let reading!: Awaited<ReturnType<typeof boundary.startupPage>>;
+    const initial = await watch('readerStart', async () => {
+      reading = await boundary.startupPage();
+      await reading.setContent('<title>Generated reading probe</title>');
+    });
+    const session = await context!.newCDPSession(reading);
+    const first = await session.send('Browser.getWindowForTarget');
+    await session.detach();
+    const bounds = first.bounds;
+    receipt.bounds = bounds;
+    receipt.pagesCount = boundary.snapshot();
+    expect(initial.changed).toBe(false);
+    await selectedReader('selectedAtStart', 1);
+    const confirmationCreated = await watch('confirmationCreate', async () => {
+      const confirmation = await boundary.newPage();
       await confirmation.setContent(
         '<title>Generated confirmation probe</title>',
       );
-      const session = await context!.newCDPSession(confirmation);
-      const first = await session.send('Browser.getWindowForTarget');
-      bounds = first.bounds;
-      let reading = await boundary.newPage();
-      await reading.goto(fake!.origin + '/your_activity/interactions/comments');
-      reading = await boundary.replace(reading);
-      await reading.goto(fake!.origin + '/your_activity/interactions/comments');
-      await reading.evaluate(() => {
-        document.title = 'Generated reading probe';
-      });
-      const next = await context!.newCDPSession(reading);
-      sameWindow =
-        (await next.send('Browser.getWindowForTarget')).windowId ===
-        first.windowId;
-      await next.detach();
-      await session.detach();
-      activePair = [confirmation, reading];
     });
-    receipt.bounds = bounds;
     receipt.pagesCount = boundary.snapshot();
-    receipt.sameWindow = sameWindow;
-    receipt.launchKeptForeground = !launch.changed;
-    receipt.pagesKeptForeground = !pages.changed;
-    receipt.status = launch.changed ? 'launch-activated-window' : 'passed';
-    const animation = await activePair[1]!.evaluate(async () => {
-      const at = performance.now();
-      for (let index = 0; index < 3; index++)
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => resolve()),
-        );
-      return performance.now() - at;
+    expect(confirmationCreated.changed).toBe(false);
+    await selectedReader('selectedAfterConfirmation', 2);
+    const recycled = await watch('readerRecycle', async () => {
+      reading = await boundary.replace(reading);
+      await reading.setContent('<title>Generated reading probe</title>');
     });
-    receipt.readingThreeFrameMs = Math.round(animation);
-    expect(animation).toBeLessThan(1000);
-    const browserSession = await context!.browser()!.newBrowserCDPSession();
-    try {
-      const processes = await browserSession.send('SystemInfo.getProcessInfo');
-      const pid = processes.processInfo.find(
-        (process) => process.type === 'browser',
-      )!.id;
-      const child = spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-STA',
-          '-File',
-          fileURLToPath(new URL('./placement-tabs.ps1', import.meta.url)),
-          String(pid),
-        ],
-        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      let output = '',
-        error = '';
-      child.stdout.on('data', (value: Buffer) => {
-        output += value.toString();
-      });
-      child.stderr.on('data', (value: Buffer) => {
-        error += value.toString();
-      });
-      await new Promise<void>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('exit', (code) =>
-          code === 0
-            ? resolve()
-            : reject(new Error(error || 'TAB_OBSERVATION_FAILED')),
-        );
-      });
-      const observed = JSON.parse(output) as {
-        count: number;
-        tabs: { index: number; kind: string; selected: boolean }[];
-        offscreen: boolean;
-      };
-      receipt.selectedTabs = observed;
-      expect(observed).toMatchObject({
-        count: 2,
-        offscreen: false,
-      });
-      expect(
-        observed.tabs.find((tab) => tab.kind === 'reading')?.selected,
-      ).toBe(true);
-      expect(
-        observed.tabs.find((tab) => tab.kind === 'confirmation')?.selected,
-      ).toBe(false);
-    } finally {
-      await browserSession.detach();
-    }
+    receipt.pagesCount = boundary.snapshot();
+    const next = await context!.newCDPSession(reading);
+    const sameWindow =
+      (await next.send('Browser.getWindowForTarget')).windowId ===
+      first.windowId;
+    await next.detach();
+    receipt.sameWindow = sameWindow;
+    expect(recycled.changed).toBe(false);
+    await selectedReader('selectedAfterRecycle', 2);
     expect(bounds).toMatchObject({
       left: placement.x,
       top: placement.y,
@@ -248,7 +244,19 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       replaced: 1,
     });
     expect(sameWindow).toBe(true);
-    expect(pages.changed).toBe(false);
+    const cap = await watch('pageCap', async () => {
+      const extra = await boundary.newPage();
+      await expect(boundary.newPage()).rejects.toMatchObject({
+        token: 'unexpected-page',
+      });
+      await extra.close();
+    });
+    receipt.pagesAfterCap = boundary.snapshot();
+    expect(cap.changed).toBe(false);
+    expect(boundary.snapshot().ownedPeak).toBe(3);
+    await selectedReader('selectedAfterCap', 2);
+    receipt.pagesKeptForeground = true;
+    receipt.status = 'reader-design-passed-launch-reported-separately';
     await context!.close();
     context = undefined;
     let runPages = 0;

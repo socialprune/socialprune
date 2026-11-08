@@ -11,32 +11,93 @@ export const InstagramItemIdSchema = z
 export const InstagramPostCodeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/);
-export const InstagramRepliesSchema = z.strictObject({
-  entries: z
-    .array(
-      z.strictObject({
-        account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
-        text: z.string().min(1).max(10000),
-        createdAt: UtcTimestampSchema.nullable(),
-        likes: z
-          .strictObject({
-            count: z
-              .number()
-              .int()
-              .nonnegative()
-              .max(Number.MAX_SAFE_INTEGER)
-              .nullable(),
-            source: z.enum(['answer', 'dom']).nullable(),
-          })
-          .refine(
-            (value) => (value.count === null) === (value.source === null),
-          ),
-      }),
+const replyCount = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+/**
+ * REPLY-SET-2 (version 13): an observation whose page showed fewer replies
+ * than Instagram's own answer declares carries a set marker. `complete` means
+ * the answer listed every declared reply, some of them only there; incomplete
+ * keeps the declared total and how many replies neither the page nor the
+ * answer listed. Absent on every other observation, as before version 13.
+ */
+export const InstagramReplySetSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('complete') }),
+  z.strictObject({
+    state: z.literal('incomplete'),
+    declaredTotal: replyCount,
+    hiddenCount: replyCount,
+  }),
+]);
+export const InstagramRepliesSchema = z
+  .strictObject({
+    entries: z
+      .array(
+        z.strictObject({
+          account: z.string().regex(/^[A-Za-z0-9_.]{1,30}$/),
+          text: z.string().min(1).max(10000),
+          createdAt: UtcTimestampSchema.nullable(),
+          likes: z
+            .strictObject({
+              count: z
+                .number()
+                .int()
+                .nonnegative()
+                .max(Number.MAX_SAFE_INTEGER)
+                .nullable(),
+              source: z.enum(['answer', 'dom']).nullable(),
+            })
+            .refine(
+              (value) => (value.count === null) === (value.source === null),
+            ),
+          // REPLY-SET-2: shown on the page, or only in the page's answer.
+          source: z.enum(['shown', 'answer-only']).optional(),
+        }),
+      )
+      .max(50),
+    moreCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    capped: z.boolean(),
+    set: InstagramReplySetSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const sources = value.entries.filter((entry) => entry.source !== undefined);
+    const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (!value.set) {
+      if (sources.length) fail('Reply sources need a set marker.');
+      return;
+    }
+    if (sources.length !== value.entries.length)
+      fail('A marked reply set names the source of every entry.');
+    if (value.capped) fail('A marked reply set is never capped.');
+    if (!value.entries.some((entry) => entry.source === 'shown'))
+      fail('A marked reply set starts from shown replies.');
+    if (value.set.state === 'complete') {
+      if (
+        value.moreCount !== 0 ||
+        !value.entries.some((entry) => entry.source === 'answer-only')
+      )
+        fail('A complete marked set adds answer-only replies and misses none.');
+    } else if (
+      value.set.declaredTotal !==
+        value.entries.length + value.set.hiddenCount ||
+      value.moreCount !== value.set.hiddenCount
     )
-    .max(50),
-  moreCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  capped: z.boolean(),
-});
+      fail('An incomplete set counts every declared reply.');
+  });
+/** Version-13 fields, which no earlier workspace or backup may carry. */
+export function replySetMarked(record: {
+  replies?: z.infer<typeof InstagramRepliesSchema>;
+}): boolean {
+  return (
+    record.replies !== undefined &&
+    (record.replies.set !== undefined ||
+      record.replies.entries.some((entry) => entry.source !== undefined))
+  );
+}
+/** DEL-ARCHIV-1: an incomplete reply set is not an observation of the replies. */
+export function repliesObserved(
+  replies: z.infer<typeof InstagramRepliesSchema> | undefined,
+): boolean {
+  return replies !== undefined && replies.set?.state !== 'incomplete';
+}
 const ContextFieldsSchema = z.strictObject({
   replies: InstagramRepliesSchema.optional(),
   likes: z

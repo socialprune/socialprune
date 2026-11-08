@@ -85,7 +85,8 @@ export class IndexedDBStore implements WorkspaceStore {
           db.createObjectStore('reviewPlans', { keyPath: 'actionId' });
         if (oldVersion < 5)
           db.createObjectStore('instagramContext', { keyPath: 'itemId' });
-        if (oldVersion >= 1 && oldVersion < 12) {
+        // 12 to 13 (REPLY-SET-2) changes no record; only the meta version moves.
+        if (oldVersion >= 1 && oldVersion < 13) {
           void (async () => {
             if (oldVersion >= 2 && oldVersion < 4) {
               let cursor = await tx.objectStore('originals').openCursor();

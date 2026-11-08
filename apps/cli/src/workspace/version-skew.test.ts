@@ -9,7 +9,7 @@ import { SQLiteStore } from './sqlite-store.ts';
 import { createWorkspace } from '@socialprune/core/workspace/store';
 import { createBackup } from '@socialprune/core/workspace/backup';
 
-test('REPLIES-1 real open/backup checks with the version-11 ceiling refuse version 12 before data changes', async () => {
+test('REPLY-SET-2 real open/backup checks with the version-12 ceiling refuse version 13 before data changes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sp-version-skew-'));
   const file = join(directory, 'socialprune.sqlite');
   try {
@@ -24,7 +24,7 @@ test('REPLIES-1 real open/backup checks with the version-11 ceiling refuse versi
       await current.close();
     }
     expect((JSON.parse(text) as { schemaVersion: number }).schemaVersion).toBe(
-      12,
+      13,
     );
     // Test-only build of the real guards with the old maximum. No production
     // entrypoint or runtime setting can select this transform.
@@ -44,12 +44,12 @@ test('REPLIES-1 real open/backup checks with the version-11 ceiling refuse versi
                 ? 'SQLITE_LAYOUT_VERSION'
                 : null;
             if (!name) return null;
-            const before = `export const ${name} = 12;`;
+            const before = `export const ${name} = 13;`;
             if (source.split(before).length !== 2)
               throw new Error('Version-skew test ceiling source changed');
             seen.add(name);
             return {
-              code: source.replace(before, `export const ${name} = 11;`),
+              code: source.replace(before, `export const ${name} = 12;`),
               map: null,
             };
           },
@@ -117,13 +117,13 @@ test('REPLIES-1 real open/backup checks with the version-11 ceiling refuse versi
     // and portable document. A generic broken compatibility build cannot pass.
     const raw = new DatabaseSync(file);
     raw.exec(
-      "UPDATE meta SET data=json_set(data,'$.schemaVersion',11); PRAGMA user_version=11;",
+      "UPDATE meta SET data=json_set(data,'$.schemaVersion',12); PRAGMA user_version=12;",
     );
     raw.close();
     const accepted = await oldStore.SQLiteStore.open(file, { readOnly: true });
     await accepted.close();
     const legacy = JSON.parse(text) as { schemaVersion: number };
-    legacy.schemaVersion = 11;
+    legacy.schemaVersion = 12;
     await expect(
       oldBackup.readBackup(
         (async function* () {
@@ -131,7 +131,7 @@ test('REPLIES-1 real open/backup checks with the version-11 ceiling refuse versi
           yield JSON.stringify(legacy);
         })(),
       ),
-    ).resolves.toMatchObject({ schemaVersion: 11 });
+    ).resolves.toMatchObject({ schemaVersion: 12 });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

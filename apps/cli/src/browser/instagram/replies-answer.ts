@@ -171,10 +171,49 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
   };
 }
 
+type ShownRow = Entry & { id?: string };
+const answerMatches = (
+  entries: readonly (Entry & { id: string })[],
+  row: ShownRow,
+) =>
+  entries.filter(
+    (value) =>
+      (row.id ? row.id === value.id : true) &&
+      value.account.toLowerCase() === row.account.toLowerCase() &&
+      normalize(value.text) === normalize(row.text) &&
+      (row.createdAt === null || value.createdAt === row.createdAt),
+  );
+
+/**
+ * Counts only, never values: how the shown rows relate to the answer's own
+ * reply entries. A row counts as matched when exactly one answer entry fits it
+ * and no earlier shown row claimed that entry; answer entries no shown row
+ * claimed are answer-only; declared replies without any answer entry are hidden.
+ */
+export function replySetCounts(
+  answer: { total: number; entries: readonly (Entry & { id: string })[] },
+  rows: readonly ShownRow[],
+) {
+  const claimed = new Set<string>();
+  let shownRowsMatched = 0;
+  for (const row of rows) {
+    const matches = answerMatches(answer.entries, row);
+    if (matches.length !== 1 || claimed.has(matches[0]!.id)) continue;
+    claimed.add(matches[0]!.id);
+    shownRowsMatched++;
+  }
+  return {
+    answerEntries: answer.entries.length,
+    shownRowsMatched,
+    answerOnlyEntries: answer.entries.length - claimed.size,
+    hiddenCount: Math.max(0, answer.total - answer.entries.length),
+  };
+}
+
 export function checkedReplyRows(
   bodies: readonly unknown[],
   match: ReplyMatch,
-  rows: readonly (Entry & { id?: string })[],
+  rows: readonly ShownRow[],
   capped: boolean,
   moreCount: number,
   scriptValues: readonly unknown[] = [],
@@ -187,13 +226,7 @@ export function checkedReplyRows(
     return { reason: 'reply-answer-incomplete' as const };
   const entries: Entry[] = [];
   for (const row of rows) {
-    const matches = answer.entries.filter(
-      (value) =>
-        (row.id ? row.id === value.id : true) &&
-        value.account.toLowerCase() === row.account.toLowerCase() &&
-        normalize(value.text) === normalize(row.text) &&
-        (row.createdAt === null || value.createdAt === row.createdAt),
-    );
+    const matches = answerMatches(answer.entries, row);
     if (matches.length !== 1)
       return { reason: 'reply-answer-mismatch' as const };
     entries.push({ ...fields(matches[0]!), createdAt: row.createdAt });
@@ -277,6 +310,7 @@ export function replyAnswerDiagnostic(
     observationFailed: false,
   },
   scriptValues: readonly unknown[] = [],
+  rows: readonly ShownRow[] = [],
 ): ReplyAnswerDiagnostic {
   const combined = combinedReplyAnswer(bodies, match, scriptValues);
   const answer = combined.answer;
@@ -367,6 +401,7 @@ export function replyAnswerDiagnostic(
     answerValid: answer.valid,
     answerTotal: answer.total,
     rowsShown,
+    ...replySetCounts(answer, rows),
     bodiesInspected: [...pathCounts.values()].reduce(
       (sum, count) => sum + count,
       0,

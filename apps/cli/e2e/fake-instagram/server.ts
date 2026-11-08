@@ -40,6 +40,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let replyDivRows = false;
   let replyAdjacentText = false;
   let replyAnswerRows = false;
+  // Declared replies the generated page never shows; with entries the answer
+  // also lists them, without entries it only counts them.
+  let replyHidden: { count: number; entries: boolean } | undefined;
   let soleCommentSet: 'no-count' | 'one' | 'two' | 'other' | undefined;
   let scriptReplyCase:
     | 'matching'
@@ -672,9 +675,13 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           ...(likesCase === 'answer' ? { comment_like_count: 23 } : {}),
           ...(replyAnswer && replyConfigured
             ? {
-                child_comment_count: replyCount,
+                child_comment_count: replyCount + (replyHidden?.count ?? 0),
                 preview_child_comments: Array.from(
-                  { length: replyCount },
+                  {
+                    length:
+                      replyCount +
+                      (replyHidden?.entries ? replyHidden.count : 0),
+                  },
                   (_, ordinal) => ({
                     pk: String(900000 + ordinal),
                     parent_comment_id: String(
@@ -766,6 +773,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     replyAnswerRows() {
       replyDivRows = true;
       replyAnswerRows = true;
+    },
+    replyHidden(count: number, entries: boolean) {
+      replyHidden = { count, entries };
     },
     scriptReplies(value: NonNullable<typeof scriptReplyCase>) {
       scriptReplyCase = value;

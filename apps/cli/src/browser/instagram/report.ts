@@ -901,6 +901,13 @@ export const ReplyAnswerDiagnosticSchema = z.strictObject({
   answerValid: z.boolean(),
   answerTotal: count,
   rowsShown: count,
+  // REPLY-SET-1 counts: answer entries bound to the focal comment, shown rows
+  // that claim exactly one of them, entries no shown row claimed, and
+  // declared replies the answer carries no entry for. Never IDs or values.
+  answerEntries: count.optional(),
+  shownRowsMatched: count.optional(),
+  answerOnlyEntries: count.optional(),
+  hiddenCount: count.optional(),
   bodiesInspected: count,
   matchIdBodies: count,
   parameterMatchIdBodies: count,

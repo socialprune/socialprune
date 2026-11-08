@@ -622,6 +622,7 @@ export async function commentReplies(
         answerPaths(),
         htmlDiagnostic(),
         scriptValues(),
+        entries,
       ),
     );
     if (checked.reason) throw new ReplyReadFailure(checked.reason);

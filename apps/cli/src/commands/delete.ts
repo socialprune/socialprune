@@ -18,6 +18,8 @@ import {
 import { productionPace } from '../browser/pace.ts';
 import { xWarningNotice } from '../browser/copy.ts';
 import { createInterface } from 'node:readline/promises';
+import { parseWindowPlacement } from '../browser/launch.ts';
+import type { WindowPlacement } from '../browser/launch.ts';
 import {
   readXWarningFile,
   requireXWarningFileClear,
@@ -37,6 +39,7 @@ export interface DeleteFlags {
   plan?: string;
   perDay?: string;
   browser?: 'chrome' | 'edge';
+  window?: WindowPlacement;
   lang: 'en' | 'de';
   withoutOriginals: boolean;
   acknowledgeWarning?: string;
@@ -290,6 +293,7 @@ export async function deleteHandler(flags: DeleteFlags, context: CliContext) {
       perDay,
       list,
       include,
+      ...(flags.window ? { windowPlacement: flags.window } : {}),
       lang: flags.lang,
       signal: context.signal,
       now: context.now,
@@ -375,6 +379,13 @@ export const deleteXCommand = buildCommand({
         values: ['chrome', 'edge'],
         optional: true,
         brief: 'Installed browser',
+      },
+      window: {
+        kind: 'parsed',
+        parse: parseWindowPlacement,
+        optional: true,
+        brief:
+          'Visible browser bounds x,y,width,height; valid in dry-run without opening a browser',
       },
       lang: {
         kind: 'enum',

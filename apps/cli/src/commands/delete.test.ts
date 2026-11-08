@@ -274,6 +274,68 @@ for (const command of commands) {
       expect(result.envelope.error?.code).toBe('INVALID_ARGUMENTS');
       expect(command.runner).not.toHaveBeenCalled();
     });
+  for (const window of [undefined, '1940,20,1600,1000', '-1680,-20,900,1000'])
+    test(`XWINDOW ${name} --window ${window ?? 'absent'} validates in the dry run and reaches the run unchanged`, async () => {
+      const h = await inputs('current-minimal');
+      try {
+        // A value starting with "-" needs the --window=value form, as for
+        // context instagram, or the parser reads it as the next flag.
+        const placement = window
+          ? window.startsWith('-')
+            ? [`--window=${window}`]
+            : ['--window', window]
+          : [];
+        const dry = await invoke([
+          ...command.path,
+          ...h.args,
+          ...placement,
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dry.code).toBe(0);
+        expect(browser.validate).not.toHaveBeenCalled();
+        expect(command.runner).not.toHaveBeenCalled();
+        const run = await invoke([
+          ...command.path,
+          ...h.args,
+          ...placement,
+          '--profile',
+          'generated-dedicated-profile',
+          '--plan',
+          dry.envelope.data.planHash,
+        ]);
+        expect(run.code).toBe(0);
+        expect(command.runner).toHaveBeenCalledOnce();
+        const options = command.runner.mock.calls[0]![0] as Record<
+          string,
+          unknown
+        >;
+        if (window) {
+          const [x, y, width, height] = window.split(',').map(Number);
+          expect(options['windowPlacement']).toEqual({ x, y, width, height });
+        } else expect('windowPlacement' in options).toBe(false);
+      } finally {
+        await h.close();
+      }
+    });
+  for (const window of ['1,2,0,4', '1,2,3', '1.5,2,3,4', 'a,b,c,d'])
+    test(`XWINDOW ${name} invalid --window ${window} refuses in the dry run before the workspace opens`, async () => {
+      const result = await invoke([
+        ...command.path,
+        '--workspace',
+        'generated-missing-workspace',
+        '--account',
+        'generated-account',
+        '--window',
+        window,
+        '--dry-run',
+        '--json',
+      ]);
+      expect(result.code).not.toBe(0);
+      expect(result.stdout).toContain('INVALID_ARGUMENTS');
+      expect(browser.validate).not.toHaveBeenCalled();
+      expect(command.runner).not.toHaveBeenCalled();
+    });
   test(`${name}: changed plan still fails with the command-neutral STALE_PLAN message`, async () => {
     const h = await inputs('missing-account');
     try {

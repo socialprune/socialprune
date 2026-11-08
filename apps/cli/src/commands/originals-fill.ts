@@ -14,6 +14,8 @@ import {
   resolveAccountName,
   accountNameText,
 } from '../browser/plan.ts';
+import { parseWindowPlacement } from '../browser/launch.ts';
+import type { WindowPlacement } from '../browser/launch.ts';
 export const originalsFillCommand = buildCommand({
   parameters: {
     flags: {
@@ -81,6 +83,13 @@ export const originalsFillCommand = buildCommand({
         optional: true,
         brief: 'Installed browser',
       },
+      window: {
+        kind: 'parsed',
+        parse: parseWindowPlacement,
+        optional: true,
+        brief:
+          'Visible browser bounds x,y,width,height; valid in dry-run without opening a browser',
+      },
       lang: {
         kind: 'enum',
         values: ['en', 'de'],
@@ -110,6 +119,7 @@ export const originalsFillCommand = buildCommand({
       'max-video-mb'?: string;
       'max-run-gb'?: string;
       browser?: 'chrome' | 'edge';
+      window?: WindowPlacement;
       lang: 'en' | 'de';
     },
   ) {
@@ -225,6 +235,7 @@ export const originalsFillCommand = buildCommand({
         maxVideoBytes: video * 1024 ** 2,
         maxRunBytes: run * 1024 ** 3,
         include,
+        ...(flags.window ? { windowPlacement: flags.window } : {}),
         lang: flags.lang,
         mediaNotice:
           flags.lang === 'de'

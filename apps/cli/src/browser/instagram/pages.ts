@@ -6,6 +6,8 @@ import {
   auditBrowserTabs,
   inheritedWindowPages,
   sameWindowPage,
+  TAB_FAILURE_STAGES,
+  TabInventoryStop,
 } from './browser-tabs.ts';
 
 const target = z.object({
@@ -91,6 +93,7 @@ export const ContextPagesSchema = z.strictObject({
   targetChecks: z.number().int().nonnegative(),
   targetTabs: z.number().int().nonnegative(),
   remainingNonOwned: z.number().int().nonnegative().nullable(),
+  targetFailure: z.enum(TAB_FAILURE_STAGES).nullable(),
 });
 
 /** Requests no OS focus; exact returned Page identity controls run ownership. */
@@ -114,6 +117,7 @@ export function contextPages(
     targetChecks: 0,
     targetTabs: 0,
     remainingNonOwned: null,
+    targetFailure: null,
   });
   const refresh = () => {
     for (const page of owned) if (page.isClosed()) owned.delete(page);
@@ -132,16 +136,28 @@ export function contextPages(
       onStop(failure);
     }
   };
+  const inRunWindow = async (page: Page) => {
+    if (!anchor) return false;
+    try {
+      return await sameWindowPage(context, anchor, page);
+    } catch (error) {
+      // A page that closed during the lookup needs no close; any other
+      // unobservable window fails closed through the caller.
+      if (page.isClosed()) return false;
+      throw error;
+    }
+  };
   const reject = (page: Page, atStartup = startup): Promise<void> => {
     const prior = closing.get(page);
     if (prior) return prior;
     const task = (async () => {
       if (page.isClosed()) return;
-      if (!anchor || !(await sameWindowPage(context, anchor, page))) return;
       if (!atStartup) {
+        // Any page that appears after startup stops the run, whatever window
+        // it opened in; only pages inherited at launch are window-scoped.
         counts.unexpectedOpened++;
         fail();
-      }
+      } else if (!(await inRunWindow(page))) return;
       await page.close({ runBeforeUnload: false });
       if (atStartup) {
         counts.startupClosed++;
@@ -182,6 +198,7 @@ export function contextPages(
         throw failure;
       }
     } catch (error) {
+      if (error instanceof TabInventoryStop) counts.targetFailure = error.stage;
       failure ??=
         error instanceof ContextStop
           ? error
@@ -233,7 +250,13 @@ export function contextPages(
     async startupPage(): Promise<Page> {
       // Even a launch tab still at about:blank may have a restore navigation
       // pending. Create our own page and close every page inherited at launch.
-      const runInitial = await inheritedWindowPages(context);
+      const runInitial = await inheritedWindowPages(context).catch(
+        (error: unknown) => {
+          if (error instanceof TabInventoryStop)
+            counts.targetFailure = error.stage;
+          throw error;
+        },
+      );
       for (const page of runInitial.slice(1)) await reject(page);
       const page = await this.newPage();
       for (const page of runInitial) await reject(page, true);

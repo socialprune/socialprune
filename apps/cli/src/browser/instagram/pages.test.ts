@@ -4,14 +4,19 @@ const tabAudit = vi.hoisted(() =>
     Promise.resolve({ closed: { page: 0, tab: 0 }, nonOwned: 0, tabs: 2 }),
   ),
 );
-vi.mock('./browser-tabs.ts', () => ({
+const sameWindow = vi.hoisted(() =>
+  vi.fn((..._args: unknown[]) => Promise.resolve(true)),
+);
+vi.mock('./browser-tabs.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./browser-tabs.ts')>()),
   auditBrowserTabs: tabAudit,
   inheritedWindowPages: (context: BrowserContext) =>
     Promise.resolve(context.pages()),
-  sameWindowPage: () => Promise.resolve(true),
+  sameWindowPage: sameWindow,
 }));
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page } from 'playwright-core';
+import { TabInventoryStop } from './browser-tabs.ts';
 import { backgroundPage, contextPages, ContextPagesSchema } from './pages.ts';
 
 test.each([false, true])(
@@ -95,8 +100,19 @@ test('PLACEMENT page report refuses fabricated or over-limit counts', () => {
     targetChecks: 0,
     targetTabs: 0,
     remainingNonOwned: null,
+    targetFailure: null,
   };
   expect(ContextPagesSchema.safeParse(counts).success).toBe(true);
+  expect(
+    ContextPagesSchema.safeParse({ ...counts, targetFailure: 'settle' })
+      .success,
+  ).toBe(true);
+  expect(
+    ContextPagesSchema.safeParse({
+      ...counts,
+      targetFailure: 'Generated private protocol text',
+    }).success,
+  ).toBe(false);
   expect(
     ContextPagesSchema.safeParse({ ...counts, ownedPeak: 4 }).success,
   ).toBe(false);
@@ -446,6 +462,83 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
       targetChecks: 1,
       targetTabs: 2,
       remainingNonOwned: 0,
+      targetFailure: null,
+    });
+  } finally {
+    boundary.dispose();
+  }
+});
+test('T1 a page in another window stays open at startup, but any page after startup stops and closes whatever its window', async () => {
+  const events = new EventEmitter(),
+    failures: string[] = [];
+  const make = () => {
+    let closed = false;
+    return {
+      isClosed: () => closed,
+      close: () => {
+        closed = true;
+        return Promise.resolve();
+      },
+    } as unknown as Page;
+  };
+  const run = make(),
+    otherWindow = make(),
+    late = make();
+  const context = Object.assign(events, {
+    pages: () => [run, otherWindow],
+    newPage: () => {
+      const page = make();
+      events.emit('page', page);
+      return Promise.resolve(page);
+    },
+  }) as unknown as BrowserContext;
+  sameWindow.mockImplementation((...args: unknown[]) =>
+    Promise.resolve(args[2] !== otherWindow && args[2] !== late),
+  );
+  const boundary = contextPages(
+    context,
+    (error) => failures.push(error.token),
+    () => context.newPage(),
+  );
+  try {
+    await boundary.startupPage();
+    expect(run.isClosed()).toBe(true);
+    expect(otherWindow.isClosed()).toBe(false);
+    expect(boundary.counts).toMatchObject({
+      startupClosed: 1,
+      unexpectedOpened: 0,
+    });
+    events.emit('page', late);
+    await expect(boundary.flush()).rejects.toMatchObject({
+      token: 'unexpected-page',
+    });
+    expect(late.isClosed()).toBe(true);
+    expect(otherWindow.isClosed()).toBe(false);
+    expect(boundary.counts.unexpectedOpened).toBe(1);
+    expect(failures).toEqual(['unexpected-page']);
+  } finally {
+    sameWindow.mockImplementation(() => Promise.resolve(true));
+    boundary.dispose();
+  }
+});
+test('T1 a failed browser inventory keeps its closed stage in the page report', async () => {
+  const events = new EventEmitter();
+  const page = {
+    isClosed: () => false,
+    close: () => Promise.resolve(),
+  } as unknown as Page;
+  const context = Object.assign(events, {
+    pages: () => [page],
+  }) as unknown as BrowserContext;
+  const boundary = contextPages(context, vi.fn(), () => Promise.resolve(page));
+  try {
+    tabAudit.mockRejectedValueOnce(new TabInventoryStop('settle'));
+    await expect(boundary.startupPage()).rejects.toMatchObject({
+      token: 'tab-inventory',
+    });
+    expect(boundary.snapshot()).toMatchObject({
+      targetFailure: 'settle',
+      remainingNonOwned: null,
     });
   } finally {
     boundary.dispose();

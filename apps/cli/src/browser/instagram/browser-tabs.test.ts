@@ -9,8 +9,12 @@ function fixture(
     | 'unclosed'
     | 'late'
     | 'unobservable'
-    | 'missing-owned' = 'normal',
+    | 'missing-owned'
+    | 'lagging' = 'normal',
 ) {
+  // In lagging mode a closed target stays listed for two more lists and has
+  // no window, as a headed browser shows while it tears the tab down.
+  const closing = new Map<string, number>();
   const targets = new Map([
     ['own-page', { type: 'page', browserContextId: 'run', window: 1 }],
     ['own-tab', { type: 'tab', browserContextId: 'run', window: 1 }],
@@ -35,6 +39,8 @@ function fixture(
       if (method === 'Browser.getWindowForTarget') {
         if (mode === 'unobservable' && args?.targetId === 'sleeping-tab')
           return Promise.reject(new Error('Generated no window'));
+        if (typeof args?.targetId === 'string' && closing.has(args.targetId))
+          return Promise.reject(new Error('Generated window gone'));
         return Promise.resolve({
           windowId:
             typeof args?.targetId === 'string'
@@ -42,7 +48,12 @@ function fixture(
               : 1,
         });
       }
-      if (method === 'Target.getTargets')
+      if (method === 'Target.getTargets') {
+        for (const [id, left] of closing)
+          if (left === 0) {
+            closing.delete(id);
+            targets.delete(id);
+          } else closing.set(id, left - 1);
         return Promise.resolve({
           targetInfos: [...targets]
             .filter(([id]) => mode !== 'missing-owned' || id !== 'own-page')
@@ -51,6 +62,7 @@ function fixture(
               ...value,
             })),
         });
+      }
       if (method === 'Target.attachToTarget')
         return Promise.resolve({ sessionId: args?.targetId });
       if (method === 'Target.sendMessageToTarget') {
@@ -78,7 +90,8 @@ function fixture(
         const id =
           typeof args?.targetId === 'string' ? args.targetId : 'invalid';
         closed.push(id);
-        if (mode !== 'unclosed') targets.delete(id);
+        if (mode === 'lagging') closing.set(id, 2);
+        else if (mode !== 'unclosed') targets.delete(id);
         return Promise.resolve({ success: true });
       }
       throw new Error('Unexpected method');
@@ -111,25 +124,44 @@ test.each(['unclosed', 'late'] as const)(
   async (mode) => {
     const f = fixture(mode);
     expect(
-      await auditBrowserTabs(f.context, new Set([f.page]), mode !== 'late'),
+      await auditBrowserTabs(f.context, new Set([f.page]), mode !== 'late', {
+        settleMs: 300,
+      }),
     ).toMatchObject({ nonOwned: 2, tabs: 3 });
     if (mode === 'unclosed')
       expect(
-        await auditBrowserTabs(f.context, new Set([f.page]), true),
+        await auditBrowserTabs(f.context, new Set([f.page]), true, {
+          settleMs: 300,
+        }),
       ).toMatchObject({ closed: { page: 0, tab: 0 } });
     if (mode === 'late') expect(f.closed).toHaveLength(0);
   },
 );
+test('browser inventory waits for its own closes to leave the list before the strict re-inspection', async () => {
+  const f = fixture('lagging');
+  expect(await auditBrowserTabs(f.context, new Set([f.page]), true)).toEqual({
+    closed: { page: 1, tab: 1 },
+    nonOwned: 0,
+    tabs: 1,
+  });
+  expect(f.closed.sort()).toEqual(['sleeping-tab', 'unwrapped-page']);
+});
+test('browser inventory still fails closed when a closing target outlives the settle bound', async () => {
+  const f = fixture('lagging');
+  await expect(
+    auditBrowserTabs(f.context, new Set([f.page]), true, { settleMs: 0 }),
+  ).rejects.toMatchObject({ token: 'tab-inventory', stage: 'window' });
+});
 test('browser inventory fails closed on a same-context target with unobservable window identity', async () => {
   const f = fixture('unobservable');
   await expect(
     auditBrowserTabs(f.context, new Set([f.page]), true),
-  ).rejects.toMatchObject({ token: 'tab-inventory' });
+  ).rejects.toMatchObject({ token: 'tab-inventory', stage: 'window' });
   expect(f.closed).toHaveLength(0);
 });
 test('browser inventory cannot report zero non-owned tabs when an owned target is absent', async () => {
   const f = fixture('missing-owned');
   await expect(
     auditBrowserTabs(f.context, new Set([f.page]), false),
-  ).rejects.toMatchObject({ token: 'tab-inventory' });
+  ).rejects.toMatchObject({ token: 'tab-inventory', stage: 'owned-missing' });
 });

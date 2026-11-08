@@ -14,6 +14,40 @@ export type TabAudit = {
   nonOwned: number;
   tabs: number;
 };
+/** Closed stage names only; no target IDs, URLs or protocol text. */
+export const TAB_FAILURE_STAGES = [
+  'inherited-window',
+  'anchor',
+  'owned-identity',
+  'owned-missing',
+  'list',
+  'window',
+  'children-attach',
+  'children-timeout',
+  'children-protocol',
+  'children-ambiguous',
+  'close',
+  'settle',
+] as const;
+export type TabFailureStage = (typeof TAB_FAILURE_STAGES)[number];
+export class TabInventoryStop extends ContextStop {
+  readonly stage: TabFailureStage;
+  constructor(stage: TabFailureStage) {
+    super('PLATFORM_CHECK', 'tab-inventory');
+    this.stage = stage;
+  }
+}
+const childStage = (error: unknown): TabFailureStage => {
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'TAB_OBSERVATION_TIMEOUT') return 'children-timeout';
+  if (
+    message === 'TAB_OBSERVATION_PROTOCOL' ||
+    message === 'TAB_OBSERVATION_INVALID' ||
+    message === 'TAB_OBSERVATION_SEND'
+  )
+    return 'children-protocol';
+  return 'children-attach';
+};
 
 export async function sameWindowPage(
   context: BrowserContext,
@@ -42,7 +76,7 @@ export async function sameWindowPage(
 export async function inheritedWindowPages(context: BrowserContext) {
   const inherited = context.pages();
   const anchor = inherited[0];
-  if (!anchor) throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+  if (!anchor) throw new TabInventoryStop('inherited-window');
   const first = await context.newCDPSession(anchor);
   try {
     const windowId = windowSchema.parse(
@@ -63,7 +97,7 @@ export async function inheritedWindowPages(context: BrowserContext) {
     }
     return same;
   } catch {
-    throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+    throw new TabInventoryStop('inherited-window');
   } finally {
     await first.detach();
   }
@@ -140,15 +174,28 @@ export async function auditBrowserTabs(
   context: BrowserContext,
   owned: ReadonlySet<Page>,
   closeStartup: boolean,
+  { settleMs = 5000 }: { settleMs?: number } = {},
 ): Promise<TabAudit> {
   const anchor = [...owned].find((page) => !page.isClosed());
-  if (!anchor) throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
-  const client = await context.newCDPSession(anchor);
+  if (!anchor) throw new TabInventoryStop('anchor');
+  let stage: TabFailureStage = 'anchor';
+  let client: CDPSession;
+  try {
+    client = await context.newCDPSession(anchor);
+  } catch {
+    throw new TabInventoryStop(stage);
+  }
   const result: TabAudit = {
     closed: { page: 0, tab: 0 },
     nonOwned: 0,
     tabs: 0,
   };
+  const listTargets = async () =>
+    targetList.parse(
+      await client.send('Target.getTargets', {
+        filter: [{ type: 'tab' }, { type: 'page' }],
+      }),
+    ).targetInfos;
   try {
     const anchorInfo = z
       .object({ targetInfo: info })
@@ -157,6 +204,7 @@ export async function auditBrowserTabs(
     const runWindow = windowSchema.parse(
       await client.send('Browser.getWindowForTarget'),
     ).windowId;
+    stage = 'owned-identity';
     const ids = new Set<string>();
     for (const page of owned) {
       if (page.isClosed()) continue;
@@ -177,12 +225,10 @@ export async function auditBrowserTabs(
       }
     }
     const inspect = async () => {
-      const targets = targetList.parse(
-        await client.send('Target.getTargets', {
-          filter: [{ type: 'tab' }, { type: 'page' }],
-        }),
-      ).targetInfos;
+      stage = 'list';
+      const targets = await listTargets();
       const same: z.infer<typeof info>[] = [];
+      stage = 'window';
       for (const value of targets) {
         if (value.browserContextId !== anchorInfo.browserContextId) continue;
         // An unobservable same-context target is not assumed foreign or closed.
@@ -195,15 +241,24 @@ export async function auditBrowserTabs(
         )
           same.push(value);
       }
+      stage = 'owned-missing';
       if ([...ids].some((id) => !same.some((value) => value.targetId === id)))
         throw new Error('OWNED_TAB_MISSING');
       const covered = new Set<string>(),
-        nonOwned: z.infer<typeof info>[] = [];
+        nonOwned: z.infer<typeof info>[] = [],
+        childrenOf = new Map<string, Set<string>>();
       let tabs = 0;
       for (const value of same.filter((value) => value.type === 'tab')) {
         tabs++;
-        const children = await tabChildren(client, value.targetId);
+        let children: Set<string>;
+        try {
+          children = await tabChildren(client, value.targetId);
+        } catch (error) {
+          throw new TabInventoryStop(childStage(error));
+        }
+        childrenOf.set(value.targetId, children);
         for (const child of children) covered.add(child);
+        stage = 'children-ambiguous';
         if (![...children].some((child) => ids.has(child)))
           nonOwned.push(value);
         else if (children.size !== 1) throw new Error('TAB_CHILD_AMBIGUOUS');
@@ -214,14 +269,32 @@ export async function auditBrowserTabs(
         tabs++;
         if (!ids.has(value.targetId)) nonOwned.push(value);
       }
-      return { tabs, nonOwned };
+      return { tabs, nonOwned, childrenOf };
     };
     let state = await inspect();
     if (closeStartup) {
       const attempted = state.nonOwned;
+      stage = 'close';
       for (const value of attempted) {
         await client.send('Target.closeTarget', { targetId: value.targetId });
       }
+      // closeTarget returns before the browser destroys the tab. Wait for the
+      // closed targets and their page children to leave the list, then run the
+      // same strict inspection; a target still present stays counted.
+      const gone = new Set<string>();
+      for (const value of attempted) {
+        gone.add(value.targetId);
+        for (const child of state.childrenOf.get(value.targetId) ?? [])
+          gone.add(child);
+      }
+      stage = 'settle';
+      const deadline = Date.now() + settleMs;
+      while (
+        gone.size &&
+        (await listTargets()).some((value) => gone.has(value.targetId)) &&
+        Date.now() < deadline
+      )
+        await new Promise((resolve) => setTimeout(resolve, 100));
       state = await inspect();
       for (const value of attempted)
         if (
@@ -234,8 +307,10 @@ export async function auditBrowserTabs(
     result.nonOwned = state.nonOwned.length;
     result.tabs = state.tabs;
     return result;
-  } catch {
-    throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+  } catch (error) {
+    throw error instanceof TabInventoryStop
+      ? error
+      : new TabInventoryStop(stage);
   } finally {
     await client.detach();
   }

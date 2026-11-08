@@ -15,6 +15,7 @@ import type { Locator } from 'playwright-core';
 import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
 import { createProfile, profileInUse } from '../src/browser/profile.ts';
 import { planContext } from '../src/browser/instagram/plan.ts';
+import { instagramArchiveMissing } from '../src/browser/instagram/delete-plan.ts';
 import { runContextWithDependencies } from '../src/browser/instagram/run.ts';
 import type { ContextOrder } from '../src/browser/instagram/order.ts';
 import { fakeInstagram } from './fake-instagram/server.ts';
@@ -7724,6 +7725,85 @@ test.each(['legacy', 'adjacent', 'answer'] as const)(
           (row) => row.extraction === layout && row.failedStep === 'none',
         ),
       ).toBe(true);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test.each([
+  ['entries', true],
+  ['count-only', false],
+] as const)(
+  'REPLY-SET-1 7 declared / 5 shown then hide-all-replies, answer %s: counted set, unchanged stop, replies stay unobserved',
+  async (_mode, withEntries) => {
+    const h = await harness('success', 5, 30000);
+    try {
+      expect(await h.start(true)).toMatchObject({ completed: 5 });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(5);
+      h.fake.replyAnswerRows();
+      h.fake.replyHidden(2, withEntries);
+      expect(
+        await h.start({ refreshReplies: true }),
+        h.notices.join('\n'),
+      ).toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'reply-answer-incomplete',
+      });
+      const contexts = await h.store.read((tx) => records(tx.instagramContext));
+      // No replies record means the deletion guard keeps counting it as missing.
+      expect(
+        contexts.every(
+          (record) =>
+            record.replies === undefined &&
+            instagramArchiveMissing(record) !== null,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(report.steps[0]);
+      expect(step.replies).toMatchObject({
+        read: 0,
+        reason: 'reply-answer-incomplete',
+      });
+      expect(step.replyAnswer).toMatchObject({
+        source: 'network',
+        answerPresent: true,
+        answerValid: true,
+        answerTotal: 7,
+        rowsShown: 5,
+        answerEntries: withEntries ? 7 : 5,
+        shownRowsMatched: 5,
+        answerOnlyEntries: withEntries ? 2 : 0,
+        hiddenCount: withEntries ? 0 : 2,
+      });
+      expect(step.replyExpansion).toMatchObject({
+        stopAt: 'answer-check',
+        clicks: [
+          {
+            clicked: true,
+            rowsBefore: 0,
+            rowsAfter: 5,
+            controlsAfter: {
+              controls: [{ shape: 'hide-all-replies', accepted: false }],
+            },
+          },
+        ],
+      });
+      for (const value of [
+        h.fixture.items[0]!.text,
+        h.plan.handle,
+        'generated_reply_0',
+        'Generated reply 0 with local text',
+        '900000',
+      ])
+        expect(JSON.stringify(step.replyAnswer)).not.toContain(value);
     } finally {
       await h.close();
     }

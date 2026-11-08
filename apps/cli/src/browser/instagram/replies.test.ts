@@ -666,3 +666,144 @@ test('REPLIES revision F4 retains NFC text and internal line breaks from the ver
     vi.restoreAllMocks();
   }
 });
+
+// REPLY-SET-1 shape: the answer declares 7, the page shows 5 and then only
+// "Hide all replies". The rows are generated; no real page was inspected.
+const setReply = (ordinal: number) => ({
+  pk: String(900000 + ordinal),
+  user: { username: `generated_reply_${ordinal}` },
+  text: `Generated reply ${ordinal} with local text`,
+  created_at: Date.parse(match.createdAt) / 1000,
+});
+const setRow = (ordinal: number) => ({
+  id: String(900000 + ordinal),
+  account: `generated_reply_${ordinal}`,
+  text: `Generated reply ${ordinal} with local text`,
+  createdAt: match.createdAt,
+  likes: { count: null, source: null },
+});
+const setFocal = (entries: number) => ({
+  pk: match.id,
+  user: { username: match.username },
+  text: match.text,
+  created_at: Date.parse(match.createdAt) / 1000,
+  child_comment_count: 7,
+  preview_child_comments: Array.from({ length: entries }, (_, i) =>
+    setReply(i),
+  ),
+});
+const shown = Array.from({ length: 5 }, (_, i) => setRow(i));
+test.each([
+  [
+    'full answer entries',
+    7,
+    { answerEntries: 7, shownRowsMatched: 5, answerOnlyEntries: 2 },
+    0,
+  ],
+  [
+    'count only',
+    5,
+    { answerEntries: 5, shownRowsMatched: 5, answerOnlyEntries: 0 },
+    2,
+  ],
+] as const)(
+  'REPLY-SET-1 7 declared / 5 shown with %s keeps the rule and counts the set without values',
+  (_name, entries, counts, hiddenCount) => {
+    const bodies = [setFocal(entries)];
+    // The reading rule is unchanged here: a declared total above the shown
+    // rows still refuses until a stored marker for the set is decided.
+    expect(checkedReplyRows(bodies, match, shown, false, 0)).toEqual({
+      reason: 'reply-answer-incomplete',
+    });
+    const value = replyAnswerDiagnostic(
+      bodies,
+      match,
+      shown.length,
+      [],
+      undefined,
+      [],
+      shown,
+    );
+    expect(value).toMatchObject({
+      answerTotal: 7,
+      rowsShown: 5,
+      ...counts,
+      hiddenCount,
+    });
+    for (const text of [
+      ...Object.values(match),
+      ...shown.flatMap((row) => [row.id, row.account, row.text]),
+    ])
+      expect(JSON.stringify(value)).not.toContain(text);
+  },
+);
+test.each(['unmatched', 'conflicting'] as const)(
+  'REPLY-SET-1 a %s shown row still stops with the mismatch and is not counted as matched',
+  (mode) => {
+    const rows =
+      mode === 'unmatched'
+        ? [...shown.slice(0, 4), { ...setRow(4), text: 'Generated other text' }]
+        : [...shown, { ...setRow(5), account: 'generated_absent' }];
+    const bodies = [
+      {
+        ...setFocal(7),
+        child_comment_count: rows.length,
+        preview_child_comments: Array.from({ length: rows.length }, (_, i) =>
+          setReply(i),
+        ),
+      },
+    ];
+    expect(checkedReplyRows(bodies, match, rows, false, 0)).toEqual({
+      reason: 'reply-answer-mismatch',
+    });
+    expect(
+      replyAnswerDiagnostic(
+        bodies,
+        match,
+        rows.length,
+        [],
+        undefined,
+        [],
+        rows,
+      ),
+    ).toMatchObject({
+      answerEntries: rows.length,
+      shownRowsMatched: rows.length - 1,
+      answerOnlyEntries: 1,
+      hiddenCount: 0,
+    });
+  },
+);
+test('REPLY-SET-1 a duplicate answer entry for one shown row is never counted as a unique match', () => {
+  const bodies = [
+    {
+      ...setFocal(1),
+      child_comment_count: 1,
+      preview_child_comments: [setReply(0)],
+    },
+  ];
+  const { id: _id, ...unlinked } = setRow(0);
+  void _id;
+  expect(
+    replyAnswerDiagnostic(
+      bodies,
+      match,
+      2,
+      [],
+      undefined,
+      [],
+      [unlinked, unlinked],
+    ),
+  ).toMatchObject({
+    answerEntries: 1,
+    shownRowsMatched: 1,
+    answerOnlyEntries: 0,
+    hiddenCount: 0,
+  });
+  expect(replyAnswerDiagnostic(bodies, match, 0)).toMatchObject({
+    answerEntries: 1,
+    shownRowsMatched: 0,
+    answerOnlyEntries: 1,
+    hiddenCount: 0,
+  });
+});

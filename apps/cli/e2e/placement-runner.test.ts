@@ -196,6 +196,16 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       after: await visibility(),
       keptForeground: !shortcut.changed,
     };
+    const animation = await activePair[1]!.evaluate(async () => {
+      const at = performance.now();
+      for (let index = 0; index < 3; index++)
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+      return performance.now() - at;
+    });
+    receipt.readingThreeFrameMs = Math.round(animation);
+    expect(animation).toBeLessThan(1000);
     expect(bounds).toMatchObject({
       left: placement.x,
       top: placement.y,

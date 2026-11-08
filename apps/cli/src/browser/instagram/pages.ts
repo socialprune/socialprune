@@ -42,7 +42,8 @@ export async function backgroundPage(context: BrowserContext): Promise<Page> {
     const { targetId } = z.object({ targetId: z.string().min(1) }).parse(
       await client.send('Target.createTarget', {
         url: 'about:blank',
-        background: true,
+        background: false,
+        focus: false,
         newWindow: false,
         ...(anchorTarget.targetInfo.browserContextId
           ? { browserContextId: anchorTarget.targetInfo.browserContextId }
@@ -101,7 +102,6 @@ export function contextPages(
   let startup = true,
     disposed = false;
   let creating: Promise<Page> | undefined;
-  let preparedReading: Page | undefined;
   let failure: ContextStop | undefined;
   const fail = () => {
     if (!failure) {
@@ -148,11 +148,6 @@ export function contextPages(
       return ContextPagesSchema.parse(counts);
     },
     async newPage(): Promise<Page> {
-      if (preparedReading) {
-        const page = preparedReading;
-        preparedReading = undefined;
-        return page;
-      }
       if (creating) throw new Error('CONTEXT_PAGE_CREATION_BUSY');
       refresh();
       if (counts.ownedOpen >= counts.pageLimit) {
@@ -189,10 +184,8 @@ export function contextPages(
       for (const page of initial.slice(1)) await reject(page);
       const confirmation = await this.newPage();
       startup = false;
-      const reading = await this.newPage();
       for (const page of initial) await reject(page, true);
       await Promise.all([...closing.values()]);
-      preparedReading = reading;
       startup = false;
       return confirmation;
     },

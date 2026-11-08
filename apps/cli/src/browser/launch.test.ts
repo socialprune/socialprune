@@ -83,6 +83,7 @@ test('installed-browser launch options are exact with and without placement and 
       expect(launch).toHaveBeenLastCalledWith('generated-profile', {
         executablePath: 'generated-browser',
         headless: false,
+        ...(placement ? { viewport: null } : {}),
         chromiumSandbox: true,
         ...(offline ? { offline: true } : {}),
         args: [

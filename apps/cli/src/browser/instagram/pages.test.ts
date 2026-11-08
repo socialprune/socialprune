@@ -56,7 +56,8 @@ test.each([false, true])(
     } else expect(await backgroundPage(context)).toBe(page);
     expect(send).toHaveBeenCalledWith('Target.createTarget', {
       url: 'about:blank',
-      background: true,
+      background: false,
+      focus: false,
       newWindow: false,
       browserContextId: 'generated-context',
     });

@@ -76,7 +76,7 @@ export const ContextPagesSchema = z.strictObject({
   replaced: z.number().int().nonnegative(),
 });
 
-/** Owned tabs are selected inside their window without requesting OS focus. */
+/** Requests no OS focus; exact returned Page identity controls run ownership. */
 export function contextPages(
   context: BrowserContext,
   onStop: (error: ContextStop) => void,

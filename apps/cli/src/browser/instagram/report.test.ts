@@ -178,6 +178,29 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     { ...base, pageForeignReplyControls: '1' },
     {
       ...base,
+      focalTimeKinds: {
+        observed: true,
+        capped: false,
+        inFocalPermalink: 1,
+        inOtherCommentPermalink: 0,
+        inPostPermalink: 1,
+        unlinked: 0,
+        text: 'Generated private',
+      },
+    },
+    {
+      ...base,
+      focalTimeKinds: {
+        observed: true,
+        capped: false,
+        inFocalPermalink: -1,
+        inOtherCommentPermalink: 0,
+        inPostPermalink: 1,
+        unlinked: 0,
+      },
+    },
+    {
+      ...base,
       answerExtraEntries: {
         captionObjects: 1,
         otherParentReferences: 0,

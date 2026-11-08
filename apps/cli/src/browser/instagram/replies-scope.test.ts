@@ -30,6 +30,7 @@ function fixture(levels: Level[]) {
   };
   const counted = (count: number) => ({
     ...empty,
+    nth: () => empty,
     count: () => Promise.resolve(count),
   });
   const root = (level: Level) => ({

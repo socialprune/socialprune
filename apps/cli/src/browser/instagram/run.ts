@@ -260,6 +260,11 @@ export async function runContextWithDependencies(
     pace: ReturnType<typeof paceSummary>;
     limits?: ReturnType<LimitSignals['summary']>;
     pages?: ReturnType<ReturnType<typeof contextPages>['snapshot']>;
+    tabChecks?: {
+      step: number;
+      tabs: number;
+      remainingNonOwned: number | null;
+    }[];
     windowPlacement?: WindowPlacement | null;
     rows: { emptySkipped: number; otherName: number; imageOnlySkipped: number };
     runtime: RuntimeReport;
@@ -434,6 +439,15 @@ export async function runContextWithDependencies(
   const checkpoint = async () => {
     waitTrace.checkpoint('guard');
     guard();
+    if (pages) {
+      waitTrace.checkpoint('guard');
+      await pages.assertTabs();
+      (report.tabChecks ??= []).push({
+        step: steps,
+        tabs: pages.counts.targetTabs,
+        remainingNonOwned: pages.counts.remainingNonOwned,
+      });
+    }
     waitTrace.checkpoint('profile-snapshot');
     const snapshot = await profileSnapshot(options.profile);
     waitTrace.checkpoint('extensions-check');

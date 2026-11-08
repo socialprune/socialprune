@@ -122,23 +122,59 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       height: Math.min(700, signal.area.height - 80),
     };
     receipt.placement = placement;
-    const launch = await watch('launch', async () => {
-      context = await launchRunBrowser(
-        join(root, 'profile'),
-        chromium.executablePath(),
-        placement,
-        true,
-      );
-    });
     const fixture = await instagramFixture(1);
     fake = await fakeInstagram(4549, fixture.items);
+    // The browser itself writes the generated session; no profile file edits.
+    const seed = await chromium.launchPersistentContext(join(root, 'profile'), {
+      executablePath: chromium.executablePath(),
+      headless: true,
+      chromiumSandbox: true,
+      args: ['--enable-automation'],
+      ignoreDefaultArgs: ['--disable-infobars'],
+      serviceWorkers: 'block',
+    });
+    for (let index = 0; index < 7; index++) {
+      const tab = index === 0 ? seed.pages()[0]! : await seed.newPage();
+      await tab.goto(fake.origin + '/your_activity/interactions/comments');
+    }
+    await seed.close();
+    const launch = await watch('launch', async () => {
+      context = await chromium.launchPersistentContext(join(root, 'profile'), {
+        executablePath: chromium.executablePath(),
+        headless: false,
+        chromiumSandbox: true,
+        viewport: null,
+        offline: true,
+        args: [
+          '--enable-automation',
+          `--window-position=${placement.x},${placement.y}`,
+          `--window-size=${placement.width},${placement.height}`,
+          '--restore-last-session',
+        ],
+        ignoreDefaultArgs: ['--disable-infobars'],
+        serviceWorkers: 'block',
+      });
+    });
+    receipt.restoredLaunchPages = context!.pages().length;
+    expect(context!.pages().length).toBeGreaterThanOrEqual(7);
     await context!.setOffline(false);
     await context!.route('**/*', (route) =>
       new URL(route.request().url()).origin === fake!.origin
         ? route.continue()
         : route.abort(),
     );
-    const boundary = contextPages(context!, () => {});
+    // Reproduce the missing-Playwright-page class using real restored CDP tabs,
+    // not fake CDP replies. Only the fixture's initial Page enumeration is partial.
+    const partial = new Proxy(context!, {
+      get(object, property) {
+        if (property === 'pages') return () => object.pages().slice(0, 1);
+        const value: unknown = Reflect.get(object, property);
+        return typeof value === 'function'
+          ? (value.bind(object) as unknown)
+          : value;
+      },
+    });
+    const boundary = contextPages(partial, () => {});
     receipt.launchKeptForeground = !launch.changed;
     receipt.status = 'measuring-reader-design';
     const selectedReader = async (name: string, count: number) => {
@@ -206,6 +242,8 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     const bounds = first.bounds;
     receipt.bounds = bounds;
     receipt.pagesCount = boundary.snapshot();
+    expect(boundary.counts.targetClosed.tab).toBeGreaterThanOrEqual(6);
+    expect(boundary.counts.remainingNonOwned).toBe(0);
     expect(initial.changed).toBe(false);
     await selectedReader('selectedAtStart', 1);
     const confirmationCreated = await watch('confirmationCreate', async () => {
@@ -302,6 +340,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       stop: generated.stop,
       recycling: generated.recycling,
       memory: generated.memory,
+      tabChecks: generated.tabChecks,
     };
     expect(generated).toMatchObject({
       pages: { rendererResets: 1, replaced: 0, ownedPeak: 2 },

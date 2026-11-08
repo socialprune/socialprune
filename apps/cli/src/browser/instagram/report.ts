@@ -355,6 +355,16 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
   focalPresent: z.boolean().nullable(),
   focalPermalinks: count.nullable(),
   focalTimes: count.nullable(),
+  focalTimeKinds: z
+    .strictObject({
+      observed: z.boolean(),
+      capped: z.boolean(),
+      inFocalPermalink: count,
+      inOtherCommentPermalink: count,
+      inPostPermalink: count,
+      unlinked: count,
+    })
+    .optional(),
   focalRows: count.nullable(),
   focalControls: count.nullable(),
   firstFailedGate: z.enum([
@@ -1172,6 +1182,8 @@ export const CONTEXT_STOP_TOKENS = [
   'comment-structure',
   'unexpected-action',
   'unexpected-page',
+  'tab-inventory',
+  'non-owned-tab',
   'request-journal',
   'second-source',
   'field-mismatch',

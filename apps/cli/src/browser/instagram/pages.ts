@@ -2,6 +2,7 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { ContextStop } from './report.ts';
 import { z } from 'zod';
 import { createServer } from 'node:http';
+import { auditBrowserTabs } from './browser-tabs.ts';
 
 const target = z.object({
   targetInfo: z.object({ targetId: z.string().min(1) }),
@@ -76,6 +77,13 @@ export const ContextPagesSchema = z.strictObject({
   backgroundCreated: z.number().int().nonnegative(),
   replaced: z.number().int().nonnegative(),
   rendererResets: z.number().int().nonnegative(),
+  targetClosed: z.strictObject({
+    page: z.number().int().nonnegative(),
+    tab: z.number().int().nonnegative(),
+  }),
+  targetChecks: z.number().int().nonnegative(),
+  targetTabs: z.number().int().nonnegative(),
+  remainingNonOwned: z.number().int().nonnegative().nullable(),
 });
 
 /** Requests no OS focus; exact returned Page identity controls run ownership. */
@@ -95,6 +103,10 @@ export function contextPages(
     backgroundCreated: 0,
     replaced: 0,
     rendererResets: 0,
+    targetClosed: { page: 0, tab: 0 },
+    targetChecks: 0,
+    targetTabs: 0,
+    remainingNonOwned: null,
   });
   const refresh = () => {
     for (const page of owned) if (page.isClosed()) owned.delete(page);
@@ -124,7 +136,10 @@ export function contextPages(
         ? Promise.resolve()
         : page.close({ runBeforeUnload: false })
     ).then(() => {
-      if (atStartup) counts.startupClosed++;
+      if (atStartup) {
+        counts.startupClosed++;
+        counts.targetClosed.page++;
+      }
     });
     closing.set(page, task);
     void task.catch(() => fail());
@@ -144,6 +159,30 @@ export function contextPages(
     if (!disposed) void classify(page).catch(() => fail());
   };
   context.on('page', opened);
+  const audit = async (closeStartup: boolean) => {
+    counts.remainingNonOwned = null;
+    try {
+      const state = await auditBrowserTabs(context, owned, closeStartup);
+      counts.targetClosed.page += state.closed.page;
+      counts.targetClosed.tab += state.closed.tab;
+      counts.startupClosed += state.closed.page + state.closed.tab;
+      counts.targetTabs = state.tabs;
+      counts.remainingNonOwned = state.nonOwned;
+      counts.targetChecks++;
+      if (state.nonOwned !== 0 || state.tabs > counts.pageLimit) {
+        failure ??= new ContextStop('PLATFORM_CHECK', 'non-owned-tab');
+        onStop(failure);
+        throw failure;
+      }
+    } catch (error) {
+      failure ??=
+        error instanceof ContextStop
+          ? error
+          : new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+      onStop(failure);
+      throw failure;
+    }
+  };
   return {
     counts,
     snapshot() {
@@ -186,9 +225,9 @@ export function contextPages(
       // pending. Create our own page and close every page inherited at launch.
       for (const page of initial.slice(1)) await reject(page);
       const page = await this.newPage();
-      startup = false;
       for (const page of initial) await reject(page, true);
       await Promise.all([...closing.values()]);
+      await audit(true);
       startup = false;
       return page;
     },
@@ -266,6 +305,10 @@ export function contextPages(
       }
     },
     allowed: classify,
+    async assertTabs() {
+      if (failure) throw failure;
+      await audit(false);
+    },
     check() {
       if (failure) throw failure;
     },

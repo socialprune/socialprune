@@ -160,6 +160,8 @@ export const InstagramStopTokenSchema = z.enum([
   'comment-structure',
   'unexpected-action',
   'unexpected-page',
+  'tab-inventory',
+  'non-owned-tab',
   'request-journal',
   'second-source',
   'field-mismatch',

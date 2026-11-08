@@ -1,4 +1,12 @@
 import { expect, test, vi } from 'vitest';
+const tabAudit = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({ closed: { page: 0, tab: 0 }, nonOwned: 0, tabs: 2 }),
+  ),
+);
+vi.mock('./browser-tabs.ts', () => ({
+  auditBrowserTabs: tabAudit,
+}));
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page } from 'playwright-core';
 import { backgroundPage, contextPages, ContextPagesSchema } from './pages.ts';
@@ -80,6 +88,10 @@ test('PLACEMENT page report refuses fabricated or over-limit counts', () => {
     backgroundCreated: 3,
     replaced: 1,
     rendererResets: 0,
+    targetClosed: { page: 0, tab: 0 },
+    targetChecks: 0,
+    targetTabs: 0,
+    remainingNonOwned: null,
   };
   expect(ContextPagesSchema.safeParse(counts).success).toBe(true);
   expect(
@@ -247,6 +259,42 @@ test('page close failure is a closed stop, not a successful startup-closed count
     boundary.dispose();
   }
 });
+test.each(['remaining', 'inventory'] as const)(
+  'T1 %s browser-level failure stops the checkpoint without claiming zero remaining',
+  async (mode) => {
+    const events = new EventEmitter();
+    const page = {
+      isClosed: () => false,
+      close: () => Promise.resolve(),
+    } as unknown as Page;
+    const context = Object.assign(events, {
+      pages: () => [page],
+    }) as unknown as BrowserContext;
+    const stop = vi.fn();
+    const boundary = contextPages(context, stop, () => Promise.resolve(page));
+    try {
+      await boundary.startupPage();
+      if (mode === 'remaining')
+        tabAudit.mockResolvedValueOnce({
+          closed: { page: 0, tab: 0 },
+          nonOwned: 1,
+          tabs: 3,
+        });
+      else
+        tabAudit.mockRejectedValueOnce(new Error('Generated observer failed'));
+      await expect(boundary.assertTabs()).rejects.toMatchObject({
+        token: mode === 'remaining' ? 'non-owned-tab' : 'tab-inventory',
+      });
+      expect(boundary.snapshot().remainingNonOwned).toBe(
+        mode === 'remaining' ? 1 : null,
+      );
+      expect(stop).toHaveBeenCalled();
+      expect(() => boundary.check()).toThrow();
+    } finally {
+      boundary.dispose();
+    }
+  },
+);
 test('a context with no blank page closes every restored page and creates its own confirmation without navigating them', async () => {
   const events = new EventEmitter(),
     closed: string[] = [];
@@ -391,6 +439,10 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
       backgroundCreated: 3,
       replaced: 1,
       rendererResets: 0,
+      targetClosed: { page: 1, tab: 0 },
+      targetChecks: 1,
+      targetTabs: 2,
+      remainingNonOwned: 0,
     });
   } finally {
     boundary.dispose();

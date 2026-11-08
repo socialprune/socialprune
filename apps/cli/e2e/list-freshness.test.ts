@@ -21,12 +21,141 @@ import {
 import { readRows, rowCandidate } from '../src/browser/instagram/selectors.ts';
 import { listNavigationPage } from './fake-instagram/list-navigation-pages.ts';
 import { listNavigation } from '../src/browser/instagram/list-navigation.ts';
-import { commentReplies } from '../src/browser/instagram/replies.ts';
+import {
+  commentReplies,
+  emptyReplyScope,
+} from '../src/browser/instagram/replies.ts';
+import { structuralReplyScope } from '../src/browser/instagram/replies-scope.ts';
+import { inspectSoleCommentAnswer } from '../src/browser/instagram/sole-comment-answer.ts';
 import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
 import { contextPages } from '../src/browser/instagram/pages.ts';
 
+test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
+  'T2 sole caption object and %s retain independent zero and scope refusals',
+  async (kind) => {
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const focal = {
+        id: '123',
+        username: 'generated',
+        text: 'Generated focal',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      };
+      const selector = 'a[href="/p/Generated/c/123/"]';
+      const second =
+        kind === 'caption-time'
+          ? '<a href="/p/Generated/"><time datetime="2024-12-31T00:00:00Z">Generated caption date</time></a>'
+          : kind === 'unlinked-time'
+            ? '<time datetime="2025-01-02T00:00:00Z">Generated edited marker</time>'
+            : '<a href="/p/Generated/c/456/"><time datetime="2025-01-02T00:00:00Z">Generated second comment</time></a>';
+      await page.setContent(
+        `<main><div><div><a href="/p/Generated/c/123/"><time datetime="${focal.createdAt}">Generated focal date</time></a></div>${second}</div></main>`,
+      );
+      const answer = inspectSoleCommentAnswer(
+        [],
+        [
+          {
+            code: 'Generated',
+            comment_count: 1,
+            caption: {
+              pk: '789',
+              user: { username: 'owner' },
+              text: 'Generated caption',
+              created_at: 1735603200,
+            },
+            comments: [
+              {
+                pk: focal.id,
+                user: { username: focal.username },
+                text: focal.text,
+                created_at: Date.parse(focal.createdAt) / 1000,
+                child_comment_count: 0,
+              },
+            ],
+          },
+        ],
+        focal,
+        'Generated',
+      );
+      const shape = emptyReplyScope();
+      expect(
+        await structuralReplyScope(
+          page.locator(selector),
+          selector,
+          true,
+          shape,
+          () => {},
+          () => {
+            shape.soleComment = answer.diagnostic;
+            return answer.accepted;
+          },
+        ),
+      ).toBeNull();
+      expect(answer.diagnostic).toMatchObject({
+        childCountProofClass: 'zero',
+        answerCommentSetSize: 2,
+        answerSetValid: false,
+        firstFailedGate: 'sole-answer-set',
+        answerExtraEntries: {
+          captionObjects: 1,
+          otherParentReferences: 0,
+          focalChildReferences: 0,
+          unresolvedObjects: 0,
+        },
+      });
+      if (kind !== 'second-comment-time')
+        expect(shape.soleComment).toMatchObject({
+          focalTimes: 2,
+          pagePermalinks: 1,
+          focalTimeKinds: {
+            observed: true,
+            inFocalPermalink: 1,
+            inOtherCommentPermalink: 0,
+            inPostPermalink: kind === 'caption-time' ? 1 : 0,
+            unlinked: kind === 'unlinked-time' ? 1 : 0,
+          },
+        });
+      const noCaption = inspectSoleCommentAnswer(
+        [],
+        [
+          {
+            pk: focal.id,
+            user: { username: focal.username },
+            text: focal.text,
+            created_at: Date.parse(focal.createdAt) / 1000,
+            child_comment_count: 0,
+          },
+        ],
+        focal,
+        'Generated',
+      );
+      const other = emptyReplyScope();
+      expect(
+        await structuralReplyScope(
+          page.locator(selector),
+          selector,
+          true,
+          other,
+          () => {},
+          () => {
+            other.soleComment = noCaption.diagnostic;
+            return noCaption.accepted;
+          },
+        ),
+      ).toBeNull();
+      if (kind !== 'second-comment-time')
+        expect(other.soleComment?.firstFailedGate).toBe('sole-focal');
+    } finally {
+      await browser.close();
+    }
+  },
+);
 test('PLACEMENT background pages retain one window identity and a closed three-page ceiling', async () => {
   const browser = await chromium.launch({
     headless: true,

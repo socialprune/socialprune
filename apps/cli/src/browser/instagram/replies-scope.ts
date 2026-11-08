@@ -324,6 +324,32 @@ export async function structuralReplyScope(
           .locator('a[href*="/c/"]')
           .count();
         sole.focalTimes = await isolated.root.locator('time[datetime]').count();
+        const kinds = {
+          observed: true,
+          capped: sole.focalTimes > 32,
+          inFocalPermalink: 0,
+          inOtherCommentPermalink: 0,
+          inPostPermalink: 0,
+          unlinked: 0,
+        };
+        for (let index = 0; index < Math.min(sole.focalTimes, 32); index++) {
+          const time = isolated.root.locator('time[datetime]').nth(index);
+          guard();
+          const link = time.locator('xpath=ancestor::a[1]');
+          if ((await link.count()) === 0) kinds.unlinked++;
+          else if (
+            (await link.and(isolated.root.locator(focalSelector)).count()) === 1
+          )
+            kinds.inFocalPermalink++;
+          else {
+            const href = await link.getAttribute('href', { timeout: 150 });
+            if (href?.includes('/c/')) kinds.inOtherCommentPermalink++;
+            else if (href && /^\/(?:p|reel)\/[^/]+\/$/u.test(href))
+              kinds.inPostPermalink++;
+            else kinds.unlinked++;
+          }
+        }
+        sole.focalTimeKinds = kinds;
         sole.focalRows = await isolated.root.locator(REPLY_ROWS).count();
         sole.focalControls = await replyControls(isolated.root).count();
       }

@@ -495,6 +495,14 @@ export type CliErrorCode = keyof typeof CLI_ERRORS;
 // These describe observed reader failures, never platform warning pages. Unknown
 // tokens retain the original error table, rather than guessing a classification.
 export const INSTAGRAM_STOP_MESSAGES = {
+  'tab-inventory': {
+    en: 'The tabs in the Instagram run window could not be checked. The run stopped.',
+    de: 'Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden. Der Lauf wurde gestoppt.',
+  },
+  'non-owned-tab': {
+    en: 'A tab outside this run remains in its browser window. The run stopped.',
+    de: 'Im Browserfenster bleibt ein Tab, der nicht zu diesem Lauf gehört. Der Lauf wurde gestoppt.',
+  },
   'run-wait-deadline': {
     en: 'An Instagram run phase exceeded its wait budget. The run stopped and retained its partial report.',
     de: 'Eine Phase des Instagram-Laufs hat ihr Wartebudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',

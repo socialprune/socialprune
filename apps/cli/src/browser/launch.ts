@@ -62,6 +62,7 @@ export async function launchRunBrowser(
   return chromium.launchPersistentContext(profile, {
     executablePath,
     headless: false,
+    ...(placement ? { viewport: null } : {}),
     ...(offline ? { offline: true } : {}),
     chromiumSandbox: true,
     args: ['--enable-automation', ...windowArguments(placement)],

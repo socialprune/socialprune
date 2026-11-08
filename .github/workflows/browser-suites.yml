@@ -11,6 +11,10 @@ on:
         type: string
         required: true
         default: all
+      placement-only:
+        description: Run only the generated Windows foreground and bounds probe
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -140,7 +144,7 @@ jobs:
 
   context:
     needs: select
-    if: needs.select.outputs.context == 'true'
+    if: needs.select.outputs.context == 'true' && inputs.placement-only != true
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
@@ -200,9 +204,37 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  placement:
+    if: inputs.placement-only == true
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 5
+      - run: pnpm --filter socialprune exec playwright install chromium
+        timeout-minutes: 5
+      - name: Measure foreground and placement before full-suite admission
+        timeout-minutes: 4
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: instagram-placement-${{ github.run_attempt }}
+          path: apps/cli/test-results/placement/
+          if-no-files-found: error
+          retention-days: 7
+
   context-aggregate:
     needs: [select, context]
-    if: ${{ always() && needs.select.outputs.context == 'true' }}
+    if: ${{ always() && needs.select.outputs.context == 'true' && inputs.placement-only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

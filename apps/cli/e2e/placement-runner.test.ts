@@ -171,8 +171,39 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
         serviceWorkers: 'block',
       });
     });
+    // Edge may add restored tabs after launch returns. Read the browser's own
+    // targets for up to 15 s; only counts and the fixture-origin match are kept.
+    const restored: {
+      ms: number;
+      pages: number;
+      tabs: number;
+      fixturePages: number;
+    }[] = [];
+    const restoredAt = Date.now();
+    const browserTargets = await context!.browser()!.newBrowserCDPSession();
+    try {
+      for (;;) {
+        const { targetInfos } = await browserTargets.send('Target.getTargets');
+        const sample = {
+          ms: Date.now() - restoredAt,
+          pages: targetInfos.filter((value) => value.type === 'page').length,
+          tabs: targetInfos.filter((value) => value.type === 'tab').length,
+          fixturePages: targetInfos.filter(
+            (value) =>
+              value.type === 'page' && value.url.startsWith(fake!.origin),
+          ).length,
+        };
+        restored.push(sample);
+        if (sample.fixturePages >= 7 || sample.ms > 15000) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    } finally {
+      await browserTargets.detach();
+    }
+    receipt.restoredTargets = restored.at(-1);
+    receipt.restoredSamples = restored.length;
     receipt.restoredLaunchPages = context!.pages().length;
-    expect(context!.pages().length).toBeGreaterThanOrEqual(7);
+    expect(restored.at(-1)!.fixturePages).toBeGreaterThanOrEqual(7);
     await context!.setOffline(false);
     await context!.route('**/*', (route) =>
       new URL(route.request().url()).origin === fake!.origin

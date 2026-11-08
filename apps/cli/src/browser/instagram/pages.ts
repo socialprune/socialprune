@@ -369,6 +369,11 @@ export function contextPages(
       try {
         await page.route(url, route);
         await page.goto(url, { waitUntil: 'load', timeout });
+        // RESET-LANG-1: leave the reader blank, as a fresh startup page, so
+        // no page check can read the CLI's own reset page (run 0a43cac2
+        // stopped with PAGE_LANGUAGE on it). The next platform navigation is
+        // checked exactly as before; this adds no platform request.
+        await page.goto('about:blank', { waitUntil: 'load', timeout });
         const client = await context.newCDPSession(page);
         try {
           await client.send('Page.resetNavigationHistory');

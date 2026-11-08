@@ -11,6 +11,8 @@ $tabs=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$tabCon
 $states=@()
 for($index=0;$index-lt$tabs.Count;$index++){
   $pattern=$tabs.Item($index).GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-  $states+=@{index=$index;selected=$pattern.Current.IsSelected}
+  $name=$tabs.Item($index).Current.Name
+  $kind=if($name.Contains('Generated reading probe')){'reading'}elseif($name.Contains('Generated confirmation probe')){'confirmation'}else{'unrecognized'}
+  $states+=@{index=$index;kind=$kind;selected=$pattern.Current.IsSelected}
 }
 [Console]::WriteLine((@{count=$tabs.Count;tabs=$states;offscreen=$window.Current.IsOffscreen}|ConvertTo-Json -Compress -Depth 4))

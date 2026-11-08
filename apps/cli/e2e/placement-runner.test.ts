@@ -144,6 +144,9 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     let activePair: Awaited<ReturnType<typeof boundary.newPage>>[] = [];
     const pages = await watch('pages', async () => {
       const confirmation = await boundary.startupPage();
+      await confirmation.setContent(
+        '<title>Generated confirmation probe</title>',
+      );
       const session = await context!.newCDPSession(confirmation);
       const first = await session.send('Browser.getWindowForTarget');
       bounds = first.bounds;
@@ -151,6 +154,9 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       await reading.goto(fake!.origin + '/your_activity/interactions/comments');
       reading = await boundary.replace(reading);
       await reading.goto(fake!.origin + '/your_activity/interactions/comments');
+      await reading.evaluate(() => {
+        document.title = 'Generated reading probe';
+      });
       const next = await context!.newCDPSession(reading);
       sameWindow =
         (await next.send('Browser.getWindowForTarget')).windowId ===
@@ -211,18 +217,20 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       });
       const observed = JSON.parse(output) as {
         count: number;
-        tabs: { index: number; selected: boolean }[];
+        tabs: { index: number; kind: string; selected: boolean }[];
         offscreen: boolean;
       };
       receipt.selectedTabs = observed;
       expect(observed).toMatchObject({
         count: 2,
         offscreen: false,
-        tabs: [
-          { index: 0, selected: false },
-          { index: 1, selected: true },
-        ],
       });
+      expect(
+        observed.tabs.find((tab) => tab.kind === 'reading')?.selected,
+      ).toBe(true);
+      expect(
+        observed.tabs.find((tab) => tab.kind === 'confirmation')?.selected,
+      ).toBe(false);
     } finally {
       await browserSession.detach();
     }

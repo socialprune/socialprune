@@ -143,6 +143,60 @@ export const replyControls = (root: Locator) =>
   root.locator(BUTTONS).filter({
     hasText: /^(?:View|Hide|See|Load).*repl/iu,
   });
+/** Any visible reply counter or expand text, button or not; it only forbids a zero. */
+export const replyCounters = (root: Locator) =>
+  root.locator('*').filter({
+    hasText:
+      /^(?:(?:View|Hide|See|Load)\b.*\brepl|(?:Alle\s+\d+\s+)?Antworten\s+(?:ansehen|anzeigen|ausblenden))/iu,
+  });
+/**
+ * Times inside the isolated sole comment. Besides the focal permalink's own
+ * time, one time admits only inside a link that is exactly this post's
+ * address (REPLY-SOLE-1 B); an unlinked or other-linked time refuses.
+ */
+async function focalTimeShape(
+  root: Locator,
+  focalSelector: string,
+  guard: () => void,
+) {
+  const href = focalSelector.slice('a[href="'.length, -2);
+  const postHref = href.slice(0, href.indexOf('/c/') + 1);
+  const times = root.locator('time[datetime]');
+  const total = await times.count();
+  const kinds = {
+    observed: true,
+    capped: total > 32,
+    inFocalPermalink: 0,
+    inOtherCommentPermalink: 0,
+    inPostPermalink: 0,
+    inSamePostPermalink: 0,
+    unlinked: 0,
+  };
+  for (let index = 0; index < Math.min(total, 32); index++) {
+    guard();
+    const link = times.nth(index).locator('xpath=ancestor::a[1]');
+    if ((await link.count()) === 0) kinds.unlinked++;
+    else if ((await link.and(root.locator(focalSelector)).count()) === 1)
+      kinds.inFocalPermalink++;
+    else {
+      const value = await link.getAttribute('href', { timeout: 150 });
+      if (value?.includes('/c/')) kinds.inOtherCommentPermalink++;
+      else if (value && /^\/(?:p|reel)\/[^/]+\/$/u.test(value)) {
+        kinds.inPostPermalink++;
+        if (value === postHref) kinds.inSamePostPermalink++;
+      } else kinds.unlinked++;
+    }
+  }
+  const admitted =
+    !kinds.capped &&
+    kinds.inFocalPermalink === 1 &&
+    kinds.inOtherCommentPermalink === 0 &&
+    kinds.unlinked === 0 &&
+    kinds.inPostPermalink === kinds.inSamePostPermalink &&
+    kinds.inSamePostPermalink <= 1 &&
+    total === 1 + kinds.inSamePostPermalink;
+  return { total, kinds, admitted };
+}
 export async function ownReplyControls(
   root: Locator,
   rows = root.locator(REPLY_ROWS),
@@ -281,6 +335,8 @@ export async function structuralReplyScope(
     }
     shape.avatarObserved ||= (await root.locator('img').count()) > 0;
     if (count > 0 || rowCount > 0) {
+      // A reply control or row at the focal comment: never a zero here.
+      if (zeroAnswer) shape.zeroDecision = 'read-normally';
       if ((await root.locator(':scope > ul, :scope > div > ul').count()) > 1)
         return null;
       return choose(root, depth);
@@ -300,6 +356,7 @@ export async function structuralReplyScope(
   const answerAccepted = soleAnswer();
   const sole = shape.soleComment;
   let actionCounts: Awaited<ReturnType<typeof focalReplyActions>> | undefined;
+  let soleTimesAdmitted = false;
   if (sole) {
     guard();
     try {
@@ -313,6 +370,7 @@ export async function structuralReplyScope(
         .locator(postPrefix.replace('a[href="', 'a[href^="') + '"]')
         .count();
       sole.pageExpandControls = await replyControls(main).count();
+      sole.pageReplyCounters = await replyCounters(main).count();
       actionCounts = await focalReplyActions(main, focalSelector, guard);
       sole.pageReplyControls = actionCounts.total;
       sole.pageOwnReplyControls = actionCounts.own;
@@ -323,36 +381,23 @@ export async function structuralReplyScope(
         sole.focalPermalinks = await isolated.root
           .locator('a[href*="/c/"]')
           .count();
-        sole.focalTimes = await isolated.root.locator('time[datetime]').count();
-        const kinds = {
-          observed: true,
-          capped: sole.focalTimes > 32,
-          inFocalPermalink: 0,
-          inOtherCommentPermalink: 0,
-          inPostPermalink: 0,
-          unlinked: 0,
-        };
-        for (let index = 0; index < Math.min(sole.focalTimes, 32); index++) {
-          const time = isolated.root.locator('time[datetime]').nth(index);
-          guard();
-          const link = time.locator('xpath=ancestor::a[1]');
-          if ((await link.count()) === 0) kinds.unlinked++;
-          else if (
-            (await link.and(isolated.root.locator(focalSelector)).count()) === 1
-          )
-            kinds.inFocalPermalink++;
-          else {
-            const href = await link.getAttribute('href', { timeout: 150 });
-            if (href?.includes('/c/')) kinds.inOtherCommentPermalink++;
-            else if (href && /^\/(?:p|reel)\/[^/]+\/$/u.test(href))
-              kinds.inPostPermalink++;
-            else kinds.unlinked++;
-          }
-        }
-        sole.focalTimeKinds = kinds;
+        const times = await focalTimeShape(isolated.root, focalSelector, guard);
+        sole.focalTimes = times.total;
+        sole.focalTimeKinds = times.kinds;
+        soleTimesAdmitted = times.admitted;
         sole.focalRows = await isolated.root.locator(REPLY_ROWS).count();
         sole.focalControls = await replyControls(isolated.root).count();
       }
+      sole.replyControlDecision =
+        sole.pageExpandControls !== 0 ||
+        sole.pageReplyCounters !== 0 ||
+        sole.pageRows !== 0 ||
+        (sole.focalControls !== null && sole.focalControls !== 0) ||
+        (sole.focalRows !== null && sole.focalRows !== 0)
+          ? 'read-normally'
+          : 'absent';
+      if (sole.replyControlDecision === 'read-normally')
+        shape.zeroDecision = 'read-normally';
       if (sole.firstFailedGate === 'none') {
         sole.firstFailedGate =
           sole.pageMainCount !== 1
@@ -360,6 +405,7 @@ export async function structuralReplyScope(
             : sole.pageFocalPermalinks !== 1 || sole.pagePermalinks !== 1
               ? 'sole-page-permalinks'
               : sole.pageExpandControls !== 0 ||
+                  sole.pageReplyCounters !== 0 ||
                   sole.pageReplyControls !== sole.pageOwnReplyControls ||
                   sole.pageForeignReplyControls !== 0
                 ? 'sole-page-controls'
@@ -367,7 +413,7 @@ export async function structuralReplyScope(
                   ? 'sole-page-rows'
                   : !isolated ||
                       sole.focalPermalinks !== 1 ||
-                      sole.focalTimes !== 1 ||
+                      !soleTimesAdmitted ||
                       sole.focalControls !== 0 ||
                       sole.focalRows !== 0
                     ? 'sole-focal'
@@ -390,20 +436,28 @@ export async function structuralReplyScope(
       (await main.locator(focalSelector).count()) === 1 &&
       (await main.locator('a[href*="/c/"]').count()) === 1 &&
       (await replyControls(main).count()) === 0 &&
+      (await replyCounters(main).count()) === 0 &&
       actionCounts.total === actionCounts.own &&
       actionCounts.foreign === 0 &&
       (await main.locator(REPLY_ROWS).count()) === 0 &&
       (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
-      (await isolated.root.locator('time[datetime]').count()) === 1 &&
+      (await focalTimeShape(isolated.root, focalSelector, guard)).admitted &&
       (await replyControls(isolated.root).count()) === 0 &&
       (await isolated.root.locator(REPLY_ROWS).count()) === 0
     ) {
       shape.scopeKind = 'sole-comment';
+      shape.zeroDecision = 'sole-zero';
       shape.avatarObserved = isolated.avatar;
       return choose(isolated.root, isolated.depth);
     }
   }
   if (shape.levels.length >= REPLY_SCOPE_DEPTH || !emptyScope) return null;
+  // A visible reply counter that is not a button cannot be read here, and a
+  // zero is never written over it.
+  if (zeroAnswer && (await replyCounters(emptyScope.root).count()) > 0) {
+    shape.zeroDecision = 'read-normally';
+    return null;
+  }
   shape.levels = shape.levels.slice(0, emptyScope.depth);
   shape.avatarObserved = emptyScope.avatar;
   return choose(emptyScope.root, emptyScope.depth);

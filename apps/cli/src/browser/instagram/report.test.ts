@@ -144,6 +144,7 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     childCountProofSource: 'script',
     childCountProofClass: 'zero',
     answerCommentSetSize: 1,
+    captionEntriesExcluded: 1,
     answerSetValid: true,
     answerTraversalCapped: false,
     declaredCountSeen: 0,
@@ -156,20 +157,42 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
     pageOwnReplyControls: 0,
     pageForeignReplyControls: 0,
     pageExpandControls: 0,
+    pageReplyCounters: 0,
     pageRows: 0,
     focalPresent: true,
     focalPermalinks: 1,
-    focalTimes: 1,
+    focalTimes: 2,
+    focalTimeKinds: {
+      observed: true,
+      capped: false,
+      inFocalPermalink: 1,
+      inOtherCommentPermalink: 0,
+      inPostPermalink: 1,
+      inSamePostPermalink: 1,
+      unlinked: 0,
+    },
     focalRows: 0,
     focalControls: 0,
+    replyControlDecision: 'absent',
     firstFailedGate: 'none',
   };
-  const parse = (sole: unknown) =>
+  const parse = (sole: unknown, zeroDecision?: unknown) =>
     ContextStepReportSchema.safeParse({
-      replyScope: { ...emptyReplyScope(), soleComment: sole },
+      replyScope: {
+        ...emptyReplyScope(),
+        soleComment: sole,
+        ...(zeroDecision === undefined ? {} : { zeroDecision }),
+      },
     }).success;
   expect(parse(base)).toBe(true);
+  expect(parse(base, 'sole-zero')).toBe(true);
+  expect(parse(base, 'read-normally')).toBe(true);
+  expect(parse(base, 'zero')).toBe(false);
+  expect(parse({ ...base, replyControlDecision: 'read-normally' })).toBe(true);
   for (const invalid of [
+    { ...base, replyControlDecision: 'Generated private control text' },
+    { ...base, captionEntriesExcluded: -1 },
+    { ...base, pageReplyCounters: '1' },
     { ...base, text: 'Generated private text' },
     { ...base, firstFailedGate: 'generated-message' },
     { ...base, declaredCountSeen: -1 },
@@ -184,6 +207,7 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
         inFocalPermalink: 1,
         inOtherCommentPermalink: 0,
         inPostPermalink: 1,
+        inSamePostPermalink: 1,
         unlinked: 0,
         text: 'Generated private',
       },
@@ -194,6 +218,18 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
         observed: true,
         capped: false,
         inFocalPermalink: -1,
+        inOtherCommentPermalink: 0,
+        inPostPermalink: 1,
+        inSamePostPermalink: 1,
+        unlinked: 0,
+      },
+    },
+    {
+      ...base,
+      focalTimeKinds: {
+        observed: true,
+        capped: false,
+        inFocalPermalink: 1,
         inOtherCommentPermalink: 0,
         inPostPermalink: 1,
         unlinked: 0,

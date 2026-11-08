@@ -330,6 +330,8 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
     'mixed',
   ]),
   answerCommentSetSize: count,
+  /** The post's own caption object, not counted as a comment (REPLY-SOLE-1 B). */
+  captionEntriesExcluded: count,
   answerSetValid: z.boolean(),
   answerExtraEntries: z
     .strictObject({
@@ -351,6 +353,8 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
   pageOwnReplyControls: count.nullable(),
   pageForeignReplyControls: count.nullable(),
   pageExpandControls: count.nullable(),
+  /** Visible reply counters or expand texts, button or not. */
+  pageReplyCounters: count.nullable(),
   pageRows: count.nullable(),
   focalPresent: z.boolean().nullable(),
   focalPermalinks: count.nullable(),
@@ -362,11 +366,15 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
       inFocalPermalink: count,
       inOtherCommentPermalink: count,
       inPostPermalink: count,
+      /** Subset of inPostPermalink whose link is exactly this post's address. */
+      inSamePostPermalink: count,
       unlinked: count,
     })
     .optional(),
   focalRows: count.nullable(),
   focalControls: count.nullable(),
+  /** A reply control, counter or row at the focal comment forbids a zero. */
+  replyControlDecision: z.enum(['not-evaluated', 'absent', 'read-normally']),
   firstFailedGate: z.enum([
     'not-evaluated',
     'none',
@@ -387,6 +395,8 @@ export const ReplyScopeDiagnosticSchema = z.strictObject({
   observed: z.boolean(),
   soleComment: SoleCommentDiagnosticSchema.optional(),
   scopeKind: z.enum(['structural', 'sole-comment']).optional(),
+  /** With a zero child count: zero written, or replies read normally. */
+  zeroDecision: z.enum(['sole-zero', 'read-normally']).optional(),
   failedCheck: z.enum([
     'none',
     'address',

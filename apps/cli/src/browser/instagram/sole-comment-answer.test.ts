@@ -254,19 +254,76 @@ test.each([
             ],
           };
     const result = inspectSoleCommentAnswer([], [value], match, code);
-    expect(result.accepted).toBe(kind === 'duplicate');
+    // REPLY-SOLE-1 B: the post's own caption object is not a comment.
+    const admitted = kind === 'duplicate' || kind === 'caption';
+    expect(result.accepted).toBe(admitted);
     expect(result.diagnostic).toMatchObject({
       answerValid: true,
       childCountProofClass: 'zero',
-      answerCommentSetSize: kind === 'duplicate' ? 1 : 2,
-      firstFailedGate: kind === 'duplicate' ? 'none' : 'sole-answer-set',
+      answerCommentSetSize: admitted ? 1 : 2,
+      captionEntriesExcluded: kind === 'caption' ? 1 : 0,
+      firstFailedGate: admitted ? 'none' : 'sole-answer-set',
       answerExtraEntries: {
-        captionObjects: kind === 'caption' ? 1 : 0,
+        captionObjects: 0,
         otherParentReferences: kind === 'other-parent' ? 1 : 0,
         focalChildReferences: kind === 'focal-child' ? 1 : 0,
         unresolvedObjects: kind === 'hidden' || kind === 'ambiguous' ? 1 : 0,
         duplicateFocalObjects: kind === 'duplicate' ? 1 : 0,
       },
     });
+  },
+);
+test.each([
+  'no-post-code',
+  'inside-comment-set',
+  'nested-media',
+  'caption-list',
+  'focal-id',
+  'other-post-and-extra',
+] as const)(
+  'REPLY-SOLE-1 B caption path %s is not the post own caption and still refuses',
+  (kind) => {
+    const extra = { ...focal, pk: '456', text: 'Generated caption entry' };
+    const value =
+      kind === 'no-post-code'
+        ? { comment_count: 1, comments: [focal], caption: extra }
+        : kind === 'inside-comment-set'
+          ? { code, comment_count: 1, comments: [focal, { caption: extra }] }
+          : kind === 'nested-media'
+            ? {
+                code,
+                comment_count: 1,
+                comments: [focal],
+                carousel_media: [{ caption: extra }],
+              }
+            : kind === 'caption-list'
+              ? { code, comment_count: 1, comments: [focal], caption: [extra] }
+              : kind === 'focal-id'
+                ? {
+                    code,
+                    comment_count: 1,
+                    comments: [focal],
+                    caption: { ...extra, pk: match.id },
+                  }
+                : {
+                    code,
+                    comment_count: 1,
+                    comments: [
+                      focal,
+                      { ...extra, pk: '457', parent_comment_id: '789' },
+                    ],
+                    caption: extra,
+                  };
+    const result = inspectSoleCommentAnswer([], [value], match, code);
+    expect(result.accepted).toBe(false);
+    expect(result.diagnostic.firstFailedGate).toBe('sole-answer-set');
+    expect(result.diagnostic.captionEntriesExcluded).toBe(
+      kind === 'other-post-and-extra' ? 1 : 0,
+    );
+    if (kind === 'other-post-and-extra')
+      expect(result.diagnostic.answerExtraEntries).toMatchObject({
+        captionObjects: 0,
+        otherParentReferences: 1,
+      });
   },
 );

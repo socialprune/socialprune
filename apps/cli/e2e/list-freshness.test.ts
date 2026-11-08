@@ -27,13 +27,16 @@ import {
 } from '../src/browser/instagram/replies.ts';
 import { structuralReplyScope } from '../src/browser/instagram/replies-scope.ts';
 import { inspectSoleCommentAnswer } from '../src/browser/instagram/sole-comment-answer.ts';
-import type { ReplyControlsDiagnostic } from '../src/browser/instagram/report.ts';
+import type {
+  ReplyControlsDiagnostic,
+  ReplyScopeDiagnostic,
+} from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
 import { contextPages } from '../src/browser/instagram/pages.ts';
 
 test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
-  'T2 sole caption object and %s retain independent zero and scope refusals',
+  'T2 REPLY-SOLE-1 B sole caption object with %s: only a same-post linked time admits the zero',
   async (kind) => {
     const browser = await chromium.launch({
       headless: true,
@@ -84,40 +87,62 @@ test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
         'Generated',
       );
       const shape = emptyReplyScope();
-      expect(
-        await structuralReplyScope(
-          page.locator(selector),
-          selector,
-          true,
-          shape,
-          () => {},
-          () => {
-            shape.soleComment = answer.diagnostic;
-            return answer.accepted;
-          },
-        ),
-      ).toBeNull();
+      const scope = await structuralReplyScope(
+        page.locator(selector),
+        selector,
+        true,
+        shape,
+        () => {},
+        () => {
+          shape.soleComment = answer.diagnostic;
+          return answer.accepted;
+        },
+      );
+      // The caption object is excluded from the answer set in every case; the
+      // page's second time decides.
+      expect(answer.accepted).toBe(true);
       expect(answer.diagnostic).toMatchObject({
         childCountProofClass: 'zero',
-        answerCommentSetSize: 2,
-        answerSetValid: false,
-        firstFailedGate: 'sole-answer-set',
+        answerCommentSetSize: 1,
+        captionEntriesExcluded: 1,
+        answerSetValid: true,
         answerExtraEntries: {
-          captionObjects: 1,
+          captionObjects: 0,
           otherParentReferences: 0,
           focalChildReferences: 0,
           unresolvedObjects: 0,
         },
       });
+      if (kind === 'caption-time') {
+        expect(scope).not.toBeNull();
+        expect(shape).toMatchObject({
+          scopeKind: 'sole-comment',
+          zeroDecision: 'sole-zero',
+        });
+      } else {
+        expect(scope).toBeNull();
+        expect(shape.zeroDecision).toBeUndefined();
+      }
+      // A second comment permalink is refused by the zero boundary before the
+      // sole-comment gate is evaluated, as before.
+      expect(shape.soleComment?.firstFailedGate).toBe(
+        kind === 'caption-time'
+          ? 'none'
+          : kind === 'unlinked-time'
+            ? 'sole-focal'
+            : undefined,
+      );
       if (kind !== 'second-comment-time')
         expect(shape.soleComment).toMatchObject({
           focalTimes: 2,
           pagePermalinks: 1,
+          replyControlDecision: 'absent',
           focalTimeKinds: {
             observed: true,
             inFocalPermalink: 1,
             inOtherCommentPermalink: 0,
             inPostPermalink: kind === 'caption-time' ? 1 : 0,
+            inSamePostPermalink: kind === 'caption-time' ? 1 : 0,
             unlinked: kind === 'unlinked-time' ? 1 : 0,
           },
         });
@@ -136,20 +161,20 @@ test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
         'Generated',
       );
       const other = emptyReplyScope();
-      expect(
-        await structuralReplyScope(
-          page.locator(selector),
-          selector,
-          true,
-          other,
-          () => {},
-          () => {
-            other.soleComment = noCaption.diagnostic;
-            return noCaption.accepted;
-          },
-        ),
-      ).toBeNull();
-      if (kind !== 'second-comment-time')
+      const otherScope = await structuralReplyScope(
+        page.locator(selector),
+        selector,
+        true,
+        other,
+        () => {},
+        () => {
+          other.soleComment = noCaption.diagnostic;
+          return noCaption.accepted;
+        },
+      );
+      if (kind === 'caption-time') expect(otherScope).not.toBeNull();
+      else expect(otherScope).toBeNull();
+      if (kind === 'unlinked-time')
         expect(other.soleComment?.firstFailedGate).toBe('sole-focal');
     } finally {
       await browser.close();
@@ -468,6 +493,192 @@ test.each([
         IG_FIXTURE.commentId,
       ])
         expect(JSON.stringify({ scope, expansion })).not.toContain(value);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+
+test.each([
+  'post-time',
+  'unlinked-time',
+  'other-post-time',
+  'control',
+  'counter',
+  'counter-text',
+  'inner-counter',
+  'other-parent',
+  'permalink',
+] as const)(
+  'REPLY-SOLE-1 B caption with %s settles a zero only without a reply control and with a same-post linked time',
+  async (mode) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(0);
+    fake.replyAnswer(true);
+    fake.replyShape(
+      mode === 'post-time'
+        ? 'sole-zero-post-time'
+        : mode === 'unlinked-time'
+          ? 'sole-zero-unlinked-time'
+          : mode === 'other-post-time'
+            ? 'sole-zero-other-post-time'
+            : mode === 'control'
+              ? 'sole-zero-control'
+              : mode === 'counter'
+                ? 'sole-zero-counter'
+                : mode === 'counter-text'
+                  ? 'sole-zero-counter-text'
+                  : mode === 'inner-counter'
+                    ? 'sole-zero-inner-counter'
+                    : mode === 'permalink'
+                      ? 'sole-zero-permalink'
+                      : 'sole-zero',
+    );
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const focal = {
+        pk: IG_FIXTURE.commentId,
+        user: { username: item.account.handle! },
+        text: item.text,
+        created_at: Date.parse(item.createdAt) / 1000,
+        child_comment_count: 0,
+      };
+      const script = [
+        {
+          code: IG_FIXTURE.code,
+          comment_count: 1,
+          caption: {
+            pk: '555444',
+            user: { username: 'generated_owner' },
+            text: 'Generated caption',
+            created_at: Date.parse('2024-12-31T00:00:00Z') / 1000,
+          },
+          comments: [
+            focal,
+            ...(mode === 'other-parent'
+              ? [
+                  {
+                    ...focal,
+                    pk: '888777',
+                    text: 'Generated other entry',
+                    parent_comment_id: '999111',
+                  },
+                ]
+              : []),
+          ],
+        },
+      ];
+      let scope: ReplyScopeDiagnostic | undefined;
+      let expansion: unknown;
+      const checked: boolean[] = [];
+      const reading = commentReplies(
+        page,
+        [],
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 15000,
+        async () => {},
+        0,
+        (answerChecked) => checked.push(answerChecked),
+        undefined,
+        (value) => {
+          scope = value;
+        },
+        undefined,
+        undefined,
+        undefined,
+        () => script,
+        undefined,
+        (value) => {
+          expansion = value;
+        },
+      );
+      const settled = await reading.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      const parsed = ContextStepReportSchema.parse({
+        replyScope: scope,
+      }).replyScope!;
+      const sole = parsed.soleComment;
+      if (mode === 'post-time') {
+        expect(settled).toMatchObject({
+          value: { entries: [], moreCount: 0, capped: false },
+        });
+        expect(checked).toContain(true);
+        expect(parsed).toMatchObject({
+          scopeKind: 'sole-comment',
+          zeroDecision: 'sole-zero',
+        });
+        expect(sole).toMatchObject({
+          captionEntriesExcluded: 1,
+          answerCommentSetSize: 1,
+          focalTimes: 2,
+          focalTimeKinds: { inSamePostPermalink: 1, unlinked: 0 },
+          replyControlDecision: 'absent',
+          firstFailedGate: 'none',
+        });
+      } else if (mode === 'inner-counter') {
+        // The focal comment's own counter: the scope goes to the normal
+        // reading path, whose own control check decides; this generated
+        // counter is not a valid expand control there, so that path stops
+        // before any click. No zero is written.
+        expect(settled).toMatchObject({
+          error: { reason: 'reply-controls-changed' },
+        });
+        expect(checked).not.toContain(true);
+        expect(parsed.zeroDecision).toBe('read-normally');
+        expect(parsed.scopeKind).not.toBe('sole-comment');
+        expect(parsed.soleComment).toBeUndefined();
+        expect(
+          ContextStepReportSchema.parse({ replyExpansion: expansion })
+            .replyExpansion,
+        ).toBeDefined();
+      } else {
+        // No zero is written: the step refuses the scope or reads normally.
+        expect(settled).toMatchObject({
+          error: { reason: 'reply-scope-unverified' },
+        });
+        expect(checked).not.toContain(true);
+        expect(parsed.scopeKind).not.toBe('sole-comment');
+        expect(sole?.firstFailedGate).toBe(
+          mode === 'unlinked-time' || mode === 'other-post-time'
+            ? 'sole-focal'
+            : mode === 'other-parent'
+              ? 'sole-answer-set'
+              : mode === 'permalink'
+                ? 'sole-page-permalinks'
+                : 'sole-page-controls',
+        );
+        if (['control', 'counter', 'counter-text'].includes(mode))
+          expect(
+            parsed.zeroDecision === 'read-normally' &&
+              sole?.replyControlDecision === 'read-normally',
+          ).toBe(true);
+        if (mode === 'counter-text') {
+          expect(sole?.pageExpandControls).toBe(0);
+          expect(sole?.pageReplyCounters).toBeGreaterThan(0);
+        }
+      }
+      for (const value of [
+        item.text,
+        item.account.handle!,
+        IG_FIXTURE.commentId,
+      ])
+        expect(JSON.stringify(parsed)).not.toContain(value);
     } finally {
       await browser.close();
       await fake.close();

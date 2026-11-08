@@ -54,6 +54,7 @@ export function inspectSoleCommentAnswer(
               ? 'zero'
               : 'positive',
     answerCommentSetSize: 0,
+    captionEntriesExcluded: 0,
     answerSetValid: true,
     answerExtraEntries: {
       captionObjects: 0,
@@ -73,12 +74,14 @@ export function inspectSoleCommentAnswer(
     pageOwnReplyControls: null,
     pageForeignReplyControls: null,
     pageExpandControls: null,
+    pageReplyCounters: null,
     pageRows: null,
     focalPresent: null,
     focalPermalinks: null,
     focalTimes: null,
     focalRows: null,
     focalControls: null,
+    replyControlDecision: 'not-evaluated',
     firstFailedGate: 'not-evaluated',
   };
   const comments = new Set<string>();
@@ -91,6 +94,7 @@ export function inspectSoleCommentAnswer(
     inSet = false,
     post = false,
     inCaption = false,
+    postCaption = false,
   ) => {
     guard();
     if (++visits > 100000 || depth > 40) {
@@ -148,7 +152,18 @@ export function inspectSoleCommentAnswer(
     diagnostic.answerNamesFocal ||= namesFocal;
     if (namesFocal && focalObjects++ > 0)
       diagnostic.answerExtraEntries!.duplicateFocalObjects++;
-    if (commentId && (inSet || commentLike)) {
+    if (
+      commentId &&
+      !namesFocal &&
+      commentLike &&
+      postCaption &&
+      !inSet &&
+      commentId !== match.id
+    ) {
+      // REPLY-SOLE-1 B: the same post's own caption object, reached through
+      // its caption key and outside every comment set, is not a comment.
+      diagnostic.captionEntriesExcluded++;
+    } else if (commentId && (inSet || commentLike)) {
       comments.add(commentId);
       if (!namesFocal) {
         valid = false;
@@ -174,6 +189,7 @@ export function inspectSoleCommentAnswer(
           commentSets.has(key) || (inSet && !['user', 'owner'].includes(key)),
           inPost,
           inCaption || key === 'caption' || key === 'edge_media_to_caption',
+          ownCode === code && key === 'caption',
         );
     }
   };

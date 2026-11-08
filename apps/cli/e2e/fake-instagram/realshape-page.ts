@@ -26,6 +26,12 @@ export type ReplyShapeCase =
   | 'sole-zero-own-foreign'
   | 'sole-zero-own-expand'
   | 'sole-zero-own-time'
+  | 'sole-zero-post-time'
+  | 'sole-zero-other-post-time'
+  | 'sole-zero-unlinked-time'
+  | 'sole-zero-counter'
+  | 'sole-zero-counter-text'
+  | 'sole-zero-inner-counter'
   | 'top-level-decoy';
 export function rowShapePage(html: string, shape: RowShapeCase) {
   if (shape === 'handle-only')
@@ -104,7 +110,27 @@ export function replyShapePage(
             ? '<div role="button">Reply</div>'
             : shape === 'sole-zero-permalink'
               ? '<a href="/p/Generated/c/888888/"><time datetime="2025-01-01T00:00:00Z">1w</time></a>'
-              : '';
+              : shape === 'sole-zero-counter'
+                ? '<div role="button">View all 2 replies</div>'
+                : shape === 'sole-zero-counter-text'
+                  ? '<span>View all 2 replies</span>'
+                  : '';
+      // A second time sits inside the isolated focal item, as the caption
+      // date does when Instagram renders it beside the only comment.
+      const post = new RegExp(`href="(/(?:p|reel)/[^/"]+/)c/${id}/"`).exec(
+        html,
+      )?.[1];
+      if (!post) throw new Error('Generated sole post address missing');
+      const innerTime =
+        shape === 'sole-zero-post-time'
+          ? `<a href="${post}"><time datetime="2024-12-31T00:00:00Z">2w</time></a>`
+          : shape === 'sole-zero-other-post-time'
+            ? '<a href="/p/GeneratedOther/"><time datetime="2024-12-31T00:00:00Z">2w</time></a>'
+            : shape === 'sole-zero-unlinked-time'
+              ? '<span><time datetime="2025-01-02T00:00:00Z">Edited</time></span>'
+              : shape === 'sole-zero-inner-counter'
+                ? '<div role="button">View all 2 replies</div>'
+                : '';
       const list = html.indexOf('<div id="comment-rows">');
       if (list < 0) throw new Error('Generated sole comment list missing');
       return (
@@ -117,6 +143,7 @@ export function replyShapePage(
         '<div><img src="/profiles/comment.png" alt=""><div></div><div>' +
         '<div>'.repeat(8) +
         focal +
+        innerTime +
         '</div>'.repeat(8) +
         '</div>' +
         (shape === 'sole-zero-reply' ? '' : local) +

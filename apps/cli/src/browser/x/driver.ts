@@ -4,11 +4,10 @@ import type { BrowserRequest } from '../../workspace/browser-journal.ts';
 import { xSelectors } from './selectors.ts';
 import { restrictOrigins } from '../network.ts';
 import { unexpectedAction } from './fill/read.ts';
-import {
-  launchRunBrowser,
-  freshPlatformPage,
-  waitForBrowserClose,
-} from '../launch.ts';
+import { launchRunBrowser, waitForBrowserClose } from '../launch.ts';
+import { xRunPages } from './pages.ts';
+import type { XRunPages } from './pages.ts';
+type ContextPages = ReturnType<XRunPages['snapshot']>;
 import type { WindowPlacement } from '../launch.ts';
 import { XResponseWindows } from './rate-windows.ts';
 import { browserClosed, captureOwnedWindow } from '../owned-window.ts';
@@ -57,6 +56,10 @@ export interface BrowserDriver {
   abortedHosts?: Record<string, number>;
   rateWindows?: XResponseWindows;
   language?(): Promise<string>;
+  /** Closed-count snapshot of the run's page discipline. */
+  pages?(): ContextPages;
+  /** Stops the page discipline when the run ends; the window stays open. */
+  endPages?(): void;
 }
 export async function pageDriver(options: {
   context: BrowserContext;
@@ -73,11 +76,13 @@ export async function pageDriver(options: {
   onWindow?: (url: string, headers: Record<string, string>) => void;
 }): Promise<BrowserDriver> {
   const context = options.context;
-  // Keep the CLI confirmation page selection unchanged. Desktop launch tabs
-  // remain untouched until all guards and request recording are installed.
-  let local = options.desktop
-    ? undefined
-    : (context.pages()[0] ?? (await context.newPage()));
+  // Pages follow the Instagram runs' discipline: created in the background in
+  // the run window, launch tabs closed, any other page or tab stops the run.
+  // Launch tabs stay until the guards below are installed. The CLI
+  // confirmation page is then the first owned page; the desktop run's first
+  // owned page is its platform page.
+  const pages = xRunPages(context);
+  let local: Page | undefined;
   let platform: Page | undefined;
   let prohibited = false;
   let mutation = false,
@@ -189,8 +194,9 @@ export async function pageDriver(options: {
     if (record)
       observe(options.record({ ...record, status: response.status() }));
   });
+  if (!options.desktop) local = await pages.startupPage();
   if (options.desktop) {
-    platform = local = await freshPlatformPage(context);
+    platform = local = await pages.startupPage();
     if (options.onOwnedWindow) {
       try {
         options.onOwnedWindow(await captureOwnedWindow(context, platform));
@@ -206,15 +212,18 @@ export async function pageDriver(options: {
     if (mutation) throw new CliError('UNEXPECTED_ACTION');
     if (prohibited || platform?.isClosed())
       throw new CliError('PLATFORM_CHECK');
+    // The account and language read-backs stay possible after a tab stop.
+    if (checkStop) pages.check();
   };
   const page = async (checkStop = true) => {
-    if (!platform) platform = await context.newPage();
+    if (!platform) platform = await pages.newPage();
     guard(checkStop);
     return platform;
   };
   return {
     abortedHosts,
     rateWindows,
+    pages: () => pages.snapshot(),
     async language() {
       return (await page(false))
         .locator('html')
@@ -241,6 +250,8 @@ export async function pageDriver(options: {
       ]);
     },
     async inspect(id) {
+      // Step boundary: no tab outside this run may remain in its window.
+      await pages.assertTabs();
       const current = await page();
       try {
         await current.goto(statusUrl(id, options.origin), {
@@ -407,9 +418,15 @@ export async function pageDriver(options: {
     },
     async flush() {
       await Promise.all([...pending]);
+      await pages.flush();
       guard(false);
     },
+    endPages() {
+      // After the run the window is the person's again.
+      pages.dispose();
+    },
     async close() {
+      pages.dispose();
       await context.close();
     },
   };
@@ -456,6 +473,7 @@ export async function productionDriver(options: {
   return {
     ...driver,
     async close() {
+      driver.endPages?.();
       // Keep the visible platform page for the person's inspection. No more
       // clicks, server or workspace access occur while waiting for that close.
       await waitForBrowserClose(context);

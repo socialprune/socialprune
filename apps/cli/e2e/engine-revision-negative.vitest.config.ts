@@ -95,13 +95,13 @@ export default defineConfig({
         if (path === 'browser/x/driver.ts') {
           source = replace(
             source,
-            /if \(options\.desktop\)\s*platform = local = await freshPlatformPage\(context\);/,
+            /if \(options\.desktop\)\s*platform = local = await pages\.startupPage\(\);/,
             'if (options.desktop) platform = local = context.pages()[0] ?? await context.newPage();',
           );
           source = replace(
             source,
-            'async close() {\n      // Keep',
-            'async close() {\n      if (options.desktop) { await context.close(); return; }\n      // Keep',
+            'async close() {\n      driver.endPages?.();\n      // Keep',
+            'async close() {\n      driver.endPages?.();\n      if (options.desktop) { await context.close(); return; }\n      // Keep',
           );
         }
         if (

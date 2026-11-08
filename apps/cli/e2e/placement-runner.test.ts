@@ -6,7 +6,16 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
-import { launchRunBrowser } from '../src/browser/launch.ts';
+import type { BrowserContext } from 'playwright-core';
+import { launchRunBrowser, windowArguments } from '../src/browser/launch.ts';
+import { createProfile } from '../src/browser/profile.ts';
+import { planDeletion } from '../src/browser/plan.ts';
+import { runWithDependencies } from '../src/browser/runner.ts';
+import { pageDriver } from '../src/browser/x/driver.ts';
+import { SQLiteStore } from '../src/workspace/sqlite-store.ts';
+import { fixtureWorkspace, FIXTURE } from './fake-x/fixture.ts';
+import { fakeX } from './fake-x/server.ts';
+import { TEST_PORTS, TEST_ORIGINS } from '../playwright.ports.config.ts';
 import { contextPages } from '../src/browser/instagram/pages.ts';
 import { fakeInstagram } from './fake-instagram/server.ts';
 import { instagramFixture } from './fake-instagram/fixture.ts';
@@ -415,6 +424,312 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     await fake?.close();
     await writeFile(stop, 'stop');
     await sentinelDone;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/** The same Windows foreground sentinel as above, for the X probe. */
+async function foregroundSentinel(root: string) {
+  const ready = join(root, 'sentinel.ready'),
+    activate = join(root, 'sentinel.activate'),
+    stop = join(root, 'sentinel.stop');
+  const sentinel = spawn(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-STA',
+      '-File',
+      fileURLToPath(new URL('./placement-sentinel.ps1', import.meta.url)),
+      ready,
+      activate,
+      stop,
+    ],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  const done = new Promise<void>((resolve, reject) => {
+    sentinel.once('error', reject);
+    sentinel.once('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`SENTINEL_EXIT_${code}`)),
+    );
+  });
+  void done.catch(() => {});
+  const waitFile = async (path: string) => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try {
+        return await readFile(path, 'utf8');
+      } catch (error) {
+        if (!(
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        ))
+          throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('PROBE_READY_TIMEOUT');
+  };
+  const signal = JSON.parse(await waitFile(ready)) as {
+    handle: string;
+    area: { x: number; y: number; width: number; height: number };
+  };
+  const helper = await prepareWindowsQuery();
+  const watch = async (name: string, action: () => Promise<void>) => {
+    const readyPath = join(root, name + '.ready'),
+      stopPath = join(root, name + '.stop');
+    await writeFile(activate, name);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const child = spawn(helper, ['foreground-watch', readyPath, stopPath], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    child.stdout.on('data', (bytes: Buffer) => {
+      output += bytes.toString();
+    });
+    const exited = new Promise<void>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code) =>
+        code === 0 ? resolve() : reject(new Error('FOREGROUND_PROBE_FAILED')),
+      );
+    });
+    void exited.catch(() => {});
+    try {
+      const initial = JSON.parse(await waitFile(readyPath)) as {
+        handle: string;
+      };
+      expect(initial.handle).toBe(signal.handle);
+      await action();
+    } finally {
+      await writeFile(stopPath, 'stop');
+      await exited;
+    }
+    return JSON.parse(output) as {
+      changed: boolean;
+      samples: number;
+      elapsedMs: number;
+    };
+  };
+  return {
+    area: signal.area,
+    watch,
+    async stop() {
+      await writeFile(stop, 'stop');
+      await done;
+    },
+  };
+}
+
+test('PLACEMENT X deletion run with restored tabs keeps the window, the foreground and closes the tabs', async () => {
+  // Runner only. This test is outside every local/default test entrypoint.
+  expect(process.platform).toBe('win32');
+  // eslint-disable-next-line no-restricted-properties -- Test-only runner admission, never a credential.
+  expect(process.env['GITHUB_ACTIONS']).toBe('true');
+  const out = resolve('apps/cli/test-results/placement');
+  await mkdir(out, { recursive: true });
+  // eslint-disable-next-line no-restricted-properties -- Test-only runner browser choice, never a credential.
+  const browserName = process.env['SP_PLACEMENT_BROWSER'] ?? 'chromium';
+  const executable =
+    browserName === 'msedge'
+      ? [
+          'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+          'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+        ].find((path) => existsSync(path))
+      : chromium.executablePath();
+  expect(executable).toBeTruthy();
+  const root = await mkdtemp(join(tmpdir(), 'sp-placement-x-'));
+  const profile = join(root, 'profile');
+  const receipt: Record<string, unknown> = {
+    generatedOnly: true,
+    run: 'x-delete',
+    // eslint-disable-next-line no-restricted-properties -- Test-only source identity, never a credential.
+    source: process.env['GITHUB_SHA'],
+    browser: browserName,
+  };
+  const sentinel = await foregroundSentinel(root);
+  const fake = await fakeX();
+  let context: BrowserContext | undefined;
+  let store: SQLiteStore | undefined;
+  try {
+    const placement = {
+      x: sentinel.area.x + 40,
+      y: sentinel.area.y + 40,
+      width: Math.min(900, sentinel.area.width - 80),
+      height: Math.min(700, sentinel.area.height - 80),
+    };
+    receipt.placement = placement;
+    await mkdir(profile);
+    await createProfile(profile);
+    // The browser itself writes the generated session; no profile file edits.
+    const seed = await chromium.launchPersistentContext(profile, {
+      executablePath: executable!,
+      headless: browserName !== 'msedge',
+      chromiumSandbox: true,
+      args: ['--enable-automation'],
+      ignoreDefaultArgs: ['--disable-infobars'],
+      serviceWorkers: 'block',
+    });
+    for (let index = 0; index < 7; index++) {
+      const tab = index === 0 ? seed.pages()[0]! : await seed.newPage();
+      await tab.goto(fake.origin + '/home');
+    }
+    await seed.close();
+    store = await SQLiteStore.open(join(root, 'socialprune.sqlite'), {
+      initial: fixtureWorkspace(['1001']),
+    });
+    const now = new Date(FIXTURE.now).getTime();
+    const plan = await planDeletion(
+      store,
+      (await store.read((tx) => tx.items.get('x:1001')))!.item.account.key,
+      new Set(),
+      new Date(now),
+    );
+    let launched!: () => void;
+    const browserReady = new Promise<void>((resolve) => {
+      launched = resolve;
+    });
+    let release!: () => void;
+    const restoredSeen = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const running = runWithDependencies(
+      {
+        store,
+        plan,
+        profile,
+        executablePath: executable!,
+        verify: false,
+        list: 'generated full list',
+        lang: 'en',
+        signal: new AbortController().signal,
+        now: () => new Date(now),
+        notice: () => {},
+        windowPlacement: placement,
+      },
+      {
+        pace: { intervalMs: 100, batchSize: 20, pauseMs: 100, perDay: 200 },
+        confirmationPort: TEST_PORTS.confirmation,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        async driver(options) {
+          // launchRunBrowser's options plus the restore flag the person's
+          // browser setting would apply.
+          context = await chromium.launchPersistentContext(profile, {
+            executablePath: options.executablePath,
+            headless: false,
+            viewport: null,
+            chromiumSandbox: true,
+            args: [
+              '--enable-automation',
+              ...windowArguments(options.windowPlacement),
+              '--restore-last-session',
+            ],
+            serviceWorkers: 'block',
+            ignoreDefaultArgs: ['--disable-infobars'],
+          });
+          launched();
+          await restoredSeen;
+          return pageDriver({
+            context,
+            origin: fake.origin,
+            allowedOrigins: [fake.origin],
+            confirmationOrigin: options.confirmationOrigin,
+            responseTimeoutMs: 5_000,
+            signal: options.signal,
+            record: (request) => options.record(request),
+            now: options.now,
+            onRateLimit: options.onRateLimit,
+            onWindow: options.onWindow,
+          });
+        },
+      },
+    );
+    void running.catch(() => {});
+    receipt.launch = await sentinel.watch('launch', () => browserReady);
+    // Edge may add restored tabs after launch returns; wait up to 15 s.
+    const restoredAt = Date.now();
+    const targets = await context!.browser()!.newBrowserCDPSession();
+    let restored = { ms: 0, fixturePages: 0 };
+    try {
+      for (;;) {
+        const { targetInfos } = await targets.send('Target.getTargets');
+        restored = {
+          ms: Date.now() - restoredAt,
+          fixturePages: targetInfos.filter(
+            (value) =>
+              value.type === 'page' && value.url.startsWith(fake.origin),
+          ).length,
+        };
+        if (restored.fixturePages >= 7 || restored.ms > 15000) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    } finally {
+      await targets.detach();
+    }
+    receipt.restored = restored;
+    expect(restored.fixturePages).toBeGreaterThanOrEqual(7);
+    let result: unknown;
+    const runWatch = await sentinel.watch('run', async () => {
+      release();
+      const confirmation = async () => {
+        for (let attempt = 0; attempt < 200; attempt++) {
+          const page = context!
+            .pages()
+            .find((value) => value.url().startsWith(TEST_ORIGINS.confirmation));
+          if (page) return page;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error('CONFIRMATION_MISSING');
+      };
+      const page = await confirmation();
+      for (const name of ['Start', 'Continue'] as const) {
+        const button = page.getByRole('button', { name, exact: true });
+        await button.waitFor({ state: 'visible', timeout: 30000 });
+        await button.click();
+      }
+      result = await running;
+    });
+    receipt.runForeground = runWatch;
+    receipt.result = result;
+    const platform = context!
+      .pages()
+      .find((value) => value.url().startsWith(fake.origin))!;
+    const session = await context!.newCDPSession(platform);
+    const { bounds } = await session.send('Browser.getWindowForTarget');
+    await session.detach();
+    receipt.bounds = bounds;
+    const runId = (await store.browserJournal()).runs[0]!.runId;
+    const report = JSON.parse(
+      await readFile(join(profile, `socialprune-delete-${runId}.json`), 'utf8'),
+    ) as { pages: Record<string, unknown>; stop: unknown };
+    receipt.pages = report.pages;
+    receipt.stop = report.stop;
+    expect(result).toMatchObject({ completed: 1, endReason: 'done' });
+    expect(report.stop).toBeNull();
+    expect(report.pages).toMatchObject({
+      remainingNonOwned: 0,
+      targetFailure: null,
+      unexpectedOpened: 0,
+    });
+    expect(report.pages['startupClosed']).toBeGreaterThanOrEqual(7);
+    expect(runWatch.changed).toBe(false);
+    expect(bounds).toMatchObject({
+      left: placement.x,
+      top: placement.y,
+      width: placement.width,
+      height: placement.height,
+      windowState: 'normal',
+    });
+    receipt.status = 'passed';
+  } finally {
+    await writeFile(
+      join(out, `placement-x-${browserName}.json`),
+      JSON.stringify(receipt, null, 2),
+    );
+    await context?.close();
+    await store?.close();
+    await fake.close();
+    await sentinel.stop();
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -822,7 +822,7 @@
                 "message": {
                   "type": "string",
                   "enum": [
-                    "The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.",
+                    "The tabs in the run window could not be checked, or a page or tab outside this run appeared. The run stopped.",
                     "The tabs in the Instagram run window could not be checked. The run stopped.",
                     "Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden. Der Lauf wurde gestoppt.",
                     "A tab outside this run remains in its browser window. The run stopped.",

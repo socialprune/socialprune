@@ -2,6 +2,19 @@ import { EventEmitter } from 'node:events';
 import { expect, test, vi } from 'vitest';
 import type { BrowserContext, Page, Locator, Response } from 'playwright-core';
 import { pageDriver } from './driver.ts';
+// The generated contexts have no CDP; the window and tab inventory is proven
+// in the browser suites. Here the run's pages come from context.newPage.
+vi.mock('./pages.ts', () => ({
+  xRunPages: (context: BrowserContext) => ({
+    startupPage: () => context.newPage(),
+    newPage: () => context.newPage(),
+    assertTabs: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
+    check: () => undefined,
+    snapshot: () => null,
+    dispose: () => undefined,
+  }),
+}));
 import { xSelectors } from './selectors.ts';
 import { CliError } from '../../cli/errors.ts';
 

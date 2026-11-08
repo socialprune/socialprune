@@ -1164,19 +1164,22 @@ for (const variant of [
             await probe.detach();
             if (variant === 'order-status-page') {
               const actualPages = context.pages.bind(context);
-              const statusPage = actualPages()[0]!;
-              await statusPage.addInitScript(() => {
+              // The run creates its own status page after closing the launch
+              // tab, so the probes go on every page the context opens.
+              await context.addInitScript(() => {
                 const violations: string[] = [];
                 Reflect.set(window, '__statusPageViolations', violations);
                 document.addEventListener('securitypolicyviolation', (event) =>
                   violations.push(event.effectiveDirective),
                 );
               });
-              const front = statusPage.bringToFront.bind(statusPage);
-              statusPage.bringToFront = async () => {
-                statusBroughtToFront++;
-                await front();
-              };
+              context.on('page', (opened) => {
+                const front = opened.bringToFront.bind(opened);
+                opened.bringToFront = async () => {
+                  statusBroughtToFront++;
+                  await front();
+                };
+              });
               // Test-only page-order decoy: the foreground X tab is first.
               context.pages = () => actualPages().reverse();
             }
@@ -1222,7 +1225,9 @@ for (const variant of [
                     new URL(value.url()).origin === TEST_ORIGINS.confirmation,
                 )!;
               if (variant === 'order-status-page') {
-                expect(statusBroughtToFront).toBe(1);
+                // No tab or window is activated after launch; the end state
+                // is still readable on the status page.
+                expect(statusBroughtToFront).toBe(0);
                 expect(context!.pages()[0]).not.toBe(page);
                 expect(
                   await page.evaluate(

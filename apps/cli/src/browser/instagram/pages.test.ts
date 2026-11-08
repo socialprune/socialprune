@@ -208,8 +208,8 @@ test('a context with no blank page closes every restored page and creates its ow
   try {
     expect(await boundary.startupPage()).toBe(blank);
     expect(closed).toEqual([
-      'generated-restored-one',
       'generated-restored-two',
+      'generated-restored-one',
     ]);
     expect(boundary.counts).toMatchObject({
       startupClosed: 2,
@@ -314,7 +314,7 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
       unexpectedOpened: 0,
       pageLimit: 3,
       ownedOpen: 2,
-      ownedPeak: 2,
+      ownedPeak: 3,
       backgroundCreated: 3,
       replaced: 1,
     });

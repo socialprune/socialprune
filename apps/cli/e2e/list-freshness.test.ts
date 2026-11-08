@@ -44,7 +44,7 @@ test('PLACEMENT background pages retain one window identity and a closed three-p
     expect(boundary.snapshot()).toMatchObject({
       pageLimit: 3,
       ownedOpen: 2,
-      ownedPeak: 2,
+      ownedPeak: 3,
       backgroundCreated: 3,
       replaced: 1,
     });

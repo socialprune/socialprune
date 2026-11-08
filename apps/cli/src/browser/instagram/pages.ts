@@ -101,6 +101,7 @@ export function contextPages(
   let startup = true,
     disposed = false;
   let creating: Promise<Page> | undefined;
+  let preparedReading: Page | undefined;
   let failure: ContextStop | undefined;
   const fail = () => {
     if (!failure) {
@@ -108,10 +109,9 @@ export function contextPages(
       onStop(failure);
     }
   };
-  const reject = (page: Page): Promise<void> => {
+  const reject = (page: Page, atStartup = startup): Promise<void> => {
     const prior = closing.get(page);
     if (prior) return prior;
-    const atStartup = startup;
     if (!atStartup) {
       counts.unexpectedOpened++;
       fail();
@@ -148,6 +148,11 @@ export function contextPages(
       return ContextPagesSchema.parse(counts);
     },
     async newPage(): Promise<Page> {
+      if (preparedReading) {
+        const page = preparedReading;
+        preparedReading = undefined;
+        return page;
+      }
       if (creating) throw new Error('CONTEXT_PAGE_CREATION_BUSY');
       refresh();
       if (counts.ownedOpen >= counts.pageLimit) {
@@ -181,19 +186,24 @@ export function contextPages(
     async startupPage(): Promise<Page> {
       // Even a launch tab still at about:blank may have a restore navigation
       // pending. Create our own page and close every page inherited at launch.
+      for (const page of initial.slice(1)) await reject(page);
       const confirmation = await this.newPage();
-      for (const page of initial) await reject(page);
+      startup = false;
+      const reading = await this.newPage();
+      for (const page of initial) await reject(page, true);
       await Promise.all([...closing.values()]);
+      preparedReading = reading;
       startup = false;
       return confirmation;
     },
     async replace(page: Page): Promise<Page> {
       if (!owned.has(page)) throw new Error('CONTEXT_PAGE_NOT_OWNED');
+      const next = await this.newPage();
       await page.close({ runBeforeUnload: false });
       owned.delete(page);
       counts.replaced++;
       refresh();
-      return this.newPage();
+      return next;
     },
     allowed: classify,
     check() {

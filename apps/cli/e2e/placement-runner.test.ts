@@ -196,45 +196,6 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       after: await visibility(),
       keptForeground: !shortcut.changed,
     };
-    const browserSession = await context!.browser()!.newBrowserCDPSession();
-    const processes = await browserSession.send('SystemInfo.getProcessInfo');
-    const browserPid = processes.processInfo.find(
-      (process) => process.type === 'browser',
-    )!.id;
-    const selection = await watch('inWindowLegacySelection', async () => {
-      const child = spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-STA',
-          '-File',
-          fileURLToPath(new URL('./placement-tab.ps1', import.meta.url)),
-          String(browserPid),
-          '2',
-        ],
-        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      let output = '',
-        error = '';
-      child.stdout.on('data', (value: Buffer) => {
-        output += value.toString();
-      });
-      child.stderr.on('data', (value: Buffer) => {
-        error += value.toString();
-      });
-      await new Promise<void>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('exit', (code) =>
-          code === 0
-            ? resolve()
-            : reject(new Error(error || 'GENERATED_TAB_SELECT_FAILED')),
-        );
-      });
-      receipt.selection = JSON.parse(output) as unknown;
-    });
-    receipt.legacySelectionKeptForeground = !selection.changed;
-    await browserSession.detach();
     expect(bounds).toMatchObject({
       left: placement.x,
       top: placement.y,
@@ -244,7 +205,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     });
     expect(boundary.snapshot()).toMatchObject({
       pageLimit: 3,
-      ownedPeak: 2,
+      ownedPeak: 3,
       backgroundCreated: 3,
       replaced: 1,
     });

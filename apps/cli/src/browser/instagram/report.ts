@@ -5,6 +5,7 @@ import { POST_PATH_CLASSES } from './signals.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { listImageOnlyManual } from './list-image-only.ts';
+import { REPLY_CLICK_FAILURES } from './replies-click.ts';
 
 const count = z.number().int().nonnegative();
 const sourceCountSchema = z.strictObject({
@@ -820,6 +821,19 @@ export const ReplyExpansionDiagnosticSchema = z.strictObject({
           .nullable(),
         nestedListAppeared: z.boolean().nullable(),
         observationFailed: z.boolean(),
+        // The one bounded click on the focal comment's own control. Closed
+        // classes from the driver's own phases only; never page content.
+        dispatch: z
+          .strictObject({
+            failure: z.enum(REPLY_CLICK_FAILURES),
+            timeoutMs: count,
+            elapsedMs: count,
+            attempts: z.number().int().min(0).max(100),
+            visibleBefore: z.boolean().nullable(),
+            enabledBefore: z.boolean().nullable(),
+            boxStableBefore: z.boolean().nullable(),
+          })
+          .optional(),
         poll: z
           .strictObject({
             maxMs: z.literal(5000),

@@ -18,6 +18,7 @@ import { checkedReplyControls } from './reply-controls.ts';
 import type { ReplyControlsDiagnostic } from './report.ts';
 import type { ReplyExpansionDiagnostic } from './report.ts';
 import { afterExpansion } from './replies-expansion.ts';
+import { replyClickFailure } from './replies-click.ts';
 import { inspectSoleCommentAnswer } from './sole-comment-answer.ts';
 import {
   replyRowShape,
@@ -507,11 +508,44 @@ export async function commentReplies(
       );
       site = 'click';
       try {
+        const dispatch: NonNullable<typeof click.dispatch> = {
+          failure: 'none',
+          timeoutMs: 0,
+          elapsedMs: 0,
+          attempts: 0,
+          visibleBefore: null,
+          enabledBefore: null,
+          boxStableBefore: null,
+        };
+        click.dispatch = dispatch;
         try {
-          await control.click({
-            timeout: Math.max(1, Math.min(1000, deadline - performance.now())),
-          });
+          dispatch.visibleBefore = await control.isVisible();
+          dispatch.enabledBefore = await control.isEnabled({ timeout: 150 });
+          // Two driver box reads apart in wall time, independent of the
+          // page's animation frames that the driver's own stability check uses.
+          const first = await control.boundingBox({ timeout: 150 });
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          const second = await control.boundingBox({ timeout: 150 });
+          dispatch.boxStableBefore =
+            first && second
+              ? (['x', 'y', 'width', 'height'] as const).every(
+                  (key) => Math.round(first[key]) === Math.round(second[key]),
+                )
+              : null;
+        } catch {
+          // The click below still decides; these states are diagnostics only.
+        }
+        const bound = Math.max(1, Math.min(1000, deadline - performance.now()));
+        dispatch.timeoutMs = Math.round(bound);
+        const clickStarted = performance.now();
+        try {
+          await control.click({ timeout: bound });
+          dispatch.elapsedMs = Math.round(performance.now() - clickStarted);
         } catch (error) {
+          dispatch.elapsedMs = Math.round(performance.now() - clickStarted);
+          const classified = replyClickFailure(error);
+          dispatch.failure = classified.failure;
+          dispatch.attempts = classified.attempts;
           guard();
           await checkPage(page);
           if (

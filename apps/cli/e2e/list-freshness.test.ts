@@ -35,6 +35,10 @@ import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
 import { SOLE_CAPTION_TIME } from './fake-instagram/realshape-page.ts';
 import { contextPages } from '../src/browser/instagram/pages.ts';
+import { replyClickCase, replyClickFake } from './reply-click-case.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
   'T2 REPLY-SOLE-1 B sole caption object with %s: only a same-post linked time admits the zero',
@@ -1507,6 +1511,15 @@ test.each([
       }
       expect(parsed.clicks[0]).toMatchObject({
         clicked: mode !== 'blocked',
+        // A covering element is the driver's own intercept verdict, not a
+        // bare timeout; the bound stays the existing one-second click bound.
+        dispatch: {
+          failure: mode === 'blocked' ? 'intercepted' : 'none',
+          timeoutMs: 1000,
+          visibleBefore: true,
+          enabledBefore: true,
+          boxStableBefore: true,
+        },
         rowsBefore: 0,
         rowsAfter: [
           'shown',
@@ -2419,3 +2432,102 @@ test('C-list a repeated opaque result for a different window stops on the second
     await fake.close();
   }
 });
+
+test('REPLYCLICK background-created selected reader clicks the view-all-4 div control once and reads four answer-matched rows', async () => {
+  const generated = await replyClickFake(CONTEXT_PORTS.instagram);
+  const root = await mkdtemp(join(tmpdir(), 'sp-replyclick-'));
+  // The full test Chromium in new headless mode, as the context harness uses.
+  const context = await chromium.launchPersistentContext(root, {
+    executablePath: chromium.executablePath(),
+    headless: true,
+    chromiumSandbox: true,
+    serviceWorkers: 'block',
+  });
+  const boundary = contextPages(context, () => {});
+  try {
+    const reader = await boundary.startupPage();
+    await boundary.newPage();
+    const result = await replyClickCase(reader, generated);
+    expect(result).toMatchObject({ read: 4, error: null, clickedOnPage: 1 });
+    expect(result.expansion).toMatchObject({
+      stopAt: null,
+      clicks: [
+        {
+          clicked: true,
+          rowsBefore: 0,
+          rowsAfter: 4,
+          dispatch: {
+            failure: 'none',
+            timeoutMs: 1000,
+            attempts: 0,
+            visibleBefore: true,
+            enabledBefore: true,
+            boxStableBefore: true,
+          },
+        },
+      ],
+    });
+  } finally {
+    boundary.dispose();
+    await context.close();
+    await generated.fake.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test.each(['moving'] as const)(
+  'REPLYCLICK %s own control keeps one bounded click and records its closed driver verdict',
+  async (mode) => {
+    const generated = await replyClickFake(CONTEXT_PORTS.instagram);
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      await page.route('**/p/**', async (route) => {
+        const response = await route.fetch();
+        const html = await response.text();
+        const control =
+          /<div role="button" onclick="([^"]*)">View all 4 replies<\/div>/u;
+        if (!control.test(html)) throw new Error('Generated control missing');
+        await route.fulfill({
+          response,
+          body: html.replace(
+            control,
+            '<style>@keyframes generated-move{from{margin-left:0}to{margin-left:120px}}</style><div role="button" style="animation:generated-move .3s infinite alternate" onclick="$1">View all 4 replies</div>',
+          ),
+        });
+      });
+      const result = await replyClickCase(page, generated);
+      expect(result).toMatchObject({
+        read: null,
+        error: { name: 'TimeoutError' },
+        clickedOnPage: 0,
+      });
+      expect(result.expansion).toMatchObject({
+        stopAt: 'click',
+        clicks: [
+          {
+            clicked: false,
+            rowsBefore: 0,
+            dispatch: {
+              failure: mode === 'moving' ? 'not-stable' : 'none',
+              timeoutMs: 1000,
+              visibleBefore: true,
+              enabledBefore: true,
+              boxStableBefore: false,
+            },
+          },
+        ],
+      });
+      expect(result.expansion!.clicks).toHaveLength(1);
+      expect(JSON.stringify(result.expansion)).not.toMatch(
+        /View all|generated_reply|Generated reply/u,
+      );
+    } finally {
+      await browser.close();
+      await generated.fake.close();
+    }
+  },
+);

@@ -201,7 +201,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     const browserPid = processes.processInfo.find(
       (process) => process.type === 'browser',
     )!.id;
-    const selection = await watch('inWindowUiaSelection', async () => {
+    const selection = await watch('inWindowLegacySelection', async () => {
       const child = spawn(
         'powershell.exe',
         [
@@ -233,7 +233,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       });
       receipt.selection = JSON.parse(output) as unknown;
     });
-    receipt.uiaSelectionKeptForeground = !selection.changed;
+    receipt.legacySelectionKeptForeground = !selection.changed;
     await browserSession.detach();
     expect(bounds).toMatchObject({
       left: placement.x,

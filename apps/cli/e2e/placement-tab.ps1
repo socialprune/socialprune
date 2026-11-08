@@ -13,5 +13,6 @@ if($tabs.Count-ne$ExpectedTabs){throw ('GENERATED_TAB_COUNT_'+$tabs.Count)}
 $last=$tabs.Item($tabs.Count-1)
 $selection=$last.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
 $before=$selection.Current.IsSelected
-$selection.Select()
+$legacy=$last.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+$legacy.Select(2)
 [Console]::WriteLine((@{tabs=$tabs.Count;selectedBefore=$before;selectedAfter=$selection.Current.IsSelected;offscreen=$window.Current.IsOffscreen}|ConvertTo-Json -Compress))

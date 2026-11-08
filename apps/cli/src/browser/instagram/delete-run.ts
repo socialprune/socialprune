@@ -22,6 +22,8 @@ import {
 } from '../profile.ts';
 import { profileWarning, EXTENSION_NOTICE } from '../copy.ts';
 import { dateInZone } from '../pace.ts';
+import { launchRunBrowser } from '../launch.ts';
+import type { WindowPlacement } from '../launch.ts';
 import { productionContext } from './driver.ts';
 import type { ContextDependencies } from './driver.ts';
 import { contextPages } from './pages.ts';
@@ -60,6 +62,8 @@ export interface InstagramDeleteOptions {
   list: string;
   verify: boolean;
   perDay?: number;
+  /** Visible bounds of the dedicated window, validated as for the reading run. */
+  windowPlacement?: WindowPlacement;
   now(this: void): Date;
   signal: AbortSignal;
   notice(text: string): void;
@@ -87,7 +91,13 @@ const production: InstagramDeleteDependencies = {
  * Tests may inject dependencies only by importing this function. */
 export async function runInstagramDeletion(
   options: InstagramDeleteOptions,
-  deps: InstagramDeleteDependencies = production,
+  deps: InstagramDeleteDependencies = options.windowPlacement
+    ? {
+        ...production,
+        launch: (profile, executable) =>
+          launchRunBrowser(profile, executable, options.windowPlacement, true),
+      }
+    : production,
 ) {
   const { store, plan, now } = options;
   if (
@@ -429,6 +439,8 @@ export async function runInstagramDeletion(
         }
         if (count.last)
           await pause(Math.max(0, count.last + 30000 - now().getTime()));
+        // Step boundary: no tab outside this run may remain in its window.
+        await pages.assertTabs();
         await writer.pageOpen(run.runId, now().toISOString(), plan.timeZone);
         await page.goto(
           new URL(
@@ -539,6 +551,9 @@ export async function runInstagramDeletion(
             ?.state === 'withdrawn'
         )
           throw new CliError('RUN_STOPPED');
+        // Step boundary before the comment opens: no tab outside this run may
+        // remain in its window.
+        await pages.assertTabs();
         await writer.pageOpen(run.runId, now().toISOString(), plan.timeZone);
         await page.goto(
           new URL(

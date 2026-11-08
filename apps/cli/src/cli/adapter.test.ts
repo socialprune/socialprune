@@ -40,6 +40,20 @@ test.each(['1940,20,1600,1000', '1,2,0,4'])(
     expect(capture.opened).toEqual([]);
   },
 );
+test.each(['1940,20,1600,1000', '1,2,0,4'])(
+  'PLACEMENT Instagram deletion window option %s parses with the same validation before side effects',
+  async (window) => {
+    const capture = capturedContext(services);
+    const code = await executeCli(
+      ['delete', 'instagram', '--window', window, '--dry-run', '--json'],
+      capture.context,
+    );
+    expect(code).not.toBe(0);
+    expect(capture.stderr.join('')).not.toContain('Unknown flag');
+    expect(capture.stdout.join('')).toContain('INVALID_ARGUMENTS');
+    expect(capture.opened).toEqual([]);
+  },
+);
 
 const archive = fileURLToPath(
   new URL(

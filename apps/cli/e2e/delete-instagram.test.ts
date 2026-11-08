@@ -1,4 +1,4 @@
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
@@ -27,7 +27,9 @@ async function generatedRun(
     | DeleteCase
     | 'extension-change'
     | 'archive-likes-lost'
-    | 'archive-replies-lost',
+    | 'archive-replies-lost'
+    | 'restored-tabs'
+    | 'foreign-tab',
   afterCanary = false,
   archiveMixed = false,
 ) {
@@ -54,7 +56,10 @@ async function generatedRun(
   await createProfile(profile, 'instagram');
   const server = await fakeInstagram(4871, workspace.items);
   server.deletionCase(
-    scenario === 'extension-change' || scenario.startsWith('archive-')
+    scenario === 'extension-change' ||
+      scenario.startsWith('archive-') ||
+      scenario === 'restored-tabs' ||
+      scenario === 'foreign-tab'
       ? 'success'
       : (scenario as DeleteCase),
   );
@@ -84,8 +89,12 @@ async function generatedRun(
           platform: (input) => new URL(input).origin === server.origin,
           image: () => false,
         },
-        launch: async (directory) => {
+        launch: async (directory, executablePath) => {
+          // The run's own executable, as production uses it. The headless
+          // shell Playwright picks without one has no shared browser windows,
+          // so the run-window rule would refuse every background page.
           const context = await chromium.launchPersistentContext(directory, {
+            executablePath,
             headless: true,
             offline: true,
             serviceWorkers: 'block',
@@ -98,6 +107,9 @@ async function generatedRun(
               await page
                 .getByRole('button', { name: 'Start', exact: true })
                 .click();
+              // A tab the run did not open, appearing after Start and before
+              // any comment page opens.
+              if (scenario === 'foreign-tab') await context.newPage();
               await page
                 .getByRole('button', { name: 'Continue', exact: true })
                 .click({ timeout: 12000 });
@@ -105,6 +117,12 @@ async function generatedRun(
               /* Refused canaries and ended contexts expose no Continue. */
             }
           };
+          // Restored tabs inherited at launch, as a reopened profile shows.
+          if (scenario === 'restored-tabs')
+            for (let index = 0; index < 3; index++)
+              await (
+                await context.newPage()
+              ).setContent('<title>Generated restored tab</title>');
           for (const page of context.pages()) void control(page);
           context.on('page', (page) => {
             void control(page);
@@ -175,9 +193,21 @@ async function generatedRun(
     }
     const result = await execute();
     const journal = await store.browserJournal();
+    const reports = join(root, 'context', 'instagram');
+    const reportFile = (await readdir(reports))
+      .filter((name) => name.startsWith('delete-'))
+      .sort()
+      .at(-1);
     return {
       result,
       journal,
+      report: reportFile
+        ? (JSON.parse(await readFile(join(reports, reportFile), 'utf8')) as {
+            stop: string | null;
+            warning: string | null;
+            pages: Record<string, unknown> | null;
+          })
+        : undefined,
       attempts: [...server.deleteAttempts],
       nextPlan: await planInstagramDeletion(store, account, new Date(clock)),
       warning: await store
@@ -230,6 +260,36 @@ test('D10 foundation: real browser page crosses human Start, sending, one allowe
   expect(
     journal.runs.findLast((r) => r.mode === 'delete')?.canaryAcceptedAt,
   ).toBeTruthy();
+});
+test('DEL-TABS restored tabs inherited at launch close at startup and the tab inventory passes at the step boundary', async () => {
+  const { result, attempts, report } = await generatedRun('restored-tabs');
+  expect(result).toMatchObject({
+    completed: 1,
+    endReason: 'canary',
+    code: null,
+  });
+  expect(attempts).toEqual(['191919191919191919']);
+  expect(report?.pages).toMatchObject({
+    remainingNonOwned: 0,
+    targetFailure: null,
+    unexpectedOpened: 0,
+  });
+  // The launch page and three restored tabs; the startup audit and one step
+  // boundary before the watched comment opens.
+  expect(report?.pages?.['startupClosed']).toBeGreaterThanOrEqual(4);
+  expect(report?.pages?.['targetChecks']).toBeGreaterThanOrEqual(2);
+});
+test('DEL-TABS a tab the run did not open stops before any deletion request and is no warning', async () => {
+  const { result, attempts, report, warning, nextPlan } =
+    await generatedRun('foreign-tab');
+  expect(result.completed).toBe(0);
+  expect(result.code).not.toBeNull();
+  expect(attempts).toEqual([]);
+  expect(report?.pages?.['unexpectedOpened']).toBe(1);
+  expect(report?.warning).toBeNull();
+  expect(warning).toBeNull();
+  // No attempt was sent, so the next plan is still the same watched canary.
+  expect(nextPlan.canary).toBe(true);
 });
 test('DEL-ARCHIV-1 headless generated browser sends only an archived capped comment and leaves all unread comments untouched', async () => {
   const { result, journal, attempts, nextPlan } = await generatedRun(

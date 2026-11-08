@@ -15,6 +15,8 @@ import {
 import { instagramHandle } from '../browser/instagram/plan.ts';
 import { resolveAccountName } from '../browser/plan.ts';
 import { acknowledgeWarningCard } from './delete.ts';
+import { parseWindowPlacement } from '../browser/launch.ts';
+import type { WindowPlacement } from '../browser/launch.ts';
 
 export interface InstagramDeleteFlags {
   workspace: string;
@@ -25,6 +27,7 @@ export interface InstagramDeleteFlags {
   list?: string;
   perDay?: string;
   browser?: 'chrome' | 'edge';
+  window?: WindowPlacement;
   lang: 'en' | 'de';
   json: boolean;
   dryRun: boolean;
@@ -144,6 +147,7 @@ export async function deleteInstagramHandler(
       lang: flags.lang,
       verify: flags.verify,
       perDay,
+      ...(flags.window ? { windowPlacement: flags.window } : {}),
       list: text,
       now: context.now,
       signal: context.signal,
@@ -215,6 +219,13 @@ export const deleteInstagramCommand = buildCommand({
         values: ['chrome', 'edge'],
         optional: true,
         brief: 'Installed browser',
+      },
+      window: {
+        kind: 'parsed',
+        parse: parseWindowPlacement,
+        optional: true,
+        brief:
+          'Visible browser bounds x,y,width,height; valid in dry-run without opening a browser',
       },
       lang: {
         kind: 'enum',

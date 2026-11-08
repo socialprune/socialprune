@@ -1,5 +1,10 @@
 import type { Locator } from 'playwright-core';
-import type { ReplyScopeDiagnostic } from './report.ts';
+import type { ReplyScopeDiagnostic, SoleCommentDiagnostic } from './report.ts';
+import type { SoleCaptionTime } from './sole-comment-answer.ts';
+
+/** The qualified answer's verdict, with the caption time it found, if any. */
+export type SoleAnswerVerdict =
+  boolean | { accepted: boolean; captionTime?: SoleCaptionTime };
 
 export const REPLY_SCOPE_DEPTH = 12;
 export const REPLY_ROWS = ':scope > ul > li, :scope > div > ul > li';
@@ -149,14 +154,122 @@ export const replyCounters = (root: Locator) =>
     hasText:
       /^(?:(?:View|Hide|See|Load)\b.*\brepl|(?:Alle\s+\d+\s+)?Antworten\s+(?:ansehen|anzeigen|ausblenden))/iu,
   });
+type UnlinkedTime = NonNullable<SoleCommentDiagnostic['unlinkedTime']>;
+const unlinkedNotEvaluated = (
+  notComparable: 'no-unlinked-time' | 'several-unlinked-times',
+): UnlinkedTime => ({
+  evaluated: false,
+  locationClass: 'not-evaluated',
+  ancestorLink: 'not-evaluated',
+  outsideFocalRow: null,
+  outsidePermalinks: null,
+  datetimeEqualsCaption: null,
+  notComparable,
+  admitted: false,
+});
+/**
+ * REPLY-SOLE-2 D and B for the one unlinked time inside the isolated sole
+ * comment. The focal row is the widest ancestor of the focal permalink inside
+ * the isolated comment that holds only that permalink and at most one image,
+ * the avatar. The time's container is the child that holds it at the nearest
+ * level that also holds the focal permalink. Only closed values leave here.
+ */
+async function unlinkedTimeShape(
+  time: Locator,
+  focal: Locator,
+  depth: number,
+  href: string,
+  captionTime: SoleCaptionTime | undefined,
+  guard: () => void,
+): Promise<UnlinkedTime> {
+  let row: Locator | undefined;
+  for (let level = 1; level <= depth; level++) {
+    guard();
+    const ancestor = focal.locator(`xpath=ancestor::*[${level}]`);
+    if (
+      (await ancestor.count()) !== 1 ||
+      (await ancestor.locator('xpath=descendant-or-self::img').count()) > 1 ||
+      (await ancestor.locator('a[href*="/c/"]').count()) !== 1
+    )
+      break;
+    row = ancestor;
+  }
+  const outsideFocalRow = row
+    ? (await time.locator('xpath=ancestor::*').and(row).count()) === 0
+    : null;
+  const links = time.locator('xpath=ancestor::a');
+  let ancestorLink: UnlinkedTime['ancestorLink'] = 'none';
+  if ((await links.count()) > 0) {
+    const value = await time
+      .locator('xpath=ancestor::a[1]')
+      .getAttribute('href', { timeout: 150 });
+    ancestorLink =
+      value && /\/c\/|(?:^|\/)(?:p|reel)\//u.test(value)
+        ? 'permalink'
+        : 'other';
+  }
+  // The selector's address is validated; it holds no quote characters.
+  const container = time.locator(
+    `xpath=ancestor-or-self::*[parent::*[descendant::a[@href="${href}"]]][1]`,
+  );
+  let locationClass: UnlinkedTime['locationClass'] = 'not-evaluated';
+  if (outsideFocalRow === false) locationClass = 'focal-row';
+  else if ((await container.count()) === 1) {
+    guard();
+    locationClass =
+      (await container
+        .locator('xpath=descendant-or-self::a[contains(@href,"/c/")]')
+        .count()) > 0
+        ? 'sibling-with-permalink'
+        : (await container
+              .locator('xpath=descendant-or-self::time')
+              .count()) !== 1
+          ? 'sibling-with-several-times'
+          : (await container
+                .locator('xpath=descendant-or-self::img')
+                .count()) === 0
+            ? 'sibling-without-image'
+            : 'image-sibling';
+  }
+  const raw = await time.getAttribute('datetime', { timeout: 150 });
+  const milliseconds = raw ? Date.parse(raw) : Number.NaN;
+  let datetimeEqualsCaption: boolean | null = null;
+  let notComparable: UnlinkedTime['notComparable'];
+  if (!captionTime) notComparable = 'caption-absent';
+  else if ('reason' in captionTime) notComparable = captionTime.reason;
+  else if (!Number.isFinite(milliseconds))
+    notComparable = 'datetime-unreadable';
+  else
+    datetimeEqualsCaption =
+      Math.floor(milliseconds / 1000) === captionTime.seconds;
+  return {
+    evaluated: true,
+    locationClass,
+    ancestorLink,
+    outsideFocalRow,
+    outsidePermalinks: ancestorLink !== 'permalink',
+    datetimeEqualsCaption,
+    ...(notComparable ? { notComparable } : {}),
+    admitted:
+      locationClass === 'image-sibling' &&
+      ancestorLink === 'none' &&
+      outsideFocalRow === true &&
+      datetimeEqualsCaption === true,
+  };
+}
 /**
  * Times inside the isolated sole comment. Besides the focal permalink's own
  * time, one time admits only inside a link that is exactly this post's
- * address (REPLY-SOLE-1 B); an unlinked or other-linked time refuses.
+ * address (REPLY-SOLE-1 B), or as the one unlinked time that REPLY-SOLE-2 B
+ * accepts as the caption's time. Any other unlinked or other-linked time
+ * refuses.
  */
 async function focalTimeShape(
   root: Locator,
+  focal: Locator,
+  depth: number,
   focalSelector: string,
+  captionTime: SoleCaptionTime | undefined,
   guard: () => void,
 ) {
   const href = focalSelector.slice('a[href="'.length, -2);
@@ -172,11 +285,14 @@ async function focalTimeShape(
     inSamePostPermalink: 0,
     unlinked: 0,
   };
+  let unlinkedIndex = -1;
   for (let index = 0; index < Math.min(total, 32); index++) {
     guard();
     const link = times.nth(index).locator('xpath=ancestor::a[1]');
-    if ((await link.count()) === 0) kinds.unlinked++;
-    else if ((await link.and(root.locator(focalSelector)).count()) === 1)
+    if ((await link.count()) === 0) {
+      kinds.unlinked++;
+      unlinkedIndex = index;
+    } else if ((await link.and(root.locator(focalSelector)).count()) === 1)
       kinds.inFocalPermalink++;
     else {
       const value = await link.getAttribute('href', { timeout: 150 });
@@ -184,18 +300,41 @@ async function focalTimeShape(
       else if (value && /^\/(?:p|reel)\/[^/]+\/$/u.test(value)) {
         kinds.inPostPermalink++;
         if (value === postHref) kinds.inSamePostPermalink++;
-      } else kinds.unlinked++;
+      } else {
+        kinds.unlinked++;
+        unlinkedIndex = index;
+      }
     }
   }
-  const admitted =
+  const unlinkedTime =
+    kinds.unlinked === 0
+      ? unlinkedNotEvaluated('no-unlinked-time')
+      : kinds.unlinked > 1 || kinds.capped
+        ? unlinkedNotEvaluated('several-unlinked-times')
+        : await unlinkedTimeShape(
+            times.nth(unlinkedIndex),
+            focal,
+            depth,
+            href,
+            captionTime,
+            guard,
+          );
+  const focalOnly =
     !kinds.capped &&
     kinds.inFocalPermalink === 1 &&
-    kinds.inOtherCommentPermalink === 0 &&
-    kinds.unlinked === 0 &&
-    kinds.inPostPermalink === kinds.inSamePostPermalink &&
-    kinds.inSamePostPermalink <= 1 &&
-    total === 1 + kinds.inSamePostPermalink;
-  return { total, kinds, admitted };
+    kinds.inOtherCommentPermalink === 0;
+  const admitted =
+    (focalOnly &&
+      kinds.unlinked === 0 &&
+      kinds.inPostPermalink === kinds.inSamePostPermalink &&
+      kinds.inSamePostPermalink <= 1 &&
+      total === 1 + kinds.inSamePostPermalink) ||
+    (focalOnly &&
+      kinds.unlinked === 1 &&
+      kinds.inPostPermalink === 0 &&
+      total === 2 &&
+      unlinkedTime.admitted);
+  return { total, kinds, unlinkedTime, admitted };
 }
 export async function ownReplyControls(
   root: Locator,
@@ -215,7 +354,7 @@ export async function structuralReplyScope(
   zeroAnswer: boolean,
   shape: ReplyScopeDiagnostic,
   guard: () => void,
-  soleAnswer: () => boolean = () => false,
+  soleAnswer: () => SoleAnswerVerdict = () => false,
 ) {
   let emptyScope: { root: Locator; depth: number; avatar: boolean } | undefined;
   let isolated: { root: Locator; depth: number; avatar: boolean } | undefined;
@@ -353,7 +492,11 @@ export async function structuralReplyScope(
     )
       emptyScope ??= { root, depth, avatar: shape.avatarObserved };
   }
-  const answerAccepted = soleAnswer();
+  const verdict = soleAnswer();
+  const answerAccepted =
+    typeof verdict === 'boolean' ? verdict : verdict.accepted;
+  const captionTime =
+    typeof verdict === 'boolean' ? undefined : verdict.captionTime;
   const sole = shape.soleComment;
   let actionCounts: Awaited<ReturnType<typeof focalReplyActions>> | undefined;
   let soleTimesAdmitted = false;
@@ -381,9 +524,17 @@ export async function structuralReplyScope(
         sole.focalPermalinks = await isolated.root
           .locator('a[href*="/c/"]')
           .count();
-        const times = await focalTimeShape(isolated.root, focalSelector, guard);
+        const times = await focalTimeShape(
+          isolated.root,
+          focal,
+          isolated.depth,
+          focalSelector,
+          captionTime,
+          guard,
+        );
         sole.focalTimes = times.total;
         sole.focalTimeKinds = times.kinds;
+        sole.unlinkedTime = times.unlinkedTime;
         soleTimesAdmitted = times.admitted;
         sole.focalRows = await isolated.root.locator(REPLY_ROWS).count();
         sole.focalControls = await replyControls(isolated.root).count();
@@ -441,7 +592,16 @@ export async function structuralReplyScope(
       actionCounts.foreign === 0 &&
       (await main.locator(REPLY_ROWS).count()) === 0 &&
       (await isolated.root.locator('a[href*="/c/"]').count()) === 1 &&
-      (await focalTimeShape(isolated.root, focalSelector, guard)).admitted &&
+      (
+        await focalTimeShape(
+          isolated.root,
+          focal,
+          isolated.depth,
+          focalSelector,
+          captionTime,
+          guard,
+        )
+      ).admitted &&
       (await replyControls(isolated.root).count()) === 0 &&
       (await isolated.root.locator(REPLY_ROWS).count()) === 0
     ) {

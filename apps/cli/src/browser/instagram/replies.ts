@@ -202,7 +202,7 @@ async function checkedScope(
       );
       shape.soleComment = sole.diagnostic;
       diagnostic?.(shape);
-      return sole.accepted;
+      return { accepted: sole.accepted, captionTime: sole.captionTime };
     },
   );
   if (!root) return fail('scope-depth');

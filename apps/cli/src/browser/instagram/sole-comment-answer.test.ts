@@ -327,3 +327,73 @@ test.each([
       });
   },
 );
+test.each([
+  'single',
+  'both-keys',
+  'repeated',
+  'absent',
+  'keys-differ',
+  'two-captions',
+  'string-time',
+  'no-time-key',
+  'not-own-caption',
+] as const)(
+  'REPLY-SOLE-2 B caption time %s is read only from the post own caption object and never reported',
+  (kind) => {
+    const seconds = 1735603200;
+    const caption = {
+      pk: '456',
+      user: { username: 'generated_owner' },
+      text: 'Generated caption entry',
+    };
+    const own = (extra: Record<string, unknown>) => ({
+      code,
+      comment_count: 1,
+      comments: [focal],
+      caption: { ...caption, ...extra },
+    });
+    const values =
+      kind === 'single'
+        ? [own({ created_at: seconds })]
+        : kind === 'both-keys'
+          ? [own({ created_at: seconds, created_at_utc: seconds })]
+          : kind === 'repeated'
+            ? [own({ created_at: seconds }), own({ created_at: seconds })]
+            : kind === 'absent'
+              ? [{ code, comment_count: 1, comments: [focal] }]
+              : kind === 'keys-differ'
+                ? [own({ created_at: seconds, created_at_utc: seconds + 1 })]
+                : kind === 'two-captions'
+                  ? [
+                      own({ created_at: seconds }),
+                      {
+                        code,
+                        caption: { ...caption, pk: '457', created_at: seconds },
+                      },
+                    ]
+                  : kind === 'string-time'
+                    ? [own({ created_at: String(seconds) })]
+                    : kind === 'no-time-key'
+                      ? [{ code, comment_count: 1, comments: [focal], caption }]
+                      : [
+                          {
+                            comment_count: 1,
+                            comments: [focal],
+                            caption: { ...caption, created_at: seconds },
+                          },
+                        ];
+    const result = inspectSoleCommentAnswer([], values, match, code);
+    expect(result.captionTime).toEqual(
+      ['single', 'both-keys', 'repeated'].includes(kind)
+        ? { seconds }
+        : kind === 'absent' ||
+            kind === 'no-time-key' ||
+            kind === 'not-own-caption'
+          ? { reason: 'caption-absent' }
+          : kind === 'string-time'
+            ? { reason: 'caption-time-unreadable' }
+            : { reason: 'caption-ambiguous' },
+    );
+    expect(JSON.stringify(result.diagnostic)).not.toContain(String(seconds));
+  },
+);

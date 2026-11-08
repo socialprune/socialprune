@@ -371,6 +371,43 @@ export const SoleCommentDiagnosticSchema = z.strictObject({
       unlinked: count,
     })
     .optional(),
+  /**
+   * REPLY-SOLE-2 D: where the one unlinked time beside the sole comment sits
+   * and whether it equals the post caption object's time to the second, as
+   * closed values only. Absent until the isolated comment's times were read.
+   */
+  unlinkedTime: z
+    .strictObject({
+      /** Exactly one unlinked time was examined. */
+      evaluated: z.boolean(),
+      /** The child, at the level where the time and the focal comment meet, that holds the time. */
+      locationClass: z.enum([
+        'not-evaluated',
+        'focal-row',
+        'image-sibling',
+        'sibling-without-image',
+        'sibling-with-permalink',
+        'sibling-with-several-times',
+      ]),
+      /** Nearest enclosing link: none, a post or comment permalink, or another link. */
+      ancestorLink: z.enum(['not-evaluated', 'none', 'permalink', 'other']),
+      outsideFocalRow: z.boolean().nullable(),
+      outsidePermalinks: z.boolean().nullable(),
+      datetimeEqualsCaption: z.boolean().nullable(),
+      notComparable: z
+        .enum([
+          'no-unlinked-time',
+          'several-unlinked-times',
+          'caption-absent',
+          'caption-ambiguous',
+          'caption-time-unreadable',
+          'datetime-unreadable',
+        ])
+        .optional(),
+      /** All REPLY-SOLE-2 B time conditions hold for this time. */
+      admitted: z.boolean(),
+    })
+    .optional(),
   focalRows: count.nullable(),
   focalControls: count.nullable(),
   /** A reply control, counter or row at the focal comment forbids a zero. */

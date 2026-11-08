@@ -32,7 +32,14 @@ export type ReplyShapeCase =
   | 'sole-zero-counter'
   | 'sole-zero-counter-text'
   | 'sole-zero-inner-counter'
+  | 'sole-zero-caption-time'
+  | 'sole-zero-caption-time-mismatch'
+  | 'sole-zero-caption-time-in-row'
+  | 'sole-zero-caption-time-other-comment'
+  | 'sole-zero-caption-time-control'
   | 'top-level-decoy';
+/** The generated caption object's time, as the fake answer states it. */
+export const SOLE_CAPTION_TIME = '2024-12-31T00:00:00.000Z';
 export function rowShapePage(html: string, shape: RowShapeCase) {
   if (shape === 'handle-only')
     return html
@@ -104,7 +111,8 @@ export function replyShapePage(
       .replace('<div role="button">Reply</div>', '');
     if (shape.startsWith('sole-zero')) {
       const local =
-        shape === 'sole-zero-control'
+        shape === 'sole-zero-control' ||
+        shape === 'sole-zero-caption-time-control'
           ? '<div role="button">View replies</div>'
           : shape === 'sole-zero-reply' || shape.startsWith('sole-zero-own-')
             ? '<div role="button">Reply</div>'
@@ -130,7 +138,23 @@ export function replyShapePage(
               ? '<span><time datetime="2025-01-02T00:00:00Z">Edited</time></span>'
               : shape === 'sole-zero-inner-counter'
                 ? '<div role="button">View all 2 replies</div>'
-                : '';
+                : shape === 'sole-zero-caption-time-in-row'
+                  ? `<span><time datetime="${SOLE_CAPTION_TIME}">2w</time></span>`
+                  : '';
+      // The real 2026-11-08 shape (run 0af2d0ac step 0): beside the focal
+      // comment, a sibling with an image and one time without any link, and
+      // an empty sibling. The time is the caption's when its datetime equals
+      // the caption object's time; the other-comment row's time does not.
+      const caption = shape.startsWith('sole-zero-caption-time');
+      const sibling =
+        shape === 'sole-zero-caption-time' ||
+        shape === 'sole-zero-caption-time-control'
+          ? `<div><img src="/profiles/owner.png" alt=""><span>Generated caption</span><span><time datetime="${SOLE_CAPTION_TIME}">2w</time></span></div>`
+          : shape === 'sole-zero-caption-time-mismatch'
+            ? '<div><img src="/profiles/owner.png" alt=""><span>Generated caption</span><span><time datetime="2024-12-31T00:00:01.000Z">2w</time></span></div>'
+            : shape === 'sole-zero-caption-time-other-comment'
+              ? '<div><img src="/profiles/comment.png" alt=""><a href="/generated_other/">generated_other</a><span>Generated other comment</span><span><time datetime="2025-01-05T00:00:00.000Z">3d</time></span></div>'
+              : '<img src="/profiles/comment.png" alt="">';
       const list = html.indexOf('<div id="comment-rows">');
       if (list < 0) throw new Error('Generated sole comment list missing');
       return (
@@ -140,19 +164,22 @@ export function replyShapePage(
             '<main>',
             `<main>${shape === 'sole-zero-reply' || shape === 'sole-zero-own-foreign' ? '<button>Reply</button>' : ''}`,
           ) +
-        '<div><img src="/profiles/comment.png" alt=""><div></div><div>' +
-        '<div>'.repeat(8) +
+        `<div>${sibling}<div></div><div>` +
+        // Caption shapes put the three siblings at scope level 12, as on the
+        // real page; the control there sits outside that level, in the page.
+        '<div>'.repeat(caption ? 3 : 8) +
         focal +
         innerTime +
-        '</div>'.repeat(8) +
+        '</div>'.repeat(caption ? 3 : 8) +
         '</div>' +
-        (shape === 'sole-zero-reply' ? '' : local) +
+        (shape === 'sole-zero-reply' || caption ? '' : local) +
         (shape === 'sole-zero-own-expand'
           ? '<div role="button">Hide replies</div>'
           : shape === 'sole-zero-own-time'
             ? '<time datetime="2025-01-01T00:00:00Z">1w</time>'
             : '') +
         '</div>' +
+        (caption ? local : '') +
         html.slice(end)
       );
     }

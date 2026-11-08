@@ -187,6 +187,55 @@ test('PLACEMENT background pages retain one window identity and a closed three-p
     await browser.close();
   }
 });
+test('T1 another inherited window is never closed when same-window creation refuses', async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    chromiumSandbox: true,
+  });
+  const context = await browser.newContext();
+  const first = await context.newPage();
+  const client = await context.newCDPSession(first);
+  const info = await client.send('Target.getTargetInfo');
+  const opened = context.waitForEvent('page');
+  const created = await client.send('Target.createTarget', {
+    url: 'about:blank',
+    newWindow: true,
+    background: true,
+    browserContextId: info.targetInfo.browserContextId,
+  });
+  await opened;
+  const foreign = await (async () => {
+    for (const page of context.pages()) {
+      const session = await context.newCDPSession(page);
+      const value = await session.send('Target.getTargetInfo');
+      await session.detach();
+      if (value.targetInfo.targetId === created.targetId) return page;
+    }
+    throw new Error('Generated foreign window missing');
+  })();
+  const runWindow = (await client.send('Browser.getWindowForTarget')).windowId;
+  const foreignSession = await context.newCDPSession(foreign);
+  expect(
+    (await foreignSession.send('Browser.getWindowForTarget')).windowId,
+  ).not.toBe(runWindow);
+  const boundary = contextPages(context, () => {});
+  try {
+    await expect(boundary.startupPage()).rejects.toMatchObject({
+      token: 'unexpected-page',
+    });
+    expect(first.isClosed()).toBe(false);
+    expect(foreign.isClosed()).toBe(false);
+    expect(boundary.snapshot()).toMatchObject({
+      startupClosed: 0,
+      remainingNonOwned: null,
+    });
+  } finally {
+    boundary.dispose();
+    await foreignSession.detach();
+    await client.detach();
+    await browser.close();
+  }
+});
 
 test.each([
   'script',

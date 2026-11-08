@@ -6,6 +6,9 @@ const tabAudit = vi.hoisted(() =>
 );
 vi.mock('./browser-tabs.ts', () => ({
   auditBrowserTabs: tabAudit,
+  inheritedWindowPages: (context: BrowserContext) =>
+    Promise.resolve(context.pages()),
+  sameWindowPage: () => Promise.resolve(true),
 }));
 import { EventEmitter } from 'node:events';
 import type { BrowserContext, Page } from 'playwright-core';

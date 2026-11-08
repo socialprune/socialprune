@@ -15,6 +15,60 @@ export type TabAudit = {
   tabs: number;
 };
 
+export async function sameWindowPage(
+  context: BrowserContext,
+  anchor: Page,
+  page: Page,
+) {
+  const first = await context.newCDPSession(anchor);
+  try {
+    const second = await context.newCDPSession(page);
+    try {
+      return (
+        windowSchema.parse(await first.send('Browser.getWindowForTarget'))
+          .windowId ===
+        windowSchema.parse(await second.send('Browser.getWindowForTarget'))
+          .windowId
+      );
+    } finally {
+      await second.detach();
+    }
+  } finally {
+    await first.detach();
+  }
+}
+
+/** A restored window in the same context is not the run's window. */
+export async function inheritedWindowPages(context: BrowserContext) {
+  const inherited = context.pages();
+  const anchor = inherited[0];
+  if (!anchor) throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+  const first = await context.newCDPSession(anchor);
+  try {
+    const windowId = windowSchema.parse(
+      await first.send('Browser.getWindowForTarget'),
+    ).windowId;
+    const same: Page[] = [];
+    for (const page of inherited) {
+      const client = await context.newCDPSession(page);
+      try {
+        if (
+          windowSchema.parse(await client.send('Browser.getWindowForTarget'))
+            .windowId === windowId
+        )
+          same.push(page);
+      } finally {
+        await client.detach();
+      }
+    }
+    return same;
+  } catch {
+    throw new ContextStop('PLATFORM_CHECK', 'tab-inventory');
+  } finally {
+    await first.detach();
+  }
+}
+
 /** A tab wrapper survives renderer disposal and need not have a Playwright Page. */
 async function tabChildren(client: CDPSession, targetId: string) {
   const { sessionId } = z

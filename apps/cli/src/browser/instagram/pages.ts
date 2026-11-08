@@ -2,14 +2,21 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { ContextStop } from './report.ts';
 import { z } from 'zod';
 import { createServer } from 'node:http';
-import { auditBrowserTabs } from './browser-tabs.ts';
+import {
+  auditBrowserTabs,
+  inheritedWindowPages,
+  sameWindowPage,
+} from './browser-tabs.ts';
 
 const target = z.object({
   targetInfo: z.object({ targetId: z.string().min(1) }),
 });
 const windowId = z.object({ windowId: z.number().int() });
-export async function backgroundPage(context: BrowserContext): Promise<Page> {
-  const anchor = context.pages().find((page) => !page.isClosed());
+export async function backgroundPage(
+  context: BrowserContext,
+  ownAnchor?: Page,
+): Promise<Page> {
+  const anchor = ownAnchor ?? context.pages().find((page) => !page.isClosed());
   if (!anchor) throw new ContextStop('PLATFORM_CHECK', 'unexpected-page');
   const client = await context.newCDPSession(anchor);
   let ready!: (id: string) => void;
@@ -90,7 +97,7 @@ export const ContextPagesSchema = z.strictObject({
 export function contextPages(
   context: BrowserContext,
   onStop: (error: ContextStop) => void,
-  create: (context: BrowserContext) => Promise<Page> = backgroundPage,
+  create?: (context: BrowserContext) => Promise<Page>,
 ) {
   const initial = context.pages(),
     owned = new Set<Page>();
@@ -116,6 +123,7 @@ export function contextPages(
   const closing = new Map<Page, Promise<void>>();
   let startup = true,
     disposed = false;
+  let anchor = initial[0];
   let creating: Promise<Page> | undefined;
   let failure: ContextStop | undefined;
   const fail = () => {
@@ -127,20 +135,19 @@ export function contextPages(
   const reject = (page: Page, atStartup = startup): Promise<void> => {
     const prior = closing.get(page);
     if (prior) return prior;
-    if (!atStartup) {
-      counts.unexpectedOpened++;
-      fail();
-    }
-    const task = (
-      page.isClosed()
-        ? Promise.resolve()
-        : page.close({ runBeforeUnload: false })
-    ).then(() => {
+    const task = (async () => {
+      if (page.isClosed()) return;
+      if (!anchor || !(await sameWindowPage(context, anchor, page))) return;
+      if (!atStartup) {
+        counts.unexpectedOpened++;
+        fail();
+      }
+      await page.close({ runBeforeUnload: false });
       if (atStartup) {
         counts.startupClosed++;
         counts.targetClosed.page++;
       }
-    });
+    })();
     closing.set(page, task);
     void task.catch(() => fail());
     return task;
@@ -207,8 +214,11 @@ export function contextPages(
       // The event and request gates compare the returned Page identity, not the
       // order in which the context emits pages during this creation window.
       try {
-        const page = await create(context);
+        const page = await (create
+          ? create(context)
+          : backgroundPage(context, anchor));
         owned.add(page);
+        anchor = page;
         counts.backgroundCreated++;
         refresh();
         resolve(page);
@@ -223,9 +233,10 @@ export function contextPages(
     async startupPage(): Promise<Page> {
       // Even a launch tab still at about:blank may have a restore navigation
       // pending. Create our own page and close every page inherited at launch.
-      for (const page of initial.slice(1)) await reject(page);
+      const runInitial = await inheritedWindowPages(context);
+      for (const page of runInitial.slice(1)) await reject(page);
       const page = await this.newPage();
-      for (const page of initial) await reject(page, true);
+      for (const page of runInitial) await reject(page, true);
       await Promise.all([...closing.values()]);
       await audit(true);
       startup = false;

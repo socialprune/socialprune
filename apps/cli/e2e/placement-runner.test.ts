@@ -206,6 +206,57 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     });
     receipt.readingThreeFrameMs = Math.round(animation);
     expect(animation).toBeLessThan(1000);
+    const browserSession = await context!.browser()!.newBrowserCDPSession();
+    try {
+      const processes = await browserSession.send('SystemInfo.getProcessInfo');
+      const pid = processes.processInfo.find(
+        (process) => process.type === 'browser',
+      )!.id;
+      const child = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-STA',
+          '-File',
+          fileURLToPath(new URL('./placement-tabs.ps1', import.meta.url)),
+          String(pid),
+        ],
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      let output = '',
+        error = '';
+      child.stdout.on('data', (value: Buffer) => {
+        output += value.toString();
+      });
+      child.stderr.on('data', (value: Buffer) => {
+        error += value.toString();
+      });
+      await new Promise<void>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('exit', (code) =>
+          code === 0
+            ? resolve()
+            : reject(new Error(error || 'TAB_OBSERVATION_FAILED')),
+        );
+      });
+      const observed = JSON.parse(output) as {
+        count: number;
+        tabs: { index: number; selected: boolean }[];
+        offscreen: boolean;
+      };
+      receipt.selectedTabs = observed;
+      expect(observed).toMatchObject({
+        count: 2,
+        offscreen: false,
+        tabs: [
+          { index: 0, selected: false },
+          { index: 1, selected: true },
+        ],
+      });
+    } finally {
+      await browserSession.detach();
+    }
     expect(bounds).toMatchObject({
       left: placement.x,
       top: placement.y,

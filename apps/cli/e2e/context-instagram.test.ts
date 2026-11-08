@@ -2161,7 +2161,7 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
       memory: { samples: 21, failedSamples: 0 },
       runtime: { unexpectedPageCloses: 0 },
     });
-    expect(activeBeforeClose).toBe(2);
+    expect(activeBeforeClose).toBe(3);
     expect(
       h.fake.requests.filter(
         (request) => request.path === networkHelpers.COMMENTS_PATH,

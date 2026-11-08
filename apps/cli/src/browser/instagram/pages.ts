@@ -76,7 +76,7 @@ export const ContextPagesSchema = z.strictObject({
   replaced: z.number().int().nonnegative(),
 });
 
-/** Only the confirmation and explicitly created reading page belong to a run. */
+/** Owned tabs are selected inside their window without requesting OS focus. */
 export function contextPages(
   context: BrowserContext,
   onStop: (error: ContextStop) => void,

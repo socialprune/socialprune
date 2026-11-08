@@ -139,9 +139,11 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     const fixture = await instagramFixture(1);
     fake = await fakeInstagram(4549, fixture.items);
     // The browser itself writes the generated session; no profile file edits.
+    // Edge did not restore a session written in headless mode (run
+    // 42486872535: 2 pages), so its seed runs headed on the runner.
     const seed = await chromium.launchPersistentContext(join(root, 'profile'), {
       executablePath: executable!,
-      headless: true,
+      headless: browserName !== 'msedge',
       chromiumSandbox: true,
       args: ['--enable-automation'],
       ignoreDefaultArgs: ['--disable-infobars'],

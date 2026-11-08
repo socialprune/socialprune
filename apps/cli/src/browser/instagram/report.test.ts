@@ -189,6 +189,37 @@ test('SOLEDIAG rejects content and arbitrary gate names in the sole-comment repo
   expect(parse(base, 'read-normally')).toBe(true);
   expect(parse(base, 'zero')).toBe(false);
   expect(parse({ ...base, replyControlDecision: 'read-normally' })).toBe(true);
+  const unlinkedTime = {
+    evaluated: true,
+    locationClass: 'image-sibling',
+    ancestorLink: 'none',
+    outsideFocalRow: true,
+    outsidePermalinks: true,
+    datetimeEqualsCaption: true,
+    admitted: true,
+  };
+  expect(parse({ ...base, unlinkedTime })).toBe(true);
+  expect(
+    parse({
+      ...base,
+      unlinkedTime: {
+        ...unlinkedTime,
+        datetimeEqualsCaption: null,
+        notComparable: 'caption-absent',
+        admitted: false,
+      },
+    }),
+  ).toBe(true);
+  for (const invalid of [
+    { ...unlinkedTime, locationClass: 'Generated private container' },
+    { ...unlinkedTime, ancestorLink: '/generated_owner/' },
+    { ...unlinkedTime, notComparable: 'generated-reason' },
+    { ...unlinkedTime, datetime: '2024-12-31T00:00:00.000Z' },
+    { ...unlinkedTime, captionSeconds: 1735603200 },
+    { ...unlinkedTime, datetimeEqualsCaption: 'true' },
+    { ...unlinkedTime, admitted: undefined },
+  ])
+    expect(parse({ ...base, unlinkedTime: invalid })).toBe(false);
   for (const invalid of [
     { ...base, replyControlDecision: 'Generated private control text' },
     { ...base, captionEntriesExcluded: -1 },

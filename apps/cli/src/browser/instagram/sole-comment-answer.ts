@@ -85,6 +85,9 @@ export function inspectSoleCommentAnswer(
     firstFailedGate: 'not-evaluated',
   };
   const comments = new Set<string>();
+  const captionIds = new Set<string>(),
+    captionSeconds = new Set<number>();
+  let captionTimeUnreadable = false;
   let valid = true,
     visits = 0;
   let focalObjects = 0;
@@ -163,6 +166,22 @@ export function inspectSoleCommentAnswer(
       // REPLY-SOLE-1 B: the same post's own caption object, reached through
       // its caption key and outside every comment set, is not a comment.
       diagnostic.captionEntriesExcluded++;
+      // REPLY-SOLE-2 B: its own time, kept outside every report.
+      captionIds.add(commentId);
+      const times = [value.created_at, value.created_at_utc].filter(
+        (time) => time !== undefined,
+      );
+      if (
+        !times.length ||
+        times.some(
+          (time) =>
+            typeof time !== 'number' ||
+            !Number.isSafeInteger(time) ||
+            time <= 0,
+        )
+      )
+        captionTimeUnreadable = true;
+      else for (const time of times) captionSeconds.add(time as number);
     } else if (commentId && (inSet || commentLike)) {
       comments.add(commentId);
       if (!namesFocal) {
@@ -217,8 +236,32 @@ export function inspectSoleCommentAnswer(
         : diagnostic.declaredCountsAllOne === false
           ? 'sole-declared-count'
           : 'none';
-  return { accepted: diagnostic.firstFailedGate === 'none', diagnostic };
+  const captionTime: SoleCaptionTime =
+    diagnostic.captionEntriesExcluded === 0
+      ? { reason: 'caption-absent' }
+      : captionIds.size !== 1
+        ? { reason: 'caption-ambiguous' }
+        : captionTimeUnreadable
+          ? { reason: 'caption-time-unreadable' }
+          : captionSeconds.size !== 1
+            ? { reason: 'caption-ambiguous' }
+            : { seconds: [...captionSeconds][0]! };
+  return {
+    accepted: diagnostic.firstFailedGate === 'none',
+    diagnostic,
+    captionTime,
+  };
 }
+/**
+ * The time of this post's own caption object in the qualified answer, used
+ * only for the in-memory comparison of REPLY-SOLE-2 B; never reported.
+ */
+export type SoleCaptionTime =
+  | { seconds: number }
+  | {
+      reason:
+        'caption-absent' | 'caption-ambiguous' | 'caption-time-unreadable';
+    };
 
 export function soleCommentAnswer(
   bodies: readonly unknown[],

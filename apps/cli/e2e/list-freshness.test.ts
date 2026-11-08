@@ -33,6 +33,7 @@ import type {
 } from '../src/browser/instagram/report.ts';
 import { ContextStepReportSchema } from '../src/browser/instagram/report.ts';
 import { deepReplyRows } from './fake-instagram/replies-page.ts';
+import { SOLE_CAPTION_TIME } from './fake-instagram/realshape-page.ts';
 import { contextPages } from '../src/browser/instagram/pages.ts';
 
 test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
@@ -176,6 +177,160 @@ test.each(['caption-time', 'unlinked-time', 'second-comment-time'] as const)(
       else expect(otherScope).toBeNull();
       if (kind === 'unlinked-time')
         expect(other.soleComment?.firstFailedGate).toBe('sole-focal');
+    } finally {
+      await browser.close();
+    }
+  },
+);
+test.each([
+  'caption',
+  'profile-link',
+  'post-path-link',
+  'unreadable',
+  'two-unlinked',
+  'boolean-verdict',
+  'ambiguous-caption',
+] as const)(
+  'REPLY-SOLE-2 B unlinked time in an image sibling, %s: only an unlinked time equal to one caption time admits',
+  async (kind) => {
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage();
+      const focal = {
+        id: '123',
+        username: 'generated',
+        text: 'Generated focal',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      };
+      const selector = 'a[href="/p/Generated/c/123/"]';
+      const caption = '2024-12-31T00:00:00.000Z';
+      const time =
+        kind === 'profile-link'
+          ? `<a href="/generated_owner/"><time datetime="${caption}">2w</time></a>`
+          : kind === 'post-path-link'
+            ? `<a href="/generated_owner/p/Generated/"><time datetime="${caption}">2w</time></a>`
+            : kind === 'unreadable'
+              ? '<span><time datetime="Generated unreadable">2w</time></span>'
+              : kind === 'two-unlinked'
+                ? `<span><time datetime="${caption}">2w</time></span><span><time datetime="${caption}">2w</time></span>`
+                : `<span><time datetime="${caption}">2w</time></span>`;
+      await page.setContent(
+        `<main><div><div><img src="/generated-owner.png" alt=""><span>Generated caption</span>${time}</div><div></div><div><img src="/generated-avatar.png" alt=""><a href="/p/Generated/c/123/"><time datetime="${focal.createdAt}">1w</time></a></div></div></main>`,
+      );
+      const seconds = Date.parse(caption) / 1000;
+      const captionObject = {
+        pk: '789',
+        user: { username: 'generated_owner' },
+        text: 'Generated caption',
+        created_at: seconds,
+      };
+      const answer = inspectSoleCommentAnswer(
+        [],
+        [
+          {
+            code: 'Generated',
+            caption: captionObject,
+            comments: [
+              {
+                pk: focal.id,
+                user: { username: focal.username },
+                text: focal.text,
+                created_at: Date.parse(focal.createdAt) / 1000,
+                child_comment_count: 0,
+              },
+            ],
+          },
+          ...(kind === 'ambiguous-caption'
+            ? [
+                {
+                  code: 'Generated',
+                  caption: { ...captionObject, created_at: seconds + 1 },
+                },
+              ]
+            : []),
+        ],
+        focal,
+        'Generated',
+      );
+      expect(answer.accepted).toBe(true);
+      expect(answer.captionTime).toEqual(
+        kind === 'ambiguous-caption'
+          ? { reason: 'caption-ambiguous' }
+          : { seconds },
+      );
+      const shape = emptyReplyScope();
+      const scope = await structuralReplyScope(
+        page.locator(selector),
+        selector,
+        true,
+        shape,
+        () => {},
+        () => {
+          shape.soleComment = answer.diagnostic;
+          return kind === 'boolean-verdict'
+            ? answer.accepted
+            : { accepted: answer.accepted, captionTime: answer.captionTime };
+        },
+      );
+      const sole = ContextStepReportSchema.parse({ replyScope: shape })
+        .replyScope!.soleComment!;
+      if (kind === 'caption') {
+        expect(scope).not.toBeNull();
+        expect(shape).toMatchObject({
+          scopeKind: 'sole-comment',
+          zeroDecision: 'sole-zero',
+        });
+        expect(sole.firstFailedGate).toBe('none');
+      } else {
+        expect(scope).toBeNull();
+        expect(shape.zeroDecision).toBeUndefined();
+        expect(sole.firstFailedGate).toBe('sole-focal');
+      }
+      expect(sole.unlinkedTime).toEqual(
+        kind === 'two-unlinked'
+          ? {
+              evaluated: false,
+              locationClass: 'not-evaluated',
+              ancestorLink: 'not-evaluated',
+              outsideFocalRow: null,
+              outsidePermalinks: null,
+              datetimeEqualsCaption: null,
+              notComparable: 'several-unlinked-times',
+              admitted: false,
+            }
+          : {
+              evaluated: true,
+              locationClass: 'image-sibling',
+              ancestorLink:
+                kind === 'profile-link'
+                  ? 'other'
+                  : kind === 'post-path-link'
+                    ? 'permalink'
+                    : 'none',
+              outsideFocalRow: true,
+              outsidePermalinks: kind !== 'post-path-link',
+              datetimeEqualsCaption: [
+                'unreadable',
+                'boolean-verdict',
+                'ambiguous-caption',
+              ].includes(kind)
+                ? null
+                : true,
+              ...(kind === 'unreadable'
+                ? { notComparable: 'datetime-unreadable' }
+                : kind === 'boolean-verdict'
+                  ? { notComparable: 'caption-absent' }
+                  : kind === 'ambiguous-caption'
+                    ? { notComparable: 'caption-ambiguous' }
+                    : {}),
+              admitted: kind === 'caption',
+            },
+      );
+      expect(JSON.stringify(sole)).not.toContain('2024-12-31');
+      expect(JSON.stringify(sole)).not.toContain(String(seconds));
     } finally {
       await browser.close();
     }
@@ -679,6 +834,206 @@ test.each([
         IG_FIXTURE.commentId,
       ])
         expect(JSON.stringify(parsed)).not.toContain(value);
+    } finally {
+      await browser.close();
+      await fake.close();
+    }
+  },
+);
+
+test.each([
+  'caption-time',
+  'mismatch',
+  'no-caption-object',
+  'in-row',
+  'other-comment',
+  'control',
+] as const)(
+  'REPLY-SOLE-2 B unlinked time beside the sole comment, %s: a zero only when it equals the caption time outside the focal row',
+  async (mode) => {
+    const fixture = await instagramFixture(1),
+      fake = await fakeInstagram(CONTEXT_PORTS.instagram, fixture.items);
+    fake.replies(0);
+    fake.replyAnswer(true);
+    fake.replyShape(
+      mode === 'mismatch'
+        ? 'sole-zero-caption-time-mismatch'
+        : mode === 'in-row'
+          ? 'sole-zero-caption-time-in-row'
+          : mode === 'other-comment'
+            ? 'sole-zero-caption-time-other-comment'
+            : mode === 'control'
+              ? 'sole-zero-caption-time-control'
+              : 'sole-zero-caption-time',
+    );
+    const browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: true,
+    });
+    try {
+      const page = await browser.newPage(),
+        item = fixture.items[0]!;
+      await page.goto(fake.origin + '/p/' + IG_FIXTURE.code + '/');
+      const focal = {
+        pk: IG_FIXTURE.commentId,
+        user: { username: item.account.handle! },
+        text: item.text,
+        created_at: Date.parse(item.createdAt) / 1000,
+        child_comment_count: 0,
+      };
+      const captionSeconds = Date.parse(SOLE_CAPTION_TIME) / 1000;
+      const script = [
+        {
+          code: IG_FIXTURE.code,
+          comment_count: 1,
+          ...(mode === 'no-caption-object'
+            ? {}
+            : {
+                caption: {
+                  pk: '555444',
+                  user: { username: 'generated_owner' },
+                  text: 'Generated caption',
+                  created_at: captionSeconds,
+                  created_at_utc: captionSeconds,
+                },
+              }),
+          comments: [focal],
+        },
+      ];
+      let scope: ReplyScopeDiagnostic | undefined;
+      const checked: boolean[] = [];
+      const settled = await commentReplies(
+        page,
+        [],
+        {
+          id: IG_FIXTURE.commentId,
+          createdAt: item.createdAt,
+          username: item.account.handle!,
+          text: item.text,
+        },
+        () => {},
+        performance.now() + 15000,
+        async () => {},
+        0,
+        (answerChecked) => checked.push(answerChecked),
+        undefined,
+        (value) => {
+          scope = value;
+        },
+        undefined,
+        undefined,
+        undefined,
+        () => script,
+      ).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      const parsed = ContextStepReportSchema.parse({
+        replyScope: scope,
+      }).replyScope!;
+      const sole = parsed.soleComment!;
+      // The generated page keeps the real shape's counts: one permalink, the
+      // own Reply action removed, no counters or rows, two focal times with
+      // one unlinked, and three children at scope level 12.
+      expect(sole).toMatchObject({
+        pagePermalinks: 1,
+        pageFocalPermalinks: 1,
+        pageForeignReplyControls: 0,
+        pageExpandControls: mode === 'control' ? 1 : 0,
+        pageReplyCounters: mode === 'control' ? 1 : 0,
+        pageRows: 0,
+        captionEntriesExcluded: mode === 'no-caption-object' ? 0 : 1,
+        answerSetValid: true,
+        childCountProofClass: 'zero',
+        focalTimes: 2,
+        focalTimeKinds: {
+          inFocalPermalink: 1,
+          inSamePostPermalink: 0,
+          inPostPermalink: 0,
+          inOtherCommentPermalink: 0,
+          unlinked: 1,
+        },
+      });
+      expect(parsed.levels.at(-1)).toMatchObject({
+        depth: 12,
+        children: [
+          {
+            containsFocal: false,
+            otherPermalinks: 0,
+            times: mode === 'in-row' ? 0 : 1,
+            expandControls: 0,
+            images: 1,
+          },
+          {
+            containsFocal: false,
+            otherPermalinks: 0,
+            times: 0,
+            expandControls: 0,
+            images: 0,
+          },
+          {
+            containsFocal: true,
+            otherPermalinks: 0,
+            times: mode === 'in-row' ? 2 : 1,
+            expandControls: 0,
+            images: 1,
+          },
+        ],
+      });
+      expect(sole.unlinkedTime).toEqual({
+        evaluated: true,
+        locationClass: mode === 'in-row' ? 'focal-row' : 'image-sibling',
+        ancestorLink: 'none',
+        outsideFocalRow: mode !== 'in-row',
+        outsidePermalinks: true,
+        datetimeEqualsCaption:
+          mode === 'no-caption-object'
+            ? null
+            : mode !== 'mismatch' && mode !== 'other-comment',
+        ...(mode === 'no-caption-object'
+          ? { notComparable: 'caption-absent' }
+          : {}),
+        admitted: mode === 'caption-time' || mode === 'control',
+      });
+      if (mode === 'caption-time') {
+        expect(settled).toMatchObject({
+          value: { entries: [], moreCount: 0, capped: false },
+        });
+        expect(checked).toContain(true);
+        expect(parsed).toMatchObject({
+          scopeKind: 'sole-comment',
+          zeroDecision: 'sole-zero',
+        });
+        expect(sole).toMatchObject({
+          replyControlDecision: 'absent',
+          firstFailedGate: 'none',
+        });
+      } else {
+        expect(settled).toMatchObject({
+          error: { reason: 'reply-scope-unverified' },
+        });
+        expect(checked).not.toContain(true);
+        expect(parsed.scopeKind).not.toBe('sole-comment');
+        expect(parsed.zeroDecision).toBe(
+          mode === 'control' ? 'read-normally' : undefined,
+        );
+        expect(sole).toMatchObject({
+          replyControlDecision: mode === 'control' ? 'read-normally' : 'absent',
+          firstFailedGate:
+            mode === 'control' ? 'sole-page-controls' : 'sole-focal',
+        });
+      }
+      const report = JSON.stringify(parsed);
+      for (const value of [
+        item.text,
+        item.account.handle!,
+        IG_FIXTURE.commentId,
+        '555444',
+        SOLE_CAPTION_TIME,
+        String(captionSeconds),
+        '2024-12-31',
+      ])
+        expect(report).not.toContain(value);
     } finally {
       await browser.close();
       await fake.close();

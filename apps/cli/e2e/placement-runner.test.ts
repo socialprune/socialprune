@@ -218,8 +218,14 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     expect(confirmationCreated.changed).toBe(false);
     await selectedReader('selectedAfterConfirmation', 2);
     const recycled = await watch('readerRecycle', async () => {
-      reading = await boundary.replace(reading);
-      await reading.setContent('<title>Generated reading probe</title>');
+      const before = reading;
+      await reading.goto(fake!.origin + '/your_activity/interactions/comments');
+      await boundary.resetRenderer(reading, 1500);
+      await reading.goto(fake!.origin + '/your_activity/interactions/comments');
+      await reading.evaluate(() => {
+        document.title = 'Generated reading probe';
+      });
+      expect(reading).toBe(before);
     });
     receipt.pagesCount = boundary.snapshot();
     const next = await context!.newCDPSession(reading);
@@ -239,9 +245,10 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     });
     expect(boundary.snapshot()).toMatchObject({
       pageLimit: 3,
-      ownedPeak: 3,
-      backgroundCreated: 3,
-      replaced: 1,
+      ownedPeak: 2,
+      backgroundCreated: 2,
+      replaced: 0,
+      rendererResets: 1,
     });
     expect(sameWindow).toBe(true);
     const cap = await watch('pageCap', async () => {
@@ -267,12 +274,25 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
         });
         return context!;
       },
-      async (action) => {
+      async (phase, action) => {
         let page!: Awaited<ReturnType<typeof action>>;
-        const observed = await watch(`generatedPage${++runPages}`, async () => {
+        const name = `generated-${phase}-${++runPages}`;
+        const observed = await watch(name, async () => {
           page = await action();
+          await page.evaluate(
+            (title) => {
+              document.title = title;
+            },
+            phase === 'confirmation'
+              ? 'Generated confirmation probe'
+              : 'Generated reading probe',
+          );
         });
         expect(observed.changed).toBe(false);
+        await selectedReader(
+          `${name}-selected`,
+          phase === 'reader-start' ? 1 : 2,
+        );
         return page;
       },
     );
@@ -280,7 +300,13 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
       pages: generated.pages,
       rows: generated.rows,
       stop: generated.stop,
+      recycling: generated.recycling,
+      memory: generated.memory,
     };
+    expect(generated).toMatchObject({
+      pages: { rendererResets: 1, replaced: 0, ownedPeak: 2 },
+      recycling: { count: 1, events: [{ afterStep: 20, nextStep: 21 }] },
+    });
     // An observed first-window activation is a reported limitation, not a false pass.
     console.log('PLACEMENT_FOREGROUND_RECEIPT', JSON.stringify(receipt));
     boundary.dispose();

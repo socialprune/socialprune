@@ -2058,23 +2058,43 @@ test.each(memoryBenchmark ? [memoryStepCount] : [3])(
 );
 export async function placementGeneratedRun(
   launch: (path: string, executablePath: string) => Promise<BrowserContext>,
-  measurePage: (action: () => Promise<Page>) => Promise<Page>,
+  measure: (
+    phase: 'reader-start' | 'confirmation' | 'renderer-reset',
+    action: () => Promise<Page>,
+  ) => Promise<Page>,
 ) {
-  const h = await harness('success', 2, 30000, launch);
+  const h = await harness('success', 22, 1500, launch);
   await fullRunReady(h);
-  h.setLimit(1);
+  h.setLimit(21);
+  h.setMaxSteps(21);
+  h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
   const original = pagesHelpers.contextPages;
   const boundary = vi
     .spyOn(pagesHelpers, 'contextPages')
     .mockImplementation((...args) => {
       const pages = original(...args),
-        make = pages.newPage.bind(pages);
-      pages.newPage = () => measurePage(make);
+        make = pages.newPage.bind(pages),
+        startup = pages.startupPage.bind(pages),
+        reset = pages.resetRenderer.bind(pages);
+      let starting = true;
+      pages.startupPage = () =>
+        measure('reader-start', async () => {
+          const page = await startup();
+          starting = false;
+          return page;
+        });
+      pages.newPage = () => (starting ? make() : measure('confirmation', make));
+      pages.resetRenderer = (page, timeout) =>
+        measure('renderer-reset', async () => {
+          await reset(page, timeout);
+          return page;
+        });
       return pages;
     });
   try {
     expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
-      completed: 1,
+      completed: 21,
+      steps: 21,
     });
     const run = (await h.store.browserJournal()).runs.find(
       (run) => run.runId !== 'generated-prior-canary',
@@ -2132,7 +2152,8 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
   h.setMaxSteps(21);
   h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
   let pagesCreated = 0,
-    activeBeforeClose = 0;
+    activeAtReset = 0;
+  let reader: Page | undefined;
   const originalPages = pagesHelpers.contextPages;
   const create = vi
     .spyOn(pagesHelpers, 'contextPages')
@@ -2142,9 +2163,16 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
       boundary.newPage = async () => {
         pagesCreated++;
         const page = await make();
-        if (pagesCreated === 3)
-          activeBeforeClose = page.context().pages().length;
+        reader ??= page;
         return page;
+      };
+      const reset = boundary.resetRenderer.bind(boundary);
+      boundary.resetRenderer = async (page, timeout) => {
+        expect(page).toBe(reader);
+        activeAtReset = page.context().pages().length;
+        const same = await reset(page, timeout);
+        expect(page.isClosed()).toBe(false);
+        return same;
       };
       return boundary;
     });
@@ -2154,7 +2182,7 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
       completed: 21,
       steps: 21,
     });
-    expect(pagesCreated).toBe(3);
+    expect(pagesCreated).toBe(2);
     expect(memory).toHaveBeenCalledTimes(2);
     const run = (await h.store.browserJournal()).runs.find(
       (run) => run.runId !== 'generated-prior-canary',
@@ -2180,8 +2208,9 @@ test('C35 IG19 recycles once between20 and21 in the same context without additio
       },
       memory: { samples: 21, failedSamples: 0 },
       runtime: { unexpectedPageCloses: 0 },
+      pages: { rendererResets: 1, replaced: 0, ownedOpen: 2, ownedPeak: 2 },
     });
-    expect(activeBeforeClose).toBe(3);
+    expect(activeAtReset).toBe(2);
     expect(
       h.fake.requests.filter(
         (request) => request.path === networkHelpers.COMMENTS_PATH,
@@ -2214,9 +2243,9 @@ test.each(['account', 'language', 'extension', 'http-429'] as const)(
     const original = pagesHelpers.contextPages;
     vi.spyOn(pagesHelpers, 'contextPages').mockImplementation((...args) => {
       const boundary = original(...args),
-        replace = boundary.replace.bind(boundary);
-      boundary.replace = async (page) => {
-        const next = await replace(page);
+        reset = boundary.resetRenderer.bind(boundary);
+      boundary.resetRenderer = async (page, timeout) => {
+        const same = await reset(page, timeout);
         if (mode === 'extension') {
           const folder = join(
             h.profile,
@@ -2229,7 +2258,7 @@ test.each(['account', 'language', 'extension', 'http-429'] as const)(
         } else if (mode === 'account') h.fake.setVariant('account-mismatch');
         else if (mode === 'language') h.fake.setVariant('de');
         else h.fake.setVariant('429');
-        return next;
+        return same;
       };
       return boundary;
     });

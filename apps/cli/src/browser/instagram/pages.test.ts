@@ -79,6 +79,7 @@ test('PLACEMENT page report refuses fabricated or over-limit counts', () => {
     ownedPeak: 2,
     backgroundCreated: 3,
     replaced: 1,
+    rendererResets: 0,
   };
   expect(ContextPagesSchema.safeParse(counts).success).toBe(true);
   expect(
@@ -90,6 +91,77 @@ test('PLACEMENT page report refuses fabricated or over-limit counts', () => {
       title: 'Generated private title',
     }).success,
   ).toBe(false);
+});
+
+test('D3 reset admits only an exact owned main-frame GET and removes its route after failure', async () => {
+  const events = new EventEmitter();
+  const frame = {};
+  let closed = false;
+  let handler!: (route: unknown) => Promise<void>;
+  let resetUrl = '';
+  const unroute = vi.fn().mockResolvedValue(undefined);
+  const page = {
+    isClosed: () => closed,
+    close: () => {
+      closed = true;
+      return Promise.resolve();
+    },
+    mainFrame: () => frame,
+    route: (url: string, value: typeof handler) => {
+      resetUrl = url;
+      handler = value;
+      return Promise.resolve();
+    },
+    unroute,
+    goto: async () => {
+      for (const [method, navigation, requestFrame, permitted] of [
+        ['GET', true, frame, true],
+        ['POST', true, frame, false],
+        ['GET', false, frame, false],
+        ['GET', true, {}, false],
+      ] as const) {
+        const proceed = vi.fn().mockResolvedValue(undefined),
+          abort = vi.fn().mockResolvedValue(undefined);
+        await handler({
+          request: () => ({
+            method: () => method,
+            isNavigationRequest: () => navigation,
+            frame: () => requestFrame,
+          }),
+          continue: proceed,
+          abort,
+        });
+        expect(proceed).toHaveBeenCalledTimes(permitted ? 1 : 0);
+        expect(abort).toHaveBeenCalledTimes(permitted ? 0 : 1);
+      }
+      throw new Error('Generated reset navigation failure');
+    },
+  } as unknown as Page;
+  const initial = { isClosed: () => false, close: () => Promise.resolve() };
+  const context = Object.assign(events, {
+    pages: () => [initial],
+  }) as unknown as BrowserContext;
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => Promise.resolve(page),
+  );
+  try {
+    await expect(boundary.resetRenderer(initial as Page, 1500)).rejects.toThrow(
+      'CONTEXT_PAGE_NOT_OWNED',
+    );
+    await boundary.startupPage();
+    await expect(boundary.resetRenderer(page, 1500)).rejects.toThrow(
+      'Generated reset navigation failure',
+    );
+    expect(new URL(resetUrl).hostname).toBe('localhost');
+    expect(new URL(resetUrl).pathname).toBe('/reader-reset');
+    expect(unroute).toHaveBeenCalledWith(resetUrl, handler);
+    expect(boundary.snapshot().rendererResets).toBe(0);
+    await expect(fetch(resetUrl)).rejects.toThrow();
+  } finally {
+    boundary.dispose();
+  }
 });
 
 test('startup pages close without navigation; a late page closes and fails exact ownership', async () => {
@@ -318,6 +390,7 @@ test('C35 IG19 replaces only an explicitly owned page and forgets its old page i
       ownedPeak: 3,
       backgroundCreated: 3,
       replaced: 1,
+      rendererResets: 0,
     });
   } finally {
     boundary.dispose();

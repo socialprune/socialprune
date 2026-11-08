@@ -1,6 +1,7 @@
 import type { BrowserContext, Page } from 'playwright-core';
 import { ContextStop } from './report.ts';
 import { z } from 'zod';
+import { createServer } from 'node:http';
 
 const target = z.object({
   targetInfo: z.object({ targetId: z.string().min(1) }),
@@ -74,6 +75,7 @@ export const ContextPagesSchema = z.strictObject({
   ownedPeak: z.number().int().min(0).max(3),
   backgroundCreated: z.number().int().nonnegative(),
   replaced: z.number().int().nonnegative(),
+  rendererResets: z.number().int().nonnegative(),
 });
 
 /** Requests no OS focus; exact returned Page identity controls run ownership. */
@@ -92,6 +94,7 @@ export function contextPages(
     ownedPeak: 0,
     backgroundCreated: 0,
     replaced: 0,
+    rendererResets: 0,
   });
   const refresh = () => {
     for (const page of owned) if (page.isClosed()) owned.delete(page);
@@ -197,6 +200,70 @@ export function contextPages(
       counts.replaced++;
       refresh();
       return next;
+    },
+    async resetRenderer(page: Page, timeout: number): Promise<Page> {
+      if (!owned.has(page)) throw new Error('CONTEXT_PAGE_NOT_OWNED');
+      const server = createServer((request, response) => {
+        if (
+          request.method !== 'GET' ||
+          request.url !== '/reader-reset' ||
+          request.headers.host !== authority
+        ) {
+          response.writeHead(404);
+          response.end();
+          return;
+        }
+        response.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Content-Security-Policy':
+            "default-src 'none'; frame-ancestors 'none'",
+          'X-Content-Type-Options': 'nosniff',
+        });
+        response.end('<!doctype html><title>SocialPrune</title>');
+      });
+      let authority = '';
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string')
+        throw new Error('CONTEXT_RESET_LISTENER');
+      authority = `localhost:${address.port}`;
+      const url = `http://${authority}/reader-reset`;
+      // This exact constant page is the only non-platform navigation admitted
+      // here. Continue bypasses the context route only for this owned main frame.
+      const route: Parameters<Page['route']>[1] = async (route) => {
+        const request = route.request();
+        if (
+          owned.has(page) &&
+          request.method() === 'GET' &&
+          request.isNavigationRequest() &&
+          request.frame() === page.mainFrame()
+        )
+          await route.continue();
+        else await route.abort();
+      };
+      try {
+        await page.route(url, route);
+        await page.goto(url, { waitUntil: 'load', timeout });
+        const client = await context.newCDPSession(page);
+        try {
+          await client.send('Page.resetNavigationHistory');
+        } finally {
+          await client.detach();
+        }
+        counts.rendererResets++;
+        return page;
+      } finally {
+        try {
+          await page.unroute(url, route);
+        } finally {
+          server.closeAllConnections();
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+      }
     },
     allowed: classify,
     check() {

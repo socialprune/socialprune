@@ -820,7 +820,7 @@ export async function runContextWithDependencies(
           await memory.dispose();
           retiredMemory.push(memory.summary());
           runtime.forget(page);
-          page = await pages.replace(page);
+          page = await pages.resetRenderer(page, deps.responseMs);
           runtime.own(page);
           memory = observePageMemory(page);
           answers = pageAnswers(page, deps.policy);

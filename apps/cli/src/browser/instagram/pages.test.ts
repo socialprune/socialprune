@@ -195,6 +195,50 @@ test('D3 reset admits only an exact owned main-frame GET and removes its route a
   }
 });
 
+test('RESET-LANG-1 a renderer reset leaves the reader blank before its history is reset', async () => {
+  const events = new EventEmitter(),
+    order: string[] = [];
+  const page = {
+    isClosed: () => false,
+    close: () => Promise.resolve(),
+    mainFrame: () => ({}),
+    route: () => Promise.resolve(),
+    unroute: () => Promise.resolve(),
+    goto: (url: string) => {
+      order.push(url === 'about:blank' ? 'about:blank' : 'reset-page');
+      return Promise.resolve(null);
+    },
+  } as unknown as Page;
+  const initial = { isClosed: () => false, close: () => Promise.resolve() };
+  const context = Object.assign(events, {
+    pages: () => [initial],
+    newCDPSession: () =>
+      Promise.resolve({
+        send: (method: string) => {
+          order.push(method);
+          return Promise.resolve({});
+        },
+        detach: () => Promise.resolve(),
+      }),
+  }) as unknown as BrowserContext;
+  const boundary = contextPages(
+    context,
+    () => {},
+    () => Promise.resolve(page),
+  );
+  try {
+    await boundary.startupPage();
+    expect(await boundary.resetRenderer(page, 1500)).toBe(page);
+    expect(order).toEqual([
+      'reset-page',
+      'about:blank',
+      'Page.resetNavigationHistory',
+    ]);
+    expect(boundary.snapshot().rendererResets).toBe(1);
+  } finally {
+    boundary.dispose();
+  }
+});
 test('startup pages close without navigation; a late page closes and fails exact ownership', async () => {
   const events = new EventEmitter(),
     failures: string[] = [];

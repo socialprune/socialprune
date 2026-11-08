@@ -254,6 +254,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
     });
     receipt.pagesCount = boundary.snapshot();
     expect(confirmationCreated.changed).toBe(false);
+    await boundary.assertTabs();
     await selectedReader('selectedAfterConfirmation', 2);
     const recycled = await watch('readerRecycle', async () => {
       const before = reading;
@@ -264,6 +265,7 @@ test('PLACEMENT Windows foreground sentinel measures launch and same-window back
         document.title = 'Generated reading probe';
       });
       expect(reading).toBe(before);
+      await boundary.assertTabs();
     });
     receipt.pagesCount = boundary.snapshot();
     const next = await context!.newCDPSession(reading);

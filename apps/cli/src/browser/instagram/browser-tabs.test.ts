@@ -113,6 +113,10 @@ test.each(['unclosed', 'late'] as const)(
     expect(
       await auditBrowserTabs(f.context, new Set([f.page]), mode !== 'late'),
     ).toMatchObject({ nonOwned: 2, tabs: 3 });
+    if (mode === 'unclosed')
+      expect(
+        await auditBrowserTabs(f.context, new Set([f.page]), true),
+      ).toMatchObject({ closed: { page: 0, tab: 0 } });
     if (mode === 'late') expect(f.closed).toHaveLength(0);
   },
 );

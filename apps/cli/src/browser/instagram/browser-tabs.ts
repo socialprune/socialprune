@@ -99,6 +99,7 @@ export async function auditBrowserTabs(
     const anchorInfo = z
       .object({ targetInfo: info })
       .parse(await client.send('Target.getTargetInfo')).targetInfo;
+    if (!anchorInfo.browserContextId) throw new Error('TAB_CONTEXT_MISSING');
     const runWindow = windowSchema.parse(
       await client.send('Browser.getWindowForTarget'),
     ).windowId;
@@ -127,7 +128,7 @@ export async function auditBrowserTabs(
           filter: [{ type: 'tab' }, { type: 'page' }],
         }),
       ).targetInfos;
-      const same = [];
+      const same: z.infer<typeof info>[] = [];
       for (const value of targets) {
         if (value.browserContextId !== anchorInfo.browserContextId) continue;
         // An unobservable same-context target is not assumed foreign or closed.
@@ -143,7 +144,7 @@ export async function auditBrowserTabs(
       if ([...ids].some((id) => !same.some((value) => value.targetId === id)))
         throw new Error('OWNED_TAB_MISSING');
       const covered = new Set<string>(),
-        nonOwned = [];
+        nonOwned: z.infer<typeof info>[] = [];
       let tabs = 0;
       for (const value of same.filter((value) => value.type === 'tab')) {
         tabs++;
@@ -163,11 +164,18 @@ export async function auditBrowserTabs(
     };
     let state = await inspect();
     if (closeStartup) {
-      for (const value of state.nonOwned) {
+      const attempted = state.nonOwned;
+      for (const value of attempted) {
         await client.send('Target.closeTarget', { targetId: value.targetId });
-        result.closed[value.type as 'page' | 'tab']++;
       }
       state = await inspect();
+      for (const value of attempted)
+        if (
+          !state.nonOwned.some(
+            (remaining) => remaining.targetId === value.targetId,
+          )
+        )
+          result.closed[value.type as 'page' | 'tab']++;
     }
     result.nonOwned = state.nonOwned.length;
     result.tabs = state.tabs;

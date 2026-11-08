@@ -436,10 +436,10 @@ export async function runContextWithDependencies(
     guard();
   };
   deps = { ...deps, sleep: (ms) => pause(ms) };
-  const checkpoint = async () => {
+  const checkpoint = async (checkTabs = false) => {
     waitTrace.checkpoint('guard');
     guard();
-    if (pages) {
+    if (pages && checkTabs) {
       waitTrace.checkpoint('guard');
       await pages.assertTabs();
       (report.tabChecks ??= []).push({
@@ -692,7 +692,7 @@ export async function runContextWithDependencies(
         throw new CliError('STALE_PLAN');
       stage = 'checkpoint';
       phase('checkpoint');
-      await checkpoint();
+      await checkpoint(true);
       // Confirmation stays in the background; only the selected reader recycles.
       memory = observePageMemory(page);
       answers = pageAnswers(page, deps.policy);
@@ -848,7 +848,7 @@ export async function runContextWithDependencies(
           });
           PageRecyclingSchema.parse(report.recycling);
           report.memory = memorySummary();
-          await checkpoint();
+          await checkpoint(true);
         }
         options.session?.entry(
           entryView(
@@ -991,7 +991,7 @@ export async function runContextWithDependencies(
             }
             stage = 'checkpoint';
             phase('checkpoint');
-            await checkpoint();
+            await checkpoint(true);
             if (dateInZone(options.now(), options.plan.timeZone) !== day) {
               stage = 'settlement';
               await writer.settle({

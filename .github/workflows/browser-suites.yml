@@ -224,6 +224,9 @@ jobs:
       - name: Measure foreground and placement before full-suite admission
         timeout-minutes: 4
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - name: Verify focused reader recycle and sibling-zero canary
+        timeout-minutes: 4
+        run: pnpm exec vitest run --config apps/cli/e2e/context.vitest.config.ts -t "^C35 IG19 recycles once between20|^STALL2 ordered unchecked sibling zero" --maxWorkers=1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -16,11 +16,24 @@ import { windowArguments } from '../src/browser/launch.ts';
 // minimized (measurement only; the product never minimizes or restores).
 // Budget: 2 browsers are chosen per step; per variant launch about 2 s plus
 // 3 states x (1 s frames + 1 s click + 1.5 s settle) = about 13 s; 3 variants
-// = about 40 s, plus 5 s per cover start: declared 120 s.
+// = about 40 s, plus 5 s per cover start: declared 120 s. Run 42523158929
+// measured 23 s per step for two variants; three variants fit the same cap.
 const BUDGET_MS = 120000;
-const VARIANTS: Record<string, string[]> = {
-  default: [],
-  'no-native-occlusion': ['--disable-features=CalculateNativeWinOcclusion'],
+const VARIANTS: Record<string, { args: string[]; drop: string[] }> = {
+  default: { args: [], drop: [] },
+  'no-native-occlusion': {
+    args: ['--disable-features=CalculateNativeWinOcclusion'],
+    drop: [],
+  },
+  // Control: Playwright's two background switches removed, to show whether
+  // they are what keeps an occluded or minimized window rendering.
+  'without-background-switches': {
+    args: [],
+    drop: [
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+    ],
+  },
 };
 async function waitFile(path: string) {
   for (let attempt = 0; attempt < 200; attempt++) {
@@ -159,6 +172,11 @@ test(
           await browserSession.detach();
           result.disableFeatures = command.arguments.filter((value) =>
             value.startsWith('--disable-features='),
+          ).length;
+          result.backgroundSwitches = command.arguments.filter((value) =>
+            /^--disable-(?:backgrounding-occluded-windows|renderer-backgrounding)$/u.test(
+              value,
+            ),
           );
           result.webdriver = await page.evaluate(() => navigator.webdriver);
           result.userAgent = await page.evaluate(() => navigator.userAgent);

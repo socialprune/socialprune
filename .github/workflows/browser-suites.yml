@@ -226,8 +226,9 @@ jobs:
     if: inputs.placement-only == true
     runs-on: windows-latest
     # 10 before the Edge probe steps, then 18 with the Instagram and X Edge
-    # steps; the two Instagram steps now cap at 6 minutes each: 18 + 2 + 2.
-    timeout-minutes: 22
+    # steps; the two Instagram steps now cap at 6 minutes each: 18 + 2 + 2;
+    # then two 3-minute startup probe steps: 22 + 6.
+    timeout-minutes: 28
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -258,6 +259,17 @@ jobs:
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT X deletion"
+      - name: Measure startup with 0, 1 and 8 restored tabs on the pinned Chromium
+        if: ${{ !cancelled() }}
+        # Declared budgets 3 x 45 s plus about 10 s vitest start = 145 s.
+        timeout-minutes: 3
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT startup with"
+      - name: Measure startup with 0, 1 and 8 restored tabs on the runner's installed Microsoft Edge
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        env:
+          SP_PLACEMENT_BROWSER: msedge
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT startup with"
       - name: Verify focused reader recycle and sibling-zero canary
         timeout-minutes: 4
         run: pnpm exec vitest run --config apps/cli/e2e/context.vitest.config.ts -t "^C35 IG19 recycles once between20|^STALL2 ordered unchecked sibling zero" --maxWorkers=1

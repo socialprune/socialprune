@@ -782,15 +782,17 @@ export async function runWithDependencies(
       options.signal.aborted ||
       (caught instanceof CliError && caught.code === 'CANCELLED')
         ? 'stopped-by-person'
-        : error instanceof CliError &&
-            [
-              'PLATFORM_CHECK',
-              'ACCOUNT_MISMATCH',
-              'PROFILE_INVALID',
-              'PAGE_LANGUAGE',
-            ].includes(error.code)
-          ? 'platform-check'
-          : 'error';
+        : error instanceof CliError && error.code === 'TAB_INVENTORY'
+          ? 'tab-inventory'
+          : error instanceof CliError &&
+              [
+                'PLATFORM_CHECK',
+                'ACCOUNT_MISMATCH',
+                'PROFILE_INVALID',
+                'PAGE_LANGUAGE',
+              ].includes(error.code)
+            ? 'platform-check'
+            : 'error';
   } finally {
     try {
       if (began) {
@@ -805,9 +807,19 @@ export async function runWithDependencies(
               options.plan.timeZone,
               warning,
             );
-          run.endReason = 'platform-check';
-          error ??= new CliError('PLATFORM_CHECK');
+          if (
+            flushError instanceof CliError &&
+            flushError.code === 'TAB_INVENTORY'
+          ) {
+            // A page or tab outside the run: its own stop, never a warning.
+            run.endReason = error ? run.endReason : 'tab-inventory';
+            error ??= flushError;
+          } else {
+            run.endReason = 'platform-check';
+            error ??= new CliError('PLATFORM_CHECK');
+          }
         }
+        browser?.endPages?.();
         try {
           if (browser && accountBefore) accountAfter = await browser.account();
         } catch (accountError) {
@@ -874,6 +886,7 @@ export async function runWithDependencies(
             path,
             JSON.stringify({
               xWindows: browser?.rateWindows?.summary() ?? [],
+              pages: browser?.pages?.() ?? null,
               stop:
                 detail ??
                 (longWindow

@@ -12,6 +12,25 @@ const { launch } = vi.hoisted(() => ({ launch: vi.fn() }));
 vi.mock('playwright-core', () => ({
   chromium: { launchPersistentContext: launch },
 }));
+// These generated contexts have no CDP. The window and tab inventory is
+// proven in the browser suites; here the run's own page comes from
+// context.newPage and the inherited launch tabs close after it.
+vi.mock('./x/pages.ts', () => ({
+  xRunPages: (context: import('playwright-core').BrowserContext) => ({
+    async startupPage() {
+      const inherited = context.pages();
+      const page = await context.newPage();
+      for (const tab of inherited) await tab.close({ runBeforeUnload: false });
+      return page;
+    },
+    newPage: () => context.newPage(),
+    assertTabs: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
+    check: () => undefined,
+    snapshot: () => null,
+    dispose: () => undefined,
+  }),
+}));
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -179,7 +198,7 @@ test('production desktop guards and request recording are installed before any f
   }
 });
 
-test('production CLI driver keeps the inherited confirmation page and does not create a platform page during setup', async () => {
+test('production CLI driver installs its guards, then creates its own confirmation page and closes the launch tab, with no platform page during setup', async () => {
   const { context, inherited } = generatedContext();
   try {
     await productionDriver({
@@ -188,8 +207,16 @@ test('production CLI driver keeps the inherited confirmation page and does not c
       confirmationOrigin: 'http://127.0.0.1:4522',
       record: () => Promise.resolve(),
     });
-    expect(context.newPage).not.toHaveBeenCalled();
-    expect(inherited.close).not.toHaveBeenCalled();
+    // One owned page, the confirmation page; the platform page opens later.
+    expect(context.newPage).toHaveBeenCalledTimes(1);
+    expect(inherited.close).toHaveBeenCalledWith({ runBeforeUnload: false });
+    for (const guardCall of [
+      ...context.route.mock.invocationCallOrder,
+      ...context.routeWebSocket.mock.invocationCallOrder,
+    ])
+      expect(guardCall).toBeLessThan(
+        context.newPage.mock.invocationCallOrder[0]!,
+      );
     expect(context.route).toHaveBeenCalledTimes(2);
     expect(context.routeWebSocket).toHaveBeenCalledTimes(1);
     expect(context.listenerCount('response')).toBe(1);

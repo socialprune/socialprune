@@ -153,6 +153,7 @@ export interface BrowserRun {
     | 'error'
     | 'platform-check'
     | 'canary'
+    | 'tab-inventory'
     | null;
   bodyShapes: Record<string, string[]>;
   profileReport: ProfileReport | null;

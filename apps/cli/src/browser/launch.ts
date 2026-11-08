@@ -1,13 +1,6 @@
 import { CliError } from '../cli/errors.ts';
 import type { BrowserContext } from 'playwright-core';
 
-/** Launch tabs can carry a restore navigation even while still at about:blank. */
-export async function freshPlatformPage(context: BrowserContext) {
-  const inherited = context.pages();
-  const page = await context.newPage();
-  for (const tab of inherited) await tab.close({ runBeforeUnload: false });
-  return page;
-}
 export async function waitForBrowserClose(
   context: BrowserContext,
 ): Promise<void> {

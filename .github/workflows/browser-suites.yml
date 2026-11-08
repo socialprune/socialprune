@@ -146,8 +146,9 @@ jobs:
     needs: select
     if: needs.select.outputs.context == 'true' && inputs.placement-only != true
     runs-on: windows-latest
-    # 40 before the added Edge placement step in shard 1 (up to 4 minutes).
-    timeout-minutes: 44
+    # 40 before the added Edge placement steps in shard 1 (Instagram and X,
+    # up to 4 minutes each).
+    timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
@@ -196,6 +197,12 @@ jobs:
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - name: Measure X deletion placement and restored tabs on the runner's installed Microsoft Edge
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        timeout-minutes: 4
+        env:
+          SP_PLACEMENT_BROWSER: msedge
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT X deletion"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && matrix.shard == 1 }}
         with:
@@ -214,8 +221,9 @@ jobs:
   placement:
     if: inputs.placement-only == true
     runs-on: windows-latest
-    # 10 before the added Edge probe step (up to 4 minutes).
-    timeout-minutes: 14
+    # 10 before the added Edge probe steps (Instagram and X, up to 4 minutes
+    # each).
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -238,6 +246,12 @@ jobs:
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
+      - name: Measure X deletion placement and restored tabs on the runner's installed Microsoft Edge
+        if: ${{ !cancelled() }}
+        timeout-minutes: 4
+        env:
+          SP_PLACEMENT_BROWSER: msedge
+        run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT X deletion"
       - name: Verify focused reader recycle and sibling-zero canary
         timeout-minutes: 4
         run: pnpm exec vitest run --config apps/cli/e2e/context.vitest.config.ts -t "^C35 IG19 recycles once between20|^STALL2 ordered unchecked sibling zero" --maxWorkers=1

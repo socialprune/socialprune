@@ -126,9 +126,10 @@ const END_REASON = {
     en: 'An Instagram run phase exceeded its wait budget. The run stopped and retained its partial report.',
     de: 'Eine Phase des Instagram-Laufs hat ihr Wartebudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.',
   },
+  // Reached only by the X runs; Instagram uses its own stop messages.
   'tab-inventory': {
-    en: 'The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.',
-    de: 'Die Tabs im Instagram-Lauffenster konnten nicht geprüft werden, oder ein Tab außerhalb dieses Laufs blieb offen. Der Lauf wurde gestoppt.',
+    en: 'The tabs in the X run window could not be checked, or a page or tab outside this run appeared. The run stopped.',
+    de: 'Die Tabs im X-Lauffenster konnten nicht geprüft werden, oder eine Seite oder ein Tab außerhalb dieses Laufs ist aufgetaucht. Der Lauf wurde gestoppt.',
   },
   'account-mismatch': {
     en: 'The signed-in account does not match the expected account.',

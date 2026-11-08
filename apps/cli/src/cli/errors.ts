@@ -290,7 +290,7 @@ export const CLI_ERRORS = {
   },
   TAB_INVENTORY: {
     message:
-      'The tabs in the Instagram run window could not be checked, or a tab outside this run remained. The run stopped.',
+      'The tabs in the run window could not be checked, or a page or tab outside this run appeared. The run stopped.',
     exitCode: 1,
     retryable: false,
   },

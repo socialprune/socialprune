@@ -96,7 +96,8 @@ async function harness(
   let mutateBeforeSend = false;
   let removePreinstalled = false,
     holdClose = false,
-    closeWaiting = false;
+    closeWaiting = false,
+    restoredTabs = 0;
   let finishClose: () => void = () => {};
   const closeGate = new Promise<void>((resolve) => {
     finishClose = resolve;
@@ -182,6 +183,11 @@ async function harness(
             await context.pages()[0]!.evaluate(() => navigator.webdriver),
           ).toBe(true);
           await probe.detach();
+          // Restored tabs inherited at launch, as a reopened profile shows.
+          for (let index = 0; index < restoredTabs; index++)
+            await (
+              await context.newPage()
+            ).setContent('<title>Generated restored tab</title>');
           context.on('request', (request) => network.push(request.url()));
           const driver = await pageDriver({
             context,
@@ -303,6 +309,21 @@ async function harness(
     holdWindowOpen() {
       holdClose = true;
     },
+    restoreTabs(count: number) {
+      restoredTabs = count;
+    },
+    /** A page the run did not open, as a person or the browser might. */
+    async foreignPage() {
+      await context!.newPage();
+    },
+    async structureReport(runId: string) {
+      return JSON.parse(
+        await readFile(
+          join(profile, `socialprune-delete-${runId}.json`),
+          'utf8',
+        ),
+      ) as { pages: Record<string, unknown> | null; stop: unknown };
+    },
     get waitingForClose() {
       return closeWaiting;
     },
@@ -403,6 +424,62 @@ test('foundation: real fake pages, human clicks, durable journal and outcome; no
     ).toBe(true);
     const token = h.launchUrls[0]!.split('#bootstrap=')[1]!;
     expect(h.notices.join('')).not.toContain(token);
+  } finally {
+    await h.close();
+  }
+});
+
+test('XPAGES restored tabs close at startup, each step checks the window, and the report keeps the counts', async () => {
+  const h = await harness(['1001']);
+  try {
+    h.restoreTabs(3);
+    const running = h.launch();
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await running).toMatchObject({ completed: 1, endReason: 'done' });
+    const runId = (await h.store.browserJournal()).runs[0]!.runId;
+    const report = await h.structureReport(runId);
+    expect(report.stop).toBeNull();
+    expect(report.pages).toMatchObject({
+      remainingNonOwned: 0,
+      targetFailure: null,
+      unexpectedOpened: 0,
+    });
+    // The launch tab and three restored tabs.
+    expect(report.pages!['startupClosed']).toBeGreaterThanOrEqual(4);
+    // The startup audit and one step boundary before the post opens.
+    expect(report.pages!['targetChecks']).toBeGreaterThanOrEqual(2);
+    expect(report.pages!['ownedPeak']).toBeLessThanOrEqual(3);
+  } finally {
+    await h.close();
+  }
+});
+test('XPAGES a page the run did not open stops before any deletion request, as TAB_INVENTORY without a warning', async () => {
+  const h = await harness(['1001', '1002']);
+  try {
+    const running = h.launch();
+    await h.local();
+    await h.foreignPage();
+    await h.click('Start');
+    await expect(running).rejects.toMatchObject({ code: 'TAB_INVENTORY' });
+    expect(
+      fake.requests.filter((r) => r.method === 'POST').map((r) => r.path),
+    ).toEqual([]);
+    const journal = await h.store.browserJournal();
+    expect(journal.runs).toHaveLength(1);
+    expect(journal.runs[0]).toMatchObject({ endReason: 'tab-inventory' });
+    expect(journal.runs[0]!.warningKind ?? null).toBeNull();
+    expect(journal.attempts.filter((a) => a.state === 'sending')).toEqual([]);
+    const report = await h.structureReport(journal.runs[0]!.runId);
+    expect(report.stop).toEqual({ code: 'TAB_INVENTORY' });
+    expect(report.pages).toMatchObject({ unexpectedOpened: 1 });
+    expect(h.notices.join('')).toContain('Stop detail: TAB_INVENTORY');
+    expect(h.notices.join('')).not.toMatch(/sign-in|account check/u);
+    // No next-day warning gate: the same plan starts again at once.
+    const again = h.launch();
+    await h.click('Start');
+    await h.click('Continue');
+    expect(await again).toMatchObject({ completed: 2, endReason: 'done' });
   } finally {
     await h.close();
   }

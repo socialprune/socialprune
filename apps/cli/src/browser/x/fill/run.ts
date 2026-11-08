@@ -55,7 +55,9 @@ import { cleanupParts, originalDirectory } from '../../../originals/media.ts';
 import { productionMedia } from '../../../originals/video.ts';
 import type { MediaDependencies } from '../../../originals/video.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { launchRunBrowser, freshPlatformPage } from '../../launch.ts';
+import { launchRunBrowser } from '../../launch.ts';
+import { xRunPages } from '../pages.ts';
+import type { XRunPages } from '../pages.ts';
 import { browserClosed, captureOwnedWindow } from '../../owned-window.ts';
 import type { WindowPlacement } from '../../launch.ts';
 import { entryView } from '../../run-session.ts';
@@ -419,12 +421,14 @@ export async function runFillWithDependencies(
   options.signal.addEventListener('abort', stopped, { once: true });
   process.on('SIGINT', stopped);
   process.on('SIGTERM', stopped);
+  let pages: XRunPages | undefined;
   const check = () => {
     if (stop || options.signal.aborted) throw new CliError('CANCELLED');
     if (action) throw new CliError('UNEXPECTED_ACTION');
     if (rateLimited)
       throw new CliError('PLATFORM_CHECK', undefined, undefined, 'http-429');
     if (projectionFailure) throw projectionFailure;
+    pages?.check();
   };
   try {
     options.session?.before(before, null);
@@ -498,8 +502,11 @@ export async function runFillWithDependencies(
       }
     });
     context.once('close', stopped);
+    // Pages follow the Instagram runs' discipline: created in the background
+    // in the run window, launch tabs closed, any other page or tab stops.
+    pages = xRunPages(context);
     if (!options.session) {
-      const local = context.pages()[0] ?? (await context.newPage());
+      const local = await pages.startupPage();
       await local.goto(confirmation.launchUrl);
     }
     options.notice(`Confirmation: ${confirmation.url}\n`);
@@ -568,9 +575,7 @@ export async function runFillWithDependencies(
       const record = requestRecords.get(response.request());
       if (record) persist({ ...record, status: response.status() });
     });
-    page = options.session
-      ? await freshPlatformPage(context)
-      : await context.newPage();
+    page = options.session ? await pages.startupPage() : await pages.newPage();
     if (options.session?.ownedWindow) {
       try {
         options.session.ownedWindow(await captureOwnedWindow(context, page));
@@ -851,6 +856,8 @@ export async function runFillWithDependencies(
         ),
       );
       let pageAnswerCompleted = false;
+      // Step boundary: no tab outside this run may remain in its window.
+      await pages.assertTabs();
       try {
         const answer = await Promise.race([
           pageAnswer(page, row.id, deps),
@@ -1243,10 +1250,15 @@ export async function runFillWithDependencies(
           ? 'shape-changed'
           : caught instanceof CliError && caught.code === 'CANCELLED'
             ? 'stopped-by-person'
-            : warning ||
-                (caught instanceof CliError && caught.code === 'PLATFORM_CHECK')
-              ? 'platform-check'
-              : 'error';
+            : !warning &&
+                caught instanceof CliError &&
+                caught.code === 'TAB_INVENTORY'
+              ? 'tab-inventory'
+              : warning ||
+                  (caught instanceof CliError &&
+                    caught.code === 'PLATFORM_CHECK')
+                ? 'platform-check'
+                : 'error';
   } finally {
     let reportPath: string | null = null;
     let reportAttempted = false;
@@ -1309,6 +1321,13 @@ export async function runFillWithDependencies(
       };
       reports.push({ gated });
       options.notice(`Gated media: ${JSON.stringify(gated)}\n`);
+    }
+    // After the run the window is the person's again; keep the closed counts.
+    pages?.dispose();
+    const pagesReport = pages?.snapshot();
+    if (pagesReport) {
+      reports.push({ pages: pagesReport });
+      options.notice(`Pages: ${JSON.stringify(pagesReport)}\n`);
     }
     let windowSummary = windows.summary();
     const windowReport = { xWindows: windowSummary };
@@ -1603,7 +1622,8 @@ export async function runFillWithDependencies(
                 !value.isClosed() && new URL(value.url()).origin === origin,
             );
           if (!statusPage) throw new Error('Confirmation page is not open.');
-          await statusPage.bringToFront();
+          // The end state is read from the page as it is; no tab or window is
+          // activated after launch.
           await statusPage
             .getByText(finalText, { exact: true })
             .waitFor({ state: 'visible', timeout: 3000 });

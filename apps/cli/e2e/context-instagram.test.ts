@@ -562,13 +562,40 @@ test('C7 media image ignores earlier profile images and unlinked images in comme
   const h = await filterHarness('media-decoys');
   try {
     await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
-    expect(await currentImageSource(h.page)).toBe(
-      `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`,
-    );
+    expect(await currentImageSource(h.page)).toMatchObject({
+      mediaKind: 'image',
+      image: {
+        element: 'media-img',
+        source: `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`,
+      },
+    });
   } finally {
     await h.close();
   }
 });
+test.each([
+  ['video-avatar-poster', 'video', 'video-poster', true],
+  ['video-avatar-no-poster', 'video', 'none', false],
+  ['image-main-decoy', 'image', 'media-img', true],
+] as const)(
+  'IMAGE-3 %s reads the media area only and never the avatar',
+  async (variant, kind, element, media) => {
+    const h = await filterHarness(variant);
+    try {
+      await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+      const area = await currentImageSource(h.page);
+      const address = `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`;
+      expect(area.mediaKind).toBe(kind);
+      if (kind === 'video') {
+        expect(area.poster).toBe(media ? address : null);
+        expect(area.image).toBeNull();
+      } else expect(area.image).toEqual({ element, source: address });
+      expect(JSON.stringify(area)).not.toContain('/profiles/');
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('C7 main media supplies the first image and actual screenshot, while fixture decoys stay out of structured workspace data', async () => {
   const h = await harness('media-decoys');
   let capturedMain = false;
@@ -584,7 +611,7 @@ test('C7 main media supplies the first image and actual screenshot, while fixtur
       expect(args[3]).toBe(
         `${h.fake.origin}/media/${IG_FIXTURE.code}.png?signature=generated-secret`,
       );
-      expect(await currentImageSource(postPage)).toBe(args[3]);
+      expect((await currentImageSource(postPage)).image?.source).toBe(args[3]);
       const screenshot = vi.spyOn(
         Object.getPrototypeOf(element) as Locator,
         'screenshot',
@@ -1620,6 +1647,68 @@ test.each(IMAGE_CASES)(
             /^\/(?:p|reel)\//.test(request.path),
           ),
         ).toHaveLength(1);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test.each([
+  ['video-avatar-poster', 'video', 'video-poster', null],
+  ['video-avatar-no-poster', 'video', 'none', 'video-without-poster'],
+  ['image-main-decoy', 'image', 'media-img', null],
+] as const)(
+  'IMAGE-3 canary on %s stores the media image or none, never the avatar',
+  async (variant, kind, element, reason) => {
+    const agrees = reason === null;
+    const h = await harness(variant, agrees ? 5 : 1);
+    try {
+      const result = await h.start(true);
+      if (agrees)
+        expect(result, h.notices.join('')).toMatchObject({
+          endReason: 'canary',
+          completed: 5,
+        });
+      // No image is as strict as today: the canary refuses the step.
+      else
+        expect(result, h.notices.join('')).toMatchObject({
+          code: 'CANARY_CHECK_FAILED',
+        });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, `context/instagram/canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          fields: SourceChecks;
+          image: { status: string } & Record<string, unknown>;
+          screenshot: { status: string };
+        }[];
+      };
+      const step = report.steps[0]!;
+      expect(step.image).toMatchObject({
+        status: agrees ? 'stored' : 'not-captured',
+        mediaKind: kind,
+        element,
+        source: agrees ? 'img-current-src' : 'none',
+      });
+      if (reason) expect(step.image['missingReason']).toBe(reason);
+      else expect(step.image).not.toHaveProperty('missingReason');
+      expect(step.fields.image.agrees).toBe(agrees);
+      expect(step.screenshot.status).toBe('stored');
+      // The avatar would be refused by the exact-address check (its address
+      // is in no candidate list), so an agreeing image field proves the
+      // stored image is the post media; without media nothing is stored.
+      if (agrees) {
+        const bytes = await readFile(
+          join(
+            instagramContextDirectory(h.directory, IG_FIXTURE.code),
+            'image.png',
+          ),
+        );
+        expect(bytes).toEqual(Buffer.from(IG_FIXTURE.png, 'base64'));
+      }
     } finally {
       await h.close();
     }

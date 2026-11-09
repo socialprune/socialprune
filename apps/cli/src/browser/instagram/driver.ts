@@ -36,6 +36,7 @@ import {
 } from './report.ts';
 import type { AccountClass, ListTimeoutDiagnostic } from './report.ts';
 import { FilteredListTimeout } from './retry.ts';
+import type { MediaArea } from './media-source.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
 import type { ReadyKind } from './signals.ts';
@@ -937,6 +938,8 @@ export async function confirmOnPost(
   result: ConfirmationResult;
   expandClicks: number;
   expansionScrolls: number;
+  /** IMAGE-3: the media area; the source is chosen once responses are known. */
+  media: MediaArea;
   source: string | null;
 }> {
   let post = await settledPost(page, deps, guard),
@@ -993,12 +996,15 @@ export async function confirmOnPost(
       if (emptyScrolls >= 2) break;
     }
   }
+  const media = await currentImageSource(page);
   return {
     post,
     result,
     expandClicks,
     expansionScrolls,
-    source: await currentImageSource(page),
+    media,
+    // Without response knowledge: the media image, never a poster or avatar.
+    source: media.image?.source ?? null,
   };
 }
 

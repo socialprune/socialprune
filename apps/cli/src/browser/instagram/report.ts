@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { listImageOnlyManual } from './list-image-only.ts';
 import { REPLY_CLICK_FAILURES } from './replies-click.ts';
+import {
+  MEDIA_ELEMENTS,
+  MEDIA_KINDS,
+  MEDIA_MISSING_REASONS,
+} from './media-source.ts';
 
 const count = z.number().int().nonnegative();
 const sourceCountSchema = z.strictObject({
@@ -1133,6 +1138,10 @@ const StepImageSchema = z
     ]),
     bytes: count,
     ...imageDiagnosticFields,
+    // IMAGE-3, optional so earlier reports still parse.
+    mediaKind: z.enum(MEDIA_KINDS).optional(),
+    element: z.enum(MEDIA_ELEMENTS).optional(),
+    missingReason: z.enum(MEDIA_MISSING_REASONS).optional(),
   })
   .refine(
     (value) =>

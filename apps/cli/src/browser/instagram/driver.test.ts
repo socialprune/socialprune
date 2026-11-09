@@ -30,7 +30,11 @@ test('REPLIES regression finding a nested own comment expands replies even witho
   vi.spyOn(performance, 'now').mockImplementation(() => (clock += 600));
   vi.spyOn(selectors, 'checkPage').mockResolvedValue();
   vi.spyOn(selectors, 'postElement').mockResolvedValue({} as Locator);
-  vi.spyOn(selectors, 'currentImageSource').mockResolvedValue(null);
+  vi.spyOn(selectors, 'currentImageSource').mockResolvedValue({
+    mediaKind: 'unknown',
+    poster: null,
+    image: null,
+  });
   vi.spyOn(selectors, 'scrollPostComments').mockResolvedValue(false);
   const element = {
     locator: () => ({ count: () => Promise.resolve(expanded ? 1 : 0) }),

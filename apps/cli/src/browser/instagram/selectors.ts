@@ -7,6 +7,8 @@ import type {
 } from './report.ts';
 import { normalize, ownerName } from './plan.ts';
 import { readRowShapes } from './row-shape.ts';
+import { mediaAreaFromSnapshot } from './media-source.ts';
+import type { MediaArea, SnapshotDocument } from './media-source.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
   code: 'code',
@@ -859,55 +861,40 @@ export function confirmComment(
             : 'not-shown',
   };
 }
-/** Chromium DOM snapshots expose currentSrc without evaluating page JavaScript. */
-export async function currentImageSource(page: Page): Promise<string | null> {
+/**
+ * IMAGE-3: the focal post's media area from one Chromium DOM snapshot, which
+ * exposes currentSrc and layout without evaluating page JavaScript. Each
+ * address is read from its own snapshot node, never through an index into
+ * another list; see media-source.ts for the structural rules.
+ */
+export async function currentImageSource(page: Page): Promise<MediaArea> {
+  const none: MediaArea = { mediaKind: 'unknown', poster: null, image: null };
   const element = await postElement(page, new URL(page.url()).origin);
-  if (!element) return null;
-  let mediaIndex = -1;
-  const images = await element.locator('img').all();
-  for (const [index, image] of images.entries()) {
-    if (
-      (await image.locator('xpath=ancestor::a').count()) === 0 &&
-      (await image
-        .locator(
-          'xpath=ancestor::*[*/a[contains(@href,"/c/")] or div/span/a[contains(@href,"/c/")]]',
-        )
-        .count()) === 0
-    ) {
-      mediaIndex = index;
-      break;
-    }
-  }
-  if (mediaIndex === -1) return null;
+  if (!element) return none;
   const client = await page.context().newCDPSession(page);
   try {
-    const root = await client.send('DOM.getDocument');
-    const main = await client.send('DOM.querySelector', {
-      nodeId: root.root.nodeId,
-      selector: 'main',
-    });
-    if (!main.nodeId) return null;
-    const image = await client.send('DOM.querySelectorAll', {
-      nodeId: main.nodeId,
-      selector: 'img',
-    });
-    const nodeId = image.nodeIds[mediaIndex];
-    if (!nodeId) return null;
-    const node = await client.send('DOM.describeNode', {
-      nodeId,
-    });
+    const metrics = await client.send('Page.getLayoutMetrics');
+    const view = metrics.cssVisualViewport;
     const snapshot = await client.send('DOMSnapshot.captureSnapshot', {
       computedStyles: [],
     });
-    for (const document of snapshot.documents) {
-      const index =
-          document.nodes.backendNodeId?.indexOf(node.node.backendNodeId) ?? -1,
-        sources = document.nodes.currentSourceURL;
-      const position = sources?.index.indexOf(index) ?? -1;
-      if (position >= 0)
-        return snapshot.strings[sources!.value[position]!] ?? null;
-    }
-    return null;
+    const document = snapshot.documents.find((value) =>
+      (value.nodes.nodeName ?? []).some(
+        (index) => snapshot.strings[index] === 'MAIN',
+      ),
+    );
+    if (!document) return none;
+    return mediaAreaFromSnapshot(
+      document as unknown as SnapshotDocument,
+      snapshot.strings,
+      page.url(),
+      {
+        x: view.pageX,
+        y: view.pageY,
+        width: view.clientWidth,
+        height: view.clientHeight,
+      },
+    );
   } finally {
     await client.detach();
   }

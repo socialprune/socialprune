@@ -231,6 +231,11 @@ export type Variant =
   | 'other-author'
   | 'reel'
   | 'video'
+  // IMAGE-3: an unlinked header avatar beside the owner link, then a video.
+  | 'video-avatar-poster'
+  | 'video-avatar-no-poster'
+  // IMAGE-3: a small unlinked image in main before the post's media.
+  | 'image-main-decoy'
   | 'unavailable'
   | 'no-row'
   | 'window-full'

@@ -342,7 +342,26 @@ export function postPage(
       (variant === 'several'
         ? commentRow(comment.replace(commentId, '282828282828282828'), username)
         : '');
-  const body = `<main><section><div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>${mediaDecoy}${variant === 'video' ? '<video></video>' : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:${variant === 'scroll-no-column' ? 'visible' : 'auto'};max-height:240px"><div><div><div><div><div id="comment-rows">${commentRows}</div></div></div></div></div></div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
+  // IMAGE-3: the real header shows the owner's picture outside any link, at
+  // avatar size, beside the owner link.
+  const unlinkedAvatar = variant.startsWith('video-avatar-');
+  const header = unlinkedAvatar
+    ? `<div><img src="/profiles/owner.png" alt="" style="width:32px;height:32px">${profile(firstProfile)}</div>`
+    : `<div><a href="/${escape(variant === 'owner-picture-profile' ? IG_FIXTURE.other.username : firstProfile)}/"><img src="/profiles/owner.png" alt=""></a>${profile(firstProfile)}</div>`;
+  const media =
+    variant === 'video'
+      ? '<video></video>'
+      : variant === 'video-avatar-no-poster'
+        ? '<video style="width:468px;height:300px"></video>'
+        : variant === 'video-avatar-poster'
+          ? // Sized by the page as a real player is; the generated poster is 1 px.
+            `<video poster="/media/${code}.png?signature=generated-secret" style="width:468px;height:300px"></video>`
+          : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`;
+  const mainDecoy =
+    variant === 'image-main-decoy'
+      ? '<img src="/profiles/decoy-icon.png" alt="" style="width:24px;height:24px">'
+      : '';
+  const body = `<main>${mainDecoy}<section>${header}${mediaDecoy}${media}</section><section>${ownLink(owner)}${extraOwnLink}${captionBlock}<div id="comments" style="overflow-y:${variant === 'scroll-no-column' ? 'visible' : 'auto'};max-height:240px"><div><div><div><div><div id="comment-rows">${commentRows}</div></div></div></div></div></div>${variant === 'hidden' ? '<button>Load more comments</button>' : ''}<button>Like</button><button>Follow</button><button>Delete</button><input></section></main>${variant === 'post-two-main' ? '<main></main>' : ''}`;
   const unsettled = `const own=document.querySelector('main>section:last-child>a');const parent=own.parentElement;mutate(()=>own.remove());${['own-link-flicker', 'expansion-link-flicker'].includes(variant) ? `setTimeout(()=>mutate(()=>parent.prepend(own)),700);` : ''}`;
   const script =
     instrumentation +

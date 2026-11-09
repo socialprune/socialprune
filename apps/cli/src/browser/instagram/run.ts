@@ -87,6 +87,7 @@ import {
   imageDiagnostic,
 } from './canary.ts';
 import type { CanaryCheck } from './canary.ts';
+import { chooseMediaSource } from './media-source.ts';
 import {
   CLICK_NAMES,
   POST_SCROLL_ACTION,
@@ -1484,10 +1485,22 @@ export async function runContextWithDependencies(
             stepReport.expansionScrolls = read.expansionScrolls;
             stepReport.ownerCount = read.post.ownerCount;
             await answers.flush(deps.responseMs);
+            // IMAGE-3: a video's poster only when its response body arrived;
+            // a profile picture is never the post image.
+            const media = chooseMediaSource(read.media, (address) =>
+              answers.images.has(address),
+            );
+            read.source = media.source;
+            const mediaFields = {
+              mediaKind: media.mediaKind,
+              element: media.element,
+              ...(media.reason ? { missingReason: media.reason } : {}),
+            };
             stepReport.image = {
               status: 'not-attempted',
               bytes: 0,
               ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+              ...mediaFields,
             };
             if (options.plan.canary) {
               await answers.flush(deps.responseMs);
@@ -1847,6 +1860,7 @@ export async function runContextWithDependencies(
                 status: record.image.status,
                 bytes: captures.imageBytes,
                 ...imageDiagnostic(read.post.code, read.source, answers.bodies),
+                ...mediaFields,
               },
               screenshot: {
                 status: record.screenshot.status,

@@ -204,7 +204,8 @@ test('REPLY-SET-2 an incomplete reply set counts as replies missing in the dry r
   const reply = (source: 'shown' | 'answer-only') => ({
     account: 'generated_reply',
     text: `Generated ${source} reply`,
-    createdAt: null,
+    // An answer-only reply always carries its time.
+    createdAt: source === 'answer-only' ? '2026-10-01T12:00:00.000Z' : null,
     likes: { count: null, source: null },
     source,
   });

@@ -115,6 +115,62 @@ test('REPLIES-1 refresh plan excludes observed empty replies and binds the CLI m
     await h.close();
   }
 });
+test('REPLY-SET-2 an incomplete set is planned again only when the person includes it', async () => {
+  const h = await excludeFixture();
+  try {
+    const record = await writeInstagramContextContract(
+      h.store,
+      h.fixture.items[0],
+    );
+    await h.store.write((tx) =>
+      tx.instagramContext.fillReplies({
+        ...record,
+        replies: {
+          entries: [
+            {
+              account: 'generated_reply',
+              text: 'Generated shown reply',
+              createdAt: null,
+              likes: { count: null, source: null },
+              source: 'shown',
+            },
+          ],
+          moreCount: 2,
+          capped: false,
+          set: { state: 'incomplete', declaredTotal: 3, hiddenCount: 2 },
+        },
+      }),
+    );
+    const plan = (include: Set<string>) =>
+      planContext(h.store, h.accountKey, include, new Set(), false, true);
+    expect((await plan(new Set())).rows).toHaveLength(0);
+    expect(
+      (await plan(new Set([record.itemId]))).rows.map((row) => row.item.id),
+    ).toEqual([record.itemId]);
+    // After its one replacement the set is complete and stays out even when
+    // included again.
+    await h.store.write((tx) =>
+      tx.instagramContext.fillReplies({
+        ...record,
+        replies: {
+          entries: [
+            {
+              account: 'generated_reply',
+              text: 'Generated shown reply',
+              createdAt: null,
+              likes: { count: null, source: null },
+            },
+          ],
+          moreCount: 0,
+          capped: false,
+        },
+      }),
+    );
+    expect((await plan(new Set([record.itemId]))).rows).toHaveLength(0);
+  } finally {
+    await h.close();
+  }
+});
 test('CONTROL explicit list-confirmed target plan and CLI bind the file, order, limit and unchanged record', async () => {
   const h = await excludeFixture();
   try {

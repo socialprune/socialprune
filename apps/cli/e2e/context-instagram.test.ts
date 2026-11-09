@@ -7961,7 +7961,7 @@ test.each([
   ['entries', true],
   ['count-only', false],
 ] as const)(
-  'REPLY-SET-2 7 declared / 5 shown then hide-all-replies, answer %s: stored as a marked set and the run continues',
+  'REPLY-SET-2 7 declared / 5 shown then hide-all-replies, answer %s: stored as a marked set; only complete sets accept the canary',
   async (_mode, withEntries) => {
     const h = await harness('success', 5, 30000);
     try {
@@ -7970,10 +7970,15 @@ test.each([
       h.fake.replies(5);
       h.fake.replyAnswerRows();
       h.fake.replyHidden(2, withEntries);
+      // G1 revision: incomplete sets are stored but confirm no canary step.
       expect(
         await h.start({ refreshReplies: true }),
         h.notices.join('\n'),
-      ).toMatchObject({ completed: 5, endReason: 'canary' });
+      ).toMatchObject(
+        withEntries
+          ? { completed: 5, endReason: 'canary' }
+          : { code: 'CANARY_CHECK_FAILED', token: 'canary-check' },
+      );
       const contexts = await h.store.read((tx) => records(tx.instagramContext));
       for (const record of contexts) {
         expect(record.replies).toMatchObject(

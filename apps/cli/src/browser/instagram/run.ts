@@ -334,6 +334,8 @@ export async function runContextWithDependencies(
     (!options.plan.refreshReplies || options.order.value.acceptCanary),
   );
   let repliesAnswerChecked = true;
+  // REPLY-SET-2: incomplete sets read in this run; never canary confirmations.
+  let unconfirmedReads = 0;
   let context: BrowserContext | undefined,
     network: Awaited<ReturnType<typeof guardInstagramNetwork>> | undefined;
   let pages: ReturnType<typeof contextPages> | undefined;
@@ -524,7 +526,7 @@ export async function runContextWithDependencies(
     if (options.plan.refreshReplies) {
       if (
         !automatic ||
-        completed !== 5 ||
+        completed - unconfirmedReads !== 5 ||
         checkedItemIds.length !== 5 ||
         !repliesAnswerChecked
       )
@@ -820,7 +822,7 @@ export async function runContextWithDependencies(
         }
       };
       outer: for (const row of chosen) {
-        if (options.plan.canary && completed === 5) break;
+        if (options.plan.canary && completed - unconfirmedReads === 5) break;
         if (steps >= max) {
           rejectIncomplete();
           if (used >= pace.perDay) endReason = 'daily-cap';
@@ -1605,15 +1607,13 @@ export async function runContextWithDependencies(
                   );
                 await checkpoint();
                 phase('settlement');
-                await writer.fillReplies(
+                const written = await writer.fillReplies(
                   attemptId,
                   replies,
                   options.now().toISOString(),
                 );
                 pendingAttempt = undefined;
                 settled = true;
-                completed++;
-                stepReport.result = 'replies-refreshed';
                 stepReport.replies = {
                   read: replies.entries.length,
                   moreCount: replies.moreCount,
@@ -1621,6 +1621,18 @@ export async function runContextWithDependencies(
                   answerChecked,
                   ...replySetReport(replies),
                 };
+                if (written === 'reply-set-conflict') {
+                  // The stored incomplete set stays; the step is settled.
+                  stepReport.result = 'reply-set-conflict';
+                  break;
+                }
+                completed++;
+                stepReport.result = 'replies-refreshed';
+                // REPLY-SET-2: an incomplete set is stored but confirms nothing.
+                if (replies.set?.state === 'incomplete') {
+                  unconfirmedReads++;
+                  break;
+                }
                 checkedItemIds.push(row.item.id);
                 repliesAnswerChecked &&= answerChecked;
                 break;
@@ -1912,7 +1924,11 @@ export async function runContextWithDependencies(
           });
       }
       await sampleMemory();
-      if (options.plan.canary && commentsTried === 15 && completed < 5)
+      if (
+        options.plan.canary &&
+        commentsTried === 15 &&
+        completed - unconfirmedReads < 5
+      )
         throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
       stage = 'canary-check';
       phase('canary-check');

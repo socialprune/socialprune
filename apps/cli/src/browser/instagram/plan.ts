@@ -193,7 +193,10 @@ export async function planContext(
         if (
           context?.confirmedBy === 'post' &&
           (refreshReplies
-            ? context.replies === undefined
+            ? context.replies === undefined ||
+              // REPLY-SET-2: an incomplete set only on the person's --include.
+              (context.replies.set?.state === 'incomplete' &&
+                include.has(item.id))
             : context.likes === undefined) &&
           (!settledRefresh.has(item.id) || include.has(item.id)) &&
           !personExcludes(item.id)

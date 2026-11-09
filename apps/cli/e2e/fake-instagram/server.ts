@@ -114,6 +114,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         busy: boolean;
         mismatch: boolean;
         lateText: boolean;
+        split: boolean;
         issue?: 'account' | 'language' | 'notice' | 'http-429';
       }
     | undefined;
@@ -366,7 +367,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           ]);
           html = html.replace(
             anchor,
-            `if(start&&end&&${JSON.stringify(windows)}.some(pair=>${imageOnlyList.mismatch ? 'pair[1]===end' : 'pair[0]===start&&pair[1]===end'})){chosen=[];const otherRow=document.createElement('div');otherRow.setAttribute('role','button');otherRow.setAttribute('aria-label','Generated readable decoration');otherRow.textContent=other.username+' '+other.text+' 1w';list.append(otherRow);for(let i=0;i<3;i++){emptyImageButton();list.lastElementChild.setAttribute('aria-label','Generated window '+start+' '+i);}${imageOnlyList.busy ? "list.setAttribute('aria-busy','true');" : ''}${imageOnlyList.lateText ? "setTimeout(()=>mutate(()=>{list.lastElementChild.append(document.createTextNode(handle+' '+rows[0].text+' 1w'));list.lastElementChild.setAttribute('aria-label','Comment row');list.lastElementChild.onclick=()=>location.href='/p/'+rows[0].code;}),250);" : ''}}` +
+            `if(start&&end&&${JSON.stringify(windows)}.some(pair=>${imageOnlyList.mismatch ? 'pair[1]===end' : 'pair[0]===start&&pair[1]===end'})){chosen=[];const otherRow=document.createElement('div');otherRow.setAttribute('role','button');otherRow.setAttribute('aria-label','Generated readable decoration');otherRow.textContent=other.username+' '+other.text+' 1w';${imageOnlyList.split ? "document.getElementById('generated-split-region')?.remove();const region=document.createElement('div');region.id='generated-split-region';region.append(otherRow);document.body.append(region);" : 'list.append(otherRow);'}for(let i=0;i<${imageOnlyList.split ? 1 : 3};i++){emptyImageButton();list.lastElementChild.setAttribute('aria-label','Generated window '+start+' '+i);}${imageOnlyList.busy ? "list.setAttribute('aria-busy','true');" : ''}${imageOnlyList.lateText ? "setTimeout(()=>mutate(()=>{list.lastElementChild.append(document.createTextNode(handle+' '+rows[0].text+' 1w'));list.lastElementChild.setAttribute('aria-label','Comment row');list.lastElementChild.onclick=()=>location.href='/p/'+rows[0].code;}),250);" : ''}}` +
               anchor,
           );
           if (imageOnlyList.issue) {
@@ -855,6 +856,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         mismatch?: boolean;
         lateText?: boolean;
         issue?: 'account' | 'language' | 'notice' | 'http-429';
+        /** LIST-1: one readable non-target row in a second region, one image-only row. */
+        split?: boolean;
       } = {},
     ) {
       if (indices.some((index) => !Number.isInteger(index) || !items[index]))
@@ -864,6 +867,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
         busy: options.busy ?? false,
         mismatch: options.mismatch ?? false,
         lateText: options.lateText ?? false,
+        split: options.split ?? false,
         ...(options.issue ? { issue: options.issue } : {}),
       };
     },

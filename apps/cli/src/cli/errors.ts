@@ -276,6 +276,12 @@ export const CLI_ERRORS = {
     exitCode: 1,
     retryable: false,
   },
+  LIST_TIMEOUT: {
+    message:
+      'The filtered Instagram comments list could not be read reliably. The run stopped.',
+    exitCode: 1,
+    retryable: false,
+  },
   STEP_DEADLINE: {
     message:
       'The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.',
@@ -604,8 +610,8 @@ const INSTAGRAM_STOP_CODES: Partial<
   STEP_DEADLINE: ['step-deadline'],
   RUN_WAIT_DEADLINE: ['run-wait-deadline'],
   TAB_INVENTORY: ['tab-inventory', 'non-owned-tab'],
+  LIST_TIMEOUT: ['list-timeout'],
   PLATFORM_CHECK: [
-    'list-timeout',
     'post-timeout',
     'navigation',
     'browser-closed',

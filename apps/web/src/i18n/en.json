@@ -811,6 +811,7 @@
   "desktop.token.PLATFORM_CHECK": "The page was not recognized or requires an account check. The run stopped.",
   "desktop.token.STEP_DEADLINE": "The Instagram reading step exceeded its time budget. The run stopped and retained its partial report.",
   "desktop.token.RUN_WAIT_DEADLINE": "An Instagram run phase exceeded its wait budget. The run stopped and retained its partial report.",
+  "desktop.token.LIST_TIMEOUT": "The filtered Instagram comments list could not be read reliably. The run stopped.",
   "desktop.token.TAB_INVENTORY": "The tabs in the run window could not be checked, or a page or tab outside this run appeared. The run stopped.",
   "desktop.token.RUN_STOPPED": "The run stopped at a problem. Check its journal before continuing.",
   "desktop.token.DELETE_FAILED": "Deletion could not finish. No automatic retry was made.",

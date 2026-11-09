@@ -14,6 +14,8 @@ export function instagramWarningKind(
     error.code === 'RUN_WAIT_DEADLINE' ||
     error.token === 'run-wait-deadline' ||
     error.code === 'TAB_INVENTORY' ||
+    error.code === 'LIST_TIMEOUT' ||
+    error.token === 'list-timeout' ||
     error.token === 'tab-inventory' ||
     error.token === 'non-owned-tab'
   )

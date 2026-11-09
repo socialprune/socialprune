@@ -757,8 +757,6 @@
                   "type": "string",
                   "enum": [
                     "The page is not recognized, or shows a login, challenge, lock or limit. The run stopped.",
-                    "The filtered Instagram comments list could not be read reliably. The run stopped.",
-                    "Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.",
                     "The Instagram post did not become ready within the response window. The run stopped.",
                     "Der Instagram-Beitrag wurde innerhalb der Antwortfrist nicht bereit. Der Lauf wurde gestoppt.",
                     "The Instagram page navigation did not finish. The run stopped.",
@@ -773,6 +771,23 @@
                     "Das erwartete Instagram-Konto konnte nicht bestätigt werden. Der Lauf wurde gestoppt.",
                     "The Instagram post structure or stored post evidence could not be verified. The run stopped.",
                     "Die Struktur des Instagram-Beitrags oder seine gespeicherten Belege konnten nicht geprüft werden. Der Lauf wurde gestoppt."
+                  ]
+                },
+                "exitCode": { "type": "number", "const": 1 },
+                "retryable": { "type": "boolean", "const": false }
+              },
+              "required": ["code", "message", "exitCode", "retryable"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "const": "LIST_TIMEOUT" },
+                "message": {
+                  "type": "string",
+                  "enum": [
+                    "The filtered Instagram comments list could not be read reliably. The run stopped.",
+                    "Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt."
                   ]
                 },
                 "exitCode": { "type": "number", "const": 1 },

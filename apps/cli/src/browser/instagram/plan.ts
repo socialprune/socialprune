@@ -250,10 +250,15 @@ export async function planContext(
         throw new CliError('INVALID_ARGUMENTS');
       rows.splice(0, rows.length, { item, context, marked: false });
     }
+    // LIST-1: the reading pass goes newest first by exported comment time;
+    // marked entries still lead, and the like and reply refreshes keep their
+    // oldest-first order. canaryRows still begins with the oldest row.
+    const newestFirst = !refreshLikes && !refreshReplies;
     rows.sort(
       (a, b) =>
         Number(b.marked) - Number(a.marked) ||
-        Date.parse(a.item.createdAt) - Date.parse(b.item.createdAt) ||
+        (Date.parse(a.item.createdAt) - Date.parse(b.item.createdAt)) *
+          (newestFirst ? -1 : 1) ||
         a.item.id.localeCompare(b.item.id),
     );
     const selected = rows.map(({ item, marked }) => ({

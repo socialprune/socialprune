@@ -471,10 +471,12 @@ test('C18 exclude removes exactly named planned and manual entries before canary
   try {
     const baseline = await planContext(h.store, h.accountKey);
     const plan = await planContext(h.store, h.accountKey, new Set(), exclude);
+    // LIST-1: newest first.
     expect(plan.rows.map((row) => row.item.id)).toEqual(
       h.fixture.items
         .filter((_, index) => index !== 0 && index !== 4)
-        .map((item) => item.id),
+        .map((item) => item.id)
+        .reverse(),
     );
     expect(plan).toMatchObject({
       personExcluded: 2,
@@ -1027,7 +1029,10 @@ test('manual reasons exclude empty and close twins but plan ownerless comments; 
     );
     expect(plan.manual).toEqual({ emptyText: 1, noOwner: 0, closeTwin: 2 });
     expect(plan.rows.map(({ item }) => item.id)).toEqual(
-      [fixture.items[2]!, ...fixture.items.slice(4)].map((item) => item.id),
+      // LIST-1: newest first.
+      [fixture.items[2]!, ...fixture.items.slice(4)]
+        .map((item) => item.id)
+        .reverse(),
     );
     const before = plan.hash,
       itemId = fixture.items[5]!.id;
@@ -1142,6 +1147,35 @@ test('earlier results require explicit include; include cannot restore confirmed
   }
 });
 
+test('LIST-1 the reading pass plans newest first by exported time, the canary still opens with the oldest, and refreshes keep oldest first', async () => {
+  const fixture = await instagramFixture(17),
+    directory = await mkdtemp(join(tmpdir(), 'sp-ig-plan-order-'));
+  // Shuffle the stored order so the plan order comes from the times only.
+  const byTime = [...fixture.items].sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
+  fixture.workspace.items.reverse();
+  const store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
+    initial: fixture.workspace,
+  });
+  try {
+    const plan = await planContext(store, fixture.items[0]!.account.key);
+    expect(plan.rows.map(({ item }) => item.id)).toEqual(
+      [...byTime].reverse().map((item) => item.id),
+    );
+    const canary = canaryRows(plan).map(({ item }) => item.id);
+    expect(canary[0]).toBe(byTime[0]!.id);
+    expect(canary.slice(1)).toEqual(
+      [...byTime]
+        .reverse()
+        .slice(0, 14)
+        .map((item) => item.id),
+    );
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test('C8 canary takes at most fifteen in plan order with the oldest first and no duplicate', async () => {
   const fixture = await instagramFixture(17),
     directory = await mkdtemp(join(tmpdir(), 'sp-ig-canary-plan-'));
@@ -1153,10 +1187,13 @@ test('C8 canary takes at most fifteen in plan order with the oldest first and no
     // A marked-first plan need not begin with its oldest exported comment.
     plan.rows = [...plan.rows.slice(7), ...plan.rows.slice(0, 7)];
     const ids = canaryRows(plan).map(({ item }) => item.id);
+    const oldest = fixture.items[0]!.id;
     expect(ids).toEqual([
-      fixture.items[0]!.id,
-      ...fixture.items.slice(7).map((item) => item.id),
-      ...fixture.items.slice(1, 5).map((item) => item.id),
+      oldest,
+      ...plan.rows
+        .map(({ item }) => item.id)
+        .filter((id) => id !== oldest)
+        .slice(0, 14),
     ]);
     expect(new Set(ids).size).toBe(15);
     expect(canaryRows({ ...plan, rows: [] })).toEqual([]);

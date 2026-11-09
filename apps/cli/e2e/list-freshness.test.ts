@@ -2196,7 +2196,7 @@ test.each(['readable-retained', 'readable-repeated'] as const)(
         expect(counts.emptySkipped).toBe(1);
       }
       expect(outcomes[mode === 'readable-retained' ? 0 : 1]).toMatchObject({
-        code: 'PLATFORM_CHECK',
+        code: 'LIST_TIMEOUT',
         token: 'list-timeout',
       });
       expect(
@@ -2263,7 +2263,7 @@ test.each(['retained', 'sibling'] as const)(
         },
       });
       expect(outcome).toMatchObject({
-        code: 'PLATFORM_CHECK',
+        code: 'LIST_TIMEOUT',
         token: 'list-timeout',
       });
       expect(outcome).not.toBeInstanceOf(FilteredListTimeout);
@@ -2414,7 +2414,7 @@ test('C-list a repeated opaque result for a different window stops on the second
     }
     expect(outcomes[0]).toMatchObject({ manualReason: 'list-image-only' });
     expect(outcomes[1]).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     expect(outcomes[1]).not.toBeInstanceOf(FilteredListTimeout);

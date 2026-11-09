@@ -335,6 +335,7 @@ declare global {
     'desktop.token.KEY_FILE_INVALID': Record<never, never>;
     'desktop.token.LABELS_FAILED': Record<never, never>;
     'desktop.token.LINK_UNKNOWN': Record<never, never>;
+    'desktop.token.LIST_TIMEOUT': Record<never, never>;
     'desktop.token.MEDIA_FAILED': Record<never, never>;
     'desktop.token.MEDIA_RATE_LIMIT': Record<never, never>;
     'desktop.token.MISSING_WORKSPACE': Record<never, never>;

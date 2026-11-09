@@ -8574,6 +8574,96 @@ test.each([
   },
   180000,
 );
+// REPLY-WIN-1 shape (run 6ccbb945 step 4, metadata only): scope verified,
+// qualified script zero, no control and no rows, but the reply budget was used
+// up before the reader reached its window check. The test-only wrapper makes
+// the answer flush consume the whole budget, as a slow page's flush can.
+test.each([
+  ['qualified zero', 'one', true],
+  ['a comment set of two', 'two', false],
+] as const)(
+  'REPLY-WIN-1 an exhausted reply budget with no control and no rows, %s',
+  async (_name, set, accepted) => {
+    const h = await harness('success', 5, 30000);
+    const original = replyHelpers.commentReplies;
+    const read = vi
+      .spyOn(replyHelpers, 'commentReplies')
+      .mockImplementation(async (...args) => {
+        const deadline = performance.now() + 1500;
+        const flush = args[8];
+        args[4] = deadline;
+        args[8] = async () => {
+          await flush?.();
+          while (performance.now() < deadline)
+            await new Promise((resolve) => setTimeout(resolve, 25));
+        };
+        return original(...args);
+      });
+    try {
+      expect(await h.start(true), h.notices.join('\n')).toMatchObject({
+        completed: 5,
+      });
+      h.fake.directPostAccount('expected');
+      h.fake.replies(0);
+      h.fake.replyAnswer(false);
+      h.fake.scriptReplies('matching');
+      h.fake.soleCommentSet(set);
+      h.fake.replyShape('sole-zero');
+      const result = await h.start({ refreshReplies: true });
+      expect(result, h.notices.join('\n')).toMatchObject(
+        accepted
+          ? { completed: 5, endReason: 'canary' }
+          : {
+              code: 'INSTAGRAM_SHAPE_CHANGED',
+              token: 'reply-scope-unverified',
+            },
+      );
+      const after = await h.store.read((tx) => records(tx.instagramContext));
+      expect(
+        after.every((record) =>
+          accepted
+            ? record.replies?.entries.length === 0 &&
+              record.replies.moreCount === 0 &&
+              !record.replies.capped &&
+              record.replies.set === undefined
+            : record.replies === undefined,
+        ),
+      ).toBe(true);
+      const run = (await h.store.browserJournal()).runs.at(-1)!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as { steps: unknown[] };
+      const step = ContextStepReportSchema.parse(report.steps[0]);
+      expect(step.replyScope?.observed).toBe(true);
+      if (accepted) {
+        expect(step.replyControls).toMatchObject({ count: 0 });
+        expect(step.replyExpansion).toMatchObject({
+          clicks: [],
+          stopAt: null,
+        });
+        expect(step.replyAnswer).toMatchObject({
+          answerPresent: true,
+          answerValid: true,
+          answerTotal: 0,
+          rowsShown: 0,
+        });
+        expect(step.replies).toMatchObject({
+          read: 0,
+          moreCount: 0,
+          capped: false,
+          answerChecked: true,
+        });
+      }
+    } finally {
+      read.mockRestore();
+      await h.close();
+    }
+  },
+  180000,
+);
 test.each([
   'no-count',
   'one',

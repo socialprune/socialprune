@@ -503,12 +503,14 @@ export async function commentReplies(
         capped = true;
         break;
       }
+      // REPLY-WIN-1: without a control nothing is left to wait for, so the
+      // budget does not apply; the answer check below still decides the set.
+      if (!controls || !control) break;
       site = 'window';
       if (performance.now() >= deadline)
         throw new ReplyReadFailure(
           entries.length ? 'reply-window-incomplete' : 'reply-window-empty',
         );
-      if (!controls || !control) break;
       site = 'control-visible';
       if (controls !== 1 || !(await control.isVisible()))
         throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');

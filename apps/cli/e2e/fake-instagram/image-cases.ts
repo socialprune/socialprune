@@ -25,7 +25,9 @@ export const IMAGE_CASES = [
   { name: 'carousel-first', agrees: true, captured: true, paths: 2 },
   {
     name: 'carousel-second-displayed',
-    agrees: false,
+    // IMAGE-2: the shown second slide is listed by exactly one carousel item
+    // of the single qualifying object (run 1610a003's shape).
+    agrees: true,
     captured: true,
     paths: 2,
   },

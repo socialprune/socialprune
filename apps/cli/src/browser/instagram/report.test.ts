@@ -536,6 +536,30 @@ test('IG-IMAGE diagnostic accepts closed numeric image data only and enforces co
     expect(ContextStepReportSchema.safeParse({ image: invalid }).success).toBe(
       false,
     );
+  // IMAGE-2: a carousel position is a closed number tied to one object.
+  const slide = {
+    ...image,
+    qualifyingObjects: 1,
+    matchingLists: 0,
+    distinctListLengths: [1],
+    carouselPosition: 2,
+    carouselFirstSlide: false,
+  };
+  expect(ContextStepReportSchema.safeParse({ image: slide }).success).toBe(
+    true,
+  );
+  for (const invalid of [
+    { ...slide, carouselPosition: 0 },
+    { ...slide, carouselPosition: 1.5 },
+    { ...slide, carouselPosition: plantedUrl },
+    { ...slide, carouselFirstSlide: true },
+    { ...slide, carouselFirstSlide: null },
+    { ...slide, qualifyingObjects: 2, distinctListLengths: [1] },
+    { ...slide, source: 'none' },
+  ])
+    expect(ContextStepReportSchema.safeParse({ image: invalid }).success).toBe(
+      false,
+    );
 });
 test('C28 per-step memory is strict numeric data rather than arbitrary fields in the loose step', () => {
   const memory = {

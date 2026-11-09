@@ -1562,6 +1562,18 @@ test.each(IMAGE_CASES)(
           matchingLists: 1,
           distinctListLengths: [1],
         });
+      if (entry.name === 'carousel-second-displayed')
+        expect(step.image).toMatchObject({
+          carouselPosition: 2,
+          carouselFirstSlide: false,
+          qualifyingObjects: 1,
+          matchingLists: 0,
+        });
+      if (entry.name === 'carousel-first')
+        expect(step.image).toMatchObject({
+          carouselPosition: 1,
+          carouselFirstSlide: true,
+        });
       if (entry.name === 'thumbnail-field-only')
         expect(step.image).toMatchObject({
           qualifyingObjects: 1,

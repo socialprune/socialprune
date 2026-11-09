@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import {
   instagramFixture,
   IG_FIXTURE,
@@ -58,12 +58,16 @@ test('IG-IMAGE diagnostic counts qualifying focal objects and exact-url candidat
   );
   const diagnostic = imageDiagnostic;
   expect(diagnostic(IG_FIXTURE.code, shape.first, [shape.body])).toEqual({
+    carouselPosition: null,
+    carouselFirstSlide: null,
     qualifyingObjects: 2,
     matchingLists: 2,
     distinctListLengths: [1, 2],
     source: 'img-current-src',
   });
   expect(diagnostic(IG_FIXTURE.code, null, [shape.body])).toEqual({
+    carouselPosition: null,
+    carouselFirstSlide: null,
     qualifyingObjects: 2,
     matchingLists: 0,
     distinctListLengths: [1, 2],
@@ -75,10 +79,138 @@ test('IG-IMAGE diagnostic counts qualifying focal objects and exact-url candidat
     'https://generated.cdninstagram.com',
   );
   expect(diagnostic(IG_FIXTURE.code, partial.first, [partial.body])).toEqual({
+    carouselPosition: null,
+    carouselFirstSlide: null,
     qualifyingObjects: 2,
     matchingLists: 1,
     distinctListLengths: [1],
     source: 'img-current-src',
+  });
+});
+
+describe('IMAGE-2 carousel slide', () => {
+  const host = 'https://generated.cdninstagram.com';
+  const OWNER = 'generated_carousel_owner';
+  const slide = (n: number) =>
+    `${host}/generated-slide-${n}.jpg?sig=generated${n}`;
+  const item = (n: number) => ({
+    id: `generated-item-${n}`,
+    image_versions2: {
+      candidates: [{ url: slide(n) }, { url: `${slide(n)}&s=low` }],
+    },
+  });
+  const post = (overrides: Record<string, unknown> = {}) => ({
+    code: IG_FIXTURE.code,
+    id: 'generated-post-id',
+    user: { username: OWNER },
+    taken_at: Date.parse(IG_FIXTURE.postAt) / 1000,
+    caption: { text: IG_FIXTURE.caption },
+    carousel_media: [item(1), item(2), item(3)],
+    ...overrides,
+  });
+  async function record() {
+    const { items } = await instagramFixture();
+    const value = instagramContractRecord(items[0]);
+    Object.assign(value.post, {
+      code: IG_FIXTURE.code,
+      owner: OWNER,
+      createdAt: IG_FIXTURE.postAt,
+      caption: IG_FIXTURE.caption,
+      captionComplete: true,
+    });
+    return value;
+  }
+  const check = (fields: ReturnType<typeof compareSources>) => ({
+    confirmed: true,
+    fields,
+    ownerShown: true,
+    timeShown: true,
+    imageStored: true,
+    screenshotStored: true,
+  });
+  test('slide 2 captured agrees and the report records position 2, not the first slide', async () => {
+    const body = { data: { items: [post()] } };
+    const fields = compareSources(await record(), slide(2), [body]);
+    expect(
+      fields.owner.agrees && fields.time.agrees && fields.caption.agrees,
+    ).toBe(true);
+    expect(fields.image).toMatchObject({ found: true, agrees: true });
+    expect(() => automaticCanaryCheck(check(fields))).not.toThrow();
+    const diagnostic = imageDiagnostic(IG_FIXTURE.code, slide(2), [body]);
+    expect(diagnostic).toMatchObject({
+      carouselPosition: 2,
+      carouselFirstSlide: false,
+      qualifyingObjects: 1,
+      matchingLists: 0,
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(host);
+  });
+  test('an address in no carousel item stays a mismatch', async () => {
+    const body = { data: { items: [post()] } };
+    const fields = compareSources(await record(), slide(9), [body]);
+    expect(fields.image).toMatchObject({ found: true, agrees: false });
+    expect(() => automaticCanaryCheck(check(fields))).toThrowError(
+      expect.objectContaining({ code: 'CANARY_MISMATCH' }),
+    );
+    expect(imageDiagnostic(IG_FIXTURE.code, slide(9), [body])).toMatchObject({
+      carouselPosition: null,
+      carouselFirstSlide: null,
+    });
+  });
+  test('two qualifying objects of the same post stay a mismatch for a non-first slide', async () => {
+    const bodies = [{ data: { items: [post()] } }, { media: post() }];
+    const fields = compareSources(await record(), slide(2), bodies);
+    expect(fields.image.agrees).toBe(false);
+    expect(() => automaticCanaryCheck(check(fields))).toThrowError(
+      expect.objectContaining({ code: 'CANARY_MISMATCH' }),
+    );
+    expect(imageDiagnostic(IG_FIXTURE.code, slide(2), bodies)).toMatchObject({
+      carouselPosition: null,
+      qualifyingObjects: 2,
+    });
+  });
+  test('the same address in two carousel items stays a mismatch', async () => {
+    const twice = post({ carousel_media: [item(1), item(2), item(2)] });
+    const fields = compareSources(await record(), slide(2), [
+      { data: { items: [twice] } },
+    ]);
+    expect(fields.image.agrees).toBe(false);
+  });
+  test('another post code is not a qualifying object', async () => {
+    const other = post({ code: 'GeneratedOther' });
+    const fields = compareSources(await record(), slide(2), [
+      { data: { items: [other] } },
+    ]);
+    expect(fields.image).toMatchObject({ found: false, agrees: false });
+  });
+  test('a non-carousel post is unchanged and records no position', async () => {
+    const single = post({
+      carousel_media: undefined,
+      image_versions2: item(1).image_versions2,
+    });
+    delete (single as Record<string, unknown>).carousel_media;
+    const body = { data: { items: [single] } };
+    const shown = compareSources(await record(), slide(1), [body]);
+    expect(shown.image.agrees).toBe(true);
+    expect(compareSources(await record(), slide(2), [body]).image.agrees).toBe(
+      false,
+    );
+    expect(imageDiagnostic(IG_FIXTURE.code, slide(1), [body])).toMatchObject({
+      carouselPosition: null,
+      carouselFirstSlide: null,
+      matchingLists: 1,
+    });
+  });
+  test('the first slide agrees as before and records position 1', async () => {
+    const body = { data: { items: [post()] } };
+    expect(compareSources(await record(), slide(1), [body]).image.agrees).toBe(
+      true,
+    );
+    expect(imageDiagnostic(IG_FIXTURE.code, slide(1), [body])).toMatchObject({
+      carouselPosition: 1,
+      carouselFirstSlide: true,
+      matchingLists: 1,
+    });
   });
 });
 

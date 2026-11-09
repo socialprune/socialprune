@@ -17,6 +17,32 @@ function object(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+function urls(value: Record<string, unknown>): string[] | null {
+  const list = object(value.image_versions2).candidates;
+  return Array.isArray(list)
+    ? list
+        .map((candidate) => object(candidate).url)
+        .filter((url): url is string => typeof url === 'string')
+    : null;
+}
+/**
+ * IMAGE-2: the 1-based carousel position whose own candidate list holds the
+ * exact captured address, when there is exactly one qualifying focal-post
+ * object, it carries carousel_media, and exactly one of its items lists the
+ * address. Every other shape returns null and keeps the IG-IMAGE A rule.
+ */
+export function carouselSlide(
+  objects: readonly Record<string, unknown>[],
+  address: string | null,
+): number | null {
+  if (address === null || objects.length !== 1) return null;
+  const media = objects[0]!.carousel_media;
+  if (!Array.isArray(media)) return null;
+  const hits = media
+    .map((item, index) => (urls(object(item))?.includes(address) ? index : -1))
+    .filter((index) => index >= 0);
+  return hits.length === 1 ? hits[0]! + 1 : null;
+}
 export function imageDiagnostic(
   code: string | null,
   source: string | null,
@@ -38,7 +64,13 @@ export function imageDiagnostic(
           .filter((url): url is string => typeof url === 'string'),
       );
   }
+  const slide = carouselSlide(
+    candidates.map((entry) => entry.value),
+    source,
+  );
   return ImageDiagnosticSchema.parse({
+    carouselPosition: slide,
+    carouselFirstSlide: slide === null ? null : slide === 1,
     qualifyingObjects: candidates.length,
     matchingLists:
       source === null
@@ -114,23 +146,27 @@ export function compareSources(
         values.length > 0 &&
         values.length === candidates.length &&
         (field === 'image' || signatures.size === 1) &&
-        values.every((value) =>
-          field === 'image'
-            ? Array.isArray(value) &&
-              expected.image !== null &&
-              value.includes(expected.image)
-            : field === 'caption' &&
-                typeof value === 'string' &&
-                typeof expected.caption === 'string'
-              ? record.post.captionComplete
-                ? value === normalize(expected.caption)
-                : value.startsWith(
-                    normalize(expected.caption)
-                      .replace(/(?:\u2026|\.\.\.)$/, '')
-                      .trimEnd(),
-                  )
-              : value === expected[field],
-        );
+        // IMAGE-2: a carousel's shown slide agrees when exactly one item of
+        // the single qualifying object lists the exact address.
+        ((field === 'image' &&
+          carouselSlide(candidates, expected.image) !== null) ||
+          values.every((value) =>
+            field === 'image'
+              ? Array.isArray(value) &&
+                expected.image !== null &&
+                value.includes(expected.image)
+              : field === 'caption' &&
+                  typeof value === 'string' &&
+                  typeof expected.caption === 'string'
+                ? record.post.captionComplete
+                  ? value === normalize(expected.caption)
+                  : value.startsWith(
+                      normalize(expected.caption)
+                        .replace(/(?:\u2026|\.\.\.)$/, '')
+                        .trimEnd(),
+                    )
+                : value === expected[field],
+          ));
       const suffix =
         field === 'owner'
           ? 'user.username'

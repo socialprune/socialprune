@@ -1094,6 +1094,10 @@ export const PageRecyclingSchema = z
       ),
   );
 const imageDiagnosticFields = {
+  /** IMAGE-2: 1-based carousel slide holding the exact address, or null. */
+  // Optional so reports written before IMAGE-2 still parse.
+  carouselPosition: z.number().int().positive().nullable().optional(),
+  carouselFirstSlide: z.boolean().nullable().optional(),
   qualifyingObjects: count,
   matchingLists: count,
   distinctListLengths: z.array(count),
@@ -1109,7 +1113,13 @@ export const ImageDiagnosticSchema = z
         (length, index) =>
           index === 0 || length > value.distinctListLengths[index - 1]!,
       ) &&
-      (value.source !== 'none' || value.matchingLists === 0),
+      (value.source !== 'none' || value.matchingLists === 0) &&
+      ((value.carouselPosition ?? null) === null) ===
+        ((value.carouselFirstSlide ?? null) === null) &&
+      ((value.carouselPosition ?? null) === null ||
+        (value.qualifyingObjects === 1 &&
+          value.source !== 'none' &&
+          value.carouselFirstSlide === (value.carouselPosition === 1))),
   );
 export type ImageDiagnostic = z.infer<typeof ImageDiagnosticSchema>;
 const StepImageSchema = z
@@ -1127,6 +1137,12 @@ const StepImageSchema = z
   .refine(
     (value) =>
       ImageDiagnosticSchema.safeParse({
+        ...(value.carouselPosition === undefined
+          ? {}
+          : { carouselPosition: value.carouselPosition }),
+        ...(value.carouselFirstSlide === undefined
+          ? {}
+          : { carouselFirstSlide: value.carouselFirstSlide }),
         qualifyingObjects: value.qualifyingObjects,
         matchingLists: value.matchingLists,
         distinctListLengths: value.distinctListLengths,

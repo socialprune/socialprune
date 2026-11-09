@@ -1215,9 +1215,51 @@ test('C16 unexpected error retains a correlated closed cause chain without its v
     step: 3,
     token: 'browser-timeout',
     chain: ['unexpected-error', 'browser-timeout'],
+    timedOut: 'outside-own-code',
   });
   for (const value of Object.values(IG_FIXTURE.other))
     expect(JSON.stringify(cause)).not.toContain(value);
+});
+test('RETRY-2 a browser timeout names only the closed own operation class that timed out', () => {
+  const location = new URL('./driver.ts', import.meta.url).href;
+  const timeout = generatedUnexpected(
+    `locator.click: Timeout 5000ms exceeded. ${plantedUrl}`,
+    'TimeoutError',
+    `TimeoutError: ${IG_FIXTURE.other.text}\n    at Locator.click (file:///generated/node_modules/playwright-core/client.js:1:2)\n    at async loadList (${location}:300:4)`,
+  );
+  const direct = contextCause(timeout, runId, 'list-read', 9);
+  expect(direct).toMatchObject({
+    token: 'browser-timeout',
+    timedOut: 'loadList',
+  });
+  expect(direct).not.toHaveProperty('errorName');
+  const wrapped = contextCause(
+    new Error(IG_FIXTURE.other.username, { cause: timeout }),
+    runId,
+    'list-read',
+    9,
+  );
+  expect(wrapped).toMatchObject({
+    token: 'browser-timeout',
+    timedOut: 'loadList',
+  });
+  expect(
+    contextCause(
+      generatedUnexpected('generated', 'AbortError'),
+      runId,
+      'list-read',
+      9,
+    ),
+  ).not.toHaveProperty('timedOut');
+  expect(() =>
+    ContextCauseSchema.parse({ ...direct, timedOut: IG_FIXTURE.other.code }),
+  ).toThrow();
+  for (const value of [
+    plantedUrl,
+    location,
+    ...Object.values(IG_FIXTURE.other),
+  ])
+    expect(JSON.stringify([direct, wrapped])).not.toContain(value);
 });
 test.each([
   [new TypeError(IG_FIXTURE.other.text), 'type-error'],

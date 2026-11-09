@@ -8,7 +8,13 @@ export class FilteredListTimeout extends ContextStop {
     super('LIST_TIMEOUT', 'list-timeout');
   }
 }
-/** Matches X fill's main-run, one-per-target, three-per-run retry shape. */
+/**
+ * Matches X fill's main-run, one-per-target, three-per-run retry shape.
+ * RETRY-2: a raw browser timeout in the list stage (`list-raw`) or in post-open
+ * before a validated post target exists (`post-no-target`) retries the whole
+ * comment from a fresh list, inside the same budget, never in a canary or a
+ * diagnostic or control run.
+ */
 export class PostOpenRetries {
   private readonly targets = new Set<string>();
   private readonly entries: PostRetry[] = [];
@@ -18,9 +24,18 @@ export class PostOpenRetries {
     step: number,
     canary: boolean,
     capacity: boolean,
+    target = true,
+    diagnostic = false,
   ): PostRetry | null {
     if (errorClass(error) !== 'timeout') return null;
-    return this.reserve(targets, step, canary, capacity, 'post-open');
+    if (!target && diagnostic) return null;
+    return this.reserve(
+      targets,
+      step,
+      canary,
+      capacity,
+      target ? 'post-open' : 'post-no-target',
+    );
   }
   beginList(
     error: unknown,
@@ -28,9 +43,12 @@ export class PostOpenRetries {
     step: number,
     canary: boolean,
     capacity: boolean,
+    diagnostic = false,
   ): PostRetry | null {
-    if (!(error instanceof FilteredListTimeout)) return null;
-    return this.reserve(targets, step, canary, capacity, 'list');
+    if (error instanceof FilteredListTimeout)
+      return this.reserve(targets, step, canary, capacity, 'list');
+    if (errorClass(error) !== 'timeout' || diagnostic) return null;
+    return this.reserve(targets, step, canary, capacity, 'list-raw');
   }
   private reserve(
     targets: readonly string[],

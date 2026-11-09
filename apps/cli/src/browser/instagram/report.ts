@@ -103,7 +103,7 @@ export type PostRequestStatus = z.infer<typeof PostRequestsSchema>[number];
 const PostRetrySchema = z.strictObject({
   step: z.number().int().positive(),
   retryStep: z.number().int().positive().nullable(),
-  stage: z.enum(['post-open', 'list']),
+  stage: z.enum(['post-open', 'list', 'list-raw', 'post-no-target']),
   waitedMs: count,
   outcome: z.enum(['ready', 'timeout']).nullable(),
 });
@@ -1804,7 +1804,34 @@ export const ContextCauseSchema = z.strictObject({
   errorName: z.enum(ERROR_NAMES).optional(),
   playwrightMessageClass: z.enum(PLAYWRIGHT_MESSAGE_CLASSES).optional(),
   ownFunction: z.enum(OWN_FUNCTIONS).optional(),
+  /** RETRY-2: the own operation class whose browser wait timed out. */
+  timedOut: z.enum(OWN_FUNCTIONS).optional(),
 });
+/** The allow-listed own function on the stack of the first browser timeout. */
+export function timedOutFunction(
+  error: unknown,
+): UnexpectedError['ownFunction'] | undefined {
+  const seen = new Set<unknown>();
+  let current = error;
+  for (let depth = 0; depth < 4 && !seen.has(current); depth++) {
+    seen.add(current);
+    if (causeToken(current) === 'browser-timeout')
+      return ownFunction(
+        current instanceof Error
+          ? diagnosticString(current, 'stack', 32768)
+          : '',
+      );
+    if (
+      !current ||
+      typeof current !== 'object' ||
+      !('cause' in current) ||
+      current.cause === undefined
+    )
+      return undefined;
+    current = current.cause;
+  }
+  return undefined;
+}
 function causeToken(error: unknown): CauseToken {
   if (error && typeof error === 'object') {
     if ('code' in error) {
@@ -1857,6 +1884,9 @@ export function contextCause(
     ...cause,
     ...(cause.token === 'unexpected-error'
       ? unexpectedErrorDetails(error)
+      : {}),
+    ...(cause.token === 'browser-timeout'
+      ? { timedOut: timedOutFunction(error) }
       : {}),
   });
 }

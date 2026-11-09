@@ -769,13 +769,21 @@ export async function runContextWithDependencies(
         options.order?.value.maxSteps ?? 600,
         Math.max(0, pace.perDay - prior.used),
       );
+      // RETRY-2: raw-timeout reopens belong to main reading runs only.
+      const diagnosticRun =
+        Boolean(options.plan.diagnosticControl) ||
+        options.order?.value.listDiagnostic === true ||
+        options.order?.value.replyDiagnostic === true;
       const waitToReopen = async (retry: PostRetry) => {
         reading?.clear();
         phase('reopen-wait', POST_REOPEN_WAIT_MS);
         guard();
         await checkPage(page);
         await checkpoint();
-        stage = retry.stage === 'list' ? 'list-read' : 'post-open';
+        stage =
+          retry.stage === 'list' || retry.stage === 'list-raw'
+            ? 'list-read'
+            : 'post-open';
         const startedWait = options.now().getTime();
         const watcher = new AbortController();
         const checkWaitingPage = async () => {
@@ -1081,6 +1089,42 @@ export async function runContextWithDependencies(
                 options.order?.value.listDiagnostic === true,
               ),
             );
+            // RETRY-2: one reopen of the whole comment from a fresh list for a
+            // raw browser timeout; IG-17's filtered empty read keeps its own stage.
+            const reopenList = async (caught: unknown) => {
+              if (
+                reopening &&
+                reopening.stage !== 'post-open' &&
+                (errorClass(caught) === 'timeout' ||
+                  (caught instanceof ContextStop &&
+                    caught.token === 'list-timeout'))
+              )
+                reopening.outcome = 'timeout';
+              const retry = postRetries.beginList(
+                caught,
+                [row.item.id],
+                steps,
+                options.plan.canary,
+                used < pace.perDay &&
+                  steps < max &&
+                  dateInZone(options.now(), options.plan.timeZone) === day,
+                diagnosticRun,
+              );
+              if (!retry) return false;
+              await sampleMemory();
+              await waitToReopen(retry);
+              reopening = retry;
+              return true;
+            };
+            const listReady = () => {
+              if (
+                reopening?.stage === 'list' ||
+                reopening?.stage === 'list-raw'
+              ) {
+                reopening.outcome = 'ready';
+                reopening = null;
+              }
+            };
             const list = await (async () => {
               if (options.plan.refreshLikes || options.plan.refreshReplies) {
                 if (options.plan.refreshReplies)
@@ -1102,13 +1146,19 @@ export async function runContextWithDependencies(
                     full: false,
                     oldestWithinWeek: false,
                   };
-                await navigateList(
-                  page,
-                  options.plan.handle,
-                  deps,
-                  guard,
-                  rowCounts,
-                );
+                try {
+                  await navigateList(
+                    page,
+                    options.plan.handle,
+                    deps,
+                    guard,
+                    rowCounts,
+                  );
+                } catch (caught) {
+                  if (await reopenList(caught)) return null;
+                  throw caught;
+                }
+                listReady();
                 return {
                   account: options.plan.handle,
                   manualReason: undefined,
@@ -1143,10 +1193,7 @@ export async function runContextWithDependencies(
                   options.order?.value.listDiagnostic,
                   options.plan.timeZone,
                 );
-                if (reopening?.stage === 'list') {
-                  reopening.outcome = 'ready';
-                  reopening = null;
-                }
+                listReady();
                 return result;
               } catch (caught) {
                 if (
@@ -1194,8 +1241,6 @@ export async function runContextWithDependencies(
                   };
                   report.steps.push(timeoutStep);
                   activeStep = timeoutStep;
-                  if (reopening?.stage === 'list')
-                    reopening.outcome = 'timeout';
                 } else if (
                   options.order?.value.listDiagnostic &&
                   (rowCounts.diagnostic || rowCounts.rowShape)
@@ -1225,20 +1270,8 @@ export async function runContextWithDependencies(
                     listWindow: rowCounts.windowDiagnostic,
                   });
                 }
-                const retry = postRetries.beginList(
-                  caught,
-                  [row.item.id],
-                  steps,
-                  options.plan.canary,
-                  used < pace.perDay &&
-                    steps < max &&
-                    dateInZone(options.now(), options.plan.timeZone) === day,
-                );
-                if (!retry) throw caught;
-                await sampleMemory();
-                await waitToReopen(retry);
-                reopening = retry;
-                return null;
+                if (await reopenList(caught)) return null;
+                throw caught;
               } finally {
                 report.rows.emptySkipped += rowCounts.emptySkipped;
                 report.rows.otherName += rowCounts.otherName;
@@ -1412,15 +1445,18 @@ export async function runContextWithDependencies(
               );
               if (reopening && errorClass(caught) === 'timeout')
                 reopening.outcome = 'timeout';
+              // RETRY-2: without a validated post target the click never
+              // reached the post, so the reopen starts from a fresh list.
               const retry = postRetries.begin(
                 caught,
                 [row.item.id, ...(target ? [target] : [])],
                 steps,
                 options.plan.canary,
-                target !== null &&
-                  used < pace.perDay &&
+                used < pace.perDay &&
                   steps < max &&
                   dateInZone(options.now(), options.plan.timeZone) === day,
+                target !== null,
+                diagnosticRun,
               );
               if (!retry) throw caught;
               await sampleMemory();
@@ -2485,7 +2521,7 @@ export async function runContextWithDependencies(
     if (error) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
+        `Stop detail: ${stopDetailText(error)}${report.cause ? `; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.cause.timedOut ? `; timedOut=${report.cause.timedOut}` : ''}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
       );
       announcedCause = report.cause;
     }
@@ -2549,7 +2585,7 @@ export async function runContextWithDependencies(
     if (report.cause && announcedCause !== report.cause) {
       report.stop = stopDetails(error);
       options.notice(
-        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
+        `Stop detail: ${stopDetailText(error)}; stage=${report.cause.stage}; step=${report.cause.step}; run=${report.cause.runId}${report.cause.timedOut ? `; timedOut=${report.cause.timedOut}` : ''}${report.stop.errorClass ? `; pageCrashes=${report.runtime.pageCrashes}; browserDisconnects=${report.runtime.browserDisconnects}; unexpectedPageCloses=${report.runtime.unexpectedPageCloses}` : ''}; retriesUsed=${report.retries.used}; retries=${JSON.stringify(report.retries.entries)}\n`,
       );
     }
   }

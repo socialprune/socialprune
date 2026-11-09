@@ -4486,6 +4486,255 @@ test.each(['error', 'login', 'challenge', '429', 'list-nav-other'] as const)(
   },
   120000,
 );
+// RETRY-2: a real Playwright TimeoutError at the list's first filter click,
+// on the listed list loads only (1-based across the run).
+function timeoutListLoads(loads: readonly number[]) {
+  const click = selectorHelpers.clickAllowed;
+  let count = 0;
+  return vi
+    .spyOn(selectorHelpers, 'clickAllowed')
+    .mockImplementation(async (page, action, ...rest) => {
+      if (
+        action.kind === 'named' &&
+        action.name === 'Sort & filter' &&
+        loads.includes(++count)
+      )
+        await page.locator('#generated-never-present').click({ timeout: 50 });
+      return click(page, action, ...rest);
+    });
+}
+async function retryReport(h: Awaited<ReturnType<typeof harness>>) {
+  const run = (await h.store.browserJournal()).runs.find(
+    (run) => run.runId !== 'generated-prior-canary',
+  )!;
+  const text = await readFile(
+    join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+    'utf8',
+  );
+  return { run, text, report: JSON.parse(text) as Record<string, unknown> };
+}
+test.each([1, 2])(
+  'RETRY-2 raw list timeout %s times reopens the whole comment once and stops on the repeat',
+  async (failures) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    const spy = timeoutListLoads(failures === 1 ? [1] : [1, 2]);
+    try {
+      const result = await h.start('no-canary');
+      const { run, text, report } = await retryReport(h);
+      expect(report).toMatchObject({
+        retries: {
+          used: 1,
+          entries: [
+            {
+              step: 1,
+              retryStep: 2,
+              stage: 'list-raw',
+              waitedMs: 60000,
+              outcome: failures === 1 ? 'ready' : 'timeout',
+            },
+          ],
+        },
+      });
+      expect(run.pageOpens).toBe(2);
+      expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(1);
+      expect(
+        h.fake.requests.filter(
+          (request) => request.path === '/your_activity/interactions/comments',
+        ),
+      ).toHaveLength(2);
+      const stored = (
+        await h.store.read((tx) => records(tx.instagramContext))
+      ).filter((record) => record.runId === run.runId);
+      if (failures === 1) {
+        expect(result, h.notices.join('')).toMatchObject({
+          completed: 1,
+          steps: 2,
+        });
+        expect(stored).toHaveLength(1);
+      } else {
+        expect(result).toMatchObject({ code: 'CONTEXT_FAILED' });
+        expect(stored).toHaveLength(0);
+        expect(report).toMatchObject({
+          stop: { token: 'browser-timeout' },
+          cause: { token: 'browser-timeout', stage: 'list-read', step: 2 },
+        });
+        expect((report['cause'] as { timedOut?: string }).timedOut).toEqual(
+          expect.stringMatching(/^[A-Za-z-]+$/),
+        );
+        expect(h.notices.join('')).toMatch(
+          /Stop detail: browser-timeout; stage=list-read; step=2; run=[0-9a-f-]+; timedOut=[A-Za-z-]+; retriesUsed=1;/,
+        );
+      }
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        ...Object.values(IG_FIXTURE.other),
+      ]) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      spy.mockRestore();
+      await h.close();
+    }
+  },
+  120000,
+);
+test('RETRY-2 a post click that never leaves the list reopens the whole comment once without a target', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  const open = driverHelpers.openCandidate;
+  let calls = 0;
+  const urls: string[] = [];
+  const spy = vi
+    .spyOn(driverHelpers, 'openCandidate')
+    .mockImplementation(async (page, ...rest) => {
+      if (++calls === 1) {
+        // The click target never navigates: the page stays on the list.
+        await page.locator('#generated-never-present').click({ timeout: 50 });
+      }
+      urls.push(new URL(page.url()).pathname);
+      return open(page, ...rest);
+    });
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 1,
+      steps: 2,
+    });
+    const { run, text, report } = await retryReport(h);
+    expect(report).toMatchObject({
+      retries: {
+        used: 1,
+        entries: [
+          {
+            step: 1,
+            retryStep: 2,
+            stage: 'post-no-target',
+            waitedMs: 60000,
+            outcome: 'ready',
+          },
+        ],
+      },
+    });
+    // The retry read a fresh list and clicked its row again.
+    expect(calls).toBe(2);
+    expect(urls).toEqual(['/your_activity/interactions/comments']);
+    expect(
+      h.fake.requests.filter(
+        (request) => request.path === '/your_activity/interactions/comments',
+      ),
+    ).toHaveLength(2);
+    expect(
+      h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toHaveLength(1);
+    expect(run.pageOpens).toBe(2);
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).filter(
+        (record) => record.runId === run.runId,
+      ),
+    ).toHaveLength(1);
+    expect(text).not.toContain(IG_FIXTURE.code);
+  } finally {
+    spy.mockRestore();
+    await h.close();
+  }
+}, 120000);
+test('RETRY-2 three raw-timeout reopens are the run budget and the fourth timeout stops', async () => {
+  const h = await harness('success', 5);
+  await fullRunReady(h);
+  h.setLimit(20);
+  const spy = timeoutListLoads([1, 3, 5, 7]);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'CONTEXT_FAILED',
+    });
+    const { run, report } = await retryReport(h);
+    expect(report).toMatchObject({
+      retries: {
+        used: 3,
+        entries: [
+          { step: 1, retryStep: 2, stage: 'list-raw', outcome: 'ready' },
+          { step: 3, retryStep: 4, stage: 'list-raw', outcome: 'ready' },
+          { step: 5, retryStep: 6, stage: 'list-raw', outcome: 'ready' },
+        ],
+      },
+      stop: { token: 'browser-timeout' },
+      cause: { stage: 'list-read', step: 7 },
+    });
+    expect(run.pageOpens).toBe(7);
+    expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(3);
+    expect(
+      (await h.store.read((tx) => records(tx.instagramContext))).filter(
+        (record) => record.runId === run.runId,
+      ),
+    ).toHaveLength(3);
+  } finally {
+    spy.mockRestore();
+    await h.close();
+  }
+}, 180000);
+test('RETRY-2 a canary raw list timeout still stops at once without a reopen', async () => {
+  const h = await harness('success', 5);
+  const spy = timeoutListLoads([1]);
+  try {
+    expect(await h.start(true)).toMatchObject({ code: 'CONTEXT_FAILED' });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toMatchObject({
+      retries: { used: 0, entries: [] },
+      stop: { token: 'browser-timeout' },
+      cause: { stage: 'list-read', step: 1 },
+    });
+    expect(run.pageOpens).toBe(1);
+    expect(h.waits).not.toContain(60000);
+    expect(
+      h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toEqual([]);
+  } finally {
+    spy.mockRestore();
+    await h.close();
+  }
+}, 60000);
+test.each(['error', '429'] as const)(
+  'RETRY-2 %s during the raw-timeout reopen wait stops at once',
+  async (variant) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    const spy = timeoutListLoads([1]);
+    h.afterWait(async (ms) => {
+      if (ms !== 60000) return;
+      h.fake.setVariant(variant);
+      await h
+        .context!.pages()
+        .find((page) => new URL(page.url()).origin === h.fake.origin)!
+        .goto(`${h.fake.origin}/your_activity/interactions/comments`);
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+      });
+      const { run, report } = await retryReport(h);
+      expect(report).toMatchObject({
+        retries: {
+          used: 1,
+          entries: [{ stage: 'list-raw', retryStep: null, outcome: null }],
+        },
+      });
+      expect(run.pageOpens).toBe(1);
+      expect(
+        h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      await h.close();
+    }
+  },
+  120000,
+);
 test.each([1, 2])(
   'C23 post slow %s times reopens once with a counted paced step and keeps the original timeout on repetition',
   async (failures) => {

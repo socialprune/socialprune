@@ -293,6 +293,83 @@ test('C23 post-open retry policy permits one reopen per target and three per run
   ).toThrow();
   expect(JSON.stringify(retries.summary())).not.toContain('generated-item');
 });
+test('RETRY-2 a raw list timeout and a post timeout without target reopen the whole comment once inside the shared budget', () => {
+  const retries = new PostOpenRetries();
+  const raw = new errors.TimeoutError(
+    'locator.click: Timeout 5000ms exceeded.',
+  );
+  expect(
+    retries.beginList(raw, ['generated-comment-1'], 1, false, true),
+  ).toEqual({
+    step: 1,
+    retryStep: null,
+    stage: 'list-raw',
+    waitedMs: 0,
+    outcome: null,
+  });
+  // The same comment never gets a second reopen, whatever the stage.
+  expect(
+    retries.beginList(raw, ['generated-comment-1'], 2, false, true),
+  ).toBeNull();
+  expect(
+    retries.begin(raw, ['generated-comment-1'], 2, false, true, false),
+  ).toBeNull();
+  expect(
+    retries.begin(raw, ['generated-comment-2'], 3, false, true, false),
+  ).toMatchObject({ step: 3, stage: 'post-no-target' });
+  expect(
+    retries.beginList(
+      new FilteredListTimeout(),
+      ['generated-comment-3'],
+      5,
+      false,
+      true,
+    ),
+  ).toMatchObject({ stage: 'list' });
+  // A fourth reopen in the run is refused for every stage.
+  expect(
+    retries.beginList(raw, ['generated-comment-4'], 7, false, true),
+  ).toBeNull();
+  expect(
+    retries.begin(raw, ['generated-comment-4'], 7, false, true, false),
+  ).toBeNull();
+  expect(retries.summary().used).toBe(3);
+  expect(PostRetriesSchema.parse(retries.summary())).toEqual(retries.summary());
+  expect(JSON.stringify(retries.summary())).not.toContain('generated-comment');
+});
+test('RETRY-2 canaries, diagnostics, capped steps and non-timeout errors never reopen on a raw timeout', () => {
+  const retries = new PostOpenRetries();
+  const raw = new errors.TimeoutError(
+    'locator.click: Timeout 5000ms exceeded.',
+  );
+  expect(retries.beginList(raw, ['generated'], 1, true, true)).toBeNull();
+  expect(retries.beginList(raw, ['generated'], 1, false, false)).toBeNull();
+  expect(
+    retries.beginList(raw, ['generated'], 1, false, true, true),
+  ).toBeNull();
+  expect(retries.begin(raw, ['generated'], 1, true, true, false)).toBeNull();
+  expect(retries.begin(raw, ['generated'], 1, false, false, false)).toBeNull();
+  expect(
+    retries.begin(raw, ['generated'], 1, false, true, false, true),
+  ).toBeNull();
+  for (const failure of [
+    new ContextStop('PLATFORM_CHECK', 'notice-error'),
+    new ContextStop('PLATFORM_CHECK', 'http-429'),
+    new ContextStop('ACCOUNT_MISMATCH', 'account-changed'),
+    new ContextStop('PLATFORM_CHECK', 'navigation'),
+    Object.assign(new Error(), { name: 'TargetClosedError' }),
+    Object.assign(new Error(), { name: 'PageCrashedError' }),
+    new Error('generated', { cause: raw }),
+  ]) {
+    expect(
+      retries.beginList(failure, ['generated'], 1, false, true),
+    ).toBeNull();
+    expect(
+      retries.begin(failure, ['generated'], 1, false, true, false),
+    ).toBeNull();
+  }
+  expect(retries.summary()).toEqual({ used: 0, entries: [] });
+});
 test('C23 notices generic failures canaries and exhausted capacity never authorize a post reopen', () => {
   const retry = new PostOpenRetries();
   const timeout = new Error();

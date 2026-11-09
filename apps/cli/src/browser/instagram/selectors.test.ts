@@ -21,6 +21,7 @@ import {
   IG_FIXTURE,
 } from '../../../e2e/fake-instagram/fixture.ts';
 import { checkInstagramDeletePage } from './delete-driver.ts';
+import { stopDetails, stopDetailText } from './report.ts';
 
 test('realfix skips only exact handle-only age rows and keeps candidate indices and malformed-row stops', async () => {
   let texts = [
@@ -71,6 +72,121 @@ test('realfix skips only exact handle-only age rows and keeps candidate indices 
   }
 });
 
+test('ROW-TRAIL-1 reads a row with one allow-listed label after its age and never keeps the label as text', async () => {
+  let texts = [
+    'generated_person A generated comment\n2d\nEdited',
+    'generated_person Another generated comment\n1w\nSee translation',
+    'generated_person\nA third generated comment\n3w\nPinned',
+    'generated_person A fourth generated comment\n4d',
+    'generated_person A fifth generated comment\n5d\nEdited',
+  ];
+  const locator = {
+    filter() {
+      return this;
+    },
+    allInnerTexts: () => Promise.resolve(texts),
+  };
+  const page = { locator: () => locator } as unknown as Page;
+  const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  expect(await readRows(page, counts, 'generated_person')).toEqual([
+    {
+      username: 'generated_person',
+      text: 'A generated comment',
+      age: '2d',
+      index: 0,
+    },
+    {
+      username: 'generated_person',
+      text: 'Another generated comment',
+      age: '1w',
+      index: 1,
+    },
+    {
+      username: 'generated_person',
+      text: 'A third generated comment',
+      age: '3w',
+      index: 2,
+    },
+    {
+      username: 'generated_person',
+      text: 'A fourth generated comment',
+      age: '4d',
+      index: 3,
+    },
+    {
+      username: 'generated_person',
+      text: 'A fifth generated comment',
+      age: '5d',
+      index: 4,
+    },
+  ]);
+  expect(counts.trailingLabelRows).toEqual({
+    edited: 2,
+    seeTranslation: 1,
+    pinned: 1,
+  });
+  // A later read with fewer labels keeps the per-class maximum.
+  texts = ['generated_person A generated comment\n2d\nPinned'];
+  await readRows(page, counts, 'generated_person');
+  expect(counts.trailingLabelRows).toEqual({
+    edited: 2,
+    seeTranslation: 1,
+    pinned: 1,
+  });
+  const plain: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  texts = ['generated_person A generated comment\n2d'];
+  await readRows(page, plain, 'generated_person');
+  expect(plain.trailingLabelRows).toBeUndefined();
+  for (const [malformed, trailingClass] of [
+    ['generated_person A generated comment\n2d\nTranslated', 'other'],
+    ['generated_person A generated comment\n2d\nedited', 'other'],
+    ['generated_person A generated comment\n2d\nEdited\nPinned', 'pinned'],
+    ['generated_person A generated comment\n2d\nEdited\nInvented', 'other'],
+    ['generated_person A generated comment\n2d\n3 likes', 'other'],
+    ['generated_person\n18w\nEdited', 'edited'],
+    ['generated_person A generated comment\n18q', 'none'],
+  ] as const) {
+    texts = [malformed];
+    const failure: unknown = await readRows(
+      page,
+      counts,
+      'generated_person',
+    ).catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'row-structure',
+      trailingClass,
+    });
+    expect(stopDetails(failure)).toEqual({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'row-structure',
+      trailingClass,
+    });
+    expect(stopDetailText(failure)).toBe(
+      `row-structure; trailingClass=${trailingClass}`,
+    );
+  }
+});
+test('ROW-TRAIL-1 a label line before the age is read as today, as part of the text', async () => {
+  const texts = ['generated_person A generated comment\nEdited\n2d'];
+  const locator = {
+    filter() {
+      return this;
+    },
+    allInnerTexts: () => Promise.resolve(texts),
+  };
+  const page = { locator: () => locator } as unknown as Page;
+  const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  expect(await readRows(page, counts, 'generated_person')).toEqual([
+    {
+      username: 'generated_person',
+      text: 'A generated comment Edited',
+      age: '2d',
+      index: 0,
+    },
+  ]);
+  expect(counts.trailingLabelRows).toBeUndefined();
+});
 test.each([false, true])(
   'realshape readRows preserves refusal and attaches count-only details only in listDiagnostic=%s',
   async (diagnose) => {
@@ -117,6 +233,7 @@ test.each([false, true])(
           {
             lineCount: 4,
             failurePart: 'extra-trailing-line',
+            trailingClass: 'other',
             anchors: 1,
             linkClasses: { profile: 1 },
             imagePresent: true,

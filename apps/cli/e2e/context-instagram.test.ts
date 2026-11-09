@@ -4735,6 +4735,113 @@ test.each(['error', '429'] as const)(
   },
   120000,
 );
+test.each([
+  ['decoy', 'Edited', 'edited'],
+  ['decoy', 'See translation', 'seeTranslation'],
+  ['decoy', 'Pinned', 'pinned'],
+  ['target', 'Edited', 'edited'],
+] as const)(
+  'ROW-TRAIL-1 a %s row with %s after its age is read, the target confirms and the label stays out of the text',
+  async (mode, label, key) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.rowShape(`trailing-${mode}:${label}`);
+    try {
+      expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+        completed: 1,
+        steps: 1,
+      });
+      const { run, text, report } = await retryReport(h);
+      const steps = report['steps'] as {
+        trailingLabelRows?: Record<string, number>;
+        confirmed: boolean;
+      }[];
+      expect(steps).toHaveLength(1);
+      expect(steps[0]!.confirmed).toBe(true);
+      const labelRows = steps[0]!.trailingLabelRows!;
+      expect(Object.keys(labelRows).sort()).toEqual([
+        'edited',
+        'pinned',
+        'seeTranslation',
+      ]);
+      for (const [name, value] of Object.entries(labelRows))
+        if (name === key)
+          if (mode === 'decoy') expect(value).toBe(1);
+          else expect(value).toBeGreaterThanOrEqual(1);
+        else expect(value).toBe(0);
+      const stored = (
+        await h.store.read((tx) => records(tx.instagramContext))
+      ).filter((record) => record.runId === run.runId);
+      expect(stored).toHaveLength(1);
+      expect(JSON.stringify(stored)).not.toContain(label);
+      expect(text).not.toContain(label);
+      expect(h.notices.join('')).not.toContain(label);
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test.each([
+  ['decoy', 'Translated', 'other'],
+  ['decoy', 'Edited\nPinned', 'pinned'],
+  ['target', '3 likes', 'other'],
+] as const)(
+  'ROW-TRAIL-1 a %s row with trailing %j still stops with row-structure and names only its closed class',
+  async (mode, line, trailingClass) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    h.fake.rowShape(`trailing-${mode}:${line}`);
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'row-structure',
+      });
+      const { run, text, report } = await retryReport(h);
+      expect(report).toMatchObject({
+        stop: {
+          code: 'INSTAGRAM_SHAPE_CHANGED',
+          token: 'row-structure',
+          trailingClass,
+        },
+      });
+      expect(h.notices.join('')).toContain(
+        `Stop detail: row-structure; trailingClass=${trailingClass}`,
+      );
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).filter(
+          (record) => record.runId === run.runId,
+        ),
+      ).toHaveLength(0);
+      expect(
+        h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+      ).toEqual([]);
+      for (const value of [...line.split('\n'), 'Generated decoy comment']) {
+        expect(text).not.toContain(value);
+        expect(h.notices.join('')).not.toContain(value);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
+test('ROW-TRAIL-1 a label line before the age is read as today and never counted as a label row', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.rowShape('trailing-before:Edited');
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 1,
+      steps: 1,
+    });
+    const { report } = await retryReport(h);
+    const steps = report['steps'] as { trailingLabelRows?: unknown }[];
+    expect(steps[0]!.trailingLabelRows).toBeUndefined();
+  } finally {
+    await h.close();
+  }
+}, 120000);
 test.each([1, 2])(
   'C23 post slow %s times reopens once with a counted paced step and keeps the original timeout on repetition',
   async (failures) => {

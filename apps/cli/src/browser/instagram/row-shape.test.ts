@@ -24,6 +24,25 @@ test.each([
     expect(JSON.stringify(result)).not.toContain('Invented words');
   },
 );
+test.each([
+  ['generated_person Invented words\n2d\nEdited', 'edited'],
+  ['generated_person Invented words\n2d\nSee translation', 'see-translation'],
+  ['generated_person Invented words\n2d\nPinned', 'pinned'],
+  ['generated_person Invented words\n2d\nInvented label', 'other'],
+  ['generated_person Invented words\n2d\nEdited\nPinned', 'pinned'],
+  ['generated_person Invented words\n3mo', 'none'],
+] as const)(
+  'ROW-TRAIL-1 refused row %# names only the closed class of its trailing line',
+  (text, trailingClass) => {
+    const refused = rowShape(text, 'generated_person', false);
+    expect(refused.trailingClass).toBe(trailingClass);
+    expect(JSON.stringify(refused)).not.toContain('Invented');
+    expect(JSON.stringify(refused)).not.toContain('Edited');
+    expect(rowShape(text, 'generated_person', true)).not.toHaveProperty(
+      'trailingClass',
+    );
+  },
+);
 test('realshape distinguishes missing username and missing comment text without accepting either', () => {
   expect(
     rowShape('invalid handle\nwords\n2d', 'generated_person', false)

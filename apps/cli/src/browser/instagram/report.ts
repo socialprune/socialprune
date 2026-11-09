@@ -13,6 +13,21 @@ import {
 } from './media-source.ts';
 
 const count = z.number().int().nonnegative();
+/** ROW-TRAIL-1: closed classes of a list row's line after its age. */
+export const ROW_TRAILING_CLASSES = [
+  'edited',
+  'see-translation',
+  'pinned',
+  'other',
+  'none',
+] as const;
+export type RowTrailingClass = (typeof ROW_TRAILING_CLASSES)[number];
+export const TrailingLabelRowsSchema = z.strictObject({
+  edited: count,
+  seeTranslation: count,
+  pinned: count,
+});
+export type TrailingLabelRows = z.infer<typeof TrailingLabelRowsSchema>;
 const sourceCountSchema = z.strictObject({
   responses: count,
   bodies: count,
@@ -308,6 +323,8 @@ export const RowShapeDiagnosticSchema = z.strictObject({
           'age',
           'extra-trailing-line',
         ]),
+        /** ROW-TRAIL-1: refused rows only; a closed class, never the line. */
+        trailingClass: z.enum(ROW_TRAILING_CLASSES).optional(),
         anchors: count,
         linkClasses: z.strictObject({
           post: count,
@@ -1267,6 +1284,7 @@ export const ContextStepReportSchema = z
     replyExpansion: ReplyExpansionDiagnosticSchema.optional(),
     oldestSortStructure: SortStructuresSchema.optional(),
     handleOnlySkipped: count.optional(),
+    trailingLabelRows: TrailingLabelRowsSchema.optional(),
     listRowsAfterApply: ListRowDiagnosticSchema.optional(),
     listPageUnfiltered: ListNavigationSchema.optional(),
     unfilteredOldestSortApplied: z.boolean().optional(),
@@ -1380,6 +1398,8 @@ export class ContextStop extends CliError {
   warningKind?: 'http-429' | 'limit-notice' | 'warning-notice';
   readonly token: ContextStopToken;
   readonly accountCheck?: AccountCheck;
+  /** ROW-TRAIL-1: closed class of the refused list row's trailing line. */
+  trailingClass?: RowTrailingClass;
   constructor(
     code: CliErrorCode,
     token: ContextStopToken,
@@ -1922,6 +1942,7 @@ export function stopDetails(error: unknown): {
   errorName?: UnexpectedError['errorName'];
   playwrightMessageClass?: UnexpectedError['playwrightMessageClass'];
   ownFunction?: UnexpectedError['ownFunction'];
+  trailingClass?: RowTrailingClass;
 } {
   if (
     error instanceof ContextStop &&
@@ -1932,6 +1953,11 @@ export function stopDetails(error: unknown): {
       token: error.token,
       ...(error.accountCheck
         ? { accountCheck: AccountCheckSchema.parse(error.accountCheck) }
+        : {}),
+      ...(error.token === 'row-structure' &&
+      error.trailingClass &&
+      ROW_TRAILING_CLASSES.includes(error.trailingClass)
+        ? { trailingClass: error.trailingClass }
         : {}),
     };
   if (error instanceof CliError && Object.hasOwn(CLI_ERRORS, error.code))
@@ -1949,6 +1975,7 @@ export function stopDetailText(error: unknown): string {
   return (
     detail.token +
     (detail.errorClass ? `; errorClass=${detail.errorClass}` : '') +
+    (detail.trailingClass ? `; trailingClass=${detail.trailingClass}` : '') +
     (detail.errorName
       ? `; errorName=${detail.errorName}; playwrightMessageClass=${detail.playwrightMessageClass}; ownFunction=${detail.ownFunction}`
       : '') +

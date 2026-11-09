@@ -1,5 +1,12 @@
 export type RowShapeCase =
-  'extra-line' | 'german-age' | 'unknown-age' | 'handle-only';
+  | 'extra-line'
+  | 'german-age'
+  | 'unknown-age'
+  | 'handle-only'
+  // ROW-TRAIL-1: generated trailing lines. `target` appends the line(s) after
+  // every row's age; `decoy` adds one own row with another text and the line(s)
+  // after its age; `before` puts the line(s) between that row's text and age.
+  | `trailing-${'target' | 'decoy' | 'before'}:${string}`;
 export type ReplyShapeCase =
   | 'time-absent'
   | 'time-nested'
@@ -41,6 +48,34 @@ export type ReplyShapeCase =
 /** The generated caption object's time, as the fake answer states it. */
 export const SOLE_CAPTION_TIME = '2024-12-31T00:00:00.000Z';
 export function rowShapePage(html: string, shape: RowShapeCase) {
+  const trailing = /^trailing-(target|decoy|before):([\s\S]+)$/u.exec(shape);
+  if (trailing) {
+    const [, mode, line] = trailing;
+    const styled = html.replace(
+      '<style>',
+      '<style>#list>[role=button]{white-space:pre-line}',
+    );
+    if (mode === 'target') {
+      const anchor = "+'\\n'+age)";
+      if (!styled.includes(anchor))
+        throw new Error('Generated trailing-line anchor missing');
+      return styled.replace(
+        anchor,
+        `+'\\n'+age+${JSON.stringify('\n' + line)})`,
+      );
+    }
+    const text =
+      mode === 'decoy'
+        ? `' Generated decoy comment\\n1w'+${JSON.stringify('\n' + line)}`
+        : `' Generated decoy comment'+${JSON.stringify('\n' + line)}+'\\n1w'`;
+    const anchor = 'list.replaceChildren();';
+    if (!styled.includes(anchor))
+      throw new Error('Generated decoy-row anchor missing');
+    return styled.replace(
+      anchor,
+      `${anchor}const decoyNode=document.createElement('div');decoyNode.setAttribute('role','button');decoyNode.setAttribute('aria-label','Generated decoy row');decoyNode.innerHTML='<img src="/thumb.png" alt="">';decoyNode.append(document.createTextNode(handle+${text}));list.append(decoyNode);`,
+    );
+  }
   if (shape === 'handle-only')
     return html
       .replace('<style>', '<style>#list>[role=button]{white-space:pre-line}')

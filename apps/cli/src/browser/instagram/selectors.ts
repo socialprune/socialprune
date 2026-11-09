@@ -6,7 +6,12 @@ import type {
   RowSignatureDiagnostic,
 } from './report.ts';
 import { normalize, ownerName } from './plan.ts';
-import { readRowShapes } from './row-shape.ts';
+import {
+  readRowShapes,
+  rowLines,
+  rowTrailingClass,
+  rowTrailingLabel,
+} from './row-shape.ts';
 import { mediaAreaFromSnapshot } from './media-source.ts';
 import type { MediaArea } from './media-source.ts';
 
@@ -114,6 +119,21 @@ const ROW_PATTERN = new RegExp(
   `^([A-Za-z0-9_.]{1,30})\\s+(.+?)\\s+(\\d+\\s*${AGE_UNITS})$`,
 );
 const AGE_PATTERN = new RegExp(`^(\\d+)\\s*(${AGE_UNITS})$`);
+/**
+ * One list row as ROW_PATTERN reads it. ROW-TRAIL-1: a single last line that
+ * is exactly an allow-listed label, right after an age line, is set aside and
+ * never becomes comment text; every other shape is read as before.
+ */
+export function parseRow(raw: string) {
+  const lines = rowLines(raw);
+  const candidate = lines.length >= 3 ? rowTrailingLabel(lines.at(-1)!) : null;
+  const label = candidate && AGE_PATTERN.test(lines.at(-2)!) ? candidate : null;
+  const match = ROW_PATTERN.exec(
+    label ? normalize(lines.slice(0, -1).join('\n')) : normalize(raw),
+  );
+  if (!match) return null;
+  return { username: match[1]!, text: match[2]!, age: match[3]!, label };
+}
 /** Coarse oldest-list diagnostic only; comment confirmation uses permalink time. */
 export function relativeAgeMs(value: string): number | null {
   const match = AGE_PATTERN.exec(value);
@@ -142,6 +162,8 @@ export interface RowReadCounts {
   emptySkipped: number;
   /** Exact own-handle and age rows without comment text, never candidates. */
   handleOnlySkipped?: number;
+  /** ROW-TRAIL-1: maximum simultaneous rows per allow-listed trailing label. */
+  trailingLabelRows?: import('./report.ts').TrailingLabelRows;
   /** Maximum simultaneous other-name rows within one step's list loads. */
   otherName: number;
   listTimeout?: ListTimeoutDiagnostic;
@@ -226,10 +248,11 @@ export async function readRows(
       texts.filter(handleOnly).length,
     );
   }
+  const labels = { edited: 0, seeTranslation: 0, pinned: 0 };
   for (let index = 0; index < texts.length; index++) {
     const raw = normalize(texts[index]!);
     if (!raw || handleOnly(texts[index]!)) continue;
-    const match = ROW_PATTERN.exec(raw);
+    const match = parseRow(texts[index]!);
     if (!match) {
       if (counts?.rowShapeHandle !== undefined)
         counts.rowShape = await readRowShapes(
@@ -237,16 +260,32 @@ export async function readRows(
           texts,
           counts.rowShapeHandle,
           new URL(page.url()).origin,
-          (value) => ROW_PATTERN.test(value),
+          (value) => parseRow(value) !== null,
         );
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
+      const stop = new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
+      stop.trailingClass = rowTrailingClass(texts[index]!);
+      throw stop;
     }
+    if (match.label === 'edited') labels.edited++;
+    else if (match.label === 'see-translation') labels.seeTranslation++;
+    else if (match.label === 'pinned') labels.pinned++;
     result.push({
-      username: match[1]!,
-      text: match[2]!,
-      age: match[3]!,
+      username: match.username,
+      text: match.text,
+      age: match.age,
       index,
     });
+  }
+  if (counts && labels.edited + labels.seeTranslation + labels.pinned > 0) {
+    const prior = counts.trailingLabelRows;
+    counts.trailingLabelRows = {
+      edited: Math.max(prior?.edited ?? 0, labels.edited),
+      seeTranslation: Math.max(
+        prior?.seeTranslation ?? 0,
+        labels.seeTranslation,
+      ),
+      pinned: Math.max(prior?.pinned ?? 0, labels.pinned),
+    };
   }
   return result;
 }

@@ -1012,5 +1012,6 @@
   "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review.",
   "desktop.token.post-unavailable": "The post was unavailable while adding likes. Recheck only when you select it.",
   "desktop.token.comment-not-shown": "The confirmed comment was not shown while adding likes. Recheck only when you select it.",
+  "desktop.token.canary-unchecked": "Instagram's own answer could not check this comment, so the trial run skipped it. The main run reads it again.",
   "desktop.token.deferred-not-rendered": "The run window drew nothing, so the replies were not read. The next run reads this comment again."
 }

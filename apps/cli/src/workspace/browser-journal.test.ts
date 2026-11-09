@@ -837,7 +837,7 @@ async function auditFixture(
         attemptId,
         at: IG_FIXTURE.now,
         state:
-          mode === 'failed' && index === 0
+          (mode === 'failed' || mode === 'canary-unchecked') && index === 0
             ? 'failed'
             : mode === 'not-listed' && index === 0
               ? 'not-listed'
@@ -999,6 +999,28 @@ test.each([
   },
 );
 
+test('CHECK-SKIP-1 journal accepts five checked records after an unchecked canary step, never with it', async () => {
+  const h = await auditFixture(5, 1, 0, 'canary-unchecked');
+  try {
+    const unchecked = h.fixture.items[0]!.id;
+    expect(h.itemIds).not.toContain(unchecked);
+    await h.accept();
+    expect((await h.store.browserJournal()).runs[0]).toMatchObject({
+      acceptedBy: 'automatic-check',
+    });
+  } finally {
+    await h.close();
+  }
+  const listed = await auditFixture(5, 1, 0, 'canary-unchecked');
+  try {
+    listed.itemIds[4] = listed.fixture.items[0]!.id;
+    await expect(listed.accept()).rejects.toMatchObject({
+      code: 'CANARY_CHECK_FAILED',
+    });
+  } finally {
+    await listed.close();
+  }
+});
 test('IMAGE-4 journal accepts listed not-applicable images and nothing else', async () => {
   const h = await auditFixture(5, 0, 0, '', 2);
   try {

@@ -1543,11 +1543,18 @@ test.each(IMAGE_CASES)(
         });
       else
         expect(result, h.notices.join('')).toMatchObject({
-          code: !entry.captured
-            ? 'CANARY_CHECK_FAILED'
-            : entry.name === 'thumbnail-field-only' ||
-                entry.name === 'partial-matching-post'
-              ? 'CANARY_NO_SECOND_SOURCE'
+          // CHECK-SKIP-1: a missing image field or two objects that do not
+          // all agree make the step unchecked; a one-comment plan then ends
+          // without five confirmations. Shapes from image-cases.ts.
+          code:
+            !entry.captured ||
+            [
+              'thumbnail-field-only',
+              'partial-matching-post',
+              'disjoint-resolutions',
+              'changed-signed-query',
+            ].includes(entry.name)
+              ? 'CANARY_CHECK_FAILED'
               : 'CANARY_MISMATCH',
         });
       const run = (await h.store.browserJournal()).runs[0]!;
@@ -1779,6 +1786,88 @@ test.each([
     }
   },
 );
+test.each([
+  ['two-answers', 'several-objects'],
+  ['missing-time', 'field-not-found'],
+] as const)(
+  'CHECK-SKIP-1 a third confirmation with %s is unchecked, not stored, and five later agreeing steps accept the canary',
+  async (variant, reason) => {
+    const h = await harness('success', 7);
+    h.fake.setPostVariant(2, variant);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        endReason: 'canary',
+        completed: 5,
+      });
+      const journal = await h.store.browserJournal();
+      const run = journal.runs[0]!;
+      expect(run.canaryAcceptedAt).not.toBeNull();
+      const skipped = h.fixture.items[2]!.id;
+      expect(
+        journal.attempts.find(
+          (attempt) => attempt.itemId === skipped && attempt.settles !== null,
+        ),
+      ).toMatchObject({ state: 'failed', code: 'canary-unchecked' });
+      expect(
+        await h.store.read((tx) => tx.instagramContext.get(skipped)),
+      ).toBeUndefined();
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, `context/instagram/canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        canaryUnchecked: number;
+        steps: Record<string, unknown>[];
+      };
+      expect(report.canaryUnchecked).toBe(1);
+      const step = report.steps[2]!;
+      expect(step).toMatchObject({
+        result: 'canary-unchecked',
+        canaryUnchecked: {
+          reason,
+          ...(reason === 'field-not-found' ? { fields: ['time'] } : {}),
+        },
+      });
+      const fields = step['fields'] as SourceChecks;
+      expect(fields.time.carriers).toBe(variant === 'missing-time' ? 0 : 2);
+      // The unchecked comment is planned again for the main run.
+      const next = await planContext(h.store, h.plan.accountKey);
+      expect(next.rows.map((row) => row.item.id)).toContain(skipped);
+      expect(
+        JSON.stringify(report.steps[2]).includes(h.fixture.items[2]!.text),
+      ).toBe(false);
+    } finally {
+      await h.close();
+    }
+  },
+);
+test('CHECK-SKIP-1 a single-object step with a disagreeing owner still stops at once', async () => {
+  const h = await harness('success', 7);
+  h.fake.setPostVariant(2, 'different-owner');
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      code: 'CANARY_MISMATCH',
+    });
+  } finally {
+    await h.close();
+  }
+});
+test('CHECK-SKIP-1 fifteen tries with fewer than five checked confirmations fail as before', async () => {
+  const h = await harness('missing-time', 15);
+  try {
+    expect(await h.start(true), h.notices.join('')).toMatchObject({
+      code: 'CANARY_CHECK_FAILED',
+    });
+    const journal = await h.store.browserJournal();
+    expect(journal.runs[0]!.canaryAcceptedAt).toBeNull();
+    expect(
+      journal.attempts.filter((attempt) => attempt.state === 'sending'),
+    ).toHaveLength(15);
+  } finally {
+    await h.close();
+  }
+});
 test('IG-IMAGE main run records exact-url counts but does not enforce canary agreement', async () => {
   const h = await harness('success', 2);
   await fullRunReady(h);
@@ -6096,7 +6185,8 @@ test.each([
   180000,
 );
 test.each([
-  ['no-json', 'CANARY_NO_SECOND_SOURCE'],
+  // CHECK-SKIP-1: five unchecked steps end without five confirmations.
+  ['no-json', 'CANARY_CHECK_FAILED'],
   ['different-owner', 'CANARY_MISMATCH'],
   ['different-time', 'CANARY_MISMATCH'],
   ['different-caption', 'CANARY_MISMATCH'],
@@ -6610,7 +6700,8 @@ test('C8 IG-6 manual selection keeps Continue and Matches after skips and stops 
 }, 180000);
 test.each([
   ['different-caption', 'CANARY_MISMATCH', 'field-mismatch'],
-  ['no-json', 'CANARY_NO_SECOND_SOURCE', 'second-source'],
+  // CHECK-SKIP-1: a missing second source no longer stops at once; the
+  // CHECK-SKIP-1 cases cover it.
   ['challenge', 'PLATFORM_CHECK', 'challenge'],
   ['429', 'PLATFORM_CHECK', 'http-429'],
   ['mutation', 'UNEXPECTED_ACTION', 'unexpected-action'],
@@ -6622,8 +6713,7 @@ test.each([
   async (variant, code, token) => {
     const h = await harness('success', 7);
     h.fake.setPostVariant(0, 'owner');
-    if (variant === 'different-caption' || variant === 'no-json')
-      h.fake.setPostVariant(1, variant);
+    if (variant === 'different-caption') h.fake.setPostVariant(1, variant);
     else
       h.fake.beforeList(async () => {
         const sends = (await h.store.browserJournal()).attempts.filter(
@@ -10338,12 +10428,16 @@ test.each([
   ['answer-ndjson', null, 'sequence', 'json', 2],
   ['answer-concatenated', null, 'sequence', 'json', 2],
   ['answer-javascript', null, 'single', 'javascript', 1],
-  ['answer-disagreement', 'CANARY_MISMATCH', 'sequence', 'json', 2],
-  ['answer-unparsable', 'CANARY_NO_SECOND_SOURCE', 'failed', 'json', 0],
+  // CHECK-SKIP-1: two disagreeing documents, or none, make every step
+  // unchecked, so all five are read and none confirms.
+  ['answer-disagreement', 'CANARY_CHECK_FAILED', 'sequence', 'json', 2],
+  ['answer-unparsable', 'CANARY_CHECK_FAILED', 'failed', 'json', 0],
 ] as const)(
   'C14 second-source %s retains every document and reports closed evidence',
   async (variant, code, mode, type, bodies) => {
     const h = await harness(variant, 5);
+    // Unchecked steps read all five comments.
+    const steps = code === null || code === 'CANARY_CHECK_FAILED' ? 5 : 1;
     try {
       const result = await h.start(true);
       expect(result, h.notices.join('')).toMatchObject(
@@ -10368,7 +10462,7 @@ test.each([
           };
         }[];
       };
-      expect(report.steps).toHaveLength(code ? 1 : 5);
+      expect(report.steps).toHaveLength(steps);
       for (const step of report.steps) {
         expect(step.secondSource.contentTypes[type]).toMatchObject({
           responses: 1,
@@ -10403,10 +10497,10 @@ test.each([
         expect(reportText).not.toContain(value);
       expect(
         h.fake.requests.filter((request) => request.path.startsWith('/ajax/')),
-      ).toHaveLength(code ? 1 : 5);
+      ).toHaveLength(steps);
       expect(
         h.fake.requests.filter((request) => request.path.startsWith('/media/')),
-      ).toHaveLength(code ? 1 : 5);
+      ).toHaveLength(steps);
       assertRecordedEvents(h.fake.events);
     } finally {
       await h.close();
@@ -10427,8 +10521,10 @@ test.each([
     try {
       const result = await h.start(true);
       expect(result, h.notices.join('')).toMatchObject(
+        // CHECK-SKIP-1: two objects that disagree make each step unchecked;
+        // all five are read and none is accepted.
         disagrees
-          ? { code: 'CANARY_MISMATCH' }
+          ? { code: 'CANARY_CHECK_FAILED' }
           : { completed: 5, endReason: 'canary' },
       );
       const journal = await h.store.browserJournal();
@@ -10453,7 +10549,7 @@ test.each([
           fields: Record<string, { found: boolean; agrees: boolean }>;
         }[];
       };
-      expect(report.steps).toHaveLength(disagrees ? 1 : 5);
+      expect(report.steps).toHaveLength(5);
       for (const step of report.steps) {
         expect(step.secondSource.contentTypes.json).toMatchObject({
           responses: 1,
@@ -10496,7 +10592,7 @@ test.each([
       assertRecordedEvents(h.fake.events);
       expect(
         h.fake.requests.filter((request) => request.path.startsWith('/media/')),
-      ).toHaveLength(disagrees ? 1 : 5);
+      ).toHaveLength(5);
     } finally {
       await h.close();
     }
@@ -10511,16 +10607,18 @@ test.each([
   ['several', 'CANARY_CHECK_FAILED'],
   ['edited', 'CANARY_CHECK_FAILED'],
   ['video', 'CANARY_CHECK_FAILED'],
-  ['no-json', 'CANARY_NO_SECOND_SOURCE'],
-  ['missing-owner', 'CANARY_NO_SECOND_SOURCE'],
-  ['missing-time', 'CANARY_NO_SECOND_SOURCE'],
-  ['missing-caption', 'CANARY_NO_SECOND_SOURCE'],
-  ['missing-image', 'CANARY_NO_SECOND_SOURCE'],
+  // CHECK-SKIP-1: an uncheckable step is skipped, so a one-comment plan
+  // ends with fewer than five confirmations.
+  ['no-json', 'CANARY_CHECK_FAILED'],
+  ['missing-owner', 'CANARY_CHECK_FAILED'],
+  ['missing-time', 'CANARY_CHECK_FAILED'],
+  ['missing-caption', 'CANARY_CHECK_FAILED'],
+  ['missing-image', 'CANARY_CHECK_FAILED'],
   ['different-owner', 'CANARY_MISMATCH'],
   ['different-time', 'CANARY_MISMATCH'],
   ['different-caption', 'CANARY_MISMATCH'],
   ['different-image', 'CANARY_MISMATCH'],
-  ['two-answers', 'CANARY_MISMATCH'],
+  ['two-answers', 'CANARY_CHECK_FAILED'],
   ['mutation', 'UNEXPECTED_ACTION'],
   ['write-segment', 'UNEXPECTED_ACTION'],
   ['de', 'PAGE_LANGUAGE'],

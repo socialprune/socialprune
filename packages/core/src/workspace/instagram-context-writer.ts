@@ -5,6 +5,7 @@ import {
   UtcTimestampSchema,
   WORKSPACE_SCHEMA_VERSION,
   replySetConflict,
+  uncheckedSettlement,
   validateInstagramContextItem,
 } from '../model/index.ts';
 import type {
@@ -455,6 +456,8 @@ export class InstagramContextWriter {
           result.itemId !== send.itemId ||
           (result.state !== (refreshReplies ? 'read' : 'confirmed') &&
             !(refreshReplies && result.state === 'failed') &&
+            // CHECK-SKIP-1: an unchecked canary step, never one of the five.
+            !(!refreshReplies && uncheckedSettlement(result)) &&
             result.state !== 'unavailable' &&
             result.state !== 'unconfirmed' &&
             result.state !== 'not-listed')

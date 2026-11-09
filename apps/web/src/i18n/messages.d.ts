@@ -412,6 +412,7 @@ declare global {
     'desktop.token.canary-auto-undecided': Record<never, never>;
     'desktop.token.canary-check': Record<never, never>;
     'desktop.token.canary-mismatch': Record<never, never>;
+    'desktop.token.canary-unchecked': Record<never, never>;
     'desktop.token.challenge': Record<never, never>;
     'desktop.token.checkpoint': Record<never, never>;
     'desktop.token.comment-not-shown': Record<never, never>;

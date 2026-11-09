@@ -79,8 +79,11 @@ import {
 } from './pace.ts';
 import { LimitSignals } from './signals.ts';
 import { dateInZone } from '../pace.ts';
+import { uncheckedSettlement } from '@socialprune/core';
+import { postObjects } from './answers.ts';
 import {
   answerMedia,
+  canaryUnchecked,
   imageNotApplicable,
   automaticCanaryCheck,
   automaticReadbackCheck,
@@ -276,6 +279,8 @@ export async function runContextWithDependencies(
     rows: { emptySkipped: number; otherName: number; imageOnlySkipped: number };
     // DEFER-1: steps whose reply click showed a page that renders no frames.
     deferred: { notRendered: number; consecutiveMax: number };
+    // CHECK-SKIP-1: canary steps the page's own answer could not check.
+    canaryUnchecked: number;
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -303,6 +308,7 @@ export async function runContextWithDependencies(
     pace: paceSummary(pace),
     rows: { emptySkipped: 0, otherName: 0, imageOnlySkipped: 0 },
     deferred: { notRendered: 0, consecutiveMax: 0 },
+    canaryUnchecked: 0,
     recycling: { intervalSteps: PAGE_RECYCLE_INTERVAL, count: 0, events: [] },
     runtime: {
       pageCrashes: 0,
@@ -571,7 +577,8 @@ export async function runContextWithDependencies(
           (settlements[0]!.state !== 'confirmed' &&
             settlements[0]!.state !== 'unavailable' &&
             settlements[0]!.state !== 'unconfirmed' &&
-            settlements[0]!.state !== 'not-listed')
+            settlements[0]!.state !== 'not-listed' &&
+            !uncheckedSettlement(settlements[0]!))
         )
           throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
         if (settlements[0]!.state === 'confirmed') {
@@ -1867,7 +1874,16 @@ export async function runContextWithDependencies(
               imageStored: record.image.status === 'stored',
               screenshotStored: record.screenshot.status === 'stored',
             };
-            if (options.plan.canary) checks.push(check);
+            // CHECK-SKIP-1: a step the page's own answer cannot check stops
+            // nothing, writes no record and stays planned for the main run.
+            const unchecked =
+              options.order && options.plan.canary
+                ? canaryUnchecked(
+                    check,
+                    postObjects(answers.bodies, read.post.code).objects.length,
+                  )
+                : null;
+            if (options.plan.canary && !unchecked) checks.push(check);
             Object.assign(stepReport, {
               ...(record.replies
                 ? {
@@ -1901,6 +1917,26 @@ export async function runContextWithDependencies(
             });
             stage = 'canary-check';
             phase('canary-check');
+            if (unchecked) {
+              Object.assign(stepReport, {
+                confirmed: false,
+                result: 'canary-unchecked',
+                canaryUnchecked: unchecked,
+              });
+              report.canaryUnchecked++;
+              await checkpoint();
+              stage = 'settlement';
+              phase('settlement');
+              await writer.settle({
+                attemptId,
+                state: 'failed',
+                code: 'canary-unchecked',
+                at: options.now().toISOString(),
+              });
+              pendingAttempt = undefined;
+              settled = true;
+              break;
+            }
             if (options.order && options.plan.canary)
               automaticCanaryCheck(check);
             await checkpoint();

@@ -1248,6 +1248,13 @@ export const ContextStepReportSchema = z
       })
       .optional(),
     image: StepImageSchema.optional(),
+    // CHECK-SKIP-1: closed reason and field names only.
+    canaryUnchecked: z
+      .strictObject({
+        reason: z.enum(['several-objects', 'field-not-found']),
+        fields: z.array(z.enum(['owner', 'time', 'caption', 'image'])).max(4),
+      })
+      .optional(),
     memory: MemorySampleSchema.optional(),
     listTimeout: ListTimeoutDiagnosticSchema.optional(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),

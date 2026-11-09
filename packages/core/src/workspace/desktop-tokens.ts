@@ -239,6 +239,7 @@ export const RunJournalCodeSchema = z.enum([
   'post-unavailable',
   'comment-not-shown',
   'deferred-not-rendered',
+  'canary-unchecked',
   'run-wait-deadline',
   'canary-auto-undecided',
   'step-deadline',

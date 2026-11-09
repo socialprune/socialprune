@@ -310,6 +310,22 @@ export const BrowserAttemptSchema = z
         message: 'Instagram deletion attempts require comment-bound states.',
       });
   });
+/**
+ * CHECK-SKIP-1: a canary confirmation the page's own answer could not check.
+ * It settles as failed with this code, writes no record, never counts as one
+ * of the five, and its comment stays planned.
+ */
+export function uncheckedSettlement(attempt: {
+  action: string;
+  state: string;
+  code: string | null;
+}): boolean {
+  return (
+    attempt.action === 'confirm-comment' &&
+    attempt.state === 'failed' &&
+    attempt.code === 'canary-unchecked'
+  );
+}
 export type BrowserAction = z.infer<typeof BrowserActionSchema>;
 export type BrowserAttempt = z.infer<typeof BrowserAttemptSchema>;
 export type BrowserRun = z.infer<typeof BrowserRunSchema>;

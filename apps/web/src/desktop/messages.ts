@@ -262,6 +262,7 @@ const tokenIds = [
   'desktop.token.post-unavailable',
   'desktop.token.comment-not-shown',
   'desktop.token.deferred-not-rendered',
+  'desktop.token.canary-unchecked',
 ] as const satisfies readonly (keyof MessageArguments)[];
 const tokenMessages = new Map<string, (typeof tokenIds)[number]>(
   tokenIds.map((id) => [id.slice('desktop.token.'.length), id]),

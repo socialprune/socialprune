@@ -1000,17 +1000,21 @@ async function canaryFixture(
         state:
           skipCode === 'not-listed'
             ? 'not-listed'
-            : skipCode === 'unavailable' ||
-                (skipCode === 'not-shown' && index % 2)
-              ? 'unavailable'
-              : 'unconfirmed',
+            : skipCode === 'canary-unchecked' || skipCode === 'other-failed'
+              ? 'failed'
+              : skipCode === 'unavailable' ||
+                  (skipCode === 'not-shown' && index % 2)
+                ? 'unavailable'
+                : 'unconfirmed',
         code:
           skipCode === 'not-listed'
             ? 'no-row'
-            : skipCode === 'unavailable' ||
-                (skipCode === 'not-shown' && index % 2)
-              ? null
-              : skipCode,
+            : skipCode === 'other-failed'
+              ? 'step-deadline'
+              : skipCode === 'unavailable' ||
+                  (skipCode === 'not-shown' && index % 2)
+                ? null
+                : skipCode,
         at,
       });
     else if (index < skipped + confirmed) {
@@ -1043,6 +1047,45 @@ test('C8 writer accepts exactly five checked confirmations after ten IG-6 skips'
   }
 });
 
+test('CHECK-SKIP-1 writer accepts after unchecked canary steps but refuses any other failed step and an unchecked ID among the five', async () => {
+  const h = await canaryFixture(5, 3, 0, 'canary-unchecked');
+  try {
+    await h.writer.acceptCanary(h.record.runId, h.at, h.checked);
+    expect(
+      await h.store.read((tx) => tx.browserRuns.get(h.record.runId)),
+    ).toMatchObject({ canaryAcceptedAt: h.at });
+  } finally {
+    await h.store.close();
+  }
+  const other = await canaryFixture(5, 1, 0, 'other-failed');
+  try {
+    await expect(
+      other.writer.acceptCanary(other.record.runId, other.at, other.checked),
+    ).rejects.toThrow('INVALID_CANARY');
+  } finally {
+    await other.store.close();
+  }
+  const listed = await canaryFixture(5, 1, 0, 'canary-unchecked');
+  try {
+    const attempts = await listed.store.read(async (tx) => {
+      const list = [];
+      for await (const attempt of tx.browserAttempts.iterate())
+        list.push(attempt);
+      return list;
+    });
+    const unchecked = attempts.find((a) => a.code === 'canary-unchecked')!;
+    listed.checked[4] = unchecked.itemId!;
+    await expect(
+      listed.writer.acceptCanary(
+        listed.record.runId,
+        listed.at,
+        listed.checked,
+      ),
+    ).rejects.toThrow('INVALID_CANARY');
+  } finally {
+    await listed.store.close();
+  }
+});
 test.each([
   'owner',
   'time',

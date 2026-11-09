@@ -1012,5 +1012,6 @@
   "desktop.token.list-image-only": "Die geprüfte Liste zeigte Bildelemente ohne lesbaren Kommentartext. Der Kommentar bleibt zur manuellen Prüfung.",
   "desktop.token.post-unavailable": "Der Beitrag war beim Ergänzen der Likes nicht verfügbar. Nur auf deine Auswahl erneut prüfen.",
   "desktop.token.comment-not-shown": "Der bestätigte Kommentar wurde beim Ergänzen der Likes nicht angezeigt. Nur auf deine Auswahl erneut prüfen.",
+  "desktop.token.canary-unchecked": "Die eigene Antwort von Instagram konnte diesen Kommentar nicht prüfen, deshalb hat der Probelauf ihn übersprungen. Der Hauptlauf liest ihn erneut.",
   "desktop.token.deferred-not-rendered": "Das Fenster des Laufs hat nichts gezeichnet, deshalb wurden die Antworten nicht gelesen. Der nächste Lauf liest diesen Kommentar erneut."
 }

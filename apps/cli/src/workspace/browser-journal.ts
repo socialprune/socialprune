@@ -4,6 +4,7 @@ import {
   validateBrowserRunUpdate,
   BrowserAttemptSchema,
   WORKSPACE_SCHEMA_VERSION,
+  uncheckedSettlement,
 } from '@socialprune/core';
 import type {
   DecisionEvent,
@@ -1208,6 +1209,10 @@ export class BrowserOutcomeWriter {
             (settles[0]!.state !==
               (acceptance.refreshReplies ? 'read' : 'confirmed') &&
               !(acceptance.refreshReplies && settles[0]!.state === 'failed') &&
+              // CHECK-SKIP-1: an unchecked canary step, never one of the five.
+              !(
+                !acceptance.refreshReplies && uncheckedSettlement(settles[0]!)
+              ) &&
               settles[0]!.state !== 'unavailable' &&
               settles[0]!.state !== 'unconfirmed' &&
               settles[0]!.state !== 'not-listed')

@@ -12,6 +12,16 @@ export interface FieldCheck {
   equalPaths: string[];
   /** IMAGE-4: the image field only; never counts as agreement. */
   notApplicable?: 'video-without-image' | null;
+  /** CHECK-SKIP-1: qualifying objects that carried the field (count only). */
+  carriers?: number;
+}
+export const CANARY_UNCHECKED_REASONS = [
+  'several-objects',
+  'field-not-found',
+] as const;
+export interface CanaryUnchecked {
+  reason: (typeof CANARY_UNCHECKED_REASONS)[number];
+  fields: Field[];
 }
 export type SourceChecks = Record<Field, FieldCheck>;
 function object(value: unknown): Record<string, unknown> {
@@ -224,6 +234,8 @@ export function compareSources(
         {
           found: values.length > 0 && values.length === candidates.length,
           agrees,
+          // CHECK-SKIP-1: how many qualifying objects carried this field.
+          carriers: values.length,
           paths,
           equalPaths: values.length
             ? []
@@ -244,6 +256,48 @@ export interface CanaryCheck {
   timeShown: boolean;
   imageStored: boolean;
   screenshotStored: boolean;
+}
+/**
+ * CHECK-SKIP-1: a canary step whose second source cannot check it. Several
+ * qualifying objects make it unchecked whatever the fields say. With one
+ * object, a found field that disagrees, or a missing owner, time or
+ * screenshot on the page, is no unchecked step: automaticCanaryCheck stops as
+ * before. Otherwise a field the answer does not carry makes it unchecked; an
+ * image that is not applicable under IMAGE-4 is not "not found".
+ */
+export function canaryUnchecked(
+  check: CanaryCheck,
+  qualifyingObjects: number,
+): CanaryUnchecked | null {
+  const na = imageNotApplicable(check);
+  const relevant = (Object.keys(check.fields) as Field[]).filter(
+    (field) => !(field === 'image' && na),
+  );
+  const notFound = relevant.filter((field) => !check.fields[field].found);
+  // Several objects in which every field is found and agrees were checked
+  // before (IG-IMAGE A: every object lists the exact address) and stay so;
+  // any other several-object step cannot tell which object is the post.
+  if (
+    qualifyingObjects > 1 &&
+    !relevant.every(
+      (field) => check.fields[field].found && check.fields[field].agrees,
+    )
+  )
+    return { reason: 'several-objects', fields: notFound };
+  if (
+    relevant.some(
+      (field) => check.fields[field].found && !check.fields[field].agrees,
+    ) ||
+    !check.ownerShown ||
+    !check.timeShown ||
+    !check.screenshotStored ||
+    // A stored-image requirement with the image field present stays a stop.
+    (!check.imageStored && !na && check.fields.image.found)
+  )
+    return null;
+  return notFound.length
+    ? { reason: 'field-not-found', fields: notFound }
+    : null;
 }
 /** IMAGE-4: no image stored and the image field marked video-without-image. */
 export function imageNotApplicable(check: CanaryCheck): boolean {

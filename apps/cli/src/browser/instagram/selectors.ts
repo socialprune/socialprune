@@ -8,7 +8,7 @@ import type {
 import { normalize, ownerName } from './plan.ts';
 import { readRowShapes } from './row-shape.ts';
 import { mediaAreaFromSnapshot } from './media-source.ts';
-import type { MediaArea, SnapshotDocument } from './media-source.ts';
+import type { MediaArea } from './media-source.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
   code: 'code',
@@ -884,17 +884,12 @@ export async function currentImageSource(page: Page): Promise<MediaArea> {
       ),
     );
     if (!document) return none;
-    return mediaAreaFromSnapshot(
-      document as unknown as SnapshotDocument,
-      snapshot.strings,
-      page.url(),
-      {
-        x: view.pageX,
-        y: view.pageY,
-        width: view.clientWidth,
-        height: view.clientHeight,
-      },
-    );
+    return mediaAreaFromSnapshot(document, snapshot.strings, page.url(), {
+      x: view.pageX,
+      y: view.pageY,
+      width: view.clientWidth,
+      height: view.clientHeight,
+    });
   } finally {
     await client.detach();
   }

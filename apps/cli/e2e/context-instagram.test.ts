@@ -2357,7 +2357,11 @@ test.each(['account', 'language', 'extension', 'http-429'] as const)(
     h.setLimit(21);
     h.setMaxSteps(21);
     h.setPace({ secondsPerStep: 10, stepsPerDay: 600, batchPause: false });
-    h.fake.filteredImageOnly(Array.from({ length: 20 }, (_, index) => index));
+    // A no-canary plan runs newest first: generated items 1 to 21, then the
+    // oldest item 0. The first 20 steps are image-only; step 21 is item 21.
+    h.fake.filteredImageOnly(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+    );
     const original = pagesHelpers.contextPages;
     vi.spyOn(pagesHelpers, 'contextPages').mockImplementation((...args) => {
       const boundary = original(...args),
@@ -2397,7 +2401,7 @@ test.each(['account', 'language', 'extension', 'http-429'] as const)(
       expect(
         contexts
           .filter((record) => record.runId !== 'generated-prior-canary')
-          .some((record) => record.itemId === h.fixture.items[20]!.id),
+          .some((record) => record.itemId === h.fixture.items[21]!.id),
       ).toBe(false);
       const journal = await h.store.browserJournal();
       const run = journal.runs.find(
@@ -4020,7 +4024,8 @@ test.each([false, true])(
     const h = await harness('success', 5);
     await fullRunReady(h);
     h.setLimit(20);
-    if (mixedPost) h.fake.slowPostOpens(0, 1);
+    // The first planned comment: generated items run newest first after 0.
+    if (mixedPost) h.fake.slowPostOpens(1, 1);
     let loads = 0;
     h.fake.beforeList(() => {
       loads++;
@@ -10231,7 +10236,8 @@ test.each([
   ['challenge', 'PLATFORM_CHECK'],
   ['checkpoint', 'PLATFORM_CHECK'],
   ['429', 'PLATFORM_CHECK'],
-  ['never', 'PLATFORM_CHECK'],
+  // LIST-1: a list that never loads has its own closed error.
+  ['never', 'LIST_TIMEOUT'],
 ] as const)(
   'automatic canary %s refuses with %s without acceptance or another comment',
   async (variant, code) => {

@@ -144,7 +144,7 @@ test('C27 diagnostic attach and DOM read failures retain the original filtered t
         undefined,
         counts,
       ),
-    ).rejects.toMatchObject({ code: 'PLATFORM_CHECK', token: 'list-timeout' });
+    ).rejects.toMatchObject({ code: 'LIST_TIMEOUT', token: 'list-timeout' });
     expect(counts.listTimeout).toMatchObject({
       rowsObserved: false,
       filter: {

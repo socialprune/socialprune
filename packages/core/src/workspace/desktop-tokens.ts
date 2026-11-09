@@ -59,6 +59,7 @@ export const DesktopCliErrorCodeSchema = z.enum([
   'STEP_DEADLINE',
   'RUN_WAIT_DEADLINE',
   'TAB_INVENTORY',
+  'LIST_TIMEOUT',
   'RUN_STOPPED',
   'DELETE_FAILED',
   'SHARING_NOT_CONFIRMED',

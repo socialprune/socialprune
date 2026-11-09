@@ -11,6 +11,7 @@ import {
   stopDetails,
   stopDetailText,
 } from './report.ts';
+import { instagramWarningKind } from './warning.ts';
 import {
   IG_FIXTURE,
   instagramFixture,
@@ -97,7 +98,7 @@ test('C25 filtered-list reopen shares IG-16s three-reopen budget and the once-pe
 test('C25 only a filtered empty-list timeout may retry, never an initial timeout, other guard, canary or capped step', () => {
   const retries = new PostOpenRetries();
   for (const error of [
-    new ContextStop('PLATFORM_CHECK', 'list-timeout'),
+    new ContextStop('LIST_TIMEOUT', 'list-timeout'),
     new ContextStop('PLATFORM_CHECK', 'notice-error'),
     new ContextStop('PLATFORM_CHECK', 'http-429'),
     new ContextStop('ACCOUNT_MISMATCH', 'account-changed'),
@@ -120,15 +121,18 @@ test('C25 only a filtered empty-list timeout may retry, never an initial timeout
 });
 test('C25 list retry records remain strict closed data and preserve the existing list-timeout stop', () => {
   const failure = new FilteredListTimeout();
+  // LIST-1: a list timeout has its own closed error, never PLATFORM_CHECK.
   expect(failure).toMatchObject({
-    code: 'PLATFORM_CHECK',
+    code: 'LIST_TIMEOUT',
     token: 'list-timeout',
   });
   expect(stopDetails(failure)).toEqual({
-    code: 'PLATFORM_CHECK',
+    code: 'LIST_TIMEOUT',
     token: 'list-timeout',
   });
   expect(stopDetailText(failure)).toBe('list-timeout');
+  failure.warningKind = 'warning-notice';
+  expect(instagramWarningKind(failure)).toBeUndefined();
   const entry = {
     step: 1,
     retryStep: 2,
@@ -208,8 +212,7 @@ test.each(['initial-empty', 'filtered-empty', 'filtered-other'] as const)(
         expect(error).not.toBeInstanceOf(FilteredListTimeout);
         expect(retries.beginList(error, [item.id], 1, false, true)).toBeNull();
         expect(error).toMatchObject({
-          code:
-            mode === 'initial-empty' ? 'PLATFORM_CHECK' : 'ACCOUNT_MISMATCH',
+          code: mode === 'initial-empty' ? 'LIST_TIMEOUT' : 'ACCOUNT_MISMATCH',
         });
       }
       expect(click.mock.calls.map((call) => call[1])).toEqual(

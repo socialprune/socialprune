@@ -122,7 +122,10 @@ export async function waitPage(
     await checkPage(page);
     if (await ready()) return;
     if (performance.now() >= deadline)
-      throw new ContextStop('PLATFORM_CHECK', token);
+      throw new ContextStop(
+        token === 'list-timeout' ? 'LIST_TIMEOUT' : 'PLATFORM_CHECK',
+        token,
+      );
     await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
   }
 }
@@ -283,7 +286,7 @@ async function checkedAccountRows(
           })
         : filtered
           ? new FilteredListTimeout()
-          : new ContextStop('PLATFORM_CHECK', 'list-timeout');
+          : new ContextStop('LIST_TIMEOUT', 'list-timeout');
     await sleep(Math.min(100, Math.max(0, deadline - performance.now())));
   }
 }
@@ -518,7 +521,7 @@ export async function loadList(
         (signature.sameAsPreviousStep === true &&
           signature.previousWindowDifferent === true))
     )
-      throw new ContextStop('PLATFORM_CHECK', 'list-timeout');
+      throw new ContextStop('LIST_TIMEOUT', 'list-timeout');
     probeAllowed = true;
     return {
       candidates,
@@ -605,7 +608,7 @@ export async function loadList(
           (signature.sameAsPreviousStep === true &&
             signature.previousWindowDifferent === true))
       )
-        throw new ContextStop('PLATFORM_CHECK', 'list-timeout');
+        throw new ContextStop('LIST_TIMEOUT', 'list-timeout');
     }
     throw error;
   } finally {

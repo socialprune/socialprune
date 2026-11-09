@@ -5,7 +5,7 @@ export const POST_REOPEN_WAIT_MS = 60000;
 /** Marks only an empty read after applying the comments date filter. */
 export class FilteredListTimeout extends ContextStop {
   constructor() {
-    super('PLATFORM_CHECK', 'list-timeout');
+    super('LIST_TIMEOUT', 'list-timeout');
   }
 }
 /** Matches X fill's main-run, one-per-target, three-per-run retry shape. */

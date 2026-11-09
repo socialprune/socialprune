@@ -811,6 +811,7 @@
   "desktop.token.PLATFORM_CHECK": "Die Seite wurde nicht erkannt oder verlangt eine Kontoprüfung. Der Lauf wurde gestoppt.",
   "desktop.token.STEP_DEADLINE": "Der Instagram-Leseschritt hat sein Zeitbudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.",
   "desktop.token.RUN_WAIT_DEADLINE": "Eine Phase des Instagram-Laufs hat ihr Wartebudget überschritten. Der Lauf wurde gestoppt und sein unvollständiger Bericht aufbewahrt.",
+  "desktop.token.LIST_TIMEOUT": "Die gefilterte Instagram-Kommentarliste konnte nicht zuverlässig gelesen werden. Der Lauf wurde gestoppt.",
   "desktop.token.TAB_INVENTORY": "Die Tabs im Lauffenster konnten nicht geprüft werden, oder eine Seite oder ein Tab außerhalb dieses Laufs ist aufgetaucht. Der Lauf wurde gestoppt.",
   "desktop.token.RUN_STOPPED": "Der Lauf hat bei einem Problem angehalten. Prüfe sein Journal, bevor du fortfährst.",
   "desktop.token.DELETE_FAILED": "Das Löschen konnte nicht beendet werden. Kein automatischer Wiederholungsversuch wurde gemacht.",

@@ -87,7 +87,7 @@ test.each(['en', 'de'] as const)(
   'Instagram list-timeout envelope and human line report the list failure in %s',
   async (lang) => {
     const failure = contextFailure(
-      new ContextStop('PLATFORM_CHECK', 'list-timeout'),
+      new ContextStop('LIST_TIMEOUT', 'list-timeout'),
       lang,
     );
     const entries = commandRegistry();
@@ -122,13 +122,14 @@ test.each(['en', 'de'] as const)(
         expect(JSON.parse(capture.stdout.join(''))).toMatchObject({
           status: 'error',
           error: {
-            code: 'PLATFORM_CHECK',
+            // LIST-1: its own closed error, never PLATFORM_CHECK.
+            code: 'LIST_TIMEOUT',
             message,
             exitCode: 1,
             retryable: false,
           },
         });
-        expect(capture.stderr.join('')).toBe(`PLATFORM_CHECK: ${message}\n`);
+        expect(capture.stderr.join('')).toBe(`LIST_TIMEOUT: ${message}\n`);
         expect(capture.stderr.join('')).not.toMatch(
           /login|challenge|lock|limit|Anmeldung|Sperre/iu,
         );

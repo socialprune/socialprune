@@ -743,7 +743,7 @@ test.each(
         {
           ordinal,
           variant: 'never',
-          code: 'PLATFORM_CHECK',
+          code: 'LIST_TIMEOUT',
           token: 'list-timeout',
         },
         {
@@ -2602,6 +2602,40 @@ test('C34 IG-18 settled image-only filtered list stays manual and the automatic 
   }
 }, 180000);
 
+test('LIST-1 a filtered list with one readable non-target row in a second region and one image-only row settles manual without a list timeout', async () => {
+  // Runs 71e269a6 / 436e454c: rowContainers 2, readableRows 1, imageOnlyRows 1,
+  // regions main 1 and elsewhere 1; the reader waited for its list timeout.
+  const h = await harness('success', 6);
+  h.fake.filteredImageOnly([0], { split: true });
+  try {
+    const result = await h.start(true);
+    expect(result, h.notices.join('')).toMatchObject({
+      completed: 5,
+      steps: 6,
+      endReason: 'canary',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.find(
+        (attempt) =>
+          attempt.itemId === h.fixture.items[0]!.id && attempt.settles !== null,
+      ),
+    ).toMatchObject({ state: 'not-listed', code: 'list-image-only' });
+    const run = journal.runs[0]!;
+    const text = await readFile(
+      join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+      'utf8',
+    );
+    expect((JSON.parse(text) as { steps: unknown[] }).steps[0]).toMatchObject({
+      result: 'list-image-only',
+      listTimeout: { rowContainers: 2, readableRows: 1, imageOnlyRows: 1 },
+    });
+    assertRecordedEvents(h.fake.events);
+  } finally {
+    await h.close();
+  }
+}, 180000);
+
 test('C34 IG-18 main run skips one opaque list without reopening and records the next comment', async () => {
   const h = await harness('success', 3);
   await fullRunReady(h);
@@ -2647,7 +2681,7 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
   h.fake.listFreshness('retained');
   try {
     expect(await h.start('no-canary')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const journal = await h.store.browserJournal();
@@ -3331,7 +3365,7 @@ test('IG-list retained split-container readable rows stop before no-row settleme
   h.fake.listFreshness('readable-retained');
   try {
     expect(await h.start('no-canary')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const journal = await h.store.browserJournal();
@@ -3405,7 +3439,7 @@ test('C-list run-wide signature stops a repeated opaque window on the next canar
   h.fake.listFreshness('repeated');
   try {
     expect(await h.start(true)).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const journal = await h.store.browserJournal();
@@ -3540,7 +3574,7 @@ test.each([
                 ? { code: 'PLATFORM_CHECK', token: 'http-429' }
                 : mode === 'extension'
                   ? { code: 'CANARY_CHECK_FAILED', token: 'extensions-added' }
-                  : { code: 'PLATFORM_CHECK', token: 'list-timeout' },
+                  : { code: 'LIST_TIMEOUT', token: 'list-timeout' },
       );
       expect(
         await h.store.read((tx) => records(tx.instagramContext)),
@@ -3664,7 +3698,7 @@ test('C27 a CDP observer failure cannot turn a filtered timeout into another sto
     );
   try {
     expect(await h.start('no-canary')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const run = (await h.store.browserJournal()).runs.find(
@@ -3699,7 +3733,7 @@ test.each([
     h.fake.filteredListPlaceholders(count, status);
     try {
       expect(await h.start('no-canary')).toMatchObject({
-        code: 'PLATFORM_CHECK',
+        code: 'LIST_TIMEOUT',
         token: 'list-timeout',
       });
       const run = (await h.store.browserJournal()).runs.find(
@@ -3919,7 +3953,7 @@ test.each([1, 2])(
         });
       else
         expect(result).toMatchObject({
-          code: 'PLATFORM_CHECK',
+          code: 'LIST_TIMEOUT',
           token: 'list-timeout',
         });
       const run = (await h.store.browserJournal()).runs.find(
@@ -3996,7 +4030,7 @@ test.each([false, true])(
     });
     try {
       expect(await h.start('no-canary')).toMatchObject({
-        code: 'PLATFORM_CHECK',
+        code: 'LIST_TIMEOUT',
         token: 'list-timeout',
       });
       const run = (await h.store.browserJournal()).runs.find(
@@ -4042,7 +4076,7 @@ test('C25 a canary empty filtered list still stops immediately without reopen or
   h.fake.emptyFilteredLists(2);
   try {
     expect(await h.start(true)).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const run = (await h.store.browserJournal()).runs[0]!;
@@ -4094,7 +4128,7 @@ test.each(['cap', 'run-limit', 'pace'] as const)(
         expect(run.pageOpens).toBe(2);
       } else {
         expect(result).toMatchObject({
-          code: 'PLATFORM_CHECK',
+          code: 'LIST_TIMEOUT',
           token: 'list-timeout',
         });
         expect(starts).toHaveLength(1);
@@ -4112,7 +4146,7 @@ test('C25 an initial empty list cannot acquire a filtered-list reopen', async ()
   await fullRunReady(h);
   try {
     expect(await h.start('no-canary')).toMatchObject({
-      code: 'PLATFORM_CHECK',
+      code: 'LIST_TIMEOUT',
       token: 'list-timeout',
     });
     const run = (await h.store.browserJournal()).runs.find(

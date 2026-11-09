@@ -119,8 +119,13 @@ test('DEL-ARCHIV-1 excludes missing archive parts, keeps null likes and empty or
       store,
       workspace.items[0]!.account.key,
     );
+    // The deletion plan stays oldest first; generated items after the first
+    // run newest first by index (LIST-1 fixture order).
     expect(plan.rows.map((row) => row.item.id)).toEqual(
-      workspace.items.slice(3).map((item) => item.id),
+      workspace.items
+        .slice(3)
+        .map((item) => item.id)
+        .reverse(),
     );
     expect(instagramDeleteSummary(plan, 'en')).toMatchObject({
       planned: 2,

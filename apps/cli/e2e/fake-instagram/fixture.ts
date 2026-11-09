@@ -82,8 +82,11 @@ export async function instagramFixture(
     ...structuredClone(item),
     id: index ? `instagram:generated-${index}` : item.id,
     text: index ? `${item.text} Generated ${index}` : item.text,
+    // The first item stays the oldest and the others run newest first, so
+    // the index order equals the reading-pass plan order (LIST-1: oldest
+    // first in the canary, then newest first). The set of dates is unchanged.
     createdAt: new Date(
-      Date.parse(item.createdAt) + index * 86400000,
+      Date.parse(item.createdAt) + (index ? count - index : 0) * 86400000,
     ).toISOString(),
     provenance: { ...item.provenance, archive: 'generated-instagram', index },
   }));

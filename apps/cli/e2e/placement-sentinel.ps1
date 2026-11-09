@@ -11,7 +11,10 @@ $script:last=''
 $timer.Add_Tick({
   if(Test-Path -LiteralPath $Stop){$form.Close();return}
   if(Test-Path -LiteralPath $Activate){
-    $value=[System.IO.File]::ReadAllText($Activate)
+    # The test rewrites this file while the timer reads it. A read that meets
+    # the write is retried on the next tick; an exception inside the tick
+    # would otherwise block the form and the stop file (TEARDOWN_STALL).
+    try{$value=[System.IO.File]::ReadAllText($Activate)}catch{return}
     if($value-ne$script:last){$script:last=$value;$form.Activate()}
   }
 })

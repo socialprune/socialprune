@@ -19,6 +19,9 @@ export const MEDIA_ELEMENTS = [
   'media-img',
   'carousel-slide',
   'video-poster',
+  // IMAGE-4: a received image whose exact address is in the answer's
+  // first-media list, for a video that gave no DOM image.
+  'answer-cover',
   'none',
 ] as const;
 export type MediaElement = (typeof MEDIA_ELEMENTS)[number];
@@ -51,6 +54,8 @@ const PROFILE_PATH = /^\/[A-Za-z0-9_.]{1,30}\/$/u;
 export function chooseMediaSource(
   area: MediaArea,
   received: (address: string) => boolean,
+  /** IMAGE-4: the single received first-media address, or null. */
+  answerCover: string | null = null,
 ): MediaChoice {
   const base = { mediaKind: area.mediaKind };
   if (area.mediaKind === 'video') {
@@ -66,6 +71,13 @@ export function chooseMediaSource(
         ...base,
         source: area.image.source,
         element: 'media-img',
+        reason: null,
+      };
+    if (answerCover)
+      return {
+        ...base,
+        source: answerCover,
+        element: 'answer-cover',
         reason: null,
       };
     return {

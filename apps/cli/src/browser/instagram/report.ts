@@ -1142,6 +1142,9 @@ const StepImageSchema = z
     mediaKind: z.enum(MEDIA_KINDS).optional(),
     element: z.enum(MEDIA_ELEMENTS).optional(),
     missingReason: z.enum(MEDIA_MISSING_REASONS).optional(),
+    // IMAGE-4, optional.
+    answerDeclaresVideo: z.boolean().nullable().optional(),
+    receivedCandidateImages: count.optional(),
   })
   .refine(
     (value) =>

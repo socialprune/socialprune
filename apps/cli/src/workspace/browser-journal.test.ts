@@ -792,7 +792,14 @@ test.each(['missing-owner', 'unknown-owner'] as const)(
   },
 );
 
-async function auditFixture(confirmed = 5, skipped = 10, extra = 0, mode = '') {
+async function auditFixture(
+  confirmed = 5,
+  skipped = 10,
+  extra = 0,
+  mode = '',
+  /** IMAGE-4: the first n confirmations store no image. */
+  withoutImage = 0,
+) {
   const directory = await mkdtemp(join(tmpdir(), 'sp-c8-audit-')),
     fixture = await instagramFixture(confirmed + skipped + extra),
     store = await SQLiteStore.open(join(directory, 'socialprune.sqlite'), {
@@ -854,6 +861,15 @@ async function auditFixture(confirmed = 5, skipped = 10, extra = 0, mode = '') {
       const record = instagramContractRecord(item);
       await writer.confirm({
         ...record,
+        ...(itemIds.length < withoutImage
+          ? {
+              image: {
+                file: null,
+                host: null,
+                status: 'not-captured' as const,
+              },
+            }
+          : {}),
         runId,
         attemptId,
         confirmedAt: IG_FIXTURE.now,
@@ -871,26 +887,33 @@ async function auditFixture(confirmed = 5, skipped = 10, extra = 0, mode = '') {
     fields: Object.fromEntries(
       ['owner', 'time', 'caption', 'image'].map((field) => [
         field,
-        { compared: confirmed, agreed: confirmed },
+        {
+          compared: field === 'image' ? confirmed - withoutImage : confirmed,
+          agreed: field === 'image' ? confirmed - withoutImage : confirmed,
+        },
       ]),
     ),
-    imagesMatched: confirmed,
+    imagesMatched: confirmed - withoutImage,
+    ...(withoutImage ? { imagesNotApplicable: withoutImage } : {}),
     screenshotsStored: confirmed,
     unexpectedActions: 0,
     extensionIdsAdded: 0,
     extensionIdsRemoved: 0,
   };
+  const imageNotApplicableIds = itemIds.slice(0, withoutImage);
   return {
     store,
     fixture,
     counts,
     itemIds,
+    imageNotApplicableIds,
     profileReport,
     runId,
     accept: () =>
       journal.recordContextAudit(runId, counts, undefined, true, {
         at: IG_FIXTURE.now,
         itemIds,
+        ...(withoutImage ? { imageNotApplicableIds } : {}),
         profileReport,
       }),
     async close() {
@@ -970,6 +993,43 @@ test.each([
       expect(await h.store.browserJournal()).toEqual(before);
       expect(before.runs[0]!.canaryAcceptedAt).toBeNull();
       expect(before.runs[0]!.acceptedBy).toBeUndefined();
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test('IMAGE-4 journal accepts listed not-applicable images and nothing else', async () => {
+  const h = await auditFixture(5, 0, 0, '', 2);
+  try {
+    await h.accept();
+    expect((await h.store.browserJournal()).runs[0]).toMatchObject({
+      acceptedBy: 'automatic-check',
+      canaryCounts: { imagesMatched: 3, imagesNotApplicable: 2 },
+    });
+  } finally {
+    await h.close();
+  }
+});
+test.each(['unlisted', 'count', 'foreign-id', 'image-agreed'] as const)(
+  'IMAGE-4 journal refuses a not-applicable image that is %s',
+  async (mode) => {
+    const h = await auditFixture(5, 0, 0, '', 2);
+    try {
+      if (mode === 'unlisted') h.imageNotApplicableIds.pop();
+      else if (mode === 'count') h.counts.imagesNotApplicable = 1;
+      else if (mode === 'foreign-id')
+        h.imageNotApplicableIds[1] = 'generated-foreign-item';
+      else {
+        h.counts.fields.image!.compared = 5;
+        h.counts.fields.image!.agreed = 5;
+      }
+      await expect(h.accept()).rejects.toMatchObject({
+        code: 'CANARY_CHECK_FAILED',
+      });
+      expect((await h.store.browserJournal()).runs[0]).toMatchObject({
+        canaryAcceptedAt: null,
+      });
     } finally {
       await h.close();
     }

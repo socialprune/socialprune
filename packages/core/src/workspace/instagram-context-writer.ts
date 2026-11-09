@@ -378,6 +378,8 @@ export class InstagramContextWriter {
     runId: string,
     at: string,
     checkedItemIds?: readonly string[],
+    /** IMAGE-4: checked items whose post is a declared video without image. */
+    imageNotApplicableIds: readonly string[] = [],
   ): Promise<void> {
     await this.store.write(async (tx) => {
       const run = await tx.browserRuns.get(runId);
@@ -427,7 +429,13 @@ export class InstagramContextWriter {
         (checkedItemIds !== undefined &&
           (confirmed.length !== 5 ||
             checkedItemIds.length !== 5 ||
-            new Set(checkedItemIds).size !== 5))
+            new Set(checkedItemIds).size !== 5)) ||
+        (imageNotApplicableIds.length > 0 &&
+          (checkedItemIds === undefined ||
+            refreshReplies ||
+            new Set(imageNotApplicableIds).size !==
+              imageNotApplicableIds.length ||
+            imageNotApplicableIds.some((id) => !checkedItemIds.includes(id))))
       )
         throw new Error('INVALID_CANARY');
       const itemIds = new Set<string>();
@@ -468,7 +476,11 @@ export class InstagramContextWriter {
               (!checkedItemIds.includes(send.itemId) ||
                 (!refreshReplies && !record.post.owner) ||
                 (!refreshReplies && !record.post.createdAt) ||
-                (!refreshReplies && record.image.status !== 'stored') ||
+                // IMAGE-4: only a listed not-applicable item may lack it.
+                (!refreshReplies &&
+                  (imageNotApplicableIds.includes(send.itemId)
+                    ? record.image.status === 'stored'
+                    : record.image.status !== 'stored')) ||
                 (!refreshReplies && record.screenshot.status !== 'stored')))
           )
             throw new Error('INVALID_CANARY');

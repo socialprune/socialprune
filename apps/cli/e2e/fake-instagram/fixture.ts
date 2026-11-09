@@ -236,6 +236,13 @@ export type Variant =
   | 'video-avatar-no-poster'
   // IMAGE-3: a small unlinked image in main before the post's media.
   | 'image-main-decoy'
+  // IMAGE-4: a video without DOM image whose answer declares a video, with
+  // the cover response received, without it, or with a poster not listed.
+  | 'video-answer-cover'
+  | 'video-answer-only'
+  | 'video-answer-wrong-poster'
+  // IMAGE-4: an image post whose page shows no media at all.
+  | 'image-no-media'
   | 'unavailable'
   | 'no-row'
   | 'window-full'

@@ -80,6 +80,8 @@ import {
 import { LimitSignals } from './signals.ts';
 import { dateInZone } from '../pace.ts';
 import {
+  answerMedia,
+  imageNotApplicable,
   automaticCanaryCheck,
   automaticReadbackCheck,
   compareSources,
@@ -326,6 +328,8 @@ export async function runContextWithDependencies(
   const checks: CanaryCheck[] = [];
   const checkedAttempts = new Map<string, CanaryCheck>();
   const checkedItemIds: string[] = [];
+  // IMAGE-4: checked items whose image field was not applicable.
+  const imageNotApplicableIds: string[] = [];
   const chosen = options.plan.canary
     ? canaryRows(options.plan)
     : options.plan.rows;
@@ -1487,14 +1491,29 @@ export async function runContextWithDependencies(
             await answers.flush(deps.responseMs);
             // IMAGE-3: a video's poster only when its response body arrived;
             // a profile picture is never the post image.
-            const media = chooseMediaSource(read.media, (address) =>
-              answers.images.has(address),
+            // IMAGE-4: a cover only from an image response the page already
+            // received whose exact address is in the single qualifying
+            // object's first-media list; no new request.
+            const answer = answerMedia(read.post.code, answers.bodies);
+            const receivedCandidates = [
+              ...new Set(
+                (answer.firstMedia ?? []).filter((address) =>
+                  answers.images.has(address),
+                ),
+              ),
+            ];
+            const media = chooseMediaSource(
+              read.media,
+              (address) => answers.images.has(address),
+              receivedCandidates.length === 1 ? receivedCandidates[0]! : null,
             );
             read.source = media.source;
             const mediaFields = {
               mediaKind: media.mediaKind,
               element: media.element,
               ...(media.reason ? { missingReason: media.reason } : {}),
+              answerDeclaresVideo: answer.declaresVideo,
+              receivedCandidateImages: receivedCandidates.length,
             };
             stepReport.image = {
               status: 'not-attempted',
@@ -1830,9 +1849,19 @@ export async function runContextWithDependencies(
               stepReport.secondSource = answers.summary(read.post.code);
             await checkpoint();
             stage = 'compare';
+            const fields = compareSources(record, read.source, answers.bodies);
+            // IMAGE-4: a video the DOM and the page's own answer both show,
+            // with no image at all, leaves the image field not applicable.
+            fields.image.notApplicable =
+              media.mediaKind === 'video' &&
+              media.source === null &&
+              record.image.status !== 'stored' &&
+              answerMedia(read.post.code, answers.bodies).declaresVideo === true
+                ? 'video-without-image'
+                : null;
             const check: CanaryCheck = {
               confirmed: true,
-              fields: compareSources(record, read.source, answers.bodies),
+              fields,
               ownerShown: Boolean(read.post.owner),
               timeShown: read.post.createdAt !== null,
               imageStored: record.image.status === 'stored',
@@ -1881,6 +1910,8 @@ export async function runContextWithDependencies(
             if (automatic) {
               checkedAttempts.set(attemptId, check);
               checkedItemIds.push(row.item.id);
+              if (imageNotApplicable(check))
+                imageNotApplicableIds.push(row.item.id);
             }
             pendingAttempt = undefined;
             settled = true;
@@ -2337,6 +2368,7 @@ export async function runContextWithDependencies(
             {
               at: options.now().toISOString(),
               itemIds: checkedItemIds,
+              imageNotApplicableIds,
               profileReport,
               ...(options.plan.refreshReplies
                 ? {

@@ -1714,6 +1714,71 @@ test.each([
     }
   },
 );
+test.each([
+  // variant, canary passes, stored, element, notApplicable, declares, received
+  ['video-answer-cover', true, true, 'answer-cover', null, true, 1],
+  ['video-answer-only', true, false, 'none', 'video-without-image', true, 0],
+  ['video-answer-wrong-poster', false, true, 'video-poster', null, true, 0],
+  ['video-avatar-no-poster', false, false, 'none', null, false, 0],
+  ['image-no-media', false, false, 'none', null, false, 0],
+] as const)(
+  'IMAGE-4 canary on %s',
+  async (
+    variant,
+    passes,
+    stored,
+    element,
+    notApplicable,
+    declares,
+    received,
+  ) => {
+    const h = await harness(variant, passes ? 5 : 1);
+    try {
+      const result = await h.start(true);
+      if (passes)
+        expect(result, h.notices.join('')).toMatchObject({
+          endReason: 'canary',
+          completed: 5,
+        });
+      else
+        expect(result, h.notices.join('')).toMatchObject({
+          code: stored ? 'CANARY_MISMATCH' : 'CANARY_CHECK_FAILED',
+        });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, `context/instagram/canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          fields: SourceChecks;
+          image: { status: string } & Record<string, unknown>;
+          screenshot: { status: string };
+        }[];
+        audit?: {
+          fields: { image: { agreed: number } };
+          imagesMatched: number;
+        };
+      };
+      const step = report.steps[0]!;
+      expect(step.image).toMatchObject({
+        status: stored ? 'stored' : 'not-captured',
+        element,
+        answerDeclaresVideo: declares,
+        receivedCandidateImages: received,
+      });
+      expect(step.fields.image.notApplicable ?? null).toBe(notApplicable);
+      // Not applicable is never image agreement.
+      if (notApplicable) expect(step.fields.image.agrees).toBe(false);
+      expect(step.screenshot.status).toBe('stored');
+      if (variant === 'video-answer-only')
+        expect(JSON.stringify(report)).not.toContain('"imagesMatched":5');
+    } finally {
+      await h.close();
+    }
+  },
+);
 test('IG-IMAGE main run records exact-url counts but does not enforce canary agreement', async () => {
   const h = await harness('success', 2);
   await fullRunReady(h);

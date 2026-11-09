@@ -1072,6 +1072,8 @@ export class BrowserOutcomeWriter {
       commentsConfirmed: number;
       fields: Record<string, { compared: number; agreed: number }>;
       imagesMatched: number;
+      /** IMAGE-4: checked steps whose image field was not applicable. */
+      imagesNotApplicable?: number;
       screenshotsStored: number;
       unexpectedActions: number;
       extensionIdsAdded: number;
@@ -1082,6 +1084,8 @@ export class BrowserOutcomeWriter {
     acceptance?: {
       at: string;
       itemIds: readonly string[];
+      /** IMAGE-4: the checked items whose image was not applicable. */
+      imageNotApplicableIds?: readonly string[];
       profileReport: BrowserProfileReport;
       refreshReplies?: boolean;
       repliesChecked?: boolean;
@@ -1106,14 +1110,19 @@ export class BrowserOutcomeWriter {
         ]),
       ),
       imagesMatched: input.imagesMatched,
+      imagesNotApplicable: input.imagesNotApplicable ?? 0,
       screenshotsStored: input.screenshotsStored,
       unexpectedActions: input.unexpectedActions,
       extensionIdsAdded: input.extensionIdsAdded,
       extensionIdsRemoved: input.extensionIdsRemoved,
     };
+    const notApplicableIds = acceptance?.imageNotApplicableIds ?? [];
+    // Images that must match: every confirmation but the not-applicable ones.
+    const imageSteps = counts.commentsConfirmed - counts.imagesNotApplicable;
     for (const number of [
       counts.commentsConfirmed,
       counts.imagesMatched,
+      counts.imagesNotApplicable,
       counts.screenshotsStored,
       counts.unexpectedActions,
       counts.extensionIdsAdded,
@@ -1142,17 +1151,21 @@ export class BrowserOutcomeWriter {
           (acceptance.refreshReplies && acceptance.repliesChecked !== true) ||
           acceptance.itemIds.length !== counts.commentsConfirmed ||
           new Set(acceptance.itemIds).size !== counts.commentsConfirmed ||
-          (!acceptance.refreshReplies &&
-            counts.imagesMatched !== counts.commentsConfirmed) ||
+          notApplicableIds.length !== counts.imagesNotApplicable ||
+          new Set(notApplicableIds).size !== notApplicableIds.length ||
+          notApplicableIds.some((id) => !acceptance.itemIds.includes(id)) ||
+          (acceptance.refreshReplies && counts.imagesNotApplicable !== 0) ||
+          (!acceptance.refreshReplies && counts.imagesMatched !== imageSteps) ||
           (!acceptance.refreshReplies &&
             counts.screenshotsStored !== counts.commentsConfirmed) ||
           counts.unexpectedActions ||
           counts.extensionIdsAdded ||
           counts.extensionIdsRemoved ||
           (!acceptance.refreshReplies &&
-            Object.values(counts.fields).some(
-              (value) =>
-                value.compared !== counts.commentsConfirmed ||
+            Object.entries(counts.fields).some(
+              ([name, value]) =>
+                value.compared !==
+                  (name === 'image' ? imageSteps : counts.commentsConfirmed) ||
                 value.agreed !== value.compared,
             )))
       )
@@ -1215,7 +1228,10 @@ export class BrowserOutcomeWriter {
                   record.attemptId !== send.attemptId ||
                   !record.post.owner ||
                   !record.post.createdAt ||
-                  record.image.status !== 'stored' ||
+                  // IMAGE-4: only a listed not-applicable item may lack it.
+                  (notApplicableIds.includes(send.itemId)
+                    ? record.image.status === 'stored'
+                    : record.image.status !== 'stored') ||
                   record.screenshot.status !== 'stored')
             )
               throw new CliError('CANARY_CHECK_FAILED');
@@ -1236,7 +1252,12 @@ export class BrowserOutcomeWriter {
           bodyShapes: {},
           profileReport: acceptance.profileReport,
         });
-        await writer.acceptCanary(runId, acceptance.at, acceptance.itemIds);
+        await writer.acceptCanary(
+          runId,
+          acceptance.at,
+          acceptance.itemIds,
+          notApplicableIds,
+        );
       }
       const updated = this.db
         .prepare(

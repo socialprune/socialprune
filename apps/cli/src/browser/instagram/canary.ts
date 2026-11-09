@@ -10,6 +10,8 @@ export interface FieldCheck {
   agrees: boolean;
   paths: string[];
   equalPaths: string[];
+  /** IMAGE-4: the image field only; never counts as agreement. */
+  notApplicable?: 'video-without-image' | null;
 }
 export type SourceChecks = Record<Field, FieldCheck>;
 function object(value: unknown): Record<string, unknown> {
@@ -42,6 +44,35 @@ export function carouselSlide(
     .map((item, index) => (urls(object(item))?.includes(address) ? index : -1))
     .filter((index) => index >= 0);
   return hits.length === 1 ? hits[0]! + 1 : null;
+}
+/**
+ * IMAGE-4: what the page's own answer says about the single qualifying
+ * focal-post object: its first-media candidate list (the list the exact-address
+ * rule reads) and whether it declares a video (media_type 2 or a non-empty
+ * video_versions). With several or no qualifying objects both are null; on a
+ * carousel the shown item is not known here, so the declaration is null too.
+ */
+export function answerMedia(
+  code: string | null,
+  bodies: readonly unknown[],
+): { firstMedia: string[] | null; declaresVideo: boolean | null } {
+  const objects = postObjects(bodies, code).objects;
+  if (objects.length !== 1) return { firstMedia: null, declaresVideo: null };
+  const value = objects[0]!.value;
+  const carousel =
+    Array.isArray(value.carousel_media) && value.carousel_media.length > 0;
+  const first = carousel
+    ? object((value.carousel_media as unknown[])[0])
+    : value;
+  const firstMedia = urls(first) ?? urls(value);
+  return {
+    firstMedia,
+    declaresVideo: carousel
+      ? null
+      : value.media_type === 2 ||
+        (Array.isArray(value.video_versions) &&
+          value.video_versions.length > 0),
+  };
 }
 export function imageDiagnostic(
   code: string | null,
@@ -214,19 +245,32 @@ export interface CanaryCheck {
   imageStored: boolean;
   screenshotStored: boolean;
 }
+/** IMAGE-4: no image stored and the image field marked video-without-image. */
+export function imageNotApplicable(check: CanaryCheck): boolean {
+  return (
+    check.fields.image.notApplicable === 'video-without-image' &&
+    !check.imageStored
+  );
+}
 export function automaticCanaryCheck(check: CanaryCheck): void {
   if (!check.confirmed)
     throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
+  // IMAGE-4: a declared video without any image leaves the image field out;
+  // owner, time and caption must still be found and agree.
+  const notApplicable = imageNotApplicable(check);
   if (
     !check.ownerShown ||
     !check.timeShown ||
-    !check.imageStored ||
+    (!check.imageStored && !notApplicable) ||
     !check.screenshotStored
   )
     throw new ContextStop('CANARY_CHECK_FAILED', 'canary-check');
-  if (Object.values(check.fields).some((field) => !field.found))
+  const compared = Object.entries(check.fields)
+    .filter(([field]) => !(field === 'image' && notApplicable))
+    .map(([, value]) => value);
+  if (compared.some((field) => !field.found))
     throw new ContextStop('CANARY_NO_SECOND_SOURCE', 'second-source');
-  if (Object.values(check.fields).some((field) => !field.agrees))
+  if (compared.some((field) => !field.agrees))
     throw new ContextStop('CANARY_MISMATCH', 'field-mismatch');
 }
 export function automaticReadbackCheck(
@@ -251,20 +295,31 @@ export function canaryAudit(
   removed: number,
   unexpected: number,
 ) {
+  // IMAGE-4: a not-applicable image step leaves the image counts; it is
+  // counted on its own and never as image agreement.
+  const notApplicable = (check: CanaryCheck) => imageNotApplicable(check);
   return {
     commentsConfirmed: checks.filter((check) => check.confirmed).length,
     fields: Object.fromEntries(
-      (['owner', 'time', 'caption', 'image'] as const).map((field) => [
-        field,
-        {
-          compared: checks.filter((check) => check.fields[field].found).length,
-          agreed: checks.filter((check) => check.fields[field].agrees).length,
-        },
-      ]),
+      (['owner', 'time', 'caption', 'image'] as const).map((field) => {
+        const counted = checks.filter(
+          (check) => field !== 'image' || !notApplicable(check),
+        );
+        return [
+          field,
+          {
+            compared: counted.filter((check) => check.fields[field].found)
+              .length,
+            agreed: counted.filter((check) => check.fields[field].agrees)
+              .length,
+          },
+        ];
+      }),
     ),
     imagesMatched: checks.filter(
       (check) => check.imageStored && check.fields.image.agrees,
     ).length,
+    imagesNotApplicable: checks.filter(notApplicable).length,
     screenshotsStored: checks.filter((check) => check.screenshotStored).length,
     unexpectedActions: unexpected,
     extensionIdsAdded: added,

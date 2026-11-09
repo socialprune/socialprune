@@ -237,8 +237,13 @@ test('REPLY-SET-2 an incomplete reply set counts as replies missing in the dry r
       store,
       workspace.items[0]!.account.key,
     );
+    // Deletion plans oldest first; generated items after the first run newest
+    // first by index (LIST-1 fixture order).
     expect(plan.rows.map((row) => row.item.id)).toEqual(
-      workspace.items.slice(1).map((item) => item.id),
+      workspace.items
+        .slice(1)
+        .map((item) => item.id)
+        .reverse(),
     );
     expect(instagramDeleteSummary(plan, 'en')).toMatchObject({
       planned: 2,

@@ -588,6 +588,73 @@ test('C28 memory peak schema is strict and never accepts page values or a missin
   ])
     expect(RunMemorySchema.safeParse(invalid).success).toBe(false);
 });
+test('LIST-DIAG the image-only decision record holds closed values only', () => {
+  const decision = {
+    filteredTimeout: true,
+    initialAccountRow: true,
+    firstReadAccountClass: 'expected',
+    firstCheck: true,
+    secondRead: true,
+    secondReadAccountClass: 'other',
+    secondReadCandidates: 0,
+    secondCheck: true,
+    domChangesSame: false,
+    lastChangeSame: true,
+    retainedResult: false,
+    outcome: 'second-read-account',
+  };
+  const base = {
+    rowContainers: 2,
+    readableRows: 1,
+    imageOnlyRows: 1,
+    statusElementPresent: false,
+    busyElementPresent: false,
+    emptyStateClassKnown: false,
+    emptyStatePresent: false,
+    rowsObserved: true,
+    filter: {
+      applied: true,
+      readbackObserved: true,
+      startMatches: true,
+      endMatches: true,
+    },
+    dom: {
+      observed: true,
+      changes: 18,
+      lastChangeAfterApplyMs: 790,
+      observedForMs: 30400,
+    },
+    observationFailed: false,
+  };
+  const parse = (value: unknown) =>
+    ContextStepReportSchema.safeParse({
+      listTimeout: { ...base, imageOnlyDecision: value },
+    }).success;
+  expect(parse(decision)).toBe(true);
+  expect(
+    parse({
+      ...decision,
+      secondRead: false,
+      secondReadAccountClass: null,
+      secondReadCandidates: null,
+      secondCheck: null,
+      domChangesSame: null,
+      lastChangeSame: null,
+      firstReadAccountClass: null,
+      outcome: 'no-initial-account-row',
+    }),
+  ).toBe(true);
+  for (const invalid of [
+    { ...decision, outcome: 'Generated private outcome' },
+    { ...decision, firstReadAccountClass: IG_FIXTURE.other.username },
+    { ...decision, secondReadCandidates: -1 },
+    { ...decision, secondReadCandidates: 1.5 },
+    { ...decision, handle: IG_FIXTURE.other.username },
+    { ...decision, text: IG_FIXTURE.other.text },
+    { ...decision, at: IG_FIXTURE.other.time },
+  ])
+    expect(parse(invalid)).toBe(false);
+});
 test('C27 list-timeout diagnostic rejects raw values and malformed counts rather than relying on the loose outer step', () => {
   const diagnostic = {
     rowContainers: 3,

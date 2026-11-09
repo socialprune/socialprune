@@ -31,6 +31,17 @@ import { placementGeneratedRun } from './context-instagram.test.ts';
 const ACTIVATION_BOUND_MS = 5000;
 /** Every teardown operation gets this long before it is named as a stall. */
 const TEARDOWN_BOUND_MS = 5000;
+/**
+ * The sentinel's own exit after its stop file: the form timer checks the stop
+ * file every 20 ms, and PowerShell then disposes the form and exits; the
+ * receipts record stopToExitMs. Bound 15 s, three times the general step bound,
+ * because a PowerShell exit on a loaded runner is the slowest of these steps.
+ */
+const SENTINEL_EXIT_BOUND_MS = 15000;
+/** The sentinel cleanup step: its exit bound plus 1 s for the forced end. */
+const SENTINEL_TEARDOWN_MS = SENTINEL_EXIT_BOUND_MS + 1000;
+// Each budget below counted the sentinel cleanup at the 5 s step bound; it now
+// counts SENTINEL_TEARDOWN_MS, 11 s more, rounded up to whole 5 s.
 /** The restored-session poll stops after this long. */
 const RESTORE_BOUND_MS = 15000;
 // Native helper preparation: 26.6 s cold (first use on the runner), 0.006 s
@@ -39,20 +50,21 @@ const HELPER_BUDGET_MS = 60000;
 // Launch and reader design: 11.1 s on Chromium, 17.6 s on Edge, of which
 // 10.0 s is Edge's restore. Work without waits at most 11.1 s, plus the
 // restore bound 15 s, plus 5 watches x 5 s activation bound, plus 4 teardown
-// operations x 5 s: 11.1 + 15 + 25 + 20 = 71.1 s, declared 75 s.
-const LAUNCH_BUDGET_MS = 75000;
+// operations x 5 s: 11.1 + 15 + 25 + 20 = 71.1 s, declared 75 s; with the
+// sentinel step at 16 s: 82.1 s, declared 85 s.
+const LAUNCH_BUDGET_MS = 85000;
 // Generated 21-step run: 103.4 s alone; in a loaded context shard about
 // 145 s (183 s total minus 37.7 s for helper and launch segment). Plus 4
 // watches x 5 s activation bound, plus 3 teardown operations x 5 s:
 // 145 + 20 + 15 = 180 s. This is the old whole-test cap, now covering only
-// this segment.
-const GENERATED_BUDGET_MS = 180000;
+// this segment; with the sentinel step at 16 s: 191 s, declared 195 s.
+const GENERATED_BUDGET_MS = 195000;
 // X deletion probe: about 15 s per test (21 to 24 s per workflow step with
 // about 8 s of startup), of which 9.5 s is Edge's restore. Work without waits
 // about 6.5 s, plus the restore bound 15 s, plus 2 watches x 5 s activation
 // bound, plus 5 teardown operations x 5 s: 6.5 + 15 + 10 + 25 = 56.5 s,
-// declared 60 s.
-const X_BUDGET_MS = 60000;
+// declared 60 s; with the sentinel step at 16 s: 67.5 s, declared 70 s.
+const X_BUDGET_MS = 70000;
 
 let helper: string;
 beforeAll(async () => {
@@ -129,16 +141,14 @@ async function bounded(
   stage: string,
   task: () => Promise<unknown>,
   stalls: string[],
+  bound = TEARDOWN_BOUND_MS,
 ) {
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
       task(),
       new Promise((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('TEARDOWN_STALL')),
-          TEARDOWN_BOUND_MS,
-        );
+        timer = setTimeout(() => reject(new Error('TEARDOWN_STALL')), bound);
       }),
     ]);
   } catch (error) {
@@ -207,11 +217,44 @@ async function foregroundSentinel(
     ],
     { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
   );
+  // TEARDOWN-1: both pipes are drained. An unread pipe that fills blocks the
+  // PowerShell writer, and with it the form's timer that watches the stop
+  // file. The receipt keeps byte counts and the first stderr line of this
+  // generated harness process, never page or account content.
+  const process: {
+    stdoutBytes: number;
+    stderrBytes: number;
+    stderrFirstLine: string | null;
+    exitCode: number | null;
+    stopToExitMs: number | null;
+    killed: boolean;
+  } = {
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stderrFirstLine: null,
+    exitCode: null,
+    stopToExitMs: null,
+    killed: false,
+  };
+  receipt.sentinelProcess = process;
+  sentinel.stdout.on('data', (bytes: Buffer) => {
+    process.stdoutBytes += bytes.length;
+  });
+  sentinel.stderr.on('data', (bytes: Buffer) => {
+    process.stderrBytes += bytes.length;
+    process.stderrFirstLine ??=
+      bytes.toString().split(/\r?\n/u)[0]!.slice(0, 160) || null;
+  });
+  let stopAt: number | undefined;
   const done = new Promise<void>((resolve, reject) => {
     sentinel.once('error', reject);
-    sentinel.once('exit', (code) =>
-      code === 0 ? resolve() : reject(new Error(`SENTINEL_EXIT_${code}`)),
-    );
+    sentinel.once('exit', (code) => {
+      process.exitCode = code;
+      if (stopAt !== undefined) process.stopToExitMs = Date.now() - stopAt;
+      return code === 0
+        ? resolve()
+        : reject(new Error(`SENTINEL_EXIT_${code}`));
+    });
   });
   void done.catch(() => {});
   const signal = JSON.parse(await waitFile(ready)) as {
@@ -301,9 +344,34 @@ async function foregroundSentinel(
   return {
     area: signal.area,
     watch,
+    /**
+     * Waits for the sentinel process to exit, at most SENTINEL_EXIT_BOUND_MS
+     * after the stop file was written; past that bound the process is ended
+     * and the stall stays a failure with its cause in the receipt.
+     */
     async stop() {
-      await writeFile(stop, 'stop');
-      await done;
+      stopAt = Date.now();
+      await writeShared(stop, 'stop');
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          done,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error('SENTINEL_EXIT_TIMEOUT')),
+              SENTINEL_EXIT_BOUND_MS,
+            );
+          }),
+        ]);
+      } catch (error) {
+        if (process.exitCode === null) {
+          process.killed = sentinel.kill();
+          await done.catch(() => undefined);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }
@@ -588,7 +656,12 @@ test(
       boundary?.dispose();
       await bounded('context', async () => context?.close(), stalls);
       await bounded('fake', async () => fake?.close(), stalls);
-      await bounded('sentinel', async () => sentinel?.stop(), stalls);
+      await bounded(
+        'sentinel',
+        async () => sentinel?.stop(),
+        stalls,
+        SENTINEL_TEARDOWN_MS,
+      );
       await bounded(
         'temp',
         () => rm(root, { recursive: true, force: true }),
@@ -675,7 +748,12 @@ test(
     } finally {
       mark('teardownStart');
       await bounded('context', async () => context?.close(), stalls);
-      await bounded('sentinel', async () => sentinel?.stop(), stalls);
+      await bounded(
+        'sentinel',
+        async () => sentinel?.stop(),
+        stalls,
+        SENTINEL_TEARDOWN_MS,
+      );
       await bounded(
         'temp',
         () => rm(root, { recursive: true, force: true }),
@@ -700,6 +778,9 @@ test(
         JSON.stringify(
           {
             ...merged,
+            // The launch segment's own cleanup result stays beside this one's.
+            launchTeardownStalls: merged['teardownStalls'] ?? null,
+            launchSentinelProcess: merged['sentinelProcess'] ?? null,
             ...rest,
             generatedPhaseMs: phaseMs,
             generatedWatchMs: watchMs,
@@ -926,7 +1007,12 @@ test(
       await bounded('context', async () => context?.close(), stalls);
       await bounded('store', async () => store?.close(), stalls);
       await bounded('fake', async () => fake?.close(), stalls);
-      await bounded('sentinel', async () => sentinel?.stop(), stalls);
+      await bounded(
+        'sentinel',
+        async () => sentinel?.stop(),
+        stalls,
+        SENTINEL_TEARDOWN_MS,
+      );
       await bounded(
         'temp',
         () => rm(root, { recursive: true, force: true }),
@@ -946,8 +1032,9 @@ test(
 
 // SETUP-1: startup with 0, 1 and 8 restored tabs. Per case about 3 s seed,
 // 1 s launch, the 15 s restore bound, 1 s startup, 2 watches x 5 s activation
-// bound and 3 teardown operations x 5 s: 3 + 1 + 15 + 1 + 10 + 15 = 45 s.
-const STARTUP_BUDGET_MS = 45000;
+// bound and 3 teardown operations x 5 s: 3 + 1 + 15 + 1 + 10 + 15 = 45 s;
+// with the sentinel step at 16 s: 56 s, declared 60 s.
+const STARTUP_BUDGET_MS = 60000;
 for (const restoredTabs of [0, 1, 8])
   test(
     `PLACEMENT startup with ${restoredTabs} restored tabs keeps the run window and creates the first owned page in it`,
@@ -1072,7 +1159,12 @@ for (const restoredTabs of [0, 1, 8])
         boundary?.dispose();
         await bounded('context', async () => context?.close(), stalls);
         await bounded('fake', async () => fake?.close(), stalls);
-        await bounded('sentinel', async () => sentinel?.stop(), stalls);
+        await bounded(
+          'sentinel',
+          async () => sentinel?.stop(),
+          stalls,
+          SENTINEL_TEARDOWN_MS,
+        );
         await bounded(
           'temp',
           () => rm(root, { recursive: true, force: true }),

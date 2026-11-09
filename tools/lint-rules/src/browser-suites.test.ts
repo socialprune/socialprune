@@ -501,7 +501,7 @@ test('the standalone workflow keeps other suites serial and case-shards context 
   // Five suite/aggregate jobs plus the opt-in isolated foreground probe, whose
   // budget grew from 10 to 22 minutes with its Microsoft Edge probe steps and
   // the 6-minute Instagram placement steps.
-  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|28)\n/g)).toHaveLength(
+  expect(workflow.match(/timeout-minutes: (?:27|12|32|10|30)\n/g)).toHaveLength(
     6,
   );
   expect(workflow).toContain('placement-only:');

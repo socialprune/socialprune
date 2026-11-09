@@ -330,6 +330,12 @@ export async function loadList(
   let oldestWithinWeek: boolean | null = null;
   let missingCandidate = false;
   let probeAllowed = false;
+  // LIST-DIAG: the last account class seen while the filtered list was read.
+  let filteredAccountClass: AccountClass | null = null;
+  const observeFiltered = (value: AccountClass) => {
+    filteredAccountClass = value;
+    deps.accountObserved?.(value);
+  };
   try {
     let navigation = await navigateList(page, expected, deps, guard, rowCounts);
     let accountRows = navigation.entries;
@@ -458,7 +464,7 @@ export async function loadList(
       guard,
       rowCounts,
       navigation.navigationStart,
-      deps.accountObserved,
+      observeFiltered,
       true,
     );
     let previous = JSON.stringify(
@@ -553,11 +559,30 @@ export async function loadList(
       rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
       rowCounts.regions = await listRegions(page, item.text, item.createdAt);
       rowCounts.listTimeout.regions = rowCounts.regions;
-      if (
-        error instanceof FilteredListTimeout &&
-        initialAccount &&
-        listImageOnlyManual(rowCounts.listTimeout)
-      ) {
+      const filteredTimeout = error instanceof FilteredListTimeout;
+      const firstCheck = listImageOnlyManual(rowCounts.listTimeout);
+      // LIST-DIAG: closed values only; the decision below is unchanged.
+      const decision: NonNullable<ListTimeoutDiagnostic['imageOnlyDecision']> =
+        {
+          filteredTimeout,
+          initialAccountRow: Boolean(initialAccount),
+          firstReadAccountClass: filteredAccountClass,
+          firstCheck,
+          secondRead: false,
+          secondReadAccountClass: null,
+          secondReadCandidates: null,
+          secondCheck: null,
+          domChangesSame: null,
+          lastChangeSame: null,
+          retainedResult: false,
+          outcome: !filteredTimeout
+            ? 'not-filtered'
+            : !initialAccount
+              ? 'no-initial-account-row'
+              : 'first-check-failed',
+        };
+      rowCounts.listTimeout.imageOnlyDecision = decision;
+      if (filteredTimeout && initialAccount && firstCheck) {
         const firstDom = rowCounts.listTimeout.dom;
         guard();
         await checkPage(page);
@@ -574,15 +599,39 @@ export async function loadList(
         rowCounts.rowSignature = await freshness.inspect(page);
         rowCounts.listTimeout.rowSignature = rowCounts.rowSignature;
         rowCounts.listTimeout.regions = rowCounts.regions;
+        const secondCheck = listImageOnlyManual(rowCounts.listTimeout),
+          domChangesSame =
+            rowCounts.listTimeout.dom.changes === firstDom.changes,
+          lastChangeSame =
+            rowCounts.listTimeout.dom.lastChangeAfterApplyMs ===
+            firstDom.lastChangeAfterApplyMs;
+        Object.assign(decision, {
+          secondRead: true,
+          secondReadAccountClass: classification,
+          secondReadCandidates: candidates.length,
+          secondCheck,
+          domChangesSame,
+          lastChangeSame,
+          outcome:
+            classification !== 'expected'
+              ? 'second-read-account'
+              : candidates.length !== 0
+                ? 'second-read-candidate'
+                : !secondCheck
+                  ? 'second-check-failed'
+                  : !domChangesSame || !lastChangeSame
+                    ? 'dom-changed'
+                    : 'list-image-only',
+        });
+        rowCounts.listTimeout.imageOnlyDecision = decision;
         guard();
         await checkPage(page);
         if (
           classification === 'expected' &&
           candidates.length === 0 &&
-          listImageOnlyManual(rowCounts.listTimeout) &&
-          rowCounts.listTimeout.dom.changes === firstDom.changes &&
-          rowCounts.listTimeout.dom.lastChangeAfterApplyMs ===
-            firstDom.lastChangeAfterApplyMs
+          secondCheck &&
+          domChangesSame &&
+          lastChangeSame
         )
           return {
             candidates,
@@ -607,8 +656,10 @@ export async function loadList(
         (signature.sameAsBeforeApply === true ||
           (signature.sameAsPreviousStep === true &&
             signature.previousWindowDifferent === true))
-      )
+      ) {
+        decision.retainedResult = true;
         throw new ContextStop('LIST_TIMEOUT', 'list-timeout');
+      }
     }
     throw error;
   } finally {

@@ -190,13 +190,13 @@ jobs:
       - name: Measure Instagram placement and foreground ownership on Windows
         if: ${{ !cancelled() && matrix.shard == 1 }}
         # Declared test budgets in placement-runner.test.ts: helper 60 s +
-        # launch segment 75 s + generated run 180 s + about 10 s vitest start
-        # = 325 s, so 6 minutes.
+        # launch segment 85 s + generated run 195 s + about 10 s vitest start
+        # = 350 s, so 6 minutes.
         timeout-minutes: 6
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - name: Measure Instagram placement on the runner's installed Microsoft Edge
         if: ${{ !cancelled() && matrix.shard == 1 }}
-        # Same derivation as the Chromium step: 325 s, so 6 minutes.
+        # Same derivation as the Chromium step: 350 s, so 6 minutes.
         timeout-minutes: 6
         env:
           SP_PLACEMENT_BROWSER: msedge
@@ -227,8 +227,9 @@ jobs:
     runs-on: windows-latest
     # 10 before the Edge probe steps, then 18 with the Instagram and X Edge
     # steps; the two Instagram steps now cap at 6 minutes each: 18 + 2 + 2;
-    # then two 3-minute startup probe steps: 22 + 6.
-    timeout-minutes: 28
+    # then two startup probe steps, now 4 minutes each with the 16 s sentinel
+    # cleanup: 22 + 8.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -243,12 +244,12 @@ jobs:
       - run: pnpm --filter socialprune exec playwright install chromium
         timeout-minutes: 5
       - name: Measure foreground and placement before full-suite admission
-        # Declared test budgets: 60 + 75 + 180 s + about 10 s start = 325 s.
+        # Declared test budgets: 60 + 85 + 195 s + about 10 s start = 350 s.
         timeout-minutes: 6
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT Windows foreground sentinel"
       - name: Measure placement on the runner's installed Microsoft Edge
         if: ${{ !cancelled() }}
-        # Same derivation as the Chromium step: 325 s, so 6 minutes.
+        # Same derivation as the Chromium step: 350 s, so 6 minutes.
         timeout-minutes: 6
         env:
           SP_PLACEMENT_BROWSER: msedge
@@ -261,12 +262,12 @@ jobs:
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT X deletion"
       - name: Measure startup with 0, 1 and 8 restored tabs on the pinned Chromium
         if: ${{ !cancelled() }}
-        # Declared budgets 3 x 45 s plus about 10 s vitest start = 145 s.
-        timeout-minutes: 3
+        # Declared budgets 3 x 60 s plus about 10 s vitest start = 190 s.
+        timeout-minutes: 4
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT startup with"
       - name: Measure startup with 0, 1 and 8 restored tabs on the runner's installed Microsoft Edge
         if: ${{ !cancelled() }}
-        timeout-minutes: 3
+        timeout-minutes: 4
         env:
           SP_PLACEMENT_BROWSER: msedge
         run: pnpm exec vitest run --config apps/cli/e2e/placement.vitest.config.ts -t "^PLACEMENT startup with"

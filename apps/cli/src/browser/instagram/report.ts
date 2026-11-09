@@ -936,6 +936,19 @@ export const ReplyAnswerDiagnosticSchema = z.strictObject({
   }),
 });
 export type ReplyAnswerDiagnostic = z.infer<typeof ReplyAnswerDiagnosticSchema>;
+// Same values as ACCOUNT_CLASSES below, declared here because the schema
+// is built before that constant.
+const ACCOUNT_CLASS_VALUES = ['expected', 'absent', 'other'] as const;
+export const IMAGE_ONLY_OUTCOMES = [
+  'list-image-only',
+  'not-filtered',
+  'no-initial-account-row',
+  'first-check-failed',
+  'second-read-account',
+  'second-read-candidate',
+  'second-check-failed',
+  'dom-changed',
+] as const;
 export const ListTimeoutDiagnosticSchema = z
   .strictObject({
     rowContainers: count,
@@ -962,6 +975,26 @@ export const ListTimeoutDiagnosticSchema = z
     observationFailed: z.boolean(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),
     regions: ListRegionsSchema.optional(),
+    /**
+     * LIST-DIAG: which input of the image-only settlement decided this list,
+     * as closed values only (no handle, ID, text or time).
+     */
+    imageOnlyDecision: z
+      .strictObject({
+        filteredTimeout: z.boolean(),
+        initialAccountRow: z.boolean(),
+        firstReadAccountClass: z.enum(ACCOUNT_CLASS_VALUES).nullable(),
+        firstCheck: z.boolean(),
+        secondRead: z.boolean(),
+        secondReadAccountClass: z.enum(ACCOUNT_CLASS_VALUES).nullable(),
+        secondReadCandidates: count.nullable(),
+        secondCheck: z.boolean().nullable(),
+        domChangesSame: z.boolean().nullable(),
+        lastChangeSame: z.boolean().nullable(),
+        retainedResult: z.boolean(),
+        outcome: z.enum(IMAGE_ONLY_OUTCOMES),
+      })
+      .optional(),
   })
   .refine(
     (value) =>

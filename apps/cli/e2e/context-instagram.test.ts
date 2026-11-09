@@ -2632,7 +2632,26 @@ test('LIST-1 a filtered list with one readable non-target row in a second region
     );
     expect((JSON.parse(text) as { steps: unknown[] }).steps[0]).toMatchObject({
       result: 'list-image-only',
-      listTimeout: { rowContainers: 2, readableRows: 1, imageOnlyRows: 1 },
+      listTimeout: {
+        rowContainers: 2,
+        readableRows: 1,
+        imageOnlyRows: 1,
+        // LIST-DIAG: every input of the settlement, as closed values.
+        imageOnlyDecision: {
+          filteredTimeout: true,
+          initialAccountRow: true,
+          firstReadAccountClass: 'expected',
+          firstCheck: true,
+          secondRead: true,
+          secondReadAccountClass: 'expected',
+          secondReadCandidates: 0,
+          secondCheck: true,
+          domChangesSame: true,
+          lastChangeSame: true,
+          retainedResult: false,
+          outcome: 'list-image-only',
+        },
+      },
     });
     assertRecordedEvents(h.fake.events);
   } finally {

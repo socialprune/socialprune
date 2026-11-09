@@ -415,12 +415,10 @@ test('C18 exclude removes exactly named planned and manual entries before canary
   try {
     const baseline = await planContext(h.store, h.accountKey);
     const plan = await planContext(h.store, h.accountKey, new Set(), exclude);
-    // LIST-1: newest first.
     expect(plan.rows.map((row) => row.item.id)).toEqual(
       h.fixture.items
         .filter((_, index) => index !== 0 && index !== 4)
-        .map((item) => item.id)
-        .reverse(),
+        .map((item) => item.id),
     );
     expect(plan).toMatchObject({
       personExcluded: 2,
@@ -973,10 +971,7 @@ test('manual reasons exclude empty and close twins but plan ownerless comments; 
     );
     expect(plan.manual).toEqual({ emptyText: 1, noOwner: 0, closeTwin: 2 });
     expect(plan.rows.map(({ item }) => item.id)).toEqual(
-      // LIST-1: newest first.
-      [fixture.items[2]!, ...fixture.items.slice(4)]
-        .map((item) => item.id)
-        .reverse(),
+      [fixture.items[2]!, ...fixture.items.slice(4)].map((item) => item.id),
     );
     const before = plan.hash,
       itemId = fixture.items[5]!.id;
@@ -1010,7 +1005,8 @@ test('manual reasons exclude empty and close twins but plan ownerless comments; 
     const after = await planContext(store, plan.accountKey);
     expect(after.hash).not.toBe(before);
     expect(after.rows[0]!.item.id).toBe(itemId);
-    expect(canaryRows(after)[0]!.item.id).toBe(fixture.items[2]!.id);
+    // The canary still opens with the oldest planned comment, not the marked one.
+    expect(canaryRows(after)[0]!.item.id).toBe(fixture.items[5]!.id);
     expect(normalize('e\u0301 \n moss')).toBe('é moss');
   } finally {
     await store.close();

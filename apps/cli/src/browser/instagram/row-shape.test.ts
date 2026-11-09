@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest';
-import { rowShape } from './row-shape.ts';
+import {
+  rowShape,
+  trailingLineAllowed,
+  trailingLineFeatures,
+} from './row-shape.ts';
 
 test.each([
   [
@@ -29,6 +33,12 @@ test.each([
   ['generated_person Invented words\n2d\nSee translation', 'see-translation'],
   ['generated_person Invented words\n2d\nPinned', 'pinned'],
   ['generated_person Invented words\n2d\nInvented label', 'other'],
+  ['generated_person Invented words\n2d\nTranslated', 'translated'],
+  ['generated_person Invented words\n2d\nReply', 'reply'],
+  ['generated_person Invented words\n2d\nHidden', 'hidden'],
+  ['generated_person Invented words\n2d\nLiked by creator', 'liked-by-creator'],
+  ['generated_person Invented words\n2d\nAuthor', 'author'],
+  ['generated_person Invented words\n2d\nCreator', 'creator'],
   ['generated_person Invented words\n2d\nEdited\nPinned', 'pinned'],
   ['generated_person Invented words\n3mo', 'none'],
 ] as const)(
@@ -43,6 +53,44 @@ test.each([
     );
   },
 );
+test('ROW-TRAIL-2 a structural trailing line is 1 to 30 characters and not an age, handle or counted label', () => {
+  const handles = ['generated_person'];
+  for (const line of [
+    'Edited',
+    'Invented flag',
+    'x',
+    'x'.repeat(30),
+    'Ünïcode',
+  ]) {
+    expect(trailingLineAllowed(line, handles)).toBe(true);
+  }
+  for (const line of [
+    'x'.repeat(31),
+    '3d',
+    '2 weeks',
+    '3 Std.',
+    'generated_person',
+    'Generated_Person',
+    '3 likes',
+    '12 replies',
+    '2 Gefällt mir-Angaben',
+  ])
+    expect(trailingLineAllowed(line, handles)).toBe(false);
+  expect(trailingLineFeatures('Invent 2 ü label line x')).toEqual({
+    letterOnly: false,
+    words: 'threePlus',
+    digits: true,
+    nonAscii: true,
+    lengthBucket: '21-30',
+  });
+  expect(trailingLineFeatures('See translation')).toEqual({
+    letterOnly: true,
+    words: 'two',
+    digits: false,
+    nonAscii: false,
+    lengthBucket: '11-20',
+  });
+});
 test('realshape distinguishes missing username and missing comment text without accepting either', () => {
   expect(
     rowShape('invalid handle\nwords\n2d', 'generated_person', false)

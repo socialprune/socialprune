@@ -41,13 +41,20 @@ export function rowAgeToken(value: string): AgeClass {
   return unit ? `de-${unit}` : 'none';
 }
 /**
- * ROW-TRAIL-1: the closed English row labels Instagram may show on the line
- * after a list row's age. Compared trimmed and case-sensitively.
+ * Closed English row labels Instagram may show on the line after a list row's
+ * age, compared trimmed and case-sensitively. Since ROW-TRAIL-2 this only
+ * classifies a line for the report; acceptance is structural.
  */
 export const ROW_TRAILING_LABELS = {
   Edited: 'edited',
   'See translation': 'see-translation',
   Pinned: 'pinned',
+  Translated: 'translated',
+  Reply: 'reply',
+  Hidden: 'hidden',
+  'Liked by creator': 'liked-by-creator',
+  Author: 'author',
+  Creator: 'creator',
 } as const;
 export function rowLines(raw: string): string[] {
   return raw
@@ -55,13 +62,13 @@ export function rowLines(raw: string): string[] {
     .map((line) => line.trim())
     .filter(Boolean);
 }
-/** The allow-listed label class of one line, or null. Never the line itself. */
+/** The closed label class of one line, `other` when it is none of them. */
 export function rowTrailingLabel(
   line: string,
-): Exclude<RowTrailingClass, 'other' | 'none'> | null {
+): Exclude<RowTrailingClass, 'none'> {
   return Object.hasOwn(ROW_TRAILING_LABELS, line)
     ? ROW_TRAILING_LABELS[line as keyof typeof ROW_TRAILING_LABELS]
-    : null;
+    : 'other';
 }
 /**
  * Closed class of a refused row's last line when an age stands before it;
@@ -71,7 +78,52 @@ export function rowTrailingClass(raw: string): RowTrailingClass {
   const lines = rowLines(raw);
   if (!lines.slice(0, -1).some((line) => rowAgeToken(line) !== 'none'))
     return 'none';
-  return rowTrailingLabel(lines.at(-1)!) ?? 'other';
+  return rowTrailingLabel(lines.at(-1)!);
+}
+const COUNTED_LABEL =
+  /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu;
+export function countedLabel(line: string): boolean {
+  return COUNTED_LABEL.test(line);
+}
+export const TRAILING_LINE_MAX = 30;
+/**
+ * ROW-TRAIL-2: whether a row's single last line after its age is a structural
+ * trailing line the reader may set aside. Never decides on the line's words.
+ */
+export function trailingLineAllowed(
+  line: string,
+  handles: readonly string[],
+): boolean {
+  const length = [...line].length;
+  return (
+    length >= 1 &&
+    length <= TRAILING_LINE_MAX &&
+    rowAgeToken(line) === 'none' &&
+    !handles.some((handle) => handle.toLowerCase() === line.toLowerCase()) &&
+    !countedLabel(line)
+  );
+}
+/** Closed, count-only features of one accepted trailing line; no text. */
+export function trailingLineFeatures(line: string) {
+  const length = [...line].length,
+    words = line.split(/\s+/u).filter(Boolean).length;
+  return {
+    letterOnly: /^[\p{L}\s]+$/u.test(line),
+    words:
+      words <= 1
+        ? ('one' as const)
+        : words === 2
+          ? ('two' as const)
+          : ('threePlus' as const),
+    digits: /\p{Nd}/u.test(line),
+    nonAscii: /[^\x00-\x7F]/u.test(line),
+    lengthBucket:
+      length <= 10
+        ? ('1-10' as const)
+        : length <= 20
+          ? ('11-20' as const)
+          : ('21-30' as const),
+  };
 }
 const bucket = (length: number) =>
   length === 0
@@ -134,17 +186,10 @@ export function rowShape(raw: string, handle: string, accepted: boolean) {
       lengthBucket: bucket(line.length),
       equalsHandle: line.toLowerCase() === handle.toLowerCase(),
       ageClass: rowAgeToken(line),
-      countedLabel:
-        /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
-          line,
-        ),
+      countedLabel: countedLabel(line),
     })),
     ageClasses: ageClasses.length ? ageClasses : ['none' as const],
-    countedLabelPresent: lines.some((line) =>
-      /^\d[\d.,\s]*\s*(?:likes?|repl(?:y|ies)|Gefällt mir(?:-Angaben)?|Antworten?)$/iu.test(
-        line,
-      ),
-    ),
+    countedLabelPresent: lines.some(countedLabel),
     failurePart,
     ...(accepted ? {} : { trailingClass: rowTrailingClass(raw) }),
   };
@@ -154,7 +199,7 @@ export async function readRowShapes(
   texts: readonly string[],
   handle: string,
   origin: string,
-  accepted: (raw: string) => boolean,
+  accepted: (raw: string, index: number) => boolean,
 ) {
   const result: {
     observed: boolean;
@@ -192,7 +237,7 @@ export async function readRowShapes(
         links[kind === 'your-activity' ? 'yourActivity' : kind]++;
       }
       result.rows.push({
-        ...rowShape(text, handle, accepted(text)),
+        ...rowShape(text, handle, accepted(text, index)),
         anchors: anchors.length,
         linkClasses: links,
         imagePresent: (await row.locator('img').count()) > 0,

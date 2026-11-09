@@ -11,6 +11,8 @@ import {
   rowLines,
   rowTrailingClass,
   rowTrailingLabel,
+  trailingLineAllowed,
+  trailingLineFeatures,
 } from './row-shape.ts';
 import { mediaAreaFromSnapshot } from './media-source.ts';
 import type { MediaArea } from './media-source.ts';
@@ -120,19 +122,30 @@ const ROW_PATTERN = new RegExp(
 );
 const AGE_PATTERN = new RegExp(`^(\\d+)\\s*(${AGE_UNITS})$`);
 /**
- * One list row as ROW_PATTERN reads it. ROW-TRAIL-1: a single last line that
- * is exactly an allow-listed label, right after an age line, is set aside and
- * never becomes comment text; every other shape is read as before.
+ * One list row as ROW_PATTERN reads it. ROW-TRAIL-2: a single last line right
+ * after the age line is set aside structurally when trailingLineAllowed says
+ * so; it never becomes comment text and its words never decide. A row whose
+ * age line is followed by a second age is refused. Every other shape is read
+ * or refused as before.
  */
-export function parseRow(raw: string) {
-  const lines = rowLines(raw);
-  const candidate = lines.length >= 3 ? rowTrailingLabel(lines.at(-1)!) : null;
-  const label = candidate && AGE_PATTERN.test(lines.at(-2)!) ? candidate : null;
+export function parseRow(raw: string, handles: readonly string[] = []) {
+  const lines = rowLines(raw),
+    last = lines.at(-1) ?? '',
+    afterAge = lines.length >= 3 && AGE_PATTERN.test(lines.at(-2)!);
+  let trailing: string | null = null;
+  if (AGE_PATTERN.test(last)) {
+    if (afterAge) return null;
+  } else if (afterAge && trailingLineAllowed(last, handles)) trailing = last;
   const match = ROW_PATTERN.exec(
-    label ? normalize(lines.slice(0, -1).join('\n')) : normalize(raw),
+    trailing === null
+      ? normalize(raw)
+      : normalize(lines.slice(0, -1).join('\n')),
   );
   if (!match) return null;
-  return { username: match[1]!, text: match[2]!, age: match[3]!, label };
+  // The row's own username as its trailing line is a handle line, not a label.
+  if (trailing !== null && match[1]!.toLowerCase() === trailing.toLowerCase())
+    return null;
+  return { username: match[1]!, text: match[2]!, age: match[3]!, trailing };
 }
 /** Coarse oldest-list diagnostic only; comment confirmation uses permalink time. */
 export function relativeAgeMs(value: string): number | null {
@@ -162,7 +175,7 @@ export interface RowReadCounts {
   emptySkipped: number;
   /** Exact own-handle and age rows without comment text, never candidates. */
   handleOnlySkipped?: number;
-  /** ROW-TRAIL-1: maximum simultaneous rows per allow-listed trailing label. */
+  /** ROW-TRAIL-1/2: maxima of accepted trailing-line rows per class and feature. */
   trailingLabelRows?: import('./report.ts').TrailingLabelRows;
   /** Maximum simultaneous other-name rows within one step's list loads. */
   otherName: number;
@@ -248,46 +261,125 @@ export async function readRows(
       texts.filter(handleOnly).length,
     );
   }
-  const labels = { edited: 0, seeTranslation: 0, pinned: 0 };
+  const handles = [
+    ...(expectedHandle === undefined ? [] : [expectedHandle]),
+    ...(counts?.rowShapeHandle === undefined ? [] : [counts.rowShapeHandle]),
+  ];
+  const refuse = async (index: number): Promise<never> => {
+    if (counts?.rowShapeHandle !== undefined)
+      counts.rowShape = await readRowShapes(
+        entries,
+        texts,
+        counts.rowShapeHandle,
+        new URL(page.url()).origin,
+        (value, at) => at !== index && parseRow(value, handles) !== null,
+      );
+    const stop = new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
+    stop.trailingClass = rowTrailingClass(texts[index]!);
+    throw stop;
+  };
+  const parsed: {
+    index: number;
+    row: NonNullable<ReturnType<typeof parseRow>>;
+  }[] = [];
   for (let index = 0; index < texts.length; index++) {
     const raw = normalize(texts[index]!);
     if (!raw || handleOnly(texts[index]!)) continue;
-    const match = parseRow(texts[index]!);
-    if (!match) {
-      if (counts?.rowShapeHandle !== undefined)
-        counts.rowShape = await readRowShapes(
-          entries,
-          texts,
-          counts.rowShapeHandle,
-          new URL(page.url()).origin,
-          (value) => parseRow(value) !== null,
-        );
-      const stop = new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'row-structure');
-      stop.trailingClass = rowTrailingClass(texts[index]!);
-      throw stop;
+    const match = parseRow(texts[index]!, handles);
+    if (!match) await refuse(index);
+    else parsed.push({ index, row: match });
+  }
+  // ROW-TRAIL-2: a row with a trailing line may carry no link beyond the most
+  // any ordinary row of the same read carries.
+  if (parsed.some(({ row }) => row.trailing !== null)) {
+    const anchors = async (index: number) =>
+      entries.nth(index).locator('a[href]').count();
+    let ordinary = 0;
+    for (const { index, row } of parsed)
+      if (row.trailing === null)
+        ordinary = Math.max(ordinary, await anchors(index));
+    for (const { index, row } of parsed)
+      if (row.trailing !== null && (await anchors(index)) > ordinary)
+        await refuse(index);
+  }
+  const read = emptyTrailingRows();
+  for (const { index, row } of parsed) {
+    if (row.trailing !== null) {
+      read[TRAILING_KEYS[rowTrailingLabel(row.trailing)]]++;
+      const feature = trailingLineFeatures(row.trailing);
+      if (feature.letterOnly) read.features.letterOnly++;
+      if (feature.digits) read.features.digits++;
+      if (feature.nonAscii) read.features.nonAscii++;
+      read.features.words[feature.words]++;
+      read.features.lengthBucket[feature.lengthBucket]++;
     }
-    if (match.label === 'edited') labels.edited++;
-    else if (match.label === 'see-translation') labels.seeTranslation++;
-    else if (match.label === 'pinned') labels.pinned++;
     result.push({
-      username: match.username,
-      text: match.text,
-      age: match.age,
+      username: row.username,
+      text: row.text,
+      age: row.age,
       index,
     });
   }
-  if (counts && labels.edited + labels.seeTranslation + labels.pinned > 0) {
-    const prior = counts.trailingLabelRows;
-    counts.trailingLabelRows = {
-      edited: Math.max(prior?.edited ?? 0, labels.edited),
-      seeTranslation: Math.max(
-        prior?.seeTranslation ?? 0,
-        labels.seeTranslation,
-      ),
-      pinned: Math.max(prior?.pinned ?? 0, labels.pinned),
-    };
-  }
+  if (counts && parsed.some(({ row }) => row.trailing !== null))
+    counts.trailingLabelRows = maxTrailingRows(counts.trailingLabelRows, read);
   return result;
+}
+type TrailingRows = import('./report.ts').TrailingLabelRows;
+const TRAILING_KEYS = {
+  edited: 'edited',
+  'see-translation': 'seeTranslation',
+  pinned: 'pinned',
+  translated: 'translated',
+  reply: 'reply',
+  hidden: 'hidden',
+  'liked-by-creator': 'likedByCreator',
+  author: 'author',
+  creator: 'creator',
+  other: 'other',
+} as const;
+function emptyTrailingRows(): TrailingRows {
+  return {
+    edited: 0,
+    seeTranslation: 0,
+    pinned: 0,
+    translated: 0,
+    reply: 0,
+    hidden: 0,
+    likedByCreator: 0,
+    author: 0,
+    creator: 0,
+    other: 0,
+    features: {
+      letterOnly: 0,
+      digits: 0,
+      nonAscii: 0,
+      words: { one: 0, two: 0, threePlus: 0 },
+      lengthBucket: { '1-10': 0, '11-20': 0, '21-30': 0 },
+    },
+  };
+}
+/** Field-wise maxima over a step's reads, like the other list counts. */
+function maxTrailingRows(
+  prior: TrailingRows | undefined,
+  read: TrailingRows,
+): TrailingRows {
+  if (!prior) return read;
+  const max = <T extends Record<string, number>>(a: T, b: T) =>
+    Object.fromEntries(
+      Object.keys(a).map((key) => [key, Math.max(a[key]!, b[key]!)]),
+    ) as T;
+  const { features: priorFeatures, ...priorClasses } = prior,
+    { features, ...classes } = read;
+  return {
+    ...max(priorClasses, classes),
+    features: {
+      letterOnly: Math.max(priorFeatures.letterOnly, features.letterOnly),
+      digits: Math.max(priorFeatures.digits, features.digits),
+      nonAscii: Math.max(priorFeatures.nonAscii, features.nonAscii),
+      words: max(priorFeatures.words, features.words),
+      lengthBucket: max(priorFeatures.lengthBucket, features.lengthBucket),
+    },
+  };
 }
 /** Counts only; semantic status/loading roles are not empty-result proof. */
 export async function listTimeoutRows(page: Page) {

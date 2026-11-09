@@ -4740,8 +4740,11 @@ test.each([
   ['decoy', 'See translation', 'seeTranslation'],
   ['decoy', 'Pinned', 'pinned'],
   ['target', 'Edited', 'edited'],
+  ['decoy', 'Translated', 'translated'],
+  ['decoy', 'Invented flag', 'other'],
+  ['target', 'Invented flag', 'other'],
 ] as const)(
-  'ROW-TRAIL-1 a %s row with %s after its age is read, the target confirms and the label stays out of the text',
+  'ROW-TRAIL-1/2 a %s row with %s after its age is read, the target confirms and the line stays out of the text',
   async (mode, label, key) => {
     const h = await harness('success', 2);
     await fullRunReady(h);
@@ -4753,22 +4756,38 @@ test.each([
       });
       const { run, text, report } = await retryReport(h);
       const steps = report['steps'] as {
-        trailingLabelRows?: Record<string, number>;
+        trailingLabelRows?: Record<string, unknown> & {
+          features: {
+            letterOnly: number;
+            lengthBucket: Record<string, number>;
+          };
+        };
         confirmed: boolean;
       }[];
       expect(steps).toHaveLength(1);
       expect(steps[0]!.confirmed).toBe(true);
-      const labelRows = steps[0]!.trailingLabelRows!;
+      const { features, ...labelRows } = steps[0]!.trailingLabelRows!;
       expect(Object.keys(labelRows).sort()).toEqual([
+        'author',
+        'creator',
         'edited',
+        'hidden',
+        'likedByCreator',
+        'other',
         'pinned',
+        'reply',
         'seeTranslation',
+        'translated',
       ]);
       for (const [name, value] of Object.entries(labelRows))
         if (name === key)
           if (mode === 'decoy') expect(value).toBe(1);
           else expect(value).toBeGreaterThanOrEqual(1);
         else expect(value).toBe(0);
+      expect(features.letterOnly).toBeGreaterThanOrEqual(1);
+      expect(
+        features.lengthBucket[label.length <= 10 ? '1-10' : '11-20'],
+      ).toBeGreaterThanOrEqual(1);
       const stored = (
         await h.store.read((tx) => records(tx.instagramContext))
       ).filter((record) => record.runId === run.runId);
@@ -4783,11 +4802,13 @@ test.each([
   120000,
 );
 test.each([
-  ['decoy', 'Translated', 'other'],
   ['decoy', 'Edited\nPinned', 'pinned'],
   ['target', '3 likes', 'other'],
+  ['decoy', 'Invented trailing line over thirty', 'other'],
+  ['decoy', '3d', 'other'],
+  ['decoy', '@handle', 'other'],
 ] as const)(
-  'ROW-TRAIL-1 a %s row with trailing %j still stops with row-structure and names only its closed class',
+  'ROW-TRAIL-1/2 a %s row with trailing %j still stops with row-structure and names only its closed class',
   async (mode, line, trailingClass) => {
     const h = await harness('success', 2);
     await fullRunReady(h);
@@ -4816,7 +4837,11 @@ test.each([
       expect(
         h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
       ).toEqual([]);
-      for (const value of [...line.split('\n'), 'Generated decoy comment']) {
+      // Lines shorter than four characters (`3d`) can occur in run IDs.
+      for (const value of [
+        ...line.split('\n').filter((part) => part.length >= 4),
+        'Generated decoy comment',
+      ]) {
         expect(text).not.toContain(value);
         expect(h.notices.join('')).not.toContain(value);
       }

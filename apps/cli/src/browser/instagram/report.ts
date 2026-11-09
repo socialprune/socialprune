@@ -13,19 +13,44 @@ import {
 } from './media-source.ts';
 
 const count = z.number().int().nonnegative();
-/** ROW-TRAIL-1: closed classes of a list row's line after its age. */
+/** ROW-TRAIL-1/2: closed classes of a list row's line after its age. */
 export const ROW_TRAILING_CLASSES = [
   'edited',
   'see-translation',
   'pinned',
+  'translated',
+  'reply',
+  'hidden',
+  'liked-by-creator',
+  'author',
+  'creator',
   'other',
   'none',
 ] as const;
 export type RowTrailingClass = (typeof ROW_TRAILING_CLASSES)[number];
+/** Per step, maxima of accepted trailing-line rows per class and feature. */
 export const TrailingLabelRowsSchema = z.strictObject({
   edited: count,
   seeTranslation: count,
   pinned: count,
+  translated: count,
+  reply: count,
+  hidden: count,
+  likedByCreator: count,
+  author: count,
+  creator: count,
+  other: count,
+  features: z.strictObject({
+    letterOnly: count,
+    digits: count,
+    nonAscii: count,
+    words: z.strictObject({ one: count, two: count, threePlus: count }),
+    lengthBucket: z.strictObject({
+      '1-10': count,
+      '11-20': count,
+      '21-30': count,
+    }),
+  }),
 });
 export type TrailingLabelRows = z.infer<typeof TrailingLabelRowsSchema>;
 const sourceCountSchema = z.strictObject({

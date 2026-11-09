@@ -72,7 +72,38 @@ test('realfix skips only exact handle-only age rows and keeps candidate indices 
   }
 });
 
-test('ROW-TRAIL-1 reads a row with one allow-listed label after its age and never keeps the label as text', async () => {
+function trailingPage(read: () => string[], links: () => number[] = () => []) {
+  const locator = {
+    filter() {
+      return this;
+    },
+    allInnerTexts: () => Promise.resolve(read()),
+    nth: (index: number) => ({
+      locator: () => ({ count: () => Promise.resolve(links()[index] ?? 0) }),
+    }),
+  };
+  return { locator: () => locator } as unknown as Page;
+}
+const noTrailingFeatures = {
+  letterOnly: 0,
+  digits: 0,
+  nonAscii: 0,
+  words: { one: 0, two: 0, threePlus: 0 },
+  lengthBucket: { '1-10': 0, '11-20': 0, '21-30': 0 },
+};
+const noTrailingClasses = {
+  edited: 0,
+  seeTranslation: 0,
+  pinned: 0,
+  translated: 0,
+  reply: 0,
+  hidden: 0,
+  likedByCreator: 0,
+  author: 0,
+  creator: 0,
+  other: 0,
+};
+test('ROW-TRAIL-2 reads a row with one short structural line after its age and never keeps that line as text', async () => {
   let texts = [
     'generated_person A generated comment\n2d\nEdited',
     'generated_person Another generated comment\n1w\nSee translation',
@@ -80,13 +111,7 @@ test('ROW-TRAIL-1 reads a row with one allow-listed label after its age and neve
     'generated_person A fourth generated comment\n4d',
     'generated_person A fifth generated comment\n5d\nEdited',
   ];
-  const locator = {
-    filter() {
-      return this;
-    },
-    allInnerTexts: () => Promise.resolve(texts),
-  };
-  const page = { locator: () => locator } as unknown as Page;
+  const page = trailingPage(() => texts);
   const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
   expect(await readRows(page, counts, 'generated_person')).toEqual([
     {
@@ -120,28 +145,68 @@ test('ROW-TRAIL-1 reads a row with one allow-listed label after its age and neve
       index: 4,
     },
   ]);
-  expect(counts.trailingLabelRows).toEqual({
+  const labelled = {
+    ...noTrailingClasses,
     edited: 2,
     seeTranslation: 1,
     pinned: 1,
-  });
-  // A later read with fewer labels keeps the per-class maximum.
+    features: {
+      ...noTrailingFeatures,
+      letterOnly: 4,
+      words: { one: 3, two: 1, threePlus: 0 },
+      lengthBucket: { '1-10': 3, '11-20': 1, '21-30': 0 },
+    },
+  };
+  expect(counts.trailingLabelRows).toEqual(labelled);
+  // A later read with fewer labels keeps the field-wise maximum.
   texts = ['generated_person A generated comment\n2d\nPinned'];
   await readRows(page, counts, 'generated_person');
-  expect(counts.trailingLabelRows).toEqual({
-    edited: 2,
-    seeTranslation: 1,
-    pinned: 1,
-  });
+  expect(counts.trailingLabelRows).toEqual(labelled);
   const plain: RowReadCounts = { emptySkipped: 0, otherName: 0 };
   texts = ['generated_person A generated comment\n2d'];
   await readRows(page, plain, 'generated_person');
   expect(plain.trailingLabelRows).toBeUndefined();
+  // Unknown lines up to 30 characters are read structurally, class other.
+  const unknown: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  texts = [
+    'generated_person A generated comment\n2d\nInvented flag',
+    'generated_person Another generated comment\n1w\nedited',
+    'generated_person A third generated comment\n3w\nInvent 2 ü label line x',
+    'generated_person A fourth generated comment\n4w\nTranslated',
+    'generated_person A fifth generated comment\n5w\nLiked by creator',
+  ];
+  expect(
+    (await readRows(page, unknown, 'generated_person')).map((row) => row.text),
+  ).toEqual([
+    'A generated comment',
+    'Another generated comment',
+    'A third generated comment',
+    'A fourth generated comment',
+    'A fifth generated comment',
+  ]);
+  expect(unknown.trailingLabelRows).toEqual({
+    ...noTrailingClasses,
+    other: 3,
+    translated: 1,
+    likedByCreator: 1,
+    features: {
+      letterOnly: 4,
+      digits: 1,
+      nonAscii: 1,
+      words: { one: 2, two: 1, threePlus: 2 },
+      lengthBucket: { '1-10': 2, '11-20': 2, '21-30': 1 },
+    },
+  });
   for (const [malformed, trailingClass] of [
-    ['generated_person A generated comment\n2d\nTranslated', 'other'],
-    ['generated_person A generated comment\n2d\nedited', 'other'],
+    // Two trailing lines, a line over 30 characters, an age, the handle and
+    // a counted label all still refuse.
     ['generated_person A generated comment\n2d\nEdited\nPinned', 'pinned'],
     ['generated_person A generated comment\n2d\nEdited\nInvented', 'other'],
+    ['generated_person A generated comment\n2d\n' + 'x'.repeat(31), 'other'],
+    ['generated_person A generated comment\n2d\n3d', 'other'],
+    ['generated_person A generated comment\n2d\n3 Std.', 'other'],
+    ['generated_person A generated comment\n2d\ngenerated_person', 'other'],
+    ['generated_person A generated comment\n2d\nGENERATED_PERSON', 'other'],
     ['generated_person A generated comment\n2d\n3 likes', 'other'],
     ['generated_person\n18w\nEdited', 'edited'],
     ['generated_person A generated comment\n18q', 'none'],
@@ -167,15 +232,26 @@ test('ROW-TRAIL-1 reads a row with one allow-listed label after its age and neve
     );
   }
 });
+test('ROW-TRAIL-2 a trailing-line row with more links than the ordinary rows still refuses', async () => {
+  const texts = [
+    'generated_person A generated comment\n2d',
+    'generated_person Another generated comment\n1w\nInvented flag',
+  ];
+  let links = [1, 1];
+  const page = trailingPage(
+    () => texts,
+    () => links,
+  );
+  const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
+  expect(await readRows(page, counts, 'generated_person')).toHaveLength(2);
+  links = [0, 1];
+  await expect(
+    readRows(page, counts, 'generated_person'),
+  ).rejects.toMatchObject({ token: 'row-structure', trailingClass: 'other' });
+});
 test('ROW-TRAIL-1 a label line before the age is read as today, as part of the text', async () => {
   const texts = ['generated_person A generated comment\nEdited\n2d'];
-  const locator = {
-    filter() {
-      return this;
-    },
-    allInnerTexts: () => Promise.resolve(texts),
-  };
-  const page = { locator: () => locator } as unknown as Page;
+  const page = trailingPage(() => texts);
   const counts: RowReadCounts = { emptySkipped: 0, otherName: 0 };
   expect(await readRows(page, counts, 'generated_person')).toEqual([
     {

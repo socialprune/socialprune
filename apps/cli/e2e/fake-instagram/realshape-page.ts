@@ -51,6 +51,9 @@ export function rowShapePage(html: string, shape: RowShapeCase) {
   const trailing = /^trailing-(target|decoy|before):([\s\S]+)$/u.exec(shape);
   if (trailing) {
     const [, mode, line] = trailing;
+    // `@handle` stands for the generated signed-in handle as the trailing line.
+    const tail =
+      line === '@handle' ? "'\\n'+handle" : JSON.stringify('\n' + line);
     const styled = html.replace(
       '<style>',
       '<style>#list>[role=button]{white-space:pre-line}',
@@ -59,15 +62,12 @@ export function rowShapePage(html: string, shape: RowShapeCase) {
       const anchor = "+'\\n'+age)";
       if (!styled.includes(anchor))
         throw new Error('Generated trailing-line anchor missing');
-      return styled.replace(
-        anchor,
-        `+'\\n'+age+${JSON.stringify('\n' + line)})`,
-      );
+      return styled.replace(anchor, `+'\\n'+age+${tail})`);
     }
     const text =
       mode === 'decoy'
-        ? `' Generated decoy comment\\n1w'+${JSON.stringify('\n' + line)}`
-        : `' Generated decoy comment'+${JSON.stringify('\n' + line)}+'\\n1w'`;
+        ? `' Generated decoy comment\\n1w'+${tail}`
+        : `' Generated decoy comment'+${tail}+'\\n1w'`;
     const anchor = 'list.replaceChildren();';
     if (!styled.includes(anchor))
       throw new Error('Generated decoy-row anchor missing');

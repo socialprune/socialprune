@@ -127,6 +127,112 @@ test('REPLIES-1 CLI to real IndexedDB to CLI backup preserves replies and v11 up
   }
 });
 
+test('REPLY-SET-2 CLI to real IndexedDB to CLI backup keeps one complete and one incomplete marked reply set', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const workspace = await mkdtemp(join(tmpdir(), 'sp-replyset-roundtrip-'));
+  let store: SQLiteStore | undefined;
+  let target: SQLiteStore | undefined;
+  try {
+    const fixture = await writeContextFixture(workspace);
+    store = await SQLiteStore.open(join(workspace, 'socialprune.sqlite'));
+    const [first, second] = fixture.data.instagramContext!;
+    const reply = (index: number, source: 'shown' | 'answer-only') => ({
+      account: `generated_set_${index}`,
+      text: `Generated marked reply ${index}`,
+      createdAt: source === 'answer-only' ? '2026-10-02T12:00:00.000Z' : null,
+      likes: { count: null, source: null },
+      source,
+    });
+    const sets = new Map([
+      [
+        first!.itemId,
+        {
+          entries: [reply(0, 'shown'), reply(1, 'answer-only')],
+          moreCount: 0,
+          capped: false,
+          set: { state: 'complete' as const },
+        },
+      ],
+      [
+        second!.itemId,
+        {
+          entries: [reply(2, 'shown')],
+          moreCount: 3,
+          capped: false,
+          set: {
+            state: 'incomplete' as const,
+            declaredTotal: 4,
+            hiddenCount: 3,
+          },
+        },
+      ],
+    ]);
+    for (const record of [first!, second!])
+      await store.write((tx) =>
+        tx.instagramContext.fillReplies({
+          ...record,
+          replies: sets.get(record.itemId)!,
+        }),
+      );
+    let source = '';
+    for await (const bytes of createBackup(store).chunks)
+      source += new TextDecoder().decode(bytes);
+    await store.close();
+    store = undefined;
+    await waitForApp(page);
+    expect(
+      await page.evaluate(
+        (text) =>
+          window.workspace.request({
+            type: 'restore',
+            requestId: crypto.randomUUID(),
+            file: new File([text], 'generated-reply-sets.json'),
+          }),
+        source,
+      ),
+    ).toMatchObject({ type: 'opened' });
+    const backup = await page.evaluate(async () => {
+      let text = '';
+      await window.workspace.backup(async (file) => {
+        text = await file.text();
+      });
+      return text;
+    });
+    const roundtrip = JSON.parse(
+      backup,
+    ) as import('@socialprune/core').WorkspaceV2;
+    expect(roundtrip.schemaVersion).toBe(13);
+    for (const [itemId, replies] of sets)
+      expect(
+        roundtrip.instagramContext!.find((value) => value.itemId === itemId)
+          ?.replies,
+      ).toEqual(replies);
+    target = await SQLiteStore.open(join(workspace, 'roundtrip.sqlite'), {
+      initial: (
+        await import('@socialprune/core/workspace/store')
+      ).createWorkspace(),
+    });
+    await restoreBackup(
+      target,
+      (async function* () {
+        await Promise.resolve();
+        yield backup;
+      })(),
+    );
+    const restored = (await target.read(readWorkspace)).instagramContext!;
+    for (const [itemId, replies] of sets)
+      expect(
+        restored.find((value) => value.itemId === itemId)?.replies,
+      ).toEqual(replies);
+  } finally {
+    await store?.close();
+    await target?.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('C10 v5 backup restores as post and real IndexedDB v5 upgrade rewrites every context without changing other stores', async ({
   page,
 }) => {

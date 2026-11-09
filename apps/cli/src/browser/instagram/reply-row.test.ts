@@ -84,6 +84,7 @@ test.each([
       present: variant !== 'absent',
       valid: variant !== 'invalid',
       total: 1,
+      declared: 1,
       entries,
     };
     const result = await readAnswerBoundReply(

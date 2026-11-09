@@ -72,16 +72,23 @@ CREATE TRIGGER IF NOT EXISTS review_plans_no_update BEFORE UPDATE ON review_plan
 CREATE TRIGGER IF NOT EXISTS review_plans_no_delete BEFORE DELETE ON review_plans BEGIN SELECT RAISE(ABORT,'append-only'); END;
 `;
 
+// Version 13 (REPLY-SET-2): besides the one-time likes and replies fills, an
+// incomplete reply set may be replaced once by a complete observation; nothing
+// else in the record may change. A fresh layout and the 12 to 13 step create
+// this same trigger.
+const CONTEXT_UPDATE_TRIGGER = `CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
+  json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
+    (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
+    (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies')) OR
+    (json_extract(OLD.data,'$.replies.set.state') IS 'incomplete' AND json_type(NEW.data,'$.replies') IS 'object' AND IFNULL(json_extract(NEW.data,'$.replies.set.state'),'complete') IS 'complete' AND json_extract(NEW.data,'$.replies.moreCount') IS 0 AND json_extract(NEW.data,'$.replies.capped') IS 0 AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
+  )
+BEGIN SELECT RAISE(ABORT,'write-once'); END;`;
+
 const contextLayout = `
 CREATE TABLE instagram_context (
   item_id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))
 ) STRICT;
-CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
-  json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
-    (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
-    (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
-  )
-BEGIN SELECT RAISE(ABORT,'write-once'); END;
+${CONTEXT_UPDATE_TRIGGER}
 CREATE TRIGGER instagram_context_no_delete BEFORE DELETE ON instagram_context BEGIN SELECT RAISE(ABORT,'write-once'); END;
 `;
 
@@ -415,16 +422,11 @@ export class SQLiteStore implements WorkspaceStore {
                 schemaVersion: WORKSPACE_SCHEMA_VERSION,
               }),
             );
-            if (Number(version) < 12)
-              db.exec(`
-              DROP TRIGGER instagram_context_no_update;
-              CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
-                json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
-                  (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
-                  (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
-                )
-              BEGIN SELECT RAISE(ABORT,'write-once'); END;
-            `);
+            // The 11 to 12 and 12 to 13 steps end with the current trigger.
+            if (Number(version) < 13)
+              db.exec(
+                `DROP TRIGGER instagram_context_no_update;\n${CONTEXT_UPDATE_TRIGGER}`,
+              );
             db.exec(`PRAGMA user_version=${SQLITE_LAYOUT_VERSION};`);
           }
           db.exec('COMMIT;');

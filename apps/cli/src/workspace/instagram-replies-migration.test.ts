@@ -24,9 +24,9 @@ test('REPLY-SET-2 v12 to v13 copies first, changes no record, then keeps a marke
     const first = await SQLiteStore.open(path, { initial });
     await first.close();
     const raw = new DatabaseSync(path);
-    // Layout 12 and 13 share every table and trigger; only the versions move.
+    // Layout 12 differs from 13 only in the context update trigger.
     raw.exec(
-      "UPDATE meta SET data=json_set(data,'$.schemaVersion',12); PRAGMA user_version=12;",
+      `DROP TRIGGER instagram_context_no_update; ${v12Trigger} UPDATE meta SET data=json_set(data,'$.schemaVersion',12); PRAGMA user_version=12;`,
     );
     const recordBefore = String(
       raw
@@ -107,6 +107,141 @@ test('REPLY-SET-2 v12 to v13 copies first, changes no record, then keeps a marke
       ).toBe(recordBefore);
     } finally {
       copy.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// Verbatim from sqlite-store.ts at main cb63964 (layout 12).
+const v12Trigger = `CREATE TRIGGER instagram_context_no_update BEFORE UPDATE ON instagram_context WHEN
+  json_extract(OLD.data,'$.confirmedBy')!='post' OR NOT (
+    (json_type(OLD.data,'$.likes') IS NULL AND json_type(NEW.data,'$.likes') IS 'object' AND json_remove(OLD.data,'$.likes')=json_remove(NEW.data,'$.likes')) OR
+    (json_type(OLD.data,'$.replies') IS NULL AND json_type(NEW.data,'$.replies') IS 'object' AND json_remove(OLD.data,'$.replies')=json_remove(NEW.data,'$.replies'))
+  )
+BEGIN SELECT RAISE(ABORT,'write-once'); END;`;
+const triggerSql = (path: string) => {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    return String(
+      db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE name='instagram_context_no_update'",
+        )
+        .get()!.sql,
+    );
+  } finally {
+    db.close();
+  }
+};
+const shownReply = {
+  account: 'generated_reply_0',
+  text: 'Generated reply 0',
+  createdAt: null,
+  likes: { count: null, source: null },
+  source: 'shown' as const,
+};
+const incompleteSet = {
+  entries: [shownReply],
+  moreCount: 2,
+  capped: false,
+  set: { state: 'incomplete' as const, declaredTotal: 3, hiddenCount: 2 },
+};
+const completeSet = {
+  entries: [
+    shownReply,
+    ...[1, 2].map((index) => ({
+      account: `generated_reply_${index}`,
+      text: `Generated reply ${index}`,
+      createdAt: `2026-10-0${index}T12:00:00.000Z`,
+      likes: { count: null, source: null },
+      source: 'answer-only' as const,
+    })),
+  ],
+  moreCount: 0,
+  capped: false,
+  set: { state: 'complete' as const },
+};
+
+test('REPLY-SET-2 a migrated v12 and a fresh v13 workspace end with the identical trigger, which allows one replacement of an incomplete set', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sp-replyset-trigger-'));
+  try {
+    const memory = createMemoryStore();
+    const prior = await writeInstagramContextContract(memory);
+    const initial = await memory.read(readWorkspace);
+    await memory.close();
+    const fresh = join(root, 'fresh.sqlite'),
+      migrated = join(root, 'migrated.sqlite');
+    for (const path of [fresh, migrated])
+      await (await SQLiteStore.open(path, { initial })).close();
+    const raw = new DatabaseSync(migrated);
+    raw.exec(
+      `DROP TRIGGER instagram_context_no_update; ${v12Trigger} UPDATE meta SET data=json_set(data,'$.schemaVersion',12); PRAGMA user_version=12;`,
+    );
+    raw.close();
+    // SQLite keeps the statement without its final semicolon.
+    const v12Stored = triggerSql(migrated);
+    expect(v12Stored).toBe(v12Trigger.replace(/;$/, ''));
+    expect(v12Stored).not.toBe(triggerSql(fresh));
+    await (await SQLiteStore.open(migrated)).close();
+    expect(triggerSql(migrated)).toBe(triggerSql(fresh));
+    for (const path of [fresh, migrated]) {
+      const store = await SQLiteStore.open(path);
+      try {
+        await store.write((tx) =>
+          tx.instagramContext.fillReplies({ ...prior, replies: incompleteSet }),
+        );
+        // The validator refuses a re-read that changes the stored reply.
+        await expect(
+          store.write((tx) =>
+            tx.instagramContext.fillReplies({
+              ...prior,
+              replies: {
+                ...completeSet,
+                entries: [
+                  { ...shownReply, text: 'Generated changed reply' },
+                  ...completeSet.entries.slice(1),
+                ],
+              },
+            }),
+          ),
+        ).rejects.toThrow('REPLY_SET_CONFLICT');
+      } finally {
+        await store.close();
+      }
+      // The trigger alone, bypassing the validator.
+      const db = new DatabaseSync(path);
+      try {
+        const update = (data: string) =>
+          db
+            .prepare('UPDATE instagram_context SET data=? WHERE item_id=?')
+            .run(data, prior.itemId);
+        const current = () =>
+          JSON.parse(
+            String(
+              db
+                .prepare('SELECT data FROM instagram_context WHERE item_id=?')
+                .get(prior.itemId)!.data,
+            ),
+          ) as Record<string, unknown>;
+        const base = current();
+        for (const next of [
+          { ...base, replies: { ...incompleteSet, moreCount: 1 } },
+          { ...base, replies: { ...completeSet, moreCount: 1 } },
+          { ...base, replies: { ...completeSet, capped: true } },
+          { ...base, runId: 'generated-other', replies: completeSet },
+        ])
+          expect(() => update(JSON.stringify(next))).toThrow('write-once');
+        update(JSON.stringify({ ...base, replies: completeSet }));
+        expect(current().replies).toEqual(completeSet);
+        for (const next of [
+          { ...base, replies: incompleteSet },
+          { ...base, replies: { ...completeSet, entries: [shownReply] } },
+        ])
+          expect(() => update(JSON.stringify(next))).toThrow('write-once');
+      } finally {
+        db.close();
+      }
     }
   } finally {
     await rm(root, { recursive: true, force: true });

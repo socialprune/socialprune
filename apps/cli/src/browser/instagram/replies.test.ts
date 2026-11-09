@@ -905,3 +905,70 @@ test('REPLY-SET-2 without the hide-all control, or with nothing shown, the decla
       checkedReplyRows([setFocal(7)], match, rows, false, 0, [], hideAll),
     ).toEqual({ reason: 'reply-answer-incomplete' });
 });
+// G1 revision, invariant 2: complete needs a declared count equal to the
+// distinct entries, and answer-only entries need their time.
+test('REPLY-SET-2 seven answer entries without any declared count are never a complete set', () => {
+  const { child_comment_count: _count, ...undeclared } = setFocal(7);
+  void _count;
+  expect(
+    checkedReplyRows([undeclared], match, shown, false, 0, [], true),
+  ).toEqual({ reason: 'reply-answer-incomplete' });
+});
+test('REPLY-SET-2 a declared count below the distinct entries refuses as a conflict', () => {
+  expect(
+    checkedReplyRows(
+      [{ ...setFocal(7), child_comment_count: 5 }],
+      match,
+      shown,
+      false,
+      0,
+      [],
+      true,
+    ),
+  ).toEqual({ reason: 'reply-answer-conflict' });
+});
+test('REPLY-SET-2 an answer-only entry without a time is counted as hidden, so the set stays incomplete', () => {
+  const focal = setFocal(7);
+  const { created_at: _time, ...untimed } = focal.preview_child_comments[6]!;
+  void _time;
+  const checked = checkedReplyRows(
+    [
+      {
+        ...focal,
+        preview_child_comments: [
+          ...focal.preview_child_comments.slice(0, 6),
+          untimed,
+        ],
+      },
+    ],
+    match,
+    shown,
+    false,
+    0,
+    [],
+    true,
+  ) as {
+    observation: {
+      entries: { source?: string; createdAt: string | null }[];
+      moreCount: number;
+      set: unknown;
+    };
+  };
+  expect(checked.observation).toMatchObject({
+    moreCount: 1,
+    set: { state: 'incomplete', declaredTotal: 7, hiddenCount: 1 },
+  });
+  expect(
+    checked.observation.entries.filter(
+      (entry) => entry.source === 'answer-only',
+    ),
+  ).toHaveLength(1);
+  expect(
+    checked.observation.entries.every(
+      (entry) => entry.source !== 'answer-only' || entry.createdAt !== null,
+    ),
+  ).toBe(true);
+  expect(InstagramRepliesSchema.safeParse(checked.observation).success).toBe(
+    true,
+  );
+});

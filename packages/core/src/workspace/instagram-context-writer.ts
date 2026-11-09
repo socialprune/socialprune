@@ -4,6 +4,7 @@ import {
   InstagramContextSchema,
   UtcTimestampSchema,
   WORKSPACE_SCHEMA_VERSION,
+  replySetConflict,
   validateInstagramContextItem,
 } from '../model/index.ts';
 import type {
@@ -13,6 +14,10 @@ import type {
   InstagramContext,
 } from '../model/index.ts';
 import type { WorkspaceStore, WriteTransaction } from './store.ts';
+
+/** Unobserved replies, or an incomplete set awaiting its one replacement. */
+const rereadable = (replies: InstagramContext['replies']) =>
+  replies === undefined || replies.set?.state === 'incomplete';
 
 async function nextSequence(tx: WriteTransaction): Promise<number> {
   let seq = 0;
@@ -166,7 +171,8 @@ export class InstagramContextWriter {
         (input.refreshReplies
           ? (await tx.instagramContext.get(input.itemId))?.confirmedBy !==
               'post' ||
-            (await tx.instagramContext.get(input.itemId))?.replies !== undefined
+            // REPLY-SET-2: an incomplete set may be read once more.
+            !rereadable((await tx.instagramContext.get(input.itemId))?.replies)
           : input.refreshLikes
             ? (await tx.instagramContext.get(input.itemId))?.confirmedBy !==
                 'post' ||
@@ -316,16 +322,27 @@ export class InstagramContextWriter {
     attemptId: string,
     replies: NonNullable<InstagramContext['replies']>,
     at: string,
-  ): Promise<void> {
-    await this.store.write(async (tx) => {
+  ): Promise<'read' | 'reply-set-conflict'> {
+    return this.store.write(async (tx) => {
       const send = await pending(tx, attemptId);
       if (send.action !== 'refresh-comment-replies' || !send.itemId)
         throw new Error('INVALID_CONTEXT_ATTEMPT');
       const prior = await tx.instagramContext.get(send.itemId);
       if (!prior) throw new Error('INVALID_CONTEXT_RECORD');
+      // REPLY-SET-2: a re-read of an incomplete set that is not complete, or
+      // that drops or changes a stored reply, keeps the stored record.
+      if (
+        prior.replies?.set?.state === 'incomplete' &&
+        replySetConflict(prior.replies, replies)
+      ) {
+        await settlement(tx, send, 'failed', at, 'reply-set-conflict');
+        await revision(tx, at);
+        return 'reply-set-conflict';
+      }
       await tx.instagramContext.fillReplies({ ...prior, replies });
       await settlement(tx, send, 'read', at, null);
       await revision(tx, at);
+      return 'read';
     });
   }
 
@@ -382,10 +399,23 @@ export class InstagramContextWriter {
           sends.every(
             (attempt) => attempt.action === 'refresh-comment-replies',
           ),
-        confirmed = settlements.filter(
+        read = settlements.filter(
           (attempt) =>
             attempt.state === (refreshReplies ? 'read' : 'confirmed'),
         );
+      // REPLY-SET-2: an incomplete set was read but is no confirmation.
+      const incomplete = new Set<string>();
+      if (refreshReplies)
+        for (const attempt of read)
+          if (
+            attempt.itemId &&
+            (await tx.instagramContext.get(attempt.itemId))?.replies?.set
+              ?.state === 'incomplete'
+          )
+            incomplete.add(attempt.itemId);
+      const confirmed = read.filter(
+        (attempt) => !attempt.itemId || !incomplete.has(attempt.itemId),
+      );
       if (
         sends.length < 1 ||
         sends.length > 15 ||
@@ -423,7 +453,10 @@ export class InstagramContextWriter {
         )
           throw new Error('INVALID_CANARY');
         itemIds.add(send.itemId);
-        if (result.state === (refreshReplies ? 'read' : 'confirmed')) {
+        if (incomplete.has(send.itemId)) {
+          if (checkedItemIds?.includes(send.itemId))
+            throw new Error('INVALID_CANARY');
+        } else if (result.state === (refreshReplies ? 'read' : 'confirmed')) {
           const record = await tx.instagramContext.get(send.itemId);
           if (
             !record ||

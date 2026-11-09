@@ -71,7 +71,9 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
     capped = false,
     present = false,
     valid = true,
-    total = 0;
+    total = 0,
+    // REPLY-SET-2: the largest child count the answer itself declared, if any.
+    declared: number | null = null;
   const entries = new Map<string, Entry & { id: string }>();
   const add = (input: unknown) => {
     const next = entry(input);
@@ -130,7 +132,10 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
             count < 0)
         )
           valid = false;
-        else total = Math.max(total, typeof count === 'number' ? count : 0);
+        else if (typeof count === 'number') {
+          total = Math.max(total, count);
+          declared = Math.max(declared ?? 0, count);
+        }
         if (children !== undefined && !Array.isArray(children)) valid = false;
         if (Array.isArray(children)) {
           if (children.length > 100000) {
@@ -167,6 +172,7 @@ export function answerReplies(bodies: readonly unknown[], match: ReplyMatch) {
     present,
     valid,
     total: Math.max(total, entries.size),
+    declared: declared as number | null,
     entries: [...entries.values()],
   };
 }
@@ -219,9 +225,12 @@ export function replySetCounts(
  * the declared total and the hidden count. Every other mismatch still stops.
  */
 function hiddenReplySet(
-  answer: { total: number; entries: readonly (Entry & { id: string })[] },
+  answer: { declared: number; entries: readonly (Entry & { id: string })[] },
   rows: readonly ShownRow[],
 ) {
+  // G1 revision: a declared count below the distinct entries contradicts them.
+  if (answer.declared < answer.entries.length)
+    return { reason: 'reply-answer-conflict' as const };
   const claimed = new Set<string>();
   const entries: Entry[] = [];
   for (const row of rows) {
@@ -235,12 +244,14 @@ function hiddenReplySet(
       source: 'shown',
     });
   }
+  // An answer-only entry is kept only as a full entry with its time; one
+  // without a time is counted among the hidden replies instead.
   for (const value of answer.entries)
-    if (!claimed.has(value.id))
+    if (!claimed.has(value.id) && value.createdAt !== null)
       entries.push({ ...fields(value), source: 'answer-only' });
   if (entries.length > 50)
     return { reason: 'reply-answer-incomplete' as const };
-  const hiddenCount = answer.total - entries.length;
+  const hiddenCount = answer.declared - entries.length;
   return {
     observation: {
       entries,
@@ -250,7 +261,7 @@ function hiddenReplySet(
         hiddenCount > 0
           ? {
               state: 'incomplete' as const,
-              declaredTotal: answer.total,
+              declaredTotal: answer.declared,
               hiddenCount,
             }
           : { state: 'complete' as const },
@@ -288,13 +299,16 @@ export function checkedReplyRows(
   if (!answer.present) return { reason: 'reply-answer-absent' as const };
   if (answer.present && !answer.valid)
     return { reason: 'reply-answer-conflict' as const };
+  // Without a declared count the answer cannot say the set is complete, so
+  // that shape keeps the refusal below.
   if (
     !capped &&
     hideAllAfterExpansion &&
     rows.length > 0 &&
+    answer.declared !== null &&
     answer.total > rows.length
   )
-    return hiddenReplySet(answer, rows);
+    return hiddenReplySet({ ...answer, declared: answer.declared }, rows);
   if (answer.present && !capped && answer.total !== rows.length)
     return { reason: 'reply-answer-incomplete' as const };
   const entries: Entry[] = [];

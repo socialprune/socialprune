@@ -13,6 +13,7 @@ import {
   restoreBackup,
 } from '../workspace/backup.ts';
 import { validateWorkspace } from '../workspace/validation.ts';
+import { InstagramContextWriter } from '../workspace/instagram-context-writer.ts';
 
 const chunks = (text: string) =>
   (async function* () {
@@ -98,10 +99,16 @@ test('REPLIES-1 post observations fill once, survive likes fills and cannot alte
 });
 
 // REPLY-SET-2 (version 13). Generated entries only.
-const entry = (index: number, source?: 'shown' | 'answer-only') => ({
+const entry = (
+  index: number,
+  source?: 'shown' | 'answer-only',
+  createdAt: string | null = source === 'answer-only'
+    ? `2026-10-0${index + 1}T12:00:00.000Z`
+    : null,
+) => ({
   account: `generated_reply_${index}`,
   text: `Generated reply ${index}`,
-  createdAt: null,
+  createdAt,
   likes: { count: null, source: null },
   ...(source ? { source } : {}),
 });
@@ -131,6 +138,11 @@ test('REPLY-SET-2 a marked set names every source and counts every declared repl
     { ...incomplete, set: { ...incomplete.set, declaredTotal: 5 } },
     { ...incomplete, set: { ...incomplete.set, hiddenCount: 0 } },
     { ...incomplete, set: { state: 'partial' } },
+    // G1 revision: an answer-only reply is a full entry with its time.
+    {
+      ...complete,
+      entries: [entry(0, 'shown'), entry(1, 'answer-only', null)],
+    },
   ])
     expect(InstagramRepliesSchema.safeParse(value).success).toBe(false);
   expect(repliesObserved(undefined)).toBe(false);
@@ -188,3 +200,202 @@ test.each([
     }
   },
 );
+
+// G1 revision, invariant 3: one replacement of an incomplete set, only by a
+// complete read that keeps every stored reply with author, time and text.
+const replacement = {
+  entries: [
+    entry(0, 'shown'),
+    entry(1, 'shown'),
+    entry(2, 'answer-only'),
+    entry(3, 'answer-only'),
+  ],
+  moreCount: 0,
+  capped: false,
+  set: { state: 'complete' as const },
+};
+test('REPLY-SET-2 an incomplete set is replaced once by a complete read that keeps every stored reply', async () => {
+  const store = createMemoryStore();
+  try {
+    const prior = await writeInstagramContextContract(store);
+    await store.write((tx) =>
+      tx.instagramContext.fillReplies({ ...prior, replies: incomplete }),
+    );
+    const stored = { ...prior, replies: incomplete };
+    expect(() =>
+      validateInstagramRepliesFill(stored, { ...prior, replies: replacement }),
+    ).not.toThrow();
+    // An unmarked full read (every reply shown) is complete too.
+    expect(() =>
+      validateInstagramRepliesFill(stored, {
+        ...prior,
+        replies: {
+          entries: [0, 1, 2, 3].map((index) => entry(index)),
+          moreCount: 0,
+          capped: false,
+        },
+      }),
+    ).not.toThrow();
+    for (const replies of [
+      incomplete,
+      { ...replacement, entries: replacement.entries.slice(1) },
+      {
+        ...replacement,
+        entries: [
+          { ...entry(0, 'shown'), text: 'Generated changed text' },
+          ...replacement.entries.slice(1),
+        ],
+      },
+      {
+        ...replacement,
+        entries: [
+          { ...entry(0, 'shown'), account: 'generated_other' },
+          ...replacement.entries.slice(1),
+        ],
+      },
+      {
+        ...replacement,
+        entries: [
+          entry(0, 'shown', '2026-10-09T12:00:00.000Z'),
+          ...replacement.entries.slice(1),
+        ],
+      },
+      { entries: [entry(0), entry(1)], moreCount: 1, capped: false },
+      { entries: [entry(0), entry(1)], moreCount: 0, capped: true },
+    ])
+      expect(() =>
+        validateInstagramRepliesFill(stored, { ...prior, replies }),
+      ).toThrow('REPLY_SET_CONFLICT');
+    // Nothing else in the record may change with the replacement.
+    expect(() =>
+      validateInstagramRepliesFill(stored, {
+        ...prior,
+        runId: 'generated-other-run',
+        replies: replacement,
+      }),
+    ).toThrow('CONTEXT_WRITE_ONCE');
+    await store.write((tx) =>
+      tx.instagramContext.fillReplies({ ...prior, replies: replacement }),
+    );
+    expect(
+      (await store.read((tx) => tx.instagramContext.get(prior.itemId)))
+        ?.replies,
+    ).toEqual(replacement);
+    // Exactly once: a complete set, like every observation, is write-once.
+    await expect(
+      store.write((tx) =>
+        tx.instagramContext.fillReplies({ ...prior, replies: replacement }),
+      ),
+    ).rejects.toThrow('CONTEXT_WRITE_ONCE');
+    expect(() =>
+      validateInstagramRepliesFill(
+        { ...prior, replies: complete },
+        { ...prior, replies: replacement },
+      ),
+    ).toThrow('CONTEXT_WRITE_ONCE');
+  } finally {
+    await store.close();
+  }
+});
+
+// G1 revision, invariant 6: an incomplete read confirms nothing for a canary.
+test.each([false, true])(
+  'REPLY-SET-2 a refresh canary of one incomplete read is not accepted (checked=%s), a complete one is',
+  async (checked) => {
+    for (const replies of [incomplete, complete]) {
+      const store = createMemoryStore();
+      try {
+        const prior = await writeInstagramContextContract(store);
+        const writer = new InstagramContextWriter(store),
+          runId = `generated-canary-${String(checked)}`,
+          at = prior.confirmedAt,
+          attemptId = `${runId}-attempt`;
+        await writer.startRun({
+          runId,
+          accountKey: prior.accountKey,
+          planHash: 'a'.repeat(64),
+          startedAt: at,
+        });
+        await writer.sending({
+          runId,
+          attemptId,
+          itemId: prior.itemId,
+          at,
+          refreshReplies: true,
+        });
+        expect(await writer.fillReplies(attemptId, replies, at)).toBe('read');
+        await writer.endRun({
+          runId,
+          endedAt: at,
+          endReason: 'canary',
+          bodyShapes: {},
+          profileReport: {
+            accountBefore: prior.accountKey.slice('instagram:'.length),
+            accountAfter: prior.accountKey.slice('instagram:'.length),
+            extensionsBefore: 0,
+            extensionsAfter: 0,
+            changedFiles: [],
+            unexpectedRequests: [],
+          },
+        });
+        const accept = writer.acceptCanary(
+          runId,
+          at,
+          checked ? [prior.itemId] : undefined,
+        );
+        if (replies === incomplete || checked)
+          await expect(accept).rejects.toThrow('INVALID_CANARY');
+        else await expect(accept).resolves.toBeUndefined();
+      } finally {
+        await store.close();
+      }
+    }
+  },
+);
+test('REPLY-SET-2 a re-read that would drop a stored reply settles as reply-set-conflict and keeps the incomplete set', async () => {
+  const store = createMemoryStore();
+  try {
+    const prior = await writeInstagramContextContract(store);
+    await store.write((tx) =>
+      tx.instagramContext.fillReplies({ ...prior, replies: incomplete }),
+    );
+    const writer = new InstagramContextWriter(store),
+      runId = 'generated-conflict',
+      at = prior.confirmedAt,
+      attemptId = `${runId}-attempt`;
+    await writer.startRun({
+      runId,
+      accountKey: prior.accountKey,
+      planHash: 'b'.repeat(64),
+      startedAt: at,
+    });
+    await writer.sending({
+      runId,
+      attemptId,
+      itemId: prior.itemId,
+      at,
+      refreshReplies: true,
+    });
+    expect(
+      await writer.fillReplies(
+        attemptId,
+        { ...replacement, entries: replacement.entries.slice(1) },
+        at,
+      ),
+    ).toBe('reply-set-conflict');
+    expect(
+      (await store.read((tx) => tx.instagramContext.get(prior.itemId)))
+        ?.replies,
+    ).toEqual(incomplete);
+    const settled = [] as { state: string; code: string | null }[];
+    await store.read(async (tx) => {
+      for await (const attempt of tx.browserAttempts.iterate())
+        if (attempt.settles === attemptId) settled.push(attempt);
+    });
+    expect(settled).toMatchObject([
+      { state: 'failed', code: 'reply-set-conflict' },
+    ]);
+  } finally {
+    await store.close();
+  }
+});

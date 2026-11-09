@@ -69,6 +69,13 @@ export const InstagramRepliesSchema = z
     if (value.capped) fail('A marked reply set is never capped.');
     if (!value.entries.some((entry) => entry.source === 'shown'))
       fail('A marked reply set starts from shown replies.');
+    // A full answer-only entry carries its exact time (order item 2b).
+    if (
+      value.entries.some(
+        (entry) => entry.source === 'answer-only' && entry.createdAt === null,
+      )
+    )
+      fail('An answer-only reply needs its time.');
     if (value.set.state === 'complete') {
       if (
         value.moreCount !== 0 ||
@@ -214,7 +221,39 @@ export function validateInstagramLikesFill(
     throw new Error('CONTEXT_WRITE_ONCE');
 }
 
-/** A post's absent replies observation may be filled once, including an empty result. */
+type Replies = z.infer<typeof InstagramRepliesSchema>;
+/** Complete means every declared reply is stored: none hidden, none capped. */
+export function repliesComplete(replies: Replies): boolean {
+  return (
+    !replies.capped &&
+    replies.moreCount === 0 &&
+    (replies.set === undefined || replies.set.state === 'complete')
+  );
+}
+/**
+ * REPLY-SET-2 replacement (parent decision of 2026-11-09): an incomplete set
+ * may be replaced once, only by a complete read that keeps every stored reply
+ * with the same author, time and text. True when that does not hold.
+ */
+export function replySetConflict(prior: Replies, next: Replies): boolean {
+  if (!repliesComplete(next)) return true;
+  const left = [...next.entries];
+  for (const stored of prior.entries) {
+    const index = left.findIndex(
+      (entry) =>
+        entry.account === stored.account &&
+        entry.createdAt === stored.createdAt &&
+        entry.text === stored.text,
+    );
+    if (index < 0) return true;
+    left.splice(index, 1);
+  }
+  return false;
+}
+/**
+ * A post's absent replies observation may be filled once, including an empty
+ * result; an incomplete reply set may be replaced once by a complete one.
+ */
 export function validateInstagramRepliesFill(
   prior: InstagramContext,
   next: InstagramContext,
@@ -224,11 +263,15 @@ export function validateInstagramRepliesFill(
   const { replies: afterReplies, ...after } = next;
   if (
     prior.confirmedBy !== 'post' ||
-    beforeReplies !== undefined ||
     afterReplies === undefined ||
     canonicalJson(before) !== canonicalJson(after)
   )
     throw new Error('CONTEXT_WRITE_ONCE');
+  if (beforeReplies === undefined) return;
+  if (beforeReplies.set?.state !== 'incomplete')
+    throw new Error('CONTEXT_WRITE_ONCE');
+  if (replySetConflict(beforeReplies, afterReplies))
+    throw new Error('REPLY_SET_CONFLICT');
 }
 
 /** Only version-5 readers/migrations may supply the formerly implicit kind. */

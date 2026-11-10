@@ -1538,7 +1538,8 @@ export async function runContextWithDependencies(
             // a profile picture is never the post image.
             // IMAGE-4: a cover only from an image response the page already
             // received whose exact address is in the single qualifying
-            // object's first-media list; no new request.
+            // object's first-media list; no new request. IMAGE-5: for a
+            // video that cover comes before the poster and the media img.
             const answer = answerMedia(read.post.code, answers.bodies);
             const receivedCandidates = [
               ...new Set(
@@ -1557,6 +1558,9 @@ export async function runContextWithDependencies(
               mediaKind: media.mediaKind,
               element: media.element,
               ...(media.reason ? { missingReason: media.reason } : {}),
+              ...(media.alsoAvailable
+                ? { alsoAvailable: media.alsoAvailable }
+                : {}),
               answerDeclaresVideo: answer.declaresVideo,
               receivedCandidateImages: receivedCandidates.length,
             };

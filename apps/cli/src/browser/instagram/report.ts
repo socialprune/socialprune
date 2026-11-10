@@ -10,6 +10,7 @@ import {
   MEDIA_ELEMENTS,
   MEDIA_KINDS,
   MEDIA_MISSING_REASONS,
+  VIDEO_CANDIDATES,
 } from './media-source.ts';
 
 const count = z.number().int().nonnegative();
@@ -1187,6 +1188,8 @@ const StepImageSchema = z
     // IMAGE-4, optional.
     answerDeclaresVideo: z.boolean().nullable().optional(),
     receivedCandidateImages: count.optional(),
+    // IMAGE-5, optional: which video candidates existed, in choice order.
+    alsoAvailable: z.array(z.enum(VIDEO_CANDIDATES)).max(3).optional(),
   })
   .refine(
     (value) =>

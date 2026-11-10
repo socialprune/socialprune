@@ -353,16 +353,21 @@ export function postPage(
       ? '<video></video>'
       : variant === 'image-no-media'
         ? ''
-        : variant === 'video-answer-wrong-poster'
+        : variant === 'video-answer-wrong-poster' ||
+            variant === 'video-answer-cover-poster'
           ? `<video poster="/media/${IG_FIXTURE.other.code}.png?signature=generated-other" style="width:468px;height:300px"></video>`
-          : variant === 'video-avatar-no-poster' ||
-              variant === 'video-answer-cover' ||
-              variant === 'video-answer-only'
-            ? '<video style="width:468px;height:300px"></video>'
-            : variant === 'video-avatar-poster'
-              ? // Sized by the page as a real player is; the generated poster is 1 px.
-                `<video poster="/media/${code}.png?signature=generated-secret" style="width:468px;height:300px"></video>`
-              : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`;
+          : variant === 'video-answer-cover-img' ||
+              variant === 'video-answer-img-only'
+            ? // IMAGE-5: the player's own cover img, not in the first-media list.
+              `<video style="width:468px;height:300px"></video><img src="/media/${IG_FIXTURE.other.code}.png?signature=generated-player" alt="" style="width:468px;height:300px">`
+            : variant === 'video-avatar-no-poster' ||
+                variant === 'video-answer-cover' ||
+                variant === 'video-answer-only'
+              ? '<video style="width:468px;height:300px"></video>'
+              : variant === 'video-avatar-poster'
+                ? // Sized by the page as a real player is; the generated poster is 1 px.
+                  `<video poster="/media/${code}.png?signature=generated-secret" style="width:468px;height:300px"></video>`
+                : `<img src="/media/${code}.png?signature=generated-secret" alt="generated media">`;
   const mainDecoy =
     variant === 'image-main-decoy'
       ? '<img src="/profiles/decoy-icon.png" alt="" style="width:24px;height:24px">'
@@ -372,7 +377,7 @@ export function postPage(
   const script =
     instrumentation +
     `let expansions=0;const comment=${json(commentRow(comment, username))};function expand(event){mutate(()=>{expansions++;event.currentTarget.remove();if(expansions<3){const button=document.createElement('button');button.textContent=expansions===1?'View replies':'Load more comments';button.onclick=expand;document.querySelector('main>section:last-child').prepend(button)}else document.getElementById('comment-rows').insertAdjacentHTML('beforeend',comment)})}const load=[...document.querySelectorAll('button')].find(b=>b.textContent==='Load more comments');if(load)load.onclick=expand;
-${variant === 'video-answer-cover' ? `new Image().src=${json(`/media/${code}.png?signature=generated-secret`)};` : ''}
+${['video-answer-cover', 'video-answer-cover-img', 'video-answer-cover-poster'].includes(variant) ? `new Image().src=${json(`/media/${code}.png?signature=generated-secret`)};` : ''}
 ${variant.startsWith('own-link-') ? `setTimeout(()=>{${unsettled}},150);` : ''}
 ${variant.startsWith('expansion-link-') ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.unsettled)return;window.unsettled=true;${unsettled}},{passive:true});` : ''}
 ${['expansion-post-switch', 'expansion-kind-switch'].includes(variant) ? `document.getElementById('comments').addEventListener('wheel',()=>{if(window.switched)return;window.switched=true;const before=${json(`/${kind}/${code}`)},after=${json(variant === 'expansion-kind-switch' ? `/reel/${code}` : `/${kind}/${IG_FIXTURE.other.code}`)};mutate(()=>{for(const link of document.querySelectorAll('main a[href]'))link.setAttribute('href',link.getAttribute('href').replace(before,after));history.replaceState(null,'',after)})},{passive:true});` : ''}

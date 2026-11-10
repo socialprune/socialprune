@@ -42,15 +42,27 @@ export interface MediaArea {
     source: string | null;
   } | null;
 }
+/** IMAGE-5: the video candidates, in their choice order. */
+export const VIDEO_CANDIDATES = [
+  'answer-cover',
+  'video-poster',
+  'media-img',
+] as const;
+export type VideoCandidate = (typeof VIDEO_CANDIDATES)[number];
 export interface MediaChoice {
   source: string | null;
   mediaKind: MediaKind;
   element: MediaElement;
   reason: MediaMissingReason | null;
+  /** IMAGE-5, videos only: which video candidates existed, tokens only. */
+  alsoAvailable?: VideoCandidate[];
 }
 const PROFILE_PATH = /^\/[A-Za-z0-9_.]{1,30}\/$/u;
 
-/** Pure: a video's poster wins only when its response body was received. */
+/**
+ * Pure. IMAGE-5: for a video the answer-cover (IMAGE-4 rule 1) wins, then a
+ * poster whose response body was received, then the media area's own img.
+ */
 export function chooseMediaSource(
   area: MediaArea,
   received: (address: string) => boolean,
@@ -59,33 +71,30 @@ export function chooseMediaSource(
 ): MediaChoice {
   const base = { mediaKind: area.mediaKind };
   if (area.mediaKind === 'video') {
-    if (area.poster && received(area.poster))
-      return {
-        ...base,
-        source: area.poster,
-        element: 'video-poster',
-        reason: null,
-      };
-    if (area.image?.source)
-      return {
-        ...base,
-        source: area.image.source,
-        element: 'media-img',
-        reason: null,
-      };
-    if (answerCover)
-      return {
-        ...base,
-        source: answerCover,
-        element: 'answer-cover',
-        reason: null,
-      };
-    return {
-      ...base,
-      source: null,
-      element: 'none',
-      reason: 'video-without-poster',
+    const sources: Record<VideoCandidate, string | null> = {
+      'answer-cover': answerCover,
+      'video-poster': area.poster && received(area.poster) ? area.poster : null,
+      'media-img': area.image?.source ?? null,
     };
+    const alsoAvailable = VIDEO_CANDIDATES.filter(
+      (candidate) => sources[candidate] !== null,
+    );
+    const chosen = alsoAvailable[0];
+    return chosen
+      ? {
+          ...base,
+          source: sources[chosen],
+          element: chosen,
+          reason: null,
+          alsoAvailable,
+        }
+      : {
+          ...base,
+          source: null,
+          element: 'none',
+          reason: 'video-without-poster',
+          alsoAvailable,
+        };
   }
   if (area.image?.source)
     return {

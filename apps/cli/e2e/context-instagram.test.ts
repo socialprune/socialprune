@@ -1660,7 +1660,9 @@ test.each(IMAGE_CASES)(
   },
 );
 test.each([
-  ['video-avatar-poster', 'video', 'video-poster', null],
+  // IMAGE-5: this poster's address is the listed first-media address and was
+  // received, so the same image is now named by the answer-cover rule.
+  ['video-avatar-poster', 'video', 'answer-cover', null],
   ['video-avatar-no-poster', 'video', 'none', 'video-without-poster'],
   ['image-main-decoy', 'image', 'media-img', null],
 ] as const)(
@@ -1728,8 +1730,13 @@ test.each([
   ['video-answer-wrong-poster', false, true, 'video-poster', null, true, 0],
   ['video-avatar-no-poster', false, false, 'none', null, false, 0],
   ['image-no-media', false, false, 'none', null, false, 0],
+  // IMAGE-5: the listed received cover comes before the player img and a
+  // received unlisted poster; without it the player img fails as before.
+  ['video-answer-cover-img', true, true, 'answer-cover', null, true, 1],
+  ['video-answer-img-only', false, true, 'media-img', null, true, 0],
+  ['video-answer-cover-poster', true, true, 'answer-cover', null, true, 1],
 ] as const)(
-  'IMAGE-4 canary on %s',
+  'IMAGE-4/5 canary on %s',
   async (
     variant,
     passes,
@@ -1775,6 +1782,19 @@ test.each([
         answerDeclaresVideo: declares,
         receivedCandidateImages: received,
       });
+      const alsoAvailable = {
+        'video-answer-cover': ['answer-cover'],
+        'video-answer-only': [],
+        'video-answer-wrong-poster': ['video-poster'],
+        'video-avatar-no-poster': [],
+        'image-no-media': undefined,
+        'video-answer-cover-img': ['answer-cover', 'media-img'],
+        'video-answer-img-only': ['media-img'],
+        'video-answer-cover-poster': ['answer-cover', 'video-poster'],
+      }[variant];
+      expect(step.image['alsoAvailable']).toEqual(alsoAvailable);
+      if (stored)
+        expect(step.fields.image.agrees).toBe(element === 'answer-cover');
       expect(step.fields.image.notApplicable ?? null).toBe(notApplicable);
       // Not applicable is never image agreement.
       if (notApplicable) expect(step.fields.image.agrees).toBe(false);

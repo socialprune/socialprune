@@ -52,6 +52,7 @@ test('IMAGE-4 an answer cover is used only for a video without poster or media i
     source: cover,
     element: 'answer-cover',
     reason: null,
+    alsoAvailable: ['answer-cover'],
   });
   expect(chooseMediaSource(video, () => false, null)).toMatchObject({
     element: 'none',
@@ -66,6 +67,76 @@ test('IMAGE-4 an answer cover is used only for a video without poster or media i
   ).toMatchObject({ element: 'none', reason: 'no-media-image' });
 });
 
+test('IMAGE-5 a video takes the answer-cover first, then a received poster, then the media img', () => {
+  const poster =
+    'https://generated.cdninstagram.com/generated-poster.jpg?sig=p';
+  const player =
+    'https://generated.cdninstagram.com/generated-player.jpg?sig=m';
+  const area = {
+    mediaKind: 'video' as const,
+    poster,
+    image: { element: 'media-img' as const, source: player },
+  };
+  expect(chooseMediaSource(area, () => true, cover)).toEqual({
+    mediaKind: 'video',
+    source: cover,
+    element: 'answer-cover',
+    reason: null,
+    alsoAvailable: ['answer-cover', 'video-poster', 'media-img'],
+  });
+  expect(chooseMediaSource(area, () => true, null)).toEqual({
+    mediaKind: 'video',
+    source: poster,
+    element: 'video-poster',
+    reason: null,
+    alsoAvailable: ['video-poster', 'media-img'],
+  });
+  // An unreceived poster is no candidate.
+  expect(chooseMediaSource(area, () => false, null)).toEqual({
+    mediaKind: 'video',
+    source: player,
+    element: 'media-img',
+    reason: null,
+    alsoAvailable: ['media-img'],
+  });
+  expect(
+    chooseMediaSource({ ...area, poster: null }, () => false, cover),
+  ).toMatchObject({
+    source: cover,
+    element: 'answer-cover',
+    alsoAvailable: ['answer-cover', 'media-img'],
+  });
+  expect(
+    chooseMediaSource(
+      { mediaKind: 'video', poster: null, image: null },
+      () => false,
+      null,
+    ),
+  ).toEqual({
+    mediaKind: 'video',
+    source: null,
+    element: 'none',
+    reason: 'video-without-poster',
+    alsoAvailable: [],
+  });
+  // Images and carousels never use the answer-cover and carry no list.
+  for (const mediaKind of ['image', 'carousel'] as const) {
+    const choice = chooseMediaSource(
+      {
+        mediaKind,
+        poster: null,
+        image: {
+          element: mediaKind === 'image' ? 'media-img' : 'carousel-slide',
+          source: player,
+        },
+      },
+      () => true,
+      cover,
+    );
+    expect(choice.source).toBe(player);
+    expect(choice).not.toHaveProperty('alsoAvailable');
+  }
+});
 const field = (agrees: boolean): FieldCheck => ({
   found: true,
   agrees,

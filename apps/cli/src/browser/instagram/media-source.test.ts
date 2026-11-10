@@ -12,12 +12,14 @@ test('IMAGE-3 a video poster wins only when its response body arrived', () => {
     source: poster,
     element: 'video-poster',
     reason: null,
+    alsoAvailable: ['video-poster'],
   });
   expect(chooseMediaSource(video, () => false)).toEqual({
     mediaKind: 'video',
     source: null,
     element: 'none',
     reason: 'video-without-poster',
+    alsoAvailable: [],
   });
   expect(
     chooseMediaSource(

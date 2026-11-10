@@ -241,6 +241,12 @@ export type Variant =
   | 'video-answer-cover'
   | 'video-answer-only'
   | 'video-answer-wrong-poster'
+  // IMAGE-5: a video whose media area holds its own player img (not listed),
+  // with the listed cover received, without it, or with a received unlisted
+  // poster and the listed cover received.
+  | 'video-answer-cover-img'
+  | 'video-answer-img-only'
+  | 'video-answer-cover-poster'
   // IMAGE-4: an image post whose page shows no media at all.
   | 'image-no-media'
   | 'unavailable'

@@ -2972,15 +2972,16 @@ test('C34 IG-18 main run skips one opaque list without reopening and records the
   }
 }, 120000);
 
-test('C-list main run stops on retained rows without a reopen or a not-listed settlement', async () => {
-  const h = await harness('success', 3);
+test('C-list RETAIN-1 main run re-reads retained rows once without a reopen and keeps the comment manual as list-repeated', async () => {
+  // The last generated item is the prior canary's, so one comment is planned.
+  const h = await harness('success', 2);
   await fullRunReady(h);
   const before = await h.store.read((tx) => records(tx.instagramContext));
   h.fake.listFreshness('retained');
   try {
-    expect(await h.start('no-canary')).toMatchObject({
-      code: 'LIST_TIMEOUT',
-      token: 'list-timeout',
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 0,
+      steps: 2,
     });
     const journal = await h.store.browserJournal();
     expect(
@@ -2990,14 +2991,165 @@ test('C-list main run stops on retained rows without a reopen or a not-listed se
     const run = journal.runs.find(
       (run) => run.runId !== 'generated-prior-canary',
     )!;
-    expect(run.pageOpens).toBe(1);
+    expect(run.pageOpens).toBe(2);
+    expect(
+      journal.attempts.find(
+        (attempt) => attempt.runId === run.runId && attempt.settles !== null,
+      ),
+    ).toMatchObject({ state: 'not-listed', code: 'list-repeated' });
     expect(await h.store.read((tx) => records(tx.instagramContext))).toEqual(
       before,
     );
+    const { report } = await retryReport(h);
+    expect(report).toMatchObject({
+      listRepeated: 1,
+      retries: { used: 0, entries: [] },
+      steps: [
+        {
+          result: 'list-timeout',
+          repeatedResult: { freshRead: false, outcome: 'list-repeated' },
+        },
+        {
+          result: 'list-repeated',
+          candidates: 0,
+          confirmed: false,
+          repeatedResult: { freshRead: true, outcome: 'list-repeated' },
+        },
+      ],
+    });
   } finally {
     await h.close();
   }
-});
+}, 120000);
+// RETAIN-1: comment A's filtered list is image-only (IG-18 manual); B's
+// filtered list then shows A's very rows under another window.
+test.each([
+  ['genuine', [1, 2, 3], 'list-repeated'],
+  ['stale', [1, 2], 'candidates'],
+] as const)(
+  'RETAIN-1 a %s repeated result after a list-image-only comment gets one fresh read and the run goes on',
+  async (_name, loads, outcome) => {
+    const h = await harness('success', 4);
+    await fullRunReady(h);
+    h.setLimit(10);
+    h.fake.listFreshness('repeated', { loads });
+    try {
+      const result = await h.start('no-canary');
+      expect(result, h.notices.join('')).toMatchObject({
+        completed: outcome === 'candidates' ? 2 : 1,
+        steps: 4,
+      });
+      const journal = await h.store.browserJournal();
+      const run = journal.runs.find(
+        (run) => run.runId !== 'generated-prior-canary',
+      )!;
+      // Comments in the order the run read them.
+      const order = journal.attempts
+        .filter(
+          (attempt) => attempt.runId === run.runId && attempt.settles === null,
+        )
+        .sort((a, b) => a.seq - b.seq)
+        .map((attempt) => attempt.itemId);
+      expect(order).toHaveLength(3);
+      const settled = (index: number) =>
+        journal.attempts.find(
+          (attempt) =>
+            attempt.runId === run.runId &&
+            attempt.itemId === order[index] &&
+            attempt.settles !== null,
+        );
+      expect(settled(0)).toMatchObject({
+        state: 'not-listed',
+        code: 'list-image-only',
+      });
+      if (outcome === 'candidates')
+        expect(settled(1)).toMatchObject({ state: 'confirmed' });
+      else
+        expect(settled(1)).toMatchObject({
+          state: 'not-listed',
+          code: 'list-repeated',
+        });
+      expect(settled(2)).toMatchObject({ state: 'confirmed' });
+      // A, B, B's fresh read and C: the fresh read is one counted step.
+      expect(run.pageOpens).toBe(4);
+      expect(h.waits).not.toContain(60000);
+      const { report, text } = await retryReport(h);
+      const steps = report['steps'] as Record<string, unknown>[];
+      expect(steps[1]).toMatchObject({
+        result: 'list-timeout',
+        repeatedResult: { freshRead: false, outcome },
+      });
+      expect(steps[2]).toMatchObject({
+        repeatedResult: { freshRead: true, outcome },
+        ...(outcome === 'list-repeated' ? { result: 'list-repeated' } : {}),
+      });
+      expect(report).toMatchObject({
+        listRepeated: outcome === 'list-repeated' ? 1 : 0,
+        rows: { imageOnlySkipped: 1 },
+        retries: { used: 0, entries: [] },
+      });
+      for (const value of [h.plan.handle, ...Object.values(IG_FIXTURE.other)])
+        expect(text).not.toContain(value);
+      // A list-repeated comment leaves the next plan.
+      if (outcome === 'list-repeated') {
+        const plan = await planContext(h.store, h.plan.accountKey);
+        expect(plan.rows.some((row) => row.item.id === order[1])).toBe(false);
+      }
+    } finally {
+      await h.close();
+    }
+  },
+  240000,
+);
+test('RETAIN-1 a canary with the repeated result still stops with LIST_TIMEOUT', async () => {
+  const h = await harness('success', 5);
+  h.fake.listFreshness('repeated');
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'LIST_TIMEOUT',
+      token: 'list-timeout',
+    });
+    const journal = await h.store.browserJournal();
+    expect(
+      journal.attempts.some((attempt) => attempt.code === 'list-repeated'),
+    ).toBe(false);
+    const run = journal.runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as { steps: Record<string, unknown>[]; listRepeated: number };
+    expect(report.listRepeated).toBe(0);
+    expect(report.steps.some((step) => 'repeatedResult' in step)).toBe(false);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test('RETAIN-1 a notice on the fresh read stops at once', async () => {
+  const h = await harness('success', 4);
+  await fullRunReady(h);
+  h.setLimit(10);
+  h.fake.listFreshness('repeated', { loads: [1, 2, 3], noticeLoad: 3 });
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'PLATFORM_CHECK',
+    });
+    const journal = await h.store.browserJournal();
+    const run = journal.runs.find(
+      (run) => run.runId !== 'generated-prior-canary',
+    )!;
+    expect(run.pageOpens).toBe(3);
+    expect(
+      journal.attempts.some((attempt) => attempt.code === 'list-repeated'),
+    ).toBe(false);
+    expect(
+      h.fake.requests.filter((request) => /^\/(p|reel)\//.test(request.path)),
+    ).toEqual([]);
+  } finally {
+    await h.close();
+  }
+}, 180000);
 
 test('realfix handle-only image row is counted, never a candidate, and both list probes run', async () => {
   const h = await harness('success', 1, 1000);

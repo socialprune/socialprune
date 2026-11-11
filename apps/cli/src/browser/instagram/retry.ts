@@ -9,6 +9,19 @@ export class FilteredListTimeout extends ContextStop {
   }
 }
 /**
+ * RETAIN-1: a filtered empty read whose rows positively repeat an earlier
+ * result (the rows before Apply, or the previous step's rows under another
+ * window), with the filter applied and read back. It stops exactly like
+ * today's LIST_TIMEOUT unless a main run re-reads the comment once.
+ */
+export class RepeatedListResult extends ContextStop {
+  readonly account: string;
+  constructor(account: string) {
+    super('LIST_TIMEOUT', 'list-timeout');
+    this.account = account;
+  }
+}
+/**
  * Matches X fill's main-run, one-per-target, three-per-run retry shape.
  * RETRY-2: a raw browser timeout in the list stage (`list-raw`) or in post-open
  * before a validated post target exists (`post-no-target`) retries the whole

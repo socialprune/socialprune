@@ -7,6 +7,8 @@ import type { RowSignatureDiagnostic } from './report.ts';
 export function listFreshness() {
   const key = randomBytes(32);
   let previous: { rows: string; window: string } | undefined;
+  // RETAIN-1: the comparison base the last finished read was compared with.
+  let prior: { rows: string; window: string } | undefined;
   let before: string | null = null;
   let current: string | null = null;
   let window: string | null = null;
@@ -70,8 +72,16 @@ export function listFreshness() {
           previous && window ? previous.window !== window : null,
       };
     },
+    /**
+     * RETAIN-1: a fresh re-read of the same comment compares with the same
+     * base its first read did, never with that first read itself.
+     */
+    rewind() {
+      previous = prior;
+    },
     finish() {
       // Unknown observations break the comparison chain; never reuse an older step.
+      prior = previous;
       previous =
         current !== null && window !== null
           ? { rows: current, window }

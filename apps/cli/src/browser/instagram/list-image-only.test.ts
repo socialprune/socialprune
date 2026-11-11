@@ -108,6 +108,23 @@ test('C-list equal rows for a repeated date window are not mistaken for a stale 
   ).toBe(true);
 });
 
+test('RETAIN-1 repeatedResult is a closed boolean and outcome token', () => {
+  for (const outcome of ['candidates', 'list-repeated', 'other'])
+    for (const freshRead of [true, false])
+      expect(
+        ContextStepReportSchema.safeParse({
+          repeatedResult: { freshRead, outcome },
+        }).success,
+      ).toBe(true);
+  for (const repeatedResult of [
+    { freshRead: true, outcome: 'generated-other' },
+    { freshRead: 'yes', outcome: 'other' },
+    { freshRead: true, outcome: 'other', rows: 3 },
+  ])
+    expect(ContextStepReportSchema.safeParse({ repeatedResult }).success).toBe(
+      false,
+    );
+});
 test('C-list missing or stale row signatures must not classify an opaque list as manual', () => {
   for (const rowSignature of [
     undefined,

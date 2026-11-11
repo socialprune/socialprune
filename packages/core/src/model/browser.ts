@@ -276,12 +276,15 @@ export const BrowserAttemptSchema = z
           !['text', 'time', 'owner', 'several', 'not-shown'].includes(
             attempt.code ?? '',
           )) ||
-        (attempt.code === 'list-image-only' &&
+        (['list-image-only', 'list-repeated'].includes(attempt.code ?? '') &&
           attempt.state !== 'not-listed') ||
         (attempt.state === 'not-listed' &&
-          !['no-row', 'window-full', 'list-image-only'].includes(
-            attempt.code ?? '',
-          )) ||
+          ![
+            'no-row',
+            'window-full',
+            'list-image-only',
+            'list-repeated',
+          ].includes(attempt.code ?? '')) ||
         (attempt.state === 'failed' && !attempt.code)
       )
         ctx.addIssue({

@@ -236,6 +236,8 @@ export const RunJournalCodeSchema = z.enum([
   'no-row',
   'window-full',
   'list-image-only',
+  // RETAIN-1: a filtered result repeated on a fresh read; stays manual.
+  'list-repeated',
   'post-unavailable',
   'comment-not-shown',
   'deferred-not-rendered',

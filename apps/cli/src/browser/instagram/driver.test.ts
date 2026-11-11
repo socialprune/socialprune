@@ -227,6 +227,7 @@ test.each([true, false])(
     const freshness = {
       beforeApply: () => Promise.resolve(),
       inspect: () => Promise.resolve({} as never),
+      rewind: () => {},
       finish: () => {},
     };
     try {

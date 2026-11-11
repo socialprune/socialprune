@@ -73,3 +73,39 @@ test('C-list signature retains only equality booleans across steps, not text, la
   });
   expect(JSON.stringify(first)).not.toMatch(/Generated|2025|[a-f0-9]{64}/);
 });
+test('RETAIN-1 rewind lets a fresh read compare with the same base as the first read', async () => {
+  let content = 'Generated A rows';
+  const page = {
+    locator: () => ({
+      allInnerTexts: () => Promise.resolve([content]),
+      nth: () => ({
+        getAttribute: () => Promise.resolve('Generated label'),
+        locator: () => ({ all: () => Promise.resolve([]) }),
+      }),
+    }),
+  } as unknown as Page;
+  const tracker = listFreshness();
+  const read = async (window: readonly [string, string], rows: string) => {
+    content = 'Generated unfiltered';
+    await tracker.beforeApply(page, window);
+    content = rows;
+    const signature = await tracker.inspect(page);
+    tracker.finish();
+    return signature;
+  };
+  await read(['2025-01-01', '2025-01-03'], 'Generated A rows');
+  const first = await read(['2025-01-02', '2025-01-04'], 'Generated A rows');
+  expect(first).toMatchObject({
+    sameAsPreviousStep: true,
+    previousWindowDifferent: true,
+  });
+  // Without rewind the same window compares with the first read itself.
+  tracker.rewind();
+  expect(await read(['2025-01-02', '2025-01-04'], 'Generated A rows')).toEqual(
+    first,
+  );
+  // After the fresh read the chain continues from that fresh read.
+  expect(
+    await read(['2025-01-02', '2025-01-04'], 'Generated A rows'),
+  ).toMatchObject({ sameAsPreviousStep: true, previousWindowDifferent: false });
+});

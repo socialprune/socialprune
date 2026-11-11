@@ -130,6 +130,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     | 'readable-retained'
     | 'readable-repeated'
     | undefined;
+  let listFreshnessOptions: { loads?: readonly number[]; noticeLoad?: number } =
+    {};
+  let listFreshnessServed = 0;
   let likesCase: 'answer' | 'dom' | 'unknown' | undefined;
   const candidates = new Map<
     number,
@@ -392,7 +395,27 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             );
           }
         }
-        if (listFreshness) {
+        // RETAIN-1: optionally only on the listed 1-based list loads, and a
+        // generated notice in the filtered list on one load.
+        const freshnessLoad = listFreshness ? ++listFreshnessServed : 0;
+        if (
+          listFreshness &&
+          listFreshnessOptions.noticeLoad === freshnessLoad
+        ) {
+          const anchor = 'for(const [index,row]of chosen.entries())';
+          if (!html.includes(anchor))
+            throw new Error('Generated freshness notice anchor missing');
+          html = html.replace(
+            anchor,
+            "if(start&&end){const notice=document.createElement('p');notice.textContent='Something went wrong';(document.querySelector('main')||document.body).append(notice);}" +
+              anchor,
+          );
+        }
+        if (
+          listFreshness &&
+          (!listFreshnessOptions.loads ||
+            listFreshnessOptions.loads.includes(freshnessLoad))
+        ) {
           const opaque = listFreshness.startsWith('readable-')
             ? "function opaque(){document.querySelector('#generated-outside-row')?.remove();list.replaceChildren();emptyImageButton();const decoration=document.createElement('div');decoration.id='generated-outside-row';decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.innerHTML='<img>';decoration.append(document.createTextNode(handle+' Generated unrelated comment 1w'));document.body.append(decoration);}"
             : "function opaque(){list.replaceChildren();const decoration=document.createElement('div');decoration.setAttribute('role','button');decoration.setAttribute('aria-label','Generated fixed readable decoration');decoration.append(document.createTextNode(other.username+' '+other.text+' 1w'));list.append(decoration);for(let i=0;i<3;i++)emptyImageButton();}";
@@ -767,8 +790,13 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     setImageCase(value: ImageCaseName) {
       imageShape = value;
     },
-    listFreshness(value: NonNullable<typeof listFreshness>) {
+    listFreshness(
+      value: NonNullable<typeof listFreshness>,
+      options: { loads?: readonly number[]; noticeLoad?: number } = {},
+    ) {
       listFreshness = value;
+      listFreshnessOptions = options;
+      listFreshnessServed = 0;
     },
     likes(value: 'answer' | 'dom' | 'unknown') {
       likesCase = value;

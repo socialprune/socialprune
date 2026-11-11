@@ -855,7 +855,9 @@ test('journal producer codes and model action/state enums are all admitted, neve
     ...nodes(run, ts.isStringLiteral)
       .map((node) => node.text)
       .filter((value) =>
-        ['no-row', 'window-full', 'list-image-only'].includes(value),
+        ['no-row', 'window-full', 'list-image-only', 'list-repeated'].includes(
+          value,
+        ),
       ),
   );
   assertCovered(codes, RunJournalCodeSchema.options);

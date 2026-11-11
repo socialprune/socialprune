@@ -1301,6 +1301,13 @@ export const ContextStepReportSchema = z
       })
       .optional(),
     memory: MemorySampleSchema.optional(),
+    // RETAIN-1: closed; freshRead marks the comment's single fresh re-read.
+    repeatedResult: z
+      .strictObject({
+        freshRead: z.boolean(),
+        outcome: z.enum(['candidates', 'list-repeated', 'other']),
+      })
+      .optional(),
     listTimeout: ListTimeoutDiagnosticSchema.optional(),
     rowSignature: RowSignatureDiagnosticSchema.optional(),
     listRegions: ListRegionsSchema.optional(),

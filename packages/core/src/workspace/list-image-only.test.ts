@@ -33,6 +33,25 @@ test('IG-18 list-image-only is closed and belongs only to a manual not-listed co
   ).toBe(false);
 });
 
+test('RETAIN-1 list-repeated is closed and belongs only to a manual not-listed comment attempt', () => {
+  const attempt = {
+    seq: 2,
+    attemptId: 'generated-repeated',
+    runId: 'generated-run',
+    itemId: 'instagram:generated',
+    action: 'confirm-comment',
+    state: 'not-listed',
+    settles: 'generated-send',
+    at: '2026-11-11T00:00:00.000Z',
+    code: 'list-repeated',
+  };
+  expect(BrowserAttemptSchema.safeParse(attempt).success).toBe(true);
+  expect(RunJournalCodeSchema.safeParse('list-repeated').success).toBe(true);
+  for (const state of ['confirmed', 'unconfirmed', 'sending', 'failed'])
+    expect(BrowserAttemptSchema.safeParse({ ...attempt, state }).success).toBe(
+      false,
+    );
+});
 test('IG-18 manual settlement survives portable restore but cannot later confirm the comment', async () => {
   const store = createMemoryStore(),
     target = createMemoryStore(),

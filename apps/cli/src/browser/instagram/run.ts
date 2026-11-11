@@ -100,7 +100,11 @@ import {
   checkPage,
   outsideProfilePaths,
 } from './selectors.ts';
-import { PostOpenRetries, POST_REOPEN_WAIT_MS } from './retry.ts';
+import {
+  PostOpenRetries,
+  POST_REOPEN_WAIT_MS,
+  RepeatedListResult,
+} from './retry.ts';
 import type { PostRetry } from './report.ts';
 import type { RowReadCounts } from './selectors.ts';
 import { listFreshness } from './list-freshness.ts';
@@ -281,6 +285,8 @@ export async function runContextWithDependencies(
     deferred: { notRendered: number; consecutiveMax: number };
     // CHECK-SKIP-1: canary steps the page's own answer could not check.
     canaryUnchecked: number;
+    // RETAIN-1: comments settled as list-repeated after their fresh read.
+    listRepeated: number;
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -309,6 +315,7 @@ export async function runContextWithDependencies(
     rows: { emptySkipped: 0, otherName: 0, imageOnlySkipped: 0 },
     deferred: { notRendered: 0, consecutiveMax: 0 },
     canaryUnchecked: 0,
+    listRepeated: 0,
     recycling: { intervalSteps: PAGE_RECYCLE_INTERVAL, count: 0, events: [] },
     runtime: {
       pageCrashes: 0,
@@ -919,6 +926,20 @@ export async function runContextWithDependencies(
           'owner' | 'time' | 'text' | 'several' | 'not-shown' = 'not-shown';
         let reopening: ReturnType<PostOpenRetries['begin']> = null;
         let reopenTarget: string | null = null;
+        // RETAIN-1: the first read's entry while this comment's single fresh
+        // read is pending, and the fresh read's own entry for its step report.
+        type RepeatedResult = {
+          freshRead: boolean;
+          outcome: 'candidates' | 'list-repeated' | 'other';
+        };
+        let repeatedRead: RepeatedResult | null = null;
+        let freshResult: RepeatedResult | null = null;
+        const settleFresh = (outcome: RepeatedResult['outcome']) => {
+          if (!repeatedRead) return;
+          repeatedRead.outcome = outcome;
+          freshResult = { freshRead: true, outcome };
+          repeatedRead = null;
+        };
         let abortOuter = false;
         const reportStart = report.steps.length;
         reading = stepDeadline((elapsedMs, budgetMs) => {
@@ -1061,7 +1082,7 @@ export async function runContextWithDependencies(
               options.now().toISOString(),
               options.plan.timeZone,
             );
-            if (candidate === 0 && !reopening) commentsTried++;
+            if (candidate === 0 && !reopening && !repeatedRead) commentsTried++;
             steps++;
             used++;
             batch++;
@@ -1194,6 +1215,7 @@ export async function runContextWithDependencies(
                   options.plan.timeZone,
                 );
                 listReady();
+                settleFresh(result.candidates.length ? 'candidates' : 'other');
                 return result;
               } catch (caught) {
                 if (
@@ -1240,8 +1262,54 @@ export async function runContextWithDependencies(
                     confirmed: false,
                     result: 'list-timeout',
                   };
+                  // RETAIN-1: in a main run a positively repeated filtered
+                  // result gets one fresh read of the same comment, without
+                  // the 60 s wait and outside the shared reopen budget; the
+                  // loop's pace, day-cap, run-limit and page checks run first.
+                  const mainRepeat =
+                    caught instanceof RepeatedListResult &&
+                    !options.plan.canary &&
+                    !diagnosticRun;
+                  if (mainRepeat && repeatedRead) {
+                    // The fresh read repeats it too: a genuine result.
+                    settleFresh('list-repeated');
+                    return {
+                      candidates: [],
+                      account: caught.account,
+                      rowCount: 0,
+                      emptySkipped: rowCounts.emptySkipped,
+                      otherName: rowCounts.otherName,
+                      scrollLoads: 0,
+                      full: false,
+                      oldestWithinWeek: null,
+                      manualReason: 'list-repeated' as const,
+                    };
+                  }
                   report.steps.push(timeoutStep);
                   activeStep = timeoutStep;
+                  if (
+                    mainRepeat &&
+                    used < pace.perDay &&
+                    steps < max &&
+                    dateInZone(options.now(), options.plan.timeZone) === day
+                  ) {
+                    if (reopening && reopening.stage !== 'post-open') {
+                      reopening.outcome = 'timeout';
+                      reopening = null;
+                    }
+                    repeatedRead = { freshRead: false, outcome: 'other' };
+                    Object.assign(timeoutStep, {
+                      repeatedResult: repeatedRead,
+                    });
+                    freshness.rewind();
+                    await sampleMemory();
+                    return null;
+                  }
+                  if (repeatedRead) {
+                    settleFresh('other');
+                    Object.assign(timeoutStep, { repeatedResult: freshResult });
+                    freshResult = null;
+                  }
                 } else if (
                   options.order?.value.listDiagnostic &&
                   (rowCounts.diagnostic || rowCounts.rowShape)
@@ -1270,6 +1338,11 @@ export async function runContextWithDependencies(
                       rowCounts.afterDialogSameAsAfterApply,
                     listWindow: rowCounts.windowDiagnostic,
                   });
+                }
+                if (repeatedRead) {
+                  // Any other outcome of the fresh read takes today's paths.
+                  settleFresh('other');
+                  freshResult = null;
                 }
                 if (await reopenList(caught)) return null;
                 throw caught;
@@ -1343,7 +1416,9 @@ export async function runContextWithDependencies(
               ...(list.manualReason
                 ? { listTimeout: rowCounts.listTimeout }
                 : {}),
+              ...(freshResult ? { repeatedResult: freshResult } : {}),
             };
+            freshResult = null;
             report.steps.push(stepReport);
             if (list.manualReason) await checkpoint();
             activeStep = stepReport;
@@ -1381,7 +1456,10 @@ export async function runContextWithDependencies(
               settled = true;
               stepReport.result =
                 list.manualReason ?? (list.full ? 'window-full' : 'no-row');
-              if (list.manualReason) report.rows.imageOnlySkipped++;
+              if (list.manualReason === 'list-image-only')
+                report.rows.imageOnlySkipped++;
+              else if (list.manualReason === 'list-repeated')
+                report.listRepeated++;
               break;
             }
             stage = 'post-open';

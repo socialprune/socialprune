@@ -1010,6 +1010,7 @@
   "desktop.token.no-row": "No matching comment row was found.",
   "desktop.token.window-full": "The inspected list window ended before the comment was found.",
   "desktop.token.list-image-only": "The inspected list showed image elements without readable comment text. This comment remains for manual review.",
+  "desktop.token.list-repeated": "The filtered list showed the same entries as before, also when read again. This comment remains for manual review.",
   "desktop.token.post-unavailable": "The post was unavailable while adding likes. Recheck only when you select it.",
   "desktop.token.comment-not-shown": "The confirmed comment was not shown while adding likes. Recheck only when you select it.",
   "desktop.token.canary-unchecked": "Instagram's own answer could not check this comment, so the trial run skipped it. The main run reads it again.",

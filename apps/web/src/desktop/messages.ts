@@ -259,6 +259,7 @@ const tokenIds = [
   'desktop.token.no-row',
   'desktop.token.window-full',
   'desktop.token.list-image-only',
+  'desktop.token.list-repeated',
   'desktop.token.post-unavailable',
   'desktop.token.comment-not-shown',
   'desktop.token.deferred-not-rendered',

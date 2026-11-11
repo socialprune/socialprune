@@ -35,7 +35,7 @@ import {
   ListTimeoutDiagnosticSchema,
 } from './report.ts';
 import type { AccountClass, ListTimeoutDiagnostic } from './report.ts';
-import { FilteredListTimeout } from './retry.ts';
+import { FilteredListTimeout, RepeatedListResult } from './retry.ts';
 import type { MediaArea } from './media-source.ts';
 import { CONTEXT_PACE } from './pace.ts';
 import type { capturePost } from './capture.ts';
@@ -545,7 +545,8 @@ export async function loadList(
       scrollLoads,
       full,
       oldestWithinWeek,
-      manualReason: undefined as 'list-image-only' | undefined,
+      manualReason: undefined as
+        'list-image-only' | 'list-repeated' | undefined,
     };
   } catch (error) {
     if (error instanceof ContextStop && error.token === 'list-timeout') {
@@ -659,6 +660,16 @@ export async function loadList(
             signature.previousWindowDifferent === true))
       ) {
         decision.retainedResult = true;
+        // RETAIN-1: the run decides whether a main run re-reads the comment
+        // once; for every other caller this is the same LIST_TIMEOUT stop.
+        if (
+          initialAccount &&
+          filter.applied &&
+          filter.readbackObserved &&
+          filter.startMatches &&
+          filter.endMatches
+        )
+          throw new RepeatedListResult(initialAccount);
         throw new ContextStop('LIST_TIMEOUT', 'list-timeout');
       }
     }

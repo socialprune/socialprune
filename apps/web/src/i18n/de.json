@@ -1010,6 +1010,7 @@
   "desktop.token.no-row": "Keine passende Kommentarzeile wurde gefunden.",
   "desktop.token.window-full": "Der geprüfte Listenteil endete, bevor der Kommentar gefunden wurde.",
   "desktop.token.list-image-only": "Die geprüfte Liste zeigte Bildelemente ohne lesbaren Kommentartext. Der Kommentar bleibt zur manuellen Prüfung.",
+  "desktop.token.list-repeated": "Die gefilterte Liste zeigte dieselben Einträge wie zuvor, auch beim erneuten Lesen. Der Kommentar bleibt zur manuellen Prüfung.",
   "desktop.token.post-unavailable": "Der Beitrag war beim Ergänzen der Likes nicht verfügbar. Nur auf deine Auswahl erneut prüfen.",
   "desktop.token.comment-not-shown": "Der bestätigte Kommentar wurde beim Ergänzen der Likes nicht angezeigt. Nur auf deine Auswahl erneut prüfen.",
   "desktop.token.canary-unchecked": "Die eigene Antwort von Instagram konnte diesen Kommentar nicht prüfen, deshalb hat der Probelauf ihn übersprungen. Der Hauptlauf liest ihn erneut.",

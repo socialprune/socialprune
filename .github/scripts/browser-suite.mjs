@@ -38,7 +38,10 @@ export const suites = Object.freeze({
 // 3330 / 4030 s, other file 53 / 60 s. Four SHA-256 case partitions project
 // to at most 941 / 1124 s. A 1800 s bound leaves >= 676 s measured margin.
 // Two and three partitions project to 2121 and 1422 s respectively.
-export const contextShards = Object.freeze({ count: 4, minutes: 30 });
+// 2026-11-13 context 43428609307 (688 cases): four partitions reached the
+// 1800 s cap twice in one shard with 0 failures and 28 cases unrun; the other
+// three took 1504 to 1823 s of job time. Five partitions keep the same bound.
+export const contextShards = Object.freeze({ count: 5, minutes: 30 });
 export const caseKey = (file, name) => JSON.stringify([file, name]);
 export function contextPartition(file, name) {
   // This existing two-case lifecycle probe shares cleanupLease and verifies the

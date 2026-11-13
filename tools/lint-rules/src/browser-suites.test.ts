@@ -516,7 +516,9 @@ test('the standalone workflow keeps other suites serial and case-shards context 
   expect(workflow.match(/-t "\^PLACEMENT startup with"\n/g)).toHaveLength(2);
   // The X deletion run's placement and restored-tab probe on Edge, in both.
   expect(workflow.match(/-t "\^PLACEMENT X deletion"\n/g)).toHaveLength(2);
-  expect(workflow).toContain('shard: [1, 2, 3, 4]');
+  // SHARD-5 (2026-11-13): five context shards, matrix and runner agree.
+  expect(runner.contextShards).toEqual({ count: 5, minutes: 30 });
+  expect(workflow).toContain('shard: [1, 2, 3, 4, 5]');
   expect(workflow).toContain('needs: [select, context]');
   expect(workflow).toContain(
     'node .github/scripts/browser-suite.mjs aggregate-context context-artifacts',
@@ -561,7 +563,7 @@ test('context aggregate fails first for planted empty JUnit and a missing shard,
         JSON.stringify({
           suite: 'context',
           shard,
-          shards: 4,
+          shards: runner.contextShards.count,
           source: 'generated-source',
           state: 'passed',
           exitCode: 0,
@@ -597,7 +599,7 @@ test('context aggregate fails first for planted empty JUnit and a missing shard,
     const summary = {
       suite: 'context',
       shard: 4,
-      shards: 4,
+      shards: runner.contextShards.count,
       source: 'generated-source',
       state: 'passed',
       exitCode: 0,
@@ -652,7 +654,7 @@ async function contextAttempt(
     JSON.stringify({
       suite: 'context',
       shard,
-      shards: 4,
+      shards: runner.contextShards.count,
       source: 'generated-source',
       state,
       exitCode: state === 'passed' ? 0 : 1,
@@ -681,7 +683,7 @@ async function contextAttempt(
 test('context rerun selects the latest attempt per shard, ignoring an earlier failure and counting every case once', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'sp-context-rerun-'));
   try {
-    for (let shard = 1; shard <= 4; shard++)
+    for (let shard = 1; shard <= runner.contextShards.count; shard++)
       await contextAttempt(
         directory,
         shard,
@@ -702,6 +704,7 @@ test('context rerun selects the latest attempt per shard, ignoring an earlier fa
       { shard: 2, attempt: 1, artifact: 'browser-suite-context-2-1' },
       { shard: 3, attempt: 1, artifact: 'browser-suite-context-3-1' },
       { shard: 4, attempt: 1, artifact: 'browser-suite-context-4-1' },
+      { shard: 5, attempt: 1, artifact: 'browser-suite-context-5-1' },
     ]);
     expect(result.shards.reduce((sum, shard) => sum + shard.cases, 0)).toBe(40);
     await contextAttempt(directory, 1, 10);
@@ -721,7 +724,7 @@ test.each(['failed', 'timed-out'])(
   async (state) => {
     const directory = await mkdtemp(resolve(tmpdir(), 'sp-context-rerun-red-'));
     try {
-      for (let shard = 1; shard <= 4; shard++)
+      for (let shard = 1; shard <= runner.contextShards.count; shard++)
         await contextAttempt(directory, shard, 1);
       await contextAttempt(directory, 1, 2, state);
       await expect(
@@ -738,7 +741,7 @@ test('context rerun rejects duplicate shard-attempt identities even when superse
     resolve(tmpdir(), 'sp-context-rerun-duplicate-'),
   );
   try {
-    for (let shard = 1; shard <= 4; shard++)
+    for (let shard = 1; shard <= runner.contextShards.count; shard++)
       await contextAttempt(directory, shard, 1);
     // Different directory spellings carry the same numeric shard/attempt pair.
     await contextAttempt(directory, 1, '01');
@@ -772,7 +775,7 @@ test('context rerun checks the selected latest JUnit and never reuses an older c
     resolve(tmpdir(), 'sp-context-rerun-report-'),
   );
   try {
-    for (let shard = 1; shard <= 4; shard++)
+    for (let shard = 1; shard <= runner.contextShards.count; shard++)
       await contextAttempt(directory, shard, 1);
     const folder = await contextAttempt(directory, 1, 2);
     const report = resolve(folder, 'junit.xml');

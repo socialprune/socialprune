@@ -3,7 +3,7 @@ import type { Item, InstagramContext } from '@socialprune/core';
 import type { WorkspaceStore } from '@socialprune/core/workspace/store';
 import { CliError } from '../../cli/errors.ts';
 import { plainLines } from '../../cli/output.ts';
-import { CONTEXT_WARNING } from './copy.ts';
+import { contextWarning } from './copy.ts';
 import { dateInZone } from '../pace.ts';
 import { contextPace, contextEstimate, paceSummary } from './pace.ts';
 import type { ContextPace } from './pace.ts';
@@ -321,6 +321,7 @@ export function contextSummary(
   plan: ContextPlan,
   lang: 'en' | 'de' = 'en',
   pace: ContextPace = contextPace(undefined, plan.canary),
+  humanInput = false,
 ) {
   return {
     dryRun: true,
@@ -340,7 +341,7 @@ export function contextSummary(
     estimateMs: contextEstimate(plan.rows.length, pace),
     pace: paceSummary(pace),
     timeZone: plan.timeZone,
-    warning: CONTEXT_WARNING[lang],
+    warning: contextWarning(lang, humanInput),
   };
 }
 export function contextList(plan: ContextPlan): string {

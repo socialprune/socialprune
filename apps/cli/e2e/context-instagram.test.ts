@@ -80,6 +80,10 @@ import {
 import { sortControlStructure } from '../src/browser/instagram/sort-structure.ts';
 import { CONTEXT_PORTS, CONTEXT_ORIGINS } from './fake-instagram/ports.ts';
 import {
+  HumanInput,
+  useHumanInput,
+} from '../src/browser/instagram/human-input.ts';
+import {
   filterList,
   openCandidate,
   productionContext,
@@ -1434,6 +1438,7 @@ async function harness(
         paceFields['listDiagnostic'] === true
           ? [fake.listWheelDelta, IG_FIXTURE.scroll.listClientHeight]
           : fake.listWheelDelta,
+        paceFields['humanInput'] === true,
       );
     })().finally(() => {
       diagnostics.close();
@@ -3243,6 +3248,262 @@ test.each([
   },
   180000,
 );
+// HUMAN-1: every page posts its whole press list each time; keep each
+// page's longest snapshot (a snapshot that is not an extension starts a page).
+function presses(h: Awaited<ReturnType<typeof harness>>) {
+  const pages: NonNullable<(typeof h.fake.events)[number]['presses']>[] = [];
+  let current: NonNullable<(typeof h.fake.events)[number]['presses']> = [];
+  for (const event of h.fake.events) {
+    const next = event.presses ?? [];
+    const extends_ =
+      next.length >= current.length &&
+      JSON.stringify(next.slice(0, current.length)) === JSON.stringify(current);
+    if (!extends_) pages.push(current);
+    current = next;
+  }
+  pages.push(current);
+  return pages.flat();
+}
+/**
+ * Run-clock times at which each announced pace wait ended. The harness clock
+ * advances only through the run's sleeps, so their running sum is the clock.
+ */
+function paceWaitEnds(h: Awaited<ReturnType<typeof harness>>) {
+  const ends: number[] = [];
+  let consumed = 0;
+  h.afterWait((ms) => {
+    const announced = [
+      ...h.notices.join('').matchAll(/Wait: pace-wait; expectedMs=(\d+)/gu),
+    ].map((match) => Number(match[1]));
+    if (announced.length > consumed && announced[consumed] === ms) {
+      consumed++;
+      ends.push(h.waits.reduce((sum, value) => sum + value, 0));
+    }
+    return Promise.resolve();
+  });
+  return ends;
+}
+type HumanStep = {
+  humanInput?: {
+    clicks: number;
+    fallbacks: number;
+    pathMsBucket: Record<string, number>;
+    scrollBursts: number;
+    extraWaitMsBucket: Record<string, number>;
+  };
+  confirmed: boolean;
+};
+test('HUMAN-1 an ordered main run moves along paths, presses off-centre with a short hold and waits at least the ordered pace', async () => {
+  const h = await harness('success', 4);
+  await fullRunReady(h);
+  h.setLimit(10);
+  h.setPace({ secondsPerStep: 10, humanInput: true });
+  const paceEnds = paceWaitEnds(h);
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 3,
+      steps: 3,
+    });
+    await expect.poll(() => presses(h).length).toBeGreaterThan(3);
+    const recorded = presses(h);
+    for (const press of recorded) {
+      expect(press.moves).toBeGreaterThan(4);
+      // The hold is measured in the page, so allow its timer granularity.
+      expect(press.holdMs).toBeGreaterThanOrEqual(55);
+      expect(press.holdMs).toBeLessThanOrEqual(400);
+      expect(press.fx).toBeGreaterThanOrEqual(0.19);
+      expect(press.fx).toBeLessThanOrEqual(0.81);
+      expect(press.fy).toBeGreaterThanOrEqual(0.19);
+      expect(press.fy).toBeLessThanOrEqual(0.81);
+    }
+    expect(
+      new Set(recorded.map((press) => `${press.fx},${press.fy}`)).size,
+    ).toBeGreaterThan(1);
+    expect(
+      recorded.some(
+        (press) =>
+          Math.abs(press.fx! - 0.5) > 0.01 || Math.abs(press.fy! - 0.5) > 0.01,
+      ),
+    ).toBe(true);
+    // Step starts lie at least the ordered 10 s apart, in-step pauses lie
+    // between 300 and 1,500 ms.
+    const { report, text } = await retryReport(h);
+    // A pace wait ends where the next step starts on the run clock.
+    expect(paceEnds.length).toBeGreaterThanOrEqual(2);
+    const gaps = paceEnds.slice(1).map((at, index) => at - paceEnds[index]!);
+    for (const gap of gaps) {
+      expect(gap).toBeGreaterThanOrEqual(10000);
+      expect(gap).toBeLessThanOrEqual(15000 + 1);
+    }
+    expect(h.waits.some((ms) => ms >= 300 && ms <= 1500)).toBe(true);
+    expect(report['humanInput']).toBe(true);
+    const steps = report['steps'] as HumanStep[];
+    for (const step of steps) {
+      expect(step.humanInput!.clicks).toBeGreaterThan(0);
+      expect(step.humanInput!.fallbacks).toBe(0);
+    }
+    const totals = report['humanInputTotals'] as NonNullable<
+      HumanStep['humanInput']
+    >;
+    // A row press navigates away, so the page may not report every press.
+    expect(totals.clicks).toBeGreaterThanOrEqual(recorded.length);
+    expect(
+      Object.values(totals.extraWaitMsBucket).reduce((a, b) => a + b, 0),
+    ).toBeGreaterThan(0);
+    expect(text).not.toMatch(/"x"|"y"|selector|aria-label/u);
+    expect(h.notices.join('')).toContain(
+      'In this run SocialPrune moves the pointer along curved paths',
+    );
+    expect(h.notices.join('')).not.toContain(
+      'SocialPrune does not hide that a program is acting in your browser.',
+    );
+  } finally {
+    await h.close();
+  }
+}, 240000);
+test('HUMAN-1 without the flag the recorded input and the warning stay as today', async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  h.setLimit(10);
+  h.setPace({ secondsPerStep: 10 });
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 2,
+    });
+    await expect.poll(() => presses(h).length).toBeGreaterThan(3);
+    for (const press of presses(h)) {
+      expect(press.moves).toBeLessThanOrEqual(2);
+      expect(press.holdMs).toBeLessThan(55);
+      expect(press.fx).toBeCloseTo(0.5, 1);
+      expect(press.fy).toBeCloseTo(0.5, 1);
+    }
+    // Without the flag no pace wait exceeds the ordered 10 s and no
+    // in-step pause of 300 to 1,500 ms is added.
+    for (const ms of h.waits.filter((ms) => ms !== 60000))
+      expect(ms).toBeLessThanOrEqual(10000);
+    expect(h.waits.filter((ms) => ms >= 300 && ms <= 1500)).toEqual([]);
+    const { report } = await retryReport(h);
+    expect(report['humanInput']).toBe(false);
+    expect(report).not.toHaveProperty('humanInputTotals');
+    for (const step of report['steps'] as HumanStep[])
+      expect(step).not.toHaveProperty('humanInput');
+    expect(h.notices.join('')).toContain(
+      'SocialPrune does not hide that a program is acting in your browser.',
+    );
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test("HUMAN-1 a target the hit check rejects falls back to today's click and counts it", async () => {
+  const h = await harness('success', 3);
+  await fullRunReady(h);
+  h.setLimit(10);
+  h.setPace({ secondsPerStep: 10, humanInput: true });
+  let restore: (() => void) | undefined;
+  h.afterLaunch(() => {
+    const prototype = Object.getPrototypeOf(
+      h.context!.pages()[0]!.locator('body'),
+    ) as Locator;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- The spy calls the original with its actual locator as this.
+    const original = prototype.hover;
+    const hover = vi.spyOn(prototype, 'hover').mockImplementation(function (
+      this: Locator,
+      ...args: Parameters<Locator['hover']>
+    ) {
+      if (args[0]?.trial)
+        return Promise.reject(new Error('Generated covered target'));
+      return original.call(this, ...args);
+    });
+    restore = () => hover.mockRestore();
+    return Promise.resolve();
+  });
+  try {
+    expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+      completed: 2,
+    });
+    const { report } = await retryReport(h);
+    const totals = report['humanInputTotals'] as NonNullable<
+      HumanStep['humanInput']
+    >;
+    expect(totals.clicks).toBe(0);
+    expect(totals.fallbacks).toBeGreaterThan(4);
+    // Each fallback is today's click: no hold, at the centre.
+    for (const press of presses(h)) expect(press.holdMs).toBeLessThan(55);
+  } finally {
+    restore?.();
+    await h.close();
+  }
+}, 180000);
+test.each([
+  { variant: 'login', code: 'PLATFORM_CHECK' },
+  { variant: 'account-mismatch', code: 'ACCOUNT_MISMATCH' },
+  { variant: '429', code: 'PLATFORM_CHECK' },
+] as const)(
+  'HUMAN-1 $variant on the second list still stops at once',
+  async ({ variant, code }) => {
+    const h = await harness('success', 4);
+    await fullRunReady(h);
+    h.setLimit(10);
+    h.setPace({ secondsPerStep: 10, humanInput: true });
+    let loads = 0;
+    h.fake.beforeList(() => {
+      if (++loads === 2) h.fake.setVariant(variant);
+      return Promise.resolve();
+    });
+    try {
+      expect(await h.start('no-canary')).toMatchObject({ code });
+      const { run } = await retryReport(h);
+      expect(run.pageOpens).toBe(2);
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).filter(
+          (record) => record.runId === run.runId,
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test('HUMAN-1 the post comment column scrolls in uneven bursts within IG-6 limits', async () => {
+  const h = await filterHarness('scroll-first');
+  const waits: number[] = [];
+  const human = new HumanInput(Math.random, () => Promise.resolve());
+  useHumanInput(h.page.context(), human);
+  try {
+    await h.page.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}`);
+    const read = await confirmOnPost(
+      h.page,
+      h.fixture.items[0]!,
+      h.fixture.items[0]!.account.handle!,
+      {
+        ...productionContext,
+        origin: h.fake.origin,
+        sleep: async (ms) => {
+          waits.push(ms);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        },
+      },
+      () => {},
+    );
+    expect(read.result).toMatchObject({ state: 'confirmed' });
+    expect(human.totals.scrollBursts).toBe(IG_FIXTURE.scroll.first);
+    for (const ms of waits) expect(ms).toBeGreaterThanOrEqual(3000);
+    await expect
+      .poll(() => h.fake.events.at(-1)?.wheels.length ?? 0)
+      .toBeGreaterThanOrEqual(2);
+    const wheels = h.fake.events.at(-1)!.wheels;
+    expect(wheels.length).toBeLessThanOrEqual(5 * IG_FIXTURE.scroll.first);
+    for (const wheel of wheels) {
+      expect(wheel.area).toBe('post-comments');
+      expect(wheel.y).toBeGreaterThanOrEqual(60);
+      expect(wheel.y).toBeLessThanOrEqual(180);
+    }
+    assertRecordedEvents(h.fake.events, IG_FIXTURE.scroll.delta, true);
+  } finally {
+    await h.close();
+  }
+}, 120000);
 test('RETAIN-1 a canary with the repeated result still stops with LIST_TIMEOUT', async () => {
   const h = await harness('success', 5);
   h.fake.listFreshness('repeated');

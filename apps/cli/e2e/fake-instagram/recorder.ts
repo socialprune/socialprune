@@ -7,10 +7,18 @@ export interface RecordedEvents {
   clicks: string[];
   added: string[];
   wheels: { area: string; x: number; y: number }[];
+  /** HUMAN-1: pointer moves before each press, hold and relative position. */
+  presses?: {
+    moves: number;
+    holdMs: number;
+    fx: number | null;
+    fy: number | null;
+  }[];
 }
 export function assertRecordedEvents(
   events: readonly RecordedEvents[],
   listWheelDelta: number | readonly number[] = IG_FIXTURE.scroll.delta,
+  humanInput = false,
 ): void {
   for (const event of events) {
     expect(event.inputs).toEqual([]);
@@ -24,7 +32,11 @@ export function assertRecordedEvents(
             ? [listWheelDelta]
             : listWheelDelta
           : [IG_FIXTURE.scroll.delta];
-      expect(allowed).toContain(wheel.y);
+      // HUMAN-1: post-column bursts use 60 to 180 px per event.
+      if (humanInput && wheel.area === 'post-comments') {
+        expect(wheel.y).toBeGreaterThanOrEqual(60);
+        expect(wheel.y).toBeLessThanOrEqual(180);
+      } else expect(allowed).toContain(wheel.y);
     }
     for (const click of event.clicks)
       expect(IG_FIXTURE.allowedClicks as readonly string[]).toContain(click);

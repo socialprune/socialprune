@@ -14,6 +14,18 @@ import {
 } from './media-source.ts';
 
 const count = z.number().int().nonnegative();
+/** HUMAN-1: counts only; no coordinates, selectors, texts or addresses. */
+export const HumanCountsSchema = z.strictObject({
+  clicks: count,
+  fallbacks: count,
+  pathMsBucket: z.strictObject({ lt300: count, lt700: count, lt1500: count }),
+  scrollBursts: count,
+  extraWaitMsBucket: z.strictObject({
+    lt1000: count,
+    lt5000: count,
+    lt16000: count,
+  }),
+});
 /** ROW-TRAIL-1/2: closed classes of a list row's line after its age. */
 export const ROW_TRAILING_CLASSES = [
   'edited',
@@ -1306,6 +1318,8 @@ export const ContextStepReportSchema = z
       .strictObject({ list: count, avatar: count, other: count })
       .optional(),
     imagesLoaded: count.optional(),
+    // HUMAN-1: closed counts of the less mechanical input in this step.
+    humanInput: HumanCountsSchema.optional(),
     // RETAIN-1: closed; freshRead marks the comment's single fresh re-read.
     repeatedResult: z
       .strictObject({

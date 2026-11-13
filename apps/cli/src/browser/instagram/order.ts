@@ -18,6 +18,9 @@ export const ContextOrderSchema = z.strictObject({
   stepsPerDay: z.number().int().min(1).max(600).optional(),
   batchPause: z.boolean().default(true),
   acceptCanary: z.boolean().default(false),
+  // HUMAN-1 (ADR-028 amendment 2026-11-13): curved pointer paths, uneven
+  // scrolling and longer varying waits; this reading scope only.
+  humanInput: z.boolean().optional(),
 });
 export interface ContextOrder {
   value: z.input<typeof ContextOrderSchema> & { acceptCanary: boolean };

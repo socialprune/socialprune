@@ -73,6 +73,12 @@ import {
 import type { ImageCounts } from './network.ts';
 import { imageClassifier } from './image-filter.ts';
 import {
+  HUMAN_STEP_EXTRA_MS,
+  HumanInput,
+  useHumanInput,
+} from './human-input.ts';
+import type { HumanCounts } from './human-input.ts';
+import {
   instagramDailyCount,
   CONTEXT_PACE,
   contextPace,
@@ -219,7 +225,12 @@ export async function runContextWithDependencies(
   if (await profileInUse(options.profile))
     throw new CliError('PROFILE_INVALID');
   const before = await profileSnapshot(options.profile),
-    summary = contextSummary(options.plan, options.lang, pace);
+    summary = contextSummary(
+      options.plan,
+      options.lang,
+      pace,
+      options.order?.value.humanInput === true,
+    );
   const confirmation = await (
     options.session?.confirmation ??
     ((initial) => startConfirmation(initial, deps.port))
@@ -291,6 +302,9 @@ export async function runContextWithDependencies(
     listRepeated: number;
     // REQ-1: run totals of aborted and loaded image downloads.
     images?: ImageCounts;
+    // HUMAN-1: whether the written order asked for it, and its run totals.
+    humanInput: boolean;
+    humanInputTotals?: HumanCounts;
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -320,6 +334,7 @@ export async function runContextWithDependencies(
     deferred: { notRendered: 0, consecutiveMax: 0 },
     canaryUnchecked: 0,
     listRepeated: 0,
+    humanInput: false,
     recycling: { intervalSteps: PAGE_RECYCLE_INTERVAL, count: 0, events: [] },
     runtime: {
       pageCrashes: 0,
@@ -442,9 +457,14 @@ export async function runContextWithDependencies(
   // REQ-1: each step's live image counter, merged when the report is written.
   const imageCountsByStep = new WeakMap<object, ImageCounts>();
   let stepImages: ImageCounts | undefined;
+  // HUMAN-1: the same binding for the step's input counts.
+  const humanCountsByStep = new WeakMap<object, HumanCounts>();
+  let stepHuman: HumanCounts | undefined;
   const countImages = (step: object) => {
     if (stepImages && !imageCountsByStep.has(step))
       imageCountsByStep.set(step, stepImages);
+    if (stepHuman && !humanCountsByStep.has(step))
+      humanCountsByStep.set(step, stepHuman);
   };
   let cancel!: () => void;
   const cancelled = new Promise<false>((resolve) => {
@@ -486,6 +506,12 @@ export async function runContextWithDependencies(
     guard();
   };
   deps = { ...deps, sleep: (ms) => pause(ms) };
+  // HUMAN-1: in-step waits go through the run's own guarded pause.
+  const human =
+    options.order?.value.humanInput === true
+      ? new HumanInput(deps.random ?? Math.random, (ms) => pause(ms))
+      : undefined;
+  const stepBudget = (ms: number) => (human ? ms + HUMAN_STEP_EXTRA_MS : ms);
   const checkpoint = async (checkTabs = false) => {
     waitTrace.checkpoint('guard');
     guard();
@@ -697,6 +723,12 @@ export async function runContextWithDependencies(
       // image downloads it never uses; the answer in use classifies them.
       network.filterImages(imageClassifier(() => answers?.bodies ?? []));
       report.images = network.imageTotals;
+      // HUMAN-1: only under a written order that asks for it.
+      if (human) {
+        useHumanInput(context, human);
+        report.humanInput = true;
+        report.humanInputTotals = human.totals;
+      }
       pages = contextPages(context, platformStop);
       report.pages = pages.counts;
       report.windowPlacement = options.windowPlacement ?? null;
@@ -1011,6 +1043,7 @@ export async function runContextWithDependencies(
           for (let candidate = 0; candidate < 3; candidate++) {
             reading!.clear();
             stepImages = network?.beginImageStep();
+            stepHuman = human?.beginStep();
             await sampleMemory();
             postRequests?.close();
             stage = 'pace';
@@ -1061,8 +1094,12 @@ export async function runContextWithDependencies(
               }
               batch = 0;
             }
-            const wait = last + pace.intervalMs - options.now().getTime();
+            // HUMAN-1: the ordered pace plus 0 to 50 percent, never less.
+            const paceExtra = human ? human.paceExtra(pace.intervalMs) : 0;
+            const wait =
+              last + pace.intervalMs + paceExtra - options.now().getTime();
             if (wait > 0) {
+              if (human && paceExtra > 0) human.countExtraWait(paceExtra);
               options.session?.update({
                 nextStepAt: new Date(
                   options.now().getTime() + wait,
@@ -1090,10 +1127,12 @@ export async function runContextWithDependencies(
             await controls?.checkpoint(resumeChecks, waits.signal);
             stage = 'attempt';
             reading!.begin(
-              readingStepBudget(
-                deps.responseMs,
-                deps.pace,
-                options.order?.value.listDiagnostic === true,
+              stepBudget(
+                readingStepBudget(
+                  deps.responseMs,
+                  deps.pace,
+                  options.order?.value.listDiagnostic === true,
+                ),
               ),
             );
             await writer.step(
@@ -1123,10 +1162,12 @@ export async function runContextWithDependencies(
             stage = 'list-read';
             phase(
               'list-open',
-              readingStepBudget(
-                deps.responseMs,
-                deps.pace,
-                options.order?.value.listDiagnostic === true,
+              stepBudget(
+                readingStepBudget(
+                  deps.responseMs,
+                  deps.pace,
+                  options.order?.value.listDiagnostic === true,
+                ),
               ),
             );
             // RETRY-2: one reopen of the whole comment from a fresh list for a
@@ -1486,9 +1527,11 @@ export async function runContextWithDependencies(
             }
             stage = 'post-open';
             const postBudget = postReadingBudget(deps.responseMs, deps.pace);
-            const phaseBudget = options.plan.refreshReplies
-              ? postBudget.budgetMs
-              : readingStepBudget(deps.responseMs, deps.pace);
+            const phaseBudget = stepBudget(
+              options.plan.refreshReplies
+                ? postBudget.budgetMs
+                : readingStepBudget(deps.responseMs, deps.pace),
+            );
             phase('post-open', phaseBudget);
             activeReady = { postMs: 0 };
             stepReport.ready = activeReady;
@@ -2319,19 +2362,21 @@ export async function runContextWithDependencies(
             ...(report.runDeadline ? { runDeadline: report.runDeadline } : {}),
           }),
           steps: report.steps.map((step) => {
-            const images =
-              step && typeof step === 'object'
-                ? imageCountsByStep.get(step)
-                : undefined;
-            return ContextStepReportSchema.parse(
-              images
+            const key = step && typeof step === 'object' ? step : undefined;
+            const images = key ? imageCountsByStep.get(key) : undefined,
+              humanCounts = key ? humanCountsByStep.get(key) : undefined;
+            return ContextStepReportSchema.parse({
+              ...(step as object),
+              ...(images
                 ? {
-                    ...(step as object),
                     imagesAborted: { ...images.imagesAborted },
                     imagesLoaded: images.imagesLoaded,
                   }
-                : step,
-            );
+                : {}),
+              ...(humanCounts
+                ? { humanInput: structuredClone(humanCounts) }
+                : {}),
+            });
           }),
           ...(report.cause
             ? { cause: ContextCauseSchema.parse(report.cause) }

@@ -65,6 +65,12 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       clicks: string[];
       added: string[];
       wheels: { area: string; x: number; y: number }[];
+      presses?: {
+        moves: number;
+        holdMs: number;
+        fx: number | null;
+        fy: number | null;
+      }[];
     }[] = [];
   let beforeNavigation: (() => Promise<void>) | undefined;
   const postVariants = new Map<number, Variant>();

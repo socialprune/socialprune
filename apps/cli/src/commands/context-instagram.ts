@@ -245,7 +245,12 @@ export const contextInstagramCommand = buildCommand({
       if (diagnosticControl && order?.value.listDiagnostic !== true)
         throw new CliError('CONTEXT_ORDER_INVALID');
       const pace = contextPace(order, plan.canary);
-      const data = contextSummary(plan, flags.lang, pace),
+      const data = contextSummary(
+          plan,
+          flags.lang,
+          pace,
+          order?.value.humanInput === true,
+        ),
         text = contextList(plan);
       if (flags.dryRun) {
         if (flags.list) {

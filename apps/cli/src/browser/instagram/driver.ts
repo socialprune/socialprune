@@ -75,6 +75,8 @@ export interface ContextDependencies {
   policy: NetworkPolicy;
   launch(profile: string, executable: string): Promise<BrowserContext>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  /** HUMAN-1: random source for pointer paths and waits; tests inject one. */
+  random?: () => number;
   capture?: typeof capturePost;
   navigated?(kind: ReadyKind, elapsedMs: number): void;
   accountObserved?(this: void, value: AccountClass): void;

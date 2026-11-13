@@ -21,6 +21,27 @@ export const CONTEXT_WARNING = {
   en: "Instagram's rules do not allow this kind of automation. Instagram can lock or suspend your account for it, even though SocialPrune goes slowly and stops at the first problem. This run only reads. It sorts and filters your comments list, opens the posts and expands their comments in your signed-in Instagram window, and keeps what Instagram shows. SocialPrune does not hide that a program is acting in your browser. Use it only for your own account, and only if you accept this.",
   de: 'Die Regeln von Instagram erlauben diese Art von Automatisierung nicht. Instagram kann dein Konto dafür sperren oder einschränken, auch wenn SocialPrune langsam vorgeht und beim ersten Problem anhält. Dieser Lauf liest nur. Er sortiert und filtert deine Kommentarliste, öffnet die Beiträge und klappt ihre Kommentare auf, in deinem angemeldeten Instagram-Fenster, und speichert, was Instagram anzeigt. SocialPrune verbirgt nicht, dass ein Programm in deinem Browser handelt. Nutze es nur für dein eigenes Konto und nur, wenn du das in Kauf nimmst.',
 } as const;
+/** HUMAN-1: the sentence that replaces the "does not hide" one. */
+const HUMAN_SENTENCE = {
+  en: [
+    'SocialPrune does not hide that a program is acting in your browser.',
+    'In this run SocialPrune moves the pointer along curved paths and varies its waits on purpose, so its input looks less mechanical. The marks by which a browser shows that a program drives it stay as they are.',
+  ],
+  de: [
+    'SocialPrune verbirgt nicht, dass ein Programm in deinem Browser handelt.',
+    'In diesem Lauf bewegt SocialPrune den Mauszeiger absichtlich in Bögen und wartet unterschiedlich lange, damit die Eingaben weniger maschinell wirken. Die Kennzeichen, an denen ein Browser zeigt, dass ein Programm ihn steuert, bleiben unverändert.',
+  ],
+} as const;
+export function contextWarning(
+  lang: BrowserLanguage,
+  humanInput = false,
+): string {
+  if (!humanInput) return CONTEXT_WARNING[lang];
+  const [today, human] = HUMAN_SENTENCE[lang];
+  if (!CONTEXT_WARNING[lang].includes(today))
+    throw new Error('Reading warning sentence missing');
+  return CONTEXT_WARNING[lang].replace(today, human);
+}
 export const CONTEXT_STEPS = {
   en: "Open your comments list in Instagram's Your activity, sort and filter it by date, open the posts your comments are on and expand their comments. No typing, likes, replies, follows, selection or deletion. Keep each confirmed post's account, caption, date, first image and a screenshot. Each opened page goes into this profile's history. Instagram's pages fill its cache, and Instagram may change its cookies and site data.",
   de: 'Deine Kommentarliste unter Deine Aktivitäten auf Instagram öffnen, sortieren und nach Datum filtern, die Beiträge deiner Kommentare öffnen und ihre Kommentare aufklappen. Keine Eingaben, Likes, Antworten, neuen Abonnements, Auswahl oder Löschungen. Konto, Bildunterschrift, Datum, erstes Bild und ein kleines Bildschirmfoto jedes bestätigten Beitrags behalten. Jede geöffnete Seite erscheint im Verlauf dieses Profils. Instagrams Seiten füllen seinen Cache; Instagram kann Cookies und Websitedaten ändern.',

@@ -15,6 +15,7 @@ import {
   trailingLineFeatures,
 } from './row-shape.ts';
 import { mediaAreaFromSnapshot } from './media-source.ts';
+import { humanInputFor } from './human-input.ts';
 import type { MediaArea } from './media-source.ts';
 
 export const SECOND_SOURCE_KEYS = Object.freeze({
@@ -69,6 +70,32 @@ export async function clickAllowed(
   else throw new ContextStop('UNEXPECTED_ACTION', 'unexpected-action');
   if ((await locator.count()) !== 1 || !(await locator.isVisible()))
     throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'filter-control');
+  // HUMAN-1: only reading runs whose written order sets humanInput register
+  // an input; the allow-list and page checks above ran first either way.
+  const human = humanInputFor(page);
+  if (human) {
+    await human.pause();
+    before();
+    await checkPage(page);
+    if (
+      await human.click(page, locator, () => {
+        before();
+        dispatched?.();
+      })
+    )
+      return;
+    // Today's click; it may navigate, so the box is read before it.
+    const box = await locator.boundingBox({ timeout: 5000 }).catch(() => null);
+    before();
+    dispatched?.();
+    await locator.click({ timeout: 5000 });
+    if (box)
+      human.placed(page, {
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+      });
+    return;
+  }
   before();
   dispatched?.();
   await locator.click({ timeout: 5000 });
@@ -936,6 +963,12 @@ export async function scrollPostComments(
         continue;
       const box = await ancestors.nth(index).boundingBox();
       if (!box || box.width <= 0 || box.height <= 0) return false;
+      // HUMAN-1: the same column, reached along a path, in an uneven burst.
+      const human = humanInputFor(page);
+      if (human) {
+        await human.wheelBurst(page, box, before);
+        return true;
+      }
       before();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       before();

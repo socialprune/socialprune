@@ -70,6 +70,8 @@ import {
   observePageMemory,
   COMMENTS_PATH,
 } from './network.ts';
+import type { ImageCounts } from './network.ts';
+import { imageClassifier } from './image-filter.ts';
 import {
   instagramDailyCount,
   CONTEXT_PACE,
@@ -287,6 +289,8 @@ export async function runContextWithDependencies(
     canaryUnchecked: number;
     // RETAIN-1: comments settled as list-repeated after their fresh read.
     listRepeated: number;
+    // REQ-1: run totals of aborted and loaded image downloads.
+    images?: ImageCounts;
     runtime: RuntimeReport;
     retries: ReturnType<PostOpenRetries['summary']>;
     memory?: ReturnType<ReturnType<typeof observePageMemory>['summary']>;
@@ -435,6 +439,13 @@ export async function runContextWithDependencies(
       report.cause = contextCause(caught, runId, at, steps);
   };
   const profileNames: string[] = [];
+  // REQ-1: each step's live image counter, merged when the report is written.
+  const imageCountsByStep = new WeakMap<object, ImageCounts>();
+  let stepImages: ImageCounts | undefined;
+  const countImages = (step: object) => {
+    if (stepImages && !imageCountsByStep.has(step))
+      imageCountsByStep.set(step, stepImages);
+  };
   let cancel!: () => void;
   const cancelled = new Promise<false>((resolve) => {
     cancel = () => resolve(false);
@@ -682,6 +693,10 @@ export async function runContextWithDependencies(
         platformStop,
         (page) => (pages ? pages.allowed(page) : Promise.resolve(true)),
       );
+      // REQ-1: every reading, canary, refresh and diagnostic run skips the
+      // image downloads it never uses; the answer in use classifies them.
+      network.filterImages(imageClassifier(() => answers?.bodies ?? []));
+      report.images = network.imageTotals;
       pages = contextPages(context, platformStop);
       report.pages = pages.counts;
       report.windowPlacement = options.windowPlacement ?? null;
@@ -949,7 +964,10 @@ export async function runContextWithDependencies(
               ? report.steps.at(-1)
               : { result: 'step-deadline', confirmed: false }
           ) as Record<string, unknown>;
-          if (!report.steps.includes(step)) report.steps.push(step);
+          if (!report.steps.includes(step)) {
+            countImages(step);
+            report.steps.push(step);
+          }
           step['result'] = 'step-deadline';
           const stages = [
             'attempt',
@@ -992,6 +1010,7 @@ export async function runContextWithDependencies(
             network = stepNetwork;
           for (let candidate = 0; candidate < 3; candidate++) {
             reading!.clear();
+            stepImages = network?.beginImageStep();
             await sampleMemory();
             postRequests?.close();
             stage = 'pace';
@@ -1285,6 +1304,7 @@ export async function runContextWithDependencies(
                       manualReason: 'list-repeated' as const,
                     };
                   }
+                  countImages(timeoutStep);
                   report.steps.push(timeoutStep);
                   activeStep = timeoutStep;
                   if (
@@ -1338,6 +1358,7 @@ export async function runContextWithDependencies(
                       rowCounts.afterDialogSameAsAfterApply,
                     listWindow: rowCounts.windowDiagnostic,
                   });
+                  countImages(report.steps.at(-1)!);
                 }
                 if (repeatedRead) {
                   // Any other outcome of the fresh read takes today's paths.
@@ -1419,6 +1440,7 @@ export async function runContextWithDependencies(
               ...(freshResult ? { repeatedResult: freshResult } : {}),
             };
             freshResult = null;
+            countImages(stepReport);
             report.steps.push(stepReport);
             if (list.manualReason) await checkpoint();
             activeStep = stepReport;
@@ -2296,9 +2318,21 @@ export async function runContextWithDependencies(
             runWaitTrace: waitTrace.summary(),
             ...(report.runDeadline ? { runDeadline: report.runDeadline } : {}),
           }),
-          steps: report.steps.map((step) =>
-            ContextStepReportSchema.parse(step),
-          ),
+          steps: report.steps.map((step) => {
+            const images =
+              step && typeof step === 'object'
+                ? imageCountsByStep.get(step)
+                : undefined;
+            return ContextStepReportSchema.parse(
+              images
+                ? {
+                    ...(step as object),
+                    imagesAborted: { ...images.imagesAborted },
+                    imagesLoaded: images.imagesLoaded,
+                  }
+                : step,
+            );
+          }),
           ...(report.cause
             ? { cause: ContextCauseSchema.parse(report.cause) }
             : {}),

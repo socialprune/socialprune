@@ -1301,6 +1301,11 @@ export const ContextStepReportSchema = z
       })
       .optional(),
     memory: MemorySampleSchema.optional(),
+    // REQ-1: closed counts of image downloads aborted per class and loaded.
+    imagesAborted: z
+      .strictObject({ list: count, avatar: count, other: count })
+      .optional(),
+    imagesLoaded: count.optional(),
     // RETAIN-1: closed; freshRead marks the comment's single fresh re-read.
     repeatedResult: z
       .strictObject({

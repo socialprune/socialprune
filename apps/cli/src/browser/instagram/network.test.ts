@@ -147,6 +147,143 @@ test.each([
     }
   },
 );
+test('REQ-1 only GET image loads on image hosts reach the filter; aborts and loads are counted per step and run', async () => {
+  let routeHandler!: (route: Route) => Promise<void>;
+  const context = Object.assign(new EventEmitter(), {
+    route: (_: string, handler: typeof routeHandler) => {
+      routeHandler = handler;
+      return Promise.resolve();
+    },
+    routeWebSocket: () => Promise.resolve(),
+  });
+  let pageUrl = 'https://www.instagram.com/your_activity/interactions/comments';
+  const page = { url: () => pageUrl } as unknown as Page;
+  const network = await guardInstagramNetwork(
+    context as unknown as BrowserContext,
+    'http://127.0.0.1:4582',
+    () => Promise.resolve(),
+    {
+      platform: () => true,
+      image: (url) => url.includes('cdninstagram'),
+    },
+    undefined,
+    undefined,
+    () => Promise.resolve(true),
+  );
+  const decisions: string[] = [];
+  network.filterImages((page, image) => {
+    decisions.push(image);
+    if (page.includes('/your_activity/')) return 'list';
+    return image.includes('avatar') ? 'avatar' : 'load';
+  });
+  const send = async (url: string, resourceType: string, method = 'GET') => {
+    const abort = vi.fn().mockResolvedValue(undefined),
+      proceed = vi.fn().mockResolvedValue(undefined);
+    await routeHandler({
+      request: () => ({
+        url: () => url,
+        method: () => method,
+        headers: () => ({}),
+        postData: () => '',
+        resourceType: () => resourceType,
+        isNavigationRequest: () => resourceType === 'document',
+        frame: () => ({ page: () => page }),
+      }),
+      abort,
+      continue: proceed,
+    } as unknown as Route);
+    return abort.mock.calls.length ? abort.mock.calls[0] : 'continued';
+  };
+  const cdn = 'https://generated.cdninstagram.com';
+  try {
+    const step = network.beginImageStep();
+    expect(await send(`${cdn}/thumb.jpg`, 'image')).toEqual([
+      'blockedbyclient',
+    ]);
+    // Documents, scripts, fetch/XHR, graphql, wbloks and video never filter.
+    for (const [url, type] of [
+      [
+        'https://www.instagram.com/your_activity/interactions/comments',
+        'document',
+      ],
+      ['https://static.cdninstagram.com/generated.js', 'script'],
+      ['https://www.instagram.com/graphql/query', 'fetch'],
+      ['https://www.instagram.com/api/v1/generated/', 'xhr'],
+      ['https://www.instagram.com/async/wbloks/fetch/', 'fetch'],
+      [`${cdn}/generated.mp4`, 'media'],
+      ['https://static.cdninstagram.com/generated.css', 'stylesheet'],
+    ])
+      expect(await send(url!, type!)).toBe('continued');
+    // A non-image host image is never filtered.
+    expect(await send('https://www.instagram.com/generated.png', 'image')).toBe(
+      'continued',
+    );
+    pageUrl = 'https://www.instagram.com/p/GeneratedFocal/';
+    const next = network.beginImageStep();
+    expect(await send(`${cdn}/avatar.jpg`, 'image')).toEqual([
+      'blockedbyclient',
+    ]);
+    expect(await send(`${cdn}/focal.jpg`, 'image')).toBe('continued');
+    expect(step).toEqual({
+      imagesAborted: { list: 1, avatar: 0, other: 0 },
+      imagesLoaded: 0,
+    });
+    expect(next).toEqual({
+      imagesAborted: { list: 0, avatar: 1, other: 0 },
+      imagesLoaded: 1,
+    });
+    expect(network.imageTotals).toEqual({
+      imagesAborted: { list: 1, avatar: 1, other: 0 },
+      imagesLoaded: 1,
+    });
+    expect(decisions).toHaveLength(3);
+  } finally {
+    network.dispose();
+  }
+});
+test('REQ-1 without a filter, as in deletion runs, every image loads as before', async () => {
+  let routeHandler!: (route: Route) => Promise<void>;
+  const context = Object.assign(new EventEmitter(), {
+    route: (_: string, handler: typeof routeHandler) => {
+      routeHandler = handler;
+      return Promise.resolve();
+    },
+    routeWebSocket: () => Promise.resolve(),
+  });
+  const page = {
+    url: () => 'https://www.instagram.com/your_activity/interactions/comments',
+  } as unknown as Page;
+  const network = await guardInstagramNetwork(
+    context as unknown as BrowserContext,
+    'http://127.0.0.1:4582',
+    () => Promise.resolve(),
+    { platform: () => true, image: () => true },
+    undefined,
+    undefined,
+    () => Promise.resolve(true),
+  );
+  const proceed = vi.fn().mockResolvedValue(undefined),
+    abort = vi.fn().mockResolvedValue(undefined);
+  try {
+    await routeHandler({
+      request: () => ({
+        url: () => 'https://generated.cdninstagram.com/thumb.jpg',
+        method: () => 'GET',
+        headers: () => ({}),
+        resourceType: () => 'image',
+        isNavigationRequest: () => false,
+        frame: () => ({ page: () => page }),
+      }),
+      abort,
+      continue: proceed,
+    } as unknown as Route);
+    expect(proceed).toHaveBeenCalledOnce();
+    expect(abort).not.toHaveBeenCalled();
+    expect(network.imageTotals.imagesLoaded).toBe(0);
+  } finally {
+    network.dispose();
+  }
+});
 const generatedMemoryMetrics = (used: number, nodes = 12) => [
   { name: 'JSHeapUsedSize', value: used * 1024 ** 2 },
   { name: 'JSHeapTotalSize', value: 8 * 1024 ** 2 },

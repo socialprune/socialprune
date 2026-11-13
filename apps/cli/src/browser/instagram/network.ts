@@ -377,6 +377,19 @@ export function mutation(
 export interface NetworkPolicy {
   platform(input: string): boolean;
   image(input: string): boolean;
+  /**
+   * REQ-1: image downloads a reading run may abort; defaults to `image`.
+   * Generated pages serve thumbnails and avatars from other paths.
+   */
+  imageDownload?(input: string): boolean;
+}
+/** REQ-1: closed per-step and per-run image download counts. */
+export interface ImageCounts {
+  imagesAborted: { list: number; avatar: number; other: number };
+  imagesLoaded: number;
+}
+export function emptyImageCounts(): ImageCounts {
+  return { imagesAborted: { list: 0, avatar: 0, other: 0 }, imagesLoaded: 0 };
 }
 export const productionPolicy: NetworkPolicy = {
   platform: allowedInstagramURL,
@@ -444,6 +457,15 @@ export async function guardInstagramNetwork(
   const abortHost = (url: URL) => {
     abortedHosts[url.host] = (abortedHosts[url.host] ?? 0) + 1;
   };
+  // REQ-1: set only by reading runs; deletion runs never filter images.
+  let imageFilter:
+    | ((
+        pageUrl: string,
+        imageUrl: string,
+      ) => 'list' | 'avatar' | 'other' | 'load')
+    | undefined;
+  const imageTotals = emptyImageCounts();
+  let imageStep: ImageCounts | undefined;
   await context.route('**/*', async (route) => {
     const request = route.request(),
       url = new URL(request.url());
@@ -483,6 +505,29 @@ export async function guardInstagramNetwork(
     if (failure) {
       await route.abort();
       return;
+    }
+    // REQ-1: only GET image loads to the image hosts; documents, scripts,
+    // styles, fonts, fetch/XHR, graphql, wbloks and video media pass as today.
+    if (
+      imageFilter &&
+      request.method() === 'GET' &&
+      request.resourceType() === 'image' &&
+      (policy.imageDownload ?? policy.image)(url.href)
+    ) {
+      let decision: 'list' | 'avatar' | 'other' | 'load' = 'load';
+      try {
+        decision = imageFilter(page.url(), url.href);
+      } catch {
+        decision = 'load';
+      }
+      if (decision !== 'load') {
+        imageTotals.imagesAborted[decision]++;
+        if (imageStep) imageStep.imagesAborted[decision]++;
+        await route.abort('blockedbyclient');
+        return;
+      }
+      imageTotals.imagesLoaded++;
+      if (imageStep) imageStep.imagesLoaded++;
     }
     const name = request.headers()['x-fb-friendly-name'];
     const operation = name && /^[A-Za-z0-9_]{1,256}$/.test(name) ? name : null;
@@ -738,6 +783,21 @@ export async function guardInstagramNetwork(
     },
     abortedHosts,
     requests,
+    /** REQ-1: install the reading run's image classifier. */
+    filterImages(
+      filter: (
+        pageUrl: string,
+        imageUrl: string,
+      ) => 'list' | 'avatar' | 'other' | 'load',
+    ) {
+      imageFilter = filter;
+    },
+    /** REQ-1: a fresh live counter for the step that starts now. */
+    beginImageStep(): ImageCounts {
+      imageStep = emptyImageCounts();
+      return imageStep;
+    },
+    imageTotals,
     get warning() {
       return warning;
     },

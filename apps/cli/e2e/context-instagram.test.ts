@@ -1313,6 +1313,13 @@ async function harness(
             image: (url) =>
               new URL(url).origin === fake.origin &&
               new URL(url).pathname.startsWith('/media/'),
+            // REQ-1: generated thumbnails and avatars stand in for the
+            // image hosts the production policy names.
+            imageDownload: (url) =>
+              new URL(url).origin === fake.origin &&
+              /^\/(?:media|profiles)\/|^\/thumb\.png$/u.test(
+                new URL(url).pathname,
+              ),
           },
           capture: captureOverride,
           async launch(path, executablePath) {
@@ -3100,6 +3107,141 @@ test.each([
     }
   },
   240000,
+);
+// REQ-1: image downloads the generated server actually served, by class.
+function imageDownloads(h: Awaited<ReturnType<typeof harness>>) {
+  const images = h.fake.requests.filter((request) =>
+    /^\/(?:media|profiles)\/|^\/thumb\.png$/u.test(request.path),
+  );
+  return {
+    total: images.length,
+    list: images.filter((request) => request.path === '/thumb.png').length,
+    avatars: images.filter((request) =>
+      /^\/profiles\/req-(?:owner|avatar-\d)\.png$/u.test(request.path),
+    ).length,
+    suggested: images.filter(
+      (request) => request.path === '/media/GeneratedSuggested.png',
+    ).length,
+    unlisted: images.filter(
+      (request) => request.path === '/profiles/req-unlisted.png',
+    ).length,
+    focal: images.filter((request) =>
+      new RegExp(`^/media/${IG_FIXTURE.code}\\d*\\.png$`, 'u').test(
+        request.path,
+      ),
+    ).length,
+  };
+}
+test('REQ-1 a main run downloads no list image, no listed avatar or other post, and still confirms every comment', async () => {
+  const h = await harness('success', 4);
+  await fullRunReady(h);
+  h.setLimit(10);
+  h.fake.requestBudget(true);
+  try {
+    const result = await h.start('no-canary');
+    const downloads = imageDownloads(h);
+    const { run, report, text } = await retryReport(h);
+    const steps = report['steps'] as {
+      confirmed: boolean;
+      imagesAborted?: { list: number; avatar: number; other: number };
+      imagesLoaded?: number;
+    }[];
+    // Measurement on generated pages: image downloads per reading step.
+    console.log(
+      'REQ-1 MEASURE',
+      JSON.stringify({
+        steps: steps.length,
+        downloads,
+        perStep: downloads.total / Math.max(1, steps.length),
+      }),
+    );
+    expect(result, h.notices.join('')).toMatchObject({
+      completed: 3,
+      steps: 3,
+    });
+    expect(downloads).toMatchObject({
+      list: 0,
+      avatars: 0,
+      suggested: 0,
+      focal: 3,
+    });
+    // An image the answer does not list loads as before (fail open).
+    expect(downloads.unlisted).toBe(3);
+    expect(steps).toHaveLength(3);
+    for (const step of steps) {
+      expect(step.confirmed).toBe(true);
+      expect(step.imagesAborted!.list).toBeGreaterThan(0);
+      expect(step.imagesAborted!.avatar).toBe(4);
+      expect(step.imagesAborted!.other).toBe(1);
+      expect(step.imagesLoaded).toBeGreaterThanOrEqual(2);
+    }
+    expect(report['images']).toEqual({
+      imagesAborted: {
+        list: steps.reduce((sum, step) => sum + step.imagesAborted!.list, 0),
+        avatar: 12,
+        other: 3,
+      },
+      imagesLoaded: steps.reduce((sum, step) => sum + step.imagesLoaded!, 0),
+    });
+    const stored = (
+      await h.store.read((tx) => records(tx.instagramContext))
+    ).filter((record) => record.runId === run.runId);
+    expect(stored).toHaveLength(3);
+    expect(text).not.toContain('req-avatar');
+    expect(text).not.toContain('GeneratedSuggested');
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test.each([
+  'success',
+  'video-answer-cover-img',
+  'video-answer-cover-poster',
+] as const)(
+  'REQ-1 a %s canary with avatars and another post on the page still agrees on the focal image',
+  async (variant) => {
+    const h = await harness(variant, 5);
+    h.fake.requestBudget(true);
+    try {
+      expect(await h.start(true), h.notices.join('')).toMatchObject({
+        endReason: 'canary',
+        completed: 5,
+      });
+      const downloads = imageDownloads(h);
+      expect(downloads).toMatchObject({ list: 0, avatars: 0, suggested: 0 });
+      const run = (await h.store.browserJournal()).runs[0]!;
+      const report = JSON.parse(
+        await readFile(
+          join(h.directory, `context/instagram/canary-${run.runId}.json`),
+          'utf8',
+        ),
+      ) as {
+        steps: {
+          fields: SourceChecks;
+          image: Record<string, unknown>;
+          imagesAborted: { avatar: number; other: number };
+        }[];
+      };
+      for (const step of report.steps.filter((step) => step.image)) {
+        expect(step.image['status']).toBe('stored');
+        expect(step.image['element']).toBe(
+          variant === 'success' ? 'media-img' : 'answer-cover',
+        );
+        expect(step.fields.image.agrees).toBe(true);
+        expect(step.imagesAborted).toMatchObject({ avatar: 4, other: 1 });
+      }
+      const bytes = await readFile(
+        join(
+          instagramContextDirectory(h.directory, IG_FIXTURE.code),
+          'image.png',
+        ),
+      );
+      expect(bytes).toEqual(Buffer.from(IG_FIXTURE.png, 'base64'));
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
 );
 test('RETAIN-1 a canary with the repeated result still stops with LIST_TIMEOUT', async () => {
   const h = await harness('success', 5);

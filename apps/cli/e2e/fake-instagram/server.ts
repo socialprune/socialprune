@@ -133,6 +133,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let listFreshnessOptions: { loads?: readonly number[]; noticeLoad?: number } =
     {};
   let listFreshnessServed = 0;
+  let reqImages = false;
   let likesCase: 'answer' | 'dom' | 'unknown' | undefined;
   const candidates = new Map<
     number,
@@ -494,6 +495,26 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           undefined,
           hiddenPosts.has(index),
         );
+        if (reqImages) {
+          // REQ-1: avatars, a suggested post and one unlisted image render
+          // after the post's answer arrived, as the real page draws them.
+          const images = [
+            '/profiles/req-owner.png',
+            '/profiles/req-avatar-1.png',
+            '/profiles/req-avatar-2.png',
+            '/profiles/req-avatar-3.png',
+            '/media/GeneratedSuggested.png?signature=generated-suggested',
+            '/profiles/req-unlisted.png',
+          ];
+          // Inside the page's own script, through its recorded mutate wrapper.
+          const anchor = 'let expansions=0;';
+          if (!html.includes(anchor))
+            throw new Error('Generated request-budget anchor missing');
+          html = html.replace(
+            anchor,
+            `setTimeout(()=>mutate(()=>{const aside=document.createElement('aside');aside.innerHTML=${JSON.stringify(images.map((src) => `<img alt="" src="${src}" style="width:24px;height:24px">`).join(''))};document.body.append(aside)}),400);${anchor}`,
+          );
+        }
         if (directPostAccount)
           html = html.replace(
             '<body>',
@@ -674,18 +695,21 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           );
           return;
         }
+        const answer = withLikes(
+          postAnswer(
+            items[Math.max(0, index)]!,
+            Math.max(0, index),
+            postVariants.get(index) ?? variant,
+            `http://127.0.0.1:${port}`,
+            url.searchParams.has('different'),
+          ),
+          Math.max(0, index),
+        );
         response.end(
           JSON.stringify(
-            withLikes(
-              postAnswer(
-                items[Math.max(0, index)]!,
-                Math.max(0, index),
-                postVariants.get(index) ?? variant,
-                `http://127.0.0.1:${port}`,
-                url.searchParams.has('different'),
-              ),
-              Math.max(0, index),
-            ),
+            reqImages
+              ? withRequestBudget(answer, `http://127.0.0.1:${port}`)
+              : answer,
           ),
         );
         return;
@@ -720,6 +744,44 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolve);
   });
+  // REQ-1: the answer lists the owner's and commenters' profile pictures and
+  // another post's media, as Instagram's post answers do.
+  function withRequestBudget(answer: unknown, origin: string) {
+    const value = answer as { data: { items: Record<string, unknown>[] } };
+    const focal = value.data.items[0]!;
+    return {
+      ...value,
+      data: {
+        ...value.data,
+        items: [
+          {
+            ...focal,
+            user: {
+              ...(focal.user as object),
+              profile_pic_url: `${origin}/profiles/req-owner.png`,
+            },
+          },
+          ...value.data.items.slice(1),
+        ],
+      },
+      generated_commenters: [1, 2, 3].map((n) => ({
+        username: `generated_commenter_${n}`,
+        profile_pic_url: `${origin}/profiles/req-avatar-${n}.png`,
+      })),
+      related: [
+        {
+          code: 'GeneratedSuggested',
+          image_versions2: {
+            candidates: [
+              {
+                url: `${origin}/media/GeneratedSuggested.png?signature=generated-suggested`,
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
   function withLikes(answer: unknown, index: number) {
     if (likesCase !== 'answer' && !replyConfigured) return answer;
     const item = items[index]!;
@@ -789,6 +851,9 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     setImageCase(value: ImageCaseName) {
       imageShape = value;
+    },
+    requestBudget(value: boolean) {
+      reqImages = value;
     },
     listFreshness(
       value: NonNullable<typeof listFreshness>,

@@ -10,6 +10,7 @@
 - Rule PA-7 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the bounded main-run reading exceptions in section 6).
 - Rule PA-8 changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the default and written-order bounds in section 7).
 - Rule The warning changed by [ADR-029](ADR-029-signed-in-originals-pass.md) on 2026-10-24 (the reading-only warning in section 6).
+- Rule PA-9 changed by [ADR-028](ADR-028-instagram-signed-in-session.md) on 2026-11-13 (under a written order the Instagram reading pass may use curved pointer paths, uneven scrolling and longer varying waits, card IG-APPROACH-1 v1 D2 B; every other item of the forbidden list stays).
 - **Date:** 2026-10-11
 - **Hard constraints touched:** 4 (changed by the maintainer on 2026-10-11; this record writes the change down and sets the rules every platform action follows), 1, 2, 3 and 5 (unchanged; they bound the change)
 - **Related:** [ADR-006](ADR-006-workspace-event-log.md), [ADR-013](ADR-013-cli-framework-output.md), [ADR-014](ADR-014-agent-interface.md), [ADR-016](ADR-016-local-review-server.md), [ADR-017](ADR-017-shared-workspace-service.md), [ADR-026](ADR-026-x-originals-fetch.md), [ADR-027](ADR-027-x-deletion-browser.md), [ADR-028](ADR-028-instagram-signed-in-session.md), [ADR-029](ADR-029-signed-in-originals-pass.md), [ADR-030](ADR-030-instagram-context-record.md), [ADR-031](ADR-031-desktop-app.md)

@@ -3504,6 +3504,126 @@ test('HUMAN-1 the post comment column scrolls in uneven bursts within IG-6 limit
     await h.close();
   }
 }, 120000);
+test.each([
+  {
+    mode: 'hang',
+    errorClass: 'timeout',
+    messageClass: 'timeout-exceeded',
+    target: null,
+    guard: false,
+  },
+  {
+    mode: 'reset',
+    errorClass: 'other',
+    messageClass:
+      /^net-err-(connection-reset|connection-closed|empty-response|failed)$/u,
+    target: null,
+    guard: false,
+  },
+  {
+    mode: 'interrupt',
+    errorClass: 'other',
+    messageClass: 'interrupted-by-navigation',
+    target: 'other-instagram',
+    guard: false,
+  },
+  // NAV-DIAG-1 proof (iv): the guard cannot see this redirect, see below.
+  // Playwright routes only the first request of a redirect chain, so a
+  // server redirect to a foreign host is not seen by the guard; here nothing
+  // listens there and the browser reports the refused connection.
+  {
+    mode: 'redirect',
+    errorClass: 'other',
+    messageClass: 'net-err-connection-refused',
+    target: null,
+    guard: false,
+  },
+] as const)(
+  'NAV-DIAG-1 a $mode list document stops with navigation as today and records its closed cause',
+  async ({ mode, errorClass, messageClass, target, guard }) => {
+    const h = await harness('success', 4);
+    await fullRunReady(h);
+    h.setLimit(10);
+    h.fake.listFailure(mode, 2, CONTEXT_PORTS.foreign);
+    if (mode === 'interrupt') {
+      // While the second list document is held, the page starts another
+      // navigation to a generated post, as a client-side jump would.
+      let loads = 0;
+      h.fake.beforeList(() => {
+        if (++loads === 2)
+          setTimeout(() => {
+            const page = h
+              .context!.pages()
+              .find(
+                (candidate) =>
+                  new URL(candidate.url()).origin === h.fake.origin,
+              );
+            void page
+              ?.goto(`${h.fake.origin}/p/${IG_FIXTURE.code}/`)
+              .catch(() => {});
+          }, 300);
+        return Promise.resolve();
+      });
+    }
+    try {
+      expect(await h.start('no-canary')).toMatchObject({
+        code: 'PLATFORM_CHECK',
+      });
+      const { run, report, text } = await retryReport(h);
+      expect(run.pageOpens).toBe(2);
+      expect(report).toMatchObject({
+        stop: { code: 'PLATFORM_CHECK', token: 'navigation' },
+        retries: { used: 0, entries: [] },
+      });
+      const failure = (report['stop'] as Record<string, unknown>)[
+        'navigationFailure'
+      ] as Record<string, unknown>;
+      expect(failure['errorClass']).toBe(errorClass);
+      if (typeof messageClass === 'string')
+        expect(failure['messageClass']).toBe(messageClass);
+      else expect(failure['messageClass']).toMatch(messageClass);
+      expect(failure['elapsedMs']).toEqual(expect.any(Number));
+      expect(failure['targetPathClass']).toBe(target);
+      expect(failure['guardAborted']).toBe(guard);
+      expect(failure['guardHostClass']).toBe(guard ? 'other' : null);
+      if (mode === 'redirect')
+        expect(typeof failure['documentResponse']).toBe('boolean');
+      // The held, reset and interrupted documents never answered.
+      if (mode !== 'redirect')
+        expect(failure).toMatchObject({
+          documentResponse: false,
+          documentStatus: null,
+        });
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).filter(
+          (record) => record.runId === run.runId,
+        ),
+      ).toHaveLength(1);
+      expect(h.waits).not.toContain(60000);
+      const notices = h.notices.join('');
+      expect(notices).toMatch(
+        /Stop detail: navigation; navErrorClass=[a-z-]+; navMessageClass=[a-z-]+; navElapsedMs=\d+; navDocumentResponse=(true|false); navDocumentStatus=(\d{3}|none); navPagePath=[a-z-]+; navTargetPath=[a-z-]+; navGuardAborted=(true|false); navGuardHost=[a-z]+/u,
+      );
+      for (const value of [
+        h.plan.handle,
+        'generated-elsewhere',
+        '/accounts/login',
+        '127.0.0.1',
+        'net::ERR',
+        'interrupted by another',
+      ]) {
+        expect(JSON.stringify(report['stop'])).not.toContain(value);
+        expect(
+          notices.slice(notices.indexOf('Stop detail:')).split('\n')[0],
+        ).not.toContain(value);
+      }
+      expect(text).not.toContain('generated-elsewhere');
+    } finally {
+      await h.close();
+    }
+  },
+  120000,
+);
 test('RETAIN-1 a canary with the repeated result still stops with LIST_TIMEOUT', async () => {
   const h = await harness('success', 5);
   h.fake.listFreshness('repeated');

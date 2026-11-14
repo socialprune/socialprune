@@ -34,7 +34,12 @@ import {
   accountClass,
   ListTimeoutDiagnosticSchema,
 } from './report.ts';
-import type { AccountClass, ListTimeoutDiagnostic } from './report.ts';
+import type {
+  AccountClass,
+  ListTimeoutDiagnostic,
+  NavigationFailure,
+} from './report.ts';
+import { observeListNavigation } from './nav-failure.ts';
 import { FilteredListTimeout, RepeatedListResult } from './retry.ts';
 import type { MediaArea } from './media-source.ts';
 import { CONTEXT_PACE } from './pace.ts';
@@ -210,6 +215,8 @@ export async function navigateList(
     action: () => Promise<T>,
   ) =>
     probePhase ? probeWait(`${probePhase}-${part}`, action, checked) : action();
+  // NAV-DIAG-1: observe the document so a failure keeps its closed classes.
+  const observed = observeListNavigation(page, deps.origin);
   try {
     await wait('load', () =>
       page.goto(deps.origin + COMMENTS_PATH, {
@@ -223,8 +230,18 @@ export async function navigateList(
       (probePhase && error instanceof ContextStop)
     )
       throw error;
+    let failure: NavigationFailure | undefined;
+    try {
+      failure = observed.failure(error);
+    } catch {
+      failure = undefined;
+    }
     guard();
-    throw new ContextStop('PLATFORM_CHECK', 'navigation');
+    const stop = new ContextStop('PLATFORM_CHECK', 'navigation');
+    if (failure) stop.navigationFailure = failure;
+    throw stop;
+  } finally {
+    observed.dispose();
   }
   const deadline = performance.now() + deps.responseMs;
   await wait('rows', () =>

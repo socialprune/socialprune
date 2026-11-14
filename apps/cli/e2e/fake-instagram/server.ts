@@ -73,6 +73,14 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
       }[];
     }[] = [];
   let beforeNavigation: (() => Promise<void>) | undefined;
+  let listFailure:
+    | {
+        mode: 'hang' | 'reset' | 'interrupt' | 'redirect' | 'foreign-jump';
+        load: number;
+        foreignPort: number;
+      }
+    | undefined;
+  let listFailureLoads = 0;
   const postVariants = new Map<number, Variant>();
   const hiddenPosts = new Set<number>();
   const slowPosts = new Map<number, number>();
@@ -303,6 +311,38 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           return;
         }
         await beforeNavigation?.();
+        // NAV-DIAG-1: one chosen list document fails in a generated way.
+        // A reset stays for every later load, so the browser's own retry of
+        // a reset request fails as well.
+        if (
+          listFailure &&
+          (++listFailureLoads === listFailure.load ||
+            (listFailure.mode === 'reset' &&
+              listFailureLoads > listFailure.load))
+        ) {
+          // `interrupt` holds the document like `hang`; the test then starts
+          // another navigation of the same page before it commits.
+          if (listFailure.mode === 'hang' || listFailure.mode === 'interrupt')
+            return;
+          if (listFailure.mode === 'reset') {
+            request.socket.destroy();
+            return;
+          }
+          if (listFailure.mode === 'redirect') {
+            response.writeHead(302, {
+              Location: `http://127.0.0.1:${listFailure.foreignPort}/generated-elsewhere`,
+            });
+            response.end();
+            return;
+          }
+          const target = `http://127.0.0.1:${listFailure.foreignPort}/generated-elsewhere`;
+          response.writeHead(200, { 'Content-Type': 'text/html' });
+          response.write(
+            `<!doctype html><html><head><script>location.href=${JSON.stringify(target)}</script></head><body>`,
+          );
+          setTimeout(() => response.end('</body></html>'), 5000);
+          return;
+        }
         response.writeHead(variant === '429' ? 429 : 200, {
           'Content-Type': 'text/html',
         });
@@ -1009,6 +1049,14 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     beforeList(value: () => Promise<void>) {
       beforeNavigation = value;
+    },
+    listFailure(
+      mode: 'hang' | 'reset' | 'interrupt' | 'redirect' | 'foreign-jump',
+      load: number,
+      foreignPort = 0,
+    ) {
+      listFailure = { mode, load, foreignPort };
+      listFailureLoads = 0;
     },
     close() {
       return (closing ??= (async () => {

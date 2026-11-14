@@ -1454,6 +1454,8 @@ export class ContextStop extends CliError {
   readonly accountCheck?: AccountCheck;
   /** ROW-TRAIL-1: closed class of the refused list row's trailing line. */
   trailingClass?: RowTrailingClass;
+  /** NAV-DIAG-1: closed classes of the failed list navigation. */
+  navigationFailure?: NavigationFailure;
   constructor(
     code: CliErrorCode,
     token: ContextStopToken,
@@ -1526,6 +1528,67 @@ export function errorClass(error: unknown): ErrorClass {
   ] as const)
     if (names.includes(name)) return value;
   return 'other';
+}
+/** NAV-DIAG-1: closed classes of a failed comments-list navigation. */
+export const NAV_NET_ERRORS = [
+  'TIMED_OUT',
+  'CONNECTION_RESET',
+  'CONNECTION_CLOSED',
+  'CONNECTION_REFUSED',
+  'NAME_NOT_RESOLVED',
+  'INTERNET_DISCONNECTED',
+  'NETWORK_CHANGED',
+  'ABORTED',
+  'FAILED',
+  'BLOCKED_BY_CLIENT',
+  'HTTP2_PROTOCOL_ERROR',
+  'EMPTY_RESPONSE',
+] as const;
+export const NAV_MESSAGE_CLASSES = [
+  'timeout-exceeded',
+  ...NAV_NET_ERRORS.map(
+    (name) => `net-err-${name.toLowerCase().replaceAll('_', '-')}`,
+  ),
+  'interrupted-by-navigation',
+  'other',
+] as [string, ...string[]];
+export type NavMessageClass =
+  | 'timeout-exceeded'
+  | `net-err-${string}`
+  | 'interrupted-by-navigation'
+  | 'other';
+export const NAV_PATH_CLASSES = [
+  'comments-list',
+  'login',
+  'challenge',
+  'other-instagram',
+  'other-host',
+  'about-blank',
+  'unknown',
+] as const;
+export type NavPathClass = (typeof NAV_PATH_CLASSES)[number];
+export const NavigationFailureSchema = z.strictObject({
+  errorClass: z.enum(ERROR_CLASSES),
+  messageClass: z.enum(NAV_MESSAGE_CLASSES),
+  elapsedMs: z.number().int().nonnegative(),
+  documentResponse: z.boolean(),
+  documentStatus: z.number().int().min(100).max(599).nullable(),
+  pagePathClass: z.enum(NAV_PATH_CLASSES),
+  targetPathClass: z.enum(NAV_PATH_CLASSES).nullable(),
+  guardAborted: z.boolean(),
+  guardHostClass: z
+    .enum(['instagram', 'cdninstagram', 'fbcdn', 'other'])
+    .nullable(),
+});
+export type NavigationFailure = z.infer<typeof NavigationFailureSchema>;
+export function navigationFailureText(value: NavigationFailure): string {
+  return (
+    `; navErrorClass=${value.errorClass}; navMessageClass=${value.messageClass}` +
+    `; navElapsedMs=${value.elapsedMs}; navDocumentResponse=${value.documentResponse}` +
+    `; navDocumentStatus=${value.documentStatus ?? 'none'}` +
+    `; navPagePath=${value.pagePathClass}; navTargetPath=${value.targetPathClass ?? 'none'}` +
+    `; navGuardAborted=${value.guardAborted}; navGuardHost=${value.guardHostClass ?? 'none'}`
+  );
 }
 export const ERROR_NAMES = [
   'Error',
@@ -1997,6 +2060,7 @@ export function stopDetails(error: unknown): {
   playwrightMessageClass?: UnexpectedError['playwrightMessageClass'];
   ownFunction?: UnexpectedError['ownFunction'];
   trailingClass?: RowTrailingClass;
+  navigationFailure?: NavigationFailure;
 } {
   if (
     error instanceof ContextStop &&
@@ -2012,6 +2076,13 @@ export function stopDetails(error: unknown): {
       error.trailingClass &&
       ROW_TRAILING_CLASSES.includes(error.trailingClass)
         ? { trailingClass: error.trailingClass }
+        : {}),
+      ...(error.token === 'navigation' && error.navigationFailure
+        ? {
+            navigationFailure: NavigationFailureSchema.parse(
+              error.navigationFailure,
+            ),
+          }
         : {}),
     };
   if (error instanceof CliError && Object.hasOwn(CLI_ERRORS, error.code))
@@ -2030,6 +2101,9 @@ export function stopDetailText(error: unknown): string {
     detail.token +
     (detail.errorClass ? `; errorClass=${detail.errorClass}` : '') +
     (detail.trailingClass ? `; trailingClass=${detail.trailingClass}` : '') +
+    (detail.navigationFailure
+      ? navigationFailureText(detail.navigationFailure)
+      : '') +
     (detail.errorName
       ? `; errorName=${detail.errorName}; playwrightMessageClass=${detail.playwrightMessageClass}; ownFunction=${detail.ownFunction}`
       : '') +

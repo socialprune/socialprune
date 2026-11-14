@@ -23,6 +23,7 @@ import type {
   MemorySample,
   MemoryValues,
 } from './report.ts';
+import { guardAbortedRequests } from './nav-failure.ts';
 import {
   LimitSignals,
   hostClass,
@@ -499,10 +500,13 @@ export async function guardInstagramNetwork(
     }
     if (!policy.platform(url.href)) {
       abortHost(url);
+      // NAV-DIAG-1: a failed list navigation can tell the guard aborted it.
+      guardAbortedRequests.add(request);
       await route.abort();
       return;
     }
     if (failure) {
+      guardAbortedRequests.add(request);
       await route.abort();
       return;
     }

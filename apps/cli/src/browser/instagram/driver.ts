@@ -38,8 +38,11 @@ import type {
   AccountClass,
   ListTimeoutDiagnostic,
   NavigationFailure,
+  PostOpenDiagnostic,
 } from './report.ts';
 import { observeListNavigation } from './nav-failure.ts';
+import { PostNotReady, watchPostOpen } from './post-open.ts';
+import { humanInputFor } from './human-input.ts';
 import { FilteredListTimeout, RepeatedListResult } from './retry.ts';
 import type { MediaArea } from './media-source.ts';
 import { CONTEXT_PACE } from './pace.ts';
@@ -84,6 +87,9 @@ export interface ContextDependencies {
   random?: () => number;
   capture?: typeof capturePost;
   navigated?(kind: ReadyKind, elapsedMs: number): void;
+  /** POST-READY-1: the row press time, and the open's closed diagnostics. */
+  postPressed?(this: void, at: number): void;
+  postOpenObserved?(this: void, value: PostOpenDiagnostic): void;
   accountObserved?(this: void, value: AccountClass): void;
   close(context: BrowserContext, automatic: boolean): Promise<void>;
 }
@@ -885,9 +891,30 @@ export async function openCandidate(
   deps: ContextDependencies,
   guard: () => void,
 ): Promise<boolean> {
-  const navigationStart = performance.now();
-  await clickAllowed(page, { kind: 'row', index }, guard);
-  return postReady(page, navigationStart, deps, guard);
+  // POST-READY-1: readiness counts from the press, after any in-step pause
+  // and pointer path; the open's navigation is observed for diagnostics.
+  const human = humanInputFor(page);
+  if (human) human.lastPress = undefined;
+  const watch = watchPostOpen(page, deps.origin);
+  try {
+    await clickAllowed(page, { kind: 'row', index }, guard, () => {
+      deps.postPressed?.(watch.pressed());
+    });
+    return await postReady(
+      page,
+      watch.pressedAt ?? watch.pressed(),
+      deps,
+      guard,
+      () => watch.navigationStarted(),
+    );
+  } finally {
+    try {
+      deps.postOpenObserved?.(watch.summary(human?.lastPress));
+    } catch {
+      // A diagnostic never replaces the open's own result.
+    }
+    watch.dispose();
+  }
 }
 export async function reopenCandidate(
   page: Page,
@@ -932,6 +959,8 @@ async function postReady(
   navigationStart: number,
   deps: ContextDependencies,
   guard: () => void,
+  /** POST-READY-1: set for a row-click open; tells whether it navigated. */
+  rowClickNavigated?: () => boolean,
 ): Promise<boolean> {
   try {
     await waitPage(
@@ -947,7 +976,10 @@ async function postReady(
     );
   } catch (error) {
     if (error instanceof ContextStop && error.token === 'post-timeout')
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+      throw new PostNotReady(
+        rowClickNavigated !== undefined,
+        rowClickNavigated?.() ?? true,
+      );
     throw error;
   }
   deps.navigated?.('post', performance.now() - navigationStart);

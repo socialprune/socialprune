@@ -113,6 +113,8 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let probeCase: ListProbeCase | undefined;
   let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
+  const latePosts = new Map<number, number>();
+  let ignoredPresses = 0;
   const delayedPosts = new Map<
     number,
     { navigationMs: number; renderMs: number }
@@ -355,6 +357,18 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           postVariants,
           clientSidePosts,
         );
+        if (ignoredPresses > 0) {
+          // POST-READY-1: this list document swallows its first row press,
+          // so the press starts no navigation.
+          ignoredPresses--;
+          const anchor = "const list=document.getElementById('list');";
+          if (!html.includes(anchor))
+            throw new Error('Generated ignored-press anchor missing');
+          html = html.replace(
+            anchor,
+            `${anchor}let generatedSwallow=true;list.addEventListener('click',e=>{if(generatedSwallow&&e.target.closest('[role=button]')){generatedSwallow=false;e.preventDefault();e.stopImmediatePropagation()}},true);`,
+          );
+        }
         if (windowLists) {
           const loop = 'for(const [index,row]of chosen.entries())';
           if (!html.includes(loop))
@@ -666,11 +680,16 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
             '<div id="comment-rows">',
             '<div id="comment-rows"><div data-generated="comment">I will try again later! my action blocked the door</div>',
           );
-        if (delayed)
+        // POST-READY-1: the document arrives, its post renders after the
+        // reader's responseMs on the listed loads only.
+        const late = latePosts.get(index) ?? 0;
+        if (late > 0) latePosts.set(index, late - 1);
+        const renderMs = delayed?.renderMs ?? (late > 0 ? 4000 : 0);
+        if (delayed || late > 0)
           html = html.replace(
             /<main>([\s\S]*?)<\/main>/u,
             (_whole: string, content: string) =>
-              `<main><template id="generated-delayed-post">${content}</template></main><script>setTimeout(()=>mutate(()=>{const t=document.getElementById('generated-delayed-post');t.replaceWith(t.content)}),${delayed.renderMs})</script>`,
+              `<main><template id="generated-delayed-post">${content}</template></main><script>setTimeout(()=>mutate(()=>{const t=document.getElementById('generated-delayed-post');t.replaceWith(t.content)}),${renderMs})</script>`,
           );
         response.end(
           imageShape
@@ -967,6 +986,14 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     },
     delayPost(index: number, navigationMs: number, renderMs: number) {
       delayedPosts.set(index, { navigationMs, renderMs });
+    },
+    /** POST-READY-1: the next `count` loads of this post render late. */
+    latePostRenders(index: number, count: number) {
+      latePosts.set(index, count);
+    },
+    /** POST-READY-1: the next `count` list documents ignore one row press. */
+    ignoredRowPresses(count: number) {
+      ignoredPresses = count;
     },
     soleCommentSet(value: SoleCommentSet) {
       soleCommentSet = value;

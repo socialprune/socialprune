@@ -72,6 +72,7 @@ import {
 } from './network.ts';
 import type { ImageCounts } from './network.ts';
 import { imageClassifier } from './image-filter.ts';
+import { PostNotReady } from './post-open.ts';
 import {
   HUMAN_STEP_EXTRA_MS,
   HumanInput,
@@ -193,10 +194,19 @@ export async function runContextWithDependencies(
   const limitSignals = new LimitSignals();
   const postRetries = new PostOpenRetries();
   let activeReady: { postMs: number } | undefined;
+  // POST-READY-1: the step whose row press is open, and that press's time.
+  let activePostOpen: Record<string, unknown> | undefined;
+  let pressedAt: number | undefined;
   let accountBeforeClass: AccountClass | undefined;
   let accountAfterClass: AccountClass = 'absent';
   deps = {
     ...deps,
+    postPressed: (at) => {
+      if (activeReady) pressedAt = at;
+    },
+    postOpenObserved: (value) => {
+      if (activePostOpen) activePostOpen['postOpen'] = value;
+    },
     navigated: (kind, elapsed) => {
       limitSignals.navigated(kind, elapsed);
       if (kind === 'post' && activeReady)
@@ -1535,6 +1545,8 @@ export async function runContextWithDependencies(
             phase('post-open', phaseBudget);
             activeReady = { postMs: 0 };
             stepReport.ready = activeReady;
+            activePostOpen = stepReport;
+            pressedAt = undefined;
             const openedAt = performance.now();
             if (options.plan.refreshReplies) {
               stepReport.postReadingBudget = postBudget;
@@ -1586,37 +1598,62 @@ export async function runContextWithDependencies(
               target ??= postReopenTarget(page.url(), deps.origin);
               activeReady.postMs = Math.max(
                 0,
-                Math.round(performance.now() - openedAt),
+                Math.round(performance.now() - (pressedAt ?? openedAt)),
               );
-              if (reopening && errorClass(caught) === 'timeout')
+              if (
+                reopening &&
+                (errorClass(caught) === 'timeout' ||
+                  caught instanceof PostNotReady)
+              )
                 reopening.outcome = 'timeout';
+              const capacity =
+                used < pace.perDay &&
+                steps < max &&
+                dateInZone(options.now(), options.plan.timeZone) === day;
               // RETRY-2: without a validated post target the click never
               // reached the post, so the reopen starts from a fresh list.
-              const retry = postRetries.begin(
-                caught,
-                [row.item.id, ...(target ? [target] : [])],
-                steps,
-                options.plan.canary,
-                used < pace.perDay &&
-                  steps < max &&
-                  dateInZone(options.now(), options.plan.timeZone) === day,
-                target !== null,
-                diagnosticRun,
-              );
+              // POST-READY-1: a post element that never appeared after a row
+              // press takes IG-16 A's reopen in the same budget.
+              const notReady =
+                caught instanceof PostNotReady && caught.rowClick
+                  ? caught
+                  : null;
+              const retry = notReady
+                ? postRetries.beginNotReady(
+                    notReady,
+                    [row.item.id, ...(target ? [target] : [])],
+                    steps,
+                    options.plan.canary,
+                    capacity,
+                    target !== null,
+                    diagnosticRun,
+                  )
+                : postRetries.begin(
+                    caught,
+                    [row.item.id, ...(target ? [target] : [])],
+                    steps,
+                    options.plan.canary,
+                    capacity,
+                    target !== null,
+                    diagnosticRun,
+                  );
               if (!retry) throw caught;
               await sampleMemory();
               await waitToReopen(retry);
               reopening = retry;
-              reopenTarget = target;
+              reopenTarget =
+                notReady && !notReady.navigationStarted ? null : target;
               candidate--;
               continue;
             } finally {
               if (activeReady && activeReady.postMs === 0)
                 activeReady.postMs = Math.max(
                   0,
-                  Math.round(performance.now() - openedAt),
+                  Math.round(performance.now() - (pressedAt ?? openedAt)),
                 );
               activeReady = undefined;
+              activePostOpen = undefined;
+              pressedAt = undefined;
               page.off('request', navigation);
             }
             if (!opened) {

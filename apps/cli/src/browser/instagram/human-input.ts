@@ -199,6 +199,11 @@ export class HumanInput {
       const target = targetPoint(box, this.random);
       await this.moveTo(page, target, Math.min(box.width, box.height));
       if (!(await stillHit(locator, target))) continue;
+      const third = (target.x - box.x) / box.width;
+      this.lastPress = {
+        position: third < 1 / 3 ? 'left' : third < 2 / 3 ? 'middle' : 'right',
+        hoverPassed: true,
+      };
       press();
       await page.mouse.down();
       await this.realSleep(Math.round(between(this.random, 60, 180)));
@@ -206,9 +211,14 @@ export class HumanInput {
       this.count((counts) => counts.clicks++);
       return true;
     }
+    // The caller's fallback click presses the centre without a passed check.
+    this.lastPress = { position: 'middle', hoverPassed: false };
     this.count((counts) => counts.fallbacks++);
     return false;
   }
+  /** POST-READY-1: closed position and check result of the last press. */
+  lastPress:
+    { position: 'left' | 'middle' | 'right'; hoverPassed: boolean } | undefined;
   /** Move onto the area, then 2 to 5 wheel events of 60 to 180 px. */
   async wheelBurst(page: Page, box: Box, before: () => void): Promise<void> {
     before();

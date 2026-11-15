@@ -153,10 +153,37 @@ export const PostRequestsSchema = z
   )
   .max(POST_PATH_CLASSES.length * 500);
 export type PostRequestStatus = z.infer<typeof PostRequestsSchema>[number];
+/** POST-READY-1: counts and booleans only; never a URL, ID or text. */
+export const POST_OPEN_PATH_CLASSES = [
+  'post',
+  'reel',
+  'comments-list',
+  'other-instagram',
+  'other-host',
+  'about-blank',
+  'unknown',
+] as const;
+export type PostOpenPathClass = (typeof POST_OPEN_PATH_CLASSES)[number];
+export const PostOpenDiagnosticSchema = z.strictObject({
+  navigationStarted: z.boolean(),
+  navigationMs: count.nullable(),
+  documentResponse: z.boolean(),
+  documentStatus: z.number().int().min(100).max(599).nullable(),
+  pagePathClass: z.enum(POST_OPEN_PATH_CLASSES),
+  pressPosition: z.enum(['left', 'middle', 'right']).optional(),
+  hoverPassed: z.boolean().optional(),
+});
+export type PostOpenDiagnostic = z.infer<typeof PostOpenDiagnosticSchema>;
 const PostRetrySchema = z.strictObject({
   step: z.number().int().positive(),
   retryStep: z.number().int().positive().nullable(),
-  stage: z.enum(['post-open', 'list', 'list-raw', 'post-no-target']),
+  stage: z.enum([
+    'post-open',
+    'list',
+    'list-raw',
+    'post-no-target',
+    'post-not-ready',
+  ]),
   waitedMs: count,
   outcome: z.enum(['ready', 'timeout']).nullable(),
 });
@@ -1351,6 +1378,8 @@ export const ContextStepReportSchema = z
     newestProbe: NewestProbeSchema.optional(),
     widenedProbes: z.array(WidenedProbeSchema).max(2).optional(),
     ready: z.strictObject({ postMs: count }).optional(),
+    // POST-READY-1: closed diagnostics of a row-click post open.
+    postOpen: PostOpenDiagnosticSchema.optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),
     otherName: z.number().int().nonnegative().optional(),

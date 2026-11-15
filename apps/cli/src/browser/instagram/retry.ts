@@ -1,5 +1,6 @@
 import { ContextStop, errorClass } from './report.ts';
 import type { PostRetry } from './report.ts';
+import { PostNotReady } from './post-open.ts';
 
 export const POST_REOPEN_WAIT_MS = 60000;
 /** Marks only an empty read after applying the comments date filter. */
@@ -49,6 +50,25 @@ export class PostOpenRetries {
       capacity,
       target ? 'post-open' : 'post-no-target',
     );
+  }
+  /**
+   * POST-READY-1 (IG-16 A): a row-click post that did not appear in time.
+   * Without a navigation since the press the comment reopens from a fresh
+   * list; with one and a validated target that target reopens. Same budget.
+   */
+  beginNotReady(
+    error: unknown,
+    targets: readonly string[],
+    step: number,
+    canary: boolean,
+    capacity: boolean,
+    target: boolean,
+    diagnostic = false,
+  ): PostRetry | null {
+    if (!(error instanceof PostNotReady) || !error.rowClick || diagnostic)
+      return null;
+    if (error.navigationStarted && !target) return null;
+    return this.reserve(targets, step, canary, capacity, 'post-not-ready');
   }
   beginList(
     error: unknown,

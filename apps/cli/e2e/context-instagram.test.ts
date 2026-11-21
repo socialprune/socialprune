@@ -5844,6 +5844,158 @@ test('POST-READY-1 a fourth not-ready post in one run stops as today', async () 
     await h.close();
   }
 }, 240000);
+type PostReadStep = { postRead?: Record<string, unknown>; result?: string };
+const POST_READ_LINE =
+  /Stop detail: post-structure; postReadSite=settled-deadline; postReadSettledLast=[a-z-]+; postReadPagePath=[a-z-]+; postReadFocalPost=(true|false|unknown); postReadFocalComment=(true|false|unknown)/u;
+test.each([false, true])(
+  'POST-READ-1 a post that breaks once during reading (humanInput %s) reopens the comment once from a fresh list',
+  async (humanInput) => {
+    const h = await harness('success', 2);
+    await fullRunReady(h);
+    if (humanInput) h.setPace({ secondsPerStep: 10, humanInput: true });
+    h.fake.brokenPostReads(0, 1);
+    try {
+      expect(await h.start('no-canary'), h.notices.join('')).toMatchObject({
+        completed: 1,
+        steps: 2,
+      });
+      const { run, report, text } = await retryReport(h);
+      expect(report['retries']).toEqual({
+        used: 1,
+        entries: [
+          {
+            step: 1,
+            retryStep: 2,
+            stage: 'post-read-shape',
+            waitedMs: 60000,
+            outcome: 'ready',
+          },
+        ],
+      });
+      expect(run.pageOpens).toBe(2);
+      expect(
+        h.fake.requests.filter(
+          (request) => request.path === '/your_activity/interactions/comments',
+        ),
+      ).toHaveLength(2);
+      const steps = report['steps'] as PostReadStep[];
+      expect(steps[0]!.postRead).toEqual({
+        site: 'settled-deadline',
+        settledLast: 'no-element',
+        pagePathClass: 'post',
+        focalPostAttached: false,
+        focalCommentAttached: null,
+      });
+      expect(steps[1]).not.toHaveProperty('postRead');
+      expect(
+        (await h.store.read((tx) => records(tx.instagramContext))).filter(
+          (record) => record.runId === run.runId,
+        ),
+      ).toHaveLength(1);
+      for (const value of [
+        h.plan.handle,
+        IG_FIXTURE.code,
+        '/p/',
+        h.fake.origin,
+        ...Object.values(IG_FIXTURE.other),
+      ])
+        expect(JSON.stringify(steps[0]!.postRead)).not.toContain(value);
+      expect(text).not.toContain(IG_FIXTURE.code);
+    } finally {
+      await h.close();
+    }
+  },
+  180000,
+);
+test('POST-READ-1 a canary with a post that breaks during reading still stops at once', async () => {
+  const h = await harness('success', 5);
+  for (let index = 0; index < 5; index++) h.fake.brokenPostReads(index, 1);
+  try {
+    expect(await h.start(true)).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'post-structure',
+    });
+    const run = (await h.store.browserJournal()).runs[0]!;
+    const report = JSON.parse(
+      await readFile(
+        join(h.directory, 'context', 'instagram', `canary-${run.runId}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      retries: { used: 0, entries: [] },
+      stop: {
+        code: 'INSTAGRAM_SHAPE_CHANGED',
+        token: 'post-structure',
+        postRead: { site: 'settled-deadline', settledLast: 'no-element' },
+      },
+    });
+    expect(run.pageOpens).toBe(1);
+    expect(h.waits).not.toContain(60000);
+    expect(h.notices.join('')).toMatch(POST_READ_LINE);
+  } finally {
+    await h.close();
+  }
+}, 120000);
+test('POST-READ-1 the same comment breaking twice stops as today', async () => {
+  const h = await harness('success', 2);
+  await fullRunReady(h);
+  h.fake.brokenPostReads(0, 2);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'post-structure',
+    });
+    const { run, report } = await retryReport(h);
+    expect(report).toMatchObject({
+      retries: {
+        used: 1,
+        entries: [
+          {
+            step: 1,
+            retryStep: 2,
+            stage: 'post-read-shape',
+            outcome: 'shape-changed',
+          },
+        ],
+      },
+      stop: { token: 'post-structure', postRead: { site: 'settled-deadline' } },
+    });
+    expect(run.pageOpens).toBe(2);
+    expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(1);
+    expect(h.notices.join('')).toMatch(POST_READ_LINE);
+  } finally {
+    await h.close();
+  }
+}, 180000);
+test('POST-READ-1 a fourth post-read failure in one run stops as today', async () => {
+  const h = await harness('success', 5);
+  await fullRunReady(h);
+  h.setLimit(20);
+  for (let index = 0; index < 4; index++) h.fake.brokenPostReads(index, 1);
+  try {
+    expect(await h.start('no-canary')).toMatchObject({
+      code: 'INSTAGRAM_SHAPE_CHANGED',
+      token: 'post-structure',
+    });
+    const { run, report } = await retryReport(h);
+    expect(report).toMatchObject({
+      retries: {
+        used: 3,
+        entries: [
+          { step: 1, retryStep: 2, stage: 'post-read-shape', outcome: 'ready' },
+          { step: 3, retryStep: 4, stage: 'post-read-shape', outcome: 'ready' },
+          { step: 5, retryStep: 6, stage: 'post-read-shape', outcome: 'ready' },
+        ],
+      },
+      stop: { token: 'post-structure' },
+    });
+    expect(run.pageOpens).toBe(7);
+    expect(h.waits.filter((ms) => ms === 60000)).toHaveLength(3);
+  } finally {
+    await h.close();
+  }
+}, 240000);
 test('C23 four slow posts consume only three reopens and stop at the fourth first timeout', async () => {
   const h = await harness('success', 5);
   await fullRunReady(h);

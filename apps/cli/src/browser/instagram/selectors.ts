@@ -1,6 +1,6 @@
 import type { Locator, Page } from 'playwright-core';
 import type { Item } from '@socialprune/core';
-import { ContextStop } from './report.ts';
+import { ContextStop, PostReadShape } from './report.ts';
 import type {
   ListTimeoutDiagnostic,
   RowSignatureDiagnostic,
@@ -679,15 +679,13 @@ export async function readPost(
   origin: string,
   commentId?: string,
 ): Promise<PostProjection> {
+  // POST-READ-1: same code and token as before, with a closed site.
   const address = postAddress(page.url(), origin, commentId);
-  if (!address)
-    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+  if (!address) throw new PostReadShape('read-address');
   const element = await postElement(page, origin, commentId);
-  if (!element)
-    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+  if (!element) throw new PostReadShape('read-element');
   const ownLinks = await postLinks(element, address);
-  if (!ownLinks.length)
-    throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+  if (!ownLinks.length) throw new PostReadShape('read-links');
   const names = new Set(ownLinks.map((link) => ownerName(link.owner)));
   const owner = ownLinks[0]!.owner;
   const profiles = await profileLinks(element);

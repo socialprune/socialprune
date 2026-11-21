@@ -5,6 +5,7 @@ import { checkPage, textBlock, postAddress } from './selectors.ts';
 import { answerLikes, parseVisibleLikes } from './likes.ts';
 import { normalize } from './plan.ts';
 import { ContextStop } from './report.ts';
+import { postReadShape } from './post-open.ts';
 import type { ReplyScopeDiagnostic } from './report.ts';
 import { CliError } from '../../cli/errors.ts';
 import {
@@ -348,7 +349,12 @@ export async function commentReplies(
         postAddress(page.url(), new URL(page.url()).origin, match.id) ??
         postAddress(page.url(), new URL(page.url()).origin);
       if (current?.code !== address.code || current.kind !== address.kind)
-        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+        throw await postReadShape(
+          page,
+          new URL(page.url()).origin,
+          'reply-page-address',
+          { commentId: match.id },
+        );
       const rows =
         clicks > 0
           ? await expandedRows(
@@ -513,7 +519,12 @@ export async function commentReplies(
         );
       site = 'control-visible';
       if (controls !== 1 || !(await control.isVisible()))
-        throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+        throw await postReadShape(
+          page,
+          new URL(page.url()).origin,
+          'reply-control-visible',
+          { commentId: match.id },
+        );
       site = 'expansion-window';
       if (performance.now() + expandMs >= deadline) {
         throw new ReplyReadFailure(

@@ -1,4 +1,4 @@
-import { ContextStop, errorClass } from './report.ts';
+import { ContextStop, PostReadShape, errorClass } from './report.ts';
 import type { PostRetry } from './report.ts';
 import { PostNotReady } from './post-open.ts';
 
@@ -69,6 +69,21 @@ export class PostOpenRetries {
       return null;
     if (error.navigationStarted && !target) return null;
     return this.reserve(targets, step, canary, capacity, 'post-not-ready');
+  }
+  /**
+   * POST-READ-1 (IG-16 A extended): a post-read `post-structure` stop after
+   * the post appeared reopens the comment from a fresh list. Same budget.
+   */
+  beginPostRead(
+    error: unknown,
+    targets: readonly string[],
+    step: number,
+    canary: boolean,
+    capacity: boolean,
+    diagnostic = false,
+  ): PostRetry | null {
+    if (!(error instanceof PostReadShape) || diagnostic) return null;
+    return this.reserve(targets, step, canary, capacity, 'post-read-shape');
   }
   beginList(
     error: unknown,

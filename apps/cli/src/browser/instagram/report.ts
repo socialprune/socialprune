@@ -183,9 +183,11 @@ const PostRetrySchema = z.strictObject({
     'list-raw',
     'post-no-target',
     'post-not-ready',
+    'post-read-shape',
   ]),
   waitedMs: count,
-  outcome: z.enum(['ready', 'timeout']).nullable(),
+  // POST-READ-1: `shape-changed` when the reopened post-read failed again.
+  outcome: z.enum(['ready', 'timeout', 'shape-changed']).nullable(),
 });
 export type PostRetry = z.infer<typeof PostRetrySchema>;
 export const PostRetriesSchema = z
@@ -1380,6 +1382,8 @@ export const ContextStepReportSchema = z
     ready: z.strictObject({ postMs: count }).optional(),
     // POST-READY-1: closed diagnostics of a row-click post open.
     postOpen: PostOpenDiagnosticSchema.optional(),
+    // POST-READ-1: the closed site of a post-read `post-structure` throw.
+    postRead: z.lazy(() => PostReadDiagnosticSchema).optional(),
     postRequests: PostRequestsSchema.optional(),
     secondSource: SecondSourceReportSchema.optional(),
     otherName: z.number().int().nonnegative().optional(),
@@ -1499,6 +1503,57 @@ export class ContextStop extends CliError {
     )
       this.accountCheck = Object.freeze(AccountCheckSchema.parse(accountCheck));
   }
+}
+/** POST-READ-1: closed throw sites of a post-read `post-structure` stop. */
+export const POST_READ_SITES = [
+  'read-address',
+  'read-element',
+  'read-links',
+  'settled-deadline',
+  'expansion-identity',
+  'reply-page-address',
+  'reply-control-visible',
+] as const;
+export type PostReadSite = (typeof POST_READ_SITES)[number];
+/** What settledPost last saw before its deadline. */
+export const SETTLED_LAST = [
+  'no-element',
+  'unstable',
+  'read-address',
+  'read-element',
+  'read-links',
+  'read-timeout',
+] as const;
+export const PostReadDiagnosticSchema = z.strictObject({
+  site: z.enum(POST_READ_SITES),
+  settledLast: z.enum(SETTLED_LAST).optional(),
+  pagePathClass: z.enum(POST_OPEN_PATH_CLASSES),
+  focalPostAttached: z.boolean().nullable(),
+  focalCommentAttached: z.boolean().nullable(),
+});
+export type PostReadDiagnostic = z.infer<typeof PostReadDiagnosticSchema>;
+/**
+ * POST-READ-1: the same `INSTAGRAM_SHAPE_CHANGED` / `post-structure` stop,
+ * carrying its closed site and, where the thrower had the page, closed
+ * observations of it.
+ */
+export class PostReadShape extends ContextStop {
+  readonly site: PostReadSite;
+  postRead?: PostReadDiagnostic;
+  constructor(site: PostReadSite, postRead?: PostReadDiagnostic) {
+    super('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+    this.site = site;
+    if (postRead) this.postRead = PostReadDiagnosticSchema.parse(postRead);
+  }
+}
+export function postReadText(value: PostReadDiagnostic): string {
+  return (
+    `; postReadSite=${value.site}` +
+    (value.settledLast ? `; postReadSettledLast=${value.settledLast}` : '') +
+    `; postReadPagePath=${value.pagePathClass}` +
+    `; postReadFocalPost=${value.focalPostAttached ?? 'unknown'}` +
+    `; postReadFocalComment=${value.focalCommentAttached ?? 'unknown'}`
+  );
 }
 export const CONTEXT_CAUSE_STAGES = [
   'run',
@@ -2090,6 +2145,7 @@ export function stopDetails(error: unknown): {
   ownFunction?: UnexpectedError['ownFunction'];
   trailingClass?: RowTrailingClass;
   navigationFailure?: NavigationFailure;
+  postRead?: PostReadDiagnostic;
 } {
   if (
     error instanceof ContextStop &&
@@ -2105,6 +2161,18 @@ export function stopDetails(error: unknown): {
       error.trailingClass &&
       ROW_TRAILING_CLASSES.includes(error.trailingClass)
         ? { trailingClass: error.trailingClass }
+        : {}),
+      ...(error instanceof PostReadShape
+        ? {
+            postRead: PostReadDiagnosticSchema.parse(
+              error.postRead ?? {
+                site: error.site,
+                pagePathClass: 'unknown',
+                focalPostAttached: null,
+                focalCommentAttached: null,
+              },
+            ),
+          }
         : {}),
       ...(error.token === 'navigation' && error.navigationFailure
         ? {
@@ -2133,6 +2201,7 @@ export function stopDetailText(error: unknown): string {
     (detail.navigationFailure
       ? navigationFailureText(detail.navigationFailure)
       : '') +
+    (detail.postRead ? postReadText(detail.postRead) : '') +
     (detail.errorName
       ? `; errorName=${detail.errorName}; playwrightMessageClass=${detail.playwrightMessageClass}; ownFunction=${detail.ownFunction}`
       : '') +

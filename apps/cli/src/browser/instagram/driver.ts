@@ -41,7 +41,9 @@ import type {
   PostOpenDiagnostic,
 } from './report.ts';
 import { observeListNavigation } from './nav-failure.ts';
-import { PostNotReady, watchPostOpen } from './post-open.ts';
+import { PostNotReady, postReadShape, watchPostOpen } from './post-open.ts';
+import type { SettledLast } from './post-open.ts';
+import { PostReadShape } from './report.ts';
 import { humanInputFor } from './human-input.ts';
 import { FilteredListTimeout, RepeatedListResult } from './retry.ts';
 import type { MediaArea } from './media-source.ts';
@@ -1051,7 +1053,7 @@ export async function confirmOnPost(
     expandClicks++;
     post = await settledPost(page, deps, guard);
     if (post.kind !== kind || post.code !== code)
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+      throw await postReadShape(page, deps.origin, 'expansion-identity');
     result = confirmComment(post, item, handle);
     if (!name) {
       emptyScrolls = (await blockCount()) > previous ? 0 : emptyScrolls + 1;
@@ -1078,6 +1080,8 @@ export async function settledPost(
 ): Promise<PostProjection> {
   const deadline = performance.now() + deps.responseMs;
   let foundAt: number | undefined;
+  // POST-READ-1: what the last pass saw, for the stop's closed site.
+  let last: SettledLast = 'no-element';
   for (;;) {
     guard();
     await checkPage(page);
@@ -1087,18 +1091,28 @@ export async function settledPost(
         if (foundAt !== undefined && now - foundAt >= 500)
           return await readPost(page, deps.origin);
         foundAt ??= now;
-      } else foundAt = undefined;
+        last = 'unstable';
+      } else {
+        foundAt = undefined;
+        last = 'no-element';
+      }
     } catch (error) {
       if (
         !(error instanceof ContextStop && error.token === 'post-structure') &&
         !(error instanceof Error && error.name === 'TimeoutError')
       )
         throw error;
+      last =
+        error instanceof PostReadShape
+          ? (error.site as SettledLast)
+          : 'read-timeout';
       foundAt = undefined;
     }
     const remaining = deadline - performance.now();
     if (remaining <= 0)
-      throw new ContextStop('INSTAGRAM_SHAPE_CHANGED', 'post-structure');
+      throw await postReadShape(page, deps.origin, 'settled-deadline', {
+        settledLast: last,
+      });
     await sleep(
       Math.min(
         foundAt === undefined

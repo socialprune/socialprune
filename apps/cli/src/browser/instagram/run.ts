@@ -73,6 +73,7 @@ import {
 import type { ImageCounts } from './network.ts';
 import { imageClassifier } from './image-filter.ts';
 import { PostNotReady } from './post-open.ts';
+import { PostReadShape } from './report.ts';
 import {
   HUMAN_STEP_EXTRA_MS,
   HumanInput,
@@ -1591,8 +1592,11 @@ export async function runContextWithDependencies(
                         deps,
                         guard,
                       );
-              if (reopening) reopening.outcome = 'ready';
-              reopening = null;
+              // POST-READ-1: a post-read reopen is ready only once read.
+              if (reopening && reopening.stage !== 'post-read-shape') {
+                reopening.outcome = 'ready';
+                reopening = null;
+              }
               reopenTarget = null;
             } catch (caught) {
               target ??= postReopenTarget(page.url(), deps.origin);
@@ -1680,36 +1684,77 @@ export async function runContextWithDependencies(
             }
             stage = 'post-read';
             phase('post-read', phaseBudget);
-            if (
-              options.plan.refreshReplies &&
-              row.context?.confirmedBy === 'post'
-            ) {
-              phase('reply-scope', phaseBudget);
-              stepReport.replyScope = await replyScopeDiagnostic(
-                page,
-                {
-                  id: row.context.comment.id,
-                  createdAt: row.context.comment.createdAt,
-                  exportCreatedAt: row.item.createdAt,
-                  username: options.plan.handle,
-                  text: row.item.text,
-                },
-                guard,
-                answers.bodies,
-                answers.scriptValues(),
-                (value) => {
-                  stepReport.replyScope = value;
-                },
+            // POST-READ-1: a post-read `post-structure` stop records its
+            // closed site; in a main run it takes IG-16 A's one fresh-list
+            // reopen inside the shared budget, else it stops as before.
+            const postReadReopen = async (caught: unknown) => {
+              if (!(caught instanceof PostReadShape)) return false;
+              stepReport.postRead = stopDetails(caught).postRead;
+              if (reopening?.stage === 'post-read-shape') {
+                reopening.outcome = 'shape-changed';
+                reopening = null;
+                return false;
+              }
+              const retry = postRetries.beginPostRead(
+                caught,
+                [row.item.id],
+                steps,
+                options.plan.canary,
+                used < pace.perDay &&
+                  steps < max &&
+                  dateInZone(options.now(), options.plan.timeZone) === day,
+                diagnosticRun,
               );
+              if (!retry) return false;
+              await sampleMemory();
+              await waitToReopen(retry);
+              reopening = retry;
+              reopenTarget = null;
+              return true;
+            };
+            let read: Awaited<ReturnType<typeof confirmOnPost>>;
+            try {
+              if (
+                options.plan.refreshReplies &&
+                row.context?.confirmedBy === 'post'
+              ) {
+                phase('reply-scope', phaseBudget);
+                stepReport.replyScope = await replyScopeDiagnostic(
+                  page,
+                  {
+                    id: row.context.comment.id,
+                    createdAt: row.context.comment.createdAt,
+                    exportCreatedAt: row.item.createdAt,
+                    username: options.plan.handle,
+                    text: row.item.text,
+                  },
+                  guard,
+                  answers.bodies,
+                  answers.scriptValues(),
+                  (value) => {
+                    stepReport.replyScope = value;
+                  },
+                );
+              }
+              phase('post-read', phaseBudget);
+              read = await confirmOnPost(
+                page,
+                row.item,
+                options.plan.handle,
+                deps,
+                guard,
+              );
+            } catch (caught) {
+              if (await postReadReopen(caught)) {
+                candidate--;
+                continue;
+              }
+              throw caught;
             }
-            phase('post-read', phaseBudget);
-            const read = await confirmOnPost(
-              page,
-              row.item,
-              options.plan.handle,
-              deps,
-              guard,
-            );
+            if (reopening?.stage === 'post-read-shape') {
+              reopening.outcome = 'ready';
+              reopening = null;
+            }
             stepReport.expansionClicks = read.expandClicks;
             stepReport.expansionScrolls = read.expansionScrolls;
             stepReport.ownerCount = read.post.ownerCount;
@@ -1835,6 +1880,10 @@ export async function runContextWithDependencies(
                     },
                   );
                 } catch (caught) {
+                  if (await postReadReopen(caught)) {
+                    candidate--;
+                    continue;
+                  }
                   // A canary keeps today's stop on the original driver error.
                   if (!(caught instanceof ReplyDeferred)) throw caught;
                   if (options.plan.canary) throw caught.original;

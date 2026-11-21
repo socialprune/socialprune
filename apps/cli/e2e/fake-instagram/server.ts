@@ -114,6 +114,7 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
   let replyControlMalformed = false;
   let directPostAccount: 'expected' | 'other' | undefined;
   const latePosts = new Map<number, number>();
+  const brokenPosts = new Map<number, number>();
   let ignoredPresses = 0;
   const delayedPosts = new Map<
     number,
@@ -682,6 +683,18 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
           );
         // POST-READY-1: the document arrives, its post renders after the
         // reader's responseMs on the listed loads only.
+        // POST-READ-1: the post appears, then its element goes away before
+        // the reader's 500 ms stability check, on the listed loads only.
+        const broken = brokenPosts.get(index) ?? 0;
+        if (broken > 0) {
+          brokenPosts.set(index, broken - 1);
+          if (!html.includes('</main>'))
+            throw new Error('Generated broken-post anchor missing');
+          html = html.replace(
+            '</main>',
+            "</main><script>setTimeout(()=>mutate(()=>{document.querySelector('main').replaceChildren()}),250)</script>",
+          );
+        }
         const late = latePosts.get(index) ?? 0;
         if (late > 0) latePosts.set(index, late - 1);
         const renderMs = delayed?.renderMs ?? (late > 0 ? 4000 : 0);
@@ -990,6 +1003,10 @@ export async function fakeInstagram(port: number, items: readonly Item[]) {
     /** POST-READY-1: the next `count` loads of this post render late. */
     latePostRenders(index: number, count: number) {
       latePosts.set(index, count);
+    },
+    /** POST-READ-1: the next `count` loads of this post break after showing. */
+    brokenPostReads(index: number, count: number) {
+      brokenPosts.set(index, count);
     },
     /** POST-READY-1: the next `count` list documents ignore one row press. */
     ignoredRowPresses(count: number) {

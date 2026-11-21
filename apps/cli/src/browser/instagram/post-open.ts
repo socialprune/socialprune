@@ -1,6 +1,18 @@
 import type { Page, Request, Response } from 'playwright-core';
-import { ContextStop, PostOpenDiagnosticSchema } from './report.ts';
-import type { PostOpenDiagnostic, PostOpenPathClass } from './report.ts';
+import {
+  ContextStop,
+  PostOpenDiagnosticSchema,
+  PostReadShape,
+  SETTLED_LAST,
+} from './report.ts';
+import type {
+  PostOpenDiagnostic,
+  PostOpenPathClass,
+  PostReadSite,
+} from './report.ts';
+import { postElement } from './selectors.ts';
+
+export type SettledLast = (typeof SETTLED_LAST)[number];
 
 /**
  * POST-READY-1: the post element did not appear in time after a post open.
@@ -14,6 +26,46 @@ export class PostNotReady extends ContextStop {
     this.rowClick = rowClick;
     this.navigationStarted = navigationStarted;
   }
+}
+/**
+ * POST-READ-1: build the post-read stop with closed observations of the page
+ * at the throw. Observation failures only leave a field null.
+ */
+export async function postReadShape(
+  page: Page,
+  origin: string,
+  site: PostReadSite,
+  options: { commentId?: string; settledLast?: SettledLast } = {},
+): Promise<PostReadShape> {
+  let url = 'unknown';
+  try {
+    url = page.url();
+  } catch {
+    url = 'unknown';
+  }
+  let focalPostAttached: boolean | null = null,
+    focalCommentAttached: boolean | null = null;
+  try {
+    focalPostAttached = (await postElement(page, origin)) !== null;
+  } catch {
+    focalPostAttached = null;
+  }
+  if (options.commentId && /^\d{1,40}$/u.test(options.commentId))
+    try {
+      focalCommentAttached =
+        (await page
+          .locator(`main a[href$="/c/${options.commentId}/"]`)
+          .count()) > 0;
+    } catch {
+      focalCommentAttached = null;
+    }
+  return new PostReadShape(site, {
+    site,
+    ...(options.settledLast ? { settledLast: options.settledLast } : {}),
+    pagePathClass: postOpenPathClass(url, origin),
+    focalPostAttached,
+    focalCommentAttached,
+  });
 }
 /** Closed path class of a page address relative to the run's origin. */
 export function postOpenPathClass(
